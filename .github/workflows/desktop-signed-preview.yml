@@ -150,10 +150,12 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.RELAYER_DESKTOP_CSC_KEY_PASSWORD }}
           RELAYER_DESKTOP_SOURCE_COMMIT: ${{ github.sha }}
           RELAYER_DESKTOP_UPDATE_BASE_URL: ${{ matrix.update_base_url }}
+          RELAYER_SHARE_SERVICE_ENDPOINT: ${{ vars.RELAYER_SHARE_SERVICE_PREVIEW_ENDPOINT }}
         run: |
           set -euo pipefail
           required=(
             RELAYER_DESKTOP_SIGN_IDENTITY
+            RELAYER_SHARE_SERVICE_ENDPOINT
             RELAYER_DESKTOP_APPLE_API_KEY_P8
             APPLE_API_KEY_ID
             APPLE_API_ISSUER
@@ -278,6 +280,7 @@ jobs:
           RELAYER_DESKTOP_CANDIDATE_RUN_ID: ${{ github.run_id }}
           RELAYER_DESKTOP_CANDIDATE_RUN_ATTEMPT: ${{ github.run_attempt }}
           RELAYER_DESKTOP_UPDATE_BASE_URL: https://updates.relayerlabs.ai/desktop/windows/x64
+          RELAYER_SHARE_SERVICE_ENDPOINT: ${{ vars.RELAYER_SHARE_SERVICE_PREVIEW_ENDPOINT }}
           RELAYER_WINDOWS_SIGNING_ENDPOINT: https://eus.codesigning.azure.net/
           RELAYER_WINDOWS_SIGNING_ACCOUNT: relayercodesigning
           RELAYER_WINDOWS_CERTIFICATE_PROFILE: ${{ vars.RELAYER_WINDOWS_CERTIFICATE_PROFILE }}

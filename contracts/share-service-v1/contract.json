@@ -1,0 +1,93 @@
+{
+  "contractVersion": 1,
+  "snapshot": {
+    "exportVersion": 1,
+    "mediaType": "application/x-ndjson",
+    "maxBytes": 16777216,
+    "maxLineBytes": 16777216,
+    "maxLines": 10001
+  },
+  "metadata": {
+    "titleMaxUnicodeScalars": 120,
+    "projectNameMaxUnicodeScalars": 256,
+    "sourceThreadIdMaxUnicodeScalars": 256,
+    "attemptIdPattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$",
+    "snapshotSha256Pattern": "^[a-f0-9]{64}$"
+  },
+  "attemptSemantics": {
+    "ownerScoped": true,
+    "freezeAtCreateLink": ["attemptId", "sourceThreadId", "title", "projectName", "byteLength", "lineCount", "snapshotSha256", "snapshotBytes"],
+    "exactRetryReturnsSameShare": true,
+    "changedRetryError": "attempt_conflict",
+    "closedRetryError": "attempt_closed"
+  },
+  "operations": {
+    "reserve": {
+      "requestRequired": ["attemptId", "sourceThreadId", "title", "byteLength", "lineCount", "snapshotSha256"],
+      "requestOptional": ["projectName"],
+      "responseRequired": ["status", "shareId", "attemptId", "url", "maxBytes", "expiresAt"],
+      "responseConditional": ["upload"]
+    },
+    "finalize": {
+      "requestRequired": ["shareId"],
+      "responseRequired": ["status", "shareId", "url", "title", "createdAt", "byteLength", "lineCount", "quotaResetAt"],
+      "responseOptional": ["projectName"]
+    },
+    "list": {
+      "responseRequired": ["items"],
+      "itemRequired": ["shareId", "url", "title", "sourceThreadId", "createdAt"],
+      "itemOptional": ["projectName"]
+    },
+    "quota": {
+      "responseRequired": ["used", "limit", "resetAt"]
+    },
+    "view": {
+      "responseMediaType": "text/html; charset=utf-8",
+      "cacheControl": "no-store",
+      "snapshotDelivery": "inline-jsonl-script",
+      "bearerVisibleToRenderer": false
+    }
+  },
+  "limits": {
+    "publishedSharesPerOwnerUtcDay": 20,
+    "activeReservationsPerOwner": 32,
+    "stagingTtlSeconds": 86400,
+    "desktopRequestTimeoutMs": 15000
+  },
+  "routes": [
+    { "method": "POST", "path": "/shares", "authentication": "bearer", "operation": "reserve" },
+    { "method": "POST", "path": "/shares/{shareId}/finalize", "authentication": "bearer", "operation": "finalize" },
+    { "method": "GET", "path": "/shares", "authentication": "bearer", "operation": "list" },
+    { "method": "GET", "path": "/shares/quota", "authentication": "bearer", "operation": "quota" },
+    { "method": "GET", "path": "/shares/{shareId}", "authentication": "bearer", "operation": "read-owned" },
+    { "method": "GET", "path": "/t/{shareId}", "authentication": "public", "operation": "view" },
+    { "method": "GET", "path": "/t/{shareId}/install", "authentication": "public", "operation": "install" }
+  ],
+  "stableErrors": {
+    "400": ["invalid_attempt_id", "invalid_project_name", "invalid_request", "invalid_share_title", "invalid_snapshot_digest", "invalid_snapshot_line_count", "invalid_source_thread"],
+    "401": ["invalid_authorization", "invalid_identity", "invalid_token", "missing_authorization"],
+    "404": ["not_found"],
+    "405": ["method_not_allowed"],
+    "409": ["attempt_closed", "attempt_conflict", "finalization_conflict", "finalization_in_progress", "staged_snapshot_changed"],
+    "410": ["reservation_expired"],
+    "413": ["snapshot_too_large"],
+    "422": ["snapshot_empty", "snapshot_empty_line", "snapshot_invalid_json", "snapshot_invalid_record", "snapshot_invalid_utf8", "snapshot_line_count", "snapshot_line_too_large", "snapshot_mismatch", "snapshot_unsupported_version", "staged_snapshot_missing"],
+    "429": ["daily_quota_exhausted", "reservation_limit_exhausted"],
+    "500": ["service_unavailable"],
+    "503": ["share_id_unavailable", "storage_unavailable"]
+  },
+  "viewerArtifact": {
+    "manifestVersion": 1,
+    "requiredIdentity": ["productCommit", "artifactSha256", "builder", "contractVersion", "snapshotVersions", "resources"],
+    "resourceIdentity": ["path", "bytes", "sha256"],
+    "requiredResources": ["logo", "ogImage", "viewerScript", "viewerStyles", "workspaceStyles", "lucideScript", "markedScript"],
+    "csp": "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'none'; form-action 'none'"
+  },
+  "compatibility": {
+    "httpContractVersions": [1],
+    "snapshotExportVersions": [1],
+    "viewerArtifactVersions": [1],
+    "publishedSharesPinViewerArtifact": true,
+    "publishedSnapshotBytesAreImmutable": true
+  }
+}

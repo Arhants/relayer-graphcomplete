@@ -8,6 +8,33 @@ This board tracks local production implementation for issues #462-#467. It does
 not authorize deployment, publication, IAM changes, live Auth0 changes, live
 Sentry submission, or promotion of prototype code.
 
+## Ownership reconciliation in progress
+
+- [x] `SHR-SPLIT-1` Keep the versioned snapshot/HTTP contract, Rust exporter,
+  main-owned desktop client, and production viewer in this public product
+  repository.
+- [x] `SHR-SPLIT-2` Remove the hosted service implementation and AWS template
+  from this repository; the private `vishaltandale00/Relayer` repository now
+  owns those modules and their deployment authority.
+- [x] `SHR-SPLIT-3` Replace the public end-to-end test's backend import with a
+  deterministic protocol fixture while retaining the real exporter, frozen
+  retry bytes/identity, parser, and viewer template.
+- [x] `SHR-SPLIT-4` Produce an immutable viewer artifact manifest bound to the
+  public commit, aggregate/file digests, builder, supported snapshot versions,
+  CSP, and transitive resources.
+- [x] `SHR-SPLIT-5` Resolve the share origin inside Electron main: Stable is
+  pinned to production, Preview requires a build-sealed HTTPS origin, and only
+  Development permits a loopback override.
+- [ ] `SHR-SPLIT-6` Private preview stack: deterministic AWS adapters, Lambda
+  composition, exact artifact verification, isolated template, and a manual
+  protected-environment workflow.
+- [ ] `SHR-SPLIT-7` Run cross-repository conformance against exact clean public
+  and private commits, then obtain fresh adversarial reviews of both snapshots.
+
+The earlier Gate B verification and reviews below describe the pre-split source
+snapshot. They remain useful regression history but do not certify the current
+two-repository state until `SHR-SPLIT-7` is complete.
+
 ## Done locally
 
 - [x] `SHR-465-1` Reconcile the merged template, open PR #459, owner/attempt/quota
@@ -98,8 +125,9 @@ Sentry submission, or promotion of prototype code.
 - [x] Run focused checkpoints, declared heavy evidence, `npm run check`, and
   `npm run build`; record exact commands and failures separately from the plan.
 - [ ] GPT-6 Astra adversarial review of semantic/UX/authority boundaries against
-  the exact integrated commit or workspace digest. Without a PR, the verdict is
-  non-certifying.
+  the exact reconciled public and private commits. The pre-split review is
+  invalidated by this ownership change; without a private PR, its replacement
+  remains non-certifying.
 
 ## Gate C / approval required
 

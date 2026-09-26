@@ -2705,6 +2705,7 @@ describe("desktop skeleton", () => {
       RELAYER_DESKTOP_TARGET: "macos-arm64",
       RELAYER_DESKTOP_CHANNEL: "preview",
       RELAYER_DESKTOP_UPDATE_BASE_URL: DESKTOP_RELEASE.updateBaseUrl,
+      RELAYER_SHARE_SERVICE_ENDPOINT: "https://share-preview.relayerlabs.ai",
       RELAYER_DESKTOP_CANDIDATE_RUN_ID: "12345",
       RELAYER_DESKTOP_CANDIDATE_RUN_ATTEMPT: "2",
       RELAYER_DESKTOP_SIGN_IDENTITY: "Developer ID Application: VISHAL TANDALE (NZ253AL7U6)",
@@ -2713,6 +2714,11 @@ describe("desktop skeleton", () => {
       APPLE_API_ISSUER: "00000000-0000-0000-0000-000000000000",
     };
     const sourceCommit = "a".repeat(40);
+    expect(() => resolveDesktopReleaseContract({
+      environment: { ...releaseEnvironment, RELAYER_SHARE_SERVICE_ENDPOINT: "" },
+      version: "0.2.0",
+      sourceCommit,
+    })).toThrow("RELAYER_SHARE_SERVICE_ENDPOINT as an HTTPS origin");
     const contract = resolveDesktopReleaseContract({
       environment: releaseEnvironment,
       version: "0.2.0",
@@ -2730,6 +2736,7 @@ describe("desktop skeleton", () => {
       providerChannel: "beta",
       manifestName: "beta-mac.yml",
       sourceCommit,
+      shareServiceEndpoint: "https://share-preview.relayerlabs.ai",
       candidateWorkflowRunId: "12345",
       candidateWorkflowRunAttempt: "2",
       appleTeamId: "NZ253AL7U6",
@@ -2796,6 +2803,7 @@ describe("desktop skeleton", () => {
       RELAYER_DESKTOP_TARGET: "windows-x64",
       RELAYER_DESKTOP_CHANNEL: "preview",
       RELAYER_DESKTOP_UPDATE_BASE_URL: DESKTOP_RELEASE_TARGETS["windows-x64"].updateBaseUrl,
+      RELAYER_SHARE_SERVICE_ENDPOINT: "https://share-preview.relayerlabs.ai",
       RELAYER_WINDOWS_SIGNING_ENDPOINT: DESKTOP_RELEASE.artifactSigningEndpoint,
       RELAYER_WINDOWS_SIGNING_ACCOUNT: DESKTOP_RELEASE.artifactSigningAccountName,
       RELAYER_WINDOWS_CERTIFICATE_PROFILE: "relayer-public-trust",
@@ -3435,6 +3443,7 @@ describe("desktop skeleton", () => {
         RELAYER_DESKTOP_TARGET: target.key,
         RELAYER_DESKTOP_CHANNEL: "preview",
         RELAYER_DESKTOP_UPDATE_BASE_URL: target.updateBaseUrl,
+        RELAYER_SHARE_SERVICE_ENDPOINT: "https://share-preview.relayerlabs.ai",
         RELAYER_WINDOWS_SIGNING_ENDPOINT: DESKTOP_RELEASE.artifactSigningEndpoint,
         RELAYER_WINDOWS_SIGNING_ACCOUNT: DESKTOP_RELEASE.artifactSigningAccountName,
         RELAYER_WINDOWS_CERTIFICATE_PROFILE: "relayer-public-trust",

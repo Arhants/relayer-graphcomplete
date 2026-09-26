@@ -22,6 +22,7 @@ import { registerDesktopIpc } from "./ipc/register-ipc.mjs";
 import { createConversationExportService } from "./services/conversation-export.mjs";
 import { createSharePublishCoordinator } from "./services/share-publish-coordinator.mjs";
 import { createShareServiceClient } from "./services/share-service-client.mjs";
+import { resolveShareServiceEndpoint } from "./services/share-service-endpoint.mjs";
 import { createShareSourceThreadIdentity } from "./services/share-source-thread-identity.mjs";
 import {
   createDesktopAccountTelemetry,
@@ -560,7 +561,9 @@ if (primaryInstance) {
       getWindow: () => mainWindow,
       exportConversation: (threadId) => productServer.exportConversation(threadId),
     });
-    const shareServiceClient = createShareServiceClient({ endpoint: "https://share.relayerlabs.ai" });
+    const shareServiceClient = createShareServiceClient({
+      endpoint: resolveShareServiceEndpoint({ packagedRelease, metadata, environment: process.env }),
+    });
     const shareCoordinator = createSharePublishCoordinator({
       exportSnapshot: (threadId, title, options) => productServer.exportShareSnapshot(threadId, title, options),
       accountSession: () => accountService.shareSession(),
