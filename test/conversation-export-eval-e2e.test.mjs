@@ -162,6 +162,7 @@ describe("conversation export to Eval end to end", () => {
     expect(dialog.showSaveDialog).toHaveBeenCalledOnce();
     const exactExportBytes = await readFile(exportPath);
     const records = exactExportBytes.toString("utf8").trimEnd().split("\n").map(JSON.parse);
+    expect(records[0].exportVersion).toBe(2);
     const contentRecords = records.filter(({ recordType }) => recordType === "visualAssetContent");
     const turnRecords = records.filter(({ recordType }) => recordType === "turn");
     expect(records.map(({ recordType }) => recordType)).toEqual(["header", "visualAssetContent", "turn", "turn", "turn", "turn"]);
@@ -525,7 +526,9 @@ async function expectHostileImports({ evalService, exportPath, exactExportBytes,
   };
   await hostile("malformed", Buffer.from("{not-json}\n"), /JSON|json/i);
   await hostile("truncated", exactExportBytes.subarray(0, exactExportBytes.length - 8), /JSON|truncated|line/i);
-  const newer = exactExportBytes.toString("utf8").replace('"exportVersion":1', '"exportVersion":999');
+  const newerRecords = exactExportBytes.toString("utf8").trimEnd().split("\n").map(JSON.parse);
+  newerRecords[0].exportVersion = 999;
+  const newer = `${newerRecords.map((record) => JSON.stringify(record)).join("\n")}\n`;
   await hostile("newer", Buffer.from(newer), /version|unsupported/i);
   const maliciousRecords = exactExportBytes.toString("utf8").trimEnd().split("\n").map(JSON.parse);
   const invalidPng = Buffer.from("this is not a PNG");

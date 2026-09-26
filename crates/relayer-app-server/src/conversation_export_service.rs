@@ -8,17 +8,18 @@ use relayer_graph_core::{
 use crate::{
     conversation_export::{
         ConversationExportHeader, ConversationExportRecord, ConversationExportTurn,
-        EXPORT_VERSION_V1, ExportAcceptedView, ExportAction, ExportActionKind, ExportActionVariant,
-        ExportAdmittedExecutionModelPlan, ExportAdmittedExecutionModelRoute, ExportAttemptOutcome,
-        ExportAuthoredDetailOmission, ExportCompletionReceipt, ExportCompletionStatus,
-        ExportContextSource, ExportContextTargetSnapshot, ExportConversation, ExportEdge,
-        ExportInputActionSnapshot, ExportInputControl, ExportInputOption, ExportInputSource,
-        ExportInteractionContext, ExportLayer, ExportLayerLayout, ExportModelSelection,
-        ExportNavigateRelation, ExportNode, ExportNodePlacement, ExportPermissionReceipt,
-        ExportProducer, ExportRecordState, ExportResolvedLayer, ExportSubmittedInput,
-        ExportSubmittedInputValue, ExportTurnManifestEntry, ExportTurnOrigin,
-        ExportVisualAssetAssociation, ExportVisualAssetContent, ExportVisualAssetProvenance,
-        MAX_EXPORT_BYTES, MAX_JSONL_LINE_BYTES, validate_export_records,
+        EXPORT_VERSION_V1, EXPORT_VERSION_V2, ExportAcceptedView, ExportAction, ExportActionKind,
+        ExportActionVariant, ExportAdmittedExecutionModelPlan, ExportAdmittedExecutionModelRoute,
+        ExportAttemptOutcome, ExportAuthoredDetailOmission, ExportCompletionReceipt,
+        ExportCompletionStatus, ExportContextSource, ExportContextTargetSnapshot,
+        ExportConversation, ExportEdge, ExportInputActionSnapshot, ExportInputControl,
+        ExportInputOption, ExportInputSource, ExportInteractionContext, ExportLayer,
+        ExportLayerLayout, ExportModelSelection, ExportNavigateRelation, ExportNode,
+        ExportNodePlacement, ExportPermissionReceipt, ExportProducer, ExportRecordState,
+        ExportResolvedLayer, ExportSubmittedInput, ExportSubmittedInputValue,
+        ExportTurnManifestEntry, ExportTurnOrigin, ExportVisualAssetAssociation,
+        ExportVisualAssetContent, ExportVisualAssetProvenance, MAX_EXPORT_BYTES,
+        MAX_JSONL_LINE_BYTES, validate_export_records,
     },
     product::{
         ActionInvocation, DurableInteractionInput, Interaction, InteractionId, ProductError,
@@ -206,7 +207,11 @@ pub(crate) async fn build_conversation_export(
     let (authored_detail_assets, visual_asset_contents) =
         collect_visual_assets(runtime, &closures, &redactor).await?;
     let header = ConversationExportRecord::Header(Box::new(ConversationExportHeader {
-        export_version: EXPORT_VERSION_V1,
+        export_version: if visual_asset_contents.is_empty() {
+            EXPORT_VERSION_V1
+        } else {
+            EXPORT_VERSION_V2
+        },
         exported_at,
         producer,
         conversation: ExportConversation {

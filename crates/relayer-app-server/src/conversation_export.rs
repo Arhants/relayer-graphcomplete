@@ -2,7 +2,8 @@
 //!
 //! V1 is a JSONL stream containing one [`ConversationExportRecord::Header`]
 //! followed by the exact ordered [`ConversationExportRecord::Turn`] records
-//! declared by that header. This module owns only the portable contract and
+//! declared by that header. V2 adds digest-deduplicated visual content records
+//! between the header and turns. This module owns only the portable contract and
 //! inference-free validation; snapshot construction and persistence live at
 //! higher product boundaries.
 
@@ -14,6 +15,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub const EXPORT_VERSION_V1: u32 = 1;
+pub const EXPORT_VERSION_V2: u32 = 2;
 pub const MAX_EXPORT_BYTES: usize = 256 * 1024 * 1024;
 pub const MAX_JSONL_LINE_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_TURNS: usize = 10_000;
@@ -592,12 +594,17 @@ pub fn validate_export_records(
     validator.finish()
 }
 
-/// Inference-free V1 validator for readers that consume one JSONL turn at a time.
+struct VisualAssetContentMetadata {
+    media_type: String,
+    byte_length: usize,
+}
+
+/// Inference-free V1/V2 validator for incremental JSONL readers.
 ///
-/// The validator retains the bounded header inventory, prior invoke provenance,
-/// portable IDs, and fixed-size SHA-256 definition fingerprints. It never retains
-/// a complete turn or accepted graph payload after [`Self::push_turn`] returns.
+/// Retains inventory, provenance, definition fingerprints, and content metadata;
+/// never retains complete turn payloads or base64 content after a push returns.
 pub struct ConversationExportValidator {
+    export_version: u32,
     manifest: Vec<ExportTurnManifestEntry>,
     next_turn: usize,
     prior_invokes: HashMap<String, HashSet<String>>,
@@ -610,7 +617,7 @@ pub struct ConversationExportValidator {
     context_actions_by_id: HashMap<String, [u8; 32]>,
     input_action_ids: HashSet<String>,
     submitted_input_ids: HashSet<String>,
-    visual_asset_contents: HashMap<String, ExportVisualAssetContent>,
+    visual_asset_contents: HashMap<String, VisualAssetContentMetadata>,
     referenced_visual_asset_digests: HashSet<String>,
 }
 
@@ -618,6 +625,7 @@ impl ConversationExportValidator {
     pub fn new(header: &ConversationExportHeader) -> Result<Self, ExportValidationError> {
         validate_header(header)?;
         Ok(Self {
+            export_version: header.export_version,
             manifest: header.turns.clone(),
             next_turn: 0,
             prior_invokes: HashMap::new(),
@@ -639,6 +647,13 @@ impl ConversationExportValidator {
         &mut self,
         content: &ExportVisualAssetContent,
     ) -> Result<(), ExportValidationError> {
+        if self.export_version == EXPORT_VERSION_V1 {
+            return Err(ExportValidationError::new(
+                "record_type_not_supported",
+                "recordType",
+                "Visual asset content records require exportVersion 2.",
+            ));
+        }
         if self.next_turn != 0 {
             return Err(ExportValidationError::new(
                 "visual_asset_content_order_invalid",
@@ -649,7 +664,13 @@ impl ConversationExportValidator {
         validate_visual_asset_content(content, "record.visualAssetContent")?;
         if self
             .visual_asset_contents
-            .insert(content.digest_sha256.clone(), content.clone())
+            .insert(
+                content.digest_sha256.clone(),
+                VisualAssetContentMetadata {
+                    media_type: content.media_type.clone(),
+                    byte_length: content.byte_length,
+                },
+            )
             .is_some()
         {
             return Err(ExportValidationError::new(
@@ -1120,12 +1141,12 @@ fn register_definition<T: Serialize>(
 }
 
 fn validate_header(header: &ConversationExportHeader) -> Result<(), ExportValidationError> {
-    if header.export_version != EXPORT_VERSION_V1 {
+    if !matches!(header.export_version, EXPORT_VERSION_V1 | EXPORT_VERSION_V2) {
         return Err(ExportValidationError::new(
             "unsupported_export_version",
             "header.exportVersion",
             format!(
-                "V1 readers support exportVersion 1, received {}.",
+                "Readers support exportVersion 1 and 2, received {}.",
                 header.export_version
             ),
         ));

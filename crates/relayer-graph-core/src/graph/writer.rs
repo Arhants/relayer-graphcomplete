@@ -241,6 +241,12 @@ impl GraphWriter {
         asset_id: &str,
     ) -> Result<crate::AcceptedDetailAsset, GraphError> {
         let mut transaction = self.database.storage.begin_read().await?;
+        self.scope
+            .require_active_authority(&mut transaction)
+            .await?;
+        NodeTable::new(&mut transaction)
+            .visible(&self.scope, node_id)
+            .await?;
         let asset = AuthoredDetailAssetTable::new(&mut transaction)
             .read(node_id, asset_id)
             .await?;

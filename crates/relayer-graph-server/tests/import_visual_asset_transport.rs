@@ -498,3 +498,85 @@ async fn draft_asset_replace_clear_and_failed_replace_reclaim_transactionally() 
     assert_eq!(remaining, 0);
     pool.close().await;
 }
+
+#[tokio::test]
+async fn writer_asset_reads_require_visible_nodes_and_live_authority() {
+    use relayer_graph_core::ThreadId;
+    let database = GraphDatabase::in_memory().await.unwrap();
+    let app = router(ServerState::new(database.clone(), "control"));
+    let blob = content(b"trusted raster fixture");
+    for (path, value) in [
+        (
+            "/api/control/conversation-import-stages",
+            stage("writer-assets", 71),
+        ),
+        (
+            "/api/control/conversation-import-stages/writer-assets/visual-asset-contents",
+            blob.clone(),
+        ),
+        (
+            "/api/control/conversation-import-stages/writer-assets/turns",
+            turn(&blob),
+        ),
+    ] {
+        assert_eq!(post(&app, path, &value).await.0, StatusCode::OK);
+    }
+    let (status, bytes) = post(
+        &app,
+        "/api/control/conversation-import-stages/writer-assets/finalize",
+        &json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let receipt: Value = serde_json::from_slice(&bytes).unwrap();
+    let node = NodeId::new(
+        receipt["turns"][0]["output"]["rootLayer"]["nodes"][0]["id"]
+            .as_i64()
+            .unwrap(),
+    )
+    .unwrap();
+    let local = database
+        .create_interaction(None, ThreadId::new(71).unwrap(), "local")
+        .await
+        .unwrap();
+    let epoch = database
+        .activate_completion_authority(local.id)
+        .await
+        .unwrap();
+    let writer = database
+        .writer_for_completion_authority(local.id, epoch)
+        .await
+        .unwrap();
+    writer.get_node(node).await.unwrap();
+    assert_eq!(
+        writer
+            .accepted_detail_asset(node, "visual")
+            .await
+            .unwrap()
+            .content,
+        b"trusted raster fixture"
+    );
+    let foreign = database
+        .create_interaction(None, ThreadId::new(72).unwrap(), "foreign")
+        .await
+        .unwrap();
+    let foreign_writer = database.writer_for_subgraph(foreign.id).await.unwrap();
+    assert!(foreign_writer.get_node(node).await.is_err());
+    assert!(
+        foreign_writer
+            .accepted_detail_asset(node, "visual")
+            .await
+            .is_err()
+    );
+    database
+        .cutover_completion_authority(local.id)
+        .await
+        .unwrap();
+    assert!(writer.get_node(node).await.is_err());
+    assert!(writer.accepted_detail_asset(node, "visual").await.is_err());
+    // Trusted product reads intentionally remain independent of agent authority.
+    database
+        .accepted_detail_asset(node, "visual")
+        .await
+        .unwrap();
+}

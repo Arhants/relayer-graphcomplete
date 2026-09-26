@@ -1832,6 +1832,23 @@ function stringArrayField(operation: VisualBridgeOperation, field: string): read
   return value as string[];
 }
 
+function resolveLogicalIds(operation: VisualBridgeOperation): readonly string[] {
+  const logicalIds = stringArrayField(operation, "logicalIds");
+  if (logicalIds.length > 32 || new Set(logicalIds).size !== logicalIds.length
+    || logicalIds.some((logicalId) => !boundedVisualAssetIdentity(logicalId))) {
+    throw new VisualAssetsError(
+      "visual_assets_request_invalid",
+      "Visual asset resolve identities are invalid",
+    );
+  }
+  return logicalIds;
+}
+
+function boundedVisualAssetIdentity(value: string): boolean {
+  return value !== "" && value.trim() === value && !value.includes("\0")
+    && Buffer.byteLength(value, "utf8") <= 128;
+}
+
 function pageFields(operation: VisualBridgeOperation): { readonly limit?: number; readonly cursor?: string } {
   return {
     ...(operation.limit === undefined ? {} : { limit: operation.limit as number }),
@@ -1963,7 +1980,7 @@ async function executeVisualAssetOperation(
       return serializedFile(await library.download(assetId));
     }
     case "resolve": {
-      const logicalIds = stringArrayField(operation, "logicalIds");
+      const logicalIds = resolveLogicalIds(operation);
       const assets = await Promise.all(logicalIds.map(async (logicalId) => {
         const asset = await visibleAssetAcross(library, visibleScopes, logicalId, true);
         return {

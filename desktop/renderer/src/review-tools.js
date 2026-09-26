@@ -39,6 +39,13 @@ export function isVisibleElement(element, windowObject = window) {
     && rect.top < windowObject.innerHeight;
 }
 
+function hiddenByAriaAncestor(element) {
+  for (let current = element; current; current = current.parentNode) {
+    if (current.getAttribute?.("aria-hidden")?.trim().toLowerCase() === "true") return true;
+  }
+  return false;
+}
+
 function contentAlternative(element, includeHidden = false) {
   if (element?.nodeType === 3) return element.textContent || "";
   if (!includeHidden && element?.getAttribute?.("aria-hidden") === "true") return "";
@@ -54,7 +61,8 @@ export function accessibleControlName(element) {
     .filter(Boolean).map((label) => (label.getAttribute("aria-label")?.trim()
       || label.getAttribute("title")?.trim()
       || contentAlternative(label, true))).join(" ").trim();
-  const labels = [...(element.labels || [])].map((label) => contentAlternative(label)).join(" ").trim();
+  const labels = [...(element.labels || [])].filter((label) => !hiddenByAriaAncestor(label))
+    .map((label) => contentAlternative(label)).join(" ").trim();
   return (labelledBy
     || element.getAttribute("aria-label")?.trim()
     || labels

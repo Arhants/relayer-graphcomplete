@@ -2905,7 +2905,26 @@ describe("desktop skeleton", () => {
       }
       const nativeFiles = await readdir(new URL(`../node_modules/@img/sharp-${process.platform}-${process.arch}/lib/`, import.meta.url));
       expect(nativeFiles).toContain(`sharp-${process.platform}-${process.arch}-${sharpManifest.version}.node`);
+      const sharpLock = JSON.parse(await readFile(new URL("../package-lock.json", import.meta.url), "utf8"));
+      const readSharpPackage = async (path) => {
+        const root = path.replace(/\/package\.json$/, "");
+        return JSON.stringify({ ...sharpLock.packages[root], exports: { "./lib": "./lib/index.js", "./binary": "./lib/libvips-cpp.8.18.6.dylib" } });
+      };
       const packagedRuntimeEntries = () => [
+        "node_modules/sharp/package.json",
+        ...["darwin-arm64", "darwin-x64", "win32-arm64", "win32-x64"].flatMap((target) => [
+          `node_modules/@img/sharp-${target}/package.json`,
+          `node_modules/@img/sharp-${target}/index.cjs`,
+        ]),
+        ...["win32-arm64", "win32-x64"].flatMap((target) => [
+          `node_modules/@img/sharp-${target}/lib/libvips-42.dll`,
+          `node_modules/@img/sharp-${target}/lib/libvips-cpp-8.18.6.dll`,
+        ]),
+        ...["darwin-arm64", "darwin-x64"].flatMap((target) => [
+          `node_modules/@img/sharp-libvips-${target}/package.json`,
+          `node_modules/@img/sharp-libvips-${target}/lib/index.js`,
+          `node_modules/@img/sharp-libvips-${target}/lib/libvips-cpp.8.18.6.dylib`,
+        ]),
         "main/single-instance.mjs",
         "main/services/codex-browser-mcp-runtime.mjs",
         "node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
@@ -2928,6 +2947,7 @@ describe("desktop skeleton", () => {
       });
       const verifyNotices = async () => ({ notices: 29 });
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2936,6 +2956,7 @@ describe("desktop skeleton", () => {
         verifyNotices,
       })).resolves.toEqual({ binaryPath: bundledBinary, architecture: "arm64" });
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "x86_64\n", stderr: "" }),
         expectedArchitecture: "x86_64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2944,6 +2965,7 @@ describe("desktop skeleton", () => {
         verifyNotices,
       })).resolves.toEqual({ binaryPath: bundledBinary, architecture: "x86_64" });
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "x86_64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2952,6 +2974,7 @@ describe("desktop skeleton", () => {
         verifyNotices,
       })).rejects.toThrow("must contain only arm64");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: () => packagedRuntimeEntries().filter((entry) => entry !== "node_modules/@relayer/graph-client/dist/index.js"),
@@ -2959,8 +2982,22 @@ describe("desktop skeleton", () => {
         verifyPrimeAgent,
         verifyNotices,
       })).rejects.toThrow("missing node_modules/@relayer/graph-client/dist/index.js");
+      for (const missing of [
+        "node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.35.4.node",
+        "node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.6.dylib",
+        "node_modules/@img/sharp-libvips-darwin-arm64/lib/index.js",
+      ]) {
+        await expect(verifyBundledAppServer(appPath, {
+          readSharpPackage,
+          expectedArchitecture: "arm64",
+          listPackageEntries: () => [...packagedRuntimeEntries().filter((entry) => entry !== missing),
+            "node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.34.0.node"],
+          verifyGraphServer, verifyPrimeAgent, verifyNotices,
+        })).rejects.toThrow(`missing ${missing}`);
+      }
       await writeFile(bundledGraphClient, "export class RelayerGraphClient {}\n");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2970,6 +3007,7 @@ describe("desktop skeleton", () => {
       })).rejects.toThrow("missing RelayerGraphClient.prototype.search");
       await writeFile(bundledGraphClient, "export class RelayerGraphClient { search() {} }\n");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: () => packagedRuntimeEntries().filter((entry) => entry !== "node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"),
@@ -2978,6 +3016,7 @@ describe("desktop skeleton", () => {
         verifyNotices,
       })).rejects.toThrow("missing node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: () => packagedRuntimeEntries().filter((entry) => entry !== "node_modules/@relayer/harness-host/dist/implementations/claude-basic-browser.js"),
@@ -2987,6 +3026,7 @@ describe("desktop skeleton", () => {
       })).rejects.toThrow("missing node_modules/@relayer/harness-host/dist/implementations/claude-basic-browser.js");
       await rm(bundledCodexBrowserScript);
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2998,6 +3038,7 @@ describe("desktop skeleton", () => {
       await rm(bundledCodexBrowserScript);
       await mkdir(bundledCodexBrowserScript);
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -3008,6 +3049,7 @@ describe("desktop skeleton", () => {
       await rm(bundledCodexBrowserScript, { recursive: true });
       await writeFile(bundledCodexBrowserScript, "helper-fixture");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -3016,6 +3058,7 @@ describe("desktop skeleton", () => {
         verifyNotices,
       })).rejects.toThrow("missing nested Prime asset");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -3031,6 +3074,7 @@ describe("desktop skeleton", () => {
       const darwinNoticesDir = join(appPath, "Contents", "Resources", noticesExtra.to);
       await cp(noticesExtra.from, darwinNoticesDir, { recursive: true });
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -3041,6 +3085,7 @@ describe("desktop skeleton", () => {
       // must fail through the default path.
       await writeFile(join(darwinNoticesDir, "stray-LICENSE"), "stray\n");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -3063,10 +3108,18 @@ describe("desktop skeleton", () => {
         writeFile(join(windowsCodexBrowserRoot, "package.json"), `${JSON.stringify({ name: "chrome-devtools-mcp", version: "1.8.0" })}\n`),
         writeFile(join(windowsCodexBrowserRoot, "build", "src", "bin", "chrome-devtools-mcp.js"), "helper-fixture"),
       ]);
+      for (const missing of ["libvips-42.dll", "libvips-cpp-8.18.6.dll"]) {
+        await expect(verifyBundledAppServer(windowsPath, {
+          platform: "win32", expectedArchitecture: "x86_64", readSharpPackage,
+          listPackageEntries: () => packagedRuntimeEntries().filter((entry) => !entry.endsWith(`/${missing}`)),
+          verifyGraphServer, verifyPrimeAgent, verifyNotices,
+        })).rejects.toThrow(`missing node_modules/@img/sharp-win32-x64/lib/${missing}`);
+      }
       // The Windows resources layout exercises the same default notice verifier
       // (not a stub), so the win32 bundle path is covered too.
       await cp(noticesExtra.from, join(windowsPath, "resources", noticesExtra.to), { recursive: true });
       await expect(verifyBundledAppServer(windowsPath, {
+        readSharpPackage,
         platform: "win32",
         execute: async () => { throw new Error("lipo must not run for Windows"); },
         listPackageEntries: () => packagedRuntimeEntries().map((entry) => `\\${entry.replaceAll("/", "\\")}`),

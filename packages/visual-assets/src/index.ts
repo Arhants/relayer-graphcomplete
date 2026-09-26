@@ -942,7 +942,7 @@ function createMemoryVisualAssetsLibraryWithGuard(
       }
       let bytes: Uint8Array;
       try {
-        bytes = (await readFile()).slice();
+        bytes = new Uint8Array(await readFile());
       } catch {
         throw new VisualAssetsError("file_unavailable", "Harness file is unavailable");
       }
@@ -1658,7 +1658,7 @@ export async function createFileVisualAssetsLibrary(
       });
       const bytesAtCall = (async () => {
         try {
-          return { ok: true as const, bytes: (await read()).slice() };
+          return { ok: true as const, bytes: new Uint8Array(await read()) };
         } catch (error) {
           return { ok: false as const, error };
         }

@@ -2937,6 +2937,10 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
     let ConversationExportRecord::Header(header) = &records[0] else {
         panic!("expected header")
     };
+    assert_eq!(
+        header.export_version, 1,
+        "ordinary exports retain the V1 contract"
+    );
     assert_eq!(header.conversation.title, "Debug [project-path]");
     assert_eq!(
         header.conversation.project_name.as_deref(),

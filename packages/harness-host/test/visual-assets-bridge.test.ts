@@ -298,6 +298,22 @@ describe("visual asset host bridge", () => {
     await expect(perform({ kind: "inspect", assetId: "owned" })).resolves.toMatchObject({ asset: { id: "owned", archived: true } });
     await expect(perform({ kind: "download", assetId: "owned" })).resolves.toMatchObject({ contentBase64: Buffer.from(svg).toString("base64") });
     await expect(perform({ kind: "resolve", logicalIds: ["owned"] })).resolves.toMatchObject({ assets: [{ logicalId: "owned", availability: "unavailable" }] });
+    const lookups = vi.spyOn(library, "lookupAsset");
+    for (const logicalIds of [
+      Array.from({ length: 33 }, (_, index) => `asset-${index}`),
+      ["owned", "owned"],
+      [""],
+      [" padded"],
+      ["nul\0id"],
+      ["é".repeat(65)],
+    ]) {
+      lookups.mockClear();
+      await expect(perform({ kind: "resolve", logicalIds })).rejects.toMatchObject({
+        code: "visual_assets_request_invalid",
+      });
+      expect(lookups).not.toHaveBeenCalled();
+    }
+    lookups.mockRestore();
     for (const assetId of ["foreign", "missing"]) {
       for (const operation of [
         { kind: "inspect", assetId }, { kind: "download", assetId }, { kind: "resolve", logicalIds: [assetId] },

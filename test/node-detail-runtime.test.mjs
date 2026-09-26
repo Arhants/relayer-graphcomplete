@@ -147,7 +147,7 @@ describe("compiled Node Detail product runtime", () => {
     const detail = compiledPackage({
       version: 1,
       components: [{ id: "controls", order: 0,
-        html: '<span id="expand-label" aria-hidden="true" aria-label="Expand"></span><button aria-labelledby="expand-label" data-gc-mount="expand"></button><span id="reference-label" title="Reference"></span><button aria-labelledby="reference-label" data-gc-mount="reference"></button><button data-gc-mount="invoke">Invoke</button><label for="constraint">Constraint</label><input id="constraint" data-gc-mount="input">', css: "" }],
+        html: '<span id="expand-label" aria-hidden="true" aria-label="Expand"></span><button aria-labelledby="expand-label" data-gc-mount="expand"></button><span id="reference-label" title="Reference"></span><button aria-labelledby="reference-label" data-gc-mount="reference"></button><button data-gc-mount="invoke">Invoke</button><section aria-hidden="true"><label for="constraint">Hidden constraint</label></section><input id="constraint" title="Constraint" data-gc-mount="input">', css: "" }],
       mounts: kinds.map((kind) => ({ id: kind, componentId: "controls", kind: "capability", host: kind === "input" ? "input" : "button",
         capability: { kind, action: { clientKey: kind, sourceNode: { clientKey: "node" }, sourceLayer: { clientKey: "layer" } } } })),
       assets: [],
@@ -178,6 +178,10 @@ describe("compiled Node Detail product runtime", () => {
       { name: "Invoke", kind: "invoke-action", actionId: "13", disabled: true },
       { name: "Constraint", kind: "input-action", actionId: "14", disabled: true },
     ]);
+    const labelContainer = host.shadowRoot.querySelector("section");
+    labelContainer.removeAttribute("aria-hidden");
+    expect(adapter.snapshot().controls.find((control) => control.actionId === "14")?.name).toBe("Hidden constraint");
+    labelContainer.setAttribute("aria-hidden", "true");
     // Even host-side DOM tampering cannot impersonate another accepted action.
     host.shadowRoot.querySelector("button").dataset.reviewActionId = "999";
     host.shadowRoot.querySelector("button").dataset.reviewKind = "control";
@@ -715,6 +719,46 @@ describe("compiled Node Detail product runtime", () => {
     expect(runtimeCss).toMatch(/overflow-wrap:\s*anywhere/);
     expect(runtime.shadowRoot.querySelector(".wide-grid")).not.toBeNull();
     expect(runtime.shadowRoot.textContent.indexOf("First")).toBeLessThan(runtime.shadowRoot.textContent.indexOf("After"));
+  });
+
+  it("resolves context-preview images from their original presenting interaction and layer", async () => {
+    const window = new Window({ url: "http://127.0.0.1:3000" });
+    vi.stubGlobal("document", window.document);
+    vi.stubGlobal("window", window);
+    vi.stubGlobal("lucide", new Proxy({ Circle: {}, createElement: () => window.document.createElement("svg") }, { get: (target, key) => target[key] ?? {} }));
+    window.document.body.innerHTML = '<section id="threadView"></section>';
+    const asset = { id: "context-image", digestSha256: "a".repeat(64), mediaType: "image/png", representation: "image" };
+    const node = { id: 7, clientKey: "context-node", kind: "concept", icon: "box", title: "Context illustration", detail: "Fallback", state: "accepted", authoredDetail: compiledPackage({
+      version: 1,
+      components: [{ id: "image", order: 0, html: '<img alt="Context illustration" data-asset-mount="image">', css: "" }],
+      mounts: [{ id: "image", componentId: "image", kind: "asset", host: "img", assetId: asset.id }], assets: [asset],
+    }) };
+    const original = { layer: { id: 99 }, nodes: [node], edges: [], actions: [] };
+    const current = { layer: { id: 100 }, nodes: [{ id: 8, kind: "concept", icon: "box", title: "Other node", detail: "Other" }], edges: [], actions: [] };
+    const source = { id: 5, threadId: 3, sequence: 1, text: "Original", graphNodeId: 50, completionStatus: "accepted", completionOutput: { rootLayer: original } };
+    const active = { id: 6, threadId: 3, sequence: 2, text: "Later", graphNodeId: 60, completionStatus: "accepted", completionOutput: { rootLayer: current } };
+    const thread = { id: 3, rootInteractionId: 5, title: "Thread", harnessId: "fixture" };
+    const state = { status: "accepted", currentInteractionId: 6, interactions: [source, active], visibleLayer: current, nodes: current.nodes, actions: [], projects: [], permissionProfiles: [], modelSettings: { defaults: { harnessId: "fixture" }, harnesses: [{ id: "fixture", available: true }], providers: [], families: [] }, modelCatalog: [], actionInvocations: [], pendingActionInvocations: [] };
+    const resolver = vi.fn(async (_asset, context) => {
+      // Model the production asset route's exact presenting-layer membership check.
+      if (context.interaction?.id !== 5 || context.layerId !== 99) return undefined;
+      return { digestSha256: asset.digestSha256, mediaType: asset.mediaType, url: "blob:http://127.0.0.1:3000/context-image", release() {} };
+    });
+    const workspace = createProductWorkspace({
+      root: window.document, getState: () => state, getThread: () => thread,
+      selection: { currentThreadId: 3, currentInteractionId: 6, selectedNodeId: null, layerPath: [] }, showThread: () => {}, showEmpty: () => {},
+      resolveNodeDetailAsset: resolver,
+      contextDraftApi: { list: async () => ({ drafts: [], confirmations: [{ draftId: "context", target: { nodeId: 7, sourceInteractionNodeId: 50, sourceLayerId: 99 }, targetNode: node, annotation: "Use this illustration", draftRevision: 1, confirmationRevision: 1 }] }) },
+    });
+    try {
+      workspace.render();
+      await window.happyDOM.waitUntilComplete();
+      window.document.querySelector('[aria-label="Show Context illustration annotations"]').click();
+      window.document.querySelector('[aria-label="Open Context illustration details"]').click();
+      await window.happyDOM.waitUntilComplete();
+      expect(resolver).toHaveBeenCalledWith(asset, expect.objectContaining({ interaction: source, layerId: 99, thread, node }));
+      expect(window.document.querySelector("#detailContent [data-node-detail-runtime]").shadowRoot.querySelector("img").src).toBe("blob:http://127.0.0.1:3000/context-image");
+    } finally { workspace.dispose(); }
   });
 
   it("mounts the canonical package when a user opens a node through the real Product workspace selection path", async () => {

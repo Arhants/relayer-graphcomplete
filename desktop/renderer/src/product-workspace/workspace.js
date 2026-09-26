@@ -4844,6 +4844,14 @@ export function createProductWorkspace({
     const inputActions = actions.filter((action) => action.kind === "input" && action.control);
     const ordinaryActions = actions.filter((action) => action.kind !== "input");
     const visibleLayer = state.visibleLayer ?? interaction?.completionOutput?.rootLayer;
+    const detailContextTarget = String(selectedContextTarget?.nodeId) === String(node.id)
+      ? selectedContextTarget : null;
+    const assetInteraction = detailContextTarget
+      ? state.interactions?.find((candidate) => String(candidate.graphNodeId) === String(detailContextTarget.sourceInteractionNodeId)
+        && String(candidate.threadId) === String(sourceThread?.id))
+      : interaction;
+    const assetThread = sourceThread;
+    const assetLayerId = detailContextTarget?.sourceLayerId ?? visibleLayer?.layer?.id;
     const resolveAuthoredAction = (reference) => resolveCompiledNodeDetailAction(
       actions,
       reference,
@@ -4887,9 +4895,10 @@ export function createProductWorkspace({
     }
     let authoredDetailRuntime;
     const authoredDetailMountKey = [
-      getThread()?.id,
+      assetThread?.id,
+      assetInteraction?.id,
       node.id,
-      visibleLayer?.layer?.id,
+      assetLayerId,
       node.authoredDetail?.integritySha256 ?? "legacy",
     ].map(String).join(":");
     const authoredDetailCompatibilityIssue = node.authoredDetail
@@ -4902,7 +4911,7 @@ export function createProductWorkspace({
       mountKey: authoredDetailMountKey,
       existing: mountedAuthoredDetail,
       compatibilityIssue: authoredDetailCompatibilityIssue,
-      resolveAsset: (asset) => resolveNodeDetailAsset(asset, { node, state, thread: sourceThread, interaction, layerId: visibleLayer?.layer?.id }),
+      resolveAsset: (asset) => resolveNodeDetailAsset(asset, { node, state, thread: assetThread, interaction: assetInteraction, layerId: assetLayerId }),
       resolveAction: resolveAuthoredAction,
       capabilityState: authoredCapabilityState,
       onNavigate: async (action) => {

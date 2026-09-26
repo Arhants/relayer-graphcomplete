@@ -244,6 +244,10 @@ fn records() -> Vec<ConversationExportRecord> {
 
 fn records_with_visual_assets(bytes: &[u8], asset_ids: &[&str]) -> Vec<ConversationExportRecord> {
     let mut fixture = records();
+    let ConversationExportRecord::Header(header) = &mut fixture[0] else {
+        unreachable!()
+    };
+    header.export_version = EXPORT_VERSION_V2;
     let digest = format!("{:x}", Sha256::digest(bytes));
     let content = ExportVisualAssetContent {
         digest_sha256: digest.clone(),
@@ -339,6 +343,10 @@ fn upload_reused_asset_nodes_preserve_association_identity() {
         };
         let visual_node = &visual_turn.accepted_view.as_ref().unwrap().layers[0].nodes[0];
         let mut fixture = two_turn_records();
+        let ConversationExportRecord::Header(header) = &mut fixture[0] else {
+            unreachable!()
+        };
+        header.export_version = EXPORT_VERSION_V2;
         for record in &mut fixture[1..] {
             let ConversationExportRecord::Turn(turn) = record else {
                 unreachable!()
@@ -518,6 +526,10 @@ fn visual_asset_archive_rejects_corrupt_or_unbound_content_before_import() {
 fn separate_content_records_keep_two_legal_seven_mib_assets_below_the_line_limit() {
     let payloads = [vec![1_u8; 7 * 1024 * 1024], vec![2_u8; 7 * 1024 * 1024]];
     let mut fixture = records();
+    let ConversationExportRecord::Header(header) = &mut fixture[0] else {
+        unreachable!()
+    };
+    header.export_version = EXPORT_VERSION_V2;
     let ConversationExportRecord::Turn(turn) = &mut fixture[1] else {
         unreachable!()
     };
@@ -1618,4 +1630,21 @@ fn submitted_inputs_round_trip_as_turn_owned_authority_free_children() {
         text: "wrong shape".into(),
     };
     assert_rejected_with_parity(&select_with_text, "input_action_snapshot_mismatch");
+}
+
+#[test]
+fn visual_content_requires_v2_while_v1_turn_streams_remain_supported() {
+    validate_incrementally(&records()).unwrap();
+    let mut fixture = records_with_visual_assets(SAFE_SVG, &["asset-a"]);
+    validate_incrementally(&fixture).unwrap();
+    let ConversationExportRecord::Header(header) = &mut fixture[0] else {
+        unreachable!()
+    };
+    header.export_version = 1;
+    assert_rejected_with_parity(&fixture, "record_type_not_supported");
+    let ConversationExportRecord::Header(header) = &mut fixture[0] else {
+        unreachable!()
+    };
+    header.export_version = 3;
+    assert_rejected_with_parity(&fixture, "unsupported_export_version");
 }

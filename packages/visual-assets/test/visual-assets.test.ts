@@ -714,6 +714,42 @@ describe("visual_assets deterministic library interface", () => {
     }
   });
 
+  it("owns Buffer-backed file bytes before a queued durable mutation resumes", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-visual-assets-buffer-copy-"));
+    try {
+      const library = await createFileVisualAssetsLibrary({}, join(directory, "visual-assets.json"));
+      let releaseFirst!: () => void;
+      const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+      const first = library.add({
+        file: { name: "first.svg", mediaType: "image/svg+xml", async read() { await firstGate; return new TextEncoder().encode(validSvg); } },
+        scope: { kind: "library" }, name: "First", tagIds: [],
+      });
+      const callerBuffer = Buffer.from(validSvg);
+      const queued = library.add({
+        file: {
+          name: "buffer.svg",
+          mediaType: "image/svg+xml",
+          read() {
+            return Promise.resolve(callerBuffer).then((bytes) => {
+              queueMicrotask(() => queueMicrotask(() => callerBuffer.fill(0)));
+              return bytes;
+            });
+          },
+        },
+        scope: { kind: "library" }, name: "Buffer", tagIds: [],
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(callerBuffer.every((byte) => byte === 0)).toBe(true);
+      releaseFirst();
+
+      await first;
+      const added = await queued;
+      expect(await (await library.download(added.id)).read()).toEqual(new TextEncoder().encode(validSvg));
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("keeps durable cursors valid across observable no-op mutations", async () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-visual-assets-durable-no-op-"));
     try {

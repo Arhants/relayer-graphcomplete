@@ -1,0 +1,49 @@
+{
+  "base": "d1a45f2e",
+  "findings": [
+    "Copy Buffer-backed file bytes into guaranteed owned storage before queued publication.",
+    "Bound and validate generic resolve identities before concurrent catalog lookups."
+  ],
+  "scopeHashes": {
+    "packages/visual-assets/src/index.ts": "84f0dae03b694b840652bd66923ccf3275a8abf42aa3683a908e496250df0e64",
+    "packages/visual-assets/test/visual-assets.test.ts": "2aa31eeb3a3c522698ba1c12937ddb7329d89230ed25e7dae9db7f6dcb3f0d2d",
+    "packages/harness-host/src/host.ts": "44c5291066cc4f34bde50d4e777338e6f78a309244b28aee5b1d835740db4651",
+    "packages/harness-host/test/visual-assets-bridge.test.ts": "97dfb456d375279bd85f8835cabfe017ef7d01ba08c938c8df49d2ecaafa243c"
+  },
+  "checkpoints": [
+    {
+      "promise": "A file read returning a Node Buffer cannot retain caller-owned backing storage while a durable mutation is queued.",
+      "test": "owns Buffer-backed file bytes before a queued durable mutation resumes"
+    },
+    {
+      "promise": "Generic resolve rejects over 32, duplicate, empty, padded, NUL-containing, and over-128-byte identities before catalog lookup fan-out.",
+      "test": "visual asset host bridge completion operation scenario with lookupAsset spy"
+    }
+  ],
+  "verification": [
+    {
+      "command": "npx vitest run packages/visual-assets/test/visual-assets.test.ts packages/harness-host/test/visual-assets-bridge.test.ts",
+      "result": "pass: 2 files, 59 tests"
+    },
+    {
+      "command": "npm run check -w @relayer/visual-assets",
+      "result": "pass: tsc, build, packaged SVG/raster smoke"
+    },
+    {
+      "command": "npm run check -w @relayer/harness-host",
+      "result": "pass: tsc"
+    },
+    {
+      "command": "git diff --check -- <four scoped files>",
+      "result": "pass"
+    }
+  ],
+  "limits": [
+    "Repository-wide check/build and desktop evidence remain parent-owned heavy gates.",
+    "This assertion is invalid if a scoped source or test hash changes."
+  ],
+  "logs": {
+    "docs/evidence/issue-371-visual-node-details/review-round-7/logs/typescript-asset-host-focused.log": "b466664349d4b65debb3fc741c0b714800be872d36bb8e92610edd09e15eb308",
+    "docs/evidence/issue-371-visual-node-details/review-round-7/logs/typescript-asset-host-package-checks.log": "11d5c92cd8c18a9ed320b2118e06106130bce17c09c15c1bed16c5cefd9174f3"
+  }
+}
