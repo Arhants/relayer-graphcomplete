@@ -7,11 +7,12 @@ pub use error::{GraphError, ValidationIssue};
 #[cfg(feature = "crash-test-support")]
 pub use graph::CompletionCrashPoint;
 pub use graph::{
-    AcceptedDetailAsset, AcceptedGraphClosure, AcceptedGraphPublication, ActionDraft, ActionId,
-    ActionKind, ActionVariant, AuthoredDetailUpdate, CompletionLifecycle, CompletionOutput,
-    CompletionState, CurrentProjectionEvent, CurrentProjectionPage, CurrentTransition,
-    CurrentTransitionReceipt, DEFAULT_IMPORT_INDEX_BUDGET, DEFAULT_SEARCH_INDEX_BUDGET, EdgeDraft,
-    EdgeId, GraphAction, GraphDatabase, GraphEdge, GraphLayer, GraphNode, GraphWriter,
+    AcceptedDetailAsset, AcceptedDetailAssetMetadata, AcceptedGraphClosure,
+    AcceptedGraphPublication, ActionDraft, ActionId, ActionKind, ActionVariant,
+    AuthoredDetailUpdate, CompletionLifecycle, CompletionOutput, CompletionState,
+    CurrentProjectionEvent, CurrentProjectionPage, CurrentTransition, CurrentTransitionReceipt,
+    DEFAULT_IMPORT_INDEX_BUDGET, DEFAULT_SEARCH_INDEX_BUDGET, EdgeDraft, EdgeId, GraphAction,
+    GraphDatabase, GraphEdge, GraphLayer, GraphNode, GraphWriter,
     IMPORTED_AUTHORED_DETAIL_OMITTED_NOTE, ImportedAcceptedView, ImportedAction,
     ImportedConversation, ImportedConversationReceipt, ImportedConversationStage,
     ImportedDetailAsset, ImportedEdge, ImportedInputSource, ImportedInteractionContext,

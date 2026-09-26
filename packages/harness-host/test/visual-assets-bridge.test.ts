@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -341,6 +341,15 @@ describe("visual asset host bridge", () => {
       visualAssets: { token: "bridge-secret", generation: 3, library },
     });
     await host.initialize();
+    // Establish an unrelated durable authority so byte-for-byte comparison also
+    // observes revision changes, not merely whether a file was created.
+    await library.authorizeScope({ kind: "thread", threadId: 1 });
+    const catalogBefore = await readFile(join(directory, "catalog.json"), "utf8");
+    const unchanged = async () => {
+      expect(await readFile(join(directory, "catalog.json"), "utf8")).toBe(catalogBefore);
+      await expect(library.listAssets({ scope: { kind: "thread", threadId: 4 } })).rejects.toMatchObject({ code: "scope_not_authorized" });
+      await expect(library.listAssets({ scope: { kind: "project", projectId: 7 } })).rejects.toMatchObject({ code: "scope_not_authorized" });
+    };
     await expect(host.visualAssetOperation({
       version: 1,
       generation: 3,
@@ -359,6 +368,46 @@ describe("visual asset host bridge", () => {
         contentBase64: svg.toString("base64"),
       } },
     })).resolves.toEqual({ valid: true });
+    await unchanged();
+    const packageContent = {
+      version: 1 as const,
+      components: [{ id: "main", order: 0, html: '<img data-asset-mount="image" alt="Imported">', css: "" }],
+      mounts: [{ id: "image", componentId: "main", kind: "asset", host: "img", assetId: "imported" }],
+      assets: [{ id: "imported", digestSha256: createHash("sha256").update(svg).digest("hex"), mediaType: "image/svg+xml", representation: "image" }],
+    };
+    const importedDetail = {
+      package: { ...packageContent, integritySha256: createHash("sha256").update(canonicalJson(packageContent)).digest("hex") },
+      assets: [{ assetId: "imported", digestSha256: packageContent.assets[0]!.digestSha256, mediaType: "image/svg+xml", byteLength: svg.length, provenance: { source: "user", fileName: "imported.svg" } }],
+    };
+    const content = { digestSha256: packageContent.assets[0]!.digestSha256, mediaType: "image/svg+xml", byteLength: svg.length, contentBase64: svg.toString("base64") };
+    const control = (operation: unknown) => host.visualAssetOperation({
+      version: 1, generation: 3,
+      authority: { kind: "control", scope: { kind: "project", projectId: 7, threadId: 9 } }, operation,
+    });
+    await expect(control({ kind: "validate-import", archive: { version: 1, details: [importedDetail], contents: [content] } })).resolves.toEqual({ details: [importedDetail] });
+    await unchanged();
+    const malformed = Buffer.from("not an image");
+    const badContent = { digestSha256: createHash("sha256").update(malformed).digest("hex"), mediaType: "image/png", byteLength: malformed.length, contentBase64: malformed.toString("base64") };
+    for (const operation of [
+      { kind: "validate-import-content", content: badContent },
+      { kind: "validate-import", archive: { version: 1, details: [], contents: [badContent] } },
+    ]) {
+      await expect(control(operation)).rejects.toMatchObject({ code: "media_content_malformed" });
+      await unchanged();
+    }
+    // Each request creates a validation facade, but all retain one library's
+    // decoder guard; import validation cannot multiply raster concurrency.
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+    const raster = { digestSha256: createHash("sha256").update(png).digest("hex"), mediaType: "image/png", byteLength: png.length, contentBase64: png.toString("base64") };
+    const concurrent = await Promise.allSettled([1, 2, 3].map(() => control({ kind: "validate-import-content", content: raster })));
+    expect(concurrent.filter(({ status }) => status === "fulfilled")).toHaveLength(2);
+    expect(concurrent.filter((result) => result.status === "rejected").map((result) => result.reason))
+      .toEqual([expect.objectContaining({ code: "media_validation_concurrency_limit" })]);
+    await unchanged();
+    const reopened = await createFileVisualAssetsLibrary({ authority: { projects: [], standaloneThreadIds: [] } }, join(directory, "catalog.json"));
+    await expect(reopened.listAssets({ scope: { kind: "thread", threadId: 1 } })).resolves.toMatchObject({ items: [] });
+    await expect(reopened.listAssets({ scope: { kind: "thread", threadId: 4 } })).rejects.toMatchObject({ code: "scope_not_authorized" });
+    await expect(reopened.listAssets({ scope: { kind: "project", projectId: 7 } })).rejects.toMatchObject({ code: "scope_not_authorized" });
     await expect(host.visualAssetOperation({
       version: 1,
       generation: 3,

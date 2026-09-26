@@ -125,7 +125,77 @@ async fn shared_large_content_crosses_real_import_routes_once_without_relaxing_b
             .await
             .unwrap();
         assert_eq!(asset.content, bytes);
+        let node_id = node["id"].as_i64().unwrap();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/api/control/nodes/{node_id}/detail-assets/visual?metadataOnly=true"
+                    ))
+                    .header("authorization", "Bearer control")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let metadata: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(metadata["digestSha256"], blob["digestSha256"]);
+        assert_eq!(metadata["byteLength"], blob["byteLength"]);
+        assert_eq!(metadata["provenance"]["fileName"], "visual.png");
+        assert!(metadata.get("contentBase64").is_none());
+        let denied = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/api/control/nodes/{node_id}/detail-assets/visual?metadataOnly=true"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
+        let missing = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/api/control/nodes/{node_id}/detail-assets/missing?metadataOnly=true"
+                    ))
+                    .header("authorization", "Bearer control")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
     }
+    let node_id = receipt["turns"][0]["output"]["rootLayer"]["nodes"][0]["id"]
+        .as_i64()
+        .unwrap();
+    let full = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/control/nodes/{node_id}/detail-assets/visual"))
+                .header("authorization", "Bearer control")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(full.status(), StatusCode::OK);
+    let full: Value =
+        serde_json::from_slice(&to_bytes(full.into_body(), usize::MAX).await.unwrap()).unwrap();
+    assert_eq!(
+        full["contentBase64"], blob["contentBase64"],
+        "default control read still returns bytes"
+    );
     let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", file.path().display()))
         .await
         .unwrap();

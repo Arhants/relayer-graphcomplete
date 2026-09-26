@@ -1,7 +1,7 @@
 use axum::{
     Json, Router,
     body::Bytes,
-    extract::{DefaultBodyLimit, Path, State},
+    extract::{DefaultBodyLimit, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -884,13 +884,32 @@ async fn accepted_closure(
     Ok(Json(closure))
 }
 
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DetailAssetReadQuery {
+    #[serde(default)]
+    metadata_only: bool,
+}
+
 async fn control_detail_asset(
     State(state): State<ServerState>,
     Path((node_id, asset_id)): Path<(NodeId, String)>,
     headers: HeaderMap,
+    Query(query): Query<DetailAssetReadQuery>,
 ) -> Result<Json<Value>, ApiError> {
     use base64::Engine as _;
     require_bearer(&headers, &state.control_token)?;
+    if query.metadata_only {
+        let asset = state
+            .graph
+            .accepted_detail_asset_metadata(node_id, &asset_id)
+            .await?;
+        return Ok(Json(json!({
+            "assetId":asset.asset_id,"digestSha256":asset.digest_sha256,
+            "mediaType":asset.media_type,"byteLength":asset.byte_length,
+            "provenance":{"source":asset.provenance_source,"fileName":asset.provenance_file_name},
+        })));
+    }
     let asset = state
         .graph
         .accepted_detail_asset(node_id, &asset_id)

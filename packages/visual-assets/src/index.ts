@@ -240,9 +240,45 @@ export async function validateVisualAssetImportContent(input: {
 }): Promise<void> {
   const bridge = PERSISTENCE_BRIDGES.get(input.library);
   if (bridge === undefined) throw new VisualAssetsError("persistence_unavailable", "Visual asset persistence is unavailable");
-  const scope = canonicalPersistenceScope(input.scope);
+  return validateImportContentWithBridge(bridge, canonicalPersistenceScope(input.scope), input.content);
+}
+
+/** Trusted host-only import validation; never grants discovery or mutation authority. */
+export function createVisualAssetImportValidator(library: VisualAssetsLibrary, requestedScope: VisualAssetScope): {
+  validateContent(content: unknown): Promise<void>;
+  importArchive(archive: VisualDetailArchive): Promise<readonly AcceptedVisualDetail[]>;
+} {
+  const scope = canonicalPersistenceScope(requestedScope);
+  const source = PERSISTENCE_BRIDGES.get(library);
+  if (source === undefined) throw new VisualAssetsError("persistence_unavailable", "Visual asset persistence is unavailable");
+  const bridge: VisualAssetsPersistenceBridge = {
+    ready: source.ready,
+    assertScope(candidate) {
+      if (persistenceScopeKey(canonicalPersistenceScope(candidate)) !== persistenceScopeKey(scope)) {
+        throw new VisualAssetsError("scope_not_authorized", "Import validation is restricted to its exact target scope");
+      }
+    },
+    // Archives are self-contained. This facade cannot look up catalog assets,
+    // borrow catalog content, or turn validation into normal asset acceptance.
+    assetById() { throw new VisualAssetsError("asset_not_authorized", "Import validation cannot read catalog assets"); },
+    readContent: () => undefined,
+    visibleIn: () => false,
+    validateBytes: source.validateBytes,
+  };
+  return Object.freeze({
+    validateContent: (content: unknown) => validateImportContentWithBridge(bridge, scope, content),
+    async importArchive(archive: VisualDetailArchive) {
+      const snapshot = snapshotVisualDetailArchive(throttleImportArchive(archive));
+      await bridge.ready();
+      return createVisualDetailPersistenceWithBridge(bridge).importArchive({ archive: snapshot, scope });
+    },
+  });
+}
+
+async function validateImportContentWithBridge(
+  bridge: VisualAssetsPersistenceBridge, scope: VisualAssetScope, candidate: unknown,
+): Promise<void> {
   bridge.assertScope(scope);
-  const candidate = input.content;
   if (!plainRecord(candidate)
     || Object.keys(candidate).sort().join(",") !== "byteLength,contentBase64,digestSha256,mediaType"
     || typeof candidate.digestSha256 !== "string" || !isPlainSha256(candidate.digestSha256)
@@ -256,7 +292,9 @@ export async function validateVisualAssetImportContent(input: {
     || sha256(bytes).slice("sha256:".length) !== candidate.digestSha256) {
     throw new VisualAssetsError("archive_content_corrupt", "Visual Detail archive content failed integrity verification");
   }
-  await bridge.validateBytes(supportedMediaType(candidate.mediaType), bytes);
+  const mediaType = supportedMediaType(candidate.mediaType);
+  await bridge.ready();
+  await bridge.validateBytes(mediaType, bytes);
 }
 
 interface GenericContentModule {
@@ -767,19 +805,36 @@ function createMemoryVisualAssetsLibraryWithGuard(
     initialAssetIds.add(initial.id);
   }
 
-  const initialAssetInputs = (options.initialAssets ?? []).map((initial) => Object.freeze({
-    ...initial,
-    content: typeof initial.content === "string" ? initial.content : initial.content.slice(),
-    scopes: Object.freeze(initial.scopes.map(canonicalScope)),
-    tagIds: Object.freeze([...initial.tagIds]),
-    defaultTagIds: initial.defaultTagIds === undefined ? undefined : Object.freeze([...initial.defaultTagIds]),
-    provenance: initial.provenance === undefined
-      ? undefined
-      : Object.freeze({ ...initial.provenance }),
-  }));
+  const ownedInitialContent = new Map<string, Uint8Array>();
+  let initialAssetInputs = (options.initialAssets ?? []).map((initial) => {
+    const callerBytes = typeof initial.content === "string"
+      ? new TextEncoder().encode(initial.content)
+      : initial.content;
+    const contentDigest = sha256(callerBytes);
+    let content = ownedInitialContent.get(contentDigest);
+    if (content === undefined) {
+      content = callerBytes.slice();
+      ownedInitialContent.set(contentDigest, content);
+    }
+    return Object.freeze({
+      ...initial,
+      content,
+      scopes: Object.freeze(initial.scopes.map(canonicalScope)),
+      tagIds: Object.freeze([...initial.tagIds]),
+      defaultTagIds: initial.defaultTagIds === undefined ? undefined : Object.freeze([...initial.defaultTagIds]),
+      provenance: initial.provenance === undefined
+        ? undefined
+        : Object.freeze({ ...initial.provenance }),
+    });
+  });
 
   async function initializeAssets(): Promise<void> {
-    const prepared: { readonly asset: VisualAsset; readonly bytes: Uint8Array }[] = [];
+    const prepared: {
+      readonly asset: VisualAsset;
+      readonly bytes: Uint8Array;
+      readonly defaultTagIds: readonly string[];
+    }[] = [];
+    const validatedContent = new Set<string>();
     for (const initial of initialAssetInputs) {
       const registry = registries.get(initial.registryId);
       if (registry === undefined) throw new VisualAssetsError("registry_not_found", `Unknown registry: ${initial.registryId}`);
@@ -791,9 +846,7 @@ function createMemoryVisualAssetsLibraryWithGuard(
         assertScope(scope);
         return canonicalScope(scope);
       }));
-      const bytes = typeof initial.content === "string"
-        ? new TextEncoder().encode(initial.content)
-        : initial.content.slice();
+      const bytes = initial.content;
       if (initial.digest !== undefined && !/^sha256:[0-9a-f]{64}$/.test(initial.digest)) {
         throw new VisualAssetsError("digest_invalid", "Initial visual asset digest is invalid");
       }
@@ -804,7 +857,11 @@ function createMemoryVisualAssetsLibraryWithGuard(
       if (initial.byteLength !== undefined && initial.byteLength !== bytes.byteLength) {
         throw new VisualAssetsError("content_length_invalid", "Initial visual asset byte length does not match its content");
       }
-      await validateBytes(initial.mediaType, bytes);
+      const validationKey = `${initial.mediaType}\0${actualDigest}`;
+      if (!validatedContent.has(validationKey)) {
+        await validateBytes(initial.mediaType, bytes);
+        validatedContent.add(validationKey);
+      }
       for (const tagId of initial.tagIds) {
         const tag = tags.get(tagId);
         if (tag === undefined) throw new VisualAssetsError("tag_not_found", `Unknown visual asset tag: ${tagId}`);
@@ -818,6 +875,7 @@ function createMemoryVisualAssetsLibraryWithGuard(
       }
       prepared.push({
         bytes,
+        defaultTagIds: initial.defaultTagIds ?? initial.tagIds,
         asset: immutableAsset({
           id: initial.id,
           registryId: initial.registryId,
@@ -835,9 +893,10 @@ function createMemoryVisualAssetsLibraryWithGuard(
     for (const entry of prepared) {
       content.index(entry.bytes);
       assets.set(entry.asset.id, entry.asset);
-      const initial = initialAssetInputs.find((candidate) => candidate.id === entry.asset.id)!;
-      defaultTagIdsByAsset.set(entry.asset.id, new Set(initial.defaultTagIds ?? entry.asset.tagIds));
+      defaultTagIdsByAsset.set(entry.asset.id, new Set(entry.defaultTagIds));
     }
+    initialAssetInputs = [];
+    ownedInitialContent.clear();
   }
 
   let initialization: Promise<void> | undefined;
@@ -1118,6 +1177,13 @@ export function createMemoryVisualDetailPersistence(
       "Visual Detail persistence requires a visual-assets library created by this Module",
     );
   }
+  return createVisualDetailPersistenceWithBridge(bridge, trustedOptions);
+}
+
+function createVisualDetailPersistenceWithBridge(
+  bridge: VisualAssetsPersistenceBridge,
+  trustedOptions: { readonly visibleScopes?: readonly VisualAssetScope[] } = {},
+): VisualDetailPersistence {
   const acceptedContent = new Map<string, { readonly mediaType: VisualAssetMediaType; readonly bytes: Uint8Array }>();
   const detailsByIntegrity = new Map<string, AcceptedVisualDetail>();
   const ownedDetails = new WeakSet<object>();
@@ -1466,6 +1532,10 @@ export async function createFileVisualAssetsLibrary(
   });
   const rasterValidation: RasterValidationGuard = { active: 0 };
   function libraryFor(value: DurableVisualAssetCatalog): VisualAssetsLibrary {
+    const contentByDigest = new Map(value.contents.map((content) => [
+      content.digest,
+      new Uint8Array(Buffer.from(content.contentBase64, "base64")),
+    ]));
     return createMemoryVisualAssetsLibraryWithGuard({
       authority: value.authority,
       registries: value.registries,
@@ -1476,7 +1546,7 @@ export async function createFileVisualAssetsLibrary(
         name: asset.name,
         fileName: asset.provenance.fileName,
         mediaType: asset.mediaType,
-        content: new Uint8Array(Buffer.from(value.contents.find((content) => content.digest === asset.digest)!.contentBase64, "base64")),
+        content: contentByDigest.get(asset.digest)!,
         digest: asset.digest,
         byteLength: asset.byteLength,
         scopes: asset.scopes,
@@ -1606,6 +1676,7 @@ export async function createFileVisualAssetsLibrary(
         });
         const asset = await candidate.add({ ...prepared, file });
         const content = await persistDurableVisualAssetContent(storagePath, asset.digest, bytes);
+        if (content.durabilityError !== undefined) throw content.durabilityError;
         try {
           await publish(replaceAssetState(asset, Buffer.from(bytes).toString("base64")), isCurrent);
         } catch (error) {
@@ -1615,7 +1686,6 @@ export async function createFileVisualAssetsLibrary(
           }
           throw error;
         }
-        if (content.durabilityError !== undefined) throw content.durabilityError;
         return asset;
       });
     },
@@ -1809,7 +1879,8 @@ async function persistDurableVisualAssetContent(
     if (sha256(existing) !== digest || !Buffer.from(existing).equals(Buffer.from(bytes))) {
       throw new VisualAssetsError("catalog_store_corrupt", "Durable visual asset content conflicts with its digest");
     }
-    return { path, created: false };
+    const durabilityError = await syncDirectory(dirname(path));
+    return { path, created: false, ...(durabilityError === undefined ? {} : { durabilityError }) };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
@@ -1846,12 +1917,17 @@ async function persistAtomicBytes(path: string, bytes: Uint8Array, isCurrent?: (
     try { await unlink(temporary); } catch { /* preserve primary durable-write failure */ }
     throw error;
   }
+  const durabilityError = await syncDirectory(directory);
+  return durabilityError === undefined ? {} : { durabilityError };
+}
+
+async function syncDirectory(directory: string): Promise<unknown | undefined> {
   try {
     const directoryHandle = await open(directory, "r");
     try { await directoryHandle.sync(); } finally { await directoryHandle.close(); }
-    return {};
-  } catch (durabilityError) {
-    return { durabilityError };
+    return undefined;
+  } catch (error) {
+    return error;
   }
 }
 

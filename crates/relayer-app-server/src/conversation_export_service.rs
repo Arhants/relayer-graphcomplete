@@ -285,6 +285,7 @@ async fn collect_visual_assets(
     let mut associations = HashMap::new();
     let mut visited_nodes = HashSet::new();
     let mut contents = BTreeMap::<String, ExportVisualAssetContent>::new();
+    let mut referenced_contents = HashSet::new();
     for node in closures
         .iter()
         .flatten()
@@ -309,7 +310,7 @@ async fn collect_visual_assets(
                 )
             })?;
         let mut node_assets = Vec::with_capacity(pins.len());
-        let mut node_contents = Vec::with_capacity(pins.len());
+        let mut node_content_digests = Vec::with_capacity(pins.len());
         let mut legacy_metadata_only = false;
         for pin in pins {
             let asset_id = pin
@@ -320,7 +321,10 @@ async fn collect_visual_assets(
                         "authored detail asset id is invalid".into(),
                     )
                 })?;
-            let value = match runtime.get_detail_asset(node.id.value(), asset_id).await {
+            let value = match runtime
+                .get_detail_asset_metadata(node.id.value(), asset_id)
+                .await
+            {
                 Ok(value) => value,
                 Err(RuntimeError::Remote { status: 404, .. }) => {
                     legacy_metadata_only = true;
@@ -379,47 +383,74 @@ async fn collect_visual_assets(
                         .and_then(serde_json::Value::as_str)
                         .unwrap_or("user")
                         .into(),
-                    file_name: redactor.text(
+                    file_name: portable_asset_filename(
                         provenance
                             .get("fileName")
                             .and_then(serde_json::Value::as_str)
                             .unwrap_or("asset"),
+                        redactor,
                     ),
                 },
             };
-            let content = ExportVisualAssetContent {
-                digest_sha256: digest.into(),
-                media_type: media.into(),
-                byte_length: length,
-                content_base64: value
-                    .get("contentBase64")
+            if let std::collections::btree_map::Entry::Vacant(entry) = contents.entry(digest.into())
+            {
+                let payload = runtime.get_detail_asset(node.id.value(), asset_id).await?;
+                if payload
+                    .get("digestSha256")
                     .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| {
-                        ConversationExportBuildError::Invalid(
-                            "accepted visual asset content is invalid".into(),
-                        )
-                    })?
-                    .into(),
-            };
-            node_contents.push(content);
+                    != Some(digest)
+                    || payload.get("mediaType").and_then(serde_json::Value::as_str) != Some(media)
+                    || payload
+                        .get("byteLength")
+                        .and_then(serde_json::Value::as_u64)
+                        != Some(length as u64)
+                {
+                    return Err(ConversationExportBuildError::Invalid(
+                        "accepted visual asset content does not match its metadata".into(),
+                    ));
+                }
+                entry.insert(ExportVisualAssetContent {
+                    digest_sha256: digest.into(),
+                    media_type: media.into(),
+                    byte_length: length,
+                    content_base64: payload
+                        .get("contentBase64")
+                        .and_then(serde_json::Value::as_str)
+                        .ok_or_else(|| {
+                            ConversationExportBuildError::Invalid(
+                                "accepted visual asset content is invalid".into(),
+                            )
+                        })?
+                        .into(),
+                });
+            }
+            let cached = &contents[digest];
+            if cached.media_type != media || cached.byte_length != length {
+                return Err(ConversationExportBuildError::Invalid(
+                    "accepted visual asset digest has conflicting metadata".into(),
+                ));
+            }
+            node_content_digests.push(digest.to_owned());
             node_assets.push(association);
         }
         if legacy_metadata_only {
             continue;
         }
-        for content in node_contents {
-            if let Some(existing) = contents.insert(content.digest_sha256.clone(), content.clone())
-                && existing != content
-            {
-                return Err(ConversationExportBuildError::Invalid(
-                    "accepted visual asset digest has conflicting content".into(),
-                ));
-            }
-        }
+        referenced_contents.extend(node_content_digests);
         node_assets.sort_by(|a, b| a.asset_id.cmp(&b.asset_id));
         associations.insert(node.id.value(), node_assets);
     }
+    contents.retain(|digest, _| referenced_contents.contains(digest));
     Ok((associations, contents.into_values().collect()))
+}
+
+fn portable_asset_filename(value: &str, redactor: &ProjectPathRedactor) -> String {
+    let redacted = redactor.text(value);
+    if redacted.trim().is_empty() || redacted.len() > crate::conversation_export::MAX_STRING_BYTES {
+        "asset".into()
+    } else {
+        redacted
+    }
 }
 
 struct ImportedExportContext<'a> {
@@ -1968,19 +1999,32 @@ mod tests {
     };
 
     #[tokio::test]
-    async fn export_fetches_each_repeated_node_asset_only_once() {
+    async fn export_fetches_shared_digest_once_and_checks_each_node_metadata() {
         use serde_json::json;
         use std::sync::{
             Arc,
-            atomic::{AtomicUsize, Ordering},
+            atomic::{AtomicBool, AtomicUsize, Ordering},
         };
         let requests = Arc::new(AtomicUsize::new(0));
         let counted = requests.clone();
-        let app = axum::Router::new().route("/api/control/temporal-features", axum::routing::get(|| async { axum::Json(json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true})) })).fallback(move || {
+        let denied = Arc::new(AtomicBool::new(false));
+        let deny = denied.clone();
+        let metadata_requests = Arc::new(AtomicUsize::new(0));
+        let metadata_counted = metadata_requests.clone();
+        let app = axum::Router::new().route("/api/control/temporal-features", axum::routing::get(|| async { axum::Json(json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true})) })).fallback(move |request: axum::extract::Request| {
             let counted = counted.clone();
+            let deny = deny.clone();
+            let metadata_counted = metadata_counted.clone();
             async move {
-                counted.fetch_add(1, Ordering::SeqCst);
-                axum::Json(json!({"digestSha256":"a".repeat(64),"mediaType":"image/png","byteLength":1,"contentBase64":"YQ==","provenance":{"source":"user","fileName":"a.png"}}))
+                if deny.load(Ordering::SeqCst) && request.uri().path().contains("/3/") {
+                    return (axum::http::StatusCode::FORBIDDEN, axum::Json(json!({"error":"denied"})));
+                }
+                let metadata_only = request.uri().query() == Some("metadataOnly=true");
+                if !metadata_only { counted.fetch_add(1, Ordering::SeqCst); } else { metadata_counted.fetch_add(1, Ordering::SeqCst); }
+                let name = if request.uri().path().contains("/3/") { "   " } else { "a.png" };
+                let mut value = json!({"digestSha256":"ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb","mediaType":"image/png","byteLength":1,"provenance":{"source":"user","fileName":name}});
+                if !metadata_only { value["contentBase64"] = json!("YQ=="); }
+                (axum::http::StatusCode::OK, axum::Json(value))
             }
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2000,22 +2044,49 @@ mod tests {
         )
         .await
         .unwrap();
-        let node = json!({"id":2,"kind":"concept","icon":"box","title":"Image","detail":"Fallback","state":"accepted","authoredDetail":{"version":1,"components":[],"mounts":[],"assets":[{"id":"image","digestSha256":"a".repeat(64),"mediaType":"image/png","representation":"image"}],"integritySha256":"b".repeat(64)}});
+        let node = json!({"id":2,"kind":"concept","icon":"box","title":"Image","detail":"Fallback","state":"accepted","authoredDetail":{"version":1,"components":[],"mounts":[],"assets":[{"id":"image","digestSha256":"ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb","mediaType":"image/png","representation":"image"}],"integritySha256":"b".repeat(64)}});
         let closure: relayer_graph_core::AcceptedGraphClosure = serde_json::from_value(json!({"nodeId":1,"interaction":{"id":1,"kind":"user-interaction","icon":"user","title":"Show","detail":"Show","state":"accepted"},"rootAction":{"id":1,"sourceNodeId":1,"kind":"navigate","relation":"expand","label":"Response","variant":"pill","targetLayerId":1,"state":"accepted"},"rootLayerId":1,"layers":[{"layer":{"id":1,"nodes":[2],"edges":[],"state":"accepted"},"nodes":[node],"edges":[],"actions":[]}]})).unwrap();
-        let (associations, content) = super::collect_visual_assets(
-            &runtime,
-            &[Some(closure.clone()), Some(closure)],
-            &ProjectPathRedactor::new(None),
-        )
-        .await
-        .unwrap();
-        server.abort();
-        assert_eq!(associations.len(), 1);
+        let mut other = closure.clone();
+        other.layers[0].nodes[0].id = relayer_graph_core::NodeId::new(3).unwrap();
+        other.layers[0].layer.nodes = vec![relayer_graph_core::NodeId::new(3).unwrap()];
+        let closures = [Some(closure.clone()), Some(closure), Some(other)];
+        let (associations, content) =
+            super::collect_visual_assets(&runtime, &closures, &ProjectPathRedactor::new(None))
+                .await
+                .unwrap();
+        assert_eq!(associations.len(), 2);
         assert_eq!(content.len(), 1);
+        assert_eq!(associations[&2][0].provenance.file_name, "a.png");
+        assert_eq!(associations[&3][0].provenance.file_name, "asset");
         assert_eq!(
             requests.load(Ordering::SeqCst),
             1,
-            "shared accepted nodes must be deduplicated before fetching bytes"
+            "shared digests must be fetched once across distinct accepted nodes"
+        );
+        assert_eq!(metadata_requests.load(Ordering::SeqCst), 2);
+        denied.store(true, Ordering::SeqCst);
+        assert!(
+            super::collect_visual_assets(&runtime, &closures, &ProjectPathRedactor::new(None))
+                .await
+                .is_err(),
+            "a cached digest cannot bypass another node's rejected metadata read"
+        );
+        server.abort();
+    }
+
+    #[test]
+    fn export_asset_filename_fallback_matches_archive_string_bounds() {
+        let redactor = ProjectPathRedactor::new(None);
+        for name in [
+            String::new(),
+            " \t\n".into(),
+            "x".repeat(crate::conversation_export::MAX_STRING_BYTES + 1),
+        ] {
+            assert_eq!(super::portable_asset_filename(&name, &redactor), "asset");
+        }
+        assert_eq!(
+            super::portable_asset_filename("kept.svg", &redactor),
+            "kept.svg"
         );
     }
 

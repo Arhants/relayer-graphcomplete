@@ -1,0 +1,61 @@
+{
+  "kind": "implementation-evidence-not-independent-review",
+  "implementer": "GPT-6-Astra /root/astra_standards",
+  "base": "494a55e1c87",
+  "fileSha256": {
+    "crates/relayer-app-server/src/conversation_export_service.rs": "f0ec8c85672f4fe39fbc391813d2f9af4bba96c637916142414105329184c523",
+    "crates/relayer-app-server/src/runtime.rs": "831cc694641168c8e9305b2f8dbbe34d251c25b8c081116e91642f29fccfa2ed",
+    "crates/relayer-graph-core/src/graph.rs": "f22b8e95da8c55e1ba05ce15ac6b3c2ef70baff1dd5f5b2a60c1b387899ed130",
+    "crates/relayer-graph-core/src/graph/database.rs": "eb8751821f42fdcbff211694c147b7ec7bf68b2b04d72a4bec1f693181df6719",
+    "crates/relayer-graph-core/src/graph/model.rs": "d73317e63c971aa8a26f41d6f5e808ea2b538be45b1f52a3bbee890f6605ff04",
+    "crates/relayer-graph-core/src/graph/model/node.rs": "782cb2ae3923222c2d99cb04e81d18542b17b97f3eaaa2d6777115a9b1e7a6c9",
+    "crates/relayer-graph-core/src/lib.rs": "bcb4f535235fe9ee687f37977a555edb8f4ac0bb3b5c0c7b025c2e791987d01d",
+    "crates/relayer-graph-core/src/storage/sqlite/authored_detail_assets.rs": "995b32a8237fa96940987a369c2e90eaa032139b1831925cb8a9b15886adbcf9",
+    "crates/relayer-graph-server/src/lib.rs": "4d89ec04aae74b3e4b15ef63b5887570f459c1636c9bb30a32be20463508f4fa",
+    "crates/relayer-graph-server/tests/import_visual_asset_transport.rs": "9ba8ce657d7189e5866d8f7f0a039f16eb6b7d252d2e97d44f6cf723b5b85ad5"
+  },
+  "checkpoints": [
+    {
+      "contract": "PRD6.4 portable provenance remains exportable without weakening archive validation",
+      "test": "export_asset_filename_fallback_matches_archive_string_bounds and export_fetches_shared_digest_once_and_checks_each_node_metadata",
+      "coverage": "Blank/whitespace/over-MAX_STRING_BYTES names use asset fallback after path redaction; ordinary names unchanged. Shared digest retains per-node different filenames."
+    },
+    {
+      "contract": "PRD6.4 single digest portable content and accepted-node authority",
+      "test": "export_fetches_shared_digest_once_and_checks_each_node_metadata",
+      "coverage": "Two distinct accepted nodes plus repeated node fetch one payload and two metadata records; denied second node fails despite cached digest."
+    },
+    {
+      "contract": "Control-only metadata query preserves existing full-read boundary",
+      "test": "shared_large_content_crosses_real_import_routes_once_without_relaxing_body_limit",
+      "coverage": "Real graph route metadata reads preserve digest/length/provenance but omit bytes; unauthenticated401 and missing association404; default fullread still returns7MiB original content."
+    }
+  ],
+  "redEvidence": [
+    "Export regression before fix returned whitespace provenance filename rather than bounded nonempty fallback."
+  ],
+  "limits": [
+    "Independent review required; no commit/push.",
+    "No public agent asset API change; metadata query is authenticated control-only.",
+    "No full heavy suite run by implementer.",
+    "Filename fallback uses actual4MiB archive string bound, not stale64KiB review text."
+  ],
+  "greenEvidence": [
+    {
+      "command": "cargo test -p relayer-app-server --lib conversation_export_service::tests -- --nocapture",
+      "passed": 19,
+      "failed": 0,
+      "log": "logs/rust-export-service.log"
+    },
+    {
+      "command": "cargo test -p relayer-graph-server --test import_visual_asset_transport -- --nocapture",
+      "passed": 5,
+      "failed": 0,
+      "log": "logs/rust-asset-control.log"
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0
+    }
+  ]
+}

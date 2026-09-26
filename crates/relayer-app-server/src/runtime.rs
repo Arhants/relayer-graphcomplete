@@ -1483,6 +1483,23 @@ impl RuntimeClient {
         node_id: i64,
         asset_id: &str,
     ) -> Result<Value, RuntimeError> {
+        self.read_detail_asset(node_id, asset_id, false).await
+    }
+
+    pub(crate) async fn get_detail_asset_metadata(
+        &self,
+        node_id: i64,
+        asset_id: &str,
+    ) -> Result<Value, RuntimeError> {
+        self.read_detail_asset(node_id, asset_id, true).await
+    }
+
+    async fn read_detail_asset(
+        &self,
+        node_id: i64,
+        asset_id: &str,
+        metadata_only: bool,
+    ) -> Result<Value, RuntimeError> {
         // Append an opaque path segment rather than interpreting catalog IDs as paths.
         let mut url = self
             .graph_url
@@ -1491,6 +1508,9 @@ impl RuntimeClient {
             .expect("graph URL supports paths")
             .pop_if_empty()
             .push(asset_id);
+        if metadata_only {
+            url.query_pairs_mut().append_pair("metadataOnly", "true");
+        }
         self.control_get(url.as_str()).await
     }
 

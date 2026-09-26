@@ -148,6 +148,37 @@ describe("visual_assets deterministic library interface", () => {
     }
   });
 
+  it("owns one bootstrap byte copy per digest across distinct logical assets", async () => {
+    const expected = new TextEncoder().encode(validSvg);
+    const callerBytes = expected.slice();
+    let sliceCalls = 0;
+    Object.defineProperty(callerBytes, "slice", {
+      configurable: true,
+      value(...args: Parameters<Uint8Array["slice"]>) {
+        sliceCalls += 1;
+        return Uint8Array.prototype.slice.apply(callerBytes, args);
+      },
+    });
+    const library = createMemoryVisualAssetsLibrary({
+      initialAssets: Array.from({ length: 24 }, (_, index) => ({
+        id: `asset_shared_${index}`,
+        registryId: "user",
+        name: `Shared ${index}`,
+        fileName: `shared-${index}.svg`,
+        mediaType: "image/svg+xml" as const,
+        content: callerBytes,
+        scopes: [{ kind: "library" as const }],
+        tagIds: [],
+      })),
+    });
+    callerBytes.fill(0);
+
+    expect((await library.listAssets({ scope: { kind: "library" } })).items).toHaveLength(24);
+    expect(sliceCalls).toBe(1);
+    expect(await (await library.download("asset_shared_0")).read()).toEqual(expected);
+    expect(await (await library.download("asset_shared_23")).read()).toEqual(expected);
+  });
+
   it("persists bootstrap asset content before the first metadata-only publication", async () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-visual-assets-bootstrap-content-"));
     try {
@@ -532,6 +563,40 @@ describe("visual_assets deterministic library interface", () => {
       expect((await reopened.listAssets({ scope: { kind: "library" } })).items.map(({ name }) => name)).toEqual(["Committed"]);
     } finally {
       await chmod(directory, 0o700).catch(() => undefined);
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("does not publish an asset when its content rename cannot be durably synced", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-visual-assets-content-sync-"));
+    const storagePath = join(directory, "visual-assets.json");
+    const contentDirectory = `${storagePath}.content`;
+    try {
+      const library = await createFileVisualAssetsLibrary({}, storagePath);
+      await mkdir(contentDirectory);
+      await chmod(contentDirectory, 0o300);
+      await expect(library.add({
+        file: memoryHarnessFile("content-sync.svg", "image/svg+xml", validSvg),
+        scope: { kind: "library" }, name: "Content sync", tagIds: [],
+      })).rejects.toBeDefined();
+      expect((await library.listAssets({ scope: { kind: "library" } })).items).toEqual([]);
+
+      await expect(library.add({
+        file: memoryHarnessFile("content-sync.svg", "image/svg+xml", validSvg),
+        scope: { kind: "library" }, name: "Content sync", tagIds: [],
+      })).rejects.toBeDefined();
+      expect((await library.listAssets({ scope: { kind: "library" } })).items).toEqual([]);
+
+      await chmod(contentDirectory, 0o700);
+      const retried = await library.add({
+        file: memoryHarnessFile("content-sync.svg", "image/svg+xml", validSvg),
+        scope: { kind: "library" }, name: "Content sync", tagIds: [],
+      });
+      expect((await library.listAssets({ scope: { kind: "library" } })).items).toEqual([retried]);
+      const reopened = await createFileVisualAssetsLibrary({}, storagePath);
+      expect((await reopened.listAssets({ scope: { kind: "library" } })).items).toEqual([retried]);
+    } finally {
+      await chmod(contentDirectory, 0o700).catch(() => undefined);
       await rm(directory, { recursive: true, force: true });
     }
   });

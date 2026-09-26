@@ -1,7 +1,9 @@
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, SqliteConnection};
 
-use crate::{AcceptedDetailAsset, GraphError, NodeId, PreparedDetailAsset};
+use crate::{
+    AcceptedDetailAsset, AcceptedDetailAssetMetadata, GraphError, NodeId, PreparedDetailAsset,
+};
 
 pub(crate) struct AuthoredDetailAssetTable<'a> {
     connection: &'a mut SqliteConnection,
@@ -109,6 +111,27 @@ impl<'a> AuthoredDetailAssetTable<'a> {
             .bind(&asset.provenance_source).bind(&asset.provenance_file_name)
             .execute(&mut *self.connection).await?;
         Ok(())
+    }
+
+    pub(crate) async fn read_metadata(
+        &mut self,
+        node_id: NodeId,
+        asset_id: &str,
+    ) -> Result<AcceptedDetailAssetMetadata, GraphError> {
+        // Preserve the accepted-node and content-existence checks without loading
+        // the shared BLOB for every logical association during export.
+        let row: (String, String, String, i64, String, String) = sqlx::query_as("SELECT asset.asset_id,asset.digest_sha256,asset.media_type,asset.byte_length,asset.provenance_source,asset.provenance_file_name FROM authored_detail_assets asset JOIN authored_detail_asset_contents content USING(digest_sha256) JOIN nodes node ON node.id=asset.node_id WHERE asset.node_id=?1 AND asset.asset_id=?2 AND node.state='accepted'")
+            .bind(node_id.value()).bind(asset_id).fetch_optional(&mut *self.connection).await?
+            .ok_or_else(|| GraphError::NotFound("accepted visual asset".into()))?;
+        Ok(AcceptedDetailAssetMetadata {
+            asset_id: row.0,
+            digest_sha256: row.1,
+            media_type: row.2,
+            byte_length: usize::try_from(row.3)
+                .map_err(|_| GraphError::Internal("invalid accepted visual asset size".into()))?,
+            provenance_source: row.4,
+            provenance_file_name: row.5,
+        })
     }
 
     pub(crate) async fn read(

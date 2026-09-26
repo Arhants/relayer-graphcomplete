@@ -36,6 +36,16 @@ pub struct PreparedDetailAsset {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcceptedDetailAssetMetadata {
+    pub asset_id: String,
+    pub digest_sha256: String,
+    pub media_type: String,
+    pub byte_length: usize,
+    pub provenance_source: String,
+    pub provenance_file_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcceptedDetailAsset {
     pub asset_id: String,
     pub digest_sha256: String,

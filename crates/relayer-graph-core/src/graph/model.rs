@@ -39,8 +39,8 @@ pub(crate) use layer::validate_authored_layout;
 pub use layer::{GraphLayer, LayerDraft, LayerLayout, NodePlacement, ResolvedLayer};
 pub(crate) use node::validate_authored_detail;
 pub use node::{
-    AcceptedDetailAsset, AuthoredDetailUpdate, GraphNode, InteractionInvocation, NodeDraft,
-    PreparedDetailAsset,
+    AcceptedDetailAsset, AcceptedDetailAssetMetadata, AuthoredDetailUpdate, GraphNode,
+    InteractionInvocation, NodeDraft, PreparedDetailAsset,
 };
 pub use record_state::RecordState;
 

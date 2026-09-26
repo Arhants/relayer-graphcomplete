@@ -7,7 +7,7 @@ import { GraphApiError, RelayerGraphClient, type GraphCapability, type GraphId }
 import {
   VisualAssetsError,
   createMemoryVisualDetailPersistence,
-  validateVisualAssetImportContent,
+  createVisualAssetImportValidator,
   type CanonicalNodeDetailPackage,
   type FileVisualAssetsLibrary,
   type VisualAsset,
@@ -305,7 +305,15 @@ export class HarnessHost {
         && this.visualAssetAuthorities.get(interactionNodeId)?.state !== "revoked"
         && !active.controller.signal.aborted;
       if (!isCurrent()) throw new VisualAssetsError("completion_inactive", "Visual asset completion authority is no longer active");
-    } else if (request.operation.kind !== "validate-import" && request.operation.kind !== "validate-import-content") {
+    } else {
+      const validator = createVisualAssetImportValidator(bridge.library, operationScope(request));
+      if (request.operation.kind === "validate-import") {
+        return { details: await validator.importArchive(request.operation.archive as never) };
+      }
+      if (request.operation.kind === "validate-import-content") {
+        await validator.validateContent(request.operation.content);
+        return { valid: true };
+      }
       throw new VisualAssetsError("visual_assets_control_operation_invalid", "Control authority may validate imports only");
     }
     await bridge.library.authorizeScope(request.authority.scope, isCurrent);
@@ -1983,15 +1991,6 @@ async function executeVisualAssetOperation(
       });
       const archive = await candidate.exportArchive({ details: [detail], scope });
       return { detail, contents: archive.contents };
-    }
-    case "validate-import": {
-      const candidate = createMemoryVisualDetailPersistence(library);
-      const details = await candidate.importArchive({ archive: operation.archive as never, scope });
-      return { details };
-    }
-    case "validate-import-content": {
-      await validateVisualAssetImportContent({ library, scope, content: operation.content });
-      return { valid: true };
     }
     default: throw new VisualAssetsError("visual_assets_operation_unsupported", `Unsupported visual asset operation: ${operation.kind}`);
   }
