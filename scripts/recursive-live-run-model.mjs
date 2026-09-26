@@ -89,6 +89,42 @@ export function resolveRunProfile(document, name, { implementation, path = "live
  */
 export const RECURSIVE_LIVE_RUN_TASK = RECURSIVE_COMPLETE_EVAL_PROMPT;
 
+/**
+ * The same planning task, asking for its three workstreams as semantic children.
+ *
+ * It exercises child launch, settlement, and integration with a real model. Because it
+ * instructs delegation, a run of it is delegation-mechanics evidence and never Check 1.
+ * It names the harness guidance's own phrase rather than any client API.
+ */
+export const RECURSIVE_LIVE_RUN_DELEGATION_TASK = [
+  "You're planning a six-week private beta for Lantern, a fictional macOS desktop agent",
+  "that runs local developer tools. The team has four engineers, no cloud execution, and",
+  "expects 100 technical beta users. Treat three areas as independent workstreams and",
+  "delegate each one as explicit semantic child work so they run in parallel: onboarding,",
+  "consent, and recovery UX; runtime isolation, updates, and failure recovery; and abuse",
+  "scenarios and operational risks. Launch all three children before awaiting any. When",
+  "they finish, integrate their results: resolve conflicts between usability and safety,",
+  "rank the five most important launch risks, and finish with weekly milestones and a",
+  "concrete go/no-go checklist.",
+].join(" ");
+
+/** Live-run tasks by name, with the verification level a run of each can claim. */
+export const LIVE_RUN_TASKS = Object.freeze({
+  natural: Object.freeze({ text: RECURSIVE_LIVE_RUN_TASK, verificationLevel: "check1" }),
+  delegate: Object.freeze({
+    text: RECURSIVE_LIVE_RUN_DELEGATION_TASK,
+    verificationLevel: "delegation-mechanics",
+  }),
+});
+
+export function liveRunTask(name) {
+  const task = LIVE_RUN_TASKS[name];
+  if (task === undefined) {
+    throw new Error(`--task must be one of: ${Object.keys(LIVE_RUN_TASKS).join(", ")}.`);
+  }
+  return Object.freeze({ name, ...task });
+}
+
 const TERMINAL_LIFECYCLES = new Set(["succeeded", "stopped", "failed"]);
 const PRE_TERMINAL_PRODUCT_STATUSES = new Set([
   "not_started", "running", "submitted", "preparing", "draft", "waiting_for_approval",

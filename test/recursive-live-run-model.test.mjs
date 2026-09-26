@@ -6,9 +6,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   LIVE_RUN_AUTH,
+  RECURSIVE_LIVE_RUN_DELEGATION_TASK,
   RECURSIVE_LIVE_RUN_TASK,
   compareRuns,
   liveRunProfileNames,
+  liveRunTask,
   normalizedTemporalFeatures,
   resolveRunProfile,
   orderedRevisions,
@@ -17,6 +19,7 @@ import {
   summarizeRun,
   timeToFirstObservableGraph,
 } from "../scripts/recursive-live-run-model.mjs";
+import { CHECK1_VERIFICATION_LEVEL } from "../scripts/recursive-live-run-provenance.mjs";
 
 function revision(sequence, number, overrides = {}) {
   return {
@@ -78,6 +81,17 @@ describe("recursive live run analysis", () => {
   it("names a demanding task without instructing the agent to delegate", () => {
     expect(RECURSIVE_LIVE_RUN_TASK).not.toMatch(/delegat|sub-?agent|child|complete\(/i);
     expect(RECURSIVE_LIVE_RUN_TASK.length).toBeGreaterThan(200);
+  });
+
+  it("keeps Check 1 for the natural task and labels the delegation task as mechanics only", () => {
+    expect(liveRunTask("natural")).toMatchObject({ text: RECURSIVE_LIVE_RUN_TASK, verificationLevel: CHECK1_VERIFICATION_LEVEL });
+    const delegate = liveRunTask("delegate");
+    expect(delegate.text).toBe(RECURSIVE_LIVE_RUN_DELEGATION_TASK);
+    expect(delegate.verificationLevel).not.toBe(CHECK1_VERIFICATION_LEVEL);
+    // It uses the harness guidance's phrase, not a client API a harness may not share.
+    expect(delegate.text).toContain("explicit semantic child work");
+    expect(delegate.text).not.toMatch(/prepare_?complete|prepareComplete|complete\(/i);
+    expect(() => liveRunTask("obedient")).toThrow(/--task must be one of: natural, delegate/);
   });
 
   it("orders paged projection events by durable sequence and drops repeats", () => {

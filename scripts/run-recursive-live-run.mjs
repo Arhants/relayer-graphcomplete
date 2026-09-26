@@ -45,7 +45,7 @@ import {
 import { digestHarnessConfiguration, loadHarnessConfigurations } from "@relayer/harness-host";
 
 import {
-  RECURSIVE_LIVE_RUN_TASK,
+  liveRunTask,
   compareRuns,
   liveRunProfileNames,
   resolveRunProfile,
@@ -59,7 +59,6 @@ import {
 } from "./recursive-live-run-transport.mjs";
 import {
   CHECK1_STATUS,
-  CHECK1_VERIFICATION_LEVEL,
   assertExecutionIdentity,
   executionIdentity,
   liveRunProvenance,
@@ -388,7 +387,7 @@ async function prepareRoute({ session, productServer, runtime, resolver, profile
 }
 
 async function runOnce({
-  recursionEnabled, profile, configurationPath, timeoutMs, outputDirectory, runId, setupOnly = false,
+  recursionEnabled, task, profile, configurationPath, timeoutMs, outputDirectory, runId, setupOnly = false,
 }) {
   const dataDirectory = mkdtempSync(join(tmpdir(), "relayer-recursive-live-"));
   const arm = recursionEnabled ? "enabled" : "disabled";
@@ -437,7 +436,7 @@ async function runOnce({
       method: "POST",
       body: JSON.stringify({
         title: "Recursive Complete live run",
-        initialMessage: RECURSIVE_LIVE_RUN_TASK,
+        initialMessage: task.text,
         harnessId: profile.harness,
         permissionProfileId: "auto",
         modelSelection: { familyId: family.id, providerId, modelId },
@@ -484,6 +483,8 @@ async function main() {
   // Proves the provider, harness readiness, and model route, then stops before a
   // thread starts, so it spends no inference.
   const setupOnly = process.argv.includes("--setup-only");
+  // `delegate` asks for semantic children; its runs can never claim Check 1.
+  const task = liveRunTask(singleArgument("--task", "natural"));
   if (!["on", "off", "both"].includes(requested)) {
     throw new Error("--recursion must be on, off, or both");
   }
@@ -506,11 +507,14 @@ async function main() {
     return;
   }
   const outputRoot = resolve(
-    singleArgument("--output-dir", join(".relayer", "live", "recursive-complete", profile.name)),
+    singleArgument("--output-dir", join(
+      ".relayer", "live", task.name === "natural" ? "recursive-complete" : `recursive-complete-${task.name}`, profile.name,
+    )),
   );
   const runId = randomUUID();
   const outputDirectory = join(outputRoot, runId);
   const options = {
+    task,
     profile,
     configurationPath,
     timeoutMs: liveRunTimeoutMs(singleArgument("--timeout-ms", "900000")),
@@ -545,7 +549,8 @@ async function main() {
   });
   const baseArtifact = {
     ...provenance,
-    task: RECURSIVE_LIVE_RUN_TASK,
+    task: task.text,
+    taskName: task.name,
     profile: profile.name,
     profileDigest: publicProfileDigest(profile),
     harnessConfiguration: profile.harness,
@@ -553,7 +558,7 @@ async function main() {
     adapterId: profile.adapterId,
     modelId: profile.modelId,
     requestedRecursion: requested,
-    verificationLevel: CHECK1_VERIFICATION_LEVEL,
+    verificationLevel: task.verificationLevel,
   };
   const artifactPath = join(outputDirectory, "run.json");
   const identityCheckpoints = [];
@@ -597,7 +602,7 @@ async function main() {
     writeJsonAtomic(artifactPath, artifact);
     writeJsonAtomic(join(outputRoot, "latest.json"), {
       schemaVersion: 1,
-      verificationLevel: CHECK1_VERIFICATION_LEVEL,
+      verificationLevel: task.verificationLevel,
       runId,
       ref: `${runId}/run.json`,
     });
@@ -615,7 +620,7 @@ async function main() {
     writeJsonAtomic(artifactPath, artifact);
     writeJsonAtomic(join(outputRoot, "latest.json"), {
       schemaVersion: 1,
-      verificationLevel: CHECK1_VERIFICATION_LEVEL,
+      verificationLevel: task.verificationLevel,
       runId,
       ref: `${runId}/run.json`,
     });
