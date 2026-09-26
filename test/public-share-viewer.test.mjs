@@ -251,6 +251,12 @@ describe("public share HTML boundary", () => {
     expect(html).toContain(`<title>${title} · Relayer</title>`);
   });
 
+  it("preserves the complete chosen project display name in public metadata", () => {
+    const projectName = "界".repeat(256);
+    const html = renderPublicViewerTemplate({ snapshot: fixtureJsonl(), description: projectName });
+    expect(html).toContain(`property="og:description" content="${projectName}"`);
+  });
+
   it("publishes the CSP contract as a small deterministic value", () => {
     expect(publicViewerCsp()).toContain("connect-src 'none'");
     expect(publicViewerCsp()).toContain("script-src 'self'");

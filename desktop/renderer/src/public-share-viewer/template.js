@@ -87,7 +87,7 @@ export function renderPublicViewerTemplate({
   const base = safeAssetBase(assetBase);
   const install = safeInstallUrl(installUrl);
   const safeTitle = Array.from(String(title || "Shared conversation")).slice(0, 120).join("");
-  const safeDescription = Array.from(String(description || DEFAULT_DESCRIPTION)).slice(0, 240).join("");
+  const safeDescription = Array.from(String(description || DEFAULT_DESCRIPTION)).slice(0, 256).join("");
   const snapshotLiteral = safeJsonScriptText(snapshot);
   const csp = escapeHtml(publicViewerCsp());
   const logo = escapeHtml(viewerAsset(assetManifest, "logo", "assets/relayer-logo.svg", base));
