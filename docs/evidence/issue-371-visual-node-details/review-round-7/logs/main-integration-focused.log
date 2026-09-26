@@ -1,0 +1,28 @@
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/05b1/relayer-graphcomplete
+
+node:fs:1746
+  const stats = binding.stat(
+                        ^
+
+Error: ELOOP: too many symbolic links encountered, stat '/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/factory-408-planner-fT7B3p/docs/postmortems/entry.md'
+    at statSync (node:fs:1746:25)
+    at isAbsentOrDirectory (file:///Users/vishaltandale/.codex/worktrees/05b1/relayer-graphcomplete/scripts/ci/plan-affected.mjs:21:12)
+    at buildPlan (file:///Users/vishaltandale/.codex/worktrees/05b1/relayer-graphcomplete/scripts/ci/plan-affected.mjs:303:11)
+    at file:///Users/vishaltandale/.codex/worktrees/05b1/relayer-graphcomplete/scripts/ci/plan-affected.mjs:439:14
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5) {
+  errno: -62,
+  code: 'ELOOP',
+  syscall: 'stat',
+  path: '/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/factory-408-planner-fT7B3p/docs/postmortems/entry.md'
+}
+
+Node.js v22.23.2
+
+ Test Files  1 passed (1)
+      Tests  62 passed (62)
+   Start at  19:36:48
+   Duration  4.37s (transform 17ms, setup 0ms, import 26ms, tests 4.27s, environment 0ms)
+

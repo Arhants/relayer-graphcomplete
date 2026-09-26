@@ -18,3 +18,5 @@ Required verification: focused tests during edits, full `npm run check`, `npm ru
 ## Executed evidence
 
 Full check passed: 2,353 Vitest tests, 3 skipped, plus 2 secret-boundary tests; native, type, Python, receipt and readability checks passed. Desktop proof including build passed. The real image-bearing archive declares V2 and imports successfully. Original/imported screenshot pixels match the previously visually inspected round-6 images. Exact source hashes and independent clean review assertions are recorded here. Fresh complete CI is still required before merge.
+
+Latest-main integration changes CI planner/tests only. Initial full check exposed six missing visual-assets fixture manifests; the repaired fixture passed 62/62, then full check passed 2,360 Vitest plus 2 secret-boundary tests and build passed. Original failure is retained. Independent review was corrected to record this missed integration dependency; final application source hashes remain identical to the desktop-proven snapshot.
