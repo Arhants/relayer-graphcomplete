@@ -131,6 +131,46 @@ describe("compiled Node Detail product runtime", () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
+  it("bounds distinct asset resolution while loading every placement and releasing each cached asset once", async () => {
+    const window = new Window({ url: "http://127.0.0.1:3000" });
+    const host = window.document.createElement("div");
+    const assets = Array.from({ length: 5 }, (_, index) => ({ id: `asset-${index}`, digestSha256: String(index).repeat(64), mediaType: "image/png", representation: "image" }));
+    const placements = [...assets, assets[0]];
+    const detail = compiledPackage({ version: 1,
+      components: [{ id: "images", order: 0, html: placements.map((_, index) => `<img alt="Illustration" data-asset-mount="image-${index}">`).join(""), css: "" }],
+      mounts: placements.map((asset, index) => ({ id: `image-${index}`, componentId: "images", kind: "asset", host: "img", assetId: asset.id })), assets });
+    const gates = assets.map(() => deferred());
+    const releases = assets.map(() => vi.fn());
+    let active = 0;
+    let maximum = 0;
+    const resolveAsset = vi.fn(async (asset) => {
+      const index = assets.indexOf(asset);
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await gates[index].promise;
+      active -= 1;
+      return { ...asset, url: `blob:http://127.0.0.1:3000/${asset.id}`, release: releases[index] };
+    });
+    const mounting = mountCompiledNodeDetail({ host, detail, resolveAsset });
+    try {
+      await vi.waitFor(() => expect(resolveAsset).toHaveBeenCalledTimes(2));
+      for (let index = 0; index < assets.length; index += 1) {
+        gates[index].resolve();
+        await vi.waitFor(() => expect(resolveAsset).toHaveBeenCalledTimes(Math.min(index + 3, assets.length)));
+      }
+    } finally {
+      for (const gate of gates) gate.resolve();
+    }
+    const runtime = await mounting;
+    expect(runtime.status).toBe("mounted");
+    expect(maximum).toBe(2);
+    expect([...host.shadowRoot.querySelectorAll("img")].map((element) => element.getAttribute("src")))
+      .toEqual(placements.map((asset) => `blob:http://127.0.0.1:3000/${asset.id}`));
+    runtime.dispose();
+    runtime.dispose();
+    for (const release of releases) expect(release).toHaveBeenCalledTimes(1);
+  });
+
   it("lets Eval navigate trusted authored controls while retaining read-only and disposal boundaries", async () => {
     const window = new Window({ url: "http://127.0.0.1:3000" });
     const host = window.document.createElement("div");

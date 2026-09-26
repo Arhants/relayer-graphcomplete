@@ -619,7 +619,13 @@ img{max-inline-size:100%}
       }
     }
     reviewSurfaces.set(host, reviewControls);
-    await Promise.all(assetWork.map((work) => work()));
+    // Each resolution may decode a maximum-size image. Keep only two placements
+    // in flight; repeated placements still share the pinned-asset promise above.
+    const pendingAssets = assetWork.values();
+    const loadAssets = async () => {
+      for (const work of pendingAssets) await work();
+    };
+    await Promise.all([loadAssets(), loadAssets()]);
     return Object.freeze({
       status: "mounted",
       shadowRoot: shadow,

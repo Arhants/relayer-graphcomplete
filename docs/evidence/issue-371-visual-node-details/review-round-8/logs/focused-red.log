@@ -1,0 +1,26 @@
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/05b1/relayer-graphcomplete
+
+ ❯ |isolated| test/node-detail-runtime.test.mjs (44 tests | 1 failed) 1278ms
+     × bounds distinct asset resolution while loading every placement and releasing each cached asset once 1011ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |isolated| test/node-detail-runtime.test.mjs > compiled Node Detail product runtime > bounds distinct asset resolution while loading every placement and releasing each cached asset once
+AssertionError: expected "vi.fn()" to be called 2 times, but got 5 times
+ ❯ test/node-detail-runtime.test.mjs:156:51
+    154|     const mounting = mountCompiledNodeDetail({ host, detail, resolveAs…
+    155|     try {
+    156|       await vi.waitFor(() => expect(resolveAsset).toHaveBeenCalledTime…
+       |                                                   ^
+    157|       for (let index = 0; index < assets.length; index += 1) {
+    158|         gates[index].resolve();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 43 passed (44)
+   Start at  19:44:35
+   Duration  1.63s (transform 110ms, setup 0ms, import 282ms, tests 1.28s, environment 0ms)
+

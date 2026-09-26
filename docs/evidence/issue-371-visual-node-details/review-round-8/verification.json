@@ -1,0 +1,12 @@
+{
+  "check": "normal command passed 2361 Vitest, 3 skipped, 2 secret-boundary tests; native/types/Python/receipts/readability passed",
+  "build": "passed via desktop entry point",
+  "desktop": "passed",
+  "manifestSha256": "02b168998c7ed623932c66e791dab4e16387359a5ecf490945cdc731104baabb",
+  "pixelsMatchPreviouslyInspected": true,
+  "failures": [
+    "Initial full check: recursive-complete teardown AggregateError after functional assertions; isolated diagnostic3/3 passed, inner cause not reproduced",
+    "Diagnostic full rerun: recursive tests passed; NODE_OPTIONS preload inherited by permission-boundary subprocess caused filesystem access denial; minimal reproduction confirmed",
+    "Final normal full check passed without preload; no production timeouts or assertions changed"
+  ]
+}
