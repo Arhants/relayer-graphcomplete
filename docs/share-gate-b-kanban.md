@@ -8,7 +8,7 @@ This board tracks local production implementation for issues #462-#467. It does
 not authorize deployment, publication, IAM changes, live Auth0 changes, live
 Sentry submission, or promotion of prototype code.
 
-## Ownership reconciliation in progress
+## Ownership reconciled locally
 
 - [x] `SHR-SPLIT-1` Keep the versioned snapshot/HTTP contract, Rust exporter,
   main-owned desktop client, and production viewer in this public product
@@ -25,7 +25,7 @@ Sentry submission, or promotion of prototype code.
 - [x] `SHR-SPLIT-5` Resolve the share origin inside Electron main: Stable is
   pinned to production, Preview requires a build-sealed HTTPS origin, and only
   Development permits a loopback override.
-- [ ] `SHR-SPLIT-6` Private preview stack: deterministic AWS adapters, Lambda
+- [x] `SHR-SPLIT-6` Private preview stack: deterministic AWS adapters, Lambda
   composition, exact artifact verification, isolated template, and a manual
   protected-environment workflow.
 - [ ] `SHR-SPLIT-7` Run cross-repository conformance against exact clean public
@@ -115,8 +115,10 @@ two-repository state until `SHR-SPLIT-7` is complete.
 
 ## Review gate
 
-- [x] Integrate the issue work into one local exporter -> main authority -> fake
-  service -> production viewer journey.
+- [ ] Replace the split seam portfolio with one durable local exporter -> main
+  authority -> private fake-backed service -> production viewer journey. The
+  public test currently uses a protocol fixture; private tests and the extracted
+  real package smoke cover the hosted seam separately.
 - [x] Wire #468's production renderer controls through preload-safe IPC to the
   main-owned coordinator and reserve/upload/finalize client. Proof: focused
   eligibility, preflight, sign-in, title, pending, success, error, quota,
@@ -137,18 +139,25 @@ two-repository state until `SHR-SPLIT-7` is complete.
 
 ## Evidence notes
 
-- Exact executable snapshot is the final fix commit recorded in the handoff.
-- Coherent journey: `test/conversation-export-eval-e2e.test.mjs` drives real
-  Rust graph/app servers, Electron-main coordination, fake service storage, a
-  lost-response retry, and the production public viewer handler.
+- Exact public/private commits and artifact/package digests are recorded in the
+  handoff; no real user export is part of either repository or package.
+- Public journey: `test/conversation-export-eval-e2e.test.mjs` drives real Rust
+  graph/app servers, Electron-main coordination, a protocol-compatible publish
+  fixture, lost-response retry, and the production viewer template. Private
+  tests separately drive the real service with deterministic storage/auth fakes,
+  and the package smoke initializes the real public artifact from the Lambda ZIP.
+  A single durable cross-repository journey remains an explicit mapping gap.
 - Focused checkpoints: 109 integrated share/service/viewer/telemetry/template
   tests, Rust share redaction tests, and the persisted-product export seam passed.
-- Declared evidence: telemetry 99/99, `npm run build`, PRD readability,
-  CloudFormation lint, and the full `npm run check` portfolio passed locally.
-  The final check ran with host-only `OPENAI_API_KEY` and `OPENAI_BASE_URL`
-  removed so its isolated secret-boundary process began in the declared clean
-  environment; the earlier inherited-environment failure remains in the
-  handoff record.
+- Declared evidence: focused suites, package/TypeScript checks, telemetry,
+  secret-boundary, Python, Ladybug receipts, PRD readability, and `npm run build`
+  passed. The outer `npm run check` did not pass: its Rust portfolio hit the
+  fixed 500 ms hostile-git-environment timeout after 246 passing tests. That
+  focused Rust case passed on the one permitted unchanged retry. A later full
+  Vitest run exposed and then cleared a telemetry inventory mapping, while the
+  evidence-capture integrity child remained unavailable because Node denied its
+  loopback listen permission. These failures are not represented as a green
+  outer command.
 - `SHR-463-5` is backed by the opt-in production Electron capture and its
   source/viewport/image hashes; the fixture is synthetic and makes no network
   or live-infrastructure claim.
