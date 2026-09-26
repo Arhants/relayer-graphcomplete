@@ -1,0 +1,16 @@
+Diagnostic assembly:
+- electron-builder 26.15.3
+- real desktop application directory and dependency collector
+- darwin arm64 directory target
+- output: temporary /tmp directory (not retained as evidence)
+- native extraResources omitted; afterPack, afterSign, and publication disabled
+- npmRebuild false; code signing disabled
+- no product packaging or integrity code changed
+
+Existing production collector: digestAsarDependencyClosure
+Root install paths: the four manifest-listed @earendil-works Prime packages
+Expected darwin-arm64 digest: 8c86ed5c66b6022559fb9903426fec212a757bd4837eff2f7dafea6fe1f54062
+Observed diagnostic digest: 8c86ed5c66b6022559fb9903426fec212a757bd4837eff2f7dafea6fe1f54062
+Match: true
+
+The full packaged-app verification remains the responsibility of CI or the parent-owned desktop gate because this diagnostic intentionally omitted native resources.

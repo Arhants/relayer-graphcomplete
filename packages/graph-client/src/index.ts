@@ -4,6 +4,7 @@ export {
   DetailCompilationError,
   NodeDetailAuthoring,
   assetRef,
+  compiledNodeDetailHasExactMountHost,
   css,
   detailCapability,
   html,

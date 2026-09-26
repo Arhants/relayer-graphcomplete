@@ -8,6 +8,7 @@ import {
   detailCapability,
   html,
   css,
+  compiledNodeDetailHasExactMountHost,
   type GraphNode,
   type CompletionOutput,
   type GraphCapability,
@@ -21,7 +22,6 @@ import {
 } from "@relayer/harness-host";
 import { readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { parseFragment, type DefaultTreeAdapterMap } from "parse5";
 import { canonicalJson } from "../cases/catalog.js";
 import { checkBasicOutput, type EvalCheck } from "../cases/graph-checks.js";
 
@@ -72,27 +72,15 @@ export function gradeNodeDetailExecution(input: {
   const compiled = detail?.version === 1 && detail.components.length > 0
     && detail.components.every((component) => component.id !== "" && component.html !== "" && typeof component.css === "string")
     && createHash("sha256").update(canonicalJson(content)).digest("hex") === detail.integritySha256;
-  const fragments = new Map(detail?.components.map((component) => [component.id, parseFragment(component.html)]));
-  const mounted = (componentId: string, attribute: string, id: string, host: string) => {
-    const fragment = fragments.get(componentId);
-    const matches: DefaultTreeAdapterMap["element"][] = [];
-    const visit = (element: DefaultTreeAdapterMap["childNode"]) => {
-      if (!("tagName" in element)) return;
-      if (element.attrs.some((attr) => attr.name === attribute && attr.value === id)) matches.push(element);
-      for (const child of element.childNodes) visit(child);
-    };
-    fragment?.childNodes.forEach(visit);
-    return matches.length === 1 && matches[0]!.tagName === host;
-  };
   const image = detail?.mounts.some((mount) => mount.kind === "asset" && mount.host === "img"
-    && mounted(mount.componentId, "data-asset-mount", mount.id, "img")
+    && compiledNodeDetailHasExactMountHost(detail, mount)
     && detail.assets.some((asset) => asset.id === mount.assetId && asset.representation === "image"
       && ["image/svg+xml", "image/png", "image/jpeg"].includes(asset.mediaType)
       && /^[a-f0-9]{64}$/.test(asset.digestSha256))) === true;
   const capabilities = ["expand", "reference", "invoke", "input", "link"].every((kind) =>
     detail?.mounts.some((mount) => {
       if (mount.kind !== "capability" || mount.capability.kind !== kind
-        || !mounted(mount.componentId, "data-gc-mount", mount.id, mount.host)) return false;
+        || !compiledNodeDetailHasExactMountHost(detail, mount)) return false;
       if (kind === "input" ? mount.host !== "input"
         : kind === "link" ? mount.host !== "a"
           : mount.host !== "button" && mount.host !== "a") return false;
