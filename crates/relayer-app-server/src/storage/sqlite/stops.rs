@@ -26,6 +26,11 @@ impl SqliteProductStore {
         .await?
         .rows_affected();
         if changed == 0 {
+            let terminal: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM interactions WHERE id=?1 AND thread_id=?2 AND completion_status IN ('accepted','stopped','failed') AND thread_id IN (SELECT id FROM threads WHERE conversation_import_id IS NULL) AND NOT EXISTS(SELECT 1 FROM completion_executions WHERE interaction_id=?1))")
+                .bind(interaction.value()).bind(thread.value()).fetch_one(&self.pool).await?;
+            if terminal {
+                return Ok(());
+            }
             return Err(StorageError::CompletionExecutionConflict(
                 "This interaction has no active product run to stop.".into(),
             ));
@@ -120,7 +125,7 @@ mod tests {
                 .is_none()
         );
         store.finish_interaction_stopped(id, "2").await.unwrap();
-        assert!(store.request_interaction_stop(thread.id, id).await.is_err());
+        store.request_interaction_stop(thread.id, id).await.unwrap();
         drop(store);
         let store = SqliteProductStore::open(&path).await.unwrap();
         let stopped = store.get_interaction(id).await.unwrap().unwrap();
@@ -128,6 +133,7 @@ mod tests {
         assert!(stopped.completion_output.is_none());
         sqlx::query("UPDATE interactions SET completion_status='accepted',completion_output_json='{}' WHERE id=?1").bind(id.value()).execute(&store.pool).await.unwrap();
         assert!(store.finish_interaction_stopped(id, "3").await.is_err());
+        store.request_interaction_stop(thread.id, id).await.unwrap();
         let accepted = store.get_interaction(id).await.unwrap().unwrap();
         assert_eq!(accepted.completion_status, "accepted");
         assert_eq!(accepted.completion_output, Some(serde_json::json!({})));

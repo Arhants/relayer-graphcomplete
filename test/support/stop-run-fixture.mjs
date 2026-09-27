@@ -1,3 +1,5 @@
+import { createServer, request as httpRequest } from "node:http";
+import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -21,6 +23,8 @@ export async function stopRunFixture() {
   const directory = await mkdtemp(join(tmpdir(), "relayer-stop-"));
   const controls = new Map();
   let admissionGate;
+  let releases = 0;
+  let graphFault;
   const services = [];
   try {
   const factories = {};
@@ -133,15 +137,29 @@ export async function stopRunFixture() {
       definition: { id: providerId, adapterId: "openai-api", accessContract: "secret@1", endpoint: "https://api.openai.com/v1" },
       descriptor: { adapterId: "openai-api", accessContract: "secret@1", implementationVersion: "2" },
       runtime: { async executionAccess() { return { kind: "secret", endpoint: "https://api.openai.com/v1", fields: { "api-key": "fixture-never-sent" } }; } },
-      async release() {},
+      async release() { releases++; },
     }); },
   });
   services.push(runtime);
   const runtimeSession = await runtime.start();
+  const graphProxy = createServer((incoming, outgoing) => {
+    if (graphFault?.(incoming)) {
+      outgoing.writeHead(500, { "content-type": "application/json" });
+      outgoing.end(JSON.stringify({ error: { message: "Injected Stop cleanup failure" } }));
+      return;
+    }
+    const upstream = httpRequest(new URL(incoming.url, runtimeSession.graphUrl), { method: incoming.method, headers: incoming.headers }, (response) => {
+      outgoing.writeHead(response.statusCode, response.headers); response.pipe(outgoing);
+    });
+    upstream.on("error", () => { outgoing.writeHead(502); outgoing.end(); });
+    incoming.pipe(upstream);
+  });
+  await new Promise((resolve) => graphProxy.listen(0, "127.0.0.1", resolve));
+  services.push({ close: () => new Promise((resolve) => graphProxy.close(resolve)) });
   const productOptions = {
     userDataDirectory: directory, binaryPath: join(repository, "target/debug/relayer-app-server"),
     webDirectory: join(repository, "desktop/renderer"), permissionCatalogPath: join(repository, "permissions/desktop.json"),
-    runtimeSession, defaultHarnessConfiguration: "fixture-stop-codex", enableReadOnlySession: true,
+    runtimeSession: { ...runtimeSession, graphUrl: `http://127.0.0.1:${graphProxy.address().port}` }, defaultHarnessConfiguration: "fixture-stop-codex", enableReadOnlySession: true,
   };
   let product = new RelayerAppServerService(productOptions);
   services.push(product);
@@ -163,12 +181,25 @@ export async function stopRunFixture() {
   return { directory, get session() { return session; }, runtimeSession, runtime, get product() { return product; }, controls, request, modelSelection,
     async restartProduct() {
       await product.close();
+      admissionGate?.release.resolve();
       for (const c of controls.values()) { c.prompt.resolve(); c.settled.resolve(); }
       await waitFor("old native runs settled", () => [...runtime.harnessHost.host.sessions.values()].every((s) => s.activeCompletions.size === 0));
       const previous = product;
       product = new RelayerAppServerService(productOptions);
       services[services.indexOf(previous)] = product;
       session = await product.start();
+    },
+    get releases() { return releases; },
+    failGraph(predicate) { graphFault = predicate; },
+    rejectStoppedPersistence() {
+      const db = new DatabaseSync(join(directory, "product-data/product.sqlite3"));
+      db.exec("CREATE TRIGGER fixture_reject_stopped BEFORE UPDATE OF completion_status ON interactions WHEN NEW.completion_status='stopped' BEGIN SELECT RAISE(ABORT,'fixture stopped persistence failure'); END");
+      db.close();
+    },
+    async current(completionId) {
+      const response = await fetch(new URL(`/api/control/interactions/${completionId}/current`, runtimeSession.graphUrl), { headers: { authorization: `Bearer ${runtimeSession.graphControlToken}` } });
+      if (!response.ok) throw new Error(`Current read failed: ${response.status}`);
+      return response.json();
     },
     holdAdmission() { admissionGate = { entered: Promise.withResolvers(), release: Promise.withResolvers() }; return admissionGate; },
     async create(provider, text) { return request("/api/threads", { method: "POST", body: JSON.stringify({ initialMessage: text, harnessId: `fixture-stop-${provider}`, permissionProfileId: "full", modelSelection }) }); },

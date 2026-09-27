@@ -216,12 +216,14 @@
           "ok"
         ],
         [
+          "LaunchAdmit",
+          1,
+          "ok"
+        ],
+        [
           "LaunchStart",
           1,
           "fail"
-        ],
-        [
-          "CleanCancel"
         ],
         [
           "CleanFail"
@@ -230,9 +232,13 @@
           "CleanFinalize"
         ],
         [
+          "CleanCancel"
+        ],
+        [
           "CleanDiscard"
         ]
-      ]
+      ],
+      "init": "selected = FALSE"
     },
     {
       "id": "completion-stop-before-failed-start",
@@ -264,6 +270,11 @@
           "ok"
         ],
         [
+          "LaunchAdmit",
+          1,
+          "ok"
+        ],
+        [
           "StopRead"
         ],
         [
@@ -278,18 +289,19 @@
           "fail"
         ],
         [
-          "CleanCancel"
-        ],
-        [
           "CleanFail"
         ],
         [
           "CleanFinalize"
         ],
         [
+          "CleanCancel"
+        ],
+        [
           "CleanDiscard"
         ]
-      ]
+      ],
+      "init": "selected = FALSE"
     },
     {
       "id": "completion-return-after-lost-start",
@@ -321,6 +333,11 @@
           "ok"
         ],
         [
+          "LaunchAdmit",
+          1,
+          "ok"
+        ],
+        [
           "LaunchStart",
           1,
           "lost"
@@ -329,7 +346,57 @@
           "ChildReturn"
         ],
         [
+          "CleanFail"
+        ],
+        [
+          "CleanFinalize"
+        ],
+        [
           "CleanCancel"
+        ],
+        [
+          "CleanDiscard"
+        ]
+      ],
+      "init": "selected = FALSE"
+    },
+    {
+      "id": "completion-admission-refused",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "init": "selected = TRUE",
+      "promises": [
+        "SettledExecutionAgreesWithGraph",
+        "LeaseReleasedOnlyAfterSettlement",
+        "AttemptEndsOnlyAfterProvider"
+      ],
+      "finalPromises": [
+        "ChildSettles",
+        "LeaseReleased"
+      ],
+      "summary": "The host refuses a selected child's admission; the child never starts, holds no lease or attempt, and cleanup fails it with the refusal's reason without cancelling anything.",
+      "steps": [
+        [
+          "LaunchCheck",
+          1
+        ],
+        [
+          "LaunchReserve",
+          1
+        ],
+        [
+          "LaunchClaim",
+          1
+        ],
+        [
+          "LaunchActivate",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchAdmit",
+          1,
+          "fail"
         ],
         [
           "CleanFail"
@@ -339,6 +406,285 @@
         ],
         [
           "CleanDiscard"
+        ]
+      ]
+    },
+    {
+      "id": "completion-admitted-start-failure",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "init": "selected = TRUE",
+      "promises": [
+        "SettledExecutionAgreesWithGraph",
+        "LeaseReleasedOnlyAfterSettlement",
+        "AttemptEndsOnlyAfterProvider"
+      ],
+      "finalPromises": [
+        "ChildSettles",
+        "LeaseReleased"
+      ],
+      "summary": "An admitted child's provider start fails; cleanup settles it and its attempt, and the lease is released.",
+      "steps": [
+        [
+          "LaunchCheck",
+          1
+        ],
+        [
+          "LaunchReserve",
+          1
+        ],
+        [
+          "LaunchClaim",
+          1
+        ],
+        [
+          "LaunchActivate",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchAdmit",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchStart",
+          1,
+          "fail"
+        ],
+        [
+          "CleanFail"
+        ],
+        [
+          "CleanFinalize"
+        ],
+        [
+          "CleanCancel"
+        ],
+        [
+          "CleanDiscard"
+        ],
+        [
+          "AttemptEnd"
+        ],
+        [
+          "LeaseReconcile"
+        ]
+      ]
+    },
+    {
+      "id": "completion-admitted-return-after-lost-start",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "init": "selected = TRUE",
+      "promises": [
+        "SettledExecutionAgreesWithGraph",
+        "LeaseReleasedOnlyAfterSettlement",
+        "AttemptEndsOnlyAfterProvider",
+        "ProviderRunsUnderLease"
+      ],
+      "finalPromises": [
+        "ChildSettles",
+        "LeaseReleased"
+      ],
+      "summary": "An admitted child runs despite a lost start acknowledgement and returns; cleanup accepts it and the lease is released.",
+      "steps": [
+        [
+          "LaunchCheck",
+          1
+        ],
+        [
+          "LaunchReserve",
+          1
+        ],
+        [
+          "LaunchClaim",
+          1
+        ],
+        [
+          "LaunchActivate",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchAdmit",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchStart",
+          1,
+          "lost"
+        ],
+        [
+          "ChildReturn"
+        ],
+        [
+          "CleanFail"
+        ],
+        [
+          "CleanFinalize"
+        ],
+        [
+          "CleanCancel"
+        ],
+        [
+          "CleanDiscard"
+        ],
+        [
+          "AttemptEnd"
+        ],
+        [
+          "LeaseReconcile"
+        ]
+      ]
+    },
+    {
+      "id": "completion-admitted-returns-while-provider-runs",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "init": "selected = TRUE",
+      "promises": [
+        "SettledExecutionAgreesWithGraph",
+        "LeaseReleasedOnlyAfterSettlement",
+        "AttemptEndsOnlyAfterProvider",
+        "ProviderRunsUnderLease"
+      ],
+      "finalPromises": [
+        "ChildSettles",
+        "LeaseReleased"
+      ],
+      "summary": "An admitted child returns and settles while its provider still runs; its attempt and lease end only after the provider exits.",
+      "steps": [
+        [
+          "LaunchCheck",
+          1
+        ],
+        [
+          "LaunchReserve",
+          1
+        ],
+        [
+          "LaunchClaim",
+          1
+        ],
+        [
+          "LaunchActivate",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchAdmit",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchStart",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchAttach",
+          1,
+          "ok"
+        ],
+        [
+          "ChildReturn"
+        ],
+        [
+          "SemFinalize"
+        ],
+        [
+          "ProviderExit",
+          "exited_ok"
+        ],
+        [
+          "ExitObserve"
+        ],
+        [
+          "ExitCheckAndFail"
+        ],
+        [
+          "ExitDiscard"
+        ],
+        [
+          "AttemptEnd"
+        ],
+        [
+          "LeaseReconcile"
+        ]
+      ]
+    },
+    {
+      "id": "completion-admitted-exits-without-return",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "init": "selected = TRUE",
+      "promises": [
+        "SettledExecutionAgreesWithGraph",
+        "LeaseReleasedOnlyAfterSettlement",
+        "AttemptEndsOnlyAfterProvider",
+        "ProviderRunsUnderLease"
+      ],
+      "finalPromises": [
+        "ChildSettles",
+        "LeaseReleased"
+      ],
+      "summary": "An admitted child's provider exits cleanly without Return; the exit observer fails it, and its attempt and lease end once it settles.",
+      "steps": [
+        [
+          "LaunchCheck",
+          1
+        ],
+        [
+          "LaunchReserve",
+          1
+        ],
+        [
+          "LaunchClaim",
+          1
+        ],
+        [
+          "LaunchActivate",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchAdmit",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchStart",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchAttach",
+          1,
+          "ok"
+        ],
+        [
+          "ProviderExit",
+          "exited_ok"
+        ],
+        [
+          "ExitObserve"
+        ],
+        [
+          "ExitCheckAndFail"
+        ],
+        [
+          "SemFinalize"
+        ],
+        [
+          "ExitDiscard"
+        ],
+        [
+          "AttemptEnd"
+        ],
+        [
+          "LeaseReconcile"
         ]
       ]
     }

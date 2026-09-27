@@ -94,6 +94,8 @@ pub(crate) use models::Project;
 pub(crate) use models::SubmittedInputEvidence;
 pub(crate) use models::Thread;
 pub(crate) use models::ThreadView;
+pub(crate) use models::UnwindingRecursiveAttempt;
+pub(crate) use models::settled_recursive_attempt_outcome;
 pub(crate) use models::{ActionInputAttachment, ActionInputDraft, ActionInputValue};
 pub(crate) use service::AcceptedInteractionCompletion;
 pub(crate) use service::CreateIdentifiedInteractionCommand;

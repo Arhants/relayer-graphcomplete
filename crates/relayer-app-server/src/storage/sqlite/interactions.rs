@@ -62,6 +62,10 @@ impl SqliteProductStore {
             "UPDATE interaction_attempts
              SET finished_at=?1,outcome='execution_failed',failure_category='application_restart',effect_boundary='unknown'
              WHERE outcome='running'
+               -- A recursive child that settled before the restart was only waiting for its
+               -- provider to unwind. Its outcome is decided; startup resumes that wait, since a
+               -- harness that outlived this server may still be running it.
+               AND interaction_id NOT IN (SELECT interaction_id FROM completion_executions WHERE phase='settled')
                AND interaction_id NOT IN (
                  SELECT interaction.id
                  FROM interactions interaction

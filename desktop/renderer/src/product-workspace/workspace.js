@@ -401,6 +401,11 @@ export function graphTurnNavigationDelta(event, graphFocused) {
 
 export { workspaceTurns } from "./model.js";
 
+export function productStopTarget(state, thread) {
+  const childIds = new Set((state.actionInvocations || []).map((item) => String(item.resultInteractionId)));
+  return workspaceTurns(state, thread).findLast((turn) => !childIds.has(String(turn.id)) && ["submitted", "running", "waiting_for_approval"].includes(turn.completionStatus)) || null;
+}
+
 export function turnStatusPresentation(status) {
   if (status === "stopping") return { kind: "running", label: "Stopping…" };
   if (status === "waiting_for_approval") {
@@ -2410,7 +2415,7 @@ export function createProductWorkspace({
   const activeRun = () => {
     const thread = getThread();
     if (mode !== "interactive" || thread?.imported === true || getState().capabilities?.stopRuns !== true) return null;
-    return workspaceTurns(getState(), thread).findLast((turn) => ["submitted", "running", "waiting_for_approval"].includes(turn.completionStatus)) || null;
+    return productStopTarget(getState(), thread);
   };
   const contextDraftSendWarning = $("#contextDraftSendWarning");
   const cancelContextDraftSend = $("#cancelContextDraftSend");

@@ -1,8 +1,8 @@
 # User Stop — issue #506
 
 Scope: the shipped product runtime and its existing native provider cancellation.
-The primary checkout and the PR #500 worktree are not changed. No inference,
-push, merge, deployment, or release operation is part of this work.
+The primary checkout and the PR #500 worktree are not changed. No paid inference, deployment, or release operation is part of this work.
+The user subsequently authorized PR publication and merge once ready.
 
 ## Required verification
 
@@ -184,3 +184,59 @@ Final results on the reviewed digest above:
 
 Logs: `.relayer/stop-final-check.log` and `.relayer/stop-final-desktop.log`.
 No paid inference, production changes, merge or deployment occurred.
+
+
+## PR review remediation
+
+The initial commit and its verification above remain historical evidence. PR review
+identified seven additional failure/race boundaries. These fixes retain the approved
+product meaning and visual design; the following expands the existing checkpoint mapping.
+
+| Review boundary | Production seam and deterministic observation |
+| --- | --- |
+| Stop during failed admission | STOP-004: early execution cancellation and transactional unsent restoration; runtime rejected-admission scenario plus SQLite attempt failure receipts |
+| Early cleanup/persistence failure | STOP-003/004: early Stop helper terminalizes admitted attempts and reconciles leases; injected graph, cleanup and stopped-persistence failures |
+| Restart before Stop dispatch | STOP-005: startup revokes active graph completion before product failure; restart-before-dispatch runtime scenario |
+| Child invocation selected as product target | STOP-001/006: composer filters authoritative invocation results; root/child overlap and child-only projection assertions |
+| Codex cancellation before turn attachment | STOP-003: typed cancellation reaches HTTP host only after process quiescence; initialize/start/resume/turn pending cases and failed-close classification |
+| Terminal transition during Stop request | STOP-001/003: conditional store insertion preserves terminal winner and output; terminal idempotence storage test |
+| Pre-Stop refresh arrives late | STOP-006: Stop invalidates outstanding refresh and reschedules polling; deferred stale response plus automatic timer-driven terminal refresh |
+
+No test was deleted. Provider tests protect transport and process settlement;
+assembled runtime fixtures protect product/host/storage ordering. Their boundaries
+are distinct. Final remediation execution and review receipts follow below.
+
+
+Final integrated review source: `origin/main` at `e2e6d71d` (#498) plus this PR.
+The only textual merge conflict was the host execution call/signature; both the
+native-start callback and the child admission identity are preserved.
+
+| Reviewer | Scope | Source digest | Verdict |
+| --- | --- | --- | --- |
+| `/root/stop_contract_review` | Rust Stop authority, early failure settlement, restart, child admission integration and checkpoint mapping | `705b52a5d78043942f62341889185e5b63b2d16b918ff0aa68a91a16e53221ba` | Pass; no unresolved findings |
+| `/root/stop_codex_review` | completion-execution.ts, codex-app-server.ts, host.ts and the two provider/host test files | `9ba5d2b8a88e5d5a50478c8ca9af5d04c097e4a36affd82fb7eef5ee2ed34c85` | Pass; independently ran 125 tests |
+| `/root/stop_frontend_review` | workspace.js, threads.js, environment-rail and workspace-navigation tests | `da08a68868bc1ae3ea50fd0401db20ce26fa3a8ac09c82323fc1882828b2b443` | Pass; automatic polling regression verified |
+
+All digests use sorted repository-relative path + NUL + bytes + NUL. The Rust
+review binds to all 39 changed source/test/PRD/CI files relative to `e2e6d71d`,
+excluding `docs/evidence/**` and media. Other digests bind only their listed scopes.
+The Rust reviewer authored the adjacent admission-receipt cleanup; that portion
+was self-review, followed by the parent agent's independent transaction/test review.
+The remaining Rust changes received independent review. Static review is separate
+from execution proof; the updated PR assertion binds these digests to its commit.
+
+
+Final remediation verification on the integrated source digest above:
+
+- `npm run check`: passed. Rust workspace and crash-recovery suites passed;
+  Vitest passed 183 files and 2,406 tests (one file/three existing guarded tests
+  skipped). Codex secret-boundary passed two tests; Python passed 29 tests.
+  Receipt and PRD checks passed.
+- `npm run test:desktop:stop`: passed, including `npm run build`. Both providers
+  passed all three visual states, neutral colors, alignment, duplicate clicks,
+  native settlement and follow-up assertions. Screenshots/result.json refreshed.
+- `git diff HEAD --check`: passed.
+
+Logs: `.relayer/stop-review-final-check.log` and
+`.relayer/stop-review-final-desktop.log`. The same pinned environment and two-worker
+Vitest setting described above were used. No tests or assertions were relaxed.

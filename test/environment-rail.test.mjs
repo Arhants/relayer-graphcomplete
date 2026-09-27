@@ -25,6 +25,7 @@ import {
   inspectorEscapeShouldClose,
   interactionStatusRenderKey,
   viewedInteractionStatus,
+  productStopTarget,
   trackedChangesLabel,
   untrackedFilesLabel,
   workspaceBreadcrumbShouldRender,
@@ -421,6 +422,11 @@ describe("desktop environment rail", () => {
     }
     expect(interactionStatusRenderKey(running, "running", "active")).toBe("8:running");
     expect(viewedInteractionStatus(running, "running", "active")).toBe("running");
+    const root = { ...running, threadId: 10, sequence: 1 };
+    const child = { id: 9, threadId: 10, sequence: 2, completionStatus: "running" };
+    const state = { interactions: [root, child], actionInvocations: [{ resultInteractionId: "9" }] };
+    expect(productStopTarget(state, { id: 10 })).toBe(root);
+    expect(productStopTarget({ ...state, interactions: [{ ...root, completionStatus: "accepted" }, child] }, { id: 10 })).toBeNull();
     const stopping = { ...running, stopRequested: true };
     expect(viewedInteractionStatus(stopping, "running", "stopped")).toBe("stopping");
     expect(interactionStatusRenderKey(stopping, "running", "stopped"))

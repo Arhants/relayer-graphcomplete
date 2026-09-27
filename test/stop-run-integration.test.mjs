@@ -111,6 +111,48 @@ describe("product Stop through native provider adapters", () => {
     } finally { await f.close(); }
   });
 
+  it.each(["admission", "graph", "cleanup", "persistence"])("settles early Stop when %s fails without stranding an attempt or admission", async (failure) => {
+    const f = await stopRunFixture();
+    try {
+      const gate = f.holdAdmission();
+      const thread = await f.create("prime", "stop before native work");
+      await gate.entered.promise;
+      const turn = (await f.request(`/api/threads/${thread.id}`)).interactions[0];
+      await f.request(`/api/threads/${thread.id}/interactions/${turn.id}/stop`, { method: "POST" });
+      if (failure === "graph") f.failGraph((r) => r.url.endsWith("/current/transitions"));
+      if (failure === "cleanup") f.failGraph((r) => r.method === "DELETE" && r.url.endsWith("/capabilities"));
+      if (failure === "persistence") f.rejectStoppedPersistence();
+      if (failure === "admission") gate.release.reject(new Error("Fixture admission failure"));
+      else gate.release.resolve();
+      const ended = await waitFor("early terminal", async () => {
+        const t = (await f.request(`/api/threads/${thread.id}`)).interactions[0];
+        return ["stopped", "failed"].includes(t.completionStatus) && t;
+      });
+      expect(ended.completionStatus).toBe(failure === "admission" ? "stopped" : "failed");
+      expect(f.controls.size).toBe(0);
+      if (failure !== "admission") {
+        expect(ended.latestAttempt.outcome).toBe("execution_failed");
+        await waitFor("admission released", () => f.releases === 1);
+      }
+    } finally { await f.close(); }
+  });
+
+  it("terminalizes a canonical active graph when restarting before Stop dispatch", async () => {
+    const f = await stopRunFixture();
+    try {
+      const gate = f.holdAdmission();
+      const thread = await f.create("prime", "restart before Stop dispatch");
+      await gate.entered.promise;
+      const turn = (await f.request(`/api/threads/${thread.id}`)).interactions[0];
+      await f.request(`/api/threads/${thread.id}/interactions/${turn.id}/stop`, { method: "POST" });
+      expect((await f.current(turn.graphNodeId)).lifecycle).toBe("active");
+      await f.restartProduct();
+      expect((await f.current(turn.graphNodeId)).lifecycle).toBe("failed");
+      expect((await f.request(`/api/threads/${thread.id}`)).interactions[0].completionStatus).toBe("failed");
+      expect(f.controls.size).toBe(0);
+    } finally { await f.close(); }
+  });
+
   it("reopens confirmed Stop and quarantines an interrupted Stop without replaying provider work", async () => {
     const f = await stopRunFixture();
     try {
