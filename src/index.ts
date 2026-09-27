@@ -1,14 +1,16 @@
-export { complete, configureCompletionRuntime } from "./complete.js";
+export { complete, configureCompletionRuntime, watchCompletions } from "./complete.js";
 export {
   CompletionTerminalError,
   type ActionKind,
   type ActionVariant,
+  type CompletionChange,
   type CompletionCurrent,
   type CompletionCurrentSnapshot,
   type CompletionHandle,
   type CompletionInputGraph,
   type CompletionLifecycle,
   type CompletionRuntime,
+  type CompletionWatch,
   type GraphAction,
   type GraphEdge,
   type GraphId,

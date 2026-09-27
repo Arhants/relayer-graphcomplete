@@ -83,15 +83,17 @@ describe("CodexBasicHarness", () => {
     expect(baseline).toContain("Advancing current does not complete the interaction");
     expect(baseline).not.toContain("Do not author HTML, CSS, colors, dimensions, or style fields");
     expect(baseline).not.toContain("graph.prepareComplete(");
-    expect(baseline).not.toContain("Import complete from");
+    expect(baseline).not.toContain("Import complete and watchCompletions from");
     expect(baseline).not.toContain("semantic completion is unavailable");
     expect(brokerAuthorized).toContain("graph.prepareComplete(invokeAction)");
     // A root that ends its turn with children in flight fails, so it must await them first.
-    expect(brokerAuthorized).toContain("Your turn ending does not wait for them");
-    expect(brokerAuthorized).toContain("await Promise.all([childA.result, childB.result])");
+    expect(brokerAuthorized).toContain("Your turn ending does not wait for children");
+    // Each change to a child's current is an event the root answers by reorganizing its own.
+    expect(brokerAuthorized).toContain("const watch = watchCompletions(children)");
+    expect(brokerAuthorized).toContain("advance your current to it. Repeat until watch.settled is true.");
+    expect(brokerAuthorized).toContain("Import complete and watchCompletions from");
     // The graph refuses a pointer move that loses the path back to the previous current layer.
     expect(brokerAuthorized).toContain("the next current layer must keep a navigation path back to it");
-    expect(brokerAuthorized).toContain("Import complete from");
   });
 
   it("reuses a native Codex thread only while its pinned presentation version is unchanged", async () => {

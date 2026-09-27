@@ -14,7 +14,7 @@ from .icons import (RELAYER_ICON_ALIASES, RELAYER_ICON_NAMES,
                     resolve_relayer_icon_name)
 from .session import GraphSession
 from .completion import (CompletionCurrent, CompletionCurrentSnapshot, CompletionHandle,
-                         CompletionTerminalError, complete)
+                         CompletionTerminalError, CompletionWatch, complete)
 from .query import (GraphQueryBooleanValue, GraphQueryBudget,
                     GraphQueryFloatValue, GraphQueryIntegerValue,
                     GraphQueryLayerValue, GraphQueryListValue,
@@ -35,7 +35,7 @@ __all__ = [
     "NodePlacement", "LayerLayout",
     "ActionVariant", "NavigateRelation", "InputControl", "InputOption",
     "CompletionInputGraph",
-    "complete", "CompletionHandle", "CompletionCurrent", "CompletionCurrentSnapshot",
+    "complete", "CompletionHandle", "CompletionCurrent", "CompletionCurrentSnapshot", "CompletionWatch",
     "CompletionTerminalError",
     "RelayerGraphError", "ConfigurationError", "TransportError", "APIError",
     "AuthenticationError", "NotFound", "ValidationError", "ValidationIssue",

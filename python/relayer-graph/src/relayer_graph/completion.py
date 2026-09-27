@@ -6,7 +6,7 @@ import json
 import os
 import socket
 from dataclasses import dataclass
-from typing import Any, Awaitable, Mapping
+from typing import Any, Awaitable, Iterable, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -63,6 +63,15 @@ class CompletionCurrent:
         value = await self._transport.request("GET", f"/{self._transport.completion_id}/current")
         return CompletionCurrentSnapshot.from_dict(value)
 
+    async def next(self, after_revision: int | None = None) -> CompletionCurrentSnapshot:
+        """Wait until this child's current moves past after_revision, or ends, and return it.
+
+        Without after_revision it returns the current at once. A parent treats each move as
+        an event for organizing its own work.
+        """
+        await self._transport.started
+        return await self._transport.observe_next_current(after_revision)
+
 
 class CompletionHandle:
     """One live semantic child: its identity, its durable current, and its awaited result."""
@@ -104,6 +113,52 @@ class CompletionHandle:
         )
 
 
+class CompletionWatch:
+    """Waits on several children at once, reporting each change to any child's current.
+
+    Create one watch for the children you launched and call await watch.changes() when you
+    are ready for the next event. It returns as soon as at least one child's current has
+    moved or ended since the last call, with every change seen by then; the first call
+    reports each child's current. Requests stay open between calls, so no change is missed
+    and none is asked for twice.
+    """
+
+    def __init__(self, children: Iterable[CompletionHandle]) -> None:
+        self._children = {child.completion_id: child for child in children}
+        self._seen: dict[int, int] = {}
+        self._ended: set[int] = set()
+        self._pending: dict[int, "asyncio.Task[CompletionCurrentSnapshot]"] = {}
+
+    @property
+    def settled(self) -> bool:
+        """True once every watched child's current is terminal."""
+        return len(self._ended) == len(self._children)
+
+    async def changes(self) -> list[tuple[CompletionHandle, CompletionCurrentSnapshot]]:
+        loop = asyncio.get_running_loop()
+        for completion_id, child in self._children.items():
+            if completion_id in self._ended or completion_id in self._pending:
+                continue
+            request = loop.create_task(child.current.next(self._seen.get(completion_id)))
+            # A failure surfaces on the next changes() call; until then it is not unobserved.
+            request.add_done_callback(_absorb_unobserved_failure)
+            self._pending[completion_id] = request
+        if not self._pending:
+            return []
+        await asyncio.wait(self._pending.values(), return_when=asyncio.FIRST_COMPLETED)
+        changes: list[tuple[CompletionHandle, CompletionCurrentSnapshot]] = []
+        for completion_id, request in list(self._pending.items()):
+            if not request.done():
+                continue
+            current = request.result()
+            del self._pending[completion_id]
+            self._seen[completion_id] = current.revision
+            if current.lifecycle != "active":
+                self._ended.add(completion_id)
+            changes.append((self._children[completion_id], current))
+        return changes
+
+
 def complete(input_graph: CompletionInputGraph) -> CompletionHandle:
     if not isinstance(input_graph, CompletionInputGraph) or input_graph.interaction_node < 1:
         raise ValueError("complete() requires an already-prepared CompletionInputGraph")
@@ -125,6 +180,31 @@ class _CompletionTransport:
         value = await self.request("POST", "", {"interactionNode": self.completion_id})
         if value.get("completionId") != self.completion_id:
             raise TransportError("completion broker returned a different completion identity")
+
+    async def observe_next_current(self, after_revision: int | None) -> CompletionCurrentSnapshot:
+        """Wait for this child's current to move past after_revision, or to end.
+
+        The broker holds each request until the current moves, answering unchanged when its
+        hold elapses, so a wait that outlasts the hold simply asks again.
+        """
+        while True:
+            path = f"/{self.completion_id}/result"
+            if after_revision is not None:
+                path = f"{path}?afterRevision={after_revision}"
+            status, value = await self.request_with_status("GET", path)
+            if status == 200:
+                return CompletionCurrentSnapshot.from_dict(
+                    await self.request("GET", f"/{self.completion_id}/current")
+                )
+            if status in (202, 409):
+                current = value.get("current") if isinstance(value, Mapping) else None
+                if not isinstance(current, Mapping):
+                    raise TransportError("completion broker delivered an observation without a current")
+                snapshot = CompletionCurrentSnapshot.from_dict(current)
+                if status == 409 or after_revision is None or snapshot.revision > after_revision:
+                    return snapshot
+                continue
+            raise TransportError(f"completion broker returned HTTP {status}")
 
     async def observe_result(self) -> Mapping[str, Any]:
         """Observe this child until it settles, one request per delivered revision.
