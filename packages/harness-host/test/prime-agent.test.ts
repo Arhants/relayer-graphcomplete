@@ -2388,11 +2388,12 @@ function expectGraphAuthoringRules(prompt: string): void {
   expect(prompt).toContain("Add actions only on draft nodes created for this interaction");
   expect(prompt).toContain("the next current layer must keep a navigation path back to it");
   expect(prompt).toContain('current["currentLayerId"], relation="reference", source_layer=new_layer');
+  // Graph core checks the same path on the final submit's Return, and only a draft node takes the action.
+  expect(prompt).toContain("to the root layer of your final graph.submit");
+  expect(prompt).toContain("every layer you make current needs at least one new draft node to carry that reference");
 }
 
-const pythonExecutable = process.platform === "darwin"
-  ? execFileSync("/usr/bin/which", ["python3"], { encoding: "utf8" }).trim()
-  : "/usr/bin/python3";
+const pythonExecutable = process.platform === "win32" ? "python" : "python3";
 
 describe("Prime graph client reference", () => {
   it("names only graph methods and keywords the Python client declares", () => {

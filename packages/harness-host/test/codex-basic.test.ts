@@ -97,6 +97,9 @@ describe("CodexBasicHarness", () => {
     expect(brokerAuthorized).toContain("Import complete and watchCompletions from");
     // The graph refuses a pointer move that loses the path back to the previous current layer.
     expect(brokerAuthorized).toContain("the next current layer must keep a navigation path back to it");
+    // Graph core checks the same path on the final submit's Return, and only a draft node takes the action.
+    expect(brokerAuthorized).toContain("to the root layer of your final graph.submit");
+    expect(brokerAuthorized).toContain("every layer you make current needs at least one new draft node to carry that reference");
   });
 
   it("reuses a native Codex thread only while its pinned presentation version is unchanged", async () => {
