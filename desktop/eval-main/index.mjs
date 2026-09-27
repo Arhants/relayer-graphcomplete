@@ -59,28 +59,27 @@ const targetDirectory = resolve(process.env.CARGO_TARGET_DIR || join(repositoryR
 const graphServerBinary = resolve(process.env.RELAYER_GRAPH_SERVER_BIN || join(targetDirectory, "debug", nativeBinaryName("relayer-graph-server")));
 const appServerBinary = resolve(process.env.RELAYER_APP_SERVER_BINARY || join(targetDirectory, "debug", nativeBinaryName("relayer-app-server")));
 const harnessDirectory = join(repositoryRoot, "harnesses");
-const evalTarget = evalRuntimeTarget({ isPackaged: false, environment: process.env });
+const evalTarget = evalRuntimeTarget({ environment: process.env });
 const permissionCatalogPath = join(repositoryRoot, "permissions", "desktop.json");
 const productRendererDirectory = join(desktopDirectory, "renderer");
 const evalRendererDirectory = join(desktopDirectory, "eval-renderer");
-const configurationPaths = evalHarnessConfigurationPaths({ harnessDirectory, isPackaged: false, targetKey: evalTarget.key });
+const configurationPaths = evalHarnessConfigurationPaths({ harnessDirectory, targetKey: evalTarget.key });
 process.env.PYTHONPATH = [join(repositoryRoot, "python", "relayer-graph", "src"), process.env.PYTHONPATH].filter(Boolean).join(delimiter);
 const codexBrowserMcpInspection = await inspectCodexBrowserMcpRuntime({ executable: process.execPath, packageRoot: join(repositoryRoot, "node_modules", "chrome-devtools-mcp") });
 const managedCodexRuntime = createEvalManagedCodexRuntime({
   root: join(userDataDirectory, "managed-runtimes"),
   developmentExecutable: process.env.RELAYER_CODEX_BINARY ? resolve(process.env.RELAYER_CODEX_BINARY) : undefined,
-  enableMaintenance: false,
 });
 const acquireEvalProviderExecution = createEvalCodexExecutionLease(
   () => managedCodexRuntime.resolve(),
 );
 
-const primeProfile = await loadEvalPrimeProfile({ isPackaged: false });
+const primeProfile = await loadEvalPrimeProfile();
 const primePythonClientRoot = join(repositoryRoot, "python", "relayer-graph", "src");
 process.env.RELAYER_PRIME_PYTHON_CLIENT_ROOT = primePythonClientRoot;
 const managedPrimeRuntime = createEvalManagedPrimeRuntime({
   root: join(userDataDirectory, "managed-runtimes"), appRoot: repositoryRoot,
-  pythonClientRoot: primePythonClientRoot, isPackaged: false,
+  pythonClientRoot: primePythonClientRoot,
 });
 let primeProvider;
 let dashboard;
@@ -165,13 +164,6 @@ async function start() {
   ownsProfileLock = true;
   if (stopping) { await lock.close(); await unlink(profileLock); ownsProfileLock = false; requireRunning(); }
   try { await lock.writeFile(String(process.pid)); } finally { await lock.close(); }
-  const pruning = await managedCodexRuntime.pruneInactiveInstallations();
-  if (pruning.failures.length) {
-    console.error("Retired managed runtime cleanup failed:", new AggregateError(
-      pruning.failures.map(({ error }) => error),
-      "One or more retired managed runtimes could not be removed.",
-    ));
-  }
   requireRunning();
   const runtimeSession = await graphRuntime.start();
   requireRunning();
@@ -261,7 +253,6 @@ async function start() {
   if (stopping) { await dashboard.close(); requireRunning(); }
   console.log(`Relayer Eval: ${dashboard.url}\nKeep this terminal open. Ctrl-C stops Eval; closing a tab does not.`);
   const localAutorun = resolveLocalSimulatedUserAutorun({
-    packaged: false,
     availableHarnessConfigurationNames: evalService.catalog().harnessConfigurations
       .map((configuration) => configuration.name),
   });
