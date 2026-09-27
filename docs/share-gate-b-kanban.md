@@ -144,12 +144,14 @@ two-repository state until `SHR-SPLIT-7` is complete.
 
 - Exact public/private commits and artifact/package digests are recorded in the
   handoff; no real user export is part of either repository or package.
-- Public journey: `test/conversation-export-eval-e2e.test.mjs` drives real Rust
-  graph/app servers, Electron-main coordination, a protocol-compatible publish
-  fixture, lost-response retry, and the production viewer template. Private
-  tests separately drive the real service with deterministic storage/auth fakes,
-  and the package smoke initializes the real public artifact from the Lambda ZIP.
-  A single durable cross-repository journey remains an explicit mapping gap.
+- Joined journey: `test/conversation-export-eval-e2e.test.mjs`, when invoked by
+  the private `test:joined-production-journey` runner, drives real Rust graph/app
+  servers, Electron-main coordination and HTTP transport, signed fake-JWKS
+  authentication, the real private service router, immutable fake storage,
+  lost-response retry, served-byte parsing, and the production
+  `bootPublicViewer`/`ProductWorkspace`. The ordinary public-only invocation
+  retains its protocol fixture, and the private runner fails closed when the
+  selected public checkout lacks the joined hook.
 - Focused checkpoints: 109 integrated share/service/viewer/telemetry/template
   tests, Rust share redaction tests, and the persisted-product export seam passed.
 - Declared evidence: focused suites, package/TypeScript checks, telemetry,
