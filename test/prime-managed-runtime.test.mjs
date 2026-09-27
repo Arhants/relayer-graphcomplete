@@ -27,7 +27,7 @@ describe("Prime managed runtime", () => {
     const recipe = resolveManagedRuntimeRecipe("prime@0.8.1", "macos-arm64");
     expect(recipe.runtimeContract).toMatchObject({
       primeSourceCommit: "f6130839ad3043f1cd3d5294fe03023035bfcd5c",
-      primeBridgeCommit: "8f33cfc30a3ce5f52f158122f34d523418aeca3e",
+      primeBridgeCommit: "3635b59066ebf4facf1a6d0285b005056644226b",
       javascript: {
         dependencyClosureSha256: PRIME_AGENT_PACKAGED_DEPENDENCY_CLOSURE_SHA256_BY_TARGET["darwin-arm64"],
         repositoryDependencyClosureSha256: PRIME_AGENT_REPOSITORY_DEPENDENCY_CLOSURE_SHA256,

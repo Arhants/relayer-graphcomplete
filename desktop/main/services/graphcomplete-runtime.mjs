@@ -83,12 +83,18 @@ function validatedModelCapabilities(value) {
       || !Number.isSafeInteger(entry.contextWindow)
       || entry.contextWindow < 1
       || !Number.isSafeInteger(entry.maxOutputTokens)
-      || entry.maxOutputTokens < 1) {
+      || entry.maxOutputTokens < 1
+      || (entry.reasoning !== undefined && typeof entry.reasoning !== "boolean")
+      || (entry.imageInput !== undefined && typeof entry.imageInput !== "boolean")
+      || (entry.reasoningEffort !== undefined && typeof entry.reasoningEffort !== "boolean")) {
       throw new Error("Provider adapter returned invalid model capabilities.");
     }
     entries.push([modelId, Object.freeze({
+      ...(entry.imageInput === undefined ? {} : { imageInput: entry.imageInput }),
       contextWindow: entry.contextWindow,
       maxOutputTokens: entry.maxOutputTokens,
+      ...(entry.reasoning === undefined ? {} : { reasoning: entry.reasoning }),
+      ...(entry.reasoningEffort === undefined ? {} : { reasoningEffort: entry.reasoningEffort }),
     })]);
   }
   return Object.freeze(Object.fromEntries(entries));

@@ -132,6 +132,13 @@ impl fmt::Display for SearchIndexRevision {
 /// `relayer-graph-server` owns the engine. That keeps the C++/CMake/OpenSSL
 /// toolchain out of graph-core, which `relayer-app-server` also depends on.
 pub trait SearchIndex: Send + Sync + 'static {
+    /// Wait for target-local startup repair before taking publication or SQLite
+    /// locks. Dropping this future must cancel the wait without publishing work.
+    /// Canonical-unknown retry validation remains the transaction's responsibility.
+    fn wait_until_available(&self, _target: SearchTarget) -> SearchIndexFuture<()> {
+        Box::pin(async { Ok(()) })
+    }
+
     /// The revision the store itself holds for a target, or `None` when it holds
     /// none.
     ///

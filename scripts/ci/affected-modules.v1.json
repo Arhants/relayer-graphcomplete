@@ -109,6 +109,7 @@
       "prefix": "desktop/",
       "package": "relayer-desktop",
       "packaging": true,
+      "packagingExcludedPrefixes": ["desktop/eval-main/", "desktop/eval-renderer/"],
       "vitestFiles": [
         "test/composer-context-state.test.mjs",
         "test/composer-provider-lifecycle.test.mjs",

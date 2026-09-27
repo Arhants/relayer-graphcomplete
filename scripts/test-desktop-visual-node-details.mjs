@@ -330,6 +330,30 @@ async function run() {
   invariant(importedScreenshotDirectory && importedScreenshot.screenshot.tileCount >= 1,
     "Imported image evidence was not retained by ReviewSession.");
 
+  let primeVisual;
+  if (process.env.RELAYER_PRIME_VISUAL_EXPORT) {
+    const primeRun = await evalService.importConversation(process.env.RELAYER_PRIME_VISUAL_EXPORT);
+    const primeExecution = primeRun.executions[0];
+    const primeThreadId = primeExecution.threadIds[0];
+    const primeThread = await productRequest(productSession, `/api/threads/${primeThreadId}`);
+    const primeTurn = primeThread.interactions.find((item) => item.completionStatus === "accepted");
+    const primeRoot = primeTurn.completionOutput.rootLayer;
+    const primeNode = primeRoot.nodes.find((item) => item.title === "Prime visual answer");
+    invariant(primeNode?.authoredDetail?.assets.length === 1, "Prime export lost its compiled image pin");
+    reviewWindow.destroy();
+    const primeReview = await openReview({ execution: primeExecution, threadId: primeThreadId, turnId: primeTurn.id, rootLayerId: primeRoot.layer.id });
+    reviewWindow = primeReview.window;
+    const primeControl = controlByName(primeReview.state, "Open Prime visual answer", "node");
+    await primeReview.session.interact({ elementRef: primeControl.elementRef, activate: true });
+    const primeAsset = await waitForRenderedAsset(reviewWindow);
+    const primeState = await primeReview.session.state();
+    invariant(controlByName(primeState, "Continue", "invoke-action")?.disabled === true, "Prime invoke escaped review authority");
+    const primeScreenshot = await primeReview.session.screenshot({ target: { kind: "element", elementRef: "node-detail" }, mode: "full", label: "Prime Python authored accepted visual detail" });
+    primeVisual = { integritySha256: primeNode.authoredDetail.integritySha256, renderedAsset: primeAsset,
+      screenshot: primeScreenshot.screenshot, screenshotDirectory: primeReview.session.artifactDirectoryFor(primeScreenshot.screenshot.screenshotId),
+      importedFromPrimeFactoryPython: true };
+  }
+
   const manifest = {
     schemaVersion: 1,
     paidInferenceCalls: 0,
@@ -341,6 +365,7 @@ async function run() {
     screenshot: screenshot.screenshot,
     screenshotDirectory,
     assertions: {
+      ...(primeVisual === undefined ? {} : { primeVisual }),
       ordinaryEvalProductState: true,
       authoredLayoutMounted: true,
       controlsDiscovered: expectedControls.map(([name]) => name),

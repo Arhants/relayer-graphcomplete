@@ -182,6 +182,8 @@ export interface HarnessTraceSink {
 export interface HarnessCompletionTraceContext {
   readonly productInteractionId: number;
   readonly personalPresentationVersionId?: number;
+  /** Product-owned key for the same stored pin, never the current configuration default. */
+  readonly personalPresentationVersionKey?: string;
 }
 
 export interface HarnessTraceDescriptor {
@@ -266,6 +268,9 @@ export type HarnessExecutionAccess =
       readonly modelCapabilities?: Readonly<Record<string, Readonly<{
         readonly contextWindow: number;
         readonly maxOutputTokens: number;
+        readonly reasoning?: boolean;
+        readonly reasoningEffort?: boolean;
+        readonly imageInput?: boolean;
       }>>>;
       readonly runtime?: HarnessManagedRuntimeAccess;
     }

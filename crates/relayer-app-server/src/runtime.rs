@@ -207,6 +207,7 @@ pub(crate) struct PreparedInteraction {
     configuration: HarnessConfiguration,
     model_selection: Option<ExecutionModelSelection>,
     personal_presentation_version_id: Option<i64>,
+    personal_presentation_version_key: Option<String>,
     /// The policy this execution was admitted under. A recursive child launch must carry it
     /// too: once a session has taken a dynamic policy update, every later execution needs one.
     harness_policy: Option<ExecutionHarnessPolicy>,
@@ -617,6 +618,7 @@ impl RuntimeClient {
                         | "personal-presentation-v1"
                         | "personal-presentation-v2"
                         | "personal-presentation-v3"
+                        | "personal-presentation-v4"
                 ) =>
             {
                 Ok(Some(value))
@@ -770,6 +772,9 @@ impl RuntimeClient {
             personal_presentation_version_id: command
                 .personal_presentation
                 .map(|value| value.version_interaction_node_id),
+            personal_presentation_version_key: command
+                .personal_presentation
+                .map(|value| value.version_key.clone()),
         })
     }
 
@@ -876,6 +881,10 @@ impl RuntimeClient {
             if let Some(version_id) = prepared.personal_presentation_version_id {
                 complete_body["traceContext"]["personalPresentationVersionId"] =
                     Value::from(version_id);
+            }
+            if let Some(version_key) = prepared.personal_presentation_version_key.as_ref() {
+                complete_body["traceContext"]["personalPresentationVersionKey"] =
+                    Value::from(version_key.clone());
             }
             if let Some(model_selection) = prepared.model_selection.as_ref() {
                 complete_body["model"] = serde_json::json!({
@@ -989,6 +998,13 @@ impl RuntimeClient {
             },
             "traceContext": { "productInteractionId": product_interaction_id },
         });
+        if let Some(version_id) = prepared.personal_presentation_version_id {
+            body["traceContext"]["personalPresentationVersionId"] = Value::from(version_id);
+        }
+        if let Some(version_key) = prepared.personal_presentation_version_key.as_ref() {
+            body["traceContext"]["personalPresentationVersionKey"] =
+                Value::from(version_key.clone());
+        }
         if let Some(model_selection) = prepared.model_selection.as_ref() {
             body["model"] = serde_json::json!({
                 "providerId": model_selection.provider_id.as_str(),
@@ -2003,6 +2019,7 @@ impl RuntimeClient {
     }
 }
 
+#[derive(Clone, Copy)]
 struct PersonalPresentationNodeDefinition {
     client_key: &'static str,
     kind: &'static str,
@@ -2099,6 +2116,26 @@ const PERSONAL_PRESENTATION_V3_NODES: &[PersonalPresentationNodeDefinition] = &[
     },
 ];
 
+const PERSONAL_PRESENTATION_V4_NODES: &[PersonalPresentationNodeDefinition] = &[
+    PERSONAL_PRESENTATION_V2_NODES[0],
+    PERSONAL_PRESENTATION_V2_NODES[1],
+    PERSONAL_PRESENTATION_V2_NODES[2],
+    PersonalPresentationNodeDefinition {
+        client_key: "authored-visual-node-details",
+        kind: "presentation-preference",
+        icon: "layout-template",
+        title: "Authored visual Node Details",
+        detail: "Author a compiled visual Node Detail for every node you create; do not leave any authored node on plain Markdown alone. Use the active harness client to author and checkpoint components before submitting the node. When a node has actions, create each stable action object with its exact source layer before checkpointing, bind that same object in the page, and add it to the graph after submitting the layer. Keep every authored page self-contained, keyboard operable, and accessible. Mount every action belonging to the node inside its detail page.",
+    },
+    PersonalPresentationNodeDefinition {
+        client_key: "explanatory-presentation",
+        kind: "presentation-preference",
+        icon: "palette",
+        title: "Explanatory presentation",
+        detail: "Shape the response around what the user needs to understand or do. When relationships, mechanisms, comparisons, quantities, sequences, or spatial structure carry the explanation, make those relationships visible through an appropriate representation. Let the content determine the form and level of detail. Visual elements should communicate information, not merely decorate prose. Keep the central answer clear, readable, accessible, and proportionate to the task. Use images or controls when they materially improve understanding or help the user act. Concise prose is appropriate when it communicates the task well.",
+    },
+];
+
 fn personal_presentation_definition(
     version_key: &str,
 ) -> Result<PersonalPresentationDefinition, RuntimeError> {
@@ -2126,6 +2163,18 @@ fn personal_presentation_definition(
             nodes: PERSONAL_PRESENTATION_V3_NODES,
             edges: &[[0, 1], [0, 2], [0, 3]],
             placements: &[[0.5, 0.2], [0.25, 0.75], [0.75, 0.75], [0.9, 0.35]],
+        }),
+        "personal-presentation-v4" => Ok(PersonalPresentationDefinition {
+            interaction_text: "Personal presentation V4",
+            nodes: PERSONAL_PRESENTATION_V4_NODES,
+            edges: &[[0, 1], [0, 2], [0, 3], [0, 4]],
+            placements: &[
+                [0.5, 0.15],
+                [0.2, 0.5],
+                [0.8, 0.5],
+                [0.3, 0.85],
+                [0.7, 0.85],
+            ],
         }),
         _ => Err(RuntimeError::Configuration(format!(
             "unknown personal presentation version {version_key}"
@@ -2877,7 +2926,7 @@ mod tests {
                                     "sourceCompletionId": 17,
                                     "actionId": 23
                                 },
-                                "traceContext": { "productInteractionId": 29 }
+                                "traceContext": { "productInteractionId": 29, "personalPresentationVersionId": 90, "personalPresentationVersionKey": "personal-presentation-v1" }
                             })
                         );
                         observed_starts.fetch_add(1, Ordering::SeqCst);
@@ -2965,7 +3014,8 @@ mod tests {
                 settings: json!({}),
             },
             model_selection: None,
-            personal_presentation_version_id: None,
+            personal_presentation_version_id: Some(90),
+            personal_presentation_version_key: Some("personal-presentation-v1".into()),
         };
         runtime.temporal_features.provider_recursion = false;
         assert!(!runtime.agent_authored_complete_available(&prepared));
@@ -3778,6 +3828,27 @@ mod tests {
             .ensure_personal_presentation_version("personal-presentation-v3")
             .await
             .unwrap();
+        let v4 = runtime
+            .ensure_personal_presentation_version("personal-presentation-v4")
+            .await
+            .unwrap();
+        assert_eq!(v4.closure.layers[0].nodes.len(), 5);
+        assert_eq!(v4.closure.layers[0].edges.len(), 4);
+        assert_eq!(
+            v4.closure.layers[0].nodes[4].title,
+            "Explanatory presentation"
+        );
+        assert!(
+            v4.closure.layers[0].nodes[4]
+                .detail
+                .contains("Let the content determine")
+        );
+        assert!(
+            !v4.closure.layers[0].nodes[3]
+                .detail
+                .contains("detailAuthoring")
+        );
+        assert_ne!(v3.interaction_node_id, v4.interaction_node_id);
         assert_eq!(v3.closure.layers[0].nodes.len(), 4);
         assert_eq!(v3.closure.layers[0].edges.len(), 3);
         assert_eq!(
@@ -4167,6 +4238,10 @@ mod tests {
                     assert_eq!(body["interactionId"], 7);
                     assert_eq!(body["graph"]["nodeId"], 41);
                     assert_eq!(body["traceContext"]["personalPresentationVersionId"], 90);
+                    assert_eq!(
+                        body["traceContext"]["personalPresentationVersionKey"],
+                        "personal-presentation-v1"
+                    );
                     Json(json!({ "output": { "nodeId": 41 } }))
                 }),
             )

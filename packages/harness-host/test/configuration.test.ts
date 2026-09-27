@@ -84,7 +84,7 @@ describe("harness configuration", () => {
   });
 
   it.each([
-    ["codex-basic", "medium", 7, "layered-navigation-multi-agent-v1"],
+    ["codex-basic", "medium", 8, "layered-navigation-multi-agent-v1"],
     ["codex-basic-high", "high", 4, undefined],
   ])("loads the checked-in %s configuration", async (name, modelReasoningEffort, revision, promptProfile) => {
     await expect(loadHarnessConfiguration(join(repositoryRoot, `harnesses/${name}.yaml`))).resolves.toEqual({
@@ -109,15 +109,24 @@ describe("harness configuration", () => {
         deny: [],
       },
       executionAccessContracts: ["managed-runtime@1", "secret@1"],
-      modelDefaults: { familyPolicy: { id: "codex-default-family", version: 2 } },
+      modelDefaults: { familyPolicy: { id: "codex-default-family", version: name === "codex-basic" ? 3 : 2 } },
       ...(name === "codex-basic" ? { complete: { agentAuthored: true }, graphCapabilityProfile: { search: "query-v1" } } : {}),
       settings: {
         modelReasoningEffort,
+        ...(name === "codex-basic" ? { personalPresentationVersion: "personal-presentation-v4" } : {}),
         ...(promptProfile === undefined ? {} : { promptProfile }),
         skipGitRepoCheck: true,
       },
     });
   });
+
+  it.each(["codex-basic", "prime-agent-basic", "prime-agent-deep"])(
+    "pins the shipped %s configuration to explanatory presentation V4",
+    async (name) => {
+      const configuration = await loadHarnessConfiguration(join(repositoryRoot, `harnesses/${name}.yaml`));
+      expect(configuration.settings.personalPresentationVersion).toBe("personal-presentation-v4");
+    },
+  );
 
   it("admits every production Claude subscription alias through the checked-in harness", async () => {
     const configuration = await loadHarnessConfiguration(join(repositoryRoot, "harnesses/claude-basic.yaml"));
@@ -282,6 +291,19 @@ describe("harness configuration", () => {
     expect(digestHarnessConfiguration(base)).not.toBe(digestHarnessConfiguration(changedRules));
   });
 
+  it("keeps presentation selection outside provider-session identity without ignoring execution settings", () => {
+    const base = parseHarnessConfiguration({ schemaVersion: 1, name: "codex-basic", implementation: "codex.basic", implementationVersion: 1, permissionBindings, settings: { modelReasoningEffort: "medium" } });
+    const promoted = parseHarnessConfiguration({ ...base, revision: 8, settings: { ...base.settings, personalPresentationVersion: "personal-presentation-v3" } });
+    expect(sameHarnessExecutionConfiguration(base, promoted)).toBe(true);
+    expect(digestHarnessConfiguration(base)).not.toBe(digestHarnessConfiguration(promoted));
+    expect(sameHarnessExecutionConfiguration(
+      { ...base, implementation: "claude.basic" },
+      { ...promoted, implementation: "claude.basic" },
+    )).toBe(false);
+    expect(sameHarnessExecutionConfiguration(promoted, { ...promoted, settings: { ...promoted.settings, modelReasoningEffort: "high" } })).toBe(false);
+    expect(sameHarnessExecutionConfiguration(promoted, { ...promoted, permissionBindings: { auto: { sandboxMode: "danger-full-access" } } })).toBe(false);
+  });
+
   it("rejects legacy model compatibility without explicit execution access", () => {
     expect(() => parseHarnessConfiguration({
       schemaVersion: 1,
@@ -357,6 +379,15 @@ describe("harness configuration", () => {
     expect(digestHarnessConfiguration(changed)).not.toBe(digestHarnessConfiguration(left));
   });
 
+  it("treats only Prime presentation selection as per-run Product metadata", () => {
+    const base = parseHarnessConfiguration({ schemaVersion: 1, name: "prime", implementation: "prime.agent", implementationVersion: 1, permissionBindings: { full: {} }, settings: { thinkingLevel: "medium" } });
+    const promoted = { ...base, settings: { ...base.settings, personalPresentationVersion: "personal-presentation-v3" } };
+    expect(sameHarnessExecutionConfiguration(base, promoted)).toBe(true);
+    expect(digestHarnessConfiguration(base)).not.toBe(digestHarnessConfiguration(promoted));
+    expect(sameHarnessExecutionConfiguration(base, { ...promoted, settings: { ...promoted.settings, thinkingLevel: "high" } })).toBe(false);
+    expect(sameHarnessExecutionConfiguration({ ...base, implementation: "claude.basic" }, { ...promoted, implementation: "claude.basic" })).toBe(false);
+  });
+
   it("allows many named configurations to select the same implementation", async () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-config-"));
     const fast = join(directory, "fast.yaml");
@@ -383,6 +414,9 @@ describe("harness configuration", () => {
     expect([...catalog.keys()]).toEqual(["prime-agent-basic", "prime-agent-deep"]);
     expect([...catalog.values()].map(({ implementation }) => implementation)).toEqual(["prime.agent", "prime.agent"]);
     expect(catalog.get("prime-agent-basic")?.settings).not.toEqual(catalog.get("prime-agent-deep")?.settings);
+    for (const configuration of catalog.values()) {
+      expect(configuration.modelDefaults?.familyPolicy).toEqual({ id: "prime-default-family", version: 1 });
+    }
     for (const selected of catalog.values()) {
       expect(selected.permissionBindings).toEqual({
         ask: { boundary: "workspace-write@1", reviewer: "user", networkAccessEnabled: true },

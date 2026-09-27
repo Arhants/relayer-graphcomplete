@@ -12,24 +12,24 @@ import {
 
 export const PRIME_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
 export const PRIME_AGENT_SOURCE_COMMIT = "f6130839ad3043f1cd3d5294fe03023035bfcd5c";
-export const PRIME_AGENT_BRIDGE_COMMIT = "8f33cfc30a3ce5f52f158122f34d523418aeca3e";
+export const PRIME_AGENT_BRIDGE_COMMIT = "3635b59066ebf4facf1a6d0285b005056644226b";
 export const PRIME_AGENT_PACKAGE_VERSION = "0.8.1";
 export const PRIME_AGENT_PACKAGE_SHA256 = Object.freeze({
   "@earendil-works/pi-agent-core": "56d1bc00321a310c9e75c0ca33a6241fec0f559c514a046acc1d68d1c7be4f08",
   "@earendil-works/pi-ai": "7560b021e023be9b39f376ba497cf64b9e54b2adb8be3d73b031f0033c4dd700",
-  "@earendil-works/pi-coding-agent": "a5608c3d617d345a4f1315e9f314c61dfb047c0741d41d0d3eb918ba2c082aaf",
+  "@earendil-works/pi-coding-agent": "e1aaf66cb2c79c42f12920a4bc3faf02db34e42a26ac144571f2f987e8bbde9e",
   "@earendil-works/pi-tui": "40517b0d5600557a31e395a0c344dbb9af7d3f8c000bea65561ef81b83142507",
 });
 export const PRIME_AGENT_PACKAGE_TREE_SHA256 = Object.freeze({
   "@earendil-works/pi-agent-core": "16223dfa60386a61d143c4cbdd4dcfe0316c2962844219e432426151ef4b8954",
   "@earendil-works/pi-ai": "2bbbd8b3207c9d5c21bfc274023dab7a9fd2755ac6c05c6a9be6d8c19f635704",
-  "@earendil-works/pi-coding-agent": "93cf3da2c0777fd7cf88db0e7a524895625c6c2507541eaeb3d6f325ab4ee89f",
+  "@earendil-works/pi-coding-agent": "7e6d1580a6b08b0ad37f52f5b38902705a93374def95bb603fbd7bbc33a3be6f",
   "@earendil-works/pi-tui": "f86a8ab553edaf05e1fc4f4d6cb48c313e5a93f2f3490f74e510661c52d74447",
 });
 export const PRIME_AGENT_PACKAGED_DEPENDENCY_CLOSURE_SHA256_BY_TARGET = Object.freeze({
-  "darwin-arm64": "8c86ed5c66b6022559fb9903426fec212a757bd4837eff2f7dafea6fe1f54062",
+  "darwin-arm64": "1253fd136c0d63e751fffdae68327a1b5cbb3176f2b9780de372744f8b83ef41",
 });
-export const PRIME_AGENT_REPOSITORY_DEPENDENCY_CLOSURE_SHA256 = "afd4e30957510486bc8ca473a41a616313783a4243000bb32f5f2536797b5af6";
+export const PRIME_AGENT_REPOSITORY_DEPENDENCY_CLOSURE_SHA256 = "02f15fb2ce6366f1e9709e66336a94476dc6605bb8618885afea9e7d2e19766f";
 export const PRIME_AGENT_HARNESS_CONFIGURATIONS = Object.freeze([
   "prime-agent-basic.yaml",
 ]);
@@ -50,9 +50,9 @@ export const PRIME_AGENT_RUNTIME_FUNCTIONS = Object.freeze([
 export const PRIME_AGENT_SESSION_FUNCTIONS = Object.freeze(["waitForRlmQuiescence"]);
 export const PRIME_AGENT_ASSET_SHA256 = Object.freeze({
   harnessConfigurations: Object.freeze({
-    "prime-agent-basic.yaml": "f0875609467c9727662bf7a78fbda9ba4470a034a2f85b6a50b87a2820145c0e",
+    "prime-agent-basic.yaml": "51e96a50ca5cba7240437fcd5846d120b01b62c0de738a1d126afadf048848bf",
   }),
-  pythonPackageTree: "501b35589f70ff67f34a200fc1a7fd05b4c2a7256400fb7c4d260848a122995a",
+  pythonPackageTree: "38f7273ca0c9ce3bc6ee4e2b87667063021c797052c9d2a1034091979dba1019",
 });
 
 export function selectPrimeAgentDependencyClosureSha256({ isPackaged, javascriptContract }) {
