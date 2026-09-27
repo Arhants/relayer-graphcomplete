@@ -7,7 +7,7 @@
     "sha256": "b05db96cb2d008e213b3bc6e3398b958f4670ed919547329a607be8f0dc7d865"
   },
   "source": {
-    "commit": "b0358251107058360ea9bafa638ff0f002807459",
+    "commit": "752f92ae1fcd6587bbb59be455353bb86b884491",
     "dirty": false,
     "sourceFiles": {
       "desktop/renderer/assets/relayer-logo.svg": {
@@ -23,8 +23,8 @@
         "sha256": "9fe98b2a55f720d7a29f42a31d332e43c880c3b6fd7ad44d1000553a1f0c12c8"
       },
       "desktop/renderer/src/action-invocation-state.js": {
-        "bytes": 2313,
-        "sha256": "4f3aafd6bcf79a0a3d81cb37ce0a0f1aec1f21115ea9115b21ac0c5bf9ad42be"
+        "bytes": 2567,
+        "sha256": "890d8f69c6a8310a0221e1a6ce35c9a6fb0735b8826be009bd68ceb56c06d4ea"
       },
       "desktop/renderer/src/api.js": {
         "bytes": 636,
@@ -91,16 +91,16 @@
         "sha256": "fbcfb3cfbe6ff4650af39839551ccfa13eb9d2dbcc12abb597b8bf9fba55ef64"
       },
       "desktop/renderer/src/product-workspace/node-detail-runtime.js": {
-        "bytes": 26320,
-        "sha256": "32f440a289bc2cd62e4d68d66745d0a292c3f9ba0273e42fd759a3de8f249bc7"
+        "bytes": 28263,
+        "sha256": "f4a5cbc7a0e55c87f25320cdd0674b5c4394a594020609bfc87350b61119614c"
       },
       "desktop/renderer/src/product-workspace/view.js": {
         "bytes": 14045,
         "sha256": "5acd7064cadf5090c92f90a205515f0c78de8370e2e15ac3a6fc59032a8fde5f"
       },
       "desktop/renderer/src/product-workspace/workspace.js": {
-        "bytes": 204685,
-        "sha256": "2d85ae71ca3b7bae2387b81969b0d3d49e881407b605974b42c0a9f1a0d67955"
+        "bytes": 205154,
+        "sha256": "3743b7c0e5454e015228f1d3cdca53a39988832363564532f5c480708bfb0718"
       },
       "desktop/renderer/src/public-share-viewer/adapter.js": {
         "bytes": 4137,
@@ -116,7 +116,7 @@
       },
       "desktop/renderer/src/public-share-viewer/template.js": {
         "bytes": 6255,
-        "sha256": "5c3db23bdd1e28935c46b8e1ff5c99e47e12c915483bb79601dad6256ee23a98"
+        "sha256": "19a4af2a39d8c519782b7e9c841a0c5abf1d1682bb3a4ba77365ec76a9db2248"
       },
       "desktop/renderer/src/public-share-viewer/viewer.css": {
         "bytes": 4340,
@@ -150,7 +150,7 @@
   },
   "browser": {
     "electron": "43.0.0",
-    "origin": "http://127.0.0.1:50227",
+    "origin": "http://127.0.0.1:62092",
     "networkRequests": [],
     "unchangedUrl": true,
     "paidInferenceCalls": 0,
