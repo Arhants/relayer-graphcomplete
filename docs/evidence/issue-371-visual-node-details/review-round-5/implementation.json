@@ -1,0 +1,31 @@
+{
+  "kind": "implementation-evidence-not-independent-review",
+  "scope": "Restore the sealed Prime ASAR dependency closure without weakening parsed Node Detail fixture grading",
+  "root_cause": "Adding parse5 directly to eval-runner introduced a second workspace-local parse5 installation into the packaged dependency layout. The Prime closure digest changed even though Prime's reviewed dependencies did not. The graph-client package already owns the required parse5 version.",
+  "files": {
+    "packages/graph-client/src/detail.ts": "2d7a19b1edf03e74a4a338ca00ccc490ed9b45cc3bbff3f4305e701aa857d4a3",
+    "packages/graph-client/src/index.ts": "f90b97b3d582bb2aa555a7cfb087c0028e8a8e4980857f27abace5719e6190f6",
+    "packages/graph-client/test/detail.test.ts": "72ca1d688f9d48b0b463d13564000961a57df63be6e1bd84975436dedbc17a31",
+    "packages/eval-runner/src/fixtures/node-detail.ts": "7b4292f890200fffe6004f5bdf8a436eccc978a76bbec64ad95da7fd8ce95ff2",
+    "packages/eval-runner/package.json": "5cef632ed2af845e653103f9bfa4772128ac5e86ddf35b93b00b045dd0052f5b",
+    "package-lock.json": "98879a967b85ab7e583f8bdc1c3fe20c8f236f0de533b695fb696017a94423a6"
+  },
+  "implementation": [
+    "Graph-client exports a narrow advisory helper that parses one compiled component and requires exactly one mount binding whose element tag equals the declared host.",
+    "Eval-runner consumes that helper through its existing graph-client dependency and no longer declares parse5 directly.",
+    "The lockfile is byte-identical to commit 0636005e's parent, before the packaging regression. Prime manifests and closure constants were not resealed or bypassed."
+  ],
+  "verification": {
+    "focused_log": "logs/focused.txt",
+    "asar_diagnostic_log": "logs/asar-diagnostic.txt",
+    "diagnostic_config": {
+      "builder": "the repository's desktop electron-builder configuration",
+      "target": "darwin-arm64 directory",
+      "included": ["real application files", "real npm dependency collection", "real ASAR layout"],
+      "omitted": ["native extraResources", "afterPack hook", "afterSign hook", "publication"],
+      "reason": "Exercise the exact JavaScript dependency layout and existing closure collector without a cold native compilation or claiming full package proof."
+    }
+  },
+  "result": "The diagnostic ASAR closure equals the unchanged reviewed Prime digest 8c86ed5c66b6022559fb9903426fec212a757bd4837eff2f7dafea6fe1f54062.",
+  "limits": "This is targeted JavaScript closure evidence. Parent-owned full check/build and the real packaged-app gate remain required."
+}

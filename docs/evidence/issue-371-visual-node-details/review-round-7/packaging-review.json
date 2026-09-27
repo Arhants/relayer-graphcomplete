@@ -1,0 +1,32 @@
+{
+  "reviewer": "GPT-5.6-Sol /root/build_366",
+  "reviewType": "independent read-only packaging verifier review",
+  "base": "d1a45f2e",
+  "scopeHashes": {
+    "desktop/packaging/verify-bundled-app-server.mjs": "6b7091f3ce5685f4878f48564799a34c51420ce35ce91e403d7bd8929b8b21a5",
+    "test/desktop-shell.test.mjs": "677bf9d2abdfa9b21e7f48d9e60ccc21c952b28df7261e109224bf3bda7368e9"
+  },
+  "verdict": "clean",
+  "assertions": [
+    "The verifier requires the exact addon filename derived from the locked platform package version rather than accepting an arbitrary versioned native file.",
+    "The packaged sharp core and native package metadata versions must match package-lock.json.",
+    "Platforms whose native package declares a sharp-libvips dependency must preserve the exact locked dependency version and the package-declared loader and binary exports.",
+    "Windows is handled separately because libvips ships inside the native package; locked Sharp 0.35.4 requires libvips-42.dll and libvips-cpp-8.18.6.dll, and unknown Sharp versions fail closed pending layout review.",
+    "Both Windows DLL omissions and macOS addon, loader, and libvips binary omissions are exercised through the production verifier seam."
+  ],
+  "resolvedFinding": {
+    "finding": "The first reviewed revision allowed a Windows bundle with the exact addon but without either embedded libvips DLL to pass.",
+    "resolution": "The final verifier maps the reviewed locked Windows Sharp version to its embedded libvips ABI version and requires both DLLs; focused negative cases cover each omission."
+  },
+  "verificationEvidence": {
+    "reportedCommand": "npx vitest run test/desktop-shell.test.mjs",
+    "reportedResult": "pass: 1 file, 46 tests",
+    "reportedLog": "/tmp/494-round7-packaging.log",
+    "reviewerIndependentRun": false
+  },
+  "limits": [
+    "This review verifies package inventory logic and fixtures; it does not claim an actual Windows packaged runtime launch.",
+    "The assertion is invalid if either scoped file hash changes."
+  ],
+  "actionableFindings": []
+}
