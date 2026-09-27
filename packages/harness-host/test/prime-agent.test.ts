@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { MAX_HARNESS_APPROVAL_TEXT_LENGTH, parseHarnessApprovalRequestInput } from "../src/approval.js";
-import { PrimeAgentHarness } from "../src/implementations/prime-agent.js";
+import { RELAYER_ICON_NAMES } from "@relayer/graph-client";
+import { PrimeAgentHarness, PYTHON_GRAPH_API_REFERENCE } from "../src/implementations/prime-agent.js";
 import { createNoopHarnessTraceSink, HarnessTraceStore } from "../src/trace.js";
 import type { HarnessConfiguration, HarnessRunContext, HarnessTraceEventInput, HarnessTraceSink } from "../src/types.js";
 import { expectGraphPresentationGuidance } from "./graph-presentation-guidance-assertions.js";
@@ -503,16 +504,41 @@ describe("PrimeAgentHarness", () => {
     expect(prompts[0]!.text).toContain("await graph.submit(11)");
     expect(prompts[0]!.text).toContain("graph with other live agents");
     expect(prompts[0]!.text).toContain("live, user-facing workspace");
+    // The graph is the user's interface, so mechanics never appear in its content.
+    expect(prompts[0]!.text).toContain("Never expose execution mechanics in graph content");
+    expect(prompts[0]!.text).toContain("rather than on every change");
     expect(prompts[0]!.text).toContain("await graph.get_current()");
     expect(prompts[0]!.text).toContain("await graph.advance_current(");
     expect(prompts[0]!.text).toContain("Advancing current does not complete the interaction");
-    expect(prompts[0]!.text).not.toContain("prepare_complete");
-    expect(prompts[0]!.text).not.toContain("from relayer_graph import complete");
+    // Only the run the product granted a broker is taught explicit semantic child work.
+    expect(prompts[0]!.text).toContain("For explicit semantic child work");
+    expect(prompts[0]!.text).toContain("input_graph = await graph.prepare_complete(invoke_action)");
+    expect(prompts[0]!.text).toContain("from relayer_graph import complete");
+    expect(prompts[0]!.text).toContain("do not create semantic children by themselves");
+    // A root that ends its turn with children in flight fails, so it must await them first.
+    expect(prompts[0]!.text).toContain("Your turn ending does not wait for children");
+    // Each child event is one the root may act on; it moves its own current only when that helps the user.
+    expect(prompts[0]!.text).toContain("from relayer_graph import complete, CompletionWatch");
+    expect(prompts[0]!.text).toContain("changes = await watch.changes()");
+    // The watch takes the list the recipe fills, so the recipe must declare it.
+    expect(prompts[0]!.text).toContain("Start with children = [] and launch each child from its own input graph with children.append(complete(input_graph))");
+    // One prepared input graph identifies one completion, so each child needs its own invoke action.
+    expect(prompts[0]!.text).toContain("give each child its own invoke action");
+    expect(prompts[0]!.text).toContain("one input graph starts exactly one child");
+    expect(prompts[0]!.text).toContain("Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting.");
+    expect(prompts[0]!.text).toContain("never leave them in a background task");
+    // A stopped or failed child raises from child.result, so the root must catch it to integrate the rest.
+    expect(prompts[0]!.text).toContain("A stopped or failed child raises CompletionTerminalError there instead");
+    expect(prompts[0]!.text).toContain("catch it and integrate the work its error.current still retains");
     expect(prompts[1]!.text).not.toContain("prepare_complete");
     expect(prompts[1]!.text).not.toContain("from relayer_graph import complete");
     expect(prompts[0]!.text).toContain("exactly one NodePlacementObject(node, x, y) per member node");
     expect(prompts[0]!.text).toContain("Place a one-node layer at (0.5, 0.5)");
     expectGraphPresentationGuidance(prompts[0]!.text);
+    expectGraphAuthoringRules(prompts[0]!.text);
+    // The submit call directly follows the sentence that introduces it.
+    expect(prompts[0]!.text).toContain("Finish the root execution only by calling:\n\nawait graph.submit(11)");
+    expect(prompts[0]!.text).toContain("exactly one new root navigate action");
     expect(prompts[0]!.text).toContain("add_navigate_action(node, \"View evidence\"");
     expect(prompts[0]!.text).toContain("explicit descriptive client_key");
     expect(prompts[0]!.text).toContain("rerun the same authoring code with the same client_key values");
@@ -1061,6 +1087,10 @@ describe("PrimeAgentHarness", () => {
     const trace = recordingTrace();
     await harness.complete({
       ...context,
+      completionBroker: {
+        url: "http://127.0.0.1:43125/api/completions",
+        token: "12345678901234567890123456789012",
+      },
       trace: trace.sink,
       personalPresentation: {
         attachment: { interactionNodeId: 11, versionInteractionNodeId: 90, rootLayerId: 91 },
@@ -1081,6 +1111,7 @@ describe("PrimeAgentHarness", () => {
     expect(prompt).toContain('relation="expand"');
     expect(prompt).toContain('relation="reference"');
     expectGraphPresentationGuidance(prompt);
+    expectGraphAuthoringRules(prompt);
     expect(prompt).toContain("A flat answer is valid");
     expect(prompt).toContain("Author in whatever order fits the task");
     expect(prompt).toContain("final graph call must be await graph.submit(11)");
@@ -1088,6 +1119,7 @@ describe("PrimeAgentHarness", () => {
     expect(prompt).toContain("await graph.get_neighbors(11)");
     expect(prompt).toContain("ordinary graph.submit(11) automatically fulfills any lease");
     expect(prompt).toContain("There is no separate resolve_action call");
+    expect(prompt).toContain("input_graph = await graph.prepare_complete(invoke_action)");
     expect(prompt).toContain("Never mention or expose the size justification");
     expect(prompt).toContain("Every new root, expansion, and reference layer requires a version-1 LayerLayoutObject");
     expect(prompt).toContain("align comparisons deliberately");
@@ -2349,3 +2381,58 @@ function singleAdapterRunContext(
     accessBundle: { byProviderId: { [route.providerId]: access } },
   };
 }
+
+/**
+ * The graph rules Prime tripped on in live recursive runs: indented first cells, guessed
+ * API names, unsupported icons, descriptions off cards, and pointer moves the graph refused
+ * for losing the path back to the previous current layer.
+ */
+function expectGraphAuthoringRules(prompt: string): void {
+  expect(prompt).toContain("Top-level cell code starts at column 0; never indent it.");
+  expect(prompt).toContain("```python\nfrom relayer_graph import GraphSession\ngraph = await GraphSession.current()\n```");
+  expect(prompt).toContain(PYTHON_GRAPH_API_REFERENCE);
+  expect(prompt).toContain(`must be one of: ${RELAYER_ICON_NAMES.join(", ")}.`);
+  expect(prompt).toContain("Only a card accepts description, and a card requires one.");
+  // Graph core exempts the interaction root before enforcing draft ownership, so the rule states that exception.
+  expect(prompt).toContain("Apart from the interaction node's one root expand action, add actions only on draft nodes created for this interaction");
+  expect(prompt).toContain("the next current layer must keep a navigation path back to it");
+  expect(prompt).toContain('current["currentLayerId"], relation="reference", source_layer=new_layer');
+  // Graph core checks the same path on the final submit's Return, and only a draft node takes the action.
+  expect(prompt).toContain("to the root layer of your final graph.submit");
+  expect(prompt).toContain("every layer you make current needs at least one new draft node to carry that reference");
+}
+
+const pythonExecutable = process.platform === "win32" ? "python" : "python3";
+
+describe("Prime graph client reference", () => {
+  it("names only graph methods and keywords the Python client declares", () => {
+    const declared = JSON.parse(execFileSync(pythonExecutable, ["-c", `
+import inspect, json
+from relayer_graph import GraphSession
+print(json.dumps({
+    name: {
+        "async": inspect.iscoroutinefunction(member),
+        "parameters": [p for p in inspect.signature(member).parameters if p != "self"],
+    }
+    for name, member in inspect.getmembers(GraphSession, inspect.isfunction)
+    if not name.startswith("_")
+}))
+`], {
+      encoding: "utf8",
+      env: { ...process.env, PYTHONPATH: join(process.cwd(), "python", "relayer-graph", "src") },
+    })) as Record<string, { async: boolean; parameters: string[] }>;
+    const calls = [...PYTHON_GRAPH_API_REFERENCE.matchAll(/await graph\.(\w+)\(([^)]*)\)/g)];
+    expect(calls.length).toBeGreaterThan(8);
+    for (const [, method, argumentList] of calls) {
+      const signature = declared[method!];
+      expect(signature, `graph.${method}`).toBeDefined();
+      expect(signature!.async, `graph.${method} is async`).toBe(true);
+      const keywords = argumentList!.split(", ")
+        .map((argument) => /^(\w+)=/.exec(argument)?.[1])
+        .filter((keyword): keyword is string => keyword !== undefined);
+      for (const keyword of keywords) {
+        expect(signature!.parameters, `graph.${method}(${keyword}=...)`).toContain(keyword);
+      }
+    }
+  });
+});
