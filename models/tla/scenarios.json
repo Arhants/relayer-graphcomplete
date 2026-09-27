@@ -769,10 +769,11 @@
       "preset": "composer-replay",
       "init": "view = \"A\"",
       "promises": [
+        "UnsentDraftSurvives",
         "SettlementClearsOnlySentText",
         "SentTextIsNotShownAgain"
       ],
-      "summary": "A render during the POST re-enables the prompt; text typed then vanishes when the new turn loads.",
+      "summary": "A render during the POST re-enables the prompt; text typed then moves into the new turn's draft when it loads.",
       "steps": [
         [
           "Type"
@@ -798,9 +799,6 @@
           "RefreshReturns",
           "A"
         ]
-      ],
-      "violatedAtEnd": [
-        "UnsentDraftSurvives"
       ]
     },
     {
@@ -809,10 +807,11 @@
       "preset": "composer-replay",
       "init": "view = \"A\"",
       "promises": [
+        "UnsentDraftSurvives",
         "SettlementClearsOnlySentText",
         "SentTextIsNotShownAgain"
       ],
-      "summary": "Leaving the thread and returning during the POST, before the server records the turn, re-enables the prompt; text typed then vanishes when the new turn loads.",
+      "summary": "Leaving the thread and returning during the POST re-enables the prompt; text typed then moves into the new turn's draft when it loads.",
       "steps": [
         [
           "Type"
@@ -843,9 +842,6 @@
           "RefreshReturns",
           "A"
         ]
-      ],
-      "violatedAtEnd": [
-        "UnsentDraftSurvives"
       ]
     },
     {
@@ -1228,6 +1224,56 @@
         ],
         [
           "SendReturns"
+        ]
+      ]
+    },
+    {
+      "id": "composer-failed-send-restores-draft",
+      "module": "TurnComposer",
+      "preset": "composer-replay",
+      "init": "view = \"A\"",
+      "promises": [
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain"
+      ],
+      "summary": "A second send fails after the first send's turn arrived; its text returns to the composer.",
+      "steps": [
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "PostInserted",
+          "A"
+        ],
+        [
+          "PostSucceeds",
+          "A"
+        ],
+        [
+          "RefreshSkipped",
+          "A"
+        ],
+        [
+          "Settle",
+          "A"
+        ],
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "TurnArrives",
+          "A"
+        ],
+        [
+          "PostFails",
+          "A"
         ]
       ]
     }

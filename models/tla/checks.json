@@ -37,7 +37,7 @@
       "MaxText": "2",
       "MaxRev": "5",
       "BackgroundRenders": "TRUE",
-      "CarryUnsentDraft": "FALSE",
+      "CarryUnsentDraft": "TRUE",
       "StableScopeRevision": "TRUE"
     },
     "composer-fixed": {
@@ -55,7 +55,7 @@
       "MaxText": "2",
       "MaxRev": "12",
       "BackgroundRenders": "TRUE",
-      "CarryUnsentDraft": "FALSE",
+      "CarryUnsentDraft": "TRUE",
       "StableScopeRevision": "TRUE"
     },
     "inspector-today": {
@@ -345,10 +345,8 @@
         "TypeOK",
         "UnsentDraftSurvives"
       ],
-      "expect": {
-        "violated": "UnsentDraftSurvives"
-      },
-      "finding": "Text typed while a follow-up is in flight stays in the old turn's draft scope; when the new turn loads the composer shows an empty draft and the text is never shown again."
+      "expect": "pass",
+      "finding": "Text typed while a follow-up is in flight survives the new turn loading (fixed; #512: it stayed in the old turn's draft scope, which was never shown again)."
     },
     {
       "id": "composer-typing-during-send-without-renders",
@@ -361,10 +359,8 @@
         "TypeOK",
         "UnsentDraftSurvives"
       ],
-      "expect": {
-        "violated": "UnsentDraftSurvives"
-      },
-      "finding": "Without any unrelated render, leaving the thread and returning during the POST re-enables the prompt and reaches the same loss."
+      "expect": "pass",
+      "finding": "The same holds when the prompt was re-enabled by leaving the thread and returning during the POST (fixed; #512)."
     },
     {
       "id": "composer-settlement-erases-edit",
@@ -520,6 +516,22 @@
         "violated": "SendCarriesEnteredAnswer"
       },
       "finding": "Without the wait, a Send served before the commit goes without the answer (#521)."
+    },
+    {
+      "id": "composer-without-carry",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "CarryUnsentDraft": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives"
+      ],
+      "expect": {
+        "violated": "UnsentDraftSurvives"
+      },
+      "finding": "Without moving unsent text into the newest turn's scope, text typed during a send is stranded (#512)."
     }
   ]
 }

@@ -1143,6 +1143,23 @@ export function createComposerDraftScopeState() {
   return { activeScopeKey: null, drafts: new Map() };
 }
 
+/**
+ * The newest unsent follow-up text left in an older turn's scope of the same
+ * thread, unless it is still the submission in flight, unchanged since Send.
+ * `olderScopes` lists `{ scopeKey, persistedText }`, newest first.
+ */
+function unsentOlderDraft(drafts, olderScopes, inFlightSubmission) {
+  for (const { scopeKey, persistedText } of olderScopes) {
+    const stored = drafts.get(scopeKey);
+    const text = stored?.promptValue || persistedText || "";
+    if (!text) continue;
+    const submitting = inFlightSubmission?.scopeKey === scopeKey
+      && Object.is(stored?.promptRevision, inFlightSubmission.promptRevision);
+    return submitting ? null : { scopeKey, text };
+  }
+  return null;
+}
+
 export function transitionComposerDraftScope(state, {
   threadId,
   interactionId,
@@ -1150,6 +1167,8 @@ export function transitionComposerDraftScope(state, {
   currentPromptRevision = 0,
   restoredDraft = null,
   persistedDraftText = null,
+  olderScopes = [],
+  inFlightSubmission = null,
 }) {
   const nextScopeKey = composerDraftScopeKey(threadId, interactionId);
   if (state.activeScopeKey === nextScopeKey) {
@@ -1193,7 +1212,19 @@ export function transitionComposerDraftScope(state, {
     });
   }
   const stored = drafts.get(nextScopeKey);
-  if (persistedDraftText !== null && stored?.promptValue !== persistedDraftText) {
+  // A newer turn's scope starts empty; unsent text typed while the previous
+  // turn's scope was active moves into it, so it is not stranded there.
+  const carried = !restoredDraft && persistedDraftText === null && !stored?.promptValue
+    ? unsentOlderDraft(drafts, olderScopes, inFlightSubmission)
+    : null;
+  if (carried) {
+    drafts.set(nextScopeKey, {
+      promptValue: carried.text,
+      promptRevision: Math.max(stored?.promptRevision ?? 0, currentPromptRevision) + 1,
+      restoredDraftInteractionId: null,
+    });
+    drafts.delete(carried.scopeKey);
+  } else if (persistedDraftText !== null && stored?.promptValue !== persistedDraftText) {
     // A scope's revision only moves forward, so settlement's revision check
     // can tell an edit from the text it sent. Unchanged text keeps its
     // revision (below); changed text takes one above any it had.
@@ -1213,6 +1244,7 @@ export function transitionComposerDraftScope(state, {
     state: { activeScopeKey: nextScopeKey, drafts },
     promptValue: drafts.get(nextScopeKey).promptValue,
     promptRevision: drafts.get(nextScopeKey).promptRevision,
+    carriedFromScopeKey: carried?.scopeKey ?? null,
   };
 }
 
@@ -2447,6 +2479,8 @@ export function createProductWorkspace({
   const confirmContextDraftSend = $("#confirmContextDraftSend");
   let sendAttempt = null;
   const inFlightSendThreads = new Map();
+  // thread -> the scope and prompt revision of its submission in flight.
+  const inFlightSubmissions = new Map();
   let sendWarningIntent = null;
   let failedConfirmationSends = new Map();
   const establishConfirmationReplayContextRevision = (threadId) => {
@@ -3256,11 +3290,35 @@ export function createProductWorkspace({
   });
   cancelContextDraftSend.onclick = () => closeContextDraftSendWarning();
 
+  // A send that fails after its thread's newer turn arrived leaves its text
+  // in the older turn's scope; bring it back into the empty prompt.
+  const restoreStrandedSubmission = (submission) => {
+    const { activeScopeKey } = composerDraftScopeState;
+    if (String(getThread()?.id) !== String(submission.threadId)
+      || activeScopeKey === submission.scopeKey
+      || prompt.value) return;
+    const text = composerDraftScopeState.drafts.get(submission.scopeKey)?.promptValue
+      || threadFollowupDraft(submission.scopeKey);
+    if (!text) return;
+    const drafts = new Map(composerDraftScopeState.drafts);
+    drafts.delete(submission.scopeKey);
+    composerDraftScopeState = { activeScopeKey, drafts };
+    prompt.value = text;
+    composerPromptRevision += 1;
+    persistThreadFollowupDraft(activeScopeKey, text);
+    clearThreadFollowupDraft(submission.scopeKey);
+  };
+
   const submitInteraction = async (intent) => {
     const submittedThreadId = intent.threadId;
     const submittedContexts = intent.contexts;
     const submittedConfirmationIds = intent.contextConfirmationIds;
     const submission = intent.submission;
+    const inFlightSubmission = Object.freeze({
+      scopeKey: submission.scopeKey,
+      promptRevision: submission.prompt.revision,
+    });
+    inFlightSubmissions.set(String(submittedThreadId), inFlightSubmission);
     prompt.disabled = true;
     send.disabled = true;
     for (const control of $("#nodeInputActions").querySelectorAll("button, textarea")) {
@@ -3389,8 +3447,12 @@ export function createProductWorkspace({
           : null,
         preserve: preserveReplay,
       });
+      restoreStrandedSubmission(submission);
       toast(error.message);
     } finally {
+      if (inFlightSubmissions.get(String(submittedThreadId)) === inFlightSubmission) {
+        inFlightSubmissions.delete(String(submittedThreadId));
+      }
       prompt.disabled = composerDisabledForState(
         getState().status,
         capabilities.canCompose,
@@ -3986,10 +4048,19 @@ export function createProductWorkspace({
       persistedDraftText: threadFollowupDraft(
         composerDraftScopeKey(threadId, latestInteraction?.id),
       ),
+      olderScopes: turns.slice(0, -1).reverse().map((turn) => {
+        const scopeKey = composerDraftScopeKey(threadId, turn.id);
+        return { scopeKey, persistedText: threadFollowupDraft(scopeKey) };
+      }),
+      inFlightSubmission: inFlightSubmissions.get(threadId) ?? null,
     });
     composerDraftScopeState = draftTransition.state;
     prompt.value = draftTransition.promptValue;
     composerPromptRevision = draftTransition.promptRevision;
+    if (draftTransition.carriedFromScopeKey) {
+      persistThreadFollowupDraft(composerDraftScopeState.activeScopeKey, prompt.value);
+      clearThreadFollowupDraft(draftTransition.carriedFromScopeKey);
+    }
     const inheritanceKey = `${thread.id}:${latestInteraction?.id ?? "none"}`;
     if (modelPicker) {
       const replaceSelection = inheritanceKey !== pickerInheritanceKey;

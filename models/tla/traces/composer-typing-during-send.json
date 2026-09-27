@@ -1,13 +1,11 @@
 {
   "scenario": "composer-typing-during-send",
   "module": "TurnComposer",
-  "summary": "A render during the POST re-enables the prompt; text typed then vanishes when the new turn loads.",
+  "summary": "A render during the POST re-enables the prompt; text typed then moves into the new turn's draft when it loads.",
   "promises": [
+    "UnsentDraftSurvives",
     "SettlementClearsOnlySentText",
     "SentTextIsNotShownAgain"
-  ],
-  "violatedAtEnd": [
-    "UnsentDraftSurvives"
   ],
   "generatedBy": "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
   "steps": [
@@ -600,12 +598,12 @@
         "disabled": true,
         "drafts": {
           "<<\"A\", 1>>": {
-            "rev": 3,
-            "text": 2
+            "rev": 0,
+            "text": 3
           },
           "<<\"A\", 2>>": {
             "rev": 4,
-            "text": 0
+            "text": 2
           },
           "<<\"B\", 1>>": {
             "rev": 0,
@@ -649,8 +647,8 @@
           "B": false
         },
         "persisted": {
-          "<<\"A\", 1>>": 2,
-          "<<\"A\", 2>>": 3,
+          "<<\"A\", 1>>": 3,
+          "<<\"A\", 2>>": 2,
           "<<\"B\", 1>>": 3,
           "<<\"B\", 2>>": 3
         },
@@ -662,7 +660,7 @@
         "sent": {
           "1": 1
         },
-        "text": 0,
+        "text": 2,
         "unsent": {
           "A": 2,
           "B": 0

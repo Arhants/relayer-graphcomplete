@@ -249,8 +249,9 @@ picker, and the unconfirmed-draft warning are not modeled.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `composer-typing-during-send` | Confirmed; replayed | `submitInteraction` disables the prompt, but any `renderThread()` during the POST re-enables it through `renderInteractionState`, because the loaded latest turn still reads as settled. The environment refresh renders every 5 s on project threads and on window focus. Text typed then stays in the old turn's draft scope. When the new turn loads, the composer moves to the new turn's scope, which is empty, and the text is never shown again. SCP-016 promises drafts "survive navigation". Scenario: `composer-typing-during-send`. |
-| `composer-typing-during-send-without-renders` | Plausible: narrow window | Leaving the thread and returning during the POST re-enables the prompt the same way, but only if both switches load state before the server records the turn; afterwards the switch loads the pending turn and the prompt stays disabled. Scenario: `composer-return-during-send`. |
+| `composer-typing-during-send` | Fixed; now passes | Before the fix (#512): `submitInteraction` disables the prompt, but any `renderThread()` during the POST re-enables it through `renderInteractionState`, because the loaded latest turn still reads as settled; the environment refresh renders every 5 s on project threads and on window focus. Text typed then stayed in the old turn's draft scope, and when the new turn loaded the composer moved to that turn's empty scope, so the text was never shown again. Entering a newer turn's empty scope now moves the thread's unsent text into it, and a send that fails after its turn arrived restores its text. Scenarios: `composer-typing-during-send`, `composer-failed-send-restores-draft`. |
+| `composer-typing-during-send-without-renders` | Fixed; now passes | The same loss, reached by leaving the thread and returning during the POST before the server records the turn. Scenario: `composer-return-during-send`. |
+| `composer-without-carry` | Records the bug | With `CarryUnsentDraft` off, text typed during a send is stranded. |
 | `composer-settlement-erases-edit` | Fixed; now passes | Before the fix (#513): re-entering a scope with persisted text assigned `currentPromptRevision + 1`, which could repeat a revision the scope already had. An edit after Send could then reach the submitted revision, and settlement cleared the prompt and deleted the persisted draft. A scope's revision now only moves forward. Scenario: `composer-settlement-erases-edit`. |
 | `composer-sent-text-lingers` | Fixed; now passes | Before the fix (#513): re-entering a scope during a send bumped its revision though the text was unchanged, so settlement no longer recognized the sent text and left it in an enabled composer. Unchanged text now keeps its revision. Scenario: `composer-sent-text-lingers`. |
 | `composer-one-send-per-thread` | passes | One follow-up per thread is in flight at a time, and every send releases its thread's Send button. |
@@ -261,6 +262,7 @@ The candidate fixes are:
 1. `CarryUnsentDraft`: moving a turn's unsent text into the newest turn's
    empty scope, and restoring it into the prompt when a send fails after the
    new turn arrived. Text still owned by an in-flight send is not moved.
+   Landed (#512).
 2. `StableScopeRevision`: re-entering a scope keeps its revision when its
    text is unchanged, and otherwise takes a revision above any it had.
    Landed (#513).
@@ -268,8 +270,8 @@ The candidate fixes are:
 `CarryUnsentDraft` recognizes the in-flight submission by its revision, so
 it is sound only together with `StableScopeRevision`.
 
-Why the draft is scoped per turn is a product decision. A fix might instead
-key follow-up drafts by thread.
+Both fixes have landed, so `composer-today` and `composer-fixed` now agree.
+Keying follow-up drafts by thread instead of by turn remains an alternative.
 
 ### `NodeInspector.tla`
 

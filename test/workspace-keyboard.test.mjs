@@ -1434,6 +1434,36 @@ describe("product workspace keyboard behavior", () => {
       .drafts.get(sentScope).promptValue).toBe("edited after send");
   });
 
+  it("moves unsent text into a newer turn's empty scope unless it is the send in flight", () => {
+    const older = composerDraftScopeKey("thread-a", "turn-1");
+    const first = transitionComposerDraftScope(createComposerDraftScopeState(), {
+      threadId: "thread-a",
+      interactionId: "turn-1",
+      currentPromptValue: "",
+    });
+    const enterTurn2 = (currentPromptValue, currentPromptRevision, inFlightSubmission) => (
+      transitionComposerDraftScope(first.state, {
+        threadId: "thread-a",
+        interactionId: "turn-2",
+        currentPromptValue,
+        currentPromptRevision,
+        olderScopes: [{ scopeKey: older, persistedText: currentPromptValue }],
+        inFlightSubmission,
+      })
+    );
+
+    const typedDuringSend = enterTurn2("typed during send", 5, { scopeKey: older, promptRevision: 4 });
+    expect(typedDuringSend.promptValue).toBe("typed during send");
+    expect(typedDuringSend.promptRevision).toBe(6);
+    expect(typedDuringSend.carriedFromScopeKey).toBe(older);
+    expect(typedDuringSend.state.drafts.has(older)).toBe(false);
+
+    const stillSending = enterTurn2("sent text", 4, { scopeKey: older, promptRevision: 4 });
+    expect(stillSending.promptValue).toBe("");
+    expect(stillSending.carriedFromScopeKey).toBeNull();
+    expect(stillSending.state.drafts.get(older).promptValue).toBe("sent text");
+  });
+
   it("retains a newer prompt revision across unrelated renders in the same scope", () => {
     const initial = transitionComposerDraftScope(createComposerDraftScopeState(), {
       threadId: 10,

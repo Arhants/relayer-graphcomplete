@@ -28,9 +28,11 @@ CONSTANTS
   MaxRev,           \* bound on composerPromptRevision
   BackgroundRenders, \* renderThread() runs for reasons unrelated to the send
                     \* (window focus refreshes the environment, polling, SSE)
-  CarryUnsentDraft, \* FALSE today: entering a new turn's scope starts empty
-                    \* even when the previous turn's scope holds text that is
-                    \* not the in-flight submission
+  CarryUnsentDraft, \* TRUE since #512: entering a newer turn's empty scope
+                    \* moves unsent text from the newest older scope of the
+                    \* thread, unless it is the submission in flight; a
+                    \* failed send restores its stranded text. Before, the
+                    \* new scope started empty and the text was stranded
   StableScopeRevision \* TRUE since #513: re-entering a scope keeps its
                     \* revision when its text is unchanged and otherwise
                     \* takes one above any it had. Before, it took
