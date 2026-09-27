@@ -31,6 +31,8 @@ import {
 } from "../shared/prime-runtime-integrity.mjs";
 import { LADYBUG_NOTICES_BUNDLE_DIR, LADYBUG_NOTICES_REPO_ROOT } from "./ladybug-notices.mjs";
 
+import { timedStage } from "./build-cache.mjs";
+
 const execFileAsync = promisify(execFile);
 
 function normalizeAsarEntry(entry) {
@@ -77,9 +79,12 @@ export async function verifyBundledAppServer(
     "node_modules/sharp/dist/index.cjs",
     "node_modules/sharp/dist/index.mjs",
     "node_modules/@relayer/harness-host/dist/implementations/claude-basic-browser.js",
-    "node_modules/@relayer/eval-runner/dist/index.js",
   ]) {
     if (!packagedEntries.has(entry)) throw new Error(`Bundled Relayer runtime is missing ${entry}.`);
+  }
+  if ([...packagedEntries].some((entry) => entry === "node_modules/@relayer/eval-runner"
+    || entry.startsWith("node_modules/@relayer/eval-runner/"))) {
+    throw new Error("Bundled Relayer runtime contains developer-only @relayer/eval-runner.");
   }
   await verifyPackagedSharp(packagedEntries, platform, expectedArchitecture, readSharpPackage);
   await verifyPackagedCodexBrowserMcp(resourcesPath);
@@ -529,7 +534,7 @@ export async function normalizePackagedBundlePermissions(bundlePath) {
   return changed;
 }
 
-export default async function verifyElectronBuilderBundledAppServer(
+async function verifyElectronBuilderBundledAppServer(
   context,
   {
     includePrimeAgent = true,
@@ -565,4 +570,8 @@ export default async function verifyElectronBuilderBundledAppServer(
     await normalizePackagedBundlePermissions(appPath);
   }
   return result;
+}
+
+export default function timedVerifyElectronBuilderBundledAppServer(context, options) {
+  return timedStage("afterPack verification", () => verifyElectronBuilderBundledAppServer(context, options));
 }

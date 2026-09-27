@@ -12,7 +12,7 @@
     "@earendil-works/pi-ai": "file:../vendor/prime-agent/earendil-works-pi-ai-0.8.1-sha256-7560b021e023be9b39f376ba497cf64b9e54b2adb8be3d73b031f0033c4dd700.tgz",
     "@earendil-works/pi-coding-agent": "file:../vendor/prime-agent/earendil-works-pi-coding-agent-0.8.1-sha256-a5608c3d617d345a4f1315e9f314c61dfb047c0741d41d0d3eb918ba2c082aaf.tgz",
     "@earendil-works/pi-tui": "file:../vendor/prime-agent/earendil-works-pi-tui-0.8.1-sha256-40517b0d5600557a31e395a0c344dbb9af7d3f8c000bea65561ef81b83142507.tgz",
-    "@relayer/eval-runner": "*",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@relayer/harness-host": "*",
     "@relayer/visual-assets": "*",
     "@sentry/node": "^10.72.0",

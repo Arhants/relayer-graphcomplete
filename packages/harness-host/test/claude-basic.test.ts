@@ -197,11 +197,14 @@ describe("ClaudeBasicHarness", () => {
       expectGraphPresentationGuidance(prompt);
       expect(prompt).toContain("graph with other live agents");
       expect(prompt).toContain("live, user-facing workspace");
+      // The graph is the user's interface, so mechanics never appear in its content.
+      expect(prompt).toContain("Never expose execution mechanics in graph content");
+      expect(prompt).toContain("rather than on every change");
       expect(prompt).toContain("await graph.getCurrent()");
       expect(prompt).toContain("await graph.advanceCurrent(");
       expect(prompt).toContain("Advancing current does not complete the interaction");
       expect(prompt).not.toContain("graph.prepareComplete(");
-      expect(prompt).not.toContain("Import complete from");
+      expect(prompt).not.toContain("Import complete and watchCompletions from");
       expect(options).toMatchObject({
         cwd: "/tmp",
         model: "claude-sonnet-4",
@@ -277,7 +280,7 @@ describe("ClaudeBasicHarness", () => {
     });
 
     expect(calls[0]?.prompt).toContain("graph.prepareComplete(invokeAction)");
-    expect(calls[0]?.prompt).toContain("Import complete from");
+    expect(calls[0]?.prompt).toContain("Import complete and watchCompletions from");
   });
 
   it("includes graph-search guidance only for a query-v1 capability profile", async () => {

@@ -14,20 +14,22 @@
     "completion-today": {
       "Launchers": "{1, 2}",
       "MaxRev": "3",
-      "ValidFailReasons": "{\"provider_exited_without_return\", \"application_restart\", \"execution\", \"provider_start_failed\", \"provider_attachment_persist_failed\", \"graph_observation_failed\"}",
-      "ObserveTimesOut": "TRUE",
-      "CleanExitIsChecked": "FALSE",
+      "ValidFailReasons": "{\"provider_exited_without_return\", \"application_restart\", \"execution\", \"provider_start_failed\", \"provider_attachment_persist_failed\", \"graph_observation_failed\", \"model_unavailable\"}",
+      "ObserveTimesOut": "FALSE",
+      "CleanExitIsChecked": "TRUE",
       "ActivationFailureSettlesGraph": "FALSE",
-      "TerminalReadSettlesCleanup": "TRUE"
+      "TerminalReadSettlesCleanup": "TRUE",
+      "ChildAdmission": "TRUE"
     },
     "completion-fixed": {
       "Launchers": "{1, 2}",
       "MaxRev": "3",
-      "ValidFailReasons": "{\"provider_exited_without_return\", \"application_restart\", \"execution\", \"provider_start_failed\", \"provider_attachment_persist_failed\", \"graph_observation_failed\"}",
+      "ValidFailReasons": "{\"provider_exited_without_return\", \"application_restart\", \"execution\", \"provider_start_failed\", \"provider_attachment_persist_failed\", \"graph_observation_failed\", \"model_unavailable\"}",
       "ObserveTimesOut": "FALSE",
       "CleanExitIsChecked": "TRUE",
       "ActivationFailureSettlesGraph": "TRUE",
-      "TerminalReadSettlesCleanup": "TRUE"
+      "TerminalReadSettlesCleanup": "TRUE",
+      "ChildAdmission": "TRUE"
     },
     "composer-today": {
       "Threads": "{\"A\", \"B\"}",
@@ -160,13 +162,16 @@
       "invariants": [
         "TypeOK",
         "AtMostOneLaunch",
-        "StopReportIsTruthful"
+        "StopReportIsTruthful",
+        "LeaseReleasedOnlyAfterSettlement",
+        "ProviderRunsUnderLease",
+        "AttemptEndsOnlyAfterProvider"
       ],
       "properties": [
         "TerminalIsAbsorbing"
       ],
       "expect": "pass",
-      "finding": "One launch per reservation; stop reports what the graph holds; terminal states are absorbing."
+      "finding": "One launch per reservation; stop reports what the graph holds; terminal states are absorbing; an admitted child ends its attempt and releases its leases only after it settles and its provider run ends."
     },
     {
       "id": "completion-observe-timeout",
@@ -175,17 +180,14 @@
       "constants": {
         "ActivationFailureSettlesGraph": "TRUE",
         "CleanExitIsChecked": "TRUE",
-        "ValidFailReasons": "{\"provider_exited_without_return\", \"application_restart\", \"execution\", \"provider_start_failed\", \"provider_attachment_persist_failed\", \"graph_observation_failed\"}",
         "TerminalReadSettlesCleanup": "TRUE"
       },
       "invariants": [
         "TypeOK",
         "NoExitFailureWhileRunning"
       ],
-      "expect": {
-        "violated": "NoExitFailureWhileRunning"
-      },
-      "finding": "The 5 s observe timeout fails a child whose provider is still running."
+      "expect": "pass",
+      "finding": "With observations that no longer time out, a child whose provider is still running is never failed for it (fixed; was: the 5 s control timeout failed running children). The re-poll itself is proved by provider_end_waits_through_observation_timeouts, not by this check."
     },
     {
       "id": "completion-activation-failure",
@@ -194,7 +196,6 @@
       "constants": {
         "ObserveTimesOut": "FALSE",
         "CleanExitIsChecked": "TRUE",
-        "ValidFailReasons": "{\"provider_exited_without_return\", \"application_restart\", \"execution\", \"provider_start_failed\", \"provider_attachment_persist_failed\", \"graph_observation_failed\"}",
         "TerminalReadSettlesCleanup": "TRUE"
       },
       "invariants": [
@@ -214,8 +215,25 @@
         "Launchers": "{1}",
         "ObserveTimesOut": "FALSE",
         "ActivationFailureSettlesGraph": "TRUE",
-        "ValidFailReasons": "{\"provider_exited_without_return\", \"application_restart\", \"execution\", \"provider_start_failed\", \"provider_attachment_persist_failed\", \"graph_observation_failed\"}",
         "TerminalReadSettlesCleanup": "TRUE"
+      },
+      "fair": true,
+      "properties": [
+        "LaunchedChildSettles"
+      ],
+      "expect": "pass",
+      "finding": "A child whose provider exits cleanly without Return is failed and settles (fixed; was: it never settled, and with admission its attempt and leases were held forever)."
+    },
+    {
+      "id": "completion-clean-exit-reverted",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "constants": {
+        "Launchers": "{1}",
+        "ObserveTimesOut": "FALSE",
+        "ActivationFailureSettlesGraph": "TRUE",
+        "TerminalReadSettlesCleanup": "TRUE",
+        "CleanExitIsChecked": "FALSE"
       },
       "fair": true,
       "properties": [
@@ -224,7 +242,7 @@
       "expect": {
         "violated": "LaunchedChildSettles"
       },
-      "finding": "A child whose provider exits cleanly without Return never settles."
+      "finding": "Without the clean-exit check, a child whose provider exits cleanly without Return never settles."
     },
     {
       "id": "completion-start-failure-reason",
@@ -252,8 +270,7 @@
         "Launchers": "{1}",
         "ObserveTimesOut": "FALSE",
         "ActivationFailureSettlesGraph": "TRUE",
-        "CleanExitIsChecked": "TRUE",
-        "ValidFailReasons": "{\"provider_exited_without_return\", \"application_restart\", \"execution\", \"provider_start_failed\", \"provider_attachment_persist_failed\", \"graph_observation_failed\"}"
+        "CleanExitIsChecked": "TRUE"
       },
       "fair": true,
       "properties": [
@@ -261,6 +278,22 @@
       ],
       "expect": "pass",
       "finding": "Start-failure cleanup settles a current another actor already terminated, with that current's outcome (fixed; was: retried forever)."
+    },
+    {
+      "id": "completion-child-admission-reverted",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "constants": {
+        "ChildAdmission": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ProviderRunsUnderLease"
+      ],
+      "expect": {
+        "violated": "ProviderRunsUnderLease"
+      },
+      "finding": "Without child admission, a selected child's provider runs with no held lease or attempt (the behavior before child admission)."
     },
     {
       "id": "completion-restart",
@@ -283,7 +316,10 @@
         "StopReportIsTruthful",
         "RestartNeverAborts",
         "NoExitFailureWhileRunning",
-        "SettledExecutionAgreesWithGraph"
+        "SettledExecutionAgreesWithGraph",
+        "LeaseReleasedOnlyAfterSettlement",
+        "ProviderRunsUnderLease",
+        "AttemptEndsOnlyAfterProvider"
       ],
       "properties": [
         "TerminalIsAbsorbing"
@@ -304,7 +340,7 @@
         "ClaimedChildSettles"
       ],
       "expect": "pass",
-      "finding": "With the candidate fixes, every claimed child settles."
+      "finding": "With the candidate fixes, every claimed child settles and releases its leases."
     },
     {
       "id": "composer-typing-during-send",
