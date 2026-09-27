@@ -49,6 +49,7 @@
       }
     ]
   },
+  "proseEvidenceDocuments": ["docs/evidence/issue-477-recursive-fixture-abort/README.md"],
   "fullPortfolio": {
     "exact": [
       ".node-version",
@@ -201,6 +202,7 @@
     { "exact": "scripts/test-share-publish-restart.mjs", "chapters": ["vitest"], "vitestFiles": ["test/share-publish-restart-evidence.test.mjs"] },
     { "exact": "scripts/capture-conversation-eval-evidence.mjs", "chapters": [] },
     { "exact": "scripts/test-eval-web.mjs", "chapters": [] },
+    { "exact": "scripts/eval-compiled.vitest.config.mjs", "chapters": [] },
     { "prefix": "scripts/lib/", "chapters": ["vitest"], "vitestFiles": ["test/desktop-capture-evidence.test.mjs", "test/tutorial-lifecycle.test.mjs"] },
     { "exact": "scripts/capture-environment-rail-evidence.mjs", "chapters": [] },
     { "exact": "scripts/capture-graph-authoring-repair-evidence.mjs", "chapters": [] },

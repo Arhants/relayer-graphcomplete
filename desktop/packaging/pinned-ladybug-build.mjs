@@ -1,14 +1,19 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
 import {
   buildPinnedOpenSsl,
+  createLadybugCargoEnvironment,
+  digestLadybugSourceTree,
   fetchLadybugSourceCache,
   loadLadybugSourceManifest,
   stageLadybugSources,
+  relativeFiles,
 } from "../../scripts/prepare-ladybug-source.mjs";
 import { verifyLadybugNativeReceipts } from "../../scripts/verify-ladybug-native-receipts.mjs";
+
+import { cachedBuild, timedStage } from "./build-cache.mjs";
 
 const QUALIFIED_TARGET = "macos-arm64";
 
@@ -33,29 +38,50 @@ export async function requireLadybugDistributionLicenseReady({
   return { manifest, nativeReceipt };
 }
 
-export async function preparePinnedLadybugForPackaging({ target }) {
+export async function preparePinnedLadybugForPackaging({ target, environment = process.env, cache }) {
   if (target.key !== QUALIFIED_TARGET) {
     throw new Error(`Pinned Ladybug packaging is not qualified for ${target.key}.`);
   }
   const manifest = await loadLadybugSourceManifest();
-  const cacheDirectory = join(tmpdir(), "relayer-ladybug-source-cache-v1");
-  await mkdir(cacheDirectory, { recursive: true, mode: 0o700 });
-  await fetchLadybugSourceCache({ cacheDirectory, manifest });
-  const outputDirectory = await mkdtemp(join(tmpdir(), "relayer-ladybug-packaging-"));
+  const sourceCache = join(tmpdir(), "relayer-ladybug-source-cache-v1");
+  let temporary;
+  async function build(outputDirectory) {
+    await mkdir(sourceCache, { recursive: true, mode: 0o700 });
+    await timedStage("pinned source fetch/verify", () => fetchLadybugSourceCache({ cacheDirectory: sourceCache, manifest }), environment);
+    await timedStage("pinned source staging", () => stageLadybugSources({ cacheDirectory: sourceCache, outputDirectory, manifest }), environment);
+    await timedStage("static OpenSSL build", () => buildPinnedOpenSsl({ manifest, outputDirectory, target: target.rustTarget, environment }), environment);
+    // Only the reviewed lbug tree and static prefix are needed by Cargo. Configure
+    // embeds this stable prefix, so cache identity binds its absolute location.
+    await rm(join(outputDirectory, `openssl-${manifest.openssl.version}`), { recursive: true, force: true });
+  }
+  async function validate(outputDirectory) {
+    const prefix = join(outputDirectory, "openssl-prefix");
+    for (const name of ["libssl.a", "libcrypto.a"]) {
+      const info = await stat(join(prefix, "lib", name));
+      if (!info.isFile() || info.size === 0) throw new Error("cached static OpenSSL archive missing or empty");
+    }
+    if ((await relativeFiles(prefix, prefix, [], { strict: true })).some((path) => /\.(dylib|dll|so)(\.|$)/.test(path))) throw new Error("cached OpenSSL prefix contains shared libraries");
+    if (await digestLadybugSourceTree(join(outputDirectory, "lbug-0.18.0")) !== manifest.rustBinding.nativeSourceTreeSha256) {
+      throw new Error("cached native source differs from reviewed lbug tree");
+    }
+  }
+  async function fallback() {
+    temporary = await mkdtemp(join(tmpdir(), "relayer-ladybug-packaging-"));
+    await build(temporary);
+    await validate(temporary);
+    return temporary;
+  }
   try {
-    await stageLadybugSources({ cacheDirectory, outputDirectory, manifest });
-    const prepared = await buildPinnedOpenSsl({
-      manifest,
-      outputDirectory,
-      target: target.rustTarget,
-    });
+    const outputDirectory = cache
+      ? await timedStage("native cache verify/build", () => cachedBuild({ cacheRoot: cache.root, kind: "native", identity: cache.native, build, validate, fallback }), environment)
+      : await fallback();
     return {
-      environment: prepared.environment,
+      environment: createLadybugCargoEnvironment({ manifest, outputDirectory, target: target.rustTarget }),
       environmentMustBeUnset: manifest.build.environmentMustBeUnset,
-      dispose: () => rm(outputDirectory, { recursive: true, force: true }),
+      dispose: () => temporary ? rm(temporary, { recursive: true, force: true }) : Promise.resolve(),
     };
   } catch (error) {
-    await rm(outputDirectory, { recursive: true, force: true });
+    if (temporary) await rm(temporary, { recursive: true, force: true });
     throw error;
   }
 }

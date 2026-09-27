@@ -836,7 +836,7 @@ from relayer_graph import GraphSession
 graph = await GraphSession.current()
 
 ${currentWorkspaceMechanicsPython()}
-${graphSearchGuidancePython(this.context.configuration.graphCapabilityProfile?.search === "query-v1")}
+${semanticChildGuidancePython(context)}${graphSearchGuidancePython(this.context.configuration.graphCapabilityProfile?.search === "query-v1")}
 
 The graph scope is supplied by the host for this complete() execution and is inherited by your RLM children. Do not read graph credentials from environment variables or files. Give every persisted NodeObject, EdgeObject, LayerObject, navigate action, and invoke action an explicit descriptive client_key that is unique within this interaction and stable across edits and reruns. Never rely on generated client keys in authored code.
 
@@ -868,7 +868,7 @@ from relayer_graph import GraphSession
 graph = await GraphSession.current()
 
 ${currentWorkspaceMechanicsPython()}
-${graphSearchGuidancePython(this.context.configuration.graphCapabilityProfile?.search === "query-v1")}
+${semanticChildGuidancePython(context)}${graphSearchGuidancePython(this.context.configuration.graphCapabilityProfile?.search === "query-v1")}
 
 The graph scope is supplied by the host for this complete() execution and is inherited by your RLM children. Do not read graph credentials from environment variables or files. Give every persisted NodeObject, EdgeObject, LayerObject, navigate action, and invoke action an explicit descriptive client_key that is unique within this interaction and stable across edits and reruns. For example, use NodeObject("info", "Summary", "...", client_key="summary-node"), EdgeObject((summary_node, detail_node), client_key="summary-detail-edge"), and LayerObject(nodes, edges, layout, client_key="response-layer"). Never rely on generated client keys in authored code. Author in whatever order fits the task, while submitting each referenced object before using it. The final graph call must be await graph.submit(${interaction.id}); call it only after the full response has been authored.
 
@@ -919,6 +919,13 @@ function primeSessionAttachment(session: PrimeAgentSession): JsonObject {
 
 function currentWorkspaceMechanicsPython(): string {
   return `Read current with current = await graph.get_current(). After submitting a layer, you may update the pointer with await graph.advance_current(layer, expected_revision=current["headRevision"], operation_key="a-stable-operation-key").`;
+}
+
+// Present only when the product granted this completion a broker, as in codex.basic.
+function semanticChildGuidancePython(context: HarnessRunContext): string {
+  if (context.completionBroker === undefined) return "";
+  return `For explicit semantic child work, give each child its own invoke action. First author and submit those invoke actions in their layer and advance that layer as current. Only after that succeeds, prepare each child separately with input_graph = await graph.prepare_complete(invoke_action); one input graph starts exactly one child. Import with from relayer_graph import complete, CompletionWatch. Start with children = [] and launch each child from its own input graph with children.append(complete(input_graph)). Each handle returns immediately with completion_id, current, and result; launch every independent child before watching them. Every change to a child's current is an event you may act on. Create watch = CompletionWatch(children) once. Then run changes = await watch.changes() in its own cell; it returns as soon as any child's current moves or ends, even when that takes minutes. After each event, decide whether the user now needs a better view, for example when a workstream reaches a finding or finishes. Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting. Repeat until watch.settled is true. Your turn ending does not wait for children, so never leave them in a background task. Then integrate every child and return this completion. await child.result gives a succeeded child's final layer. A stopped or failed child raises CompletionTerminalError there instead, also importable from relayer_graph; catch it and integrate the work its error.current still retains. Prime RLM children and subagents remain inside this completion and do not create semantic children by themselves.
+`;
 }
 
 function graphSearchGuidancePython(enabled: boolean): string {
