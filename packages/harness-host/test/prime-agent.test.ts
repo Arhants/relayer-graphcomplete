@@ -503,11 +503,32 @@ describe("PrimeAgentHarness", () => {
     expect(prompts[0]!.text).toContain("await graph.submit(11)");
     expect(prompts[0]!.text).toContain("graph with other live agents");
     expect(prompts[0]!.text).toContain("live, user-facing workspace");
+    // The graph is the user's interface, so mechanics never appear in its content.
+    expect(prompts[0]!.text).toContain("Never expose execution mechanics in graph content");
+    expect(prompts[0]!.text).toContain("rather than on every change");
     expect(prompts[0]!.text).toContain("await graph.get_current()");
     expect(prompts[0]!.text).toContain("await graph.advance_current(");
     expect(prompts[0]!.text).toContain("Advancing current does not complete the interaction");
-    expect(prompts[0]!.text).not.toContain("prepare_complete");
-    expect(prompts[0]!.text).not.toContain("from relayer_graph import complete");
+    // Only the run the product granted a broker is taught explicit semantic child work.
+    expect(prompts[0]!.text).toContain("For explicit semantic child work");
+    expect(prompts[0]!.text).toContain("input_graph = await graph.prepare_complete(invoke_action)");
+    expect(prompts[0]!.text).toContain("from relayer_graph import complete");
+    expect(prompts[0]!.text).toContain("do not create semantic children by themselves");
+    // A root that ends its turn with children in flight fails, so it must await them first.
+    expect(prompts[0]!.text).toContain("Your turn ending does not wait for children");
+    // Each child event is one the root may act on; it moves its own current only when that helps the user.
+    expect(prompts[0]!.text).toContain("from relayer_graph import complete, CompletionWatch");
+    expect(prompts[0]!.text).toContain("changes = await watch.changes()");
+    // The watch takes the list the recipe fills, so the recipe must declare it.
+    expect(prompts[0]!.text).toContain("Start with children = [] and launch each child from its own input graph with children.append(complete(input_graph))");
+    // One prepared input graph identifies one completion, so each child needs its own invoke action.
+    expect(prompts[0]!.text).toContain("give each child its own invoke action");
+    expect(prompts[0]!.text).toContain("one input graph starts exactly one child");
+    expect(prompts[0]!.text).toContain("Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting.");
+    expect(prompts[0]!.text).toContain("never leave them in a background task");
+    // A stopped or failed child raises from child.result, so the root must catch it to integrate the rest.
+    expect(prompts[0]!.text).toContain("A stopped or failed child raises CompletionTerminalError there instead");
+    expect(prompts[0]!.text).toContain("catch it and integrate the work its error.current still retains");
     expect(prompts[1]!.text).not.toContain("prepare_complete");
     expect(prompts[1]!.text).not.toContain("from relayer_graph import complete");
     expect(prompts[0]!.text).toContain("exactly one NodePlacementObject(node, x, y) per member node");
@@ -1061,6 +1082,10 @@ describe("PrimeAgentHarness", () => {
     const trace = recordingTrace();
     await harness.complete({
       ...context,
+      completionBroker: {
+        url: "http://127.0.0.1:43125/api/completions",
+        token: "12345678901234567890123456789012",
+      },
       trace: trace.sink,
       personalPresentation: {
         attachment: { interactionNodeId: 11, versionInteractionNodeId: 90, rootLayerId: 91 },
@@ -1088,6 +1113,7 @@ describe("PrimeAgentHarness", () => {
     expect(prompt).toContain("await graph.get_neighbors(11)");
     expect(prompt).toContain("ordinary graph.submit(11) automatically fulfills any lease");
     expect(prompt).toContain("There is no separate resolve_action call");
+    expect(prompt).toContain("input_graph = await graph.prepare_complete(invoke_action)");
     expect(prompt).toContain("Never mention or expose the size justification");
     expect(prompt).toContain("Every new root, expansion, and reference layer requires a version-1 LayerLayoutObject");
     expect(prompt).toContain("align comparisons deliberately");
