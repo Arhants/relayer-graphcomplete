@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { once } from "node:events";
 import { mkdtemp, rm, readFile, writeFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,6 +14,14 @@ import { openBrowserReview } from "../desktop/eval-main/browser-review.mjs";
 
 const directory = await mkdtemp(join(tmpdir(), "relayer-eval-web-proof-"));
 const resources = [];
+const shutdownShim = join(directory, "shutdown-shim.mjs");
+await writeFile(shutdownShim, 'process.on("message", (message) => { if (message === "shutdown") process.emit("SIGINT"); });\n');
+const hostArguments = ["--import", pathToFileURL(shutdownShim).href, "desktop/eval-main/index.mjs"];
+function requestShutdown(child) {
+  // Windows kill(SIGINT) terminates rather than dispatching the Node handler.
+  if (process.platform === "win32") child.send("shutdown");
+  else child.kill("SIGINT");
+}
 const selection = { testCaseIds: ["empty-project.task-system.two-turn"], harnessConfigurationNames: ["fixture-task-system"], judgeConfigurationName: "deterministic-graph-contract" };
 async function until(fn, label, timeout = 30_000) {
   const deadline = Date.now() + timeout;
@@ -20,9 +29,9 @@ async function until(fn, label, timeout = 30_000) {
   throw new Error(`Timed out: ${label}`);
 }
 async function launchHost() {
-  const child = spawn(process.execPath, ["desktop/eval-main/index.mjs"], {
+  const child = spawn(process.execPath, hostArguments, {
     env: { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("RELAYER_EVAL_AUTORUN"))), RELAYER_EVAL_USER_DATA_DIR: join(directory, "host"), RELAYER_EVAL_PRIME_PROFILE_FILE: "", RELAYER_EVAL_AUTORUN_INPUT_ROUNDTRIP: "" },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
   });
   let log = "";
   child.stdout.on("data", (bytes) => { log += bytes; });
@@ -30,7 +39,7 @@ async function launchHost() {
   const exited = once(child, "exit");
   const close = async () => {
     if (child.exitCode !== null) return;
-    child.kill("SIGINT");
+    requestShutdown(child);
     const timeout = setTimeout(() => child.kill("SIGKILL"), 10_000);
     try { const [code, signal] = await exited; assert.equal(signal, null, "host required forced shutdown"); assert.equal(code, 0, log); }
     finally { clearTimeout(timeout); }
@@ -48,18 +57,23 @@ async function rpc(url, operation, args = []) {
 }
 try {
   // A native child that never reports readiness exercises interruption during startup.
-  const waitingBinary = join(directory, "waiting-server");
+  const waitingBinary = join(directory, process.platform === "win32" ? "waiting-server.exe" : "waiting-server");
   const marker = join(directory, "waiting-server.pid");
-  await writeFile(waitingBinary, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, String(process.pid)); setInterval(() => {}, 1000);\n`, { mode: 0o700 });
+  const waitingSource = join(directory, "waiting_server.rs");
+  await writeFile(waitingSource, `fn main() {
+    std::fs::write(std::env::var_os("RELAYER_EVAL_TEST_PID_FILE").unwrap(), std::process::id().to_string()).unwrap();
+    loop { std::thread::sleep(std::time::Duration::from_secs(1)); }
+  }`);
+  execFileSync("rustc", [waitingSource, "-o", waitingBinary], { stdio: "pipe" });
   const interruptedProfile = join(directory, "interrupted");
-  const pending = spawn(process.execPath, ["desktop/eval-main/index.mjs"], {
-    env: { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("RELAYER_EVAL_AUTORUN"))), RELAYER_EVAL_USER_DATA_DIR: interruptedProfile, RELAYER_EVAL_PRIME_PROFILE_FILE: "", RELAYER_GRAPH_SERVER_BIN: waitingBinary }, stdio: "ignore",
+  const pending = spawn(process.execPath, hostArguments, {
+    env: { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("RELAYER_EVAL_AUTORUN"))), RELAYER_EVAL_USER_DATA_DIR: interruptedProfile, RELAYER_EVAL_PRIME_PROFILE_FILE: "", RELAYER_GRAPH_SERVER_BIN: waitingBinary, RELAYER_EVAL_TEST_PID_FILE: marker }, stdio: ["ignore", "ignore", "ignore", "ipc"],
   });
   const pendingExit = once(pending, "exit");
   const timeout = setTimeout(() => pending.kill("SIGKILL"), 15_000);
   try {
     const pid = await until(async () => { try { return Number(await readFile(marker, "utf8")); } catch { return null; } }, "pending native startup", 10_000);
-    pending.kill("SIGINT");
+    requestShutdown(pending);
     const [code, signal] = await pendingExit;
     assert.equal(signal, null); assert.equal(code, 0);
     assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
