@@ -115,10 +115,13 @@ two-repository state until `SHR-SPLIT-7` is complete.
 
 ## Review gate
 
-- [ ] Replace the split seam portfolio with one durable local exporter -> main
-  authority -> private fake-backed service -> production viewer journey. The
-  public test currently uses a protocol fixture; private tests and the extracted
-  real package smoke cover the hosted seam separately.
+- [x] Replace the split seam portfolio with one durable local exporter -> main
+  authority -> private fake-backed service -> production viewer journey.
+  `RELAYER_PRODUCT_ROOT=<public-checkout> npm run test:joined-production-journey`
+  from the private `share-service` package runs
+  the real Rust exporter, Electron-main coordinator and HTTP client, signed
+  fake-JWKS authentication, service router, immutable fake storage, lost-finalize
+  retry, and production viewer renderer in one test.
 - [x] Wire #468's production renderer controls through preload-safe IPC to the
   main-owned coordinator and reserve/upload/finalize client. Proof: focused
   eligibility, preflight, sign-in, title, pending, success, error, quota,
