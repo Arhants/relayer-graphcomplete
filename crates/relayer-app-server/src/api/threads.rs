@@ -2043,6 +2043,40 @@ pub(super) struct StopCompletionRequest {
     reason: Option<String>,
 }
 
+pub(super) async fn stop_interaction(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Path((thread_id, interaction_id)): Path<(i64, i64)>,
+) -> Result<Json<InteractionResponse>, ApiError> {
+    authorize_write(&state, &headers)?;
+    if !super::state::stop_available(&state) {
+        return Err(ApiError::invalid(
+            "Stop is unavailable in the diagnostic compatibility runtime",
+        ));
+    }
+    let thread_id = ThreadId::try_from(thread_id)?;
+    let interaction_id = InteractionId::try_from(interaction_id)?;
+    let interaction = state.product.get_interaction(interaction_id).await?;
+    if interaction.thread_id != thread_id {
+        return Err(ApiError::invalid(
+            "Interaction does not belong to this thread",
+        ));
+    }
+    if matches!(
+        interaction.completion_status.as_str(),
+        "accepted" | "stopped" | "failed"
+    ) {
+        return Ok(Json(interaction.into()));
+    }
+    state
+        .product
+        .request_interaction_stop(thread_id, interaction_id)
+        .await?;
+    Ok(Json(
+        state.product.get_interaction(interaction_id).await?.into(),
+    ))
+}
+
 pub(super) async fn stop_completion(
     State(state): State<ApiState>,
     headers: HeaderMap,
