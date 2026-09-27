@@ -82,6 +82,8 @@
     "test:eval-compiled-runtime": "vitest run --config scripts/eval-compiled.vitest.config.mjs"
   },
   "devDependencies": {
+    "@actions/cache": "6.2.0",
+    "@actions/core": "3.0.1",
     "@electron/asar": "3.4.1",
     "@types/node": "^22.20.1",
     "app-builder-lib": "26.15.3",

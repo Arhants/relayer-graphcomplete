@@ -84,6 +84,27 @@ function fullPlanWithoutDiff() {
 // Each case spawns the planner as a subprocess, and the full-plan cases also
 // run cargo metadata; the default 5s per-test budget races CI runner load.
 describe("affected-module plan v1", { timeout: 30_000 }, () => {
+  test("narrows only the reviewed prose evidence document, preserving mixed and deleted paths", () => {
+    withPlannerFixture((repository) => {
+      const path = "docs/evidence/issue-477-recursive-fixture-abort/README.md";
+      mkdirSync(dirname(join(repository, path)), { recursive: true });
+      writeFileSync(join(repository, path), "Evidence narrative");
+      expect(planIn(repository, path).chapters.packaging).toBe(false);
+      writeFileSync(join(repository, path), "Updated evidence narrative");
+      expect(planIn(repository, path).mode).toBe("affected");
+      expect(planIn(repository, path, "desktop/renderer/styles.css").chapters.packaging).toBe(true);
+      expect(planIn(repository, path, "test/support/recursive-complete-fixture.mjs").chapters.vitest).toBe(true);
+      for (const other of ["docs/evidence/unknown/README.md", "docs/evidence/issue-477-recursive-fixture-abort/probe.mjs", "docs/evidence/issue-257-browser-harnesses/manifest.json"]) expect(planIn(repository, other).mode).toBe("full");
+      rmSync(join(repository, path));
+      symlinkSync(join(repository, "Cargo.toml"), join(repository, path));
+      expect(planIn(repository, path).mode).toBe("full");
+      rmSync(join(repository, path));
+      expect(planIn(repository, path).mode).toBe("full");
+      mkdirSync(join(repository, path));
+      expect(planIn(repository, path).mode).toBe("full");
+    });
+  });
+
   test("is a checked-in versioned contract", () => {
     const config = JSON.parse(readFileSync(configPath, "utf8"));
     expect(config.version).toBe(1);
