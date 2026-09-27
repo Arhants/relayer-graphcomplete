@@ -72,6 +72,14 @@ impl InteractionExecutionService {
     ) {
         let execution = self;
         let runtime = &execution.runtime;
+        // A stop received during preparation must not start provider work.
+        if let Ok(bound) = execution.product.get_interaction(interaction.id).await
+            && bound.stop_requested
+            && bound.stop_error.is_none()
+        {
+            stop_before_native_execution(execution, &thread, &interaction, prepared, None).await;
+            return;
+        }
         let working_directory = match thread.project_id {
             Some(project_id) => match execution.product.project_path(project_id).await {
                 Ok(path) => path,
@@ -250,6 +258,22 @@ impl InteractionExecutionService {
             match runtime.admit_provider_execution(&command).await {
                 Ok(admission) => Some(admission),
                 Err(error) => {
+                    if execution
+                        .product
+                        .get_interaction(interaction.id)
+                        .await
+                        .is_ok_and(|bound| bound.stop_requested && bound.stop_error.is_none())
+                    {
+                        stop_before_native_execution(
+                            execution,
+                            &thread,
+                            &interaction,
+                            prepared,
+                            None,
+                        )
+                        .await;
+                        return;
+                    }
                     if let Err(cleanup) = discard_model_preparation(runtime, prepared).await {
                         record_reconciliation_pending(execution, &thread, &interaction, &cleanup)
                             .await;
@@ -371,6 +395,15 @@ impl InteractionExecutionService {
         } else {
             None
         };
+        // Admission can await a provider connection. Honor requests received in
+        // that window before starting any native run, and release its lease.
+        if let Ok(bound) = execution.product.get_interaction(interaction.id).await
+            && bound.stop_requested
+            && bound.stop_error.is_none()
+        {
+            stop_before_native_execution(execution, &thread, &interaction, prepared, attempt).await;
+            return;
+        }
         let command = CompleteInteraction {
             execution_lease_id: admission
                 .as_ref()
@@ -400,6 +433,7 @@ impl InteractionExecutionService {
                 });
         let completion = runtime.complete_prepared(&command, prepared, completion_broker);
         tokio::pin!(completion);
+        let mut cancellation_dispatched = false;
         let mut cursor = 0;
         let mut harness_session_id = None;
         let mut complete_call_id = None;
@@ -456,6 +490,23 @@ impl InteractionExecutionService {
                     break result;
                 }
                 _ = interval.tick() => {
+                    if !cancellation_dispatched {
+                        match execution.product.get_interaction(interaction.id).await {
+                            Ok(bound) if bound.stop_requested && bound.stop_error.is_none() => {
+                                match dispatch_product_stop(runtime, thread.id, interaction.id, prepared_graph_node_id).await {
+                                    Ok(dispatched) => cancellation_dispatched = dispatched,
+                                    Err(error) => {
+                                        eprintln!("stop for interaction {} failed: {error}", interaction.id);
+                                        if let Err(persist_error) = execution.product.record_stop_error(interaction.id, "Stop could not be confirmed. Try Stop again.").await {
+                                            eprintln!("could not persist stop failure: {persist_error}");
+                                        }
+                                    }
+                                }
+                            }
+                            Err(error) => eprintln!("could not read stop request: {error}"),
+                            _ => {}
+                        }
+                    }
                     match runtime.approval_events(thread.id.value(), cursor).await {
                         Ok(snapshot) => {
                             if let Err(error) = persist_approval_snapshot(
@@ -717,10 +768,36 @@ impl InteractionExecutionService {
                 }
                 match recovered_output {
                     Ok(None) => {
+                        let graph_stopped = runtime
+                            .completion_current(prepared_graph_node_id)
+                            .await
+                            .is_ok_and(|current| {
+                                current.lifecycle
+                                    == relayer_graph_core::CompletionLifecycle::Stopped
+                            });
+                        if graph_stopped && error.cancellation_settled() {
+                            match execution
+                                .product
+                                .finish_interaction_stopped(interaction.id)
+                                .await
+                            {
+                                Ok(()) => release_terminal_admission(execution, attempt).await,
+                                Err(error) => {
+                                    record_reconciliation_pending(
+                                        execution,
+                                        &thread,
+                                        &interaction,
+                                        &error.to_string(),
+                                    )
+                                    .await
+                                }
+                            }
+                            return;
+                        }
                         let (category, effect_boundary, model_related) = error.attempt_failure();
                         let error_message = error.safe_failure_message().to_owned();
                         let temporal_root = runtime.temporal_features().root_current_write;
-                        if temporal_root {
+                        if temporal_root && !graph_stopped {
                             let failure_operation = format!(
                                 "root-provider-failure:{}",
                                 attempt.unwrap_or(interaction.id.value())
@@ -762,7 +839,9 @@ impl InteractionExecutionService {
                                         },
                                         failure_category: category,
                                         effect_boundary,
-                                        return_to_unsent: model_related && !temporal_root,
+                                        return_to_unsent: model_related
+                                            && !temporal_root
+                                            && !graph_stopped,
                                         graph_node_id: error.graph_node_id(),
                                     },
                                 )
@@ -774,7 +853,7 @@ impl InteractionExecutionService {
                                     "could not atomically finalize failed attempt {attempt}: {persistence_error}"
                                 );
                             }
-                        } else if model_related && !temporal_root {
+                        } else if model_related && !temporal_root && !graph_stopped {
                             return_model_failure_to_unsent(
                                 execution,
                                 &thread,
@@ -807,6 +886,35 @@ impl InteractionExecutionService {
                 }
             }
         }
+    }
+}
+
+/// Stop graph authority first; a racing Return remains authoritative. A false
+/// host acknowledgment can mean the exact completion is still being registered,
+/// so the execution observer checks again until cancellation or settlement.
+async fn dispatch_product_stop(
+    runtime: &RuntimeClient,
+    thread: ThreadId,
+    interaction: InteractionId,
+    completion: i64,
+) -> Result<bool, RuntimeError> {
+    let current = runtime.completion_current(completion).await?;
+    if current.lifecycle == relayer_graph_core::CompletionLifecycle::Active
+        && let Err(error) = runtime
+            .stop_graph_completion(completion, &format!("product-stop:{interaction}"))
+            .await
+    {
+        let current = runtime.completion_current(completion).await?;
+        if current.lifecycle == relayer_graph_core::CompletionLifecycle::Active {
+            return Err(error);
+        }
+    }
+    match runtime
+        .cancel_invoked_completion(thread.value(), completion)
+        .await
+    {
+        Err(RuntimeError::Remote { status: 404, .. }) => Ok(false),
+        result => result,
     }
 }
 
@@ -884,6 +992,60 @@ async fn wait_for_completion_output(
             Err(error) => return Err(error),
         }
     }
+}
+
+async fn stop_before_native_execution(
+    execution: &InteractionExecutionService,
+    thread: &Thread,
+    interaction: &Interaction,
+    prepared: PreparedInteraction,
+    attempt: Option<i64>,
+) {
+    let graph_node_id = prepared.graph_node_id;
+    let stopped = execution
+        .runtime
+        .stop_graph_completion(graph_node_id, &format!("product-stop:{}", interaction.id))
+        .await;
+    let cleanup = execution.runtime.discard_prepared(prepared).await;
+    let result = match (stopped, cleanup) {
+        (Ok(_), Ok(())) => execution
+            .product
+            .finish_interaction_stopped(interaction.id)
+            .await
+            .map_err(|error| error.to_string()),
+        (stopped, cleanup) => Err(format!(
+            "Could not confirm Stop before execution: graph={:?}; cleanup={:?}",
+            stopped.err(),
+            cleanup.err()
+        )),
+    };
+    if let Err(error) = result {
+        let message = format!("{RECONCILIATION_PENDING_PREFIX} {error}");
+        if let Some(attempt_id) = attempt {
+            if let Err(error) = execution
+                .product
+                .fail_interaction_completion_with_attempt(
+                    crate::product::FailedInteractionCompletion {
+                        attempt_id,
+                        interaction_id: interaction.id,
+                        harness_configuration_name: &thread.harness_configuration_name,
+                        error: &message,
+                        outcome: "execution_failed",
+                        failure_category: "execution_failed",
+                        effect_boundary: "none",
+                        return_to_unsent: false,
+                        graph_node_id: Some(graph_node_id),
+                    },
+                )
+                .await
+            {
+                eprintln!("could not finalize early Stop attempt {attempt_id}: {error}");
+            }
+        } else {
+            record_reconciliation_pending(execution, thread, interaction, &error).await;
+        }
+    }
+    release_terminal_admission(execution, attempt).await;
 }
 
 async fn record_reconciliation_pending(

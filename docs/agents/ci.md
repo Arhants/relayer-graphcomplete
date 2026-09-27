@@ -250,3 +250,52 @@ contract tests, so it selects the Rust closure of `relayer-graph-core`.
 `docs/graph-query-v1-errors.json` is the source of the generated
 query-error code and the Python client contract, so it selects the
 `@relayer/graph-client` workspace closure and the Python chapter.
+
+## Development packaging acceleration
+
+`npm run desktop:pack` still assembles a fresh application and executes its
+actual `afterPack` verification. Apple-Silicon development packaging now keeps
+two independent, verified build caches under `.relayer/packaging-cache-v1`:
+reviewed Ladybug sources/static OpenSSL preparation, and the two release-profile
+Rust server binaries. Local runs reuse their private entries; Actions restores
+compatible trusted branch entries and saves only on successful branch pushes.
+These entries contain build outputs, never test results or an accepted ASAR.
+`RELAYER_PACKAGING_CACHE=off` requests the ordinary fresh build path.
+
+Every entry carries its exact file inventory, executable modes, SHA-256 values
+and input identity. Reuse verifies all bytes before installing binaries or
+exporting native paths. Identity binds repository/cache location (OpenSSL
+prefixes are not relocatable), source/native manifests, packaging implementation,
+Rust/Clang/Cargo/CMake/Perl/Make/SDK identities, target, default features and
+release profile. All crate files, including local untracked files and migrations,
+are hashed. Symlinks, external Cargo path packages, custom Cargo configuration,
+unsupported compiler overrides and target directories disable reuse. The
+reviewed build scripts/configuration in `scripts/ci/packaging-input-contract.json`
+name the input-contract boundary: changing or adding one disables reuse until its
+external inputs have been reviewed and the contract updated. Never update those
+digests mechanically to obtain a hit. Signed release compilation is unchanged:
+its debug profile and dSYM evidence need a separate artifact contract.
+
+A miss or rejected entry builds fresh. Concurrent cache writers fall back; failed
+compilation is not retried or published. License readiness and the actual ASAR,
+resource, architecture, static linkage and bundled graph-server checks remain
+fresh on hits. Stage durations cover identity, native fetch/staging/OpenSSL,
+cache verification/build, Cargo, Electron, and afterPack. Telemetry cannot turn
+successful verification into failure.
+
+The packaging restore adapter uses the pinned `@actions/cache` SDK in an isolated
+process so its otherwise swallowed service diagnostics are observable. It adds
+at most one 5–10 second jittered retry for an explicit 429/5xx, honors reported
+Retry-After up to 30 seconds, and falls back immediately for longer service waits,
+ordinary misses, authorization/unknown errors or a timed-out attempt. Each SDK
+attempt has a 120-second process bound; the SDK also has its own internal retries
+for some server failures. This policy does not retry build or verification errors.
+Cache saves and transport remain optional acceleration. SDK diagnostics and
+attempt/hit classifications are logged; no credentials are copied into receipts.
+
+The exact prose-only `docs/evidence/issue-477-recursive-fixture-abort/README.md`
+is reviewed as having no CI consumer. Its addition/modification alone runs plan,
+quick and `check`; a deletion or non-file replacement remains full coverage.
+Mixed fixture edits retain fresh Vitest, and desktop edits retain packaging.
+Every other `docs/evidence/` path retains the conservative full-portfolio rule,
+including executable probes, qualification receipts and unknown documents.

@@ -1,3 +1,4 @@
+import { NativeExecutionCancelled } from "../src/completion-execution.js";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
@@ -1911,7 +1912,7 @@ describe("HarnessHost", () => {
     }
   });
 
-  it("starts an invoked completion over HTTP once, acknowledges native attachment, and cancels its exact completion", async () => {
+  it.each(["reason", "typed", "ordinary"])("starts an invoked completion once and classifies %s cancellation over HTTP", async (cancellationKind) => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-recursive-start-route-"));
     const nativeFetch = globalThis.fetch;
     let running: Awaited<ReturnType<typeof startHarnessHost>> | undefined;
@@ -1950,7 +1951,7 @@ describe("HarnessHost", () => {
             observedCompletionBroker = context.completionBroker;
             context.trace.emit({ type: "message", data: { text: "attributed invoked completion" } });
             const execution = new Promise<void>((_resolve, reject) => {
-              signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+              signal?.addEventListener("abort", () => reject(cancellationKind === "typed" ? new NativeExecutionCancelled("cancelled for thread 1") : cancellationKind === "ordinary" ? new Error("cancelled for thread 1") : signal.reason), { once: true });
             });
             return nativeExecutionHandle(execution, undefined, attached);
           },
@@ -2039,6 +2040,9 @@ describe("HarnessHost", () => {
       // A bounded observation of an ended run answers with that end at once.
       await expect(running.host.observeInvokedCompletion(1, 2, 60_000)).rejects.toThrow("cancelled for thread 1");
       expect(running.host.cancel(1, 2)).toBe(false);
+      const observed = await fetch(`${running.url}/sessions/1/invoked-completions/2`, { headers: { authorization: "Bearer control" } });
+      expect(observed.status).toBe(cancellationKind === "ordinary" ? 500 : 409);
+      expect((await observed.json()).cancellationSettled).toBe(cancellationKind === "ordinary" ? undefined : true);
       const exported = join(directory, "exported-child-trace");
       const descriptor = await running.host.exportCandidateTrace(29, exported, {
         runId: "recursive-live-run",

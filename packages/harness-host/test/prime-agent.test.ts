@@ -522,6 +522,9 @@ describe("PrimeAgentHarness", () => {
     expect(prompts[0]!.text).toContain("changes = await watch.changes()");
     expect(prompts[0]!.text).toContain("Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting.");
     expect(prompts[0]!.text).toContain("never leave them in a background task");
+    // A stopped or failed child raises from child.result, so the root must catch it to integrate the rest.
+    expect(prompts[0]!.text).toContain("A stopped or failed child raises CompletionTerminalError there instead");
+    expect(prompts[0]!.text).toContain("catch it and integrate the work its error.current still retains");
     expect(prompts[1]!.text).not.toContain("prepare_complete");
     expect(prompts[1]!.text).not.toContain("from relayer_graph import complete");
     expect(prompts[0]!.text).toContain("exactly one NodePlacementObject(node, x, y) per member node");

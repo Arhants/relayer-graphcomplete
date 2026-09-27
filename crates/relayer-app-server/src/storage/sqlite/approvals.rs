@@ -150,7 +150,7 @@ impl SqliteProductStore {
             }
             ApprovalOutcome::Cancelled => {
                 sqlx::query(
-                    "UPDATE interactions SET completion_status='stopped',completion_error='Approval request was cancelled.' WHERE id=?1 AND completion_status IN ('running','waiting_for_approval')",
+                    "UPDATE interactions SET completion_status='stopped',completion_error='Approval request was cancelled.' WHERE id=?1 AND completion_status IN ('running','waiting_for_approval') AND NOT EXISTS(SELECT 1 FROM interaction_stop_requests WHERE interaction_id=?1)",
                 )
                 .bind(interaction_id)
                 .execute(&mut *transaction)
@@ -158,7 +158,7 @@ impl SqliteProductStore {
             }
             ApprovalOutcome::Expired => {
                 sqlx::query(
-                    "UPDATE interactions SET completion_status='failed',completion_error='Approval request expired at the provider.' WHERE id=?1 AND completion_status IN ('running','waiting_for_approval')",
+                    "UPDATE interactions SET completion_status='failed',completion_error='Approval request expired at the provider.' WHERE id=?1 AND completion_status IN ('running','waiting_for_approval') AND NOT EXISTS(SELECT 1 FROM interaction_stop_requests WHERE interaction_id=?1)",
                 )
                 .bind(interaction_id)
                 .execute(&mut *transaction)
@@ -166,13 +166,17 @@ impl SqliteProductStore {
             }
             ApprovalOutcome::Aborted => {
                 sqlx::query(
-                    "UPDATE interactions SET completion_status='failed',completion_error='Approval request was aborted because its harness session ended.' WHERE id=?1 AND completion_status IN ('running','waiting_for_approval')",
+                    "UPDATE interactions SET completion_status='failed',completion_error='Approval request was aborted because its harness session ended.' WHERE id=?1 AND completion_status IN ('running','waiting_for_approval') AND NOT EXISTS(SELECT 1 FROM interaction_stop_requests WHERE interaction_id=?1)",
                 )
                 .bind(interaction_id)
                 .execute(&mut *transaction)
                 .await?;
             }
         }
+        // A Stop acknowledgment closes the approval, but only the execution
+        // observer can declare the provider settled and write a terminal state.
+        sqlx::query("UPDATE interactions SET completion_status='running' WHERE id=?1 AND completion_status='waiting_for_approval' AND EXISTS(SELECT 1 FROM interaction_stop_requests WHERE interaction_id=?1)")
+            .bind(interaction_id).execute(&mut *transaction).await?;
         receipt.resolution = Some(resolution.clone());
         transaction.commit().await?;
         Ok(receipt)
@@ -463,6 +467,61 @@ mod tests {
             Some("session ended")
         );
         drop(store);
+    }
+
+    #[tokio::test]
+    async fn stop_closes_approval_without_claiming_provider_settlement() {
+        let (store, _directory) = store().await;
+        let thread = store
+            .insert_thread_with_initial_interaction(crate::storage::NewThreadRecord {
+                title: "Stop pending approval",
+                project_id: None,
+                initial_message: "Work",
+                harness_configuration_name: "test",
+                permission_profile_id: "ask",
+                model_selection: None,
+                timestamp: "1",
+            })
+            .await
+            .unwrap();
+        store
+            .mark_interaction_running(thread.root_interaction_id, "test")
+            .await
+            .unwrap();
+        let pending = request(&thread, "stop-approval");
+        store.record_approval_request(&pending).await.unwrap();
+        store
+            .request_interaction_stop(thread.id, thread.root_interaction_id)
+            .await
+            .unwrap();
+        let mut cancelled = resolution(&pending, ApprovalOutcome::Approved);
+        cancelled.outcome = ApprovalOutcome::Cancelled;
+        cancelled.actor = ApprovalActor::Host;
+        cancelled.decision = None;
+        store
+            .record_approval_resolution(&cancelled, true)
+            .await
+            .unwrap();
+        let interaction = store
+            .get_interaction(thread.root_interaction_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(interaction.completion_status, "running");
+        assert!(interaction.stop_requested);
+        store
+            .finish_interaction_stopped(thread.root_interaction_id, "4")
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .get_interaction(thread.root_interaction_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .completion_status,
+            "stopped"
+        );
     }
 
     async fn store() -> (SqliteProductStore, tempfile::TempDir) {

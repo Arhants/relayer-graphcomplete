@@ -100,6 +100,9 @@ describe("CodexBasicHarness", () => {
     // Graph core checks the same path on the final submit's Return, and only a draft node takes the action.
     expect(brokerAuthorized).toContain("to the root layer of your final graph.submit");
     expect(brokerAuthorized).toContain("every layer you make current needs at least one new draft node to carry that reference");
+    // A stopped or failed child rejects child.result, so the root must catch it to integrate the rest.
+    expect(brokerAuthorized).toContain("A stopped or failed child rejects it with CompletionTerminalError");
+    expect(brokerAuthorized).toContain("catch it and integrate the work its error.current still retains");
   });
 
   it("reuses a native Codex thread only while its pinned presentation version is unchanged", async () => {
