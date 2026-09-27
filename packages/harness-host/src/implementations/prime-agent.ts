@@ -947,7 +947,7 @@ export const PYTHON_GRAPH_API_REFERENCE = `Graph client reference (every graph m
 - Graph objects do not expose client_key after submission; keep your own references to the objects you submitted.`;
 
 /** Rules the graph service enforces on authored objects, stated so the first attempt passes. */
-const PYTHON_GRAPH_AUTHORING_RULES = `Every node and every optional action icon must be one of: ${RELAYER_ICON_NAMES.join(", ")}. Action variants are "chip", "pill", "wide", or "card". Only a card accepts description, and a card requires one. Add actions only on draft nodes created for this interaction; an accepted node you reuse keeps its existing actions.`;
+const PYTHON_GRAPH_AUTHORING_RULES = `Every node and every optional action icon must be one of: ${RELAYER_ICON_NAMES.join(", ")}. Action variants are "chip", "pill", "wide", or "card". Only a card accepts description, and a card requires one. Apart from the interaction node's one root expand action, add actions only on draft nodes created for this interaction; an accepted node you reuse keeps its existing actions.`;
 
 // Present only when the product granted this completion a broker, as in codex.basic.
 function semanticChildGuidancePython(context: HarnessRunContext): string {

@@ -2388,7 +2388,8 @@ function expectGraphAuthoringRules(prompt: string): void {
   expect(prompt).toContain(PYTHON_GRAPH_API_REFERENCE);
   expect(prompt).toContain(`must be one of: ${RELAYER_ICON_NAMES.join(", ")}.`);
   expect(prompt).toContain("Only a card accepts description, and a card requires one.");
-  expect(prompt).toContain("Add actions only on draft nodes created for this interaction");
+  // Graph core exempts the interaction root before enforcing draft ownership, so the rule states that exception.
+  expect(prompt).toContain("Apart from the interaction node's one root expand action, add actions only on draft nodes created for this interaction");
   expect(prompt).toContain("the next current layer must keep a navigation path back to it");
   expect(prompt).toContain('current["currentLayerId"], relation="reference", source_layer=new_layer');
   // Graph core checks the same path on the final submit's Return, and only a draft node takes the action.
