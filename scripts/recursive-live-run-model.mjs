@@ -18,6 +18,8 @@ export const LIVE_RUN_AUTH = Object.freeze({
 
 /** Harness implementations that run a task through the managed Codex executable. */
 const CODEX_IMPLEMENTATIONS = new Set(["codex.basic"]);
+/** Harness implementations whose runtime this runner provisions and checks before a turn. */
+const LIVE_RUN_IMPLEMENTATIONS = new Set(["codex.basic", "prime.agent"]);
 
 /** Names the profiles a credentials document defines, for an error a human can act on. */
 export function liveRunProfileNames(document) {
@@ -54,7 +56,14 @@ export function resolveRunProfile(document, name, { implementation, path = "live
   if (auth.contract === "managed-runtime@1" && apiKey) {
     throw new Error(`${path} run ${name} must leave auth.apiKey null for ${kind}; its login lives in codexHome.`);
   }
+  if (!LIVE_RUN_IMPLEMENTATIONS.has(implementation)) {
+    throw new Error(`${path} run ${name} selects ${implementation}, whose runtime this runner does not provision. It runs: ${[...LIVE_RUN_IMPLEMENTATIONS].join(", ")}.`);
+  }
   const codex = CODEX_IMPLEMENTATIONS.has(implementation);
+  if (codex && auth.contract === "secret@1") {
+    // Codex routes only through the built-in codex provider, which is subscription-only.
+    throw new Error(`${path} run ${name} selects ${implementation} with ${kind}; this runner routes Codex only through a codex-subscription login.`);
+  }
   if (!codex && auth.contract === "managed-runtime@1") {
     throw new Error(`${path} run ${name} selects ${implementation}, which accepts a key rather than a ${kind} login.`);
   }
@@ -63,9 +72,10 @@ export function resolveRunProfile(document, name, { implementation, path = "live
     name,
     harness: required("harness", profile.harness),
     implementation,
-    // The Codex harness declares compatibility with the built-in `codex` provider, so the
-    // definition keeps that id while its adapter varies.
-    providerId: String(profile.providerId ?? "codex").trim(),
+    // The Codex harness declares compatibility with the built-in `codex` provider, so a
+    // Codex run keeps that id while its adapter varies. Any other harness routes a
+    // key-based provider of its own; the built-in `codex` provider is managed-runtime@1.
+    providerId: String(profile.providerId ?? (codex ? "codex" : `live-run-${auth.adapterId}`)).trim(),
     modelId: required("modelId", profile.modelId),
     ...(codex
       ? {
@@ -87,6 +97,45 @@ export function resolveRunProfile(document, name, { implementation, path = "live
  * instructs delegation, because a run that only proves obedience proves nothing.
  */
 export const RECURSIVE_LIVE_RUN_TASK = RECURSIVE_COMPLETE_EVAL_PROMPT;
+
+/**
+ * The same planning task, asking for its three workstreams as semantic children.
+ *
+ * It exercises child launch, settlement, and integration with a real model. Because it
+ * instructs delegation, a run of it is delegation-mechanics evidence and never Check 1.
+ * It names the harness guidance's own phrase rather than any client API.
+ */
+export const RECURSIVE_LIVE_RUN_DELEGATION_TASK = [
+  "You're planning a six-week private beta for Lantern, a fictional macOS desktop agent",
+  "that runs local developer tools. The team has four engineers, no cloud execution, and",
+  "expects 100 technical beta users. Treat three areas as independent workstreams and",
+  "delegate each one as explicit semantic child work so they run in parallel: onboarding,",
+  "consent, and recovery UX; runtime isolation, updates, and failure recovery; and abuse",
+  "scenarios and operational risks. Launch all three children before awaiting any. When",
+  "they finish, integrate their results: resolve conflicts between usability and safety,",
+  "rank the five most important launch risks, and finish with weekly milestones and a",
+  "concrete go/no-go checklist.",
+].join(" ");
+
+/** Live-run tasks by name, with the verification level a run of each can claim. */
+export const LIVE_RUN_TASKS = Object.freeze({
+  natural: Object.freeze({ text: RECURSIVE_LIVE_RUN_TASK, verificationLevel: "check1" }),
+  delegate: Object.freeze({
+    text: RECURSIVE_LIVE_RUN_DELEGATION_TASK,
+    verificationLevel: "delegation-mechanics",
+    // The task names three independent workstreams and asks for all of them to launch
+    // before any is awaited.
+    expectedChildren: 3,
+  }),
+});
+
+export function liveRunTask(name) {
+  const task = LIVE_RUN_TASKS[name];
+  if (task === undefined) {
+    throw new Error(`--task must be one of: ${Object.keys(LIVE_RUN_TASKS).join(", ")}.`);
+  }
+  return Object.freeze({ name, ...task });
+}
 
 const TERMINAL_LIFECYCLES = new Set(["succeeded", "stopped", "failed"]);
 const PRE_TERMINAL_PRODUCT_STATUSES = new Set([
@@ -230,6 +279,8 @@ export function summarizeRun({
   completionMetadata = [],
   completionExecutions = [],
   traces = [],
+  verificationLevel = "check1",
+  expectedChildren,
 }) {
   const normalizedRequestedTemporalFeatures = normalizedTemporalFeatures(requestedTemporalFeatures);
   const normalizedActualTemporalFeatures = normalizedTemporalFeatures(actualTemporalFeatures, { requireExplicit: true });
@@ -239,7 +290,24 @@ export function summarizeRun({
   const children = semanticChildren(rootCompletionId, completionMetadata);
   const relevantCompletionIds = [rootCompletionId, ...children];
   if (recursionEnabled && children.length === 0) {
-    findings.push("no semantic child was created by the agent's own decision");
+    findings.push(verificationLevel === "check1"
+      ? "no semantic child was created by the agent's own decision"
+      : "no semantic child was created");
+  }
+  if (recursionEnabled && expectedChildren !== undefined) {
+    if (children.length !== expectedChildren) {
+      findings.push(`the task asked for ${expectedChildren} semantic children, and ${children.length} were created`);
+    }
+    // Durable evidence that every child launched before the parent could have needed any
+    // result: no child settled before the last one was created.
+    const executions = completionExecutions.filter(({ completionId }) => children.includes(completionId));
+    const lastLaunch = Math.max(...executions.map(({ createdAt }) => Number(createdAt)));
+    const firstSettlement = Math.min(...executions
+      .filter(({ phase }) => phase === "settled")
+      .map(({ updatedAt }) => Number(updatedAt)));
+    if (executions.length === children.length && children.length > 0 && firstSettlement < lastLaunch) {
+      findings.push("a semantic child settled before every child had launched");
+    }
   }
   if (!recursionEnabled && children.length > 0) {
     findings.push("recursion-disabled execution created a semantic child");
@@ -335,7 +403,12 @@ export function summarizeRun({
     findings,
     passed: findings.length === 0,
     // Semantic coherence is graded separately and blocks merge on its own.
-    judge: { verdict: "not-run", reason: "Gate 2 grades this run; Check 1 does not." },
+    judge: {
+      verdict: "not-run",
+      reason: verificationLevel === "check1"
+        ? "Gate 2 grades this run; Check 1 does not."
+        : `A ${verificationLevel} run proves child launch and settlement. It does not judge how the root integrated the results; Gate 2 grades that.`,
+    },
   };
 }
 
