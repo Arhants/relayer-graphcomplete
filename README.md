@@ -131,13 +131,15 @@ Select one profile per invocation, so a run never spends more than intended:
 
 ```sh
 RELAYER_RECURSIVE_LIVE_RUN=1 npm run live:recursive-complete -- --profile prime-openrouter
-RELAYER_RECURSIVE_LIVE_RUN=1 npm run live:recursive-complete -- --profile codex-openai
+RELAYER_RECURSIVE_LIVE_RUN=1 npm run live:recursive-complete -- --profile codex-subscription
 ```
 
-A `codex.basic` profile also needs `codexExecutable` and `codexHome`, and runs
-inside that home so it never picks up an unrelated provider login. A
-`prime.agent` profile needs neither; it reaches its provider directly and
-accepts only a key.
+The runner provisions `prime.agent` and `codex.basic` harnesses and refuses any
+other. A `codex.basic` profile also needs `codexExecutable` and `codexHome`,
+runs inside that home so it never picks up an unrelated provider login, and
+takes only a `codex-subscription` login: Codex routes through the built-in
+`codex` provider, which has no key contract. A `prime.agent` profile needs
+neither; it reaches its provider directly and accepts only a key.
 
 Each attempt writes an immutable
 `.relayer/live/recursive-complete/<profile>/<run-id>/run.json`; `latest.json`
