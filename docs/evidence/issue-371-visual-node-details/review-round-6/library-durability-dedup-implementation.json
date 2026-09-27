@@ -1,0 +1,44 @@
+{
+  "reviewFindings": [
+    "U9CJ content durability must resolve before logical catalog publication",
+    "U9CQ decoded bootstrap content must be owned and retained once per digest"
+  ],
+  "implementation": {
+    "sourceHash": "0671b100796507be3e3d3cf95d516d10898289ce5942e939ab212cc8604f4e8c",
+    "testHash": "ea7854a7f9a64bf346dd2e7c9a1768841092320da318eec800e84f2e14dcd351",
+    "scope": [
+      "packages/visual-assets/src/index.ts",
+      "packages/visual-assets/test/visual-assets.test.ts"
+    ],
+    "behavior": [
+      "A content rename whose parent directory cannot be synced does not publish a logical asset.",
+      "A retry against the existing digest blob must also sync that directory and remains unpublished until durability succeeds.",
+      "Durable candidate reconstruction decodes content once per digest.",
+      "Memory bootstrap owns one byte copy per digest, validates identical media once, and releases bootstrap references after indexing while preserving copy-on-read output."
+    ],
+    "ownedRegionHashBeforeAdjacentImportValidatorChange": "8d0e3f1ce3eda0027193b2e4d938931fbe6352a1fd98d84f7926ea0133055707",
+    "hashNote": "Final file hash includes adjacent import-validation helpers added by a separate owner after this scoped durability/dedup verification; the owned regions did not change."
+  },
+  "verification": [
+    {
+      "command": "npx vitest run packages/visual-assets/test/visual-assets.test.ts",
+      "result": "pass: 1 file, 54 tests"
+    },
+    {
+      "command": "npm run check -w @relayer/visual-assets",
+      "result": "pass: TypeScript noEmit, build, packaged SVG/raster smoke"
+    },
+    {
+      "command": "git diff --check -- packages/visual-assets/src/index.ts packages/visual-assets/test/visual-assets.test.ts",
+      "result": "pass"
+    }
+  ],
+  "repairReview": {
+    "finding": "An existing digest path originally bypassed parent-directory resync on retry.",
+    "resolution": "The existing-path branch now uses the same directory sync boundary as a fresh rename; the regression repeats the retry while permissions still deny sync and observes no published asset before a final successful retry."
+  },
+  "limits": [
+    "A content blob whose rename completed but directory sync failed can remain as an unreferenced digest file; a later successful retry reuses it after verifying bytes and syncing the directory.",
+    "This focused evidence does not replace repository-wide check/build or desktop evidence."
+  ]
+}

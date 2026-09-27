@@ -1,5 +1,5 @@
 import { escapeHtml, toast } from "../ui.js";
-import { actionCanRetry, actionWasInvoked } from "../action-invocation-state.js";
+import { actionCanRetry, actionWasInvoked, actionReviewKind } from "../action-invocation-state.js";
 import { setControlActivationCompletion } from "../control-activation.js";
 import {
   createModelPicker,
@@ -1295,13 +1295,6 @@ export async function navigateWorkspaceAction({
   await onNavigateLayer(action.targetLayerId, { action, sourceNode });
 }
 
-export function actionReviewKind(action) {
-  if (action?.kind === "input") return "input-action";
-  return (
-    action?.kind === "navigate"
-    || (action?.kind === "invoke" && action.targetLayerId != null)
-  ) ? "navigate-action" : "invoke-action";
-}
 
 export function resolveCompiledNodeDetailAction(actions, reference, node) {
   if (!reference?.clientKey
@@ -2773,10 +2766,16 @@ export function createProductWorkspace({
   }
   function renderComposerContexts() {
     const tray = $("#composerContextTray");
+    const thread = getThread();
+    if (!thread) {
+      tray.replaceChildren();
+      tray.classList.add("hidden");
+      return;
+    }
     const parts = [];
     if (
       contextEditor
-      && contextEditor.ownerThreadId !== String(getThread()?.id)
+      && contextEditor.ownerThreadId !== String(thread.id)
     ) {
       contextEditor = null;
     }
@@ -2961,7 +2960,6 @@ export function createProductWorkspace({
       parts.push(pills);
     }
 
-    const thread = getThread();
     const inputDraft = inputDraftController?.current(thread?.id);
     const inputAttachments = inputDraft?.attachments || [];
     const openInput = inputAttachments.find((attachment) => (
@@ -3072,30 +3070,38 @@ export function createProductWorkspace({
   }
   const syncComposer = () => {
     resizeComposerTextarea(prompt);
+    const thread = getThread();
+    if (!thread) {
+      send.disabled = true;
+      const tray = $("#composerContextTray");
+      tray.replaceChildren();
+      tray.classList.add("hidden");
+      return;
+    }
     const contextDraftsReady = !contextDraftController
-      || loadedContextDraftThreads.has(String(getThread()?.id));
-    const inputThreadId = String(getThread()?.id);
+      || loadedContextDraftThreads.has(String(thread.id));
+    const inputThreadId = String(thread.id);
     const inputDraftsReady = !inputDraftController
       || (loadedInputDraftThreads.has(inputThreadId) && !inputDraftLoads.has(inputThreadId));
-    const inputAttachments = inputDraftController?.current(getThread()?.id)?.attachments || [];
-    const failedConfirmationSend = failedConfirmationSends.get(String(getThread()?.id));
+    const inputAttachments = inputDraftController?.current(thread.id)?.attachments || [];
+    const failedConfirmationSend = failedConfirmationSends.get(String(thread.id));
     const replayIntent = confirmationSendReplayIntent({
       intent: failedConfirmationSend?.intent,
-      threadId: getThread()?.id,
+      threadId: thread.id,
       draftScopeKey: composerDraftScopeState.activeScopeKey,
       promptRevision: composerPromptRevision,
       contextRevision: composerContextState.revision,
       replayContextRevision: failedConfirmationSend?.contextRevision,
       modelSelection: pickerSelectionPayload(modelPicker?.getSelection())?.modelSelection,
-      inputDraftRevision: currentInputDraftRevision(getThread()?.id),
-      inputCompositionRevision: currentInputCompositionRevision(getThread()?.id),
+      inputDraftRevision: currentInputDraftRevision(thread.id),
+      inputCompositionRevision: currentInputCompositionRevision(thread.id),
     });
     const replayReady = replayIntent
       && !prompt.disabled
       && (modelPicker?.isReady() ?? false)
       && !contextEditor;
-    send.disabled = threadHasInFlightSend(inFlightSendThreads, getThread()?.id)
-      || threadHasPendingInputMutation(inputPending, getThread()?.id)
+    send.disabled = threadHasInFlightSend(inFlightSendThreads, thread.id)
+      || threadHasPendingInputMutation(inputPending, thread.id)
       || !contextDraftsReady || !inputDraftsReady || (!replayReady && !composerSubmissionReady(
       prompt.value,
       prompt.disabled,
@@ -4745,7 +4751,8 @@ export function createProductWorkspace({
   } = {}) {
     if (contextEditor?.resolving) return false;
     const requestSequence = ++nodeSelectionSequence;
-    const sourceThreadId = String(getThread()?.id);
+    const sourceThread = getThread();
+    const sourceThreadId = String(sourceThread?.id);
     const node = resolveInteractionContextNode(
       id,
       state.nodes,
@@ -4756,7 +4763,7 @@ export function createProductWorkspace({
     const nextSelectedContextTarget = contextTarget !== undefined
       ? contextTarget || null
       : (notify ? null : selectedContextTarget);
-    const interaction = currentInteraction(state, getThread());
+    const interaction = currentInteraction(state, sourceThread);
     const nextTarget = interactionContextTargetForEditor({
       nodeId: node.id,
       selectedContextTarget: nextSelectedContextTarget,
@@ -4837,6 +4844,14 @@ export function createProductWorkspace({
     const inputActions = actions.filter((action) => action.kind === "input" && action.control);
     const ordinaryActions = actions.filter((action) => action.kind !== "input");
     const visibleLayer = state.visibleLayer ?? interaction?.completionOutput?.rootLayer;
+    const detailContextTarget = String(selectedContextTarget?.nodeId) === String(node.id)
+      ? selectedContextTarget : null;
+    const assetInteraction = detailContextTarget
+      ? state.interactions?.find((candidate) => String(candidate.graphNodeId) === String(detailContextTarget.sourceInteractionNodeId)
+        && String(candidate.threadId) === String(sourceThread?.id))
+      : interaction;
+    const assetThread = sourceThread;
+    const assetLayerId = detailContextTarget?.sourceLayerId ?? visibleLayer?.layer?.id;
     const resolveAuthoredAction = (reference) => resolveCompiledNodeDetailAction(
       actions,
       reference,
@@ -4880,9 +4895,10 @@ export function createProductWorkspace({
     }
     let authoredDetailRuntime;
     const authoredDetailMountKey = [
-      getThread()?.id,
+      assetThread?.id,
+      assetInteraction?.id,
       node.id,
-      visibleLayer?.layer?.id,
+      assetLayerId,
       node.authoredDetail?.integritySha256 ?? "legacy",
     ].map(String).join(":");
     const authoredDetailCompatibilityIssue = node.authoredDetail
@@ -4895,7 +4911,7 @@ export function createProductWorkspace({
       mountKey: authoredDetailMountKey,
       existing: mountedAuthoredDetail,
       compatibilityIssue: authoredDetailCompatibilityIssue,
-      resolveAsset: (asset) => resolveNodeDetailAsset(asset, { node, state, thread: getThread() }),
+      resolveAsset: (asset) => resolveNodeDetailAsset(asset, { node, state, thread: assetThread, interaction: assetInteraction, layerId: assetLayerId }),
       resolveAction: resolveAuthoredAction,
       capabilityState: authoredCapabilityState,
       onNavigate: async (action) => {
@@ -5152,3 +5168,5 @@ export function createProductWorkspace({
     dispose,
   });
 }
+
+export { actionReviewKind } from "../action-invocation-state.js";

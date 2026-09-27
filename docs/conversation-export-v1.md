@@ -88,3 +88,6 @@ JSONL line, 10,000 turns, 10,000 layers per turn, 8 nodes, 28 edges, and 64 acti
 V1 excludes artifacts, trace events, drafts, stopped graph records, credentials, graph capabilities,
 hidden reasoning, private layer-size rationale, runtime session state, environment variables, and
 local project paths. Importers treat every field as inert data and never execute an imported action.
+
+Visual-asset content records require [conversation export V2](conversation-export-v2.md).
+They are not an optional V1 field or a V1 record type. Current readers retain V1 support.
