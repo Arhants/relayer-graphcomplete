@@ -121,8 +121,9 @@ async function observeNextCurrent(
 
 /**
  * Watches the children a parent launched. Each call to `changes()` resolves on the next
- * event: any child's current moving or ending. Requests stay open between calls, so no
- * change is missed and none is asked for twice.
+ * event: any child's current moving or ending. A child still unanswered keeps its request
+ * open; an answered child is asked again after the revision it reported, so its next event
+ * carries its latest current, with any moves made in between folded into it.
  */
 export function watchCompletions(children: Iterable<CompletionHandle>): CompletionWatch {
   const watched = new Map<number, CompletionHandle>();
@@ -144,7 +145,7 @@ export function watchCompletions(children: Iterable<CompletionHandle>): Completi
       }
       if (pending.size === 0) return [];
       await Promise.race(pending.values());
-      // Every request that has answered by now is one change; the rest stay open.
+      // Every request that has answered by now is one change; the unanswered ones stay open.
       const answered = await Promise.all([...pending].map(async ([id, request]) => (
         await Promise.race([request, Promise.resolve(undefined)]) === undefined ? undefined : id
       )));

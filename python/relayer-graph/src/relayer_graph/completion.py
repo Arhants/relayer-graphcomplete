@@ -119,8 +119,9 @@ class CompletionWatch:
     Create one watch for the children you launched and call await watch.changes() when you
     are ready for the next event. It returns as soon as at least one child's current has
     moved or ended since the last call, with every change seen by then; the first call
-    reports each child's current. Requests stay open between calls, so no change is missed
-    and none is asked for twice.
+    reports each child's current. A child still unanswered keeps its request open; an
+    answered child is asked again after the revision it reported, so its next event carries
+    its latest current, with any moves made in between folded into it.
     """
 
     def __init__(self, children: Iterable[CompletionHandle]) -> None:

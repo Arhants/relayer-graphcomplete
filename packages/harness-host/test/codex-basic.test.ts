@@ -95,6 +95,9 @@ describe("CodexBasicHarness", () => {
     expect(brokerAuthorized).toContain("const watch = watchCompletions(children)");
     expect(brokerAuthorized).toContain("Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting.");
     expect(brokerAuthorized).toContain("Import complete and watchCompletions from");
+    // A stopped or failed child rejects child.result, so the root must catch it to integrate the rest.
+    expect(brokerAuthorized).toContain("A stopped or failed child rejects it with CompletionTerminalError");
+    expect(brokerAuthorized).toContain("catch it and integrate the work its error.current still retains");
   });
 
   it("reuses a native Codex thread only while its pinned presentation version is unchanged", async () => {
