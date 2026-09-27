@@ -1,0 +1,15 @@
+   Compiling relayer-graph-core v0.0.0 (/Users/vishaltandale/.codex/worktrees/05b1/relayer-graphcomplete/crates/relayer-graph-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.40s
+     Running tests/graph_database.rs (target/debug/deps/graph_database-06c12c4bbe94e223)
+
+running 7 tests
+test authored_detail_rejects_a_package_with_corrupt_canonical_integrity ... ok
+test authored_detail_rejects_rehashed_noncanonical_asset_schema ... ok
+test authored_detail_assets_require_an_exact_prepared_snapshot_before_draft_mutation ... ok
+test imported_conversation_notes_an_authored_detail_the_export_omitted ... ok
+test imported_conversation_reconnects_the_canonical_authored_detail_to_its_node ... ok
+test draft_resubmission_without_authored_detail_preserves_checkpointed_package ... ok
+test accepted_authored_detail_survives_caller_mutation_and_database_reopen ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 68 filtered out; finished in 0.22s
+

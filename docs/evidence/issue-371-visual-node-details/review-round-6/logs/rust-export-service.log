@@ -1,0 +1,53 @@
+warning: field `layout` is never read
+  --> crates/relayer-graph-server/src/search_index.rs:61:5
+   |
+59 | struct LadybugRuntime {
+   |        -------------- field in this struct
+60 |     store: StdRwLock<Arc<LadybugStore>>,
+61 |     layout: StoreLayout,
+   |     ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `root` is never used
+  --> crates/relayer-graph-server/src/search_index/store.rs:49:12
+   |
+40 | impl StoreLayout {
+   | ---------------- method in this implementation
+...
+49 |     pub fn root(&self) -> &Path {
+   |            ^^^^
+
+warning: function `rows` is never used
+   --> crates/relayer-graph-server/src/search_index/store.rs:645:8
+    |
+645 | pub fn rows(connection: &Connection<'_>, query: &str) -> Result<Vec<Vec<Value>>> {
+    |        ^^^^
+
+warning: `relayer-graph-server` (lib) generated 3 warnings
+   Compiling relayer-app-server v0.0.0 (/Users/vishaltandale/.codex/worktrees/05b1/relayer-graphcomplete/crates/relayer-app-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.16s
+     Running unittests src/lib.rs (target/debug/deps/relayer_app_server-b68cd9d222dbd8f1)
+
+running 19 tests
+test conversation_export_service::tests::exports_approval_lifecycle_completion_statuses ... ok
+test conversation_export_service::tests::export_asset_filename_fallback_matches_archive_string_bounds ... ok
+test conversation_export_service::tests::keeps_encoded_text_that_is_not_a_private_path ... ok
+test conversation_export_service::tests::degrades_authored_detail_containing_a_windows_project_path ... ok
+test conversation_export_service::tests::markdown_redaction_removes_encoded_private_paths_through_the_shared_matcher ... ok
+test conversation_export_service::tests::degrades_authored_detail_without_mutating_its_fallback ... ok
+test conversation_export_service::tests::degrades_nested_numeric_and_named_html_character_references ... ok
+test conversation_export_service::tests::preserves_unrelated_html_entities_in_authored_detail ... ok
+test conversation_export_service::tests::resolved_invoke_exports_its_authored_shape ... ok
+test conversation_export_service::tests::historical_mapping_exports_its_action_origin ... ok
+test conversation_export_service::tests::rejects_unbound_durable_contexts_until_graph_authority_is_bound ... ok
+test conversation_export_service::tests::degrades_authored_detail_containing_an_html_entity_encoded_project_path ... ok
+test conversation_export_service::tests::unanswered_input_action_exports_its_authored_payload ... ok
+test conversation_export_service::tests::expanding_path_redaction_keeps_option_keys_within_the_portable_limit ... ok
+test conversation_export_service::tests::native_submitted_inputs_sort_by_materialized_portable_identity ... ok
+test conversation_export_service::tests::exports_context_diagnostics_with_ordered_annotations_and_authority_free_ids ... ok
+test conversation_export_service::tests::degrades_authored_detail_hidden_behind_sibling_encodings_and_records_the_omission ... ok
+test conversation_export_service::tests::exports_native_submitted_input_with_redacted_snapshot_and_portable_provenance ... ok
+test conversation_export_service::tests::export_fetches_shared_digest_once_and_checks_each_node_metadata ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 231 filtered out; finished in 0.01s

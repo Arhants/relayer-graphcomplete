@@ -48,7 +48,7 @@ function withPlannerFixture(run) {
     join(repository, "desktop", "package.json"),
     JSON.stringify({ name: "relayer-desktop" }),
   );
-  for (const name of ["eval-runner", "graph-client", "harness-host"]) {
+  for (const name of ["eval-runner", "graph-client", "visual-assets", "harness-host"]) {
     mkdirSync(join(repository, "packages", name), { recursive: true });
     writeFileSync(
       join(repository, "packages", name, "package.json"),
@@ -200,6 +200,7 @@ describe("affected-module plan v1", { timeout: 30_000 }, () => {
       "@relayer/eval-runner",
       "@relayer/graph-client",
       "@relayer/harness-host",
+      "@relayer/visual-assets",
       "relayer-desktop",
     ]);
     expect(result.chapters.typescript).toBe(true);
@@ -219,6 +220,7 @@ describe("affected-module plan v1", { timeout: 30_000 }, () => {
       "relayer-desktop",
     ]);
     expect(result.npmBuildWorkspaces).toContain("@relayer/graph-client");
+    expect(result.npmBuildWorkspaces).toContain("@relayer/visual-assets");
   });
 
   test("selects packaging only for owned desktop packaging inputs", () => {
