@@ -86,6 +86,9 @@ describe("CodexBasicHarness", () => {
     expect(baseline).not.toContain("Import complete from");
     expect(baseline).not.toContain("semantic completion is unavailable");
     expect(brokerAuthorized).toContain("graph.prepareComplete(invokeAction)");
+    // A root that ends its turn with children in flight fails, so it must await them first.
+    expect(brokerAuthorized).toContain("Your turn ending does not wait for them");
+    expect(brokerAuthorized).toContain("await Promise.all([childA.result, childB.result])");
     expect(brokerAuthorized).toContain("Import complete from");
   });
 

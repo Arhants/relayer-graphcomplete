@@ -742,7 +742,7 @@ function semanticCompletionGuidanceJs(
   nativeAgentLabel: string,
 ): string {
   if (context?.completionBroker === undefined) return "";
-  return `For explicit semantic child work, first author and submit the invoke action in its layer and advance that layer as current. Only after that succeeds, call const inputGraph = await graph.prepareComplete(invokeAction). Import complete from ${completeModuleUrl} and call const child = complete(inputGraph). That returns immediately with completionId, current.snapshot(), and result; launch multiple children before awaiting them when the work is independent. Native ${nativeAgentLabel} subagents remain inside this completion and do not create semantic children by themselves.\n`;
+  return `For explicit semantic child work, first author and submit the invoke action in its layer and advance that layer as current. Only after that succeeds, call const inputGraph = await graph.prepareComplete(invokeAction). Import complete from ${completeModuleUrl} and call const child = complete(inputGraph). That returns immediately with completionId, current.snapshot(), and result; launch multiple children before awaiting them when the work is independent. Your turn ending does not wait for them: before you end it, await every child's result, for example const results = await Promise.all([childA.result, childB.result]), even when that takes minutes. Never leave a child's result unawaited. Then integrate the results and return this completion. Native ${nativeAgentLabel} subagents remain inside this completion and do not create semantic children by themselves.\n`;
 }
 
 function graphAuthoringCommand(launcher: string | undefined): string {

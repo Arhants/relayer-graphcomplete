@@ -511,6 +511,10 @@ describe("PrimeAgentHarness", () => {
     expect(prompts[0]!.text).toContain("input_graph = await graph.prepare_complete(invoke_action)");
     expect(prompts[0]!.text).toContain("from relayer_graph import complete");
     expect(prompts[0]!.text).toContain("do not create semantic children by themselves");
+    // A root that ends its turn with children in flight fails, so it must await them first.
+    expect(prompts[0]!.text).toContain("Your turn ending does not wait for them");
+    expect(prompts[0]!.text).toContain("results = await asyncio.gather(child_a.result, child_b.result)");
+    expect(prompts[0]!.text).toContain("Never leave a child's result in a background task");
     expect(prompts[1]!.text).not.toContain("prepare_complete");
     expect(prompts[1]!.text).not.toContain("from relayer_graph import complete");
     expect(prompts[0]!.text).toContain("exactly one NodePlacementObject(node, x, y) per member node");
