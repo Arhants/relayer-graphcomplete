@@ -98,3 +98,19 @@ source freshness or sandbox arbitrary build scripts. Explicit binary overrides
 and manually shared/hardlinked generated outputs are outside the default
 ownership contract. Compiled edits require preparation and restart. No end-to-end
 speed percentage or candidate/judge latency reduction is claimed.
+
+### Teardown failure found during verification
+
+The full check exposed an existing context-preview race. Happy DOM's task drain
+does not wait for native WebCrypto integrity work, and workspace disposal called
+`releaseSendAttempt`, which could start a new detail render after releasing the
+mounted asset. The same real-preview checkpoint now waits for the actual image
+and provenance, then asserts disposal retains the same host and releases the
+asset exactly once. Reselection is suppressed when the workspace is disposed.
+This changes only teardown, not node-selection or graph authority semantics.
+
+Changed seam: the production workspace's send-attempt cleanup during disposal.
+Checkpoint: `test/node-detail-runtime.test.mjs`, “resolves context-preview images
+from their original presenting interaction and layer”. The strengthened assertion
+failed before the one-line guard and passed afterward. Browser proof retains
+shutdown/restart coverage. The full deterministic check remains required.
