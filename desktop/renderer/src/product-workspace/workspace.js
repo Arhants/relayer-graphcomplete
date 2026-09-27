@@ -493,8 +493,19 @@ export function untrackedFilesLabel(count = 0) {
   return `${count} ${count === 1 ? "file" : "files"}`;
 }
 
-export function interactionStatusRenderKey(interaction, fallbackStatus = "idle") {
-  return `${interaction?.id ?? "none"}:${interaction?.completionStatus || fallbackStatus}`;
+const TERMINAL_TEMPORAL_LIFECYCLES = ["succeeded", "stopped", "failed"];
+
+/** The status a turn shows: its terminal graph lifecycle when it has one, else its product status. */
+export function viewedInteractionStatus(interaction, fallbackStatus = "idle", temporalLifecycle = null) {
+  return TERMINAL_TEMPORAL_LIFECYCLES.includes(temporalLifecycle)
+    ? temporalLifecycle
+    : interaction?.completionStatus || fallbackStatus;
+}
+
+/** Changes whenever the shown status would, including a graph lifecycle ahead of the product status. */
+export function interactionStatusRenderKey(interaction, fallbackStatus = "idle", temporalLifecycle = null) {
+  const key = `${interaction?.id ?? "none"}:${interaction?.completionStatus || fallbackStatus}`;
+  return TERMINAL_TEMPORAL_LIFECYCLES.includes(temporalLifecycle) ? `${key}:${temporalLifecycle}` : key;
 }
 
 export function inspectorEscapeShouldClose({
@@ -4015,13 +4026,11 @@ export function createProductWorkspace({
   }
 
   function renderInteractionState(state, interaction, restoredDraft = false) {
-    const viewedStatus = ["succeeded", "stopped", "failed"].includes(state.temporalLifecycle)
-      ? state.temporalLifecycle
-      : interaction?.completionStatus || state.status || "idle";
+    const viewedStatus = viewedInteractionStatus(interaction, state.status || "idle", state.temporalLifecycle);
     const presentation = turnStatusPresentation(viewedStatus);
     const statusElement = $("#interactionStatus");
     const safeReason = state.temporalSafeReason || null;
-    const statusKey = `${interactionStatusRenderKey(interaction, state.status || "idle")}:${safeReason ?? ""}`;
+    const statusKey = `${interactionStatusRenderKey(interaction, state.status || "idle", state.temporalLifecycle)}:${safeReason ?? ""}`;
     if (statusKey !== renderedInteractionStatusKey) {
       statusElement.className = presentation.hidden
         ? "interaction-status hidden"
