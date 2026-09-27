@@ -8,7 +8,7 @@ import { userInfo } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { nativeBinaryName } from "../shared/target.mjs";
+import { requireEvalArtifacts } from "./runtime-artifacts.mjs";
 
 import {
   graphMemoryFixtureFactory,
@@ -55,9 +55,7 @@ const repositoryRoot = resolve(desktopDirectory, "..");
 const metadata = JSON.parse(readFileSync(join(repositoryRoot, "package.json"), "utf8"));
 const desktopVersion = metadata.version;
 const userDataDirectory = resolve(process.env.RELAYER_EVAL_USER_DATA_DIR || join(homedir(), ".relayer", "eval-web"));
-const targetDirectory = resolve(process.env.CARGO_TARGET_DIR || join(repositoryRoot, "target"));
-const graphServerBinary = resolve(process.env.RELAYER_GRAPH_SERVER_BIN || join(targetDirectory, "debug", nativeBinaryName("relayer-graph-server")));
-const appServerBinary = resolve(process.env.RELAYER_APP_SERVER_BINARY || join(targetDirectory, "debug", nativeBinaryName("relayer-app-server")));
+const { graphServerBinary, appServerBinary } = requireEvalArtifacts(repositoryRoot);
 const harnessDirectory = join(repositoryRoot, "harnesses");
 const evalTarget = evalRuntimeTarget({ environment: process.env });
 const permissionCatalogPath = join(repositoryRoot, "permissions", "desktop.json");

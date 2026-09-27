@@ -77,7 +77,12 @@
     "desktop:release:audit-authority": "node scripts/audit-desktop-release-authority.mjs",
     "desktop:release:publish-preview": "node desktop/release/publish-preview.mjs",
     "desktop:release:promote-stable": "node desktop/release/promote-stable.mjs",
-    "test:eval-web": "node scripts/test-eval-web.mjs"
+    "test:eval-web": "node scripts/test-eval-web.mjs",
+    "eval-app:prepare": "node desktop/eval-main/runtime-artifacts.mjs prepare",
+    "preeval-app:dev": "node desktop/eval-main/runtime-artifacts.mjs",
+    "preeval:input-roundtrip:live": "node desktop/eval-main/runtime-artifacts.mjs",
+    "pretest:eval-web": "node desktop/eval-main/runtime-artifacts.mjs",
+    "test:eval-prepared-runtime": "vitest run --config scripts/eval-prepared.vitest.config.mjs"
   },
   "devDependencies": {
     "@electron/asar": "3.4.1",

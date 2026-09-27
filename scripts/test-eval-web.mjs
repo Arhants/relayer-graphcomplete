@@ -1,3 +1,4 @@
+import { requireEvalArtifacts } from "../desktop/eval-main/runtime-artifacts.mjs";
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -168,12 +169,12 @@ try {
 
   // Exercise the actual judge adapter against the real product server, without inference.
   const root = resolve(".");
-  const binaries = resolve(process.env.CARGO_TARGET_DIR || "target", "debug");
+  const { graphServerBinary, appServerBinary } = requireEvalArtifacts(root);
   const configurationPaths = [join(root, "harnesses/fixture-task-system.yaml")];
   const data = join(directory, "judge");
-  const runtime = new GraphCompleteRuntimeService({ userDataDirectory: data, graphServerBinary: join(binaries, "relayer-graph-server"), configurationPaths, additionalImplementations: { "fixture.task-system": taskSystemFixtureFactory } });
+  const runtime = new GraphCompleteRuntimeService({ userDataDirectory: data, graphServerBinary, configurationPaths, additionalImplementations: { "fixture.task-system": taskSystemFixtureFactory } });
   resources.push(runtime);
-  const product = new RelayerAppServerService({ userDataDirectory: data, binaryPath: join(binaries, "relayer-app-server"), webDirectory: join(root, "desktop/renderer"), permissionCatalogPath: join(root, "permissions/desktop.json"), runtimeSession: await runtime.start(), defaultHarnessConfiguration: "fixture-task-system", allowHarnessOverride: true, enableReadOnlySession: true });
+  const product = new RelayerAppServerService({ userDataDirectory: data, binaryPath: appServerBinary, webDirectory: join(root, "desktop/renderer"), permissionCatalogPath: join(root, "permissions/desktop.json"), runtimeSession: await runtime.start(), defaultHarnessConfiguration: "fixture-task-system", allowHarnessOverride: true, enableReadOnlySession: true });
   resources.push(product);
   const productSession = await product.start();
   const service = await new EvalService({ stateFile: join(data, "eval-data/test-runs.json"), productSession, configurationPaths }).open();

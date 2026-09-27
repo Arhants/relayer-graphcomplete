@@ -50,3 +50,12 @@ build or packaging commands. Developers rebuild changed Rust or TypeScript input
 explicitly; dashboard, renderer, and host JavaScript edits need no Eval build.
 Packaged-Eval configuration, credential, autorun, and startup-maintenance branches
 are removed. Existing review authority and browser proof remain unchanged.
+
+`npm run eval-app:prepare` runs the existing shared build with a private checkout
+`target`. Preparation migrates a target symlink by removing only that link; it
+never deletes the shared destination. Default launch rejects external Cargo
+targets and escaping binary paths. Explicit per-binary overrides retain their
+advanced/test meaning outside that guarantee. Launch and browser proof resolve
+the same artifacts. Readiness checks existence and ownership, not source freshness;
+compiled changes require explicit preparation and host restart. This step adds
+no watcher, alternate compiler pipeline, or cache manager.
