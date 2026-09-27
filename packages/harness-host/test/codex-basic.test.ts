@@ -89,6 +89,8 @@ describe("CodexBasicHarness", () => {
     // A root that ends its turn with children in flight fails, so it must await them first.
     expect(brokerAuthorized).toContain("Your turn ending does not wait for them");
     expect(brokerAuthorized).toContain("await Promise.all([childA.result, childB.result])");
+    // The graph refuses a pointer move that loses the path back to the previous current layer.
+    expect(brokerAuthorized).toContain("the next current layer must keep a navigation path back to it");
     expect(brokerAuthorized).toContain("Import complete from");
   });
 

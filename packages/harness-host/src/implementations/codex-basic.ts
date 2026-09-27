@@ -733,7 +733,7 @@ The graph service enforces exact provenance, target visibility, layer size, expa
 }
 
 function currentWorkspaceMechanicsJs(): string {
-  return `Read current with const current = await graph.getCurrent(). After submitting a layer, you may update the pointer with await graph.advanceCurrent(layer, current.headRevision, "a-stable-operation-key").`;
+  return `Read current with const current = await graph.getCurrent(). After submitting a layer, you may update the pointer with await graph.advanceCurrent(layer, current.headRevision, "a-stable-operation-key"). Once a layer is current, the next current layer must keep a navigation path back to it, so the user can always return to what they saw: after submitting the new layer and before advancing to it, add a reference navigate action from one of its nodes to current.currentLayerId.`;
 }
 
 function semanticCompletionGuidanceJs(
