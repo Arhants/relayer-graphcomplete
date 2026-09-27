@@ -1442,6 +1442,108 @@ describe("HarnessHost", () => {
     }
   });
 
+  it("claims an invoked child's family admission exactly as a root run's", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-invoked-admission-"));
+    const releases: string[] = [];
+    let observedContext: HarnessRunContext | undefined;
+    const plan: HarnessModelPlan = {
+      familyId: 5,
+      familyRevision: 2,
+      orchestrator: { providerId: "openrouter-work", adapterId: "openrouter", accessContract: "secret@1", modelId: "luna" },
+      roster: [{ providerId: "openrouter-work", adapterId: "openrouter", accessContract: "secret@1", modelId: "luna" }],
+    };
+    const policy = {
+      configurationRevision: 1,
+      configurationDigest: `sha256:${"c".repeat(64)}`,
+      executionAccessContracts: ["secret@1"],
+      modelRules: { allow: [{ adapterId: "openrouter", modelIdRegex: ".*" }], deny: [] },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : graphReadResponse(url, 2, [], 102)));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire(route) {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: route.providerId, adapterId: route.adapterId!,
+              adapterImplementationVersion: "2", endpoint: "https://openrouter.test", fields: { "api-key": "secret" },
+            },
+            release() { releases.push(route.providerId); },
+          };
+        } },
+        implementations: { test: () => ({
+          supportsInvokedComplete: true,
+          async complete(context) { observedContext = context; },
+          state: emptyState,
+        }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: {
+          ...completeEnabledConfiguration,
+          revision: 1,
+          modelRules: policy.modelRules,
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      // The product admits the child under its own product interaction, then starts it.
+      const admission = await host.admitModelPlanExecution(
+        1, 29, "attempt-child-29", plan, new AbortController().signal, policy,
+      );
+      await host.startInvokedCompletion(1, {
+        ...invoked(graph(2, "child-token")),
+        traceContext: { productInteractionId: 29 },
+        harnessPolicy: policy,
+        modelPlan: plan,
+        executionLeaseId: admission.executionLeaseId,
+        attemptAdmissionId: "attempt-child-29",
+      });
+      await expect(host.observeInvokedCompletion(1, 2)).resolves.toEqual({ completionId: 2 });
+
+      expect(observedContext?.modelPlan).toEqual(admission.admittedPlan);
+      expect(observedContext?.accessBundle?.byProviderId["openrouter-work"]?.adapterImplementationVersion).toBe("2");
+      // The child's leases stay held until the product releases them after settlement.
+      expect(releases).toEqual([]);
+      expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
+      expect(releases).toEqual(["openrouter-work"]);
+    } finally {
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an invoked child that carries only part of an admission", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-invoked-partial-admission-"));
+    let running: Awaited<ReturnType<typeof startHarnessHost>> | undefined;
+    try {
+      running = await startHarnessHost({
+        stateFile: join(directory, "sessions.json"),
+        controlToken: "control",
+        implementations: { test: () => ({ async complete() {}, state: emptyState }) },
+      });
+      const response = await fetch(`${running.url}/sessions/1/invoked-completions`, {
+        method: "POST",
+        headers: { authorization: "Bearer control", "content-type": "application/json" },
+        body: JSON.stringify({
+          ...invoked(graph(2, "child-token")),
+          traceContext: { productInteractionId: 29 },
+          executionLeaseId: "00000000-0000-4000-8000-000000000000",
+        }),
+      });
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({
+        error: "invalid_invoked_completion",
+        message: expect.stringContaining("together"),
+      });
+    } finally {
+      await running?.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("rolls back already-acquired family access when a later provider cannot be acquired", async () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-family-rollback-"));
     const release = vi.fn();

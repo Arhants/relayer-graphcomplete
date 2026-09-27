@@ -44,10 +44,48 @@ use std::{
 /// retries forever is still retrying when this elapses.
 const CLEANUP_QUIESCENCE: Duration = Duration::from_millis(1500);
 
+/// The thread's harness: the product's seeded codex-basic row, backed here by the
+/// runtime's test implementation.
+const HARNESS: &str = "codex-basic";
+
+/// Admits a requested family plan the way the harness host does: every route at
+/// adapter version 1, signed with the policy and plan digests the app server checks.
+fn sign_admission(body: &Value) -> Value {
+    let plan: crate::product::ExecutionModelPlan =
+        serde_json::from_value(body["modelPlan"].clone()).unwrap();
+    let admit =
+        |route: &crate::product::ExecutionModelRoute| crate::product::AdmittedExecutionModelRoute {
+            provider_id: route.provider_id.clone(),
+            adapter_id: route.adapter_id.clone(),
+            access_contract: route.access_contract.clone(),
+            model_id: route.model_id.clone(),
+            adapter_implementation_version: "1".into(),
+        };
+    let mut admitted = crate::product::AdmittedExecutionModelPlan {
+        family_id: plan.family_id,
+        family_revision: plan.family_revision,
+        orchestrator: admit(&plan.orchestrator),
+        roster: plan.roster.iter().map(admit).collect(),
+        harness_policy_digest: crate::runtime::harness_policy_value_digest(&body["harnessPolicy"])
+            .unwrap(),
+        digest: String::new(),
+    };
+    admitted.digest = crate::runtime::admitted_model_plan_digest(&admitted).unwrap();
+    serde_json::json!({
+        "executionLeaseId": uuid::Uuid::new_v4().to_string(),
+        "adapterImplementationVersion": "1",
+        "admittedPlan": admitted,
+    })
+}
+
 /// What the fake harness does, set by the replay.
 struct HarnessControl {
     /// "fail" refuses a start; "lost" runs it but acknowledges another identity.
     start: Mutex<&'static str>,
+    /// "ok" admits a family plan by signing it as the host does; "fail" refuses it.
+    admission: Mutex<&'static str>,
+    /// The child's provider run: none | running | cancelled.
+    prov: Mutex<&'static str>,
     /// Once armed, a cancellation waits for the replay to release it.
     cancel_gated: AtomicBool,
     cancel_gate: tokio::sync::Semaphore,
@@ -67,6 +105,9 @@ struct World {
     stop_report: &'static str,
     graph: GraphDatabase,
     harness: Arc<HarnessControl>,
+    selected: bool,
+    admission: Option<RecursiveChildAdmission>,
+    pool: sqlx::SqlitePool,
     root: PathBuf,
     tasks: Vec<tokio::task::JoinHandle<Result<(), std::io::Error>>>,
 }
@@ -82,8 +123,9 @@ async fn serve(app: Router) -> (String, tokio::task::JoinHandle<Result<(), std::
 
 impl World {
     /// A root interaction whose accepted current publishes one invoke action,
-    /// and the recursive child prepared and bound for it, before any launch.
-    async fn new(label: &str) -> Self {
+    /// and the recursive child prepared and bound for it, before any launch. A
+    /// selected world gives the root a model selection the child inherits.
+    async fn new(label: &str, selected: bool) -> Self {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -98,7 +140,7 @@ impl World {
         fs::write(
             &catalog,
             serde_json::json!({"schemaVersion":1,"configurations":[{"configuration":{
-                "schemaVersion":1,"name":"test","implementation":"test",
+                "schemaVersion":1,"name":HARNESS,"implementation":"test",
                 "implementationVersion":1,"permissionBindings":{"auto":{}},
                 "complete":{"agentAuthored":true},"settings":{}
             },"digest":"sha256:test"}]})
@@ -111,7 +153,7 @@ impl World {
                 title: None,
                 project_id: None,
                 initial_message: "Root".into(),
-                harness_configuration_name: "test".into(),
+                harness_configuration_name: HARNESS.into(),
                 personal_presentation_version_key: None,
                 permission_profile_id: "auto".into(),
                 model_selection: None,
@@ -211,22 +253,75 @@ impl World {
         .execute(&pool)
         .await
         .unwrap();
-        pool.close().await;
+        if selected {
+            // The seeded catalog the product's own storage tests use: one connected
+            // provider model in one family, routable by the thread's harness.
+            for statement in [
+                "UPDATE model_providers SET connected=1,unavailable_reason_code=NULL,unavailable_reason_message=NULL,refreshed_at='1' WHERE id='codex'",
+                "INSERT INTO provider_models(provider_id,model_id,label,provider_order,visible,available,provider_default,metadata_json) VALUES ('codex','test-model','Test model',0,1,1,1,'{}')",
+                "UPDATE product_harnesses SET available=1,unavailable_reason_code=NULL,unavailable_reason_message=NULL WHERE configuration_name='codex-basic'",
+                "INSERT INTO model_families(id,name,kind,system_key,enabled,position) VALUES (1,'Codex','system','codex',1,0)",
+                "INSERT INTO model_family_members(family_id,position,provider_id,model_id) VALUES (1,0,'codex','test-model')",
+            ] {
+                sqlx::query(statement).execute(&pool).await.unwrap();
+            }
+            sqlx::query("UPDATE interactions SET model_provider_id='codex',provider_model_id='test-model',model_family_id=1 WHERE id=?1")
+                .bind(thread.root_interaction_id.value())
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
 
         let harness_control = Arc::new(HarnessControl {
             start: Mutex::new("fail"),
+            admission: Mutex::new("ok"),
+            prov: Mutex::new("none"),
             cancel_gated: AtomicBool::new(false),
             cancel_gate: tokio::sync::Semaphore::new(0),
         });
         let start_control = harness_control.clone();
         let cancel_control = harness_control.clone();
+        let admission_control = harness_control.clone();
         let harness = Router::new()
+            .route(
+                "/sessions",
+                // The thread's live session is held by the running root turn, which
+                // awaits its child, so a child must never ask the host to set it up.
+                routing::post(|| async {
+                    (
+                        StatusCode::CONFLICT,
+                        axum::Json(
+                            serde_json::json!({"error":"session is held by the running root turn"}),
+                        ),
+                    )
+                }),
+            )
+            .route(
+                "/sessions/{id}/execution-leases",
+                routing::post(move |axum::Json(body): axum::Json<Value>| {
+                    let control = admission_control.clone();
+                    async move {
+                        if *control.admission.lock().unwrap() != "ok" {
+                            return (
+                                StatusCode::CONFLICT,
+                                axum::Json(serde_json::json!({"error":"provider unavailable"})),
+                            );
+                        }
+                        (StatusCode::CREATED, axum::Json(sign_admission(&body)))
+                    }
+                }),
+            )
+            .route(
+                "/sessions/{id}/execution-leases/{lease}",
+                routing::delete(|| async { axum::Json(serde_json::json!({"released":true})) }),
+            )
             .route(
                 "/sessions/{id}/invoked-completions",
                 routing::post(move || {
                     let control = start_control.clone();
                     async move {
                         if *control.start.lock().unwrap() == "lost" {
+                            *control.prov.lock().unwrap() = "running";
                             (
                                 StatusCode::CREATED,
                                 axum::Json(serde_json::json!({
@@ -252,6 +347,10 @@ impl World {
                     async move {
                         if control.cancel_gated.load(Ordering::SeqCst) {
                             control.cancel_gate.acquire().await.unwrap().forget();
+                        }
+                        let mut prov = control.prov.lock().unwrap();
+                        if *prov == "running" {
+                            *prov = "cancelled";
                         }
                         axum::Json(serde_json::json!({"cancelled":true}))
                     }
@@ -283,49 +382,7 @@ impl World {
             .await
             .unwrap()
             .interaction;
-        assert!(product.claim_interaction_preparing(child.id).await.unwrap());
-        let working_directory = root.to_string_lossy().into_owned();
-        let seeded = runtime
-            .prepare(&CompleteInteraction {
-                project_id: None,
-                product_interaction_id: child.id.value(),
-                thread_id: thread.id.value(),
-                interaction_id: child.id.value(),
-                text: &child.text,
-                working_directory: &working_directory,
-                harness_configuration_name: "test",
-                permission_profile: permission_catalog.profile("auto").unwrap(),
-                model_selection: None,
-                model_plan: None,
-                attempt_admission_id: None,
-                execution_lease_id: None,
-                harness_policy: None,
-                invocation: Some(invocation),
-                input_identity: None,
-                input_digest: None,
-                personal_presentation: None,
-                contexts: &[],
-                submitted_inputs: &[],
-            })
-            .await
-            .unwrap();
-        assert!(
-            product
-                .bind_prepared_interaction(PreparedInteractionBinding {
-                    interaction_id: child.id,
-                    graph_node_id: seeded.graph_node_id,
-                    harness_configuration_name: &seeded.harness_configuration_name,
-                    harness_configuration_digest: &seeded.harness_configuration_digest,
-                    effective_execution_digest: &seeded.effective_execution_digest,
-                    effective_permission_receipt: &seeded.effective_permission_receipt,
-                    input_children: &seeded.input_children,
-                })
-                .await
-                .unwrap()
-        );
-        let origin_digest =
-            completion_permission_origin_digest(&seeded.effective_permission_receipt, invocation)
-                .unwrap_or_else(|error| panic!("origin digest: {}", error.message()));
+        assert_eq!(child.model_selection.is_some(), selected);
         let state = ApiState {
             product: product.clone(),
             authenticator: DesktopSessionAuthenticator::new("control", None),
@@ -336,7 +393,7 @@ impl World {
                 Some(runtime.clone()),
             ),
             permission_catalog,
-            default_harness_configuration: "test".into(),
+            default_harness_configuration: HARNESS.into(),
             allow_harness_override: true,
             allow_conversation_import: false,
             standalone_workspaces_directory: root.join("workspaces"),
@@ -354,6 +411,14 @@ impl World {
             completion_brokers: CompletionBrokerRegistry::new(Some("http://broker".into())),
             completion_observations: CompletionObservations::default(),
         };
+        // Prepared and bound exactly as complete_prepared_child prepares it.
+        let seeded = prepare_and_claim_interaction(&state, &thread, &child, false, true)
+            .await
+            .unwrap_or_else(|error| panic!("prepare: {}", error.message()))
+            .expect("prepared child");
+        let origin_digest =
+            completion_permission_origin_digest(&seeded.effective_permission_receipt, invocation)
+                .unwrap_or_else(|error| panic!("origin digest: {}", error.message()));
         Self {
             state,
             product,
@@ -368,6 +433,9 @@ impl World {
             stop_report: "none",
             graph: graph_reader,
             harness: harness_control,
+            selected,
+            admission: None,
+            pool,
             root,
             tasks: vec![graph_task, harness_task],
         }
@@ -432,6 +500,38 @@ impl World {
                 .expect("activation ownership");
                 self.activated = Some(activated);
             }
+            "LaunchAdmit" => {
+                let ok = argument(2) == "ok";
+                *self.harness.admission.lock().unwrap() = if ok { "ok" } else { "fail" };
+                let activated = self.activated.clone().expect("activated before admission");
+                match admit_recursive_child(
+                    &self.state,
+                    &self.runtime,
+                    &self.thread,
+                    &self.child,
+                    &activated,
+                )
+                .await
+                {
+                    Ok(admission) => {
+                        assert!(ok, "the fake harness refused this admission");
+                        self.admission = admission;
+                    }
+                    Err(_) => {
+                        assert!(!ok, "the admission was expected to succeed");
+                        self.harness.cancel_gated.store(true, Ordering::SeqCst);
+                        spawn_failed_recursive_start_cleanup(
+                            self.state.clone(),
+                            self.thread.clone(),
+                            self.child.clone(),
+                            activated,
+                            self.origin_digest.clone(),
+                            "model_unavailable",
+                            None,
+                        );
+                    }
+                }
+            }
             "LaunchStart" => {
                 let mode = match argument(2) {
                     "fail" => "fail",
@@ -448,6 +548,13 @@ impl World {
                         &activated,
                         self.invocation,
                         None,
+                        self.admission.as_ref().map(|admission| {
+                            crate::runtime::InvokedCompletionAdmission {
+                                model_plan: &admission.model_plan,
+                                execution_lease_id: &admission.execution_lease_id,
+                                attempt_admission_id: &admission.attempt_admission_id,
+                            }
+                        }),
                     )
                     .await;
                 assert!(started.is_err(), "a {mode} start must fail");
@@ -459,6 +566,10 @@ impl World {
                     self.child.clone(),
                     activated,
                     self.origin_digest.clone(),
+                    "provider_start_failed",
+                    self.admission
+                        .as_ref()
+                        .map(|admission| admission.attempt_id),
                 );
             }
             // stop_completion's GET and POSTs are one terminate call here (THR:1732).
@@ -550,7 +661,8 @@ impl World {
                     .await
                     .unwrap();
             }
-            "CleanCancel" | "CleanFail" | "CleanFinalize" | "CleanDiscard" => {
+            // Settlement reconciles the terminal attempt's lease inline, inside cleanup.
+            "CleanCancel" | "CleanFail" | "CleanFinalize" | "CleanDiscard" | "LeaseReconcile" => {
                 if name == "CleanCancel" {
                     self.harness.cancel_gate.add_permits(1);
                 }
@@ -623,7 +735,33 @@ impl World {
             .await
             .unwrap()
             .completion_status;
+        let attempt_row: Option<(String, Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT outcome,execution_lease_id,execution_lease_reconciled_at FROM interaction_attempts WHERE interaction_id=?1 ORDER BY id DESC LIMIT 1",
+        )
+        .bind(self.child.id.value())
+        .fetch_optional(&self.pool)
+        .await
+        .unwrap();
+        let (attempt, lease) = match attempt_row {
+            None => ("none", "none"),
+            Some((outcome, lease_id, reconciled)) => (
+                if outcome == "running" {
+                    "running"
+                } else {
+                    "terminal"
+                },
+                match (lease_id, reconciled) {
+                    (None, _) => "none",
+                    (Some(_), None) => "held",
+                    (Some(_), Some(_)) => "released",
+                },
+            ),
+        };
         serde_json::json!({
+            "selected": self.selected,
+            "attempt": attempt,
+            "lease": lease,
+            "prov": *self.harness.prov.lock().unwrap(),
             "life": serde_json::to_value(current.lifecycle).unwrap(),
             "head": current.head_revision,
             "why": current.safe_reason.unwrap_or_else(|| "none".into()),
@@ -644,6 +782,10 @@ impl World {
 
 fn project_model_state(state: &Value) -> Value {
     serde_json::json!({
+        "selected": state["selected"],
+        "attempt": state["attempt"],
+        "lease": state["lease"],
+        "prov": state["prov"],
         "life": state["life"],
         "head": state["head"],
         "why": state["why"],
@@ -665,6 +807,15 @@ fn promise_holds(name: &str, state: &Value) -> bool {
                 && (!(status == "failed" && phase == "settled")
                     || matches!(life, "stopped" | "failed"))
         }
+        "LeaseReleasedOnlyAfterSettlement" => {
+            state["lease"] != "released" || state["attempt"] == "terminal"
+        }
+        "ProviderRunsUnderLease" => {
+            !(state["selected"] == true && state["prov"] == "running" && phase != "settled")
+                || state["lease"] == "held"
+        }
+        "SettledChildEndsItsAttempt" => phase != "settled" || state["attempt"] != "running",
+        "LeaseReleased" => state["lease"] != "held",
         "ChildSettles" => {
             life != "active" && phase == "settled" && matches!(status, "accepted" | "failed")
         }
@@ -690,11 +841,12 @@ fn traces() -> Vec<Value> {
 
 async fn replay(trace: &Value) {
     let scenario = trace["scenario"].as_str().unwrap();
-    let mut world = World::new(scenario).await;
+    let selected = trace["steps"][0]["state"]["selected"] == true;
+    let mut world = World::new(scenario, selected).await;
     let steps = trace["steps"].as_array().unwrap();
     let is_cleanup = |step: Option<&Value>| {
         step.and_then(|step| step["action"][0].as_str())
-            .is_some_and(|name| name.starts_with("Clean"))
+            .is_some_and(|name| name.starts_with("Clean") || name == "LeaseReconcile")
     };
     for (index, step) in steps.iter().enumerate() {
         let action = step["action"].as_array();

@@ -132,6 +132,13 @@ pub(crate) struct RuntimeClient {
     temporal_features: relayer_graph_core::TemporalFeatureConfig,
 }
 
+/// A recursive child's family admission, forwarded to its start exactly as a root run's.
+pub(crate) struct InvokedCompletionAdmission<'a> {
+    pub(crate) model_plan: &'a ExecutionModelPlan,
+    pub(crate) execution_lease_id: &'a str,
+    pub(crate) attempt_admission_id: &'a str,
+}
+
 pub(crate) struct CompleteInteraction<'a> {
     pub(crate) project_id: Option<i64>,
     pub(crate) product_interaction_id: i64,
@@ -201,6 +208,13 @@ pub(crate) struct PreparedInteraction {
     /// The policy this execution was admitted under. A recursive child launch must carry it
     /// too: once a session has taken a dynamic policy update, every later execution needs one.
     harness_policy: Option<ExecutionHarnessPolicy>,
+}
+
+impl PreparedInteraction {
+    /// The policy this execution was prepared under, which its admission must match.
+    pub(crate) fn harness_policy(&self) -> Option<&ExecutionHarnessPolicy> {
+        self.harness_policy.as_ref()
+    }
 }
 
 #[derive(Debug)]
@@ -919,6 +933,7 @@ impl RuntimeClient {
         prepared: &PreparedInteraction,
         invocation: PreparedInvocation,
         completion_broker: Option<RuntimeCompletionBroker<'_>>,
+        admission: Option<InvokedCompletionAdmission<'_>>,
     ) -> Result<RuntimeInvokedCompletionStart, RuntimeError> {
         if thread_id < 1
             || product_interaction_id < 1
@@ -964,6 +979,11 @@ impl RuntimeClient {
                 "token": completion_broker.token,
             });
         }
+        if let Some(admission) = admission {
+            body["modelPlan"] = serde_json::to_value(admission.model_plan)?;
+            body["executionLeaseId"] = Value::String(admission.execution_lease_id.to_owned());
+            body["attemptAdmissionId"] = Value::String(admission.attempt_admission_id.to_owned());
+        }
         let started: RuntimeInvokedCompletionStart = self
             .post(
                 self.harness_url
@@ -1001,6 +1021,24 @@ impl RuntimeClient {
         &self,
         command: &CompleteInteraction<'_>,
     ) -> Result<RuntimeExecutionAdmission, RuntimeError> {
+        self.admit_execution(command, true).await
+    }
+
+    /// Admits a recursive child inside its thread's live harness session. The session
+    /// already exists, and its root turn holds it while it awaits the child, so the
+    /// child must not ask the host to create or update it.
+    pub(crate) async fn admit_invoked_execution(
+        &self,
+        command: &CompleteInteraction<'_>,
+    ) -> Result<RuntimeExecutionAdmission, RuntimeError> {
+        self.admit_execution(command, false).await
+    }
+
+    async fn admit_execution(
+        &self,
+        command: &CompleteInteraction<'_>,
+        ensure_session: bool,
+    ) -> Result<RuntimeExecutionAdmission, RuntimeError> {
         let selected = self
             .configurations
             .get(command.harness_configuration_name)
@@ -1028,19 +1066,21 @@ impl RuntimeClient {
                 "provider execution admission requires an attempt admission id".into(),
             )
         })?;
-        let _: Value = self
-            .post(
-                self.harness_url.join("sessions")?,
-                &serde_json::json!({
-                    "threadId": command.thread_id,
-                    "configuration": selected.configuration,
-                    "permissionProfileId": command.permission_profile.id,
-                    "workingDirectory": command.working_directory,
-                }),
-                &self.harness_control_token,
-                StatusCode::CREATED,
-            )
-            .await?;
+        if ensure_session {
+            let _: Value = self
+                .post(
+                    self.harness_url.join("sessions")?,
+                    &serde_json::json!({
+                        "threadId": command.thread_id,
+                        "configuration": selected.configuration,
+                        "permissionProfileId": command.permission_profile.id,
+                        "workingDirectory": command.working_directory,
+                    }),
+                    &self.harness_control_token,
+                    StatusCode::CREATED,
+                )
+                .await?;
+        }
         let admitted: ExecutionAdmissionResponse = self
             .post(
                 self.harness_url
@@ -2300,6 +2340,18 @@ fn validate_admitted_plan(
             "provider broker admitted a different harness policy".into(),
         ));
     }
+    if admitted.digest != admitted_model_plan_digest(admitted)? {
+        return Err(RuntimeError::Protocol(
+            "provider broker returned an invalid admitted model-plan digest".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// The digest the harness host signs an admitted plan with, over everything but the digest.
+pub(crate) fn admitted_model_plan_digest(
+    admitted: &AdmittedExecutionModelPlan,
+) -> Result<String, RuntimeError> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct UnsignedPlan<'a> {
@@ -2319,19 +2371,18 @@ fn validate_admitted_plan(
     let mut plan_hasher = Sha256::new();
     plan_hasher.update(b"relayer.harness-model-plan.v1\0");
     plan_hasher.update(serde_json::to_vec(&unsigned)?);
-    let expected_plan_digest = format!("sha256:{:x}", plan_hasher.finalize());
-    if admitted.digest != expected_plan_digest {
-        return Err(RuntimeError::Protocol(
-            "provider broker returned an invalid admitted model-plan digest".into(),
-        ));
-    }
-    Ok(())
+    Ok(format!("sha256:{:x}", plan_hasher.finalize()))
 }
 
 fn harness_policy_digest(harness_policy: &ExecutionHarnessPolicy) -> Result<String, RuntimeError> {
+    harness_policy_value_digest(&serde_json::to_value(harness_policy)?)
+}
+
+/// The policy digest over the policy's JSON value, as the harness host signs it.
+pub(crate) fn harness_policy_value_digest(policy: &Value) -> Result<String, RuntimeError> {
     let mut hasher = Sha256::new();
     hasher.update(b"relayer.harness-policy.v1\0");
-    hasher.update(serde_json::to_vec(&serde_json::to_value(harness_policy)?)?);
+    hasher.update(serde_json::to_vec(policy)?);
     Ok(format!("sha256:{:x}", hasher.finalize()))
 }
 
@@ -2789,6 +2840,7 @@ mod tests {
                     source_action_id: 23,
                 },
                 None,
+                None,
             )
             .await
             .unwrap_err();
@@ -2807,6 +2859,7 @@ mod tests {
                     source_interaction_node_id: 17,
                     source_action_id: 23,
                 },
+                None,
                 None,
             )
             .await

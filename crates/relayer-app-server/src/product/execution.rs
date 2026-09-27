@@ -37,6 +37,13 @@ pub(crate) struct InteractionExecutionService {
 }
 
 impl InteractionExecutionService {
+    /// Asks the background worker to release terminal attempts' provider leases.
+    pub(crate) fn schedule_execution_lease_reconciliation(&self) {
+        if let Some(reconciler) = &self.execution_lease_reconciler {
+            reconciler.schedule();
+        }
+    }
+
     pub(crate) fn new(
         product: ProductService,
         runtime: RuntimeClient,

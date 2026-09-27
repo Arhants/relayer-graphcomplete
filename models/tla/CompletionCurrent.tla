@@ -32,17 +32,20 @@ CONSTANTS
                     \* active-current check (THR:1998); a clean exit does not
   ActivationFailureSettlesGraph, \* FALSE today: a lost or failed
                     \* activation settles only the execution row (THR:1437-1463)
-  TerminalReadSettlesCleanup \* FALSE today: cleanup's fail loop treats a
+  TerminalReadSettlesCleanup, \* FALSE today: cleanup's fail loop treats a
                     \* current another actor terminated as an error (RT:1609)
+  ChildAdmission    \* FALSE before child admission: a selected child ran on
+                    \* a single leased route with no plan, attempt, or held lease
 
-Keys == {"stop", "exit", "start", "attach", "obs", "restart", "activate"}
+Keys == {"stop", "exit", "start", "attach", "obs", "restart", "activate", "admit"}
 Reason == [stop |-> "cancelled_by_user",
            exit |-> "provider_exited_without_return",
            start |-> "provider_start_failed",
            attach |-> "provider_attachment_persist_failed",
            obs |-> "graph_observation_failed",
            restart |-> "application_restart",
-           activate |-> "execution"]
+           activate |-> "execution",
+           admit |-> "model_unavailable"]
 Target(k) == IF k = "stop" THEN "stopped" ELSE "failed"
 Active == {"submitted", "running"}     \* product statuses a finalize accepts
 None == 99                 \* no receipt; outside 0..MaxRev
@@ -70,12 +73,18 @@ VARIABLES
   stopPc,       \* idle | post | cancel | done
   stopSeen,     \* [h, l] read by stop's GET current
   stopReport,   \* what stop_completion answered the parent
-  restartPc     \* none | reconcile | done | aborted
+  restartPc,    \* none | reconcile | done | aborted
+  \* --- child admission (THR admit_recursive_child) ---
+  selected,     \* the child inherited a model selection, so it is admitted
+  attempt,      \* interaction_attempts row: none | running | terminal
+  lease,        \* host execution lease: none | held | released
+  cleanKey      \* the start-failure cleanup's operation: start | admit
 
 vars == <<life, head, why, receipt, auth, phase, status, execWhy, prov, launches,
           appUp, lpc, semPc, exitPc, cleanPc, stopPc, stopSeen, stopReport,
-          restartPc>>
+          restartPc, selected, attempt, lease, cleanKey>>
 graphVars == <<life, head, why, receipt>>
+admissionVars == <<selected, attempt, lease, cleanKey>>
 actorVars == <<lpc, semPc, exitPc, cleanPc, stopPc, stopSeen, stopReport,
                restartPc>>
 
@@ -91,6 +100,8 @@ Init ==
   /\ stopPc = "idle" /\ stopSeen = [h |-> 0, l |-> "active"]
   /\ stopReport = "none"
   /\ restartPc = "none"
+  /\ selected \in BOOLEAN
+  /\ attempt = "none" /\ lease = "none" /\ cleanKey = "start"
 
 -----------------------------------------------------------------------------
 (* Trusted-control termination (RT:1555-1624, CUR:21-233).                *)
@@ -122,6 +133,9 @@ TermNowOk(k) == TermOutcome(k, head, life) /= "error"
 
 \* finalize_completion_execution_accepted / _failed (CEX:242-442): one
 \* transaction; any mismatch rolls back and the caller retries.
+\* A finalize moves the child's running attempt to its terminal outcome (CEX:333, 536).
+EndAttempt == attempt' = IF attempt = "running" THEN "terminal" ELSE attempt
+
 CanFinalizeAccepted == phase \in {"launching", "attached"} /\ status = "running"
 CanFinalizeFailed == phase \in {"launching", "attached"} /\ status \in Active
 
@@ -133,14 +147,14 @@ LaunchCheck(l) ==
      THEN lpc' = [lpc EXCEPT ![l] = "done"]          \* 200, no launch (:1332)
      ELSE lpc' = [lpc EXCEPT ![l] = "reserve"]
   /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, prov, launches, appUp, semPc,
-                 exitPc, cleanPc, stopPc, stopSeen, stopReport, restartPc>>
+                 exitPc, cleanPc, stopPc, stopSeen, stopReport, restartPc, admissionVars>>
 
 LaunchReserve(l) ==                                   \* reserve (CEX:37-105)
   /\ appUp /\ lpc[l] = "reserve"
   /\ phase' = IF phase = "none" THEN "reserved" ELSE phase
   /\ lpc' = [lpc EXCEPT ![l] = "claim"]
   /\ UNCHANGED <<graphVars, auth, status, execWhy, prov, launches, appUp, semPc,
-                 exitPc, cleanPc, stopPc, stopSeen, stopReport, restartPc>>
+                 exitPc, cleanPc, stopPc, stopSeen, stopReport, restartPc, admissionVars>>
 
 LaunchClaim(l) ==                                     \* CAS (CEX:108-134)
   /\ appUp /\ lpc[l] = "claim"
@@ -148,9 +162,9 @@ LaunchClaim(l) ==                                     \* CAS (CEX:108-134)
      THEN /\ phase' = "launching" /\ UNCHANGED execWhy
           /\ lpc' = [lpc EXCEPT ![l] = "activate"]
      ELSE /\ lpc' = [lpc EXCEPT ![l] = "done"]
-          /\ UNCHANGED <<phase, execWhy>>
+          /\ UNCHANGED <<phase, execWhy, admissionVars>>
   /\ UNCHANGED <<graphVars, auth, status, prov, launches, appUp, semPc,
-                 exitPc, cleanPc, stopPc, stopSeen, stopReport, restartPc>>
+                 exitPc, cleanPc, stopPc, stopSeen, stopReport, restartPc, admissionVars>>
 
 \* claim_and_activate (THR:1423-1465): claim running, remint the capability.
 \* Ownership lost or activation failure settles the execution row only.
@@ -158,34 +172,54 @@ LaunchActivate(l, ok) ==
   /\ appUp /\ lpc[l] = "activate"
   /\ \/ /\ ok
         /\ status' = "running" /\ auth' = TRUE
-        /\ lpc' = [lpc EXCEPT ![l] = "start"]
-        /\ UNCHANGED <<phase, execWhy, graphVars>>
+        /\ lpc' = [lpc EXCEPT ![l] = "admit"]
+        /\ UNCHANGED <<phase, execWhy, graphVars, admissionVars>>
      \/ /\ ~ok
         /\ phase' = "settled" /\ execWhy' = "capability_activation_failed"
         /\ lpc' = [lpc EXCEPT ![l] = "done"]
         /\ UNCHANGED auth
         /\ IF ActivationFailureSettlesGraph   \* candidate fix: fail both stores
            THEN /\ TermNow("activate") /\ status' = "failed"
-           ELSE UNCHANGED <<graphVars, status>>
+           ELSE UNCHANGED <<graphVars, status, admissionVars>>
   /\ UNCHANGED <<prov, launches, appUp, semPc, exitPc, cleanPc,
-                 stopPc, stopSeen, stopReport, restartPc>>
+                 stopPc, stopSeen, stopReport, restartPc, admissionVars>>
+
+\* admit_recursive_child: a selected child resolves its plan, the host leases every
+\* provider in it, and the product records the running attempt before the start. A
+\* failed admission holds no lease or attempt and fails the child through cleanup.
+\* An unselected child, and every child before ChildAdmission, passes straight on.
+LaunchAdmit(l, ok) ==
+  /\ appUp /\ lpc[l] = "admit"
+  /\ IF selected /\ ChildAdmission
+     THEN IF ok
+          THEN /\ attempt' = "running" /\ lease' = "held"
+               /\ lpc' = [lpc EXCEPT ![l] = "start"]
+               /\ UNCHANGED <<cleanPc, cleanKey>>
+          ELSE /\ lpc' = [lpc EXCEPT ![l] = "done"]
+               /\ cleanPc' = "cancel" /\ cleanKey' = "admit"
+               /\ UNCHANGED <<attempt, lease>>
+     ELSE /\ ok
+          /\ lpc' = [lpc EXCEPT ![l] = "start"]
+          /\ UNCHANGED <<cleanPc, cleanKey, attempt, lease>>
+  /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, prov, launches, appUp,
+                 semPc, exitPc, stopPc, stopSeen, stopReport, restartPc, selected>>
 
 LaunchStart(l, outcome) ==                            \* THR:1479-1506
   /\ appUp /\ lpc[l] = "start"
   /\ \/ /\ outcome = "ok"
         /\ prov' = "running" /\ launches' = launches + 1
         /\ lpc' = [lpc EXCEPT ![l] = "attach"]
-        /\ UNCHANGED cleanPc
+        /\ UNCHANGED <<cleanPc, cleanKey>>
      \/ /\ outcome = "fail"
-        /\ cleanPc' = "cancel"                        \* spawn cleanup (:1497)
+        /\ cleanPc' = "cancel" /\ cleanKey' = "start"  \* spawn cleanup (:1497)
         /\ lpc' = [lpc EXCEPT ![l] = "done"]
         /\ UNCHANGED <<prov, launches>>
      \/ /\ outcome = "lost"
-        /\ cleanPc' = "cancel"      \* the start ran but its acknowledgement
-        /\ lpc' = [lpc EXCEPT ![l] = "done"]  \* was lost (THR test :3229)
+        /\ cleanPc' = "cancel" /\ cleanKey' = "start"  \* the start ran but its
+        /\ lpc' = [lpc EXCEPT ![l] = "done"]  \* acknowledgement was lost (THR :3229)
         /\ prov' = "running" /\ launches' = launches + 1
   /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, appUp, semPc, exitPc,
-                 stopPc, stopSeen, stopReport, restartPc>>
+                 stopPc, stopSeen, stopReport, restartPc, selected, attempt, lease>>
 
 \* attach, then spawn both observers regardless (THR:1508-1532). A failed
 \* attach cancels the provider and tries Fail(attachment_persist_failed).
@@ -195,13 +229,13 @@ LaunchAttach(l, ok) ==
   /\ lpc' = [lpc EXCEPT ![l] = "done"]
   /\ \/ /\ ok
         /\ phase' = IF phase = "launching" THEN "attached" ELSE phase
-        /\ UNCHANGED <<graphVars, prov, execWhy>>
+        /\ UNCHANGED <<graphVars, prov, execWhy, admissionVars>>
      \/ /\ ~ok
         /\ prov' = IF prov = "running" THEN "cancelled" ELSE prov
         /\ TermNow("attach")
-        /\ UNCHANGED <<phase, execWhy>>
+        /\ UNCHANGED <<phase, execWhy, admissionVars>>
   /\ UNCHANGED <<auth, status, launches, appUp, cleanPc, stopPc, stopSeen,
-                 stopReport, restartPc>>
+                 stopReport, restartPc, admissionVars>>
 
 -----------------------------------------------------------------------------
 (* The child model, through its graph capability (GS:1496-1558). Advance  *)
@@ -210,20 +244,20 @@ ChildAdvance ==   \* leaves room under MaxRev for one terminal revision
   /\ prov = "running" /\ auth /\ life = "active" /\ head < MaxRev - 1
   /\ head' = head + 1
   /\ UNCHANGED <<life, why, receipt, auth, phase, execWhy, status, prov, launches,
-                 appUp, actorVars>>
+                 appUp, actorVars, admissionVars>>
 
 ChildReturn ==
   /\ prov = "running" /\ auth /\ life = "active" /\ head < MaxRev
   /\ life' = "succeeded" /\ head' = head + 1
   /\ UNCHANGED <<why, receipt, auth, phase, execWhy, status, prov, launches, appUp,
-                 actorVars>>
+                 actorVars, admissionVars>>
 
 \* The harness run ends. HH resolves the observation for any native settle
 \* (host.ts:540-541), whether or not the child returned.
 ProviderExit(outcome) ==
   /\ prov = "running"
   /\ prov' = outcome
-  /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, launches, appUp, actorVars>>
+  /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, launches, appUp, actorVars, admissionVars>>
 
 -----------------------------------------------------------------------------
 (* Semantic observer (THR:1850-1990). It projects a terminal current into *)
@@ -233,21 +267,21 @@ SemFinalize ==
   /\ IF life = "succeeded"
      THEN IF CanFinalizeAccepted
           THEN /\ phase' = "settled" /\ status' = "accepted" /\ execWhy' = "none"
-               /\ semPc' = "done"
-          ELSE UNCHANGED <<phase, execWhy, status, semPc>>       \* retry forever
+               /\ semPc' = "done" /\ EndAttempt
+          ELSE UNCHANGED <<phase, execWhy, status, semPc, attempt>>       \* retry forever
      ELSE IF CanFinalizeFailed
           THEN /\ phase' = "settled" /\ status' = "failed" /\ execWhy' = why
-               /\ semPc' = "done"
-          ELSE UNCHANGED <<phase, execWhy, status, semPc>>
+               /\ semPc' = "done" /\ EndAttempt
+          ELSE UNCHANGED <<phase, execWhy, status, semPc, attempt>>
   /\ UNCHANGED <<graphVars, auth, prov, launches, appUp, lpc, exitPc, cleanPc,
-                 stopPc, stopSeen, stopReport, restartPc>>
+                 stopPc, stopSeen, stopReport, restartPc, selected, lease, cleanKey>>
 
 \* Twenty consecutive projection errors: cancel, then Fail(graph_observation_failed).
 SemObservationFault ==
   /\ appUp /\ semPc = "watch" /\ life = "active"
   /\ prov' = IF prov = "running" THEN "cancelled" ELSE prov
   /\ TermNow("obs")
-  /\ UNCHANGED <<auth, phase, execWhy, status, launches, appUp, actorVars>>
+  /\ UNCHANGED <<auth, phase, execWhy, status, launches, appUp, actorVars, admissionVars>>
 
 (* Provider-exit observer (THR:1992-2015). The observe GET has a 5 s     *)
 (* timeout (RT:23, 1755-1764); an Err with an active current is failed.   *)
@@ -260,7 +294,7 @@ ExitObserve ==
      \/ /\ prov = "running" /\ ObserveTimesOut
         /\ exitPc' = "check"
   /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, prov, launches, appUp, lpc,
-                 semPc, cleanPc, stopPc, stopSeen, stopReport, restartPc>>
+                 semPc, cleanPc, stopPc, stopSeen, stopReport, restartPc, admissionVars>>
 
 \* GET current, and if active, fail_graph_completion (itself GET + POST);
 \* the result is ignored. The check and the fail are separate reads.
@@ -269,14 +303,14 @@ ExitCheckAndFail ==
   /\ exitPc' = "discard"
   /\ IF life = "active" THEN TermNow("exit") ELSE UNCHANGED graphVars
   /\ UNCHANGED <<auth, phase, execWhy, status, prov, launches, appUp, lpc, semPc,
-                 cleanPc, stopPc, stopSeen, stopReport, restartPc>>
+                 cleanPc, stopPc, stopSeen, stopReport, restartPc, admissionVars>>
 
 \* discard_prepared revokes the child's capability.
 ExitDiscard ==
   /\ appUp /\ exitPc = "discard"
   /\ auth' = FALSE /\ exitPc' = "done"
   /\ UNCHANGED <<graphVars, phase, execWhy, status, prov, launches, appUp, lpc, semPc,
-                 cleanPc, stopPc, stopSeen, stopReport, restartPc>>
+                 cleanPc, stopPc, stopSeen, stopReport, restartPc, admissionVars>>
 
 -----------------------------------------------------------------------------
 (* Start-failure cleanup (THR:1554-1623): four sequential loops, each     *)
@@ -286,16 +320,16 @@ CleanCancel ==
   /\ cleanPc' = "fail"
   /\ prov' = IF prov = "running" THEN "cancelled" ELSE prov
   /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, launches, appUp, lpc,
-                 semPc, exitPc, stopPc, stopSeen, stopReport, restartPc>>
+                 semPc, exitPc, stopPc, stopSeen, stopReport, restartPc, admissionVars>>
 
 CleanFail ==
   /\ appUp /\ cleanPc = "fail"
-  /\ TermNow("start")
-  /\ cleanPc' = IF TermNowOk("start")
+  /\ TermNow(cleanKey)
+  /\ cleanPc' = IF TermNowOk(cleanKey)
                    \/ (TerminalReadSettlesCleanup /\ life /= "active")
                 THEN "finalize" ELSE "fail"
   /\ UNCHANGED <<auth, phase, execWhy, status, prov, launches, appUp, lpc, semPc,
-                 exitPc, stopPc, stopSeen, stopReport, restartPc>>
+                 exitPc, stopPc, stopSeen, stopReport, restartPc, admissionVars>>
 
 \* Today it always finalizes as failed. With the candidate fix it finalizes
 \* what the graph holds.
@@ -304,21 +338,21 @@ CleanFinalize ==
   /\ IF TerminalReadSettlesCleanup /\ life = "succeeded"
      THEN IF CanFinalizeAccepted
           THEN /\ phase' = "settled" /\ status' = "accepted" /\ execWhy' = "none"
-               /\ cleanPc' = "discard"
-          ELSE UNCHANGED <<phase, execWhy, status, cleanPc>>
+               /\ cleanPc' = "discard" /\ EndAttempt
+          ELSE UNCHANGED <<phase, execWhy, status, cleanPc, attempt>>
      ELSE IF CanFinalizeFailed
-     THEN /\ phase' = "settled" /\ status' = "failed" /\ cleanPc' = "discard"
+     THEN /\ phase' = "settled" /\ status' = "failed" /\ cleanPc' = "discard" /\ EndAttempt
           \* Today the reason is fixed; with the fix it is the graph's.
           /\ execWhy' = IF TerminalReadSettlesCleanup THEN why ELSE "provider_start_failed"
-     ELSE UNCHANGED <<phase, execWhy, status, cleanPc>>
+     ELSE UNCHANGED <<phase, execWhy, status, cleanPc, attempt>>
   /\ UNCHANGED <<graphVars, auth, prov, launches, appUp, lpc, semPc, exitPc,
-                 stopPc, stopSeen, stopReport, restartPc>>
+                 stopPc, stopSeen, stopReport, restartPc, selected, lease, cleanKey>>
 
 CleanDiscard ==
   /\ appUp /\ cleanPc = "discard"
   /\ auth' = FALSE /\ cleanPc' = "done"
   /\ UNCHANGED <<graphVars, phase, execWhy, status, prov, launches, appUp, lpc, semPc,
-                 exitPc, stopPc, stopSeen, stopReport, restartPc>>
+                 exitPc, stopPc, stopSeen, stopReport, restartPc, admissionVars>>
 
 -----------------------------------------------------------------------------
 (* Parent stop_completion (THR:1708-1759): settle the current first, then *)
@@ -330,7 +364,7 @@ StopRead ==
   /\ stopSeen' = [h |-> head, l |-> life]
   /\ stopPc' = "post"
   /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, prov, launches, appUp, lpc,
-                 semPc, exitPc, cleanPc, stopReport, restartPc>>
+                 semPc, exitPc, cleanPc, stopReport, restartPc, admissionVars>>
 
 StopPost ==
   /\ appUp /\ stopPc = "post"
@@ -342,14 +376,14 @@ StopPost ==
                            [] OTHER -> life
   /\ stopPc' = "cancel"
   /\ UNCHANGED <<auth, phase, execWhy, status, prov, launches, appUp, lpc, semPc,
-                 exitPc, cleanPc, stopSeen, restartPc>>
+                 exitPc, cleanPc, stopSeen, restartPc, admissionVars>>
 
 StopCancel ==
   /\ appUp /\ stopPc = "cancel"
   /\ prov' = IF prov = "running" /\ stopReport /= "error" THEN "cancelled" ELSE prov
   /\ stopPc' = "done"
   /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, launches, appUp, lpc, semPc,
-                 exitPc, cleanPc, stopSeen, stopReport, restartPc>>
+                 exitPc, cleanPc, stopSeen, stopReport, restartPc, admissionVars>>
 
 -----------------------------------------------------------------------------
 (* Application restart. Every in-memory actor dies, the harness run and   *)
@@ -364,7 +398,11 @@ Crash ==
   /\ semPc' = "dead" /\ exitPc' = "dead" /\ cleanPc' = "dead"
   /\ stopPc' = IF stopPc = "done" THEN "done" ELSE "dead"
   /\ restartPc' = "reconcile"
-  /\ UNCHANGED <<graphVars, phase, execWhy, status, launches, stopSeen, stopReport>>
+  \* Restart turns a running attempt to unknown; the host's leases die with it.
+  /\ attempt' = IF attempt = "running" THEN "terminal" ELSE attempt
+  /\ lease' = IF lease = "held" THEN "released" ELSE lease
+  /\ UNCHANGED <<graphVars, phase, execWhy, status, launches, stopSeen, stopReport,
+                 selected, cleanKey>>
 
 \* A launched row maps the graph lifecycle into the product; an active one
 \* is failed with application_restart first. Any error aborts startup (`?`).
@@ -372,23 +410,32 @@ RestartReconcile ==
   /\ restartPc = "reconcile"
   /\ IF phase \notin {"launching", "attached"}
      THEN /\ restartPc' = "done" /\ appUp' = TRUE
-          /\ UNCHANGED <<graphVars, phase, execWhy, status>>
+          /\ UNCHANGED <<graphVars, phase, execWhy, status, attempt>>
      ELSE IF life = "active"
      THEN /\ TermNow("restart")
-          /\ UNCHANGED <<phase, execWhy, status, restartPc, appUp>>   \* then re-read
+          /\ UNCHANGED <<phase, execWhy, status, restartPc, appUp, attempt>>   \* then re-read
      ELSE IF (life = "succeeded" /\ CanFinalizeAccepted)
              \/ (life /= "succeeded" /\ CanFinalizeFailed)
      THEN /\ phase' = "settled"
           /\ status' = IF life = "succeeded" THEN "accepted" ELSE "failed"
           /\ execWhy' = IF life = "succeeded" THEN "none" ELSE why
-          /\ restartPc' = "done" /\ appUp' = TRUE
+          /\ restartPc' = "done" /\ appUp' = TRUE /\ EndAttempt
           /\ UNCHANGED graphVars
      ELSE /\ restartPc' = "aborted"
-          /\ UNCHANGED <<graphVars, phase, execWhy, status, appUp>>
+          /\ UNCHANGED <<graphVars, phase, execWhy, status, appUp, attempt>>
   /\ UNCHANGED <<auth, prov, launches, lpc, semPc, exitPc, cleanPc, stopPc,
-                 stopSeen, stopReport>>
+                 stopSeen, stopReport, selected, lease, cleanKey>>
+
+\* The lease-debt reconciler releases a terminal attempt's provider leases
+\* (app_server reconcile_terminal_execution_lease).
+LeaseReconcile ==
+  /\ appUp /\ attempt = "terminal" /\ lease = "held"
+  /\ lease' = "released"
+  /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, prov, launches, appUp,
+                 actorVars, selected, attempt, cleanKey>>
 
 -----------------------------------------------------------------------------
+LaunchAdmitAny(l) == \E ok \in BOOLEAN : LaunchAdmit(l, ok)
 LaunchActivateAny(l) == \E ok \in BOOLEAN : LaunchActivate(l, ok)
 LaunchStartAny(l) == \E o \in {"ok", "fail", "lost"} : LaunchStart(l, o)
 LaunchAttachAny(l) == \E ok \in BOOLEAN : LaunchAttach(l, ok)
@@ -396,13 +443,14 @@ ProviderExitAny == \E o \in {"exited_ok", "exited_err"} : ProviderExit(o)
 
 SystemStep ==
   \/ \E l \in Launchers : LaunchCheck(l) \/ LaunchReserve(l) \/ LaunchClaim(l)
-                          \/ LaunchActivateAny(l) \/ LaunchStartAny(l)
+                          \/ LaunchActivateAny(l) \/ LaunchAdmitAny(l) \/ LaunchStartAny(l)
                           \/ LaunchAttachAny(l)
   \/ SemFinalize
   \/ ExitObserve \/ ExitCheckAndFail \/ ExitDiscard
   \/ CleanCancel \/ CleanFail \/ CleanFinalize \/ CleanDiscard
   \/ StopPost \/ StopCancel
   \/ RestartReconcile
+  \/ LeaseReconcile
 
 Next ==
   \/ SystemStep
@@ -420,6 +468,7 @@ Fairness ==
   /\ \A l \in Launchers :
        /\ WF_vars(LaunchCheck(l)) /\ WF_vars(LaunchReserve(l))
        /\ WF_vars(LaunchClaim(l)) /\ WF_vars(LaunchActivateAny(l))
+       /\ WF_vars(LaunchAdmitAny(l))
        /\ WF_vars(LaunchStartAny(l)) /\ WF_vars(LaunchAttachAny(l))
   /\ WF_vars(SemFinalize)
   /\ WF_vars(ExitObserve) /\ WF_vars(ExitCheckAndFail) /\ WF_vars(ExitDiscard)
@@ -427,6 +476,7 @@ Fairness ==
   /\ WF_vars(CleanDiscard)
   /\ WF_vars(StopPost) /\ WF_vars(StopCancel)
   /\ WF_vars(RestartReconcile)
+  /\ WF_vars(LeaseReconcile)
   /\ WF_vars(ProviderExitAny)
 
 (* A scenario step is a tuple naming one action and its arguments, as the  *)
@@ -438,6 +488,7 @@ Act(s) ==
     [] n = "LaunchReserve" -> LaunchReserve(s[2])
     [] n = "LaunchClaim" -> LaunchClaim(s[2])
     [] n = "LaunchActivate" -> LaunchActivate(s[2], s[3] = "ok")
+    [] n = "LaunchAdmit" -> LaunchAdmit(s[2], s[3] = "ok")
     [] n = "LaunchStart" -> LaunchStart(s[2], s[3])
     [] n = "LaunchAttach" -> LaunchAttach(s[2], s[3] = "ok")
     [] n = "ChildAdvance" -> ChildAdvance
@@ -457,6 +508,7 @@ Act(s) ==
     [] n = "StopCancel" -> StopCancel
     [] n = "Crash" -> Crash
     [] n = "RestartReconcile" -> RestartReconcile
+    [] n = "LeaseReconcile" -> LeaseReconcile
 
 Spec == Init /\ [][Next]_vars
 FairSpec == Spec /\ Fairness
@@ -497,9 +549,24 @@ SettledExecutionAgreesWithGraph ==
 \* Startup never aborts on a state the product itself produced.
 RestartNeverAborts == restartPc /= "aborted"
 
+\* A lease is released only once the attempt it belongs to is terminal, so a
+\* running child keeps its providers (terminal acknowledgement).
+LeaseReleasedOnlyAfterSettlement ==
+  (lease = "released" /\ restartPc = "none") => attempt = "terminal"
+
+\* A selected child's provider runs only under a held lease until the child
+\* settles, so provider removal waits for it.
+ProviderRunsUnderLease ==
+  (selected /\ prov = "running" /\ phase /= "settled" /\ restartPc = "none")
+    => lease = "held"
+
+\* A settled child keeps no running attempt.
+SettledChildEndsItsAttempt == phase = "settled" => attempt /= "running"
+
 (* Liveness. PRD: a never-settling result is not the contract.            *)
 Settled == life /= "active" /\ phase = "settled" /\ status \in {"accepted", "failed"}
 LaunchedChildSettles == (launches > 0) ~> Settled
-ClaimedChildSettles == (phase = "launching") ~> (phase = "settled" /\ life /= "active")
+ClaimedChildSettles ==
+  (phase = "launching") ~> (phase = "settled" /\ life /= "active" /\ lease /= "held")
 
 =============================================================================

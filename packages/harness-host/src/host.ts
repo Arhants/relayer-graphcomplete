@@ -105,6 +105,13 @@ export interface HarnessInvokedCompletion {
   /** Required once this session has taken a dynamic policy update, exactly as a root run is. */
   readonly harnessPolicy?: HarnessExecutionPolicy;
   readonly completionBroker?: HarnessCompletionBrokerScope;
+  /**
+   * A family-admitted child, exactly as a root run is admitted. The three travel together,
+   * and the admission is claimed against traceContext.productInteractionId.
+   */
+  readonly modelPlan?: HarnessModelPlan;
+  readonly executionLeaseId?: string;
+  readonly attemptAdmissionId?: string;
 }
 
 export interface HarnessInvokedCompletionStart {
@@ -498,9 +505,14 @@ export class HarnessHost {
     invocation: HarnessInvokedCompletion,
     signal?: AbortSignal,
   ): InvokedCompletionRun {
-    const { capability, origin, traceContext, model, harnessPolicy, completionBroker } = invocation;
+    const {
+      capability, origin, traceContext, harnessPolicy, completionBroker, executionLeaseId, attemptAdmissionId,
+    } = invocation;
     validateGraphCapability(capability);
     validateCompletionOrigin(origin);
+    const admitted = validateInvokedAdmission(invocation);
+    const modelPlan = invocation.modelPlan === undefined ? undefined : normalizeModelPlan(invocation.modelPlan);
+    const model = modelPlan?.orchestrator ?? invocation.model;
     if (model !== undefined) validateInteractionModelSelection(model);
     const session = this.liveSession(threadId);
     if (!harnessAllowsAgentAuthoredComplete(session.descriptor.configuration)) {
@@ -537,6 +549,12 @@ export class HarnessHost {
       ...(model === undefined ? {} : { model }),
       ...(harnessPolicy === undefined ? {} : { harnessPolicy }),
       ...(completionBroker === undefined ? {} : { completionBroker }),
+      ...(admitted ? {
+        modelPlan: modelPlan!,
+        executionLeaseId: executionLeaseId!,
+        attemptAdmissionId: attemptAdmissionId!,
+        admissionInteractionId: traceContext!.productInteractionId,
+      } : {}),
       ...(signal === undefined ? {} : { signal }),
       onNativeExecution: (native) => {
         nativeReported = true;
@@ -571,6 +589,8 @@ export class HarnessHost {
     readonly modelPlan?: HarnessModelPlan;
     readonly attemptAdmissionId?: string;
     readonly completionBroker?: HarnessCompletionBrokerScope;
+    /** The product interaction an invoked child's admission was issued for. */
+    readonly admissionInteractionId?: number;
     readonly origin: CompletionOrigin;
     readonly onNativeExecution?: (native: NativeExecutionHandle | undefined) => void;
   }): Promise<HarnessCompleteResult | HarnessInvokedCompletionObservation> {
@@ -608,6 +628,7 @@ export class HarnessHost {
         input.origin,
         input.completionBroker,
         input.onNativeExecution,
+        input.admissionInteractionId,
       );
     } catch (error) {
       operationError = error;
@@ -806,6 +827,7 @@ export class HarnessHost {
     origin: CompletionOrigin = { kind: "root" },
     completionBroker?: HarnessCompletionBrokerScope,
     onNativeExecution?: (native: NativeExecutionHandle | undefined) => void,
+    admissionInteractionId: number = productInteractionId,
   ): Promise<HarnessCompleteResult | HarnessInvokedCompletionObservation> {
     const graph = new RelayerGraphClient(capability);
     const interactionNodeId = capability.nodeId;
@@ -884,7 +906,7 @@ export class HarnessHost {
         if (pending === undefined || pending.state !== "admitted" || pending.threadId !== threadId || model === undefined
           || pending.model.providerId !== model.providerId || pending.model.adapterId !== model.adapterId
           || pending.model.modelId !== model.modelId
-          || pending.interactionId !== (modelPlan === undefined ? undefined : productInteractionId)
+          || pending.interactionId !== (modelPlan === undefined ? undefined : admissionInteractionId)
           || pending.attemptAdmissionId !== attemptAdmissionId
           || (pending.modelPlan === undefined) !== (modelPlan === undefined)
           || (pending.modelPlan !== undefined && modelPlan !== undefined
@@ -1819,7 +1841,10 @@ function readCompleteInput(value: unknown): {
 
 function readInvokedCompletionInput(value: unknown): HarnessInvokedCompletion {
   if (!isRecord(value)) throw new Error("Harness invoked completion input must be an object");
-  const unknown = Object.keys(value).filter((key) => !["capability", "origin", "traceContext", "model", "harnessPolicy", "completionBroker"].includes(key));
+  const unknown = Object.keys(value).filter((key) => ![
+    "capability", "origin", "traceContext", "model", "harnessPolicy", "completionBroker",
+    "modelPlan", "executionLeaseId", "attemptAdmissionId",
+  ].includes(key));
   if (unknown.length > 0) throw new Error(`Harness invoked completion contains unsupported fields: ${unknown.join(", ")}`);
   if (!isRecord(value.capability)
     || Object.keys(value.capability).some((key) => !["url", "token", "nodeId"].includes(key))) {
@@ -1834,14 +1859,45 @@ function readInvokedCompletionInput(value: unknown): HarnessInvokedCompletion {
   const model = readInteractionModelSelection(value);
   const harnessPolicy = readHarnessExecutionPolicy(value);
   const completionBroker = readCompletionBroker(value);
-  return {
+  const modelPlan = readHarnessModelPlan(value);
+  const executionLeaseId = readExecutionLeaseId(value);
+  const attemptAdmissionId = readAttemptAdmissionId(value, false);
+  const input: HarnessInvokedCompletion = {
     capability: readGraphCapability({ graph: value.capability }),
     origin: value.origin,
     ...(traceContext === undefined ? {} : { traceContext }),
     ...(model === undefined ? {} : { model }),
     ...(harnessPolicy === undefined ? {} : { harnessPolicy }),
     ...(completionBroker === undefined ? {} : { completionBroker }),
+    ...(modelPlan === undefined ? {} : { modelPlan }),
+    ...(executionLeaseId === undefined ? {} : { executionLeaseId }),
+    ...(attemptAdmissionId === undefined ? {} : { attemptAdmissionId }),
   };
+  validateInvokedAdmission(input);
+  return input;
+}
+
+/**
+ * An invoked child is either admitted like a root run (plan, lease, attempt, and the product
+ * interaction the admission names) or carries none of them. Returns whether it is admitted.
+ */
+function validateInvokedAdmission(input: HarnessInvokedCompletion): boolean {
+  const parts = [input.modelPlan, input.executionLeaseId, input.attemptAdmissionId];
+  if (parts.every((part) => part === undefined)) return false;
+  if (parts.some((part) => part === undefined)) {
+    throw new Error("An admitted invoked completion requires modelPlan, executionLeaseId, and attemptAdmissionId together");
+  }
+  if (input.traceContext?.productInteractionId === undefined) {
+    throw new Error("An admitted invoked completion requires its product interaction in traceContext");
+  }
+  if (input.harnessPolicy === undefined) {
+    throw new Error("An admitted invoked completion requires its harness policy");
+  }
+  const plan = normalizeModelPlan(input.modelPlan);
+  if (input.model !== undefined && !sameModelRoute(plan.orchestrator, input.model)) {
+    throw new Error("Invoked completion model must match the family-plan orchestrator");
+  }
+  return true;
 }
 
 function readCompletionBroker(value: unknown): HarnessCompletionBrokerScope | undefined {

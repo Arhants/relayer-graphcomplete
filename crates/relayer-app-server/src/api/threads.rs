@@ -1463,6 +1463,30 @@ pub(super) async fn complete_prepared_child(
             return Err(error);
         }
     };
+    let admission = match admit_recursive_child(
+        &state,
+        runtime,
+        &thread,
+        &outcome.interaction,
+        &prepared,
+    )
+    .await
+    {
+        Ok(admission) => admission,
+        Err(error) => {
+            spawn_failed_recursive_start_cleanup(
+                state.clone(),
+                thread,
+                outcome.interaction,
+                prepared,
+                permission_origin_digest,
+                "model_unavailable",
+                None,
+            );
+            return Err(error);
+        }
+    };
+    let attempt_id = admission.as_ref().map(|admission| admission.attempt_id);
 
     let broker_url = runtime
         .agent_authored_complete_available(&prepared)
@@ -1490,6 +1514,13 @@ pub(super) async fn complete_prepared_child(
             &prepared,
             invocation,
             completion_broker,
+            admission
+                .as_ref()
+                .map(|admission| crate::runtime::InvokedCompletionAdmission {
+                    model_plan: &admission.model_plan,
+                    execution_lease_id: &admission.execution_lease_id,
+                    attempt_admission_id: &admission.attempt_admission_id,
+                }),
         )
         .await;
     let started = match started {
@@ -1501,6 +1532,8 @@ pub(super) async fn complete_prepared_child(
                 outcome.interaction,
                 prepared,
                 permission_origin_digest,
+                "provider_start_failed",
+                attempt_id,
             );
             return Err(error.into());
         }
@@ -1529,6 +1562,7 @@ pub(super) async fn complete_prepared_child(
         prepared,
         permission_origin_digest,
         child_broker_lease,
+        attempt_id,
     );
     if let Err(error) = attachment_result {
         let _ = runtime
@@ -1551,8 +1585,99 @@ pub(super) async fn complete_prepared_child(
     ))
 }
 
+/// What a recursive child was admitted with, and the attempt that owns its leases.
+struct RecursiveChildAdmission {
+    model_plan: crate::product::ExecutionModelPlan,
+    execution_lease_id: String,
+    attempt_admission_id: String,
+    attempt_id: i64,
+}
+
+/// Admits a recursive child as a root turn is admitted. Its inherited selection resolves
+/// to the family plan current at launch, the host leases every provider in that plan, and
+/// the product records the running attempt that owns those leases until the child settles.
+/// A child with no selection (from an accepted pre-selector source) runs on the thread's
+/// pinned harness alone, as before.
+async fn admit_recursive_child(
+    state: &ApiState,
+    runtime: &crate::runtime::RuntimeClient,
+    thread: &Thread,
+    interaction: &Interaction,
+    prepared: &PreparedInteraction,
+) -> Result<Option<RecursiveChildAdmission>, ApiError> {
+    let Some(selection) = interaction.model_selection.as_ref() else {
+        return Ok(None);
+    };
+    let (model_plan, route) = state
+        .product
+        .resolve_execution_model_plan(&thread.harness_configuration_name, selection)
+        .await?;
+    let harness_policy = prepared.harness_policy().ok_or_else(|| {
+        ApiError::internal("a recursive child with a model selection requires its harness policy")
+    })?;
+    let working_directory = thread_working_directory(state, thread).await?;
+    let permission_profile = state
+        .permission_catalog
+        .profile(&thread.permission_profile_id)?;
+    let attempt_admission_id = uuid::Uuid::new_v4().to_string();
+    let command = CompleteInteraction {
+        project_id: thread.project_id.map(ProjectId::value),
+        product_interaction_id: interaction.id.value(),
+        thread_id: thread.id.value(),
+        interaction_id: interaction.id.value(),
+        text: &interaction.text,
+        working_directory: &working_directory,
+        harness_configuration_name: &thread.harness_configuration_name,
+        permission_profile,
+        model_selection: Some(&route),
+        model_plan: Some(&model_plan),
+        attempt_admission_id: Some(&attempt_admission_id),
+        execution_lease_id: None,
+        harness_policy: Some(harness_policy),
+        invocation: None,
+        input_identity: None,
+        input_digest: None,
+        contexts: &[],
+        personal_presentation: None,
+        submitted_inputs: &[],
+    };
+    let admission = runtime.admit_invoked_execution(&command).await?;
+    let attempt = state
+        .product
+        .begin_interaction_attempt(crate::product::BeginInteractionAttempt {
+            interaction_id: interaction.id,
+            attempt_admission_id: attempt_admission_id.clone(),
+            harness_name: &thread.harness_configuration_name,
+            route: &route,
+            model_plan: model_plan.clone(),
+            admitted_plan: admission.admitted_plan.clone(),
+            adapter_version: admission.adapter_implementation_version,
+            expected_harness_policy: Some(harness_policy),
+            execution_lease_id: &admission.execution_lease_id,
+        })
+        .await;
+    let attempt_id = match attempt {
+        Ok(attempt_id) => attempt_id,
+        Err(error) => {
+            // No attempt records these leases, so they are released here rather than as debt.
+            let _ = runtime
+                .release_provider_execution(thread.id.value(), &admission.execution_lease_id)
+                .await;
+            return Err(error.into());
+        }
+    };
+    Ok(Some(RecursiveChildAdmission {
+        model_plan,
+        execution_lease_id: admission.execution_lease_id,
+        attempt_admission_id,
+        attempt_id,
+    }))
+}
+
 /// Projects one terminal graph current into the recursive child's product rows,
-/// and reports whether the product accepted it. A caller retries a refusal.
+/// and reports whether the product accepted it. A caller retries a refusal. Once the
+/// child's attempt is terminal, its provider leases are released as attempt debt.
+#[allow(clippy::too_many_arguments)]
 async fn settle_terminal_recursive_child(
     state: &ApiState,
     runtime: &crate::runtime::RuntimeClient,
@@ -1561,6 +1686,7 @@ async fn settle_terminal_recursive_child(
     prepared: &PreparedInteraction,
     permission_origin_digest: &str,
     current: &relayer_graph_core::CompletionState,
+    attempt_id: Option<i64>,
 ) -> bool {
     let completion_id = prepared.graph_node_id;
     let settled = if current.lifecycle == relayer_graph_core::CompletionLifecycle::Succeeded {
@@ -1610,7 +1736,20 @@ async fn settle_terminal_recursive_child(
             .map(|_| ())
     };
     match settled {
-        Ok(()) => true,
+        Ok(()) => {
+            if let Some(attempt_id) = attempt_id
+                && !crate::app_server::reconcile_terminal_execution_lease(
+                    &state.product,
+                    runtime,
+                    attempt_id,
+                )
+                .await
+                && let Some(execution) = &state.interaction_execution
+            {
+                execution.schedule_execution_lease_reconciliation();
+            }
+            true
+        }
         Err(error) => {
             eprintln!(
                 "recursive completion {completion_id} {} settlement could not be projected: {error}",
@@ -1627,6 +1766,8 @@ fn spawn_failed_recursive_start_cleanup(
     interaction: Interaction,
     prepared: PreparedInteraction,
     permission_origin_digest: String,
+    reason: &'static str,
+    attempt_id: Option<i64>,
 ) {
     tokio::spawn(async move {
         let completion_id = prepared.graph_node_id;
@@ -1653,7 +1794,7 @@ fn spawn_failed_recursive_start_cleanup(
                 .fail_graph_completion(
                     completion_id,
                     &format!("recursive-provider-start:{}", interaction.id),
-                    "provider_start_failed",
+                    reason,
                 )
                 .await
             {
@@ -1682,6 +1823,7 @@ fn spawn_failed_recursive_start_cleanup(
             &prepared,
             &permission_origin_digest,
             &current,
+            attempt_id,
         )
         .await
         {
@@ -1911,6 +2053,7 @@ fn spawn_recursive_completion_observers(
     prepared: PreparedInteraction,
     permission_origin_digest: String,
     broker_lease: Option<CompletionBrokerLease>,
+    attempt_id: Option<i64>,
 ) {
     let semantic_state = state.clone();
     let semantic_thread = thread.clone();
@@ -1967,6 +2110,7 @@ fn spawn_recursive_completion_observers(
                         &semantic_prepared,
                         &semantic_origin_digest,
                         &current,
+                        attempt_id,
                     )
                     .await
                     {
@@ -2358,6 +2502,24 @@ async fn start_interaction(
     Ok(running)
 }
 
+/// The thread's execution workspace, created if absent.
+async fn thread_working_directory(state: &ApiState, thread: &Thread) -> Result<String, ApiError> {
+    let working_directory = match thread.project_id {
+        Some(project_id) => state.product.project_path(project_id).await?,
+        None => state
+            .standalone_workspaces_directory
+            .join(thread.id.value().to_string())
+            .to_string_lossy()
+            .into_owned(),
+    };
+    if let Err(error) = tokio::fs::create_dir_all(&working_directory).await {
+        return Err(ApiError::internal(&format!(
+            "cannot create thread workspace: {error}"
+        )));
+    }
+    Ok(working_directory)
+}
+
 async fn prepare_and_claim_interaction(
     state: &ApiState,
     thread: &Thread,
@@ -2432,24 +2594,7 @@ async fn prepare_and_claim_interaction(
     } else {
         None
     };
-    let working_directory = match thread.project_id {
-        Some(project_id) => match state.product.project_path(project_id).await {
-            Ok(path) => path,
-            Err(error) => {
-                return Err(error.into());
-            }
-        },
-        None => state
-            .standalone_workspaces_directory
-            .join(thread.id.value().to_string())
-            .to_string_lossy()
-            .into_owned(),
-    };
-    if let Err(error) = tokio::fs::create_dir_all(&working_directory).await {
-        return Err(ApiError::internal(&format!(
-            "cannot create thread workspace: {error}"
-        )));
-    }
+    let working_directory = thread_working_directory(state, thread).await?;
     let permission_profile = state
         .permission_catalog
         .profile(&thread.permission_profile_id)?;
