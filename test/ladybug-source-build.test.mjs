@@ -175,6 +175,11 @@ describe("pinned Ladybug source build", () => {
     await writeFile(join(cargoResolvedCopy, ".cargo-ok"), "registry extraction marker\n");
     expect(digestCargoResolvedLbugTree(cargoResolvedCopy))
       .toBe(manifest.rustBinding.nativeSourceTreeSha256);
+    await mkdir(join(cargoResolvedCopy, ".cache", "lbug-prebuilt", "latest", "lib"), { recursive: true });
+    await writeFile(join(cargoResolvedCopy, ".cache", "lbug-prebuilt.env"), "LBUG_PREBUILT=1\n");
+    await writeFile(join(cargoResolvedCopy, ".cache", "lbug-prebuilt", "latest", "lib", "liblbug.a"), "generated archive\n");
+    expect(digestCargoResolvedLbugTree(cargoResolvedCopy))
+      .toBe(manifest.rustBinding.nativeSourceTreeSha256);
     await createTar({
       cwd: fixtureDirectory,
       file: join(cacheDirectory, manifest.rustBinding.archive),
