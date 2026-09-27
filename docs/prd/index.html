@@ -446,6 +446,12 @@ interface CompletionHandle {
 
 interface CompletionCurrent {
   snapshot(): Promise&lt;CompletionCurrentSnapshot&gt;;
+  next(afterRevision?: number): Promise&lt;CompletionCurrentSnapshot&gt;;
+}
+
+interface CompletionWatch {
+  readonly settled: boolean;
+  changes(): Promise&lt;readonly { child: CompletionHandle; current: CompletionCurrentSnapshot }[]&gt;;
 }
 
 interface CompletionTerminalError extends Error {
@@ -467,6 +473,7 @@ interface CompletionTerminalError extends Error {
 <p><code>handle.stop(reason)</code> is that agent-only control. The stopped child retains its current and reports <code>stopped</code>.</p>
 <p>Observation is delivered as current-pointer revisions only. There is no token streaming, no partial-layer publication, and no additional event kind.</p>
 <p>An awaiting agent performs no repeated polling. The server holds one observation open and answers when the awaited completion advances, filtered to that caller's grant.</p>
+<p><code>current.next(afterRevision)</code> answers when one child's current moves past that revision or ends. A watch over the children an agent launched reports each such change as one event.</p>
 <p>Restart never reattaches. Interrupted active completions fail safely with <code>application_restart</code> and keep their retained current.</p>
 <p>No provider is asked whether its execution survived. Complete is never re-called as crash recovery for an already-started execution.</p>
 <p>The app server creates the human-root interaction and passes its pointer to Complete. A supported recursive provider adapter derives the prepared pointer from the invoking completion and exact published invoke occurrence. It then passes that same pointer to Complete. The selected harness uses its bound graph client to construct nodes, edges, layers, and actions, then returns with <code>current.return(layer)</code> or the compatible <code>graph.submit(interactionNode)</code>. The accepted result includes the fully resolved first layer so the desktop can display it immediately without a second request. The graph engine persists the same layer and serves later navigation. A model turn ending without Return is failure, never success.</p>
@@ -2016,6 +2023,7 @@ interface NativeExecutionHandle {
 <p>Required context and identity come from GraphComplete rather than hidden provider history. The attachment retains the harness's ordinary native helper infrastructure. A helper may ask its owning orchestrator to create semantic work, but helper topology is never mirrored automatically.</p>
 <p>Codex binds a semantic child to a fresh app-server thread and turn whose orchestrator receives the child scope. Codex-native subagents remain internal helpers for that orchestrator. Claude binds a semantic child to a fresh Agent SDK query that neither resumes nor replaces the root session. Prime binds a semantic child to a fresh ordinary Prime session and execution. Prime's RLM and subagents remain internal helpers unless that execution explicitly calls Complete again.</p>
 <p>Codex and Prime teach explicit semantic child work in their prompts, and only when the product grants that execution a completion broker.</p>
+<p>A parent treats each change to a child's current as an event. It responds by advancing its own current to organize the work. The parent awaits these events itself; nothing wakes it automatically.</p>
 <h3>12.2 Persistent Node harness host</h3>
 <p>The Node harness host is a long-lived child process of the evaluator or Relayer app server. It resolves a small code-owned implementation map and lazily constructs one harness object per thread:</p>
 <pre><code class="language-ts">const harnessImplementations: Record&lt;string, HarnessFactory&gt; = {

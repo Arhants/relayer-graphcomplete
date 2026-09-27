@@ -1,9 +1,11 @@
 import {
   CompletionTerminalError,
+  type CompletionChange,
   type CompletionCurrentSnapshot,
   type CompletionHandle,
   type CompletionInputGraph,
   type CompletionRuntime,
+  type CompletionWatch,
   type ResolvedGraphLayer,
 } from "./contracts.js";
 
@@ -61,7 +63,13 @@ function completionRuntimeFromEnvironment(environment: NodeJS.ProcessEnv = proce
       let observation: Promise<ResolvedGraphLayer> | undefined;
       return Object.freeze({
         completionId,
-        current: Object.freeze({ snapshot }),
+        current: Object.freeze({
+          snapshot,
+          async next(afterRevision?: number): Promise<CompletionCurrentSnapshot> {
+            await started;
+            return observeNextCurrent(url, token, completionId, afterRevision);
+          },
+        }),
         // Observation begins on the first read, so an unawaited handle costs nothing.
         get result(): Promise<ResolvedGraphLayer> {
           observation ??= started.then(() => observeResult(url, token, completionId));
@@ -76,6 +84,80 @@ function completionRuntimeFromEnvironment(environment: NodeJS.ProcessEnv = proce
           if (response.status !== 200) throw await brokerError(response);
         },
       });
+    },
+  });
+}
+
+/**
+ * Waits for one child's current to move past `afterRevision`, or to end. The broker holds
+ * each request until the current moves, answering unchanged when its hold elapses, so a
+ * wait that outlasts the hold simply asks again.
+ */
+async function observeNextCurrent(
+  url: string,
+  token: string,
+  completionId: number,
+  afterRevision: number | undefined,
+): Promise<CompletionCurrentSnapshot> {
+  for (;;) {
+    const query = afterRevision === undefined ? "" : `?afterRevision=${afterRevision}`;
+    const response = await brokerRequest(url, token, `/${completionId}/result${query}`);
+    const value = await response.json() as unknown;
+    if (response.status === 200) {
+      const current = await brokerRequest(url, token, `/${completionId}/current`);
+      if (current.status !== 200) throw await brokerError(current);
+      return normalizeCurrent(await current.json());
+    }
+    if ((response.status === 202 || response.status === 409) && isRecord(value) && isRecord(value.current)) {
+      const current = normalizeCurrent(value.current);
+      if (response.status === 409 || afterRevision === undefined || current.revision > afterRevision) {
+        return current;
+      }
+      continue;
+    }
+    throw await brokerError(response, value);
+  }
+}
+
+/**
+ * Watches the children a parent launched. Each call to `changes()` resolves on the next
+ * event: any child's current moving or ending. Requests stay open between calls, so no
+ * change is missed and none is asked for twice.
+ */
+export function watchCompletions(children: Iterable<CompletionHandle>): CompletionWatch {
+  const watched = new Map<number, CompletionHandle>();
+  for (const child of children) watched.set(child.completionId, child);
+  const seen = new Map<number, number>();
+  const ended = new Set<number>();
+  const pending = new Map<number, Promise<{ id: number; current: CompletionCurrentSnapshot }>>();
+  return Object.freeze({
+    get settled(): boolean {
+      return ended.size === watched.size;
+    },
+    async changes(): Promise<readonly CompletionChange[]> {
+      for (const [id, child] of watched) {
+        if (ended.has(id) || pending.has(id)) continue;
+        const request = child.current.next(seen.get(id)).then((current) => ({ id, current }));
+        // A failure surfaces on the next changes() call; until then it must not be unhandled.
+        request.catch(() => {});
+        pending.set(id, request);
+      }
+      if (pending.size === 0) return [];
+      await Promise.race(pending.values());
+      // Every request that has answered by now is one change; the rest stay open.
+      const answered = await Promise.all([...pending].map(async ([id, request]) => (
+        await Promise.race([request, Promise.resolve(undefined)]) === undefined ? undefined : id
+      )));
+      const changes: CompletionChange[] = [];
+      for (const id of answered) {
+        if (id === undefined) continue;
+        const { current } = await pending.get(id)!;
+        pending.delete(id);
+        seen.set(id, current.revision);
+        if (current.lifecycle !== "active") ended.add(id);
+        changes.push(Object.freeze({ child: watched.get(id)!, current }));
+      }
+      return changes;
     },
   });
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CompletionTerminalError, complete, configureCompletionRuntime } from "../src/index.js";
+import { CompletionTerminalError, complete, configureCompletionRuntime, watchCompletions } from "../src/index.js";
 import type {
   CompletionCurrentSnapshot,
   CompletionHandle,
@@ -74,7 +74,7 @@ describe("complete", () => {
     };
     const handle: CompletionHandle = Object.freeze({
       completionId: 41,
-      current: Object.freeze({ snapshot: vi.fn(async () => snapshot) }),
+      current: Object.freeze({ snapshot: vi.fn(async () => snapshot), next: vi.fn(async () => snapshot) }),
       result,
       stop: vi.fn(async () => {}),
     });
@@ -100,7 +100,7 @@ describe("complete", () => {
   it("rejects competing runtime owners and releases the exact binding idempotently", () => {
     const handle = {
       completionId: 41,
-      current: { snapshot: vi.fn() },
+      current: { snapshot: vi.fn(), next: vi.fn() },
       result: Promise.resolve(layer),
       stop: vi.fn(),
     } satisfies CompletionHandle;
@@ -129,7 +129,7 @@ describe("complete", () => {
     const terminal = new CompletionTerminalError(41, "stopped", current, "cancelled");
     const handle: CompletionHandle = {
       completionId: 41,
-      current: { snapshot: async () => current },
+      current: { snapshot: async () => current, next: async () => current },
       result: Promise.reject(terminal),
       stop: async () => {},
     };
@@ -285,5 +285,84 @@ describe("complete", () => {
     const handle = complete(inputGraph);
     await expect(handle.current.snapshot()).rejects.toThrow("invalid current snapshot");
     await expect(handle.result).resolves.toEqual(layer);
+  });
+
+  it("waits for a child's current to move past the revision the parent saw", async () => {
+    const failed = { ...activeCurrent(6), lifecycle: "failed", safeReason: "execution" };
+    const requests = stubBroker([
+      new Response(JSON.stringify({ current: activeCurrent(3) }), { status: 202 }),
+      // The broker's hold elapsed with nothing new, so the wait asks again.
+      new Response(JSON.stringify({ current: activeCurrent(3) }), { status: 202 }),
+      new Response(JSON.stringify({ current: activeCurrent(4) }), { status: 202 }),
+      new Response(JSON.stringify({ current: failed }), { status: 409 }),
+    ]);
+    const handle = complete(inputGraph);
+
+    await expect(handle.current.next()).resolves.toMatchObject({ revision: 3, lifecycle: "active" });
+    await expect(handle.current.next(3)).resolves.toMatchObject({ revision: 4, lifecycle: "active" });
+    await expect(handle.current.next(4)).resolves.toMatchObject({ revision: 6, lifecycle: "failed" });
+    expect(requests.filter((request) => request.includes("/result"))).toEqual([
+      "GET http://127.0.0.1:43125/api/completions/41/result",
+      "GET http://127.0.0.1:43125/api/completions/41/result?afterRevision=3",
+      "GET http://127.0.0.1:43125/api/completions/41/result?afterRevision=3",
+      "GET http://127.0.0.1:43125/api/completions/41/result?afterRevision=4",
+    ]);
+  });
+
+  it("reads the final current of a child that succeeded while the parent waited", async () => {
+    const succeeded = { ...activeCurrent(5), lifecycle: "succeeded", currentLayerId: 7, finalLayerId: 7 };
+    stubBroker([
+      new Response(JSON.stringify(layer), { status: 200 }),
+      new Response(JSON.stringify(succeeded), { status: 200 }),
+    ]);
+
+    await expect(complete(inputGraph).current.next(4))
+      .resolves.toMatchObject({ revision: 5, lifecycle: "succeeded", finalLayerId: 7 });
+  });
+
+  it("reports each child's change as its own event and settles when every child ends", async () => {
+    const snapshot = (completionId: number, revision: number, lifecycle = "active"): CompletionCurrentSnapshot => ({
+      completionId, revision, lifecycle: lifecycle as CompletionCurrentSnapshot["lifecycle"],
+      currentLayerId: revision, finalLayerId: lifecycle === "succeeded" ? revision : null,
+    });
+    const releases = new Map<string, (current: CompletionCurrentSnapshot) => void>();
+    const asked: string[] = [];
+    const child = (completionId: number): CompletionHandle => ({
+      completionId,
+      current: {
+        snapshot: async () => snapshot(completionId, 0),
+        next: (afterRevision?: number) => {
+          asked.push(`${completionId}:${afterRevision ?? "-"}`);
+          return new Promise((resolve) => releases.set(`${completionId}:${afterRevision ?? "-"}`, resolve));
+        },
+      },
+      result: Promise.resolve(layer),
+      stop: async () => {},
+    });
+    const watch = watchCompletions([child(1), child(2)]);
+
+    const first = watch.changes();
+    await Promise.resolve();
+    releases.get("1:-")!(snapshot(1, 0));
+    expect((await first).map(({ current }) => `${current.completionId}@${current.revision}`)).toEqual(["1@0"]);
+
+    // Child 2's first request is still open; it is not asked again.
+    const second = watch.changes();
+    await Promise.resolve();
+    releases.get("2:-")!(snapshot(2, 0));
+    releases.get("1:0")!(snapshot(1, 1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect((await second).map(({ current }) => `${current.completionId}@${current.revision}`).sort())
+      .toEqual(["1@1", "2@0"]);
+
+    const third = watch.changes();
+    await Promise.resolve();
+    releases.get("1:1")!(snapshot(1, 2, "succeeded"));
+    releases.get("2:0")!(snapshot(2, 1, "failed"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect((await third).map(({ current }) => current.lifecycle).sort()).toEqual(["failed", "succeeded"]);
+    expect(watch.settled).toBe(true);
+    await expect(watch.changes()).resolves.toEqual([]);
+    expect(asked).toEqual(["1:-", "2:-", "1:0", "1:1", "2:0"]);
   });
 });

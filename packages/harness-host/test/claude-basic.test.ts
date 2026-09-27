@@ -201,7 +201,7 @@ describe("ClaudeBasicHarness", () => {
       expect(prompt).toContain("await graph.advanceCurrent(");
       expect(prompt).toContain("Advancing current does not complete the interaction");
       expect(prompt).not.toContain("graph.prepareComplete(");
-      expect(prompt).not.toContain("Import complete from");
+      expect(prompt).not.toContain("Import complete and watchCompletions from");
       expect(options).toMatchObject({
         cwd: "/tmp",
         model: "claude-sonnet-4",
@@ -277,7 +277,7 @@ describe("ClaudeBasicHarness", () => {
     });
 
     expect(calls[0]?.prompt).toContain("graph.prepareComplete(invokeAction)");
-    expect(calls[0]?.prompt).toContain("Import complete from");
+    expect(calls[0]?.prompt).toContain("Import complete and watchCompletions from");
   });
 
   it("includes graph-search guidance only for a query-v1 capability profile", async () => {
