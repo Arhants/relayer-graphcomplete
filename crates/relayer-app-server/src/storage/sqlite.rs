@@ -14,6 +14,7 @@ mod personal_presentation;
 mod product_state;
 mod projects;
 mod schema;
+mod stops;
 mod threads;
 
 use super::StorageError;

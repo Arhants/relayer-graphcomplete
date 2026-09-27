@@ -87,6 +87,8 @@ pub(crate) struct Interaction {
     pub(crate) text: String,
     pub(crate) graph_node_id: Option<i64>,
     pub(crate) completion_status: String,
+    pub(crate) stop_requested: bool,
+    pub(crate) stop_error: Option<String>,
     pub(crate) harness_configuration_name: Option<String>,
     pub(crate) harness_configuration_digest: Option<String>,
     pub(crate) permission_profile_id: String,

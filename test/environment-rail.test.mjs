@@ -421,6 +421,18 @@ describe("desktop environment rail", () => {
     }
     expect(interactionStatusRenderKey(running, "running", "active")).toBe("8:running");
     expect(viewedInteractionStatus(running, "running", "active")).toBe("running");
+    const stopping = { ...running, stopRequested: true };
+    expect(viewedInteractionStatus(stopping, "running", "stopped")).toBe("stopping");
+    expect(interactionStatusRenderKey(stopping, "running", "stopped"))
+      .not.toBe(interactionStatusRenderKey(running, "running", "stopped"));
+    for (const completionStatus of ["accepted", "failed", "stopped"]) {
+      const settled = { ...stopping, completionStatus };
+      expect(viewedInteractionStatus(settled, "running", "stopped")).toBe(completionStatus);
+      expect(interactionStatusRenderKey(settled, "running", "stopped"))
+        .not.toBe(interactionStatusRenderKey(stopping, "running", "stopped"));
+    }
+    expect(viewedInteractionStatus({ ...stopping, stopError: "Retry Stop" }, "running", "stopped"))
+      .toBe("running");
   });
 
   it("lets only the topmost surface consume Escape before restoring graph focus", () => {

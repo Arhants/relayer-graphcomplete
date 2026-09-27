@@ -259,6 +259,21 @@ async fn reconcile_interrupted_interaction(
                     interaction.id
                 )));
             }
+        } else if interaction.stop_requested {
+            // The previous process is gone, but an interrupted Stop is not a
+            // native terminal acknowledgment. Preserve the failure honestly and
+            // never replay work the user asked to stop.
+            storage
+                .fail_interaction_completion(
+                    interaction.id,
+                    interaction
+                        .harness_configuration_name
+                        .as_deref()
+                        .unwrap_or("unknown"),
+                    "Stop was interrupted when Relayer restarted. Send a follow-up to continue.",
+                )
+                .await
+                .map_err(StartupReconciliationError::retryable)?;
         } else if let Some(durable_input) = durable_input.as_ref() {
             if durable_input.submitted_inputs.is_empty() {
                 storage.recover_identified_interaction_submitted(
@@ -635,7 +650,8 @@ impl RelayerAppServer {
                     let context_only_identified = durable_input
                         .as_ref()
                         .is_some_and(|input| input.submitted_inputs.is_empty());
-                    if error.is_retryable()
+                    if !interaction.stop_requested
+                        && error.is_retryable()
                         && !has_submitted_inputs
                         && (graph_lease_recoverable || context_only_identified)
                     {
@@ -670,7 +686,10 @@ impl RelayerAppServer {
                     if has_submitted_inputs {
                         let pending_error =
                             format!("{} {error}", crate::product::RECONCILIATION_PENDING_PREFIX);
-                        if error.is_retryable() && interaction.graph_node_id.is_some() {
+                        if !interaction.stop_requested
+                            && error.is_retryable()
+                            && interaction.graph_node_id.is_some()
+                        {
                             storage
                                 .quarantine_interrupted_submitted_input(
                                     interaction.id,

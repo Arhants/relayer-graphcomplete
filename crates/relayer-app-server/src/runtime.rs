@@ -2450,6 +2450,17 @@ pub(crate) enum RuntimeError {
 }
 
 impl RuntimeError {
+    pub(crate) fn cancellation_settled(&self) -> bool {
+        match self {
+            Self::Completion { operation, .. } => operation.cancellation_settled(),
+            Self::Remote { body, .. } => {
+                body.get("cancellationSettled").and_then(Value::as_bool) == Some(true)
+                    || body.get("executionNotStarted").and_then(Value::as_bool) == Some(true)
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) fn attempt_failure(&self) -> (&str, &str, bool) {
         if let Self::Completion { operation, .. } = self {
             return operation.attempt_failure();
