@@ -31,6 +31,8 @@ import {
 } from "../shared/prime-runtime-integrity.mjs";
 import { LADYBUG_NOTICES_BUNDLE_DIR, LADYBUG_NOTICES_REPO_ROOT } from "./ladybug-notices.mjs";
 
+import { timedStage } from "./build-cache.mjs";
+
 const execFileAsync = promisify(execFile);
 
 function normalizeAsarEntry(entry) {
@@ -529,7 +531,7 @@ export async function normalizePackagedBundlePermissions(bundlePath) {
   return changed;
 }
 
-export default async function verifyElectronBuilderBundledAppServer(
+async function verifyElectronBuilderBundledAppServer(
   context,
   {
     includePrimeAgent = true,
@@ -565,4 +567,8 @@ export default async function verifyElectronBuilderBundledAppServer(
     await normalizePackagedBundlePermissions(appPath);
   }
   return result;
+}
+
+export default function timedVerifyElectronBuilderBundledAppServer(context, options) {
+  return timedStage("afterPack verification", () => verifyElectronBuilderBundledAppServer(context, options));
 }

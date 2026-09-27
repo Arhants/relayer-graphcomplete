@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -256,6 +256,16 @@ function buildPlan(repository, config, changedFiles, forcedMode) {
   let rootTypeScript = false;
 
   for (const path of changedFiles) {
+    // Exact reviewed prose documents only. Deletions still fail open.
+    if ((config.proseEvidenceDocuments ?? []).includes(path)) {
+      try {
+        if (!lstatSync(join(repository, path)).isFile()) reasons.push(`${path}: non-file exempted path`);
+      } catch (error) {
+        if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+        reasons.push(`${path}: deleted exempted path`);
+      }
+      continue;
+    }
     if (
       /^test\/.*\.(test|spec)\.[cm]?[jt]sx?$/.test(path) &&
       !existsSync(join(repository, path))
