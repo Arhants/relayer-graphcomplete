@@ -178,6 +178,8 @@ jobs:
     needs: [plan, lbug-prebuilt]
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.rust == 'true' }}
     runs-on: ubuntu-latest
+    env:
+      RELAYER_CI_PROFILE_DIR: ${{ runner.temp }}/ci-resource-profiles
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -229,12 +231,24 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
           key: ${{ steps.rust-setup.outputs.dependency-cache-key }}
+      - name: Upload command resource profiles
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: rust-clippy-resource-profiles-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-resource-profiles
+          if-no-files-found: ignore
+          retention-days: 14
+
 
   rust-tests:
     name: Fresh Rust tests
     needs: [plan, lbug-prebuilt]
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.rust == 'true' }}
     runs-on: ubuntu-latest
+    env:
+      RELAYER_CI_PROFILE_DIR: ${{ runner.temp }}/ci-resource-profiles
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -274,12 +288,24 @@ jobs:
         with:
           lane: rust-tests
           sccache-enabled: ${{ steps.rust-setup.outputs.sccache-enabled }}
+      - name: Upload command resource profiles
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: rust-tests-resource-profiles-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-resource-profiles
+          if-no-files-found: ignore
+          retention-days: 14
+
 
   rust-crash:
     name: Fresh crash reconciliation tests
     needs: [plan, lbug-prebuilt]
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.rust_crash == 'true' }}
     runs-on: ubuntu-latest
+    env:
+      RELAYER_CI_PROFILE_DIR: ${{ runner.temp }}/ci-resource-profiles
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -320,12 +346,24 @@ jobs:
         with:
           lane: rust-crash
           sccache-enabled: ${{ steps.rust-setup.outputs.sccache-enabled }}
+      - name: Upload command resource profiles
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: rust-crash-resource-profiles-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-resource-profiles
+          if-no-files-found: ignore
+          retention-days: 14
+
 
   rust-runtime:
     name: Rust runtime build
     needs: [plan, lbug-prebuilt]
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.rust_runtime == 'true' && needs.plan.outputs.runtime_cache_hit != 'true' }}
     runs-on: ubuntu-latest
+    env:
+      RELAYER_CI_PROFILE_DIR: ${{ runner.temp }}/ci-resource-profiles
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -418,6 +456,16 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
           key: ${{ steps.rust-setup.outputs.dependency-cache-key }}
+      - name: Upload command resource profiles
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: rust-runtime-resource-profiles-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-resource-profiles
+          if-no-files-found: ignore
+          retention-days: 14
+
 
   rust:
     name: Rust checks and fresh tests
@@ -459,6 +507,8 @@ jobs:
     needs: [plan, rust-runtime]
     if: ${{ !cancelled() && needs.plan.outputs.vitest == 'true' && (needs.plan.outputs.rust_runtime != 'true' || needs.plan.outputs.runtime_cache_hit == 'true' || needs['rust-runtime'].result == 'success') }}
     runs-on: ubuntu-latest
+    env:
+      RELAYER_CI_PROFILE_DIR: ${{ runner.temp }}/ci-resource-profiles
     steps:
       - name: Check out source and base history
         uses: actions/checkout@v7
@@ -492,6 +542,16 @@ jobs:
         run: node scripts/ci/run-chapter.mjs vitest
         env:
           CI_PLAN_JSON: ${{ needs.plan.outputs.plan }}
+      - name: Upload command resource profiles
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: vitest-resource-profiles-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-resource-profiles
+          if-no-files-found: ignore
+          retention-days: 14
+
 
   python:
     name: Fresh Python client tests
@@ -557,6 +617,8 @@ jobs:
           - target: macos-arm64
             runner: macos-15
     runs-on: ${{ matrix.runner }}
+    env:
+      RELAYER_CI_PROFILE_DIR: ${{ runner.temp }}/ci-resource-profiles
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -564,16 +626,38 @@ jobs:
         uses: ./.github/actions/setup-node-dependencies
       - name: Verify Node toolchain
         run: node scripts/check-node-version.mjs
+      - name: Identify sealed packaging cache inputs
+        id: packaging-cache
+        run: node scripts/ci/packaging-cache-identity.mjs
+        env:
+          RELAYER_DESKTOP_TARGET: ${{ matrix.target }}
+      - name: Restore sealed release runtime
+        if: ${{ steps.packaging-cache.outputs.runtime != '' }}
+        id: release-cache
+        continue-on-error: true
+        uses: ./.github/actions/restore-packaging-cache
+        with:
+          path: ${{ steps.packaging-cache.outputs.root }}/runtime/${{ steps.packaging-cache.outputs.runtime }}
+          key: packaging-release-v1-${{ steps.packaging-cache.outputs.runtime }}
+      - name: Verify restored release runtime
+        id: runtime-ready
+        run: node scripts/ci/packaging-cache-ready.mjs
+        env:
+          PACKAGING_CACHE_ROOT: ${{ steps.packaging-cache.outputs.root }}
+          PACKAGING_RUNTIME_ID: ${{ steps.packaging-cache.outputs.runtime }}
       - name: Identify Rust cache inputs
+        if: ${{ steps.runtime-ready.outputs.ready != 'true' }}
         id: rust-toolchain
         run: |
           rustc --version --verbose
           echo "release=$(rustc --version --verbose | sed -n 's/^release: //p')" >> "$GITHUB_OUTPUT"
           echo "host=$(rustc --version --verbose | sed -n 's/^host: //p')" >> "$GITHUB_OUTPUT"
       - name: Start Rust cache timing
+        if: ${{ steps.runtime-ready.outputs.ready != 'true' }}
         id: rust-cache-timing
         run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
       - name: Restore packaging Rust compilation acceleration
+        if: ${{ steps.runtime-ready.outputs.ready != 'true' }}
         id: rust-cache
         continue-on-error: true
         uses: ./.github/actions/restore-packaging-cache
@@ -587,6 +671,7 @@ jobs:
           restore-keys: |
             rust-packaging-${{ matrix.target }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.release }}-${{ steps.rust-toolchain.outputs.host }}-debug-default-v1-
       - name: Record packaging Rust cache status
+        if: ${{ steps.runtime-ready.outputs.ready != 'true' }}
         env:
           CACHE_HIT: ${{ steps.rust-cache.outputs.cache-hit }}
           STARTED: ${{ steps.rust-cache-timing.outputs.started }}
@@ -596,34 +681,23 @@ jobs:
           echo "- Exact hit: ${CACHE_HIT:-false}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Restore: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
       - name: Seed the locked Cargo dependency closure
+        if: ${{ steps.runtime-ready.outputs.ready != 'true' }}
         run: node scripts/ci/run-timed.mjs "Packaging Cargo fetch" cargo fetch --locked --target aarch64-apple-darwin
-      - name: Identify sealed packaging cache inputs
-        id: packaging-cache
-        run: node scripts/ci/packaging-cache-identity.mjs
-        env:
-          RELAYER_DESKTOP_TARGET: ${{ matrix.target }}
       - name: Restore pinned native preparation
-        if: ${{ steps.packaging-cache.outputs.native != '' }}
+        if: ${{ steps.runtime-ready.outputs.ready != 'true' && steps.packaging-cache.outputs.native != '' }}
         id: native-cache
         continue-on-error: true
         uses: ./.github/actions/restore-packaging-cache
         with:
           path: ${{ steps.packaging-cache.outputs.root }}/native/${{ steps.packaging-cache.outputs.native }}
           key: packaging-native-v1-${{ steps.packaging-cache.outputs.native }}
-      - name: Restore sealed release runtime
-        if: ${{ steps.packaging-cache.outputs.runtime != '' }}
-        id: release-cache
-        continue-on-error: true
-        uses: ./.github/actions/restore-packaging-cache
-        with:
-          path: ${{ steps.packaging-cache.outputs.root }}/runtime/${{ steps.packaging-cache.outputs.runtime }}
-          key: packaging-release-v1-${{ steps.packaging-cache.outputs.runtime }}
       - name: Build and inspect the actual target ASAR
         run: node scripts/ci/run-timed.mjs "Apple Silicon packaging" npm run desktop:pack
         env:
+          RELAYER_PACKAGING_FETCH_ON_MISS: ${{ steps.runtime-ready.outputs.ready == 'true' && '1' || '0' }}
           RELAYER_DESKTOP_TARGET: ${{ matrix.target }}
       - name: Save trusted packaging Rust compilation acceleration
-        if: ${{ github.event_name == 'push' && success() && steps.rust-cache.outputs.cache-hit != 'true' }}
+        if: ${{ github.event_name == 'push' && success() && steps.rust-cache.outputs.cache-primary-key != '' && steps.rust-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: |
@@ -633,7 +707,7 @@ jobs:
             target
           key: ${{ steps.rust-cache.outputs.cache-primary-key }}
       - name: Save trusted native preparation
-        if: ${{ github.event_name == 'push' && success() && steps.packaging-cache.outputs.native != '' && steps.native-cache.outputs.cache-hit != 'true' }}
+        if: ${{ github.event_name == 'push' && success() && steps.runtime-ready.outputs.ready != 'true' && steps.packaging-cache.outputs.native != '' && steps.native-cache.outputs.cache-hit != 'true' }}
         continue-on-error: true
         uses: actions/cache/save@v5
         with:
@@ -646,6 +720,16 @@ jobs:
         with:
           path: ${{ steps.packaging-cache.outputs.root }}/runtime/${{ steps.packaging-cache.outputs.runtime }}
           key: packaging-release-v1-${{ steps.packaging-cache.outputs.runtime }}
+      - name: Upload command resource profiles
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: packaging-resource-profiles-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-resource-profiles
+          if-no-files-found: ignore
+          retention-days: 14
+
 
   check:
     name: check

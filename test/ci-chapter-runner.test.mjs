@@ -38,11 +38,12 @@ describe("CI chapter runner", () => {
 
   afterEach(() => rmSync(directory, { recursive: true, force: true }));
 
-  function run(chapter, plan) {
+  function run(chapter, plan, environment = {}) {
     execFileSync(process.execPath, [runner, chapter], {
       cwd: repositoryRoot,
       env: {
         ...process.env,
+          RELAYER_CI_PROFILE_DIR: "",
         // Pin the timing inputs so ambient exports cannot flip these tests
         // into the --timings branch or move a real report as a side effect.
         // GITHUB_STEP_SUMMARY points at a scratch file so spawned failures
@@ -54,6 +55,7 @@ describe("CI chapter runner", () => {
         CI_INVOCATION_TRACE: invocationTrace,
         PATH: `${directory}:${process.env.PATH}`,
         TRACE: trace,
+        ...environment,
       },
     });
     return readFileSync(trace, "utf8").trim().split("\n");
@@ -81,6 +83,20 @@ describe("CI chapter runner", () => {
     ]);
   });
 
+  test("profiles the real chapter command once without replacing its authority trace", () => {
+    // Keep fixture Cargo, but use the real interpreter for the optional wrapper.
+    rmSync(join(directory, "python3"));
+    const profiles = join(directory, "profiles");
+    expect(run("rust-tests", { rustPackages: ["relayer-graph-core"] }, { RELAYER_CI_PROFILE_DIR: profiles })).toEqual([
+      "cargo:test -p relayer-graph-core",
+    ]);
+    const evidence = JSON.parse(readFileSync(join(profiles, readdirSync(profiles)[0]), "utf8"));
+    expect(evidence).toMatchObject({ label: "Fresh Rust tests", program: "cargo", exitCode: 0 });
+    expect(readFileSync(invocationTrace, "utf8").trim().split("\n").map(JSON.parse)).toEqual([
+      { chapter: "rust-tests", role: "authority", id: "rust-tests" },
+    ]);
+  });
+
   test("adds --timings and harvests the report when a timings directory is set", () => {
     const timingsDirectory = join(directory, "timings");
     const targetDirectory = join(directory, "cargo-target");
@@ -97,6 +113,7 @@ describe("CI chapter runner", () => {
         cwd: repositoryRoot,
         env: {
           ...process.env,
+          RELAYER_CI_PROFILE_DIR: "",
           CARGO_TARGET_DIR: targetDirectory,
           CI_PLAN_JSON: JSON.stringify({ rustPackages: ["relayer-graph-core"] }),
           CI_INVOCATION_TRACE: invocationTrace,
@@ -131,6 +148,7 @@ describe("CI chapter runner", () => {
         cwd: repositoryRoot,
         env: {
           ...process.env,
+          RELAYER_CI_PROFILE_DIR: "",
           CARGO_TARGET_DIR: targetDirectory,
           CI_PLAN_JSON: JSON.stringify({ rustPackages: ["relayer-graph-core"] }),
           CI_INVOCATION_TRACE: invocationTrace,
@@ -161,6 +179,7 @@ describe("CI chapter runner", () => {
         cwd: repositoryRoot,
         env: {
           ...process.env,
+          RELAYER_CI_PROFILE_DIR: "",
           CARGO_TARGET_DIR: targetDirectory,
           CI_PLAN_JSON: JSON.stringify({ rustPackages: ["relayer-graph-core"] }),
           CI_INVOCATION_TRACE: invocationTrace,
