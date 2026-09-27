@@ -238,6 +238,7 @@ export function createSharePublishCoordinator({
         completed: publishedUrl !== null,
         publishedUrl,
         running: false,
+        dismissing: false,
       };
     } catch {
       return null;
@@ -278,7 +279,7 @@ export function createSharePublishCoordinator({
   }
 
   async function run(record, authority) {
-    if (record.running) {
+    if (record.running || record.dismissing) {
       return Object.freeze({ status: "failed", attemptReferenceId: record.reference, code: "share_attempt_unavailable", retryable: false });
     }
     record.running = true;
@@ -402,6 +403,7 @@ export function createSharePublishCoordinator({
           completed: false,
           publishedUrl: null,
           running: false,
+          dismissing: false,
         };
         await save(record);
         remember(record);
@@ -420,7 +422,9 @@ export function createSharePublishCoordinator({
           return Object.freeze({ status: "failed", attemptReferenceId: reference, code: "share_attempt_unavailable", retryable: false });
         }
         const account = exactAccount(await accountSession());
-        if (account.ownerKey !== record.ownerKey) {
+        if (account.ownerKey !== record.ownerKey
+          || attempts.get(reference) !== record
+          || record.dismissing) {
           return Object.freeze({ status: "failed", attemptReferenceId: reference, code: "share_attempt_unavailable", retryable: false });
         }
         if (record.completed && record.publishedUrl) {
@@ -444,7 +448,8 @@ export function createSharePublishCoordinator({
         const candidates = [...attempts.values()]
           .filter((record) => record.ownerKey === account.ownerKey
             && record.threadId === threadId
-            && !record.running)
+            && !record.running
+            && !record.dismissing)
           .sort((left, right) => right.createdAt - left.createdAt);
         const record = candidates[0];
         if (!record) return null;
@@ -480,11 +485,17 @@ export function createSharePublishCoordinator({
         await ensureLoaded();
         const account = exactAccount(await accountSession());
         const record = attempts.get(reference);
-        if (!record || record.running || record.ownerKey !== account.ownerKey) {
+        if (!record || record.running || record.dismissing || record.ownerKey !== account.ownerKey) {
           return Object.freeze({ status: "failed", attemptReferenceId: reference, code: "share_attempt_unavailable", retryable: false });
         }
-        await attemptStore.delete(reference);
-        attempts.delete(reference);
+        record.dismissing = true;
+        try {
+          await attemptStore.delete(reference);
+          attempts.delete(reference);
+        } catch (error) {
+          record.dismissing = false;
+          throw error;
+        }
         return Object.freeze({ status: "dismissed", attemptReferenceId: reference });
       } catch (error) {
         return closedFailure(error, reference);

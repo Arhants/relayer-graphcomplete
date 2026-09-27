@@ -280,6 +280,88 @@ describe("share publication coordinator", () => {
     });
   });
 
+  it("lets dismissal claim an idle attempt before a captured retry finishes authenticating", async () => {
+    const records = new Map();
+    let releaseDelete;
+    let releaseRetryAccount;
+    let deferNextAccount = false;
+    const account = { ownerKey: "owner-a", authorization: "Bearer current", generation: 1 };
+    const attemptStore = {
+      load: async () => [...records.values()].map((record) => structuredClone(record)),
+      save: async (record) => { records.set(record.reference, structuredClone(record)); },
+      delete: vi.fn(async (reference) => {
+        await new Promise((resolve) => { releaseDelete = resolve; });
+        return records.delete(reference);
+      }),
+    };
+    const publish = vi.fn(async () => {
+      throw Object.assign(new Error("offline"), { code: "share_upload_failed", failureStage: "upload" });
+    });
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot: async () => snapshot,
+      accountSession: async () => {
+        if (!deferNextAccount) return account;
+        deferNextAccount = false;
+        return new Promise((resolve) => { releaseRetryAccount = () => resolve(account); });
+      },
+      sourceThreadIdentity: async (threadId) => `installation:test:thread:${threadId}`,
+      publish,
+      attemptStore,
+      createReferenceId: () => "SHR-DISMISS1",
+    });
+    await coordinator.create({ threadId: 42, title: "Public title" });
+
+    deferNextAccount = true;
+    const retrying = coordinator.retry("SHR-DISMISS1");
+    await vi.waitFor(() => expect(releaseRetryAccount).toBeTypeOf("function"));
+    const dismissing = coordinator.dismiss("SHR-DISMISS1");
+    await vi.waitFor(() => expect(releaseDelete).toBeTypeOf("function"));
+    releaseRetryAccount();
+    await expect(retrying).resolves.toMatchObject({
+      status: "failed",
+      code: "share_attempt_unavailable",
+    });
+    releaseDelete();
+    await expect(dismissing).resolves.toEqual({
+      status: "dismissed",
+      attemptReferenceId: "SHR-DISMISS1",
+    });
+
+    expect(publish).toHaveBeenCalledOnce();
+    expect(records.has("SHR-DISMISS1")).toBe(false);
+    await expect(coordinator.pending({ threadId: 42 })).resolves.toBeNull();
+  });
+
+  it("restores retry authority when durable dismissal fails", async () => {
+    let publishCount = 0;
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot: async () => snapshot,
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer current", generation: 1 }),
+      sourceThreadIdentity: async (threadId) => `installation:test:thread:${threadId}`,
+      publish: async () => {
+        publishCount += 1;
+        if (publishCount === 1) throw Object.assign(new Error("offline"), { code: "share_upload_failed" });
+        return { url: "https://share.example.test/t/retried-after-delete-failure" };
+      },
+      attemptStore: {
+        load: async () => [],
+        save: async () => {},
+        delete: async () => { throw new Error("delete failed"); },
+      },
+      createReferenceId: () => "SHR-DELFAIL1",
+    });
+    await coordinator.create({ threadId: 42, title: "Public title" });
+
+    await expect(coordinator.dismiss("SHR-DELFAIL1")).resolves.toMatchObject({
+      status: "failed",
+      code: "share_service_failed",
+    });
+    await expect(coordinator.retry("SHR-DELFAIL1")).resolves.toMatchObject({
+      status: "created",
+      url: "https://share.example.test/t/retried-after-delete-failure",
+    });
+  });
+
   it("preflights export eligibility/size and quota without retaining an attempt", async () => {
     const exportSnapshot = vi.fn(async () => snapshot);
     const preflightPublication = vi.fn(async ({ authorization, assertAuthority }) => {
