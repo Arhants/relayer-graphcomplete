@@ -1,0 +1,14 @@
+{
+  "sourceCommit": "cef47f7ad9956a8951552a1839aa1626a60f1ff7",
+  "sourceTree": "4846e60cdd0cf71d70d62a712051230c94c9b663",
+  "files": {
+    "collapsed-dark-620.png": "154af2deef0c4cf11783d8be3e9a4d722cf4479938c0d775e706e48f9cee56f4",
+    "collapsed-light-620.png": "dad16038ae3af4c704c6fadf879be98f303b207c6d6d17f21433012c6b46dbca",
+    "collapsed-graph-375.png": "459007d87cf072315cc2317183e183f6bb6954cf1dca9efa748f4e236288736e",
+    "expanded-620.png": "6ac51681eaf24fb0e728633a73d3cd291ed2794f05a6bace469930b3c3672beb",
+    "sidebar-interaction.mp4": "c75c64222bc98134826cd6bb4d1ae2679f0932eda3fcee9ae764124e83240d43",
+    "pre-gates.json": "ba2cd2014326cd84244db81e81c8a2f80721892208cbbc09e9cdb8dbe9ccc570",
+    "post-gates.json": "ba2cd2014326cd84244db81e81c8a2f80721892208cbbc09e9cdb8dbe9ccc570",
+    "results.json": "7a7b0ee6dc569c7144c5ee7d122464b0048bdb626f70151c0e8797350522314c"
+  }
+}

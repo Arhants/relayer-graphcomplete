@@ -1,0 +1,37 @@
+[
+  {
+    "stage": "check",
+    "exitCode": 0,
+    "seconds": 262.9191312789917
+  },
+  {
+    "stage": "build",
+    "exitCode": 0,
+    "seconds": 4.282294750213623
+  },
+  {
+    "stage": "sidebar-new-thread",
+    "exitCode": 0,
+    "seconds": 0.5982058048248291
+  },
+  {
+    "stage": "sidebar-new-thread-light",
+    "exitCode": 0,
+    "seconds": 0.5806059837341309
+  },
+  {
+    "stage": "sidebar-thread-375",
+    "exitCode": 0,
+    "seconds": 0.5723330974578857
+  },
+  {
+    "stage": "sidebar-new-thread-expanded",
+    "exitCode": 0,
+    "seconds": 0.6180810928344727
+  },
+  {
+    "stage": "sidebar-thread-journey",
+    "exitCode": 0,
+    "seconds": 10.256836175918579
+  }
+]
