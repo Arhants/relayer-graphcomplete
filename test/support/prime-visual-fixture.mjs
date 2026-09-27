@@ -19,7 +19,19 @@ export function primeVisualFixtureFactory(context) {
     createAgentSessionFromServices: async ({ hostRequestHandlers }) => {
       let process;
       return { session: {
-        async promptAndWait(_prompt, { runContext }) {
+        async promptAndWait(prompt, { runContext }) {
+          let python = PYTHON;
+          if (prompt.includes("Authored visual Node Details:")) {
+            if (/detailAuthoring|checkpointNodeDetail|detailCapability|html`/.test(prompt)) {
+              throw new Error("Prime V3 prompt contains TypeScript authoring instructions");
+            }
+            const example = prompt.match(/```python\n([\s\S]*?)\n```/)?.[1];
+            if (!example) throw new Error("Prime V3 prompt has no runnable example");
+            // Execute the actual composed prompt, not a separately maintained recipe.
+            python = PYTHON.slice(0, PYTHON.indexOf("from relayer_graph import"))
+              + "async def main():\n" + example.split("\n").map((line) => "    " + line).join("\n")
+              + "\nasyncio.run(main())\n";
+          }
           if (nativeKernel) {
             const kernel = new nativeKernel.KernelManager({
               python: globalThis.process.env.RELAYER_TEST_PRIME_PYTHON,
@@ -30,7 +42,8 @@ export function primeVisualFixtureFactory(context) {
             });
             try {
               await kernel.start();
-              const code = `import sys, asyncio\nsys.path.insert(0, ${JSON.stringify(resolve("python/relayer-graph/src"))})\n` + PYTHON.slice(PYTHON.indexOf("from relayer_graph import"));
+              const shimEnd = python.indexOf("\n", python.indexOf("sys.modules['rlm'] =")) + 1;
+              const code = `import sys, asyncio\nsys.path.insert(0, ${JSON.stringify(resolve("python/relayer-graph/src"))})\n` + python.slice(shimEnd);
               const result = await kernel.execute(code.replace("asyncio.run(main())", "await main()"), {
                 hostRequestContext: { executionId: "visual-native-proof", runContext, signal: new AbortController().signal },
               });
@@ -56,7 +69,7 @@ export function primeVisualFixtureFactory(context) {
           await new Promise((done) => server.listen(0, "127.0.0.1", done));
           try {
             await new Promise((done, reject) => {
-              process = spawn("python3", ["-c", PYTHON], { env: { ...globalThis.process.env,
+              process = spawn("python3", ["-c", python], { env: { ...globalThis.process.env,
                 PYTHONPATH: resolve("python/relayer-graph/src"),
                 PRIME_FIXTURE_BRIDGE: `http://127.0.0.1:${server.address().port}`,
               } });

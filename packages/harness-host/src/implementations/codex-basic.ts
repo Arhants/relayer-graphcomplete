@@ -553,6 +553,7 @@ Codex native subagents are available when useful. Subagents may directly author,
 Answer the current user interaction by authoring and accepting a useful graph layer that truthfully presents the completed work or genuine blocker.
 
 ${GRAPH_PRESENTATION_GUIDANCE}
+${CODEX_VISUAL_GUIDANCE}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interactionNode.id}
@@ -689,6 +690,7 @@ Do not turn a node, relationship, path, list, record, or arbitrary string into a
 After doing the underlying work, answer the current user interaction with a useful graph that truthfully presents the result, evidence, and limitations. A flat answer is valid. Add navigation only when opening it would materially improve understanding or support; apply that same test again inside every layer you author.
 
 ${GRAPH_PRESENTATION_GUIDANCE}
+${CODEX_VISUAL_GUIDANCE}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation && context !== undefined ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interactionNode.id}
@@ -817,8 +819,8 @@ function redactPersonalPresentationTraceData(
   if (traceValues === undefined) return value;
   if (typeof value === "string") {
     const values = includeFragments
-      ? [traceValues.exactBlock, ...traceValues.fragments]
-      : [traceValues.exactBlock];
+      ? [traceValues.exactBlock, ...traceValues.legacyBlocks, ...traceValues.fragments]
+      : [traceValues.exactBlock, ...traceValues.legacyBlocks];
     return values.reduce(
       (sanitized, traceValue) => sanitized.split(traceValue).join("[redacted-personal-presentation]"),
       value,
@@ -1254,3 +1256,5 @@ function optionalStringArray(value: unknown, field: string): readonly string[] |
 export function createCodexBasicFactory(dependencies: CodexBasicDependencies = {}): HarnessFactory {
   return (context) => new CodexBasicHarness(context, dependencies);
 }
+
+const CODEX_VISUAL_GUIDANCE = "For visual Node Details: Import the exported html, css, and detailCapability helpers. At minimum, call node.detailAuthoring.setComponent(\"main\", html`<section><h2>Summary</h2><p>Details</p></section>`, css`section { display: grid; gap: 0.75rem; }`), await graph.checkpointNodeDetail(node), and then await graph.submitNode(node). When a node has actions, create each stable action object with its sourceLayer before checkpointing, bind that same object in the page with the matching detailCapability helper, and pass it to graph.addAction after submitting the layer.";

@@ -844,6 +844,7 @@ export class PrimeAgentHarness implements Harness {
 
 ${GRAPH_PRESENTATION_GUIDANCE}
 ${PRIME_VISUAL_GUIDANCE}
+${primeVisualExample(interaction.id)}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interaction.id}
@@ -877,6 +878,7 @@ If a graph call fails, edit and rerun the same authoring code with the same clie
 
 ${GRAPH_PRESENTATION_GUIDANCE}
 ${PRIME_VISUAL_GUIDANCE}
+${primeVisualExample(interaction.id)}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interaction.id}
@@ -1162,8 +1164,8 @@ function sanitizePrimeTraceValue(
     );
     if (presentationTraceValues === undefined) return accessRedacted;
     const presentationValues = includePresentationFragments
-      ? [presentationTraceValues.exactBlock, ...presentationTraceValues.fragments]
-      : [presentationTraceValues.exactBlock];
+      ? [presentationTraceValues.exactBlock, ...presentationTraceValues.legacyBlocks, ...presentationTraceValues.fragments]
+      : [presentationTraceValues.exactBlock, ...presentationTraceValues.legacyBlocks];
     return presentationValues.reduce(
       (sanitized, traceValue) => sanitized.split(traceValue).join("[redacted-personal-presentation]"),
       accessRedacted,
@@ -1689,3 +1691,21 @@ function optionalEnum<const T extends readonly string[]>(value: unknown, allowed
 
 const PRIME_VISUAL_GUIDANCE = `For visual Node Details, import html, asset_ref, external_link, action_capability, and ActionObject from relayer_graph. node.detail_authoring.set_component("main", html("<h2>Answer</h2>"), "h2 { color: blue; }") authors a component; node.detail remains the Markdown fallback. Use html(["<button gc=", ">Continue</button>"], action_capability("continue", action)) for a declared ActionObject. Its source_layer must be the exact LayerObject containing that node. Reuse the same action in await graph.add_action(node, action) after submitting nodes and layers. Navigate actions use kind="navigate", relation="expand" or "reference", and target=layer; invoke actions use interaction_text; input actions use control, prompt, and options. Checkpoint with await graph.checkpoint_node_detail(node). Submit freezes that object's detail; use a fresh NodeObject with the same client_key for an edited draft. Untouched detail retains its prior package; detail_authoring.clear() explicitly removes it.
 Discover assets with graph.visual_assets.scope(), list_assets(scope=scope), list_tags(scope=scope), and inspect(asset_id, scope). Add caller-read bytes with VisualAssetFile(name, media_type, bytes) and await graph.visual_assets.add(file=file, scope=scope, name=name). Bind logical asset IDs with html(['<img asset=', ' alt="Description">'], asset_ref(asset_id)); the host resolves and pins content. Never supply compiled packages, mounts, hashes, raw image URLs, or executable JavaScript.`;
+
+function primeVisualExample(interactionNodeId: number): string {
+  return `For a simple answer, a single visual node is sufficient. Start from this runnable Python example and replace its content for the task. Use the public client API; inspect a specific signature or error only when needed instead of reading compiler or server internals. Optional graph search and asset discovery are unnecessary when the answer needs neither retrieved context nor images.
+
+\`\`\`python
+from relayer_graph import GraphSession, NodeObject, LayerObject, LayerLayoutObject, NodePlacementObject, html
+graph = await GraphSession.current()
+node = NodeObject("info", "Answer", "Replace with the answer.", client_key="answer")
+node.detail_authoring.set_component("main", html("<section><h2>Answer</h2><p>Replace with the answer.</p></section>"), "section { display: grid; gap: 0.75rem; }")
+await graph.checkpoint_node_detail(node)
+await graph.submit_node(node)
+layer = LayerObject([node], [], LayerLayoutObject([NodePlacementObject(node, 0.5, 0.5)]), client_key="answer-layer")
+await graph.submit_layer(layer)
+await graph.add_navigate_action(${interactionNodeId}, "Answer", layer, relation="expand", client_key="response")
+await graph.submit(${interactionNodeId})
+\`\`\`
+The final submit accepts the graph; do not run this placeholder unchanged. Additional nodes and controls should serve the user's task.`;
+}

@@ -1138,6 +1138,41 @@ describe("PrimeAgentHarness", () => {
     expect(nativeInstructions?.[1]).not.toContain("Decision-useful center");
   });
 
+  it.each([undefined, "layered-navigation-v1"])("composes Python-only V3 guidance and redacts historical V3 echoes (%s)", async (promptProfile) => {
+    const source = await readFile(new URL("../../../crates/relayer-app-server/src/runtime.rs", import.meta.url), "utf8");
+    const rawDetail = JSON.parse(source.match(/title: "Authored visual Node Details",\s*detail: ("(?:[^"\\]|\\.)*")/)![1]!);
+    const title = "Authored visual Node Details";
+    const legacyBlock = `Personal graph presentation preferences:\n\n${title}: ${rawDetail}`;
+    let prompt = "";
+    let listener: ((event: unknown) => void) | undefined;
+    const session = primeSession("/tmp/prime-v3-prompt.jsonl", {
+      subscribe: vi.fn((next) => { listener = next; return vi.fn(); }),
+      promptAndWait: vi.fn(async (text: string) => {
+        prompt = text;
+        listener?.({ type: "tool_execution_start", toolCallId: "old-child", toolName: "ipython", args: { task: legacyBlock } });
+        listener?.({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: rawDetail }] } });
+      }),
+    });
+    Object.assign(session, { reload: vi.fn(async () => undefined) });
+    const harness = await createHarness(session, { ...configuration, settings: { ...configuration.settings, ...(promptProfile ? { promptProfile } : {}) } });
+    const context = presentationRunContext(11, "token", 90);
+    const node = context.personalPresentation!.graph.layers[0]!.nodes[0]!;
+    Object.assign(node, { title, detail: rawDetail });
+    const trace = recordingTrace();
+    try {
+      await harness.complete({ ...context, trace: trace.sink });
+      expect(prompt).toContain("every node you create");
+      expect(prompt).toContain("await graph.checkpoint_node_detail(node)");
+      expect(prompt).toContain("await graph.submit(11)");
+      expect(prompt).not.toMatch(/detailAuthoring|checkpointNodeDetail|detailCapability|html`/);
+      const tool = trace.events.find((event) => event.type === "tool.call.started");
+      expect(tool).toBeDefined();
+      expect(JSON.stringify(tool)).toContain("[redacted-personal-presentation]");
+      expect(JSON.stringify(trace.events)).not.toContain(rawDetail);
+      expect(node.detail).toBe(rawDetail);
+    } finally { await harness.dispose(); }
+  });
+
   it("includes Python graph-search guidance only for a query-v1 capability profile", async () => {
     let disabledPrompt = "";
     const disabled = await createHarness(primeSession("/tmp/search-disabled.jsonl", {

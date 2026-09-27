@@ -90,6 +90,9 @@ it.each(["prime-agent-basic", "prime-agent-deep"])("%s accepts Python authored a
     const freshTurn = await acceptedTurn(session, fresh.id, 0);
     const freshTrace = await runtime.exportCandidateTrace(freshTurn.id, join(directory, 'fresh-trace'));
     expect(freshTrace.personalPresentationVersionKey).toBe('personal-presentation-v3');
+    expect(freshTurn.completionOutput.rootLayer.nodes).toHaveLength(1);
+    expect(freshTurn.completionOutput.rootLayer.nodes[0].authoredDetail).toBeDefined();
+    expect(freshTurn.completionOutput.rootLayer.nodes[0].title).toBe('Answer');
 
   } finally {
     await product?.close(); await runtime.close(); await rm(directory, { recursive: true, force: true });
