@@ -69,6 +69,8 @@ describe("share publish renderer boundary", () => {
   it("explains a local eligibility failure before account or title input", async () => {
     const test = fixture();
     test.interactions.splice(0);
+    test.account.read.mockClear();
+    test.share.pending.mockClear();
     test.controller.render();
 
     expect(test.window.document.querySelector("#shareConversation").getAttribute("aria-disabled")).toBe("true");
@@ -77,6 +79,7 @@ describe("share publish renderer boundary", () => {
       .toContain("This thread needs an accepted response before it can be shared");
     expect(test.window.document.querySelector("#shareTitle")).toBeNull();
     expect(test.account.read).not.toHaveBeenCalled();
+    expect(test.share.pending).not.toHaveBeenCalled();
   });
 
   it("caps titles by Unicode code points instead of splitting a surrogate pair", () => {
@@ -192,6 +195,63 @@ describe("share publish renderer boundary", () => {
     expect(test.share.create).not.toHaveBeenCalled();
     await test.window.document.querySelector('[data-share-action="close"]').onclick();
     expect(test.share.dismiss).toHaveBeenCalledWith("SHR-RECOVER1");
+    controller.dispose();
+  });
+
+  it("clears a recovered URL when the signed-in account is replaced", async () => {
+    const test = fixture();
+    test.controller.dispose();
+    test.account.read.mockResolvedValue({ status: "signed-in", channel: "stable", subject: "owner-a" });
+    test.share.pending
+      .mockResolvedValueOnce({
+        status: "created",
+        attemptReferenceId: "SHR-OWNER-A",
+        url: "https://share.example.test/t/owner-a",
+      })
+      .mockResolvedValueOnce(null);
+    const controller = createSharePublishController({
+      root: test.window.document,
+      getThread: () => test.thread,
+      getInteractions: () => test.interactions,
+      account: test.account,
+      share: test.share,
+      clipboard: test.clipboard,
+    });
+
+    controller.render();
+    await vi.waitFor(() => expect(test.window.document.querySelector('[aria-label="Share link"]')?.value)
+      .toBe("https://share.example.test/t/owner-a"));
+    test.changed({ status: "signed-in", channel: "stable", subject: "owner-b" });
+    await vi.waitFor(() => expect(test.window.document.querySelector('[aria-label="Share link"]')).toBeNull());
+    await vi.waitFor(() => expect(test.window.document.querySelector("#shareTitle")).not.toBeNull());
+    controller.dispose();
+  });
+
+  it("ignores a pending recovery reply that arrives after sign-out", async () => {
+    const test = fixture();
+    test.controller.dispose();
+    test.account.read.mockResolvedValue({ status: "signed-in", channel: "stable", subject: "owner-a" });
+    let resolvePending;
+    test.share.pending.mockImplementation(() => new Promise((resolve) => { resolvePending = resolve; }));
+    const controller = createSharePublishController({
+      root: test.window.document,
+      getThread: () => test.thread,
+      getInteractions: () => test.interactions,
+      account: test.account,
+      share: test.share,
+      clipboard: test.clipboard,
+    });
+
+    controller.render();
+    await vi.waitFor(() => expect(resolvePending).toBeTypeOf("function"));
+    test.changed({ status: "signed-out", channel: "stable" });
+    resolvePending({
+      status: "created",
+      attemptReferenceId: "SHR-STALE-A",
+      url: "https://share.example.test/t/stale-owner-a",
+    });
+    await vi.waitFor(() => expect(test.window.document.querySelector('[aria-label="Share link"]')).toBeNull());
+    expect(test.window.document.querySelector("#shareDialog").classList.contains("hidden")).toBe(true);
     controller.dispose();
   });
 

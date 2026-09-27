@@ -100,4 +100,19 @@ describe("durable share publish attempt store", () => {
     await expect(store.save(oversized)).rejects.toThrow("invalid");
     await expect(readdir(root)).resolves.toEqual([]);
   });
+
+  it("rejects a concurrent thirty-third attempt without evicting or freezing updates", async () => {
+    const root = await temporaryRoot();
+    const store = createSharePublishAttemptStore({ directory: root });
+    const references = Array.from({ length: 32 }, (_, index) => `SHR-CAP${String(index).padStart(5, "0")}`);
+    await Promise.all(references.map((reference) => store.save(record(reference))));
+
+    await expect(store.save(record("SHR-CAP99999"))).rejects.toThrow("capacity");
+    await store.save({ ...record(references[0]), title: "Updated existing attempt" });
+
+    const loaded = await store.load();
+    expect(loaded).toHaveLength(32);
+    expect(loaded.find((value) => value.reference === references[0])?.title).toBe("Updated existing attempt");
+    expect(loaded.some((value) => value.reference === "SHR-CAP99999")).toBe(false);
+  });
 });

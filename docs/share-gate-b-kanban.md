@@ -175,6 +175,6 @@ Sentry submission, or promotion of prototype code.
   persistence-before-publish, lost response, reporting deduplication, successful
   receipt recovery, dismissal, and a two-process restart. Post-Slice-3
   `npm run check` completed every chapter with 194 Vitest files passing and one
-  skipped, 2,456 tests passing and three skipped, secret-boundary 2/2, Python
+  skipped, 2,461 tests passing and three skipped, secret-boundary 2/2, Python
   29/29, and green Rust, Ladybug, and PRD checks. `npm run build` passed. The
   exact-source Slice 3 adversarial review remains due before handoff.

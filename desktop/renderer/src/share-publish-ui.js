@@ -296,14 +296,18 @@ export function createSharePublishController({
     renderDialog();
   }
 
-  async function recoverPending() {
+  async function recoverPending(accountValue = null) {
     if (disposed || phase !== "closed" || typeof share.pending !== "function") return false;
     const threadId = getThread()?.id;
     if (!Number.isSafeInteger(threadId) || threadId <= 0) return false;
     const threadKey = String(threadId);
     if (recoveryThreadKey === threadKey) return false;
-    recoveryThreadKey = threadKey;
     const operation = ++operationVersion;
+    const currentAccount = accountValue ?? await account.read().catch(() => null);
+    if (disposed || phase !== "closed" || operation !== operationVersion
+      || normalizedAccount(currentAccount) !== "signed-in") return false;
+    accountSubject = typeof currentAccount?.subject === "string" ? currentAccount.subject : null;
+    recoveryThreadKey = threadKey;
     const pending = await share.pending(threadId).catch(() => null);
     if (disposed || phase !== "closed" || operation !== operationVersion
       || String(getThread()?.id) !== threadKey || !pending) return false;
@@ -321,8 +325,12 @@ export function createSharePublishController({
   const unsubscribe = account.onChanged?.((value) => {
     if (disposed) return;
     if (phase === "closed") {
+      operationVersion += 1;
+      result = null;
+      attemptResult = false;
       recoveryThreadKey = null;
-      if (normalizedAccount(value) === "signed-in") void recoverPending();
+      if (normalizedAccount(value) === "signed-in") void recoverPending(value);
+      else accountSubject = null;
       return;
     }
     if (phase === "blocked") return;
@@ -339,7 +347,7 @@ export function createSharePublishController({
       phase = "closed";
       recoveryThreadKey = null;
       renderDialog();
-      void recoverPending().then((recovered) => {
+      void recoverPending(value).then((recovered) => {
         if (!recovered && !disposed && phase === "closed") void runPreflight();
       });
       return;
@@ -366,7 +374,7 @@ export function createSharePublishController({
       headerButton.setAttribute("aria-disabled", String(!eligibility.eligible));
       menuButton.setAttribute("aria-disabled", String(!eligibility.eligible));
       headerButton.title = eligibility.eligible ? "Share" : "Share unavailable";
-      if (phase === "closed" && recoveryThreadKey !== threadKey) void recoverPending();
+      if (phase === "closed" && eligibility.eligible && recoveryThreadKey !== threadKey) void recoverPending();
     },
     dispose() {
       disposed = true;

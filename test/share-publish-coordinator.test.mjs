@@ -47,9 +47,10 @@ describe("share publication coordinator", () => {
       expect(snapshotBytes).toEqual(snapshot);
       return { url: "https://share.example.test/t/recovered" };
     });
+    let reopenedAccount = { ownerKey: "owner-a", authorization: "Bearer second", generation: 2 };
     const reopened = createSharePublishCoordinator({
       exportSnapshot: exportAfterRestart,
-      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer second", generation: 2 }),
+      accountSession: async () => reopenedAccount,
       sourceThreadIdentity: async () => { throw new Error("must not recalculate identity"); },
       publish: secondPublish,
       attemptStore,
@@ -78,6 +79,19 @@ describe("share publication coordinator", () => {
       attemptReferenceId: "SHR-DURABLE1",
       url: "https://share.example.test/t/recovered",
     });
+    reopenedAccount = { ownerKey: "owner-b", authorization: "Bearer replacement", generation: 3 };
+    await expect(reopened.retry("SHR-DURABLE1")).resolves.toMatchObject({
+      status: "failed",
+      code: "share_attempt_unavailable",
+      retryable: false,
+    });
+    reopenedAccount = null;
+    await expect(reopened.retry("SHR-DURABLE1")).resolves.toMatchObject({
+      status: "failed",
+      code: "share_sign_in_required",
+      retryable: false,
+    });
+    reopenedAccount = { ownerKey: "owner-a", authorization: "Bearer restored", generation: 4 };
     await reopened.dismiss("SHR-DURABLE1");
     expect(records.has("SHR-DURABLE1")).toBe(false);
   });
@@ -188,6 +202,49 @@ describe("share publication coordinator", () => {
     });
     await reopened.retry("SHR-REPORT01");
     expect(reportAfterRestart).not.toHaveBeenCalled();
+  });
+
+  it("keeps a published receipt durable but withholds its URL when ownership changes during the receipt save", async () => {
+    let account = { ownerKey: "owner-a", authorization: "Bearer first", generation: 1 };
+    let releaseReceiptSave;
+    let saveCount = 0;
+    let stored;
+    const publish = vi.fn(async () => ({ url: "https://share.example.test/t/saved-before-switch" }));
+    const attemptStore = {
+      load: async () => [],
+      save: vi.fn(async (record) => {
+        saveCount += 1;
+        stored = structuredClone(record);
+        if (saveCount === 2) await new Promise((resolve) => { releaseReceiptSave = resolve; });
+      }),
+      delete: async () => false,
+    };
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot: async () => snapshot,
+      accountSession: async () => account,
+      sourceThreadIdentity: async (threadId) => `installation:test:thread:${threadId}`,
+      publish,
+      attemptStore,
+      createReferenceId: () => "SHR-SAVERACE",
+    });
+
+    const creating = coordinator.create({ threadId: 42, title: "Public title" });
+    await vi.waitFor(() => expect(releaseReceiptSave).toBeTypeOf("function"));
+    account = { ownerKey: "owner-b", authorization: "Bearer replacement", generation: 2 };
+    releaseReceiptSave();
+
+    await expect(creating).resolves.toMatchObject({ code: "share_sign_in_required" });
+    expect(stored).toMatchObject({
+      snapshotBytes: [],
+      title: "",
+      publishedUrl: "https://share.example.test/t/saved-before-switch",
+    });
+    account = { ownerKey: "owner-a", authorization: "Bearer restored", generation: 3 };
+    await expect(coordinator.retry("SHR-SAVERACE")).resolves.toMatchObject({
+      status: "created",
+      url: "https://share.example.test/t/saved-before-switch",
+    });
+    expect(publish).toHaveBeenCalledOnce();
   });
 
   it("preflights export eligibility/size and quota without retaining an attempt", async () => {

@@ -313,6 +313,11 @@ export function createSharePublishCoordinator({
       record.publishedUrl = result.url;
       record.lastFailure = null;
       await save(record);
+      try {
+        await assertAuthority();
+      } catch (error) {
+        return closedFailure(error, record.reference);
+      }
       return Object.freeze({ status: "created", attemptReferenceId: record.reference, url: result.url });
     } catch (error) {
       record.completed = false;
@@ -414,12 +419,12 @@ export function createSharePublishCoordinator({
         if (!record) {
           return Object.freeze({ status: "failed", attemptReferenceId: reference, code: "share_attempt_unavailable", retryable: false });
         }
-        if (record.completed && record.publishedUrl) {
-          return Object.freeze({ status: "created", attemptReferenceId: reference, url: record.publishedUrl });
-        }
         const account = exactAccount(await accountSession());
         if (account.ownerKey !== record.ownerKey) {
           return Object.freeze({ status: "failed", attemptReferenceId: reference, code: "share_attempt_unavailable", retryable: false });
+        }
+        if (record.completed && record.publishedUrl) {
+          return Object.freeze({ status: "created", attemptReferenceId: reference, url: record.publishedUrl });
         }
         return run(record, {
           generation: account.generation,
