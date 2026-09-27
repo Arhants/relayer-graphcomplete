@@ -322,6 +322,16 @@ function main() {
   const options = parseArguments(process.argv.slice(2));
   const repository = resolve(options.repository ?? defaultRepository);
   if (options.command === "create") {
+    const testOverrides = [
+      "lbug-source-dir",
+      "lbug-version",
+      "lbug-features",
+    ].filter((name) => Object.hasOwn(options, name));
+    if (testOverrides.length > 0) {
+      throw new Error(
+        `create does not accept test-only native source overrides: ${testOverrides.join(", ")}`,
+      );
+    }
     const manifest = createLbugArtifact({
       repository,
       targetDirectory: resolve(options["target-dir"]),
@@ -329,13 +339,6 @@ function main() {
       sourceCommit: options["source-commit"],
       platform: options.platform,
       rustcRelease: options["rustc-release"],
-      lbugSourceDirectory: options["lbug-source-dir"]
-        ? resolve(options["lbug-source-dir"])
-        : undefined,
-      lbugVersionOverride: options["lbug-version"],
-      lbugFeaturesOverride: options["lbug-features"]
-        ? options["lbug-features"].split(",").filter(Boolean).sort()
-        : undefined,
     });
     process.stdout.write(
       `Prebuilt Ladybug bundle created for lbug ${manifest.lbugVersion} (${manifest.library.sha256.slice(0, 12)}, ${(manifest.library.sizeBytes / (1024 * 1024)).toFixed(0)} MB${manifest.library.stripped ? ", stripped" : ", UNSTRIPPED"}).\n`,

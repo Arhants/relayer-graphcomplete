@@ -1,0 +1,63 @@
+{
+  "implementer": "astra_standards (GPT-6-Astra)",
+  "base": "d1a45f2e763916c0b6450d5836eae0b01891689e",
+  "scope": {
+    "crates/relayer-app-server/src/conversation_export.rs": "74f2bc312f5fc42912a44f397e4c4facf6a1e2f318d02ee7b7ee576a1586b30a",
+    "crates/relayer-app-server/src/conversation_export_service.rs": "7a559834fa7b207a57d831e9726158a731937722dd53b36fa001d9e182ebd860",
+    "crates/relayer-app-server/tests/conversation_export_contract.rs": "0cdd93bafe8d941a6d094b88ea019410988cd783d25c680ecb362ed2127197f6",
+    "crates/relayer-app-server/tests/product_persistence_flow.rs": "213941455f57b29802cc67c09e2ffe125c8912f9fbf6d5d42b361325ebdb87ec",
+    "crates/relayer-graph-core/src/graph/writer.rs": "9f59ba88ae9f5bd87de9118824ab2a29d1ffbf220af5e417bf3aad6ecc2eea08",
+    "crates/relayer-graph-server/tests/import_visual_asset_transport.rs": "fa0f0fab150ef6e7c6eba1a0600e845d7d578c7188dcf8a511a22c03b9a1f7bc",
+    "docs/conversation-export-v1.md": "0c3b7cdda8ebc8dd3098201124dc28487d223b80e6506b087d08f3ef202f5cb0",
+    "docs/conversation-export-v2.md": "952c33a3f98c95679ded31e074effd71c02d1b5518a8fcd7d78a9bec1a238b13"
+  },
+  "checkpoints": [
+    {
+      "promise": "PRD6.4 bounded portable asset validation",
+      "seams": [
+        "ConversationExportValidator::push_visual_asset_content",
+        "association media/length validation",
+        "finish unreachable-content validation"
+      ],
+      "evidence": "Metadata-only map type stores media_type and byte_length keyed by digest, with no base64 field. Existing large two-content and integrity/order/association tests pass in contract suite. Structural retention guarantee independently reviewed; no measured heap claim."
+    },
+    {
+      "promise": "Preserve V1 compatibility; explicitly version new required record structure",
+      "seams": [
+        "validate_header",
+        "push_visual_asset_content",
+        "build_conversation_export header version selection",
+        "V1/V2 format documents"
+      ],
+      "evidence": "Version regression red then green; incremental and batch parity accept V1 and V2, reject V1 content and version3. Real Product export test explicitly observes V1 for ordinary archive. Parent desktop image export/import is the V2 production-writer checkpoint, not claimed by this focused result."
+    },
+    {
+      "promise": "Graph scope and active completion authority protect accepted content",
+      "seams": [
+        "GraphWriter::accepted_detail_asset"
+      ],
+      "evidence": "Real accepted import fixture: same-thread read succeeds; foreign-thread writer fails; cutover invalidates writer; trusted GraphDatabase read remains. Regression fails without guard at foreign asset read, passes with guard. Same read transaction contains authority, visibility and content read."
+    }
+  ],
+  "actual_results": {
+    "conversation_export_contract": "23/23 pass",
+    "conversation_export_service": "19/19 pass",
+    "import_visual_asset_transport": "6/6 pass",
+    "product_persistence_flow conversation_export_uses_real_accepted_graph": "1/1 pass",
+    "git diff --check": "pass"
+  },
+  "test_subsumption": "No tests deleted. Existing visual fixtures now declare V2; ordinary fixtures remain V1. New version test covers protocol admission; new writer test covers scoped in-process authority distinct from trusted control endpoint authentication.",
+  "limits": [
+    "Full check/build and desktop proof owned by parent.",
+    "Shared snapshot V1 service contract unchanged; V2 shared publication is not claimed.",
+    "No heap profiler; retention is established by owned metadata-only type and independent source review."
+  ],
+  "logs": [
+    "docs/evidence/issue-371-visual-node-details/review-round-7/logs/rust-contract-green.log",
+    "docs/evidence/issue-371-visual-node-details/review-round-7/logs/rust-export-service.log",
+    "docs/evidence/issue-371-visual-node-details/review-round-7/logs/rust-product-export.log",
+    "docs/evidence/issue-371-visual-node-details/review-round-7/logs/rust-version-red.log",
+    "docs/evidence/issue-371-visual-node-details/review-round-7/logs/rust-writer-green.log",
+    "docs/evidence/issue-371-visual-node-details/review-round-7/logs/rust-writer-red.log"
+  ]
+}

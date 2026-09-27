@@ -1,0 +1,17 @@
+
+> @relayer/visual-assets@0.0.0 check
+> tsc --noEmit && npm run test:built
+
+
+> @relayer/visual-assets@0.0.0 test:built
+> npm run build && node test/built-package-smoke.mjs
+
+
+> @relayer/visual-assets@0.0.0 build
+> tsc -p tsconfig.build.json
+
+visual-assets built-package SVG/raster smoke passed
+
+> @relayer/harness-host@0.0.0 check
+> tsc --noEmit
+

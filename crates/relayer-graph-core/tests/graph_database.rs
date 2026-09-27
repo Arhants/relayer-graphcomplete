@@ -198,6 +198,7 @@ fn imported_conversation(interaction_node_id: &str) -> ImportedConversation {
                         detail: "A queue".into(),
                         authored_detail: None,
                         authored_detail_omitted: false,
+                        authored_detail_assets: Vec::new(),
                     }],
                     edges: vec![],
                     actions: vec![],
@@ -250,6 +251,7 @@ fn imported_invoke_conversation() -> ImportedConversation {
                     detail: "Invoke this path".into(),
                     authored_detail: None,
                     authored_detail_omitted: false,
+                    authored_detail_assets: Vec::new(),
                 }],
                 edges: vec![],
                 actions: vec![ImportedAction {
@@ -315,6 +317,7 @@ fn imported_invoke_conversation() -> ImportedConversation {
                     detail: "Imported result".into(),
                     authored_detail: None,
                     authored_detail_omitted: false,
+                    authored_detail_assets: Vec::new(),
                 }],
                 edges: vec![],
                 actions: vec![],
@@ -334,6 +337,10 @@ fn imported_invoke_conversation() -> ImportedConversation {
 #[tokio::test]
 async fn imported_conversation_is_materialized_read_only_and_removable() {
     let database = GraphDatabase::in_memory().await.unwrap();
+    database
+        .remove_imported_conversation("missing-import")
+        .await
+        .unwrap();
     let input = imported_conversation("interaction-1");
     let receipt = database.import_accepted_conversation(&input).await.unwrap();
     let turn = &receipt.turns[0];
@@ -377,6 +384,46 @@ async fn imported_conversation_is_materialized_read_only_and_removable() {
             .await
             .is_err()
     );
+    database
+        .remove_imported_conversation(&input.import_id)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn imported_stage_without_publications_can_be_removed() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    database
+        .begin_imported_conversation(&ImportedConversationStage {
+            import_id: "empty-stage".into(),
+            source_sha256: "source-digest".into(),
+            project_id: None,
+            thread_id: ThreadId::new(7001).unwrap(),
+            created_at: "2026-09-25T00:00:00Z".into(),
+        })
+        .await
+        .unwrap();
+
+    database
+        .remove_imported_conversation("empty-stage")
+        .await
+        .unwrap();
+    // Reusing the same import identity and thread proves the staged row was
+    // removed even though there were no graph publications to inspect.
+    database
+        .begin_imported_conversation(&ImportedConversationStage {
+            import_id: "empty-stage".into(),
+            source_sha256: "source-digest".into(),
+            project_id: None,
+            thread_id: ThreadId::new(7001).unwrap(),
+            created_at: "2026-09-25T00:00:00Z".into(),
+        })
+        .await
+        .unwrap();
+    database
+        .remove_imported_conversation("empty-stage")
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -427,6 +474,7 @@ async fn imported_conversation_notes_an_authored_detail_the_export_omitted() {
         id: "context-action".into(),
         target: ImportedNode {
             authored_detail_omitted: false,
+            authored_detail_assets: Vec::new(),
             ..accepted_node
         },
         source_interaction_node_id: "source-interaction".into(),
@@ -457,6 +505,7 @@ async fn imported_context_snapshots_deduplicate_and_remain_inert_on_nonaccepted_
         detail: "A queue".into(),
         authored_detail: None,
         authored_detail_omitted: false,
+        authored_detail_assets: Vec::new(),
     };
     input.turns[0].interaction_node_id = Some("interaction-1".into());
     input.turns[0].contexts = vec![ImportedInteractionContext {
@@ -705,6 +754,7 @@ async fn imported_submitted_input_provenance_must_be_one_exact_accepted_occurren
         detail: "A worker".into(),
         authored_detail: None,
         authored_detail_omitted: false,
+        authored_detail_assets: Vec::new(),
     });
     // Two input actions, both genuinely authored by node-1.
     for id in ["input-action-1", "input-action-2"] {
@@ -4410,14 +4460,23 @@ async fn accepted_authored_detail_survives_caller_mutation_and_database_reopen()
         }],
         "assets": [{
             "id": "architecture-diagram",
-            "digestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "digestSha256": "a9ce00f55032b62526a3abfc5aa6019874beff5d18c90607d663840d14ed11f9",
             "mediaType": "image/png",
             "representation": "image"
         }],
-        "integritySha256": "d9080b60296e82a0084b817742756b226fee981d41c37a7e27983a3bcb682b25"
+        "integritySha256": "adf1296990ca1e4be5e4d90eb9f4a4fab14716a885efc524cc04018294fc17d1"
     });
+    let prepared = PreparedDetailAsset {
+        asset_id: "architecture-diagram".into(),
+        digest_sha256: "a9ce00f55032b62526a3abfc5aa6019874beff5d18c90607d663840d14ed11f9".into(),
+        media_type: "image/png".into(),
+        byte_length: 13,
+        provenance_source: "user".into(),
+        provenance_file_name: "architecture.png".into(),
+        content: b"trusted asset".to_vec(),
+    };
     let answer = writer
-        .submit_node_with_authored_detail(
+        .submit_node_with_prepared_detail_assets(
             &NodeDraft {
                 client_key: "answer".into(),
                 kind: "concept".into(),
@@ -4425,7 +4484,8 @@ async fn accepted_authored_detail_survives_caller_mutation_and_database_reopen()
                 title: "Architecture".into(),
                 detail: "Legacy fallback".into(),
             },
-            Some(&authored_detail),
+            AuthoredDetailUpdate::Replace(&authored_detail),
+            Some(std::slice::from_ref(&prepared)),
         )
         .await
         .unwrap();
@@ -4447,6 +4507,105 @@ async fn accepted_authored_detail_survives_caller_mutation_and_database_reopen()
         "<section><img data-gc-asset=\"m_asset\"></section>"
     );
     assert_eq!(persisted.detail, "Legacy fallback");
+    let persisted_asset = reopened
+        .accepted_detail_asset(answer.id, "architecture-diagram")
+        .await
+        .unwrap();
+    assert_eq!(persisted_asset.content, b"trusted asset");
+    assert_eq!(persisted_asset.provenance_source, "user");
+    assert_eq!(persisted_asset.provenance_file_name, "architecture.png");
+}
+
+#[tokio::test]
+async fn authored_detail_assets_require_an_exact_prepared_snapshot_before_draft_mutation() {
+    let (database, interaction) = setup(Some(project(1)), thread(1)).await;
+    let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+    let original = NodeDraft {
+        client_key: "answer".into(),
+        kind: "concept".into(),
+        icon: "box".into(),
+        title: "Original".into(),
+        detail: "Original fallback".into(),
+    };
+    let checkpointed = writer.submit_node(&original).await.unwrap();
+    let replacement = NodeDraft {
+        title: "Replacement".into(),
+        detail: "Replacement fallback".into(),
+        ..original.clone()
+    };
+    let package = serde_json::json!({
+        "version": 1,
+        "components": [],
+        "mounts": [],
+        "assets": [{
+            "id": "visual",
+            "digestSha256": "a9ce00f55032b62526a3abfc5aa6019874beff5d18c90607d663840d14ed11f9",
+            "mediaType": "image/png",
+            "representation": "image"
+        }],
+        "integritySha256": "b18b2fd5072d9771b2454970111b3c78bb2660f044b2c15d83fa7cdaad80fe06"
+    });
+
+    for result in [
+        writer
+            .submit_node_with_authored_detail(&replacement, Some(&package))
+            .await,
+        writer
+            .submit_node_with_authored_detail_update(
+                &replacement,
+                AuthoredDetailUpdate::Replace(&package),
+            )
+            .await,
+    ] {
+        assert!(matches!(
+            result,
+            Err(GraphError::Validation {
+                code: "authored_detail_asset_snapshot_mismatch",
+                ..
+            })
+        ));
+        let unchanged = writer.get_node(checkpointed.id).await.unwrap();
+        assert_eq!(unchanged.title, "Original");
+        assert_eq!(unchanged.detail, "Original fallback");
+        assert_eq!(unchanged.authored_detail, None);
+    }
+
+    let prepared = PreparedDetailAsset {
+        asset_id: "visual".into(),
+        digest_sha256: "a9ce00f55032b62526a3abfc5aa6019874beff5d18c90607d663840d14ed11f9".into(),
+        media_type: "image/png".into(),
+        byte_length: 13,
+        provenance_source: "user".into(),
+        provenance_file_name: "visual.png".into(),
+        content: b"trusted asset".to_vec(),
+    };
+    let with_asset = writer
+        .submit_node_with_prepared_detail_assets(
+            &replacement,
+            AuthoredDetailUpdate::Replace(&package),
+            Some(std::slice::from_ref(&prepared)),
+        )
+        .await
+        .unwrap();
+    assert_eq!(with_asset.authored_detail.as_ref(), Some(&package));
+
+    let asset_free_package = serde_json::json!({
+        "version": 1,
+        "components": [{"id":"summary","order":0,"html":"<p>Asset free</p>","css":""}],
+        "mounts": [],
+        "assets": [],
+        "integritySha256": "c70e238c045d135d5560ce2f51a0a6768a7e8af712c118f5df3c3a04fe1ebbe0"
+    });
+    let asset_free = writer
+        .submit_node_with_authored_detail(&replacement, Some(&asset_free_package))
+        .await
+        .unwrap();
+    assert_eq!(
+        asset_free.authored_detail.as_ref(),
+        Some(&asset_free_package)
+    );
+    let retained = writer.submit_node(&original).await.unwrap();
+    assert_eq!(retained.authored_detail.as_ref(), Some(&asset_free_package));
 }
 
 #[tokio::test]

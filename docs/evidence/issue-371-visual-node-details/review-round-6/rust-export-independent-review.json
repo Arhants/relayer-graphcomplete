@@ -1,0 +1,31 @@
+{
+  "reviewer": "GPT-5.6-Sol /root/build_366",
+  "reviewType": "independent read-only source and test review",
+  "base": "a55e1c87ee59ec608f6c784a76462913be641788",
+  "scope": {
+    "crates/relayer-app-server/src/conversation_export_service.rs": "f0ec8c85672f4fe39fbc391813d2f9af4bba96c637916142414105329184c523",
+    "crates/relayer-app-server/src/runtime.rs": "831cc694641168c8e9305b2f8dbbe34d251c25b8c081116e91642f29fccfa2ed",
+    "crates/relayer-graph-core/src/graph.rs": "f22b8e95da8c55e1ba05ce15ac6b3c2ef70baff1dd5f5b2a60c1b387899ed130",
+    "crates/relayer-graph-core/src/lib.rs": "bcb4f535235fe9ee687f37977a555edb8f4ac0bb3b5c0c7b025c2e791987d01d",
+    "crates/relayer-graph-core/src/graph/database.rs": "eb8751821f42fdcbff211694c147b7ec7bf68b2b04d72a4bec1f693181df6719",
+    "crates/relayer-graph-core/src/graph/model.rs": "d73317e63c971aa8a26f41d6f5e808ea2b538be45b1f52a3bbee890f6605ff04",
+    "crates/relayer-graph-core/src/graph/model/node.rs": "782cb2ae3923222c2d99cb04e81d18542b17b97f3eaaa2d6777115a9b1e7a6c9",
+    "crates/relayer-graph-core/src/storage/sqlite/authored_detail_assets.rs": "995b32a8237fa96940987a369c2e90eaa032139b1831925cb8a9b15886adbcf9",
+    "crates/relayer-graph-server/src/lib.rs": "4d89ec04aae74b3e4b15ef63b5887570f459c1636c9bb30a32be20463508f4fa",
+    "crates/relayer-graph-server/tests/import_visual_asset_transport.rs": "9ba8ce657d7189e5866d8f7f0a039f16eb6b7d252d2e97d44f6cf723b5b85ad5"
+  },
+  "verdict": "clean",
+  "assertions": [
+    "The metadata-only control route retains bearer authentication and the same accepted-node, exact asset-id, and content-existence checks as the full byte read.",
+    "Every node association receives its own metadata authorization and provenance read; only the immutable digest payload is cached across nodes.",
+    "Accepted graph asset rows and digest-addressed content are immutable for this export boundary, so the metadata and later payload reads cannot be redirected by an authored caller.",
+    "A partial legacy metadata-only node contributes neither associations nor otherwise-unreferenced cached content.",
+    "The provenance filename fallback is nonempty and uses the archive validator's UTF-8 byte limit."
+  ],
+  "actionableFindings": [],
+  "limits": [
+    "The reviewer did not independently execute tests.",
+    "Reported focused test results belong to the implementation owner and remain separate execution evidence.",
+    "This assertion is invalid if any scoped file hash changes."
+  ]
+}

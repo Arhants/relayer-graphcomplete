@@ -22,7 +22,6 @@ Pre-alpha product and executable runtime. The repository now includes:
 - a persistent Node harness host that loads named file-backed configurations, caches one harness object per thread, persists opaque provider resume state without graph credentials, and supports cancellation and deterministic disposal;
 - graph-tool `codex.basic` and `claude.basic` harnesses using Relayer's Codex app-server bridge and the Claude Agent SDK respectively;
 - a `prime.agent` harness that passes the current graph scope through Prime Agent's run-scoped IPython host context;
-- an inference-free evaluation that starts the real Rust server and Node host and checks two interactions in one empty-project thread;
 - a separate internal Relayer Eval desktop application that runs test-case × harness matrices through the product app server and opens their threads in the production graph/chat workspace;
 - one Rust-owned product permission contract with Ask for approval (`ask`), Approve for me (`auto`), and Full access (`full`), translated by each harness configuration;
 - Rust, TypeScript, Python, and process-level integration tests.
@@ -47,7 +46,7 @@ The implemented basic loop is:
 5. `graph.submit(interactionNode)` recursively validates typed `expand` and `reference` navigation, exact source-layer provenance, layer size, and complete authored layouts, then atomically returns the current authored closure. Temporal `advance` uses the same validation and acceptance boundary while preserving the exact prior current through graph-native navigation. Flat answers remain valid. See [ADR 0005](docs/decisions/0005-layered-navigation-contract.md) and [ADR 0008](docs/decisions/0008-temporal-current-and-completion-brokers.md).
 6. Complete returns the resolved root layer for immediate display; later navigation reads the persisted layer.
 
-`NodeObject` also creates and owns a typed `detailAuthoring` builder while the node remains a client-side draft. Graph-action mounts derive source-node provenance from that owner, and their draft source layer must contain that exact node; authored capability calls cannot provide another node. Authors may checkpoint stable HTML/CSS components through `RelayerGraphClient.checkpointNodeDetail` before `submitNode`; there is no author-controlled finalize operation. Checkpoint and first-submit finalization snapshot the complete authored component program from ordinary own data descriptors, so later builder, template, capability, action, or layer mutation cannot alter that in-flight package. The first submit is single-flight per client and node: it registers shared submission and detail-finalization promises before executing envelope, compiler, or transport work, compiles only from that snapshot, freezes the builder, and sends one transport request. The immutable compiled package is retained by the builder so a replacement client can retry the same object after transport failure without recompilation. Successful node envelopes and every node field are snapshotted once from exact ordinary own data descriptors before validation. The same snapshot creates one frozen accepted value in code-owned private state, exposed through a non-configurable read-only `ref` projection and cached for concurrent calls and retries. Resolution or compilation failure removes the matching pending placeholders and leaves an unfrozen builder repairable. Agent-facing visual asset interpolation remains deferred until its authenticated resolver is connected; every development and packaged agent resource exposes the same HTML, CSS, and capability surface. Public compiler calls cannot seed the client's private finalization map. Product and Eval copy one self-contained `resources/graph-client/index.js`, with no compiler or host-bridge sibling modules. Rust integrity-checks and persists the canonical package beside the legacy fallback, conversation export/import carries that same package without a renderer-only shape, and Product mounts it through the constrained Node Detail runtime. Resubmitting a draft without mentioning `authoredDetail` retains its checkpointed package; `detailAuthoring.clear()` is the explicit way to drop it, and conversation export records `authoredDetailOmitted` when a private project path forces it to leave a package out.
+`NodeObject` also creates and owns a typed `detailAuthoring` builder while the node remains a client-side draft. Graph-action mounts derive source-node provenance from that owner, and their draft source layer must contain that exact node; authored capability calls cannot provide another node. Authors may checkpoint stable HTML/CSS components through `RelayerGraphClient.checkpointNodeDetail` before `submitNode`; there is no author-controlled finalize operation. Checkpoint and first-submit finalization snapshot the complete authored component program from ordinary own data descriptors, so later builder, template, capability, action, or layer mutation cannot alter that in-flight package. The first submit is single-flight per client and node: it registers shared submission and detail-finalization promises before executing envelope, compiler, or transport work, compiles only from that snapshot, freezes the builder, and sends one transport request. The immutable compiled package is retained by the builder so a replacement client can retry the same object after transport failure without recompilation. Successful node envelopes and every node field are snapshotted once from exact ordinary own data descriptors before validation. The same snapshot creates one frozen accepted value in code-owned private state, exposed through a non-configurable read-only `ref` projection and cached for concurrent calls and retries. Resolution or compilation failure removes the matching pending placeholders and leaves an unfrozen builder repairable. Agent-facing `assetRef` bindings resolve logical IDs through the authenticated graph capability; the private host bridge owns catalog scope and media validation. Every development and packaged agent resource exposes the same HTML, CSS, capability, and visual-assets surface. Public compiler calls cannot seed the client's private finalization map. Product and Eval copy one self-contained `resources/graph-client/index.js`, with no compiler or host-bridge sibling modules. Rust integrity-checks and persists the canonical package beside the legacy fallback, conversation export/import carries that same package without a renderer-only shape, and Product mounts it through the constrained Node Detail runtime. Resubmitting a draft without mentioning `authoredDetail` retains its checkpointed package; `detailAuthoring.clear()` is the explicit way to drop it, and conversation export records `authoredDetailOmitted` when a private project path forces it to leave a package out.
 
 Independent self-assessment will later add an optional review gate to this same loop.
 
@@ -94,42 +93,7 @@ Browser use stays inside each harness's existing native approval unit. Ask, Appr
 
 Unsupported setup fails as an ordinary harness limitation: Codex reports its native MCP connection or packaged-helper failure, Claude returns a sanitized unavailable/no-page/ambiguous-target/timeout error, and Prime raises its browser skill's loopback CDP failure. None of these paths may claim unread content or an action that did not execute. Site behavior, authenticated access, prompts, downloads, CAPTCHA handling, and compatibility are harness- and site-specific rather than a cross-harness guarantee. The sanitized delivery ledger is in [issue #257 evidence](docs/evidence/issue-257-browser-harnesses/README.md).
 
-## Run the GraphComplete runtime eval
-
-The default run is deterministic and makes no inference calls. It launches the Rust graph server and Node host, completes two interactions through one live harness object with separately scoped graph capabilities, exercises the real TypeScript client, and saves `result.json` plus an interactive turn-navigable `index.html` under `.relayer/evals/runtime/<test-run-id>/<test-case-id>/<harness-configuration-name>/`:
-
-```sh
-npm run eval:basic
-```
-
-The opt-in live path requires the runner to select one or more named harness configurations and receive an explicit managed Codex executable path through `RELAYER_CODEX_BINARY`. This command loads `harnesses/codex-basic.yaml`, resolves its `codex.basic` implementation, reuses the matching Codex login, and then runs the structured judge:
-
-```sh
-RELAYER_CODEX_BINARY=/absolute/path/to/managed/codex npm run eval:basic:live -- --configuration codex-basic
-```
-
-Selecting two configurations expands the same harness-agnostic case into two executions in one test run. `codex-basic` and `codex-basic-high` both select the `codex.basic` implementation with different settings:
-
-```sh
-npm run eval:basic:live -- --configuration codex-basic --configuration codex-basic-high
-```
-
-An additional opt-in live case exercises graph-authoring recovery through the
-ordinary Codex harness Complete path. It requires a whole-program stable-key
-replay, observes orphan validation, explicitly discards the orphan twice, and
-then verifies the accepted output plus the stopped layer through graph control:
-
-```sh
-npm run eval:graph-repair:live -- --configuration codex-basic
-```
-
-Its durable `result.json` and viewer are written under
-`.relayer/evals/runtime/<test-run-id>/graph-authoring.replay-repair/<configuration>/`.
-The live command is not part of `npm run check` and is the only part of this
-case that invokes inference; its evidence parser and grader run in the default
-deterministic test suite.
-
-### Recursive Complete live run
+## Recursive Complete live run
 
 Recursive `complete(inputGraph)` ships enabled. Recursion needs the whole
 persisted feature chain, so one switch turns on every prerequisite. It is not a

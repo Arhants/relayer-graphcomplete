@@ -42,7 +42,6 @@ describe("prebuilt Ladybug artifact", () => {
       `relayer-lbug-artifact-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     );
     targetDirectory = join(fixture, "target");
-    const lbugSource = join(fixture, "lbug-source");
     const buildSource = join(
       targetDirectory,
       "debug",
@@ -52,15 +51,8 @@ describe("prebuilt Ladybug artifact", () => {
       "build",
       "src",
     );
-    const include = join(lbugSource, "lbug-src", "src", "include");
     mkdirSync(buildSource, { recursive: true });
-    mkdirSync(join(include, "c_api"), { recursive: true });
-    mkdirSync(join(include, "main"), { recursive: true });
-    mkdirSync(join(include, "common"), { recursive: true });
     writeFileSync(join(buildSource, "liblbug.a"), "archive-bytes");
-    writeFileSync(join(include, "c_api", "lbug.h"), "#pragma once\n");
-    writeFileSync(join(include, "main", "lbug.h"), "#pragma once\n");
-    writeFileSync(join(include, "common", "types.h"), "#pragma once\n");
 
     bundle = join(fixture, "bundle");
     run([
@@ -68,7 +60,6 @@ describe("prebuilt Ladybug artifact", () => {
       "--repository", repositoryRoot,
       "--target-dir", targetDirectory,
       "--artifact-dir", bundle,
-      "--lbug-source-dir", lbugSource,
       "--source-commit", sourceCommit,
       ...identity,
     ]);
@@ -180,7 +171,7 @@ describe("prebuilt Ladybug artifact", () => {
     expect(existsSync(join(bundle, "lib", "liblbug.a"))).toBe(true);
     expect(existsSync(join(bundle, "include", "lbug.h"))).toBe(true);
     expect(existsSync(join(bundle, "include", "lbug.hpp"))).toBe(true);
-    expect(existsSync(join(bundle, "include", "common", "types.h"))).toBe(true);
+    expect(existsSync(join(bundle, "include", "transaction", "transaction_manager.h"))).toBe(true);
   });
 
   test("verify accepts an untampered bundle and exports the link environment", () => {
@@ -234,6 +225,22 @@ describe("prebuilt Ladybug artifact", () => {
     }
     expect(existsSync(envFile)).toBe(false);
     expect(verifyError?.message).toMatch(/source tree changed/u);
+  });
+
+  test("create CLI rejects test-only native source overrides before packaging", () => {
+    const createdBundle = join(fixture, "bundle-from-test-overrides");
+    expect(() => run([
+      "create",
+      "--repository", repositoryRoot,
+      "--target-dir", targetDirectory,
+      "--artifact-dir", createdBundle,
+      "--source-commit", sourceCommit,
+      "--lbug-source-dir", join(fixture, "untrusted-lbug-source"),
+      "--lbug-version", "0.18.0",
+      "--lbug-features", "extension_tests",
+      ...identity,
+    ])).toThrow(/does not accept test-only native source overrides/u);
+    expect(existsSync(createdBundle)).toBe(false);
   });
 
   test("verify accepts feature-only producer drift and exports both link paths", () => {
@@ -361,7 +368,6 @@ describe("prebuilt Ladybug artifact", () => {
         "--repository", repositoryRoot,
         "--target-dir", join(fixture, "empty-target"),
         "--artifact-dir", join(fixture, "bundle-missing"),
-        "--lbug-source-dir", join(fixture, "lbug-source"),
         "--source-commit", sourceCommit,
         ...identity,
       ]),
