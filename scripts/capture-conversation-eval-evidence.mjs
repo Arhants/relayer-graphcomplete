@@ -14,17 +14,15 @@ import {
   RelayerGraphClient,
 } from "@relayer/graph-client";
 
-import { createEvalDashboard } from "../desktop/eval-main/web-host.mjs";
-import { createProductReview } from "../desktop/main/services/product-review.mjs";
 import { EvalService } from "../desktop/eval-main/eval-service.mjs";
 import { createConversationExportService } from "../desktop/main/services/conversation-export.mjs";
 import { GraphCompleteRuntimeService } from "../desktop/main/services/graphcomplete-runtime.mjs";
-import { createProductBackend } from "../desktop/main/services/product-backend.mjs";
+import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 
 const OPT_IN = "RELAYER_CAPTURE_CONVERSATION_EVAL_EVIDENCE";
 const VIDEO_OPT_IN = "RELAYER_RECORD_CONVERSATION_EVAL_VIDEO";
 const repositoryRoot = resolve(import.meta.dirname, "..");
-const outputDirectory = process.env.RELAYER_CONVERSATION_EVAL_EVIDENCE_DIR || join(repositoryRoot, "docs", "prd", "assets", "evidence", "conversation-export-eval");
+const outputDirectory = join(repositoryRoot, "docs", "prd", "assets", "evidence", "conversation-export-eval");
 const videoOutputFile = join(outputDirectory, "conversation-export-eval.mp4");
 const dataDirectory = mkdtempSync(join(tmpdir(), "relayer-conversation-evidence-"));
 const videoFramesDirectory = join(dataDirectory, "video-frames");
@@ -36,8 +34,6 @@ const screenshots = [];
 const videoFrames = [];
 const videoEnabled = process.env[VIDEO_OPT_IN] === "1";
 let dashboardWindow;
-let dashboardSurface;
-const reviews = [];
 let reviewWindow;
 let ordinaryWindow;
 let evalService;
@@ -60,26 +56,10 @@ app.setName("Relayer Conversation Eval Evidence");
 mkdirSync(join(dataDirectory, "electron-profile"), { recursive: true });
 app.setPath("userData", join(dataDirectory, "electron-profile"));
 app.commandLine.appendSwitch("disable-gpu");
-app.on("web-contents-created", (_event, contents) => {
-  const execute = contents.executeJavaScript.bind(contents);
-  contents.executeJavaScript = async (source, ...args) => {
-    try { return await execute(source, ...args); }
-    catch (error) { throw new Error(`Evidence renderer command failed: ${source}`, { cause: error }); }
-  };
-});
 
 function register(channel, handler) {
   ipcMain.handle(channel, handler);
   ipcChannels.push(channel);
-}
-
-async function acquireFixtureExecution(providerId) {
-  return {
-    definition: { id: providerId, adapterId: "codex-subscription", accessContract: "managed-runtime@1" },
-    descriptor: { adapterId: "codex-subscription", accessContract: "managed-runtime@1", implementationVersion: "1" },
-    runtime: { async executionAccess() { return { kind: "managed-runtime", environment: {} }; } },
-    async release() {},
-  };
 }
 
 function statusFixtureFactory() {
@@ -143,8 +123,7 @@ async function waitForTurn(threadId, index, status) {
     if (detail.interactions[index]?.completionStatus === status) return detail;
     await new Promise((resolveWait) => setTimeout(resolveWait, 25));
   }
-  const detail = await productRequest(`/api/threads/${threadId}`);
-  throw new Error(`Evidence turn ${index + 1} did not reach ${status}: ${JSON.stringify(detail.interactions[index])}`);
+  throw new Error(`Evidence turn ${index + 1} did not reach ${status}.`);
 }
 
 async function createOrdinaryExport() {
@@ -155,8 +134,8 @@ async function createOrdinaryExport() {
     models: [{ id: "fixture-model", label: "Fixture model", order: 0, visible: true, available: true, providerDefault: true, metadata: {} }],
     systemFamily: { key: "codex", name: "Codex", modelIds: ["fixture-model"] },
   });
-  const family = await productRequest("/api/model-families", { method: "POST", body: JSON.stringify({ name: "Fixture models", enabled: true, members: [{ providerId: "codex", modelId: "fixture-model" }] }) });
-  const modelSelection = { familyId: family.id, providerId: "codex", modelId: "fixture-model" };
+  const settings = await productRequest("/api/model-settings");
+  const modelSelection = { familyId: settings.families[0].id, providerId: "codex", modelId: "fixture-model" };
   const thread = await productRequest("/api/threads", {
     method: "POST",
     body: JSON.stringify({ title: "Ordinary owner conversation", initialMessage: "Explain the task queue", harnessId: "fixture-task-system", modelSelection }),
@@ -209,7 +188,7 @@ async function createOrdinaryExport() {
 async function waitFor(label, window, expression, timeoutMs = 15_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await window.webContents.executeJavaScript(expression)) { process.stdout.write(`PASS ${label}\n`); return; }
+    if (await window.webContents.executeJavaScript(expression)) return;
     await new Promise((resolveWait) => setTimeout(resolveWait, 50));
   }
   const diagnostic = window && !window.isDestroyed()
@@ -293,11 +272,28 @@ async function createReview(executionId) {
     .find((execution) => execution.id === executionId)?.turns
     .find((turn) => turn.status === "accepted");
   if (!acceptedTurn) throw new Error("Evidence fixture has no accepted turn.");
-  const review = await createProductReview({ productSession, context, threadId, turnId: acceptedTurn.interactionId });
-  services.push(review);
-  reviews.push(review);
-  reviewOpenPromise = (async () => {
-    await waitFor("native review session ready", reviewWindow, `Boolean(window.__evalPresentation?.snapshot()?.turnId)`);
+  reviewWindow = new BrowserWindow({
+    width: 1480,
+    height: 920,
+    show: false,
+    backgroundColor: "#0b0c0d",
+    webPreferences: {
+      preload: join(repositoryRoot, "desktop", "preload", "eval-review.cjs"),
+      additionalArguments: [`--relayer-eval-execution=${executionId}`],
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  await reviewWindow.webContents.session.cookies.set({
+    url: productSession.origin,
+    name: productSession.readOnlyCookie.name,
+    value: productSession.readOnlyCookie.value,
+    httpOnly: true,
+    sameSite: "strict",
+    secure: false,
+  });
+  await reviewWindow.loadURL(`${productSession.origin}/?threadId=${threadId}&interactionId=${acceptedTurn.interactionId}&review=1`);
   const browserState = await reviewWindow.webContents.executeJavaScript(`fetch('/api/state?threadId=${threadId}').then(async (response) => ({ status: response.status, body: await response.text() }))`);
   if (browserState.status !== 200) throw new Error(`Review product state failed: ${JSON.stringify(browserState)}`);
   const parsedBrowserState = JSON.parse(browserState.body);
@@ -307,59 +303,38 @@ async function createReview(executionId) {
   await reviewWindow.webContents.executeJavaScript(`document.querySelector('[data-thread="${threadId}"]')?.click()`);
   await waitFor("review turn picker", reviewWindow, `Boolean(document.querySelector('#turnPickerButton'))`);
   await waitFor("review thread hydration", reviewWindow, `document.querySelector('#interactionText')?.textContent === 'RUNNING_EVIDENCE'`);
-    return reviewWindow;
-  })();
-  return review.url;
+  return reviewWindow;
 }
 
-async function openDashboard() {
-  const dashboard = await createEvalDashboard({ service: evalService, rendererDirectory: join(repositoryRoot, "desktop/eval-renderer"), openReview: createReview });
-  services.push(dashboard);
-  dashboardSurface = dashboard;
-  dashboardWindow = new BrowserWindow({ width: 1320, height: 860, show: false, backgroundColor: "#0b0c0d", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
-  dashboardWindow.webContents.setWindowOpenHandler(() => ({ action: "allow", overrideBrowserWindowOptions: { width: 1480, height: 920, show: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } } }));
-  dashboardWindow.webContents.on("did-create-window", (window) => { reviewWindow = window; });
-  await dashboardWindow.loadURL(dashboard.url);
-  dashboardWindow.show();
-}
-
-async function startEvidenceBackend() {
+async function run() {
+  await mkdir(outputDirectory, { recursive: true });
   const runtime = new GraphCompleteRuntimeService({
     userDataDirectory: dataDirectory,
     graphServerBinary: join(repositoryRoot, "target", "debug", "relayer-graph-server"),
     configurationPaths: [join(repositoryRoot, "harnesses", "fixture-task-system.yaml")],
     additionalImplementations: { "fixture.task-system": statusFixtureFactory() },
-    acquireProviderExecution: acquireFixtureExecution,
   });
-  const backend = createProductBackend({ graphRuntime: runtime, productOptions: {
+  services.push(runtime);
+  const runtimeSession = await runtime.start();
+  productServer = new RelayerAppServerService({
     userDataDirectory: dataDirectory,
     binaryPath: join(repositoryRoot, "target", "debug", "relayer-app-server"),
     webDirectory: join(repositoryRoot, "desktop", "renderer"),
     permissionCatalogPath: join(repositoryRoot, "permissions", "desktop.json"),
+    runtimeSession,
     defaultHarnessConfiguration: "fixture-task-system",
     allowHarnessOverride: true,
     allowConversationImport: true,
     enableReadOnlySession: true,
-  } });
-  services.push(backend);
-  ({ productServer, productSession } = await backend.start());
-  return backend;
-}
-
-async function run() {
-  await mkdir(outputDirectory, { recursive: true });
-  const backend = await startEvidenceBackend();
+  });
+  services.push(productServer);
+  productSession = await productServer.start();
   const nativeExporter = createConversationExportService({
     dialog: { showSaveDialog: async () => ({ canceled: false, filePath: ordinaryExportFile }) },
     getWindow: () => ordinaryWindow,
     exportConversation: (threadId) => productServer.exportConversation(threadId),
     createTemporaryId: () => "evidence",
   });
-  let composerDrafts = { pendingNewThread: null, threadFollowups: {} };
-  register("relayer:composer-drafts-read", () => composerDrafts);
-  register("relayer:composer-drafts-write", (_event, value) => { composerDrafts = value; return value; });
-  register("relayer:tutorial-read", () => ({ status: "dismissed", automaticEligible: false }));
-  register("relayer:provider-status", () => ({ adapters: [], definitions: [], hasCompletedOnboarding: true }));
   register("relayer:conversation-export", (_event, threadId) => nativeExporter.save(threadId));
   register("relayer:account-read", () => ({ status: "connected", account: { email: "evidence@relayer.test", planType: "Evidence" } }));
   register("relayer:account-login", () => ({ status: "connected" }));
@@ -380,34 +355,46 @@ async function run() {
     productSession,
     configurationPaths: [join(repositoryRoot, "harnesses", "fixture-task-system.yaml")],
     conversationImportEnabled: true,
+    onChanged: (runs) => dashboardWindow?.webContents.send("relayer-eval:runs-changed", runs),
   }).open();
 
-  await openDashboard();
-  await waitFor("Eval empty dashboard", dashboardWindow, `typeof document.querySelector('#importConversation')?.onclick === "function"`);
-  await captureVideoStep(dashboardWindow, "4. In Eval, choose Import conversation", "#importConversation");
-  dashboardWindow.webContents.debugger.attach("1.3");
-  await dashboardWindow.webContents.debugger.sendCommand("Page.enable");
-  await dashboardWindow.webContents.debugger.sendCommand("Page.setInterceptFileChooserDialog", { enabled: true });
-  const uploaded = new Promise((resolveUpload, rejectUpload) => {
-    dashboardWindow.webContents.debugger.on("message", (_event, method, params) => {
-      if (method === "Page.fileChooserOpened") dashboardWindow.webContents.debugger.sendCommand("DOM.setFileInputFiles", { backendNodeId: params.backendNodeId, files: [ordinaryExportFile] }).then(resolveUpload, rejectUpload);
-    });
+  register("relayer-eval:catalog", () => evalService.catalog());
+  register("relayer-eval:list-runs", () => evalService.listRuns());
+  register("relayer-eval:get-run", (_event, id) => evalService.getRun(id));
+  register("relayer-eval:create-run", () => { throw new Error("Evidence capture does not execute cases."); });
+  register("relayer-eval:import-conversation", () => evalService.importConversation(ordinaryExportFile));
+  register("relayer-eval:judge-imported-conversation", (_event, id, judge) => evalService.judgeImportedConversation(id, judge));
+  register("relayer-eval:open-review", async (_event, id) => {
+    reviewOpenPromise = createReview(id);
+    await reviewOpenPromise;
+    return true;
   });
-  await dashboardWindow.webContents.executeJavaScript(`document.querySelector('#importConversation').click()`, true);
-  let uploadTimeout;
-  try { await Promise.race([uploaded, new Promise((_, reject) => { uploadTimeout = setTimeout(() => reject(new Error("File chooser did not provide the evidence upload")), 10000); })]); }
-  finally { clearTimeout(uploadTimeout); }
-  dashboardWindow.webContents.debugger.detach();
+  register("relayer-eval:open-judge-review", () => false);
+  register("relayer-eval:open-candidate-trace", () => false);
+  register("relayer-eval:load-candidate-trace", () => null);
+  register("relayer-eval:load-judge-screenshot", () => null);
+  register("relayer-eval:review-context", (_event, id) => evalService.reviewContext(id));
+
+  dashboardWindow = new BrowserWindow({
+    width: 1320,
+    height: 860,
+    show: false,
+    backgroundColor: "#0b0c0d",
+    webPreferences: { preload: join(repositoryRoot, "scripts", "lib", "eval-dashboard-preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  await dashboardWindow.loadFile(join(repositoryRoot, "desktop", "eval-renderer", "index.html"));
+  dashboardWindow.show();
+  await waitFor("Eval empty dashboard", dashboardWindow, `Boolean(document.querySelector('#importConversation'))`);
+  await captureVideoStep(dashboardWindow, "4. In Eval, choose Import conversation", "#importConversation");
+  await dashboardWindow.webContents.executeJavaScript(`document.querySelector('#importConversation').click()`);
   await waitFor("imported run in dashboard", dashboardWindow, `document.querySelector('#runMetadata')?.textContent.includes('Imported conversation')`);
   await captureVideoStep(dashboardWindow, "5. Eval imports the JSONL as an immutable external run", "#runMetadata");
   await capture(dashboardWindow, "eval-dashboard-imported", ["Eval dashboard imported the exact owner-saved JSONL as an immutable external conversation"]);
-  await dashboardWindow.webContents.executeJavaScript(`document.querySelector('[data-execution-detail]').click()`, true);
-  await waitFor("imported execution dossier", dashboardWindow, `Boolean(document.querySelector('[data-run-imported-judge]'))`);
   await dashboardWindow.webContents.executeJavaScript(`document.querySelector('[data-run-imported-judge="deterministic-graph-contract"]').click()`);
   await waitFor("deterministic judge completion", dashboardWindow, `document.querySelector('#runStatus')?.textContent === 'passed'`);
   await capture(dashboardWindow, "eval-dashboard-judged", ["Existing deterministic judge completed", "Product workspace action remains available"]);
   const importedExecution = evalService.listRuns()[0].executions[0];
-  await dashboardWindow.webContents.executeJavaScript(`document.querySelector('[data-product-execution]')?.click()`, true);
+  await dashboardWindow.webContents.executeJavaScript(`document.querySelector('[data-product-execution]')?.click()`);
   const openDeadline = Date.now() + 15_000;
   while (!reviewOpenPromise && Date.now() < openDeadline) await new Promise((resolveWait) => setTimeout(resolveWait, 25));
   if (!reviewOpenPromise) throw new Error("Dashboard did not open ProductWorkspace.");
@@ -421,7 +408,7 @@ async function run() {
   await captureVideoStep(reviewWindow, "6. Open the imported conversation to inspect and judge it", ".graph-node");
   await capture(reviewWindow, "product-workspace-imported-root", ["Production ProductWorkspace renders imported accepted turn", "Review mode is read-only", "Turn navigation includes unfinished and failed turns"]);
   await reviewWindow.webContents.executeJavaScript(`document.querySelector('#turnPickerButton').click()`);
-  await waitFor("turn statuses", reviewWindow, `document.querySelectorAll('[data-turn-id]').length === 3 && [...document.querySelectorAll('.turn-option-status')].map((item) => item.textContent.trim()).sort().join(',') === 'Failed,Running'`);
+  await waitFor("turn statuses", reviewWindow, `document.querySelectorAll('.turn-option-status').length === 3`);
   await capture(reviewWindow, "product-workspace-turn-statuses", ["Turn picker visibly distinguishes accepted, failed, and unfinished imported turns"]);
   await reviewWindow.webContents.executeJavaScript(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
   await waitFor("closed turn picker", reviewWindow, `document.querySelector('#turnPopover')?.classList.contains('hidden') === true`);
@@ -444,16 +431,36 @@ async function run() {
   reviewWindow = undefined;
   dashboardWindow.destroy();
   dashboardWindow = undefined;
-  await Promise.all(reviews.splice(0).map((review) => review.close()));
-  await dashboardSurface.close();
-  await backend.close();
+  await productServer.close();
+  await runtime.close();
 
-  await startEvidenceBackend();
+  const restartedRuntime = new GraphCompleteRuntimeService({
+    userDataDirectory: dataDirectory,
+    graphServerBinary: join(repositoryRoot, "target", "debug", "relayer-graph-server"),
+    configurationPaths: [join(repositoryRoot, "harnesses", "fixture-task-system.yaml")],
+    additionalImplementations: { "fixture.task-system": statusFixtureFactory() },
+  });
+  services.push(restartedRuntime);
+  const restartedRuntimeSession = await restartedRuntime.start();
+  productServer = new RelayerAppServerService({
+    userDataDirectory: dataDirectory,
+    binaryPath: join(repositoryRoot, "target", "debug", "relayer-app-server"),
+    webDirectory: join(repositoryRoot, "desktop", "renderer"),
+    permissionCatalogPath: join(repositoryRoot, "permissions", "desktop.json"),
+    runtimeSession: restartedRuntimeSession,
+    defaultHarnessConfiguration: "fixture-task-system",
+    allowHarnessOverride: true,
+    allowConversationImport: true,
+    enableReadOnlySession: true,
+  });
+  services.push(productServer);
+  productSession = await productServer.start();
   evalService = await new EvalService({
     stateFile,
     productSession,
     configurationPaths: [join(repositoryRoot, "harnesses", "fixture-task-system.yaml")],
     conversationImportEnabled: true,
+    onChanged: (runs) => dashboardWindow?.webContents.send("relayer-eval:runs-changed", runs),
   }).open();
   const replayedRun = evalService.getRun(importedRunBeforeRestart.id);
   const replayedExecution = replayedRun.executions.find((execution) => execution.id === importedExecutionBeforeRestart.id);
@@ -467,14 +474,20 @@ async function run() {
     throw new Error("Restarted Eval run did not preserve source, status, and judge provenance.");
   }
 
-  await openDashboard();
+  dashboardWindow = new BrowserWindow({
+    width: 1320,
+    height: 860,
+    show: false,
+    backgroundColor: "#0b0c0d",
+    webPreferences: { preload: join(repositoryRoot, "scripts", "lib", "eval-dashboard-preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  await dashboardWindow.loadFile(join(repositoryRoot, "desktop", "eval-renderer", "index.html"));
+  dashboardWindow.show();
   await waitFor("restarted imported dashboard", dashboardWindow, `document.querySelector('#runStatus')?.textContent === 'passed' && document.querySelector('#runMetadata')?.textContent.includes(${JSON.stringify(sourceShaBeforeRestart)})`);
   await capture(dashboardWindow, "eval-dashboard-restarted", ["Eval restart replays the same imported source digest and completed deterministic judge"]);
 
   reviewOpenPromise = undefined;
-  await dashboardWindow.webContents.executeJavaScript(`document.querySelector('[data-execution-detail]').click()`, true);
-  await waitFor("reopened execution dossier", dashboardWindow, `Boolean(document.querySelector('[data-product-execution]'))`);
-  await dashboardWindow.webContents.executeJavaScript(`document.querySelector('[data-product-execution]')?.click()`, true);
+  await dashboardWindow.webContents.executeJavaScript(`document.querySelector('[data-product-execution]')?.click()`);
   const replayOpenDeadline = Date.now() + 15_000;
   while (!reviewOpenPromise && Date.now() < replayOpenDeadline) await new Promise((resolveWait) => setTimeout(resolveWait, 25));
   if (!reviewOpenPromise) throw new Error("Restarted dashboard did not reopen ProductWorkspace.");
@@ -528,7 +541,6 @@ async function stop() {
   await rm(dataDirectory, { recursive: true, force: true });
 }
 
-process.once("SIGTERM", () => { void stop().finally(() => app.exit(1)); });
 app.whenReady().then(run).then(async () => {
   await stop();
   app.exit(0);

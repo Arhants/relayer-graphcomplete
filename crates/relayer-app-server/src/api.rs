@@ -8,7 +8,6 @@ mod input_drafts;
 mod input_operator_sessions;
 mod model_settings;
 mod projects;
-mod review_sessions;
 mod state;
 pub(crate) mod threads;
 mod types;
@@ -60,7 +59,6 @@ pub(crate) struct ApiState {
     pub(crate) annotation_sessions: Arc<Mutex<HashMap<String, AnnotationSession>>>,
     pub(crate) input_operator_sessions: Arc<Mutex<HashMap<String, InputOperatorSession>>>,
     pub(crate) annotations_enabled: bool,
-    pub(crate) review_sessions: Arc<Mutex<HashMap<String, review_sessions::ReviewSession>>>,
     pub(crate) environment_inspector: crate::environment::EnvironmentInspector,
     pub(crate) completion_brokers: CompletionBrokerRegistry,
     pub(crate) completion_observations: CompletionObservations,
@@ -122,7 +120,6 @@ pub(crate) fn router(
         annotation_sessions: Arc::new(Mutex::new(HashMap::new())),
         input_operator_sessions: Arc::new(Mutex::new(HashMap::new())),
         annotations_enabled,
-        review_sessions: Arc::new(Mutex::new(HashMap::new())),
         environment_inspector: crate::environment::EnvironmentInspector::new(),
         completion_brokers,
         completion_observations: CompletionObservations::default(),
@@ -134,8 +131,6 @@ pub(crate) fn router(
         });
     }
     Router::new()
-        .route("/api/internal/review-sessions", axum::routing::post(review_sessions::register).delete(review_sessions::revoke))
-        .route("/api/review-context", get(review_sessions::context))
         .route("/health", get(state::health))
         .route("/api/capabilities", get(state::capabilities))
         .route("/api/permission-profiles", get(state::permission_profiles))
@@ -325,6 +320,5 @@ pub(crate) fn router(
             get(threads::get_action_destination),
         )
         .fallback_service(ServeDir::new(web_directory).append_index_html_on_directories(true))
-        .layer(axum::middleware::from_fn_with_state(state.clone(), review_sessions::guard))
         .with_state(state)
 }

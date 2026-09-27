@@ -26,23 +26,12 @@ and prints an authenticated loopback URL. The terminal owns service lifetime;
 closing a tab leaves execution running, and Ctrl-C stops owned services. The
 checkout pins dependencies. Eval has no installer, updater, or Electron package.
 
-The dashboard retains its own origin and capability. The product server owns
-human and automated review sessions. Each opening snapshots its thread roster,
-context, and optional annotation author. A tab receives only a scoped bearer
-capability; control and broad read-only credentials stay in the backend.
-The product bootstrap consumes the URL fragment into tab-local session storage.
-It omits cookies and authenticates only same-origin product requests. Review
-sessions share the product origin without sharing their tab-local authority.
-Rust enforces scoped reads, annotation writes, and revocation. Automated judges
-use isolated Chromium contexts without annotation authority. Input-operator
-credentials remain backend-only. Review capture and production-workspace
+The dashboard and each human review use separate origins and opaque browser
+capabilities. Rust credentials remain server-side. Human review forwards only
+read-only authority and its thread-scoped annotation credential. Automated judges
+use fresh pinned Chromium contexts with read-only credentials; their input
+operator authority stays in the backend. Review capture and production-workspace
 behavior remain required. Browser Eval does not certify Electron-specific behavior.
-
-This consolidation also shares backend startup, partial-startup cleanup, and
-provider readiness publication between hosts. Eval retains fixture selection,
-tracing, its explicit profile, and in-memory provider credentials. Native product
-evidence retains an Electron transport adapter; the review controller itself
-has no Electron dependency.
 
 Prime development credentials are loaded from the explicitly selected profile
 on each launch and retained only in memory by the Eval host. No OS encryption
@@ -53,3 +42,11 @@ profile, with its native credential file left untouched.
 This replaces the original separate internal Electron distribution decision.
 Keeping Electron would preserve an installation workflow that developers do not
 need. A remotely hosted, multi-user evaluation service remains outside this decision.
+
+## Development loop (2026-09-27)
+
+Eval launch uses the checkout's existing shared runtime artifacts without invoking
+build or packaging commands. Developers rebuild changed Rust or TypeScript inputs
+explicitly; dashboard, renderer, and host JavaScript edits need no Eval build.
+Packaged-Eval configuration, credential, autorun, and startup-maintenance branches
+are removed. Existing review authority and browser proof remain unchanged.

@@ -5,7 +5,6 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createElectronReviewTransport } from "../scripts/lib/electron-review-transport.mjs";
 import { ReviewSession } from "../desktop/eval-main/review-session.mjs";
 import { captureGroundingTargets } from "../desktop/eval-main/simulated-user-judge.mjs";
 import { setControlActivationCompletion } from "../desktop/renderer/src/control-activation.js";
@@ -72,16 +71,18 @@ describe("ReviewSession", () => {
     expect(() => new ReviewSession({
       executionId: "execution-1",
       readOnly: false,
-      transport: createElectronReviewTransport(electron),
+      webContents: electron.webContents,
       artifactDirectory: "/unused",
+      ipc: electron.ipc,
     })).toThrow("server-enforced read-only authority");
 
     electron.webContents.getURL = () => "https://example.com/?review=1";
     const session = new ReviewSession({
       executionId: "execution-1",
       readOnly: true,
-      transport: createElectronReviewTransport(electron),
+      webContents: electron.webContents,
       artifactDirectory: "/unused",
+      ipc: electron.ipc,
     });
     await expect(session.open()).rejects.toThrow("local production review workspace");
   });
@@ -92,8 +93,9 @@ describe("ReviewSession", () => {
     const session = new ReviewSession({
       executionId: "execution-1",
       readOnly: true,
-      transport: createElectronReviewTransport(electron),
+      webContents: electron.webContents,
       artifactDirectory: "/unused",
+      ipc: electron.ipc,
       loadInputDraftRevision: vi.fn(async () => inputDraftRevision),
     });
 
@@ -111,8 +113,9 @@ describe("ReviewSession", () => {
     const session = new ReviewSession({
       executionId: "execution-1",
       readOnly: true,
-      transport: createElectronReviewTransport(electron),
+      webContents: electron.webContents,
       artifactDirectory: "/unused",
+      ipc: electron.ipc,
       loadInputDraftRevision: vi.fn(async () => null),
     });
 
@@ -139,8 +142,9 @@ describe("ReviewSession", () => {
     const session = new ReviewSession({
       executionId: "execution-1",
       readOnly: true,
-      transport: createElectronReviewTransport(electron),
+      webContents: electron.webContents,
       artifactDirectory: "/unused",
+      ipc: electron.ipc,
     });
     await session.open();
 
@@ -202,8 +206,9 @@ describe("ReviewSession", () => {
     const session = new ReviewSession({
       executionId: "execution-1",
       readOnly: true,
-      transport: createElectronReviewTransport(electron),
+      webContents: electron.webContents,
       artifactDirectory: directory,
+      ipc: electron.ipc,
     });
     await session.open();
 
@@ -284,8 +289,9 @@ describe("ReviewSession", () => {
     const session = new ReviewSession({
       executionId: "execution-1",
       readOnly: true,
-      transport: createElectronReviewTransport(electron),
+      webContents: electron.webContents,
       artifactDirectory: directory,
+      ipc: electron.ipc,
     });
     await session.open();
 
@@ -339,8 +345,9 @@ describe("ReviewSession", () => {
     const session = new ReviewSession({
       executionId: "execution-1",
       readOnly: true,
-      transport: createElectronReviewTransport(electron),
+      webContents: electron.webContents,
       artifactDirectory: directory,
+      ipc: electron.ipc,
     });
     await session.open();
 
@@ -424,8 +431,9 @@ describe("ReviewSession", () => {
     const session = new ReviewSession({
       executionId: "execution-1",
       readOnly: true,
-      transport: createElectronReviewTransport(electron),
+      webContents: electron.webContents,
       artifactDirectory: "/unused",
+      ipc: electron.ipc,
       commandTimeoutMs: 100,
     });
     await session.open();
@@ -523,8 +531,9 @@ describe("ReviewSession", () => {
     const session = new ReviewSession({
       executionId: "execution-1",
       readOnly: true,
-      transport: createElectronReviewTransport(electron),
+      webContents: electron.webContents,
       artifactDirectory: directory,
+      ipc: electron.ipc,
       commandTimeoutMs: 100,
     });
     await session.open();
@@ -580,8 +589,9 @@ describe("ReviewSession", () => {
     const session = new ReviewSession({
       executionId: "execution-1",
       readOnly: true,
-      transport: createElectronReviewTransport(electron),
+      webContents: electron.webContents,
       artifactDirectory: "/unused",
+      ipc: electron.ipc,
       commandTimeoutMs: 100,
     });
     await session.open();
@@ -608,8 +618,9 @@ describe("ReviewSession", () => {
     const session = new ReviewSession({
       executionId: "execution-1",
       readOnly: true,
-      transport: createElectronReviewTransport(electron),
+      webContents: electron.webContents,
       artifactDirectory: "/unused",
+      ipc: electron.ipc,
       commandTimeoutMs: 100,
     });
     await session.open();
@@ -646,8 +657,9 @@ describe("ReviewSession", () => {
     const session = new ReviewSession({
       executionId: "execution-1",
       readOnly: true,
-      transport: createElectronReviewTransport(electron),
+      webContents: electron.webContents,
       artifactDirectory: "/unused",
+      ipc: electron.ipc,
       commandTimeoutMs: 100,
     });
     await session.open();

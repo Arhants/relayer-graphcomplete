@@ -102,7 +102,7 @@ Activation changes only future human-authored pins. Existing interactions, retri
 
 ## Shared product and Eval workspace
 
-Relayer is an Electron build target; Relayer Eval is a developer-only local web host. Relayer exposes the ordinary product window and lets each new thread pin an available catalog configuration. Relayer Eval exposes a test-run dashboard and selects named configurations for its matrix, but executes each case through the same product app server. A case may create one or more ordinary product threads and interactions. Both hosts share backend startup and provider readiness composition while retaining their credential and execution policies. The product app server owns revocable browser review sessions with fixed thread rosters and optional annotation authors. Eval serves its dashboard; it does not proxy the product workspace. Browser review consumes a tab-local scoped bearer through the product bootstrap. The review controller uses a transport interface; Electron remains an adapter only for native evidence.
+Relayer is an Electron build target; Relayer Eval is a developer-only local web host. Relayer exposes the ordinary product window and lets each new thread pin an available catalog configuration. Relayer Eval exposes a test-run dashboard and selects named configurations for its matrix, but executes each case through the same product app server. A case may create one or more ordinary product threads and interactions.
 
 Opening one case × harness execution creates a separate review page using the exact production renderer and `ProductWorkspace` component. The web bridge supplies Eval navigation context: the run's cases and product thread IDs for the selected harness. Product graph reads, accepted-layer navigation, turn navigation, layout, and node inspection remain owned by the ordinary product API and workspace. The gateway uses the same app server’s read-only capability and the app server rejects product writes at the API boundary; workspace review mode also removes composition and mutating controls. See [ADR 0003](decisions/0003-shared-product-eval-workspace.md).
 
@@ -439,7 +439,8 @@ These are planned service boundaries, not implemented product capabilities. See
 
 Relayer Eval starts from the checkout under Node and serves its dashboard on
 loopback. It supervises the same Rust product/graph servers and harness host.
-It has no Electron package. Each human review has a separate loopback origin;
+It has no Electron package or launch-time build. Developers explicitly rebuild shared
+Rust and TypeScript artifacts when their inputs change. Each human review has a separate loopback origin;
 a capability header authenticates requests and a gateway supplies only read-only
 Rust authority plus a scoped human annotation credential. Browser-supplied
 cookies never become upstream credentials. Judges use fresh Chromium contexts

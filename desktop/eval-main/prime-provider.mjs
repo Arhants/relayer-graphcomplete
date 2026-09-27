@@ -1,16 +1,18 @@
 import { readFile } from "node:fs/promises";
-import { createProductManagedRuntimeInstaller } from "../main/managed-runtimes/product-installer.mjs";
+import { createManagedRuntimeInstaller } from "../main/managed-runtimes/installer.mjs";
 import { createManagedRuntimeResolver } from "../main/managed-runtimes/resolver.mjs";
-import { createProductProviderComposition } from "../main/providers/product-provider-composition.mjs";
-import { productionHarnessRuntimeDescriptor, productionProviderRuntimeDependencies } from "../main/providers/provider-adapter-registry.mjs";
-import { managedRuntimeRequirementForHarness } from "../shared/managed-runtime-requirements.mjs";
+import { createProviderComposition } from "../main/providers/provider-composition.mjs";
+import { productionProviderAdapterRegistry, productionHarnessRuntimeDescriptor, productionProviderRuntimeDependencies } from "../main/providers/provider-adapter-registry.mjs";
+import { assemblePrimeManagedRuntime, checkPrimeManagedRuntime, createPrimeReviewedTreeCopier } from "../main/services/prime-managed-runtime.mjs";
+import { PRIME_AGENT_ASSET_SHA256, selectPrimeAgentDependencyClosureSha256 } from "../main/services/prime-agent-runtime.mjs";
+import { createHarnessReadinessCoordinator } from "../main/services/harness-readiness.mjs";
+import { HARNESS_MANAGED_RUNTIME_REQUIREMENTS, managedRuntimeRequirementForHarness } from "../shared/managed-runtime-requirements.mjs";
 
 // Explicit development opt-in. Credentials never become part of an Eval selection
 // or run record; the Eval host retains them in memory until shutdown.
-export async function loadEvalPrimeProfile({ isPackaged, environment = process.env }) {
+export async function loadEvalPrimeProfile({ environment = process.env } = {}) {
   const path = environment.RELAYER_EVAL_PRIME_PROFILE_FILE;
   if (!path) return null;
-  if (isPackaged) throw new Error("Local Prime Eval profiles are development-only.");
   let profile;
   try {
     const document = JSON.parse(await readFile(path, "utf8"));
@@ -28,15 +30,24 @@ export async function loadEvalPrimeProfile({ isPackaged, environment = process.e
     modelIds: [profile.modelId, profile.verificationHelperModelId] };
 }
 
-export function createEvalManagedPrimeRuntime({ root, appRoot, pythonClientRoot, isPackaged,
-  createInstaller = createProductManagedRuntimeInstaller }) {
+export function createEvalManagedPrimeRuntime({ root, appRoot, pythonClientRoot,
+  createInstaller = createManagedRuntimeInstaller }) {
   let installer;
   let resolver;
-  const getInstaller = () => installer ??= createInstaller({ root, appRoot, pythonClientRoot, isPackaged });
+  const getInstaller = () => installer ??= createInstaller({ root, assembleRecipe: async (context) => {
+    if (context.recipe.runtimeId !== "prime") return;
+    await assemblePrimeManagedRuntime(context, {
+      copyReviewedTrees: createPrimeReviewedTreeCopier({ appRoot, pythonClientRoot,
+        expectedClosureSha256: selectPrimeAgentDependencyClosureSha256({
+          isPackaged: false, javascriptContract: context.recipe.runtimeContract.javascript,
+        }),
+        expectedPythonClientSha256: PRIME_AGENT_ASSET_SHA256.pythonPackageTree,
+      }),
+    });
+  } });
   const getResolver = () => resolver ??= createManagedRuntimeResolver(getInstaller());
   const recipeId = managedRuntimeRequirementForHarness("prime.agent").recipeId;
   return { installer: {
-    activeOperations: () => installer?.activeOperations() ?? [],
     cancelAll: (reason) => installer?.cancelAll(reason) ?? Promise.resolve(),
   },
     prepare: async () => productionHarnessRuntimeDescriptor(await getResolver().prepare(recipeId)),
@@ -46,7 +57,7 @@ export function createEvalManagedPrimeRuntime({ root, appRoot, pythonClientRoot,
 
 export function createEvalPrimeProvider({ userDataDirectory, productServer, productSession,
   runtimeSession, graphRuntime, managedPrimeRuntime, managedCodexRuntime,
-  fetchImpl = fetch, createComposition }) {
+  fetchImpl = fetch, createComposition = createProviderComposition }) {
   const request = async (path, { method = "GET", body } = {}) => {
     const response = await fetchImpl(new URL(path, productSession.origin), {
       method, headers: { "Content-Type": "application/json",
@@ -60,6 +71,16 @@ export function createEvalPrimeProvider({ userDataDirectory, productServer, prod
   const configurations = new Map([...runtimeSession.configurations].filter(([, configuration]) => (
     configuration.implementation === "prime.agent"
   )));
+  const readiness = createHarnessReadinessCoordinator({ configurations,
+    digestConfiguration: runtimeSession.digestConfiguration,
+    runtimeRequirements: HARNESS_MANAGED_RUNTIME_REQUIREMENTS,
+    prepareRecipe: () => managedPrimeRuntime.prepare(),
+    checkers: { "prime.agent": ({ runtime }) => checkPrimeManagedRuntime({ runtime }) },
+    publishAvailability: async (updates) => {
+      await productServer.publishHarnessReadiness(updates);
+      await graphRuntime.recordHarnessReadiness(updates);
+    },
+  });
   const entries = new Map();
   const credentialStore = {
     set: async (reference, value) => { entries.set(reference, structuredClone(value)); },
@@ -67,10 +88,11 @@ export function createEvalPrimeProvider({ userDataDirectory, productServer, prod
     delete: async (reference) => entries.delete(reference),
     listReferences: async () => [...entries.keys()],
   };
-  const composition = createProductProviderComposition({
-    runtimeSession, graphRuntime, productServer, configurations, createComposition,
-    prepareRecipe: () => managedPrimeRuntime.prepare(),
+  const composition = createComposition({
+    registry: productionProviderAdapterRegistry,
+    definitionStore: productServer.providerDefinitionStore(),
     credentialStore,
+    providerStatuses: () => productServer.providerStatuses(),
     runtimeDependencies: async (definition) => {
       if (definition.accessContract === "secret@1") {
         return productionProviderRuntimeDependencies(definition, {});
@@ -86,6 +108,8 @@ export function createEvalPrimeProvider({ userDataDirectory, productServer, prod
         environment: { ...runtime.environment, RELAYER_CODEX_BINARY: runtime.executable },
       };
     },
+    evaluateReadiness: (input) => readiness.evaluate(input),
+    publishCatalog: (snapshot, options) => productServer.publishProviderCatalog(snapshot, options),
   });
   let modelIds;
   let familyId;

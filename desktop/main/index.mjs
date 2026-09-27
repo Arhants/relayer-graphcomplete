@@ -11,7 +11,7 @@ import {
   productionProviderRuntimeDependencies,
   resolveLegacyCodexHome,
 } from "./providers/provider-adapter-registry.mjs";
-import { createProductProviderComposition } from "./providers/product-provider-composition.mjs";
+import { createProviderComposition } from "./providers/provider-composition.mjs";
 import { createProviderDiagnosticsLog } from "./providers/provider-diagnostics-log.mjs";
 import { removeLeftoverEphemeralCodexAuthFiles } from "./providers/ephemeral-codex-auth.mjs";
 import { createProviderRuntimeStateRemover } from "./providers/provider-runtime-state.mjs";
@@ -27,16 +27,21 @@ import {
   setDesktopAuthenticatedErrorChannel,
 } from "./services/authenticated-error-startup.mjs";
 import { inspectCodexBrowserMcpRuntime } from "./services/codex-browser-mcp-runtime.mjs";
-import { createProductBackend } from "./services/product-backend.mjs";
+import { RelayerAppServerService } from "./services/relayer-app-server.mjs";
 import { installElectronMainErrorAdapter } from "./services/electron-main-error-adapter.mjs";
 import { createCanaryEvidenceLog } from "./services/canary-evidence-log.mjs";
 import { settleShutdownWithin } from "./services/update-restart.mjs";
 import { GraphCompleteRuntimeService, productTemporalFeatures } from "./services/graphcomplete-runtime.mjs";
 import {
   inspectPrimeAgentRuntime,
+  PRIME_AGENT_ASSET_SHA256,
   requirePrimeAgentRuntime,
+  selectPrimeAgentDependencyClosureSha256,
 } from "./services/prime-agent-runtime.mjs";
 import {
+  assemblePrimeManagedRuntime,
+  checkPrimeManagedRuntime,
+  createPrimeReviewedTreeCopier,
 } from "./services/prime-managed-runtime.mjs";
 import { resolveDesktopHarnessConfiguration } from "./services/desktop-harness-configuration.mjs";
 import { createSettingsStore } from "./services/settings-store.mjs";
@@ -47,8 +52,9 @@ import {
   GRAPHCOMPLETE_LOGIN_URL,
 } from "./services/desktop-account-service.mjs";
 import { createDesktopUpdater, resolveUpdateChannel } from "./services/updater.mjs";
-import { createProductManagedRuntimeInstaller } from "./managed-runtimes/product-installer.mjs";
+import { createManagedRuntimeInstaller } from "./managed-runtimes/installer.mjs";
 import { createManagedRuntimeResolver } from "./managed-runtimes/resolver.mjs";
+import { createHarnessReadinessCoordinator } from "./services/harness-readiness.mjs";
 import { confirmManagedRuntimeQuit } from "./managed-runtimes/quit-guard.mjs";
 import { claimPrimaryDesktopInstance } from "./single-instance.mjs";
 import { createWindowFactory } from "./window.mjs";
@@ -60,6 +66,7 @@ import { developmentTelemetryPackageMetadata } from "../shared/telemetry-release
 import { nativeBinaryName } from "../shared/target.mjs";
 import {
   activeProviderRuntimeRequirements,
+  HARNESS_MANAGED_RUNTIME_REQUIREMENTS,
   compatibleHarnessImplementationForAdapter,
   managedRuntimeRequirementForHarness,
   parseUpdateRuntimeRequirements,
@@ -89,11 +96,22 @@ const primeAppRoot = app.isPackaged ? app.getAppPath() : repositoryRoot;
 const primePythonClientRoot = app.isPackaged
   ? join(process.resourcesPath, "python", "relayer-graph", "src")
   : join(repositoryRoot, "python", "relayer-graph", "src");
-const managedRuntimeInstaller = createProductManagedRuntimeInstaller({
+const managedRuntimeInstaller = createManagedRuntimeInstaller({
   root: join(userDataPath, "managed-runtimes"),
-  appRoot: primeAppRoot,
-  pythonClientRoot: primePythonClientRoot,
-  isPackaged: app.isPackaged,
+  assembleRecipe: async (context) => {
+    if (context.recipe.runtimeId !== "prime") return;
+    await assemblePrimeManagedRuntime(context, {
+      copyReviewedTrees: createPrimeReviewedTreeCopier({
+        appRoot: primeAppRoot,
+        pythonClientRoot: primePythonClientRoot,
+        expectedClosureSha256: selectPrimeAgentDependencyClosureSha256({
+          isPackaged: app.isPackaged,
+          javascriptContract: context.recipe.runtimeContract.javascript,
+        }),
+        expectedPythonClientSha256: PRIME_AGENT_ASSET_SHA256.pythonPackageTree,
+      }),
+    });
+  },
 });
 const managedRuntimeResolver = createManagedRuntimeResolver(managedRuntimeInstaller);
 const legacyCodexHome = resolveLegacyCodexHome(userDataPath, process.env);
@@ -232,7 +250,6 @@ if (primaryInstance) {
     coordinateHarnessReadiness: true,
   });
   let productServer;
-  let backend;
   let modelCatalog;
   let providerSetup;
   let providerComposition;
@@ -356,7 +373,7 @@ if (primaryInstance) {
         results.push({ status: "rejected", reason: error });
       }
       try {
-        if (backend) await backend.close();
+        if (productServer) await productServer.close();
       } catch (error) {
         results.push({ status: "rejected", reason: error });
       }
@@ -369,7 +386,7 @@ if (primaryInstance) {
       results.push(...await Promise.allSettled([
         settings.flush(),
         providerComposition?.close(),
-        ...(backend ? [] : [graphRuntime.close()]),
+        graphRuntime.close(),
       ]));
       const failures = results.filter((result) => result.status === "rejected");
       if (failures.length) {
@@ -426,11 +443,13 @@ if (primaryInstance) {
         "One or more leftover Codex API-key auth files could not be removed.",
       ));
     }
-    backend = createProductBackend({ graphRuntime, productOptions: {
+    const runtimeSession = await graphRuntime.start();
+    productServer = new RelayerAppServerService({
       userDataDirectory: userDataPath,
       binaryPath: relayerAppServerBinary,
       webDirectory: rendererDirectory,
       permissionCatalogPath,
+      runtimeSession,
       defaultHarnessConfiguration,
       allowHarnessOverride: !app.isPackaged && defaultHarnessConfiguration.startsWith("prime-agent-"),
       exportProducer: {
@@ -448,12 +467,46 @@ if (primaryInstance) {
       },
       issueErrorReporter,
       issueErrorCapability,
-    } });
-    const { runtimeSession, productSession, productServer: startedProductServer } = await backend.start();
-    productServer = startedProductServer;
-    providerComposition = createProductProviderComposition({
-      runtimeSession, graphRuntime, productServer,
-      prepareRecipe: async (recipeId) => managedRuntimeDescriptor(await managedRuntimeResolver.prepare(recipeId)),
+    });
+    const productSession = await productServer.start();
+    const readiness = createHarnessReadinessCoordinator({
+      configurations: runtimeSession.configurations,
+      digestConfiguration: runtimeSession.digestConfiguration,
+      runtimeRequirements: HARNESS_MANAGED_RUNTIME_REQUIREMENTS,
+      prepareRecipe: async (recipeId) => managedRuntimeDescriptor(
+        await managedRuntimeResolver.prepare(recipeId),
+      ),
+      checkers: {
+        "codex.basic": async ({ runtime }) => ({
+          available: runtime?.runtimeId === "codex"
+            && typeof runtime.executable === "string"
+            && runtime.executable.trim() !== ""
+            && runtime.environment !== null
+            && typeof runtime.environment === "object",
+        }),
+        "claude.basic": async ({ runtime }) => ({
+          available: runtime?.runtimeId === "claude"
+            && typeof runtime.executable === "string"
+            && runtime.executable.trim() !== ""
+            && typeof runtime.moduleUrl === "string"
+            && runtime.moduleUrl.trim() !== ""
+            && runtime.environment !== null
+            && typeof runtime.environment === "object",
+        }),
+        "prime.agent": ({ runtime }) => checkPrimeManagedRuntime({ runtime }),
+      },
+      publishAvailability: async (updates) => {
+        await productServer.publishHarnessReadiness(updates);
+        await graphRuntime.recordHarnessReadiness(updates);
+      },
+      diagnostics: providerDiagnostics,
+    });
+    const publishCatalog = (snapshot, { signal } = {}) => (
+      productServer.publishProviderCatalog(snapshot, { signal })
+    );
+    providerComposition = createProviderComposition({
+      registry: productionProviderAdapterRegistry,
+      definitionStore: productServer.providerDefinitionStore(),
       credentialStore: createEncryptedCredentialStore({
         path: join(userDataPath, "provider-credentials.json"),
         encrypt: async (value) => safeStorage.encryptString(value).toString("base64"),
@@ -464,6 +517,7 @@ if (primaryInstance) {
         runtimeRoot: providerRuntimeRoot,
         registry: productionProviderAdapterRegistry,
       }),
+      providerStatuses: () => productServer.providerStatuses(),
       runtimeDependencies: async (definition) => {
         if (definition.accessContract === "secret@1") {
           return productionProviderRuntimeDependencies(definition, {
@@ -493,6 +547,8 @@ if (primaryInstance) {
         );
         await managedRuntimeResolver.prepare(requirement.recipeId);
       },
+      evaluateReadiness: (request) => readiness.evaluate(request),
+      publishCatalog,
     });
     ({ modelCatalog, providerDefinitions: providerSetup } = providerComposition);
     await providerComposition.start();

@@ -1,9 +1,5 @@
 # Developer-only Eval web host
 
-The subsequent [product consolidation](../eval-product-consolidation/README.md)
-replaces the human review proxy and legacy dashboard evidence preload. This
-record describes the original web migration; the successor maps current seams.
-
 The explicit product decision is in ADR 0003 and PRD section 9: Eval runs from a
 checkout, its terminal owns the local backend, and it has no desktop package.
 The production renderer, product persistence, graph authority, harness-native
@@ -55,3 +51,22 @@ runs are reported separately.
 The PR records actual command results and the adversarial reviewers' exact source
 snapshot. Browser proof certifies the shared workspace and local web host, not
 Electron rendering equivalence, live provider quality, or release readiness.
+
+## Checkout-only launch simplification
+
+Normal and opt-in live Eval commands now start Node without a build. The existing
+browser proof checks those command contracts and launches the declared entrypoint.
+Shared Rust/TypeScript artifacts remain explicit preparation, documented in README.
+
+Changed-seam checkpoints remain in the existing tests:
+- Development targets and actual harness availability: `eval-configuration-paths`.
+- Lazy runtime setup, cancellation, and credentials: `eval-managed-codex-runtime`
+  and `eval-prime-provider`.
+- Explicit live opt-in, conflicting selections, and harness availability:
+  `simulated-user-electron-adapter`.
+
+Only unreachable packaged-Eval cases and disabled maintenance assertions are
+retired; their production callers already selected unpackaged/no-maintenance.
+Required handoff proof is `npm run check`, `npm run build`, and
+`npm run test:eval-web`. Product-native evidence and review authority are unchanged.
+Adversarial deletion review and exact-source outcomes are recorded in the PR.

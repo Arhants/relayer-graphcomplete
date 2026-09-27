@@ -8,29 +8,18 @@ import { join, resolve } from "node:path";
 import { chromium } from "playwright";
 import { taskSystemFixtureFactory } from "@relayer/eval-runner";
 import { GraphCompleteRuntimeService } from "../desktop/main/services/graphcomplete-runtime.mjs";
-import { createProductBackend } from "../desktop/main/services/product-backend.mjs";
+import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 import { EvalService } from "../desktop/eval-main/eval-service.mjs";
 import { openBrowserReview } from "../desktop/eval-main/browser-review.mjs";
 
 const directory = await mkdtemp(join(tmpdir(), "relayer-eval-web-proof-"));
 const resources = [];
 const shutdownShim = join(directory, "shutdown-shim.mjs");
-await writeFile(shutdownShim, `
-let stall = false;
-const originalFetch = globalThis.fetch;
-globalThis.fetch = (url, options) => {
-  if (stall && String(url).endsWith("/api/internal/review-sessions") && options.method === "POST") {
-    process.send("registration-stalled");
-    return new Promise(() => {});
-  }
-  return originalFetch(url, options);
-};
-process.on("message", (message) => {
-  if (message === "shutdown") process.emit("SIGINT");
-  if (message === "stall-reviews") { stall = true; process.send("stall-armed"); }
-});
-`);
-const hostArguments = ["--import", pathToFileURL(shutdownShim).href, "desktop/eval-main/index.mjs"];
+await writeFile(shutdownShim, 'process.on("message", (message) => { if (message === "shutdown") process.emit("SIGINT"); });\n');
+const { scripts } = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+assert.equal(scripts["eval-app:dev"], "node desktop/eval-main/index.mjs", "Eval launch must not build or package");
+assert.equal(scripts["eval:input-roundtrip:live"], "RELAYER_EVAL_AUTORUN_INPUT_ROUNDTRIP=1 node desktop/eval-main/index.mjs");
+const hostArguments = ["--import", pathToFileURL(shutdownShim).href, scripts["eval-app:dev"].slice("node ".length)];
 function requestShutdown(child) {
   // Windows kill(SIGINT) terminates rather than dispatching the Node handler.
   if (process.platform === "win32") child.send("shutdown");
@@ -63,16 +52,7 @@ async function launchHost() {
     if (child.exitCode !== null) throw new Error(log);
     return log.match(/Relayer Eval: (http:\/\/\S+)/)?.[1];
   }, "host ready");
-  return { url, close, stallReview: async (id) => {
-    let armed = false;
-    let entered = false;
-    child.on("message", (message) => { if (message === "stall-armed") armed = true; if (message === "registration-stalled") entered = true; });
-    child.send("stall-reviews");
-    await until(() => armed, "review stall armed");
-    const pending = rpc(url, "openReview", [id]).catch(() => null);
-    await until(() => entered, "review registration stalled");
-    return { pending };
-  } };
+  return { url, close };
 }
 async function rpc(url, operation, args = []) {
   const response = await fetch(new URL(`/eval-api/${operation}`, url), { method: "POST", headers: { Authorization: `Bearer ${new URL(url).hash.slice(1)}`, "Content-Type": "application/json" }, body: JSON.stringify(args) });
@@ -131,16 +111,13 @@ try {
   assert.equal((await rpc(host.url, "getRun", [run.id])).status, "passed");
   const reviewUrl = await rpc(host.url, "openReview", [execution.id]);
   const secondReviewUrl = await rpc(host.url, "openReview", [execution.id]);
-  assert.equal(new URL(secondReviewUrl).origin, new URL(reviewUrl).origin);
-  assert.notEqual(new URL(secondReviewUrl).hash, new URL(reviewUrl).hash);
-  const secondContext = await fetch(new URL("/api/review-context", secondReviewUrl), { headers: { Authorization: `Bearer ${new URL(secondReviewUrl).hash.slice(1)}` } });
+  assert.notEqual(new URL(secondReviewUrl).origin, new URL(reviewUrl).origin);
+  const secondContext = await fetch(new URL("/eval-api/context", secondReviewUrl), { headers: { Authorization: `Bearer ${new URL(secondReviewUrl).hash.slice(1)}` } });
   assert.equal(secondContext.status, 200);
+  const crossed = await fetch(new URL("/eval-api/context", reviewUrl), { headers: { Authorization: `Bearer ${new URL(secondReviewUrl).hash.slice(1)}` } });
+  assert.equal(crossed.status, 401);
   const review = await browser.newPage(); review.on("pageerror", (error) => pageErrors.push(error.message));
   await review.goto(reviewUrl);
-  await review.waitForFunction(() => Boolean(window.__evalPresentation?.snapshot()?.turnId));
-  assert.equal(new URL(review.url()).hash, "");
-  assert.deepEqual(await review.context().cookies(), []);
-  await review.reload();
   await review.waitForFunction(() => Boolean(window.__evalPresentation?.snapshot()?.turnId));
   const state = await review.evaluate(() => window.__evalPresentation.snapshot());
   assert.equal(state.executionId, execution.id);
@@ -168,7 +145,7 @@ try {
   const fresh = await browser.newContext();
   const unauthorized = await fresh.newPage();
   await unauthorized.goto(new URL(reviewUrl).origin);
-  assert.equal(await unauthorized.evaluate(async () => (await fetch('/api/review-context')).status), 401);
+  assert.equal(await unauthorized.evaluate(async () => (await fetch('/eval-api/context')).status), 401);
   await fresh.close();
   const dashboard = await browser.newPage(); await dashboard.goto(host.url);
   const judgePopup = dashboard.context().waitForEvent("page");
@@ -182,10 +159,8 @@ try {
   const tracePage = await tracePopup; await tracePage.waitForLoadState();
   await until(async () => (await tracePage.locator("body").textContent()).includes("fixture-task-system"), "candidate trace");
   assert.deepEqual(pageErrors, []);
-  const stalled = await host.stallReview(execution.id);
   await host.close();
-  await stalled.pending;
-  await assert.rejects(fetch(new URL("/api/review-context", reviewUrl)));
+  await assert.rejects(fetch(new URL("/eval-api/context", reviewUrl)));
   const restarted = await launchHost();
   assert.equal((await rpc(restarted.url, "getRun", [run.id])).status, "passed");
   await restarted.close();
@@ -197,9 +172,10 @@ try {
   const configurationPaths = [join(root, "harnesses/fixture-task-system.yaml")];
   const data = join(directory, "judge");
   const runtime = new GraphCompleteRuntimeService({ userDataDirectory: data, graphServerBinary: join(binaries, "relayer-graph-server"), configurationPaths, additionalImplementations: { "fixture.task-system": taskSystemFixtureFactory } });
-  const backend = createProductBackend({ graphRuntime: runtime, productOptions: { userDataDirectory: data, binaryPath: join(binaries, "relayer-app-server"), webDirectory: join(root, "desktop/renderer"), permissionCatalogPath: join(root, "permissions/desktop.json"), defaultHarnessConfiguration: "fixture-task-system", allowHarnessOverride: true, enableReadOnlySession: true } });
-  resources.push(backend);
-  const { productSession } = await backend.start();
+  resources.push(runtime);
+  const product = new RelayerAppServerService({ userDataDirectory: data, binaryPath: join(binaries, "relayer-app-server"), webDirectory: join(root, "desktop/renderer"), permissionCatalogPath: join(root, "permissions/desktop.json"), runtimeSession: await runtime.start(), defaultHarnessConfiguration: "fixture-task-system", allowHarnessOverride: true, enableReadOnlySession: true });
+  resources.push(product);
+  const productSession = await product.start();
   const service = await new EvalService({ stateFile: join(data, "eval-data/test-runs.json"), productSession, configurationPaths }).open();
   const fixture = await service.createRun(selection);
   const completed = await until(() => { const value = service.getRun(fixture.id); return ["passed", "failed", "error", "interrupted"].includes(value.status) ? value : null; }, "judge fixture");
@@ -209,9 +185,9 @@ try {
   const opened = await openBrowserReview({ browser, productSession, context: service.reviewContext(candidate.id), executionId: candidate.id, threadId: candidate.threadIds[0], turnId: turn.interactionId, rootLayerId: turn.rootLayerId, artifactDirectory: join(directory, "screenshots") });
   const judgeContext = browser.contexts().find((context) => context.pages().some((page) => page.url().startsWith(productSession.origin)));
   assert.ok(judgeContext);
-  assert.deepEqual(await judgeContext.cookies(), []);
+  assert.deepEqual((await judgeContext.cookies()).map(({ name }) => name), [productSession.readOnlyCookie.name]);
   const denied = await judgeContext.pages()[0].evaluate(async (id) => (await fetch(`/api/threads/${id}/annotations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ anchor: { kind: "thread" }, comment: "forbidden" }) })).status, candidate.threadIds[0]);
-  assert.equal(denied, 403);
+  assert.equal(denied, 401);
   const shot = await opened.session.screenshot({ target: { kind: "viewport" }, label: "Fixture review" });
   assert.equal(shot.ok, true); assert.ok(shot.screenshot.tiles[0].width > 0);
   if (process.env.RELAYER_EVAL_WEB_SCREENSHOT) {
