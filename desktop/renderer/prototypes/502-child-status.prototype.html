@@ -1,0 +1,587 @@
+<title>Child Progress Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<script src="https://unpkg.com/lucide@0.562.0/dist/umd/lucide.min.js"></script>
+<style>
+  /* Tokens copied from desktop/renderer/styles.css (dark is the desktop default). */
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --raised: #f5f5f4; --hover: #f1f1ef;
+    --line: #e7e5e4; --line-strong: #d6d3d1; --text: #1c1917; --muted: #57534e; --faint: #a8a29e;
+    --green: #15803d; --accent: #b45309; --danger: #b91c1c; --warning: #92400e;
+    --stage: #fafaf9; --dot: #d6d3d1; --edge: #d6d3d1;
+    --glyph-bg: #ffffff; --glyph-line: #d6d3d1; --glyph-hover: #fff7ed; --glyph-hover-line: #b45309;
+    --banner: rgba(255, 255, 255, .86); --pill-bg: rgba(255, 255, 255, .7);
+    --proto: #312e81; --proto-text: #eef2ff; --proto-muted: #c7d2fe; --proto-line: #4338ca;
+    --ring: rgba(180, 83, 9, .18);
+    --shadow: 0 8px 22px rgba(28, 25, 23, .08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0b0c0d; --panel: #101214; --raised: #17191c; --hover: #1c1f22;
+      --line: #292c30; --line-strong: #3a3e43; --text: #f1f2f3; --muted: #969ba2; --faint: #666c74;
+      --green: #7ed6a2; --accent: #80aef8; --danger: #ef8b8b; --warning: #e3bd62;
+      --stage: #0e1012; --dot: #282b2f; --edge: #4a4f55;
+      --glyph-bg: #191c20; --glyph-line: #515860; --glyph-hover: #23272c; --glyph-hover-line: #a1abb6;
+      --banner: rgba(20, 23, 25, .82); --pill-bg: rgba(12, 14, 15, .58);
+      --proto: #1e1b4b; --proto-text: #e0e7ff; --proto-muted: #a5b4fc; --proto-line: #3730a3;
+      --ring: rgba(128, 174, 248, .16);
+      --shadow: 0 8px 22px rgba(0, 0, 0, .3);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0b0c0d; --panel: #101214; --raised: #17191c; --hover: #1c1f22;
+    --line: #292c30; --line-strong: #3a3e43; --text: #f1f2f3; --muted: #969ba2; --faint: #666c74;
+    --green: #7ed6a2; --accent: #80aef8; --danger: #ef8b8b; --warning: #e3bd62;
+    --stage: #0e1012; --dot: #282b2f; --edge: #4a4f55;
+    --glyph-bg: #191c20; --glyph-line: #515860; --glyph-hover: #23272c; --glyph-hover-line: #a1abb6;
+    --banner: rgba(20, 23, 25, .82); --pill-bg: rgba(12, 14, 15, .58);
+    --proto: #1e1b4b; --proto-text: #e0e7ff; --proto-muted: #a5b4fc; --proto-line: #3730a3;
+    --ring: rgba(128, 174, 248, .16);
+    --shadow: 0 8px 22px rgba(0, 0, 0, .3);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 13px/1.45 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 12px 16px 24px;
+  }
+  button, select, input { font: inherit; color: inherit; }
+  button:focus-visible, select:focus-visible, input:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  svg.lucide { width: 1em; height: 1em; stroke-width: 1.7; }
+
+  /* ---------- Prototype chrome: deliberately not the product's look ---------- */
+  .proto-bar {
+    background: var(--proto); color: var(--proto-text); border: 1px solid var(--proto-line);
+    border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; margin-bottom: 14px;
+  }
+  .proto-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+  .proto-tag {
+    font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    background: var(--proto-text); color: var(--proto); border-radius: 4px; padding: 2px 6px;
+  }
+  .proto-top h1 { font-size: 15px; margin: 0; font-weight: 600; text-wrap: balance; }
+  .proto-top p { margin: 0; color: var(--proto-muted); font-size: 12px; flex-basis: 100%; }
+  .variant-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .variant-tab {
+    border: 1px solid var(--proto-line); background: transparent; border-radius: 8px;
+    padding: 6px 10px; cursor: pointer; text-align: left; color: var(--proto-text);
+  }
+  .variant-tab b { font-weight: 700; margin-right: 6px; }
+  .variant-tab[aria-selected="true"] { background: var(--proto-text); color: var(--proto); border-color: var(--proto-text); }
+  .replay { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .replay button, .replay select {
+    background: transparent; border: 1px solid var(--proto-line); color: var(--proto-text);
+    border-radius: 8px; padding: 5px 10px; cursor: pointer;
+  }
+  .replay select option { color: #111; }
+  .replay input[type="range"] { flex: 1 1 180px; accent-color: var(--proto-muted); min-width: 0; }
+  .clock { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--proto-muted); min-width: 92px; }
+  .variant-note { font-size: 12px; color: var(--proto-muted); margin: 0; }
+  .variant-note b { color: var(--proto-text); font-weight: 600; }
+
+  /* ---------- Mock of the Relayer thread workspace ---------- */
+  .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; align-items: start; }
+  .thread-header {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; min-height: 36px;
+    border-bottom: 1px solid var(--line); font-weight: 600; font-size: 13px; padding-bottom: 6px;
+  }
+  .thread-header .nav { color: var(--faint); display: inline-flex; gap: 6px; }
+  .banner {
+    grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    background: var(--banner); border: 1px solid var(--line); border-radius: 16px; padding: 10px 12px;
+  }
+  .banner .prompt-icon { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--faint); font-size: 12px; }
+  .banner .prompt { flex: 1 1 260px; min-width: 0; color: var(--text); font-size: 12px; }
+  .turn-stepper { position: relative; display: inline-flex; align-items: center; gap: 4px; }
+  .turn-stepper button {
+    border: 1px solid var(--line); background: var(--raised); border-radius: 8px; padding: 4px 9px;
+    font-size: 11px; color: var(--muted); cursor: pointer;
+  }
+  .turn-popover {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; width: 280px;
+    background: var(--panel); border: 1px solid var(--line-strong); border-radius: 12px; padding: 6px;
+    box-shadow: var(--shadow);
+  }
+  .turn-option { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; font-size: 11px; }
+  .turn-option span:last-child { margin-left: auto; color: var(--faint); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); flex: none; }
+  .dot.running { background: var(--accent); }
+  .dot.accepted { background: var(--green); }
+  .dot.failed { background: var(--danger); }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 11px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--pill-bg); font-size: 10px; color: var(--muted);
+  }
+
+  .graph-column { display: grid; gap: 8px; min-width: 0; }
+  .breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); min-height: 20px; }
+  .breadcrumb .sep { color: var(--faint); }
+  .breadcrumb .here { color: var(--text); }
+
+  .children-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .child-card {
+    border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 9px 10px;
+    display: grid; gap: 5px; text-align: left; cursor: pointer; min-width: 0;
+  }
+  .child-card:hover { background: var(--hover); }
+  .child-card.viewing { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+  .child-card .row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .child-card .name { font-weight: 600; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .child-card .meta { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .child-card .layer { font-size: 10px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ticks { position: relative; height: 8px; border-radius: 4px; background: var(--raised); overflow: hidden; }
+  .ticks i { position: absolute; top: 1px; width: 2px; height: 6px; background: var(--accent); border-radius: 1px; }
+  .ticks i.end { background: var(--green); width: 3px; }
+  .ticks .now { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--faint); }
+
+  .stage {
+    position: relative; width: 100%; aspect-ratio: 960 / 640; max-width: 100%;
+    background-color: var(--stage);
+    background-image: radial-gradient(circle, var(--dot) 1px, transparent 1px);
+    background-size: 22px 22px; border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+  }
+  .stage svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .stage svg.edges line { stroke: var(--edge); stroke-width: 1.5; }
+  .stage-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: 12px; }
+  .node {
+    position: absolute; width: 150px; transform: translate(-50%, -23px); display: flex; flex-direction: column;
+    align-items: center; gap: 7px; cursor: pointer; border: 0; background: none; padding: 0; text-align: center;
+  }
+  .glyph {
+    position: relative; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+    border: 1px solid var(--glyph-line); background: var(--glyph-bg); box-shadow: var(--shadow); font-size: 22px;
+  }
+  .node:hover .glyph, .node.selected .glyph { border-color: var(--glyph-hover-line); background: var(--glyph-hover); }
+  .node.selected .glyph { box-shadow: 0 0 0 4px var(--ring), var(--shadow); }
+  .node b { font-size: 11px; line-height: 1.25; font-weight: 600; color: var(--text); }
+  .badge {
+    position: absolute; right: -4px; top: -4px; min-width: 18px; height: 18px; border-radius: 999px;
+    display: grid; place-items: center; font-size: 11px; border: 2px solid var(--stage); color: var(--bg);
+  }
+  .badge.running { background: var(--accent); }
+  .badge.accepted { background: var(--green); }
+  .badge.failed { background: var(--danger); }
+  .badge.running::after {
+    content: ""; position: absolute; inset: -5px; border-radius: 999px; border: 2px solid var(--accent); opacity: 0;
+  }
+  .badge.moved::after { animation: ping 1.4s ease-out 1; }
+  @keyframes ping { 0% { opacity: .9; transform: scale(.7); } 100% { opacity: 0; transform: scale(1.6); } }
+
+  .jump-chip {
+    position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 3;
+    display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 6px 12px;
+    background: var(--panel); border: 1px solid var(--accent); color: var(--text); font-size: 11px; cursor: pointer;
+    box-shadow: var(--shadow); white-space: nowrap;
+  }
+  .jump-chip .accent { color: var(--accent); font-weight: 600; }
+  .stage-foot {
+    position: absolute; left: 10px; bottom: 8px; font-size: 10px; color: var(--faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .inspector {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 15px 16px;
+    display: grid; gap: 12px; min-width: 0;
+  }
+  .inspector .label { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+  .node-heading { display: flex; gap: 10px; align-items: center; }
+  .node-icon {
+    width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; flex: none;
+    border: 1px solid var(--line-strong); background: var(--raised); font-size: 18px;
+  }
+  .node-heading h2 { font-size: 14px; margin: 0; line-height: 1.3; text-wrap: balance; }
+  .inspector .detail { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0; }
+  .actions { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .action-card {
+    display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; padding: 11px 12px;
+    border: 1px solid var(--line-strong); background: var(--raised); border-radius: 12px; cursor: pointer;
+  }
+  .action-card:hover { background: var(--hover); }
+  .action-card[disabled] { opacity: .38; filter: grayscale(1); cursor: default; }
+  .action-card .icon { font-size: 17px; margin-top: 1px; }
+  .action-card strong { display: block; font-size: 12px; }
+  .action-card small { display: block; color: var(--muted); font-size: 10px; margin-top: 2px; }
+  .action-status { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted); margin-top: 5px; font-variant-numeric: tabular-nums; }
+  .open-current { color: var(--accent); font-weight: 600; }
+
+  .footnote { color: var(--faint); font-size: 11px; margin: 12px 0 0; max-width: 72ch; }
+
+  @media (max-width: 860px) {
+    .workspace { grid-template-columns: minmax(0, 1fr); }
+    .node { width: 104px; }
+    .node b { font-size: 9px; }
+    .glyph { width: 34px; height: 34px; font-size: 16px; }
+  }
+  @media (max-width: 560px) {
+    .children-strip { grid-template-columns: minmax(0, 1fr); }
+    .node b { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .badge.moved::after { animation: none; }
+  }
+</style>
+
+<section class="proto-bar" aria-label="Prototype controls">
+  <div class="proto-top">
+    <span class="proto-tag">Prototype</span>
+    <h1>How a parent's graph shows its running children</h1>
+    <p>Replays paid delegation run 0fc27a06: the Lantern beta task, one root and three semantic children, 3 min 30 s. Pick the variant you want; the Jump to current chip is in all three.</p>
+  </div>
+  <div class="variant-tabs" role="tablist" aria-label="Variants">
+    <button class="variant-tab" role="tab" id="tab-A" data-variant="A"><b>A</b>Root's own layers only</button>
+    <button class="variant-tab" role="tab" id="tab-B" data-variant="B"><b>B</b>Status on each workstream</button>
+    <button class="variant-tab" role="tab" id="tab-C" data-variant="C"><b>C</b>Children strip</button>
+  </div>
+  <p class="variant-note" id="variantNote"></p>
+  <div class="replay">
+    <button type="button" id="playButton">Pause</button>
+    <select id="speedSelect" aria-label="Replay speed">
+      <option value="1">1× (real time)</option>
+      <option value="4">4×</option>
+      <option value="8" selected>8×</option>
+      <option value="20">20×</option>
+    </select>
+    <input type="range" id="scrubber" min="0" max="212" step="0.5" value="0" aria-label="Replay position">
+    <span class="clock" id="clock">0:00 / 3:32</span>
+    <select id="lookSelect" aria-label="What the user is looking at">
+      <option value="follow">Viewing: current layer (following)</option>
+      <option value="plan">Viewing: the plan layer (pinned)</option>
+    </select>
+  </div>
+</section>
+
+<main class="workspace" aria-label="Relayer thread workspace mock">
+  <header class="thread-header">
+    <span class="nav" aria-hidden="true"><i data-lucide="arrow-left"></i><i data-lucide="arrow-right"></i></span>
+    Lantern private beta plan
+  </header>
+  <section class="banner">
+    <span class="prompt-icon" aria-hidden="true">›_</span>
+    <span class="prompt">Plan a six-week private beta for Lantern. Delegate onboarding, runtime and abuse as three parallel workstreams, then integrate.</span>
+    <span class="turn-stepper">
+      <button type="button" id="turnButton" aria-expanded="false">Turn 1 of 4</button>
+      <div class="turn-popover" id="turnPopover" hidden></div>
+    </span>
+    <span class="status-pill" id="statusPill"><span class="dot"></span>Running</span>
+  </section>
+
+  <div class="graph-column">
+    <nav class="breadcrumb" id="breadcrumb" aria-label="Location"></nav>
+    <div class="children-strip" id="childrenStrip" hidden></div>
+    <div class="stage" id="stage">
+      <svg class="edges" id="edges" viewBox="0 0 960 640" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div id="nodes"></div>
+      <button type="button" class="jump-chip" id="jumpChip" hidden></button>
+      <div class="stage-foot" id="stageFoot"></div>
+    </div>
+  </div>
+
+  <aside class="inspector" id="inspector" aria-label="Node details"></aside>
+</main>
+
+<p class="footnote">Timings are the run's own: when each completion's pointer moved, when children returned, and the one refused move. Layer contents are rebuilt from the node titles each completion authored, so node placement is approximate. In the real app, actions sit in the inspector, not on node cards, so variant B marks the workstream node and puts the live status on its action.</p>
+
+<script>
+(() => {
+  const RUN_END = 212;
+  const WORKSTREAMS = {
+    ux: { id: 20, key: "ux", icon: "users", name: "Onboarding, consent & recovery UX", action: "Delegate UX review" },
+    runtime: { id: 21, key: "runtime", icon: "shield-check", name: "Runtime isolation, updates & failure recovery", action: "Delegate runtime review" },
+    abuse: { id: 22, key: "abuse", icon: "alert-triangle", name: "Abuse scenarios & operational risks", action: "Delegate abuse review" },
+  };
+  // Pointer moves, returns and the refused move, in seconds from the root's start.
+  const CHILDREN = {
+    ux: { start: 21.5, moves: [{ t: 50.9, layer: 8 }, { t: 126.0, layer: 23 }, { t: 137.8, layer: 25 }], end: 140.9 },
+    runtime: { start: 21.5, moves: [{ t: 77.0, layer: 10 }], end: 77.2 },
+    abuse: { start: 21.4, moves: [{ t: 60.1, layer: 9 }], refused: [79.1], end: 90.7 },
+  };
+  const CHILD_LAYERS = {
+    8: ["shield-check|Decision: ship with scoped, just-in-time consent", "route|First run: reach value before permissions", "key|Consent: separate, narrow, and revocable", "rotate-ccw|Recovery: stop, explain, undo where possible", "clipboard-check|Beta gate: prove comprehension and containment"],
+    23: ["sprout|1. Explain and configure without blocking", "folder-tree|2. Bind file access to a chosen project", "search|3. Preview first, request when needed", "clipboard-check|Prompt: action, scope, effect, choice", "shield|Rules for saved consent"],
+    25: ["alert-triangle|P0: broad or misunderstood consent", "alert-circle|P1: fatigue and unsafe workarounds", "check-circle|Acceptance: prompt clarity and safe denial", "clipboard-check|Acceptance: containment and revocation", "calendar|Six-week sequence and beta stop criteria"],
+    10: ["shield-check|Beta recommendation: isolate every run; no ambient shell", "lock|Isolation and least privilege", "rotate-ccw|Signed updates; recover safely", "check-circle|Launch only on measured gates"],
+    9: ["shield-check|Recommendation: staged private beta, gated on containment", "alert-triangle|Top abuse paths", "lock|Launch controls", "clipboard-check|Six-week operating gates"],
+  };
+  const ws = (key, title) => `${WORKSTREAMS[key].icon}|${title}`;
+  // The root's own current layers: each advance the event loop made, with what it showed.
+  const ROOT_LAYERS = [
+    { t: 20.1, rev: 1, plan: true, nodes: ["compass|Lantern beta plan: parallel workstreams", ws("ux", WORKSTREAMS.ux.name), ws("runtime", WORKSTREAMS.runtime.name), ws("abuse", WORKSTREAMS.abuse.name)] },
+    { t: 34.4, rev: 2, nodes: ["loader|Parallel review in progress", ws("ux", "UX: active, awaiting first layer"), ws("runtime", "Runtime: active, awaiting first layer"), ws("abuse", "Abuse: active, awaiting first layer")] },
+    { t: 39.1, rev: 3, nodes: ["loader|Three parallel reviews are active", ws("ux", "UX: active; no layer published"), ws("runtime", "Runtime: active; no layer published"), ws("abuse", "Abuse: active; no layer published")] },
+    { t: 67.7, rev: 4, nodes: ["loader|First workstream layer is available", ws("ux", "UX: layer 8 published; review active"), ws("runtime", "Runtime: active; awaiting layer"), ws("abuse", "Abuse: active; awaiting layer")] },
+    { t: 74.1, rev: 5, nodes: ["loader|UX and abuse reviews have published working layers", ws("ux", "UX: working layer 8; active"), ws("runtime", "Runtime: active; no layer yet"), ws("abuse", "Abuse: working layer 9; active")] },
+    { t: 82.0, rev: 6, nodes: ["check-circle|Runtime review completed; two reviews remain active", ws("ux", "UX: active on layer 8"), ws("runtime", "Runtime: completed on final layer 10"), ws("abuse", "Abuse: active on layer 9")] },
+    { t: 94.7, rev: 7, nodes: ["check-circle|Runtime and abuse reviews completed", ws("ux", "UX: active on layer 8"), ws("runtime", "Runtime: complete; final layer 10"), ws("abuse", "Abuse: complete; final layer 9")] },
+    { t: 131.1, rev: 8, nodes: ["loader|UX has added a newer working layer", ws("ux", "UX: active; latest layer 23"), ws("runtime", "Runtime: complete; final layer 10"), ws("abuse", "Abuse: complete; final layer 9")] },
+    { t: 142.7, rev: 9, nodes: ["loader|UX review continues; latest snapshot is layer 25", ws("ux", "UX: active; latest layer 25"), ws("runtime", "Runtime: complete; final layer 10"), ws("abuse", "Abuse: complete; final layer 9")] },
+    { t: 149.5, rev: 10, nodes: ["check-circle|All workstreams complete; integration can begin", ws("ux", "UX: complete; final layer 25"), ws("runtime", "Runtime: complete; final layer 10"), ws("abuse", "Abuse: complete; final layer 9")] },
+    { t: 204.6, rev: 11, nodes: ["shield-check|Recommendation: run a gated six-week beta, not an open launch", "key|Resolve usability vs. safety at the permission boundary", "alert-triangle|Five launch risks, ranked by impact", "kanban|Six-week delivery and cohort milestones", "clipboard-check|Go/no-go checklist: every critical gate must pass"] },
+  ];
+  const ROOT_RETURN = 207.1;
+  const NOTES = {
+    A: "<b>A. Root's own layers only.</b> The desktop adds nothing. The root agent reorganizes its layer on every child event, and the view follows it. Children otherwise appear only as turns in the turn picker.",
+    B: "<b>B. Status on each workstream.</b> The workstream nodes that launched children carry a live badge, and their action in the inspector shows the child's state and opens its current layer. It only exists on the plan layer, where those actions live. Pin the plan layer to judge it.",
+    C: "<b>C. Children strip.</b> A strip above the graph lists every child with its state, current layer, and pointer moves, whatever root layer is on screen. Click a child to open its current layer.",
+  };
+
+  const state = { variant: "A", t: 0, playing: true, speed: 8, target: "root", follow: true, pinned: null, selected: 1, turnOpen: false };
+  try { const saved = localStorage.getItem("childProgressVariant"); if (saved && NOTES[saved]) state.variant = saved; } catch {}
+  const hash = location.hash.replace("#", "").toUpperCase();
+  if (NOTES[hash]) state.variant = hash;
+
+  const $ = (id) => document.getElementById(id);
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const escape = (text) => text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+  function rootLayerAt(t) {
+    let current = null;
+    for (const layer of ROOT_LAYERS) if (layer.t <= t) current = layer;
+    return current;
+  }
+  function childAt(key, t) {
+    const child = CHILDREN[key];
+    if (t < child.start) return { state: "waiting", layer: null, moves: 0, lastMove: null, refused: 0 };
+    const moves = child.moves.filter((m) => m.t <= t);
+    const last = moves.at(-1) ?? null;
+    return {
+      state: t >= child.end ? "accepted" : "running",
+      layer: last ? last.layer : null,
+      moves: moves.length,
+      lastMove: last ? last.t : child.start,
+      refused: (child.refused ?? []).filter((r) => r <= t).length,
+    };
+  }
+  function shownLayer() {
+    if (state.target === "root") {
+      if (!state.follow) return { kind: "root", layer: state.pinned };
+      return { kind: "root", layer: rootLayerAt(state.t) };
+    }
+    const child = childAt(state.target, state.t);
+    const id = state.follow ? child.layer : state.pinned;
+    return { kind: "child", key: state.target, id, layer: id ? { nodes: CHILD_LAYERS[id] } : null };
+  }
+  function place(count) {
+    if (count === 4) return [[.5, .2], [.18, .7], [.5, .7], [.82, .7]];
+    if (count === 5) return [[.5, .18], [.14, .68], [.38, .76], [.62, .76], [.86, .68]];
+    return Array.from({ length: count }, (_, i) => [(i + 1) / (count + 1), .5]);
+  }
+
+  let lastKey = "";
+  function render() {
+    const t = state.t;
+    $("clock").textContent = `${fmt(t)} / ${fmt(RUN_END)}`;
+    $("scrubber").value = String(t);
+    for (const tab of document.querySelectorAll(".variant-tab")) {
+      tab.setAttribute("aria-selected", String(tab.dataset.variant === state.variant));
+    }
+    $("variantNote").innerHTML = NOTES[state.variant];
+    $("lookSelect").value = state.target === "root" && !state.follow ? "plan" : "follow";
+
+    const view = shownLayer();
+    const children = Object.fromEntries(Object.keys(CHILDREN).map((key) => [key, childAt(key, t)]));
+    const rootCurrent = rootLayerAt(t);
+    const rootDone = t >= ROOT_RETURN;
+
+    // Everything that changes the DOM structure; clock-only changes skip the rebuild.
+    const key = JSON.stringify([
+      state.variant, state.target, state.follow, view.kind, view.id ?? view.layer?.rev ?? null, state.selected,
+      Object.values(children).map((c) => [c.state, c.layer, c.moves, c.refused]), rootCurrent?.rev ?? 0, rootDone,
+      state.turnOpen, Math.floor(t / 5),
+    ]);
+    if (key === lastKey) return;
+    lastKey = key;
+
+    // Status pill.
+    const pill = $("statusPill");
+    pill.innerHTML = rootDone
+      ? `<span class="dot accepted"></span>Accepted`
+      : `<span class="dot running"></span>Running`;
+
+    // Turn picker: how children are reachable today.
+    const turns = [["Plan a six-week private beta…", rootDone ? "accepted" : "running", "Turn 1"]].concat(
+      Object.keys(WORKSTREAMS).map((k, i) => [WORKSTREAMS[k].action, t < CHILDREN[k].start ? "waiting" : children[k].state, `Turn ${i + 2}`]),
+    );
+    $("turnPopover").hidden = !state.turnOpen;
+    $("turnButton").setAttribute("aria-expanded", String(state.turnOpen));
+    $("turnPopover").innerHTML = turns.map(([label, status, turn]) =>
+      `<div class="turn-option"><span class="dot ${status}"></span><span>${escape(label)}</span><span>${turn}</span></div>`).join("");
+
+    // Breadcrumb.
+    const crumbs = ["Lantern private beta plan"];
+    if (view.kind === "root") {
+      crumbs.push(view.layer ? `Root layer ${view.layer.rev}${state.follow ? " (current)" : ""}` : "Waiting for the first layer");
+    } else {
+      crumbs.push(WORKSTREAMS[view.key].action, view.id ? `Layer ${view.id}${state.follow ? " (current)" : ""}` : "No layer yet");
+    }
+    $("breadcrumb").innerHTML = crumbs.map((c, i) =>
+      `${i ? '<span class="sep">›</span>' : ""}<span class="${i === crumbs.length - 1 ? "here" : ""}">${escape(c)}</span>`).join("");
+
+    // Children strip (variant C).
+    const strip = $("childrenStrip");
+    strip.hidden = state.variant !== "C";
+    if (state.variant === "C") {
+      strip.innerHTML = Object.keys(WORKSTREAMS).map((k) => {
+        const w = WORKSTREAMS[k]; const c = children[k]; const child = CHILDREN[k];
+        const label = c.state === "waiting" ? "Not launched" : c.state === "accepted" ? "Returned" : "Running";
+        const since = c.state === "running" ? ` · moved ${Math.max(0, Math.round(t - c.lastMove))}s ago` : "";
+        const ticks = child.moves.filter((m) => m.t <= t).map((m) => `<i style="left:${(m.t / RUN_END) * 100}%"></i>`).join("")
+          + (t >= child.end ? `<i class="end" style="left:${(child.end / RUN_END) * 100}%"></i>` : "");
+        const layerTitle = c.layer ? CHILD_LAYERS[c.layer][0].split("|")[1] : "No layer published yet";
+        return `<button type="button" class="child-card${state.target === k ? " viewing" : ""}" data-child="${k}">
+          <span class="row"><i data-lucide="${w.icon}"></i><span class="name">${escape(w.name)}</span></span>
+          <span class="row"><span class="dot ${c.state}"></span><span class="meta">${label}${c.layer ? ` · layer ${c.layer}` : ""}${since}${c.refused ? " · 1 move refused" : ""}</span></span>
+          <span class="layer">${escape(layerTitle)}</span>
+          <span class="ticks" aria-hidden="true">${ticks}<span class="now" style="left:${(t / RUN_END) * 100}%"></span></span>
+        </button>`;
+      }).join("");
+    }
+
+    // Graph stage.
+    const nodes = view.layer?.nodes ?? [];
+    const positions = place(nodes.length);
+    $("edges").innerHTML = nodes.slice(1).map((_, i) => {
+      const [x1, y1] = positions[0]; const [x2, y2] = positions[i + 1];
+      return `<line x1="${x1 * 960}" y1="${y1 * 640 + 14}" x2="${x2 * 960}" y2="${y2 * 640 - 10}"></line>`;
+    }).join("");
+    const planWorkstreams = view.kind === "root" && view.layer?.plan ? ["ux", "runtime", "abuse"] : [];
+    $("nodes").innerHTML = nodes.length ? nodes.map((entry, i) => {
+      const [icon, title] = entry.split("|");
+      const [x, y] = positions[i];
+      let badge = "";
+      const wsKey = i > 0 ? planWorkstreams[i - 1] : undefined;
+      if (state.variant === "B" && wsKey && children[wsKey].state !== "waiting") {
+        const c = children[wsKey];
+        const moved = c.state === "running" && t - c.lastMove < 2.5 ? " moved" : "";
+        badge = c.state === "accepted"
+          ? `<span class="badge accepted" title="Returned"><i data-lucide="check"></i></span>`
+          : `<span class="badge running${moved}" title="Running"></span>`;
+      }
+      return `<button type="button" class="node${state.selected === i ? " selected" : ""}" data-node="${i}" style="left:${x * 100}%;top:${y * 100}%">
+        <span class="glyph"><i data-lucide="${icon}"></i>${badge}</span><b>${escape(title)}</b></button>`;
+    }).join("") : `<div class="stage-empty">${view.kind === "child" ? "This child has not published a layer yet." : "The root has not published a layer yet."}</div>`;
+
+    // Jump to current: shown whenever the view is pinned and the thing it pins has moved on.
+    const chip = $("jumpChip");
+    let chipText = "";
+    if (!state.follow) {
+      if (view.kind === "root" && rootCurrent && view.layer && rootCurrent.rev !== view.layer.rev) {
+        chipText = `Newer view · root layer ${rootCurrent.rev} <span class="accent">Jump to current</span>`;
+      }
+    } else if (view.kind === "child" && rootCurrent) {
+      chipText = `Root moved on to layer ${rootCurrent.rev} <span class="accent">Back to the root</span>`;
+    }
+    chip.hidden = !chipText;
+    chip.innerHTML = chipText;
+    $("stageFoot").textContent = view.kind === "root"
+      ? (rootCurrent ? `Root pointer: revision ${rootCurrent.rev}${rootDone ? ", returned" : ""}` : "Root pointer: revision 0")
+      : `Child pointer: ${view.id ? `layer ${view.id}` : "no layer"}`;
+
+    renderInspector(view, children);
+    drawIcons();
+  }
+
+  function renderInspector(view, children) {
+    const nodes = view.layer?.nodes ?? [];
+    const entry = nodes[state.selected] ?? nodes[0];
+    const inspector = $("inspector");
+    if (!entry) { inspector.innerHTML = `<span class="label">Node details</span><p class="detail">Nothing selected.</p>`; return; }
+    const [icon, title] = entry.split("|");
+    const index = nodes.indexOf(entry);
+    const wsKey = view.kind === "root" && view.layer?.plan && index > 0 ? ["ux", "runtime", "abuse"][index - 1] : undefined;
+    let actions = "";
+    if (wsKey) {
+      const w = WORKSTREAMS[wsKey]; const c = children[wsKey]; const launched = c.state !== "waiting";
+      let status = "";
+      if (state.variant === "B" && launched) {
+        const text = c.state === "accepted" ? `Returned · final layer ${c.layer}`
+          : `${c.layer ? `On layer ${c.layer}` : "No layer yet"} · moved ${Math.max(0, Math.round(state.t - c.lastMove))}s ago${c.refused ? " · 1 move refused" : ""}`;
+        status = `<span class="action-status"><span class="dot ${c.state}"></span>${text}${c.layer ? ` · <span class="open-current">Open current layer</span>` : ""}</span>`;
+      }
+      const disabled = launched && state.variant !== "B" ? " disabled" : "";
+      actions = `<div class="actions"><span class="label">Actions</span>
+        <button type="button" class="action-card" data-open="${wsKey}"${disabled}>
+          <span class="icon"><i data-lucide="play"></i></span>
+          <span><strong>${escape(w.action)}</strong><small>Runs this workstream as its own semantic child.</small>${status}</span>
+        </button></div>`;
+    }
+    inspector.innerHTML = `<span class="label">Node details</span>
+      <div class="node-heading"><span class="node-icon"><i data-lucide="${icon}"></i></span><h2>${escape(title)}</h2></div>
+      <p class="detail">${view.kind === "root" ? "Authored by the root agent." : `Authored by the ${escape(WORKSTREAMS[view.key].action.replace("Delegate ", ""))} child.`}</p>${actions}`;
+  }
+
+  function drawIcons() {
+    if (!window.lucide?.createIcons) return;
+    try { window.lucide.createIcons({ icons: window.lucide.icons }); } catch {}
+    for (const leftover of document.querySelectorAll("i[data-lucide]")) {
+      leftover.outerHTML = `<svg class="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/></svg>`;
+    }
+  }
+
+  function openChild(key) {
+    state.target = key; state.follow = true; state.selected = 0; lastKey = ""; render();
+  }
+
+  document.querySelector(".variant-tabs").addEventListener("click", (event) => {
+    const tab = event.target.closest(".variant-tab"); if (!tab) return;
+    state.variant = tab.dataset.variant;
+    try { localStorage.setItem("childProgressVariant", state.variant); } catch {}
+    if (state.variant !== "C" && state.variant !== "B" && state.target !== "root") { state.target = "root"; state.follow = true; }
+    lastKey = ""; render();
+  });
+  $("playButton").addEventListener("click", () => {
+    state.playing = !state.playing;
+    if (state.playing && state.t >= RUN_END) state.t = 0;
+    $("playButton").textContent = state.playing ? "Pause" : "Play";
+  });
+  $("speedSelect").addEventListener("change", (e) => { state.speed = Number(e.target.value); });
+  $("scrubber").addEventListener("input", (e) => { state.t = Number(e.target.value); lastKey = ""; render(); });
+  $("lookSelect").addEventListener("change", (e) => {
+    state.target = "root"; state.selected = 1;
+    if (e.target.value === "plan") { state.follow = false; state.pinned = ROOT_LAYERS[0]; if (state.t < ROOT_LAYERS[0].t) state.t = ROOT_LAYERS[0].t; }
+    else state.follow = true;
+    lastKey = ""; render();
+  });
+  $("turnButton").addEventListener("click", () => { state.turnOpen = !state.turnOpen; lastKey = ""; render(); });
+  $("jumpChip").addEventListener("click", () => { state.target = "root"; state.follow = true; state.selected = 0; lastKey = ""; render(); });
+  $("nodes").addEventListener("click", (event) => {
+    const node = event.target.closest(".node"); if (!node) return;
+    state.selected = Number(node.dataset.node); lastKey = ""; render();
+  });
+  $("childrenStrip").addEventListener("click", (event) => {
+    const card = event.target.closest(".child-card"); if (card) openChild(card.dataset.child);
+  });
+  $("inspector").addEventListener("click", (event) => {
+    const action = event.target.closest(".action-card"); if (!action || action.disabled) return;
+    if (state.variant === "B" && childAt(action.dataset.open, state.t).layer) openChild(action.dataset.open);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.target.closest("input, select, textarea")) return;
+    const order = ["A", "B", "C"];
+    if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+      const step = event.key === "ArrowRight" ? 1 : 2;
+      state.variant = order[(order.indexOf(state.variant) + step) % 3]; lastKey = ""; render();
+    }
+  });
+
+  // Start just after the root publishes its plan, so the first frame shows the real graph.
+  state.t = 24;
+  let previous = performance.now();
+  function tick(now) {
+    const delta = (now - previous) / 1000; previous = now;
+    if (state.playing) {
+      state.t = Math.min(RUN_END, state.t + delta * state.speed);
+      if (state.t >= RUN_END) { state.playing = false; $("playButton").textContent = "Replay"; }
+    }
+    render();
+    requestAnimationFrame(tick);
+  }
+  render();
+  requestAnimationFrame(tick);
+})();
+</script>
