@@ -407,7 +407,7 @@ export function summarizeRun({
       verdict: "not-run",
       reason: verificationLevel === "check1"
         ? "Gate 2 grades this run; Check 1 does not."
-        : `A ${verificationLevel} run proves child launch, settlement, and integration; it is not graded.`,
+        : `A ${verificationLevel} run proves child launch and settlement. It does not judge how the root integrated the results; Gate 2 grades that.`,
     },
   };
 }

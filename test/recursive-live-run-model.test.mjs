@@ -220,6 +220,8 @@ describe("recursive live run analysis", () => {
     const fannedOut = delegation([child(202, 10, 50), child(203, 11, 60), child(204, 12, 70)]);
     expect(fannedOut.findings.filter((finding) => /children|launched/.test(finding))).toEqual([]);
     expect(fannedOut.judge.reason).not.toContain("Check 1");
+    // Nothing here observes integration, so the verdict must not claim it.
+    expect(fannedOut.judge.reason).toContain("does not judge how the root integrated the results");
   });
 
   it("fails a run whose root did not settle accepted", () => {
