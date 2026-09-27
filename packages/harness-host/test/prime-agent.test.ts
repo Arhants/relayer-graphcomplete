@@ -519,6 +519,8 @@ describe("PrimeAgentHarness", () => {
     // Each child event is one the root may act on; it moves its own current only when that helps the user.
     expect(prompts[0]!.text).toContain("from relayer_graph import complete, CompletionWatch");
     expect(prompts[0]!.text).toContain("changes = await watch.changes()");
+    // The watch takes the list the recipe fills, so the recipe must declare it.
+    expect(prompts[0]!.text).toContain("Start with children = [] and launch each child with children.append(complete(input_graph))");
     expect(prompts[0]!.text).toContain("Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting.");
     expect(prompts[0]!.text).toContain("never leave them in a background task");
     // A stopped or failed child raises from child.result, so the root must catch it to integrate the rest.

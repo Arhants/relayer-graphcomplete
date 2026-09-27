@@ -321,24 +321,7 @@ describe("complete", () => {
   });
 
   it("reports each child's change as its own event and settles when every child ends", async () => {
-    const snapshot = (completionId: number, revision: number, lifecycle = "active"): CompletionCurrentSnapshot => ({
-      completionId, revision, lifecycle: lifecycle as CompletionCurrentSnapshot["lifecycle"],
-      currentLayerId: revision, finalLayerId: lifecycle === "succeeded" ? revision : null,
-    });
-    const releases = new Map<string, (current: CompletionCurrentSnapshot) => void>();
-    const asked: string[] = [];
-    const child = (completionId: number): CompletionHandle => ({
-      completionId,
-      current: {
-        snapshot: async () => snapshot(completionId, 0),
-        next: (afterRevision?: number) => {
-          asked.push(`${completionId}:${afterRevision ?? "-"}`);
-          return new Promise((resolve) => releases.set(`${completionId}:${afterRevision ?? "-"}`, resolve));
-        },
-      },
-      result: Promise.resolve(layer),
-      stop: async () => {},
-    });
+    const { snapshot, releases, asked, child } = heldChildren();
     const watch = watchCompletions([child(1), child(2)]);
 
     const first = watch.changes();
@@ -365,4 +348,44 @@ describe("complete", () => {
     await expect(watch.changes()).resolves.toEqual([]);
     expect(asked).toEqual(["1:-", "2:-", "1:0", "1:1", "2:0"]);
   });
+
+  it("returns each event to only one of two overlapping changes() calls", async () => {
+    const { snapshot, releases, asked, child } = heldChildren();
+    const watch = watchCompletions([child(1), child(2)]);
+
+    const first = watch.changes();
+    const second = watch.changes();
+    await Promise.resolve();
+    releases.get("1:-")!(snapshot(1, 0));
+    expect((await first).map(({ current }) => `${current.completionId}@${current.revision}`)).toEqual(["1@0"]);
+
+    // The second call starts after the first returns, so it waits for the next event.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releases.get("2:-")!(snapshot(2, 0));
+    expect((await second).map(({ current }) => `${current.completionId}@${current.revision}`)).toEqual(["2@0"]);
+    expect(asked).toEqual(["1:-", "2:-", "1:0"]);
+  });
 });
+
+/** Children whose next() calls stay open until the test releases them by `completionId:afterRevision`. */
+function heldChildren() {
+  const snapshot = (completionId: number, revision: number, lifecycle = "active"): CompletionCurrentSnapshot => ({
+    completionId, revision, lifecycle: lifecycle as CompletionCurrentSnapshot["lifecycle"],
+    currentLayerId: revision, finalLayerId: lifecycle === "succeeded" ? revision : null,
+  });
+  const releases = new Map<string, (current: CompletionCurrentSnapshot) => void>();
+  const asked: string[] = [];
+  const child = (completionId: number): CompletionHandle => ({
+    completionId,
+    current: {
+      snapshot: async () => snapshot(completionId, 0),
+      next: (afterRevision?: number) => {
+        asked.push(`${completionId}:${afterRevision ?? "-"}`);
+        return new Promise((resolve) => releases.set(`${completionId}:${afterRevision ?? "-"}`, resolve));
+      },
+    },
+    result: Promise.resolve(layer),
+    stop: async () => {},
+  });
+  return { snapshot, releases, asked, child };
+}

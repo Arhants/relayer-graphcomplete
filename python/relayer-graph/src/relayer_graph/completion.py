@@ -121,7 +121,8 @@ class CompletionWatch:
     moved or ended since the last call, with every change seen by then; the first call
     reports each child's current. A child still unanswered keeps its request open; an
     answered child is asked again after the revision it reported, so its next event carries
-    its latest current, with any moves made in between folded into it.
+    its latest current, with any moves made in between folded into it. Overlapping calls
+    take turns, so each event is returned by exactly one of them.
     """
 
     def __init__(self, children: Iterable[CompletionHandle]) -> None:
@@ -129,6 +130,7 @@ class CompletionWatch:
         self._seen: dict[int, int] = {}
         self._ended: set[int] = set()
         self._pending: dict[int, "asyncio.Task[CompletionCurrentSnapshot]"] = {}
+        self._turn = asyncio.Lock()
 
     @property
     def settled(self) -> bool:
@@ -136,6 +138,10 @@ class CompletionWatch:
         return len(self._ended) == len(self._children)
 
     async def changes(self) -> list[tuple[CompletionHandle, CompletionCurrentSnapshot]]:
+        async with self._turn:
+            return await self._collect()
+
+    async def _collect(self) -> list[tuple[CompletionHandle, CompletionCurrentSnapshot]]:
         loop = asyncio.get_running_loop()
         for completion_id, child in self._children.items():
             if completion_id in self._ended or completion_id in self._pending:

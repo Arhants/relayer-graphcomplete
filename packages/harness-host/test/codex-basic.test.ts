@@ -93,6 +93,8 @@ describe("CodexBasicHarness", () => {
     expect(brokerAuthorized).toContain("Your turn ending does not wait for children");
     // Each child event is one the root may act on; it moves its own current only when that helps the user.
     expect(brokerAuthorized).toContain("const watch = watchCompletions(children)");
+    // The watch takes the array the recipe fills, so the recipe must declare it.
+    expect(brokerAuthorized).toContain("Start with const children = [] and launch each child with children.push(complete(inputGraph))");
     expect(brokerAuthorized).toContain("Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting.");
     expect(brokerAuthorized).toContain("Import complete and watchCompletions from");
     // A stopped or failed child rejects child.result, so the root must catch it to integrate the rest.

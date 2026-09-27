@@ -123,7 +123,8 @@ async function observeNextCurrent(
  * Watches the children a parent launched. Each call to `changes()` resolves on the next
  * event: any child's current moving or ending. A child still unanswered keeps its request
  * open; an answered child is asked again after the revision it reported, so its next event
- * carries its latest current, with any moves made in between folded into it.
+ * carries its latest current, with any moves made in between folded into it. Overlapping
+ * calls take turns, so each event is returned by exactly one of them.
  */
 export function watchCompletions(children: Iterable<CompletionHandle>): CompletionWatch {
   const watched = new Map<number, CompletionHandle>();
@@ -131,33 +132,39 @@ export function watchCompletions(children: Iterable<CompletionHandle>): Completi
   const seen = new Map<number, number>();
   const ended = new Set<number>();
   const pending = new Map<number, Promise<{ id: number; current: CompletionCurrentSnapshot }>>();
+  let turn: Promise<unknown> = Promise.resolve();
+  const collect = async (): Promise<readonly CompletionChange[]> => {
+    for (const [id, child] of watched) {
+      if (ended.has(id) || pending.has(id)) continue;
+      const request = child.current.next(seen.get(id)).then((current) => ({ id, current }));
+      // A failure surfaces on the next changes() call; until then it must not be unhandled.
+      request.catch(() => {});
+      pending.set(id, request);
+    }
+    if (pending.size === 0) return [];
+    await Promise.race(pending.values());
+    // Every request that has answered by now is one change; the unanswered ones stay open.
+    const answered = await Promise.all([...pending].map(async ([id, request]) => (
+      await Promise.race([request, Promise.resolve(undefined)]) === undefined ? undefined : id
+    )));
+    const changes: CompletionChange[] = [];
+    for (const id of answered) {
+      if (id === undefined) continue;
+      const { current } = await pending.get(id)!;
+      pending.delete(id);
+      seen.set(id, current.revision);
+      if (current.lifecycle !== "active") ended.add(id);
+      changes.push(Object.freeze({ child: watched.get(id)!, current }));
+    }
+    return changes;
+  };
   return Object.freeze({
     get settled(): boolean {
       return ended.size === watched.size;
     },
-    async changes(): Promise<readonly CompletionChange[]> {
-      for (const [id, child] of watched) {
-        if (ended.has(id) || pending.has(id)) continue;
-        const request = child.current.next(seen.get(id)).then((current) => ({ id, current }));
-        // A failure surfaces on the next changes() call; until then it must not be unhandled.
-        request.catch(() => {});
-        pending.set(id, request);
-      }
-      if (pending.size === 0) return [];
-      await Promise.race(pending.values());
-      // Every request that has answered by now is one change; the unanswered ones stay open.
-      const answered = await Promise.all([...pending].map(async ([id, request]) => (
-        await Promise.race([request, Promise.resolve(undefined)]) === undefined ? undefined : id
-      )));
-      const changes: CompletionChange[] = [];
-      for (const id of answered) {
-        if (id === undefined) continue;
-        const { current } = await pending.get(id)!;
-        pending.delete(id);
-        seen.set(id, current.revision);
-        if (current.lifecycle !== "active") ended.add(id);
-        changes.push(Object.freeze({ child: watched.get(id)!, current }));
-      }
+    changes(): Promise<readonly CompletionChange[]> {
+      const changes = turn.then(collect);
+      turn = changes.catch(() => {});
       return changes;
     },
   });
