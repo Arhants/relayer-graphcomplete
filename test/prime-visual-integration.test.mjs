@@ -7,22 +7,13 @@ import { RelayerAppServerService } from "../desktop/main/services/relayer-app-se
 import { EvalService } from "../desktop/eval-main/eval-service.mjs";
 import { primeVisualFixtureFactory } from "./support/prime-visual-fixture.mjs";
 
-it("accepts Prime Python authored images and controls, exports to Eval, and reopens exact packages", async () => {
+it.each(["prime-agent-basic", "prime-agent-deep"])("%s accepts Python authored assets and preserves old pins while promoting new threads", async (harnessId) => {
   const root = resolve('.');
   const directory = await mkdtemp(join(tmpdir(), 'prime-visual-proof-'));
   const configurationPath = join(directory, 'prime.yaml');
-  const configuration = `schemaVersion: 1
-name: prime-visual-proof
-implementation: prime.agent
-implementationVersion: 1
-permissionBindings:
-  full: {}
-modelCompatibility:
-  - providerId: openai-work
-executionAccessContracts: [secret@1]
-settings:
-  personalPresentationVersion: personal-presentation-v1
-`;
+  const shipped = await readFile(join(root, 'harnesses', `${harnessId}.yaml`), 'utf8');
+  expect(shipped).toContain('personalPresentationVersion: personal-presentation-v3');
+  const configuration = shipped.replace('  personalPresentationVersion: personal-presentation-v3\n', '');
   await writeFile(configurationPath, configuration);
   const runtimeOptions = { userDataDirectory: directory,
     graphServerBinary: join(root, 'target/debug/relayer-graph-server'), configurationPaths: [configurationPath],
@@ -41,7 +32,7 @@ settings:
     const runtimeSession = await runtime.start();
     const productOptions = { userDataDirectory: directory, binaryPath: join(root, 'target/debug/relayer-app-server'),
       webDirectory: join(root, 'desktop/renderer'), permissionCatalogPath: join(root, 'permissions/desktop.json'), runtimeSession,
-      defaultHarnessConfiguration: 'prime-visual-proof', allowHarnessOverride: true, allowConversationImport: true, enableReadOnlySession: true,
+      defaultHarnessConfiguration: harnessId, allowHarnessOverride: true, allowConversationImport: true, enableReadOnlySession: true,
       exportProducer: { desktopVersion: 'fixture', buildCommit: '0'.repeat(40), platform: 'darwin', architecture: 'arm64' },
     };
     product = new RelayerAppServerService(productOptions);
@@ -52,7 +43,7 @@ settings:
       systemFamily: { key: 'fixture', name: 'Fixture', modelIds: ['fixture-model'] },
     });
     const family = await request(session, '/api/model-families', { method: 'POST', body: JSON.stringify({ name: 'Fixture', enabled: true, members: [{ providerId: 'openai-work', modelId: 'fixture-model' }] }) });
-    const thread = await request(session, '/api/threads', { method: 'POST', body: JSON.stringify({ title: 'Prime visual proof', initialMessage: 'Show a visual answer', permissionProfileId: 'full', harnessId: 'prime-visual-proof', modelSelection: { familyId: family.id, providerId: 'openai-work', modelId: 'fixture-model' } }) });
+    const thread = await request(session, '/api/threads', { method: 'POST', body: JSON.stringify({ title: 'Prime visual proof', initialMessage: 'Show a visual answer', permissionProfileId: 'full', harnessId: harnessId, modelSelection: { familyId: family.id, providerId: 'openai-work', modelId: 'fixture-model' } }) });
     let detail;
     for (let attempt = 0; attempt < 200; attempt++) {
       detail = await request(session, `/api/threads/${thread.id}`);
@@ -85,7 +76,7 @@ settings:
     const asset = await request(session, `/api/threads/${importedDetail.thread.id}/interactions/${importedTurn.id}/nodes/${importedNode.id}/detail-assets/${original.assets[0].id}?layerId=${importedTurn.completionOutput.rootLayer.layer.id}`);
     expect(asset.digestSha256).toBe(original.assets[0].digestSha256);
     await product.close(); await runtime.close();
-    await writeFile(configurationPath, configuration.replace('personal-presentation-v1', 'personal-presentation-v3'));
+    await writeFile(configurationPath, shipped);
     runtime = new GraphCompleteRuntimeService(runtimeOptions);
     product = new RelayerAppServerService({ ...productOptions, runtimeSession: await runtime.start() });
     session = await product.start();
@@ -95,7 +86,7 @@ settings:
     const continued = await acceptedTurn(session, thread.id, 1);
     const continuedTrace = await runtime.exportCandidateTrace(continued.id, join(directory, 'continued-trace'));
     expect(continuedTrace.personalPresentationVersionKey).toBe('personal-presentation-v1');
-    const fresh = await request(session, '/api/threads', { method: 'POST', body: JSON.stringify({ title: 'Promoted Prime', initialMessage: 'New visual answer', permissionProfileId: 'full', harnessId: 'prime-visual-proof', modelSelection: { familyId: family.id, providerId: 'openai-work', modelId: 'fixture-model' } }) });
+    const fresh = await request(session, '/api/threads', { method: 'POST', body: JSON.stringify({ title: 'Promoted Prime', initialMessage: 'New visual answer', permissionProfileId: 'full', harnessId: harnessId, modelSelection: { familyId: family.id, providerId: 'openai-work', modelId: 'fixture-model' } }) });
     const freshTurn = await acceptedTurn(session, fresh.id, 0);
     const freshTrace = await runtime.exportCandidateTrace(freshTurn.id, join(directory, 'fresh-trace'));
     expect(freshTrace.personalPresentationVersionKey).toBe('personal-presentation-v3');

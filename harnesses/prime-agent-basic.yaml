@@ -2,7 +2,7 @@ schemaVersion: 1
 name: prime-agent-basic
 implementation: prime.agent
 implementationVersion: 1
-revision: 3
+revision: 5
 complete:
   agentAuthored: true
 permissionBindings:
@@ -27,9 +27,14 @@ modelRules:
       modelIdRegex: ".*"
   deny: []
 executionAccessContracts: [secret@1]
+modelDefaults:
+  familyPolicy:
+    id: prime-default-family
+    version: 1
 graphCapabilityProfile:
   search: query-v1
 settings:
+  personalPresentationVersion: personal-presentation-v3
   thinkingLevel: medium
   rlmMaxDepth: 1
   prewarmIpythonKernel: true

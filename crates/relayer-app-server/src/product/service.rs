@@ -3719,6 +3719,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn prime_qwen_policy_selects_the_provider_specific_default_route() {
+        for (adapter, qwen) in [
+            ("openrouter", "qwen/qwen3.8-max"),
+            ("vercel-ai-router", "alibaba/qwen3.8-max"),
+        ] {
+            let (path, storage, service) = managed_policy_service(3).await;
+            let mut harnesses = managed_runtime_harnesses(3);
+            let prime = harnesses
+                .iter_mut()
+                .find(|h| h.id == "prime-agent-basic")
+                .unwrap();
+            prime.family_policy = Some(FamilyPolicyReference {
+                id: super::super::model_policy::PRIME_DEFAULT_FAMILY_POLICY_ID.into(),
+                version: 1,
+            });
+            prime.model_rules.as_mut().unwrap().allow[0].adapter_id = adapter.into();
+            storage
+                .initialize_model_catalog("prime-agent-basic", &harnesses)
+                .await
+                .unwrap();
+            let (mut definition, mut catalog) = staged_codex_catalog();
+            definition.adapter_id = adapter.into();
+            definition.endpoint = Some("https://router.example.test/v1".into());
+            definition.access_contract = "secret@1".into();
+            definition.credential_reference = Some("provider:fixture".into());
+            catalog.models[0].id = "deepseek/deepseek-v4-pro-0813".into();
+            catalog.models[1].id = qwen.into();
+            let provider_id = definition.id.clone();
+            service
+                .create_provider_with_catalog(definition, catalog.clone())
+                .await
+                .unwrap();
+            let completion = service
+                .complete_default_provider_onboarding(
+                    &provider_id,
+                    "prime-agent-basic",
+                    &HashSet::from(["prime-agent-basic".to_owned()]),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(completion.defaults.harness_id, "prime-agent-basic");
+            assert_eq!(completion.resolution.resolvable_members[0].model_id, qwen);
+            let family_id = completion.resolution.family_id;
+            service.publish_provider_catalog(catalog).await.unwrap();
+            let settings = service.model_settings().await.unwrap();
+            assert_eq!(settings.defaults.family_id, Some(family_id));
+            drop(service);
+            drop(storage);
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[tokio::test]
     async fn openai_api_default_onboarding_selects_its_managed_family_without_custom_setup() {
         let (path, storage, service) = managed_policy_service(1).await;
         let (mut definition, mut snapshot) = staged_codex_catalog();
@@ -4014,15 +4068,16 @@ mod tests {
                 .expect("provider-scoped managed family");
             assert!(family.managed_policy.as_ref().is_some_and(|policy| {
                 policy.provider_id == provider_id
-                    && policy.policy_id == match adapter_id {
-                        "openrouter" => {
-                            super::super::model_policy::OPENROUTER_DEFAULT_FAMILY_POLICY_ID
+                    && policy.policy_id
+                        == match adapter_id {
+                            "openrouter" => {
+                                super::super::model_policy::OPENROUTER_DEFAULT_FAMILY_POLICY_ID
+                            }
+                            "vercel-ai-router" => {
+                                super::super::model_policy::PRIME_DEFAULT_FAMILY_POLICY_ID
+                            }
+                            _ => super::super::model_policy::PROVIDER_DEFAULT_FAMILY_POLICY_ID,
                         }
-                        "vercel-ai-router" => {
-                            super::super::model_policy::VERCEL_AI_ROUTER_DEFAULT_FAMILY_POLICY_ID
-                        }
-                        _ => super::super::model_policy::PROVIDER_DEFAULT_FAMILY_POLICY_ID,
-                    }
                     && policy.policy_version == 1
             }));
         }

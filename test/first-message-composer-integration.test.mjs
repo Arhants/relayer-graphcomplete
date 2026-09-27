@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 describe("first-message composer integration", () => {
-  it("reopens a Codex thread and accepts follow-up and invoke with its saved presentation", async () => {
+  it("promotes new Codex threads while preserving reopened follow-up and invoke presentation pins", async () => {
     const dataDirectory = await mkdtemp(join(tmpdir(), "relayer-codex-presentation-"));
     directories.push(dataDirectory);
     const configurationPath = join(dataDirectory, "codex-basic.yaml");
@@ -119,10 +119,20 @@ describe("first-message composer integration", () => {
       });
       const trace = await after.runtime.exportCandidateTrace(interaction.id, join(dataDirectory, `trace-${interaction.id}`));
       expect(trace.personalPresentationVersionId).toBe(oldPresentation.attachment.versionInteractionNodeId);
+      expect(trace.personalPresentationVersionKey).toBe("personal-presentation-v1");
     }
     const expectedSourceOutput = structuredClone(source.completionOutput);
     expectedSourceOutput.rootLayer.actions.find(({ id }) => id === invoke.id).targetLayerId = child.completionOutput.rootLayer.layer.id;
     expect(invokedThread.interactions.find(({ id }) => id === source.id).completionOutput).toEqual(expectedSourceOutput);
+    const newThread = await createThread(after.session);
+    const newAccepted = await waitForAcceptedThread(after.session, newThread.id);
+    const newPresentation = observed.find(({ graphNodeId }) => graphNodeId === newAccepted.interactions[0].graphNodeId).presentation;
+    expect(newPresentation.attachment.versionInteractionNodeId).not.toBe(oldPresentation.attachment.versionInteractionNodeId);
+    const titles = (presentation) => presentation.graph.layers.flatMap(({ nodes }) => nodes.map(({ title }) => title));
+    expect(titles(oldPresentation)).not.toContain("Authored visual Node Details");
+    expect(titles(newPresentation)).toContain("Authored visual Node Details");
+    const newTrace = await after.runtime.exportCandidateTrace(newAccepted.interactions[0].id, join(dataDirectory, "new-trace"));
+    expect(newTrace.personalPresentationVersionKey).toBe("personal-presentation-v3");
   }, 20_000);
 
   it("submits on Enter and accepts a graph through the zero-inference fixture harness", async () => {
