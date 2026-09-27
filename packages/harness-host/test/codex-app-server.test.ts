@@ -1,3 +1,4 @@
+import { NativeExecutionCancelled } from "../src/completion-execution.js";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -483,6 +484,34 @@ describe("Codex app-server transport", () => {
     await expect(runCodexAppServerTurn(options(fake, { approvals: { request } }))).rejects.toThrow("stopped (17)");
     expect(approvalSignal?.aborted).toBe(true);
     expect(String(approvalSignal?.reason)).toContain("stopped (17)");
+  });
+
+  it.each(["initialize", "thread/start", "thread/resume", "turn/start"])("settles cancellation while %s is pending only after process exit", async (phase) => {
+    const controller = new AbortController();
+    const fake = new FakeCodexProcess((message) => {
+      if (message.method === phase) { queueMicrotask(() => controller.abort(new Error("user Stop"))); return; }
+      handshake(fake, message);
+      if (message.method === "thread/resume") fake.respond(message.id, { thread: { id: "thread-new" } });
+    });
+    fake.kill = vi.fn(() => true);
+    let settled = false;
+    const turn = runCodexAppServerTurn(options(fake, { signal: controller.signal, ...(phase === "thread/resume" ? { savedThreadId: "thread-new" } : {}), shutdownGraceMs: 1000 }));
+    const outcome = turn.catch((error) => error).finally(() => { settled = true; });
+    await vi.waitFor(() => expect(fake.kill).toHaveBeenCalled());
+    expect(settled).toBe(false);
+    fake.exit(null, "SIGTERM");
+    expect(await outcome).toBeInstanceOf(NativeExecutionCancelled);
+    expect(fake.messages.some(({ method }) => method === "turn/interrupt")).toBe(false);
+  });
+
+  it("keeps pre-attachment process termination failure distinct from cancellation", async () => {
+    const controller = new AbortController();
+    const fake = new FakeCodexProcess((message) => {
+      if (message.method === "initialize") queueMicrotask(() => controller.abort());
+    });
+    fake.kill = vi.fn(() => true);
+    await expect(runCodexAppServerTurn(options(fake, { signal: controller.signal, shutdownGraceMs: 5 })))
+      .rejects.toThrow("did not exit");
   });
 
   it("interrupts the active turn on cancellation", async () => {

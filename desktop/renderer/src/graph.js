@@ -75,6 +75,7 @@ function workspace() {
     onExportConversation: desktop?.conversation?.export
       ? (threadId) => desktop.conversation.export(threadId)
       : null,
+    onStopInteraction: (threadId, interactionId) => import("./threads.js").then(({ stopInteraction }) => stopInteraction(threadId, interactionId)),
     onSubmitInteraction: (
       text,
       modelSelection,

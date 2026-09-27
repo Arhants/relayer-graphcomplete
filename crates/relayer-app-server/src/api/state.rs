@@ -47,7 +47,9 @@ pub(super) async fn capabilities(
     authorize_read(&state, &headers)?;
     let annotations = annotation_capability(&state, &headers);
     Ok(Json(
-        CapabilitiesResponse::from(state.product.capabilities()).with_annotations(annotations),
+        CapabilitiesResponse::from(state.product.capabilities())
+            .with_annotations(annotations)
+            .with_stop_runs(stop_available(&state)),
     ))
 }
 
@@ -169,7 +171,8 @@ pub(super) async fn product_state(
         .with_interactions(interactions)
         .with_current_projection(current_projection)
         .with_input_draft_revision(input_draft_revision)
-        .with_annotations(annotation_capability(&state, &headers));
+        .with_annotations(annotation_capability(&state, &headers))
+        .with_stop_runs(stop_available(&state));
     Ok(Json(response))
 }
 
@@ -184,4 +187,11 @@ fn annotation_capability(state: &ApiState, headers: &HeaderMap) -> bool {
                 .expect("annotation session lock poisoned")
                 .contains_key(token)
         })
+}
+
+pub(super) fn stop_available(state: &ApiState) -> bool {
+    state.runtime.as_ref().is_some_and(|runtime| {
+        let features = runtime.temporal_features();
+        features.schema_read && features.root_current_write
+    })
 }
