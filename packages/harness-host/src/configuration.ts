@@ -286,11 +286,21 @@ export function sameHarnessExecutionConfiguration(
   } = right;
   return canonicalJson({
     ...leftExecution,
+    settings: primeSessionExecutionSettings(left),
     graphCapabilityProfile: resolveGraphCapabilityProfile(left),
   }) === canonicalJson({
     ...rightExecution,
+    settings: primeSessionExecutionSettings(right),
     graphCapabilityProfile: resolveGraphCapabilityProfile(right),
   });
+}
+
+// Prime receives the exact immutable presentation attachment on every run.
+// This Product selection metadata does not change provider-session execution.
+function primeSessionExecutionSettings(configuration: HarnessConfiguration): HarnessConfiguration["settings"] {
+  if (configuration.implementation !== "prime.agent") return configuration.settings;
+  const { personalPresentationVersion: _selection, ...execution } = configuration.settings;
+  return execution;
 }
 
 export function digestHarnessConfiguration(configuration: HarnessConfiguration): string {

@@ -1,3 +1,4 @@
+import { PrimeVisualAuthoring } from "./prime-visual-authoring.js";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, realpath, stat } from "node:fs/promises";
@@ -422,6 +423,22 @@ export class PrimeAgentHarness implements Harness {
       if (run === undefined) throw new Error("relayer.graph.current requires an active GraphComplete run");
       return capabilityResponse(run.graph.acquireCapability());
     });
+    const visualRuns = new WeakMap<PrimeAgentRunContext, PrimeVisualAuthoring>();
+    const visualAuthoring = primeAgent.createHostRequestHandler<PrimeAgentRunContext>(async (payload, invocation) => {
+      const active = () => {
+        if (!invocation.isCurrent() || invocation.signal.aborted) throw new Error("The graph run is no longer active");
+        if (invocation.runContext === undefined) throw new Error("Visual authoring requires an active GraphComplete run");
+        invocation.runContext.graph.acquireCapability();
+      };
+      active();
+      const run = invocation.runContext!;
+      let authoring = visualRuns.get(run);
+      if (authoring === undefined) {
+        authoring = new PrimeVisualAuthoring();
+        visualRuns.set(run, authoring);
+      }
+      return authoring.execute(payload, run.graph.acquireCapability(), active, invocation.signal);
+    });
     const completeCurrent = primeAgent.createHostRequestHandler<PrimeAgentRunContext>(async (_payload, invocation) => {
       if (!invocation.isCurrent() || invocation.signal.aborted) throw new Error("The completion run is no longer active");
       const broker = invocation.runContext?.completionBroker;
@@ -465,6 +482,7 @@ export class PrimeAgentHarness implements Harness {
         tools: ["ipython"],
         hostRequestHandlers: {
           "relayer.graph.current": graphCurrent,
+          "relayer.graph.visual-authoring": visualAuthoring,
           "relayer.complete.current": completeCurrent,
         },
         telemetryDisabled: true,
@@ -822,6 +840,7 @@ export class PrimeAgentHarness implements Harness {
     return `Complete the current Relayer interaction by using Python in IPython to author a useful graph response.
 
 ${GRAPH_PRESENTATION_GUIDANCE}
+${PRIME_VISUAL_GUIDANCE}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interaction.id}
@@ -854,6 +873,7 @@ If a graph call fails, edit and rerun the same authoring code with the same clie
     return `Complete the current Relayer interaction by using Python in IPython to author a useful graph response. A flat answer is valid. Add navigation only when opening it would materially improve understanding or support; apply that same test again inside every layer you author.
 
 ${GRAPH_PRESENTATION_GUIDANCE}
+${PRIME_VISUAL_GUIDANCE}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interaction.id}
@@ -1223,9 +1243,10 @@ function parsePrimeAgentConfiguration(context: HarnessFactoryContext): PrimeAgen
   if (selected.implementation !== PRIME_AGENT_KEY) throw new Error(`prime.agent cannot run implementation ${selected.implementation}`);
   if (selected.implementationVersion !== 1) throw new Error(`Unsupported prime.agent implementation version: ${selected.implementationVersion}`);
   const settings = selected.settings;
-  const allowed = new Set(["thinkingLevel", "rlmMaxDepth", "prewarmIpythonKernel", "promptProfile"]);
+  const allowed = new Set(["thinkingLevel", "rlmMaxDepth", "prewarmIpythonKernel", "promptProfile", "personalPresentationVersion"]);
   const unknown = Object.keys(settings).filter((key) => !allowed.has(key));
   if (unknown.length > 0) throw new Error(`Unknown prime.agent configuration field: ${unknown.join(", ")}`);
+  optionalEnum(settings.personalPresentationVersion, ["personal-presentation-v0", "personal-presentation-v1", "personal-presentation-v2", "personal-presentation-v3"] as const, "personalPresentationVersion");
   const thinkingLevel = optionalEnum(settings.thinkingLevel, ["minimal", "low", "medium", "high", "xhigh", "max"] as const, "thinkingLevel");
   const rlmMaxDepth = optionalPositiveInteger(settings.rlmMaxDepth, "rlmMaxDepth");
   const prewarmIpythonKernel = optionalBoolean(settings.prewarmIpythonKernel, "prewarmIpythonKernel");
@@ -1662,3 +1683,6 @@ function optionalEnum<const T extends readonly string[]>(value: unknown, allowed
   if (typeof value !== "string" || !allowed.includes(value)) throw new Error(`prime.agent ${field} must be one of: ${allowed.join(", ")}`);
   return value as T[number];
 }
+
+const PRIME_VISUAL_GUIDANCE = `For visual Node Details, import html, asset_ref, external_link, action_capability, and ActionObject from relayer_graph. node.detail_authoring.set_component("main", html("<h2>Answer</h2>"), "h2 { color: blue; }") authors a component; node.detail remains the Markdown fallback. Use html(["<button gc=", ">Continue</button>"], action_capability("continue", action)) for a declared ActionObject. Its source_layer must be the exact LayerObject containing that node. Reuse the same action in await graph.add_action(node, action) after submitting nodes and layers. Navigate actions use kind="navigate", relation="expand" or "reference", and target=layer; invoke actions use interaction_text; input actions use control, prompt, and options. Checkpoint with await graph.checkpoint_node_detail(node). Submit freezes that object's detail; use a fresh NodeObject with the same client_key for an edited draft. Untouched detail retains its prior package; detail_authoring.clear() explicitly removes it.
+Discover assets with graph.visual_assets.scope(), list_assets(scope=scope), list_tags(scope=scope), and inspect(asset_id, scope). Add caller-read bytes with VisualAssetFile(name, media_type, bytes) and await graph.visual_assets.add(file=file, scope=scope, name=name). Bind logical asset IDs with html(['<img asset=', ' alt="Description">'], asset_ref(asset_id)); the host resolves and pins content. Never supply compiled packages, mounts, hashes, raw image URLs, or executable JavaScript.`;

@@ -198,6 +198,7 @@ pub(crate) struct PreparedInteraction {
     configuration: HarnessConfiguration,
     model_selection: Option<ExecutionModelSelection>,
     personal_presentation_version_id: Option<i64>,
+    personal_presentation_version_key: Option<String>,
     /// The policy this execution was admitted under. A recursive child launch must carry it
     /// too: once a session has taken a dynamic policy update, every later execution needs one.
     harness_policy: Option<ExecutionHarnessPolicy>,
@@ -748,6 +749,9 @@ impl RuntimeClient {
             personal_presentation_version_id: command
                 .personal_presentation
                 .map(|value| value.version_interaction_node_id),
+            personal_presentation_version_key: command
+                .personal_presentation
+                .map(|value| value.version_key.clone()),
         })
     }
 
@@ -854,6 +858,10 @@ impl RuntimeClient {
             if let Some(version_id) = prepared.personal_presentation_version_id {
                 complete_body["traceContext"]["personalPresentationVersionId"] =
                     Value::from(version_id);
+            }
+            if let Some(version_key) = prepared.personal_presentation_version_key.as_ref() {
+                complete_body["traceContext"]["personalPresentationVersionKey"] =
+                    Value::from(version_key.clone());
             }
             if let Some(model_selection) = prepared.model_selection.as_ref() {
                 complete_body["model"] = serde_json::json!({
@@ -966,6 +974,13 @@ impl RuntimeClient {
             },
             "traceContext": { "productInteractionId": product_interaction_id },
         });
+        if let Some(version_id) = prepared.personal_presentation_version_id {
+            body["traceContext"]["personalPresentationVersionId"] = Value::from(version_id);
+        }
+        if let Some(version_key) = prepared.personal_presentation_version_key.as_ref() {
+            body["traceContext"]["personalPresentationVersionKey"] =
+                Value::from(version_key.clone());
+        }
         if let Some(model_selection) = prepared.model_selection.as_ref() {
             body["model"] = serde_json::json!({
                 "providerId": model_selection.provider_id.as_str(),
@@ -2757,7 +2772,7 @@ mod tests {
                                     "sourceCompletionId": 17,
                                     "actionId": 23
                                 },
-                                "traceContext": { "productInteractionId": 29 }
+                                "traceContext": { "productInteractionId": 29, "personalPresentationVersionId": 90, "personalPresentationVersionKey": "personal-presentation-v1" }
                             })
                         );
                         observed_starts.fetch_add(1, Ordering::SeqCst);
@@ -2845,7 +2860,8 @@ mod tests {
                 settings: json!({}),
             },
             model_selection: None,
-            personal_presentation_version_id: None,
+            personal_presentation_version_id: Some(90),
+            personal_presentation_version_key: Some("personal-presentation-v1".into()),
         };
         runtime.temporal_features.provider_recursion = false;
         assert!(!runtime.agent_authored_complete_available(&prepared));
@@ -4045,6 +4061,10 @@ mod tests {
                     assert_eq!(body["interactionId"], 7);
                     assert_eq!(body["graph"]["nodeId"], 41);
                     assert_eq!(body["traceContext"]["personalPresentationVersionId"], 90);
+                    assert_eq!(
+                        body["traceContext"]["personalPresentationVersionKey"],
+                        "personal-presentation-v1"
+                    );
                     Json(json!({ "output": { "nodeId": 41 } }))
                 }),
             )

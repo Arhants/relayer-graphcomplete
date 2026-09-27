@@ -523,7 +523,17 @@ describe("PrimeAgentHarness", () => {
       token: "first-token",
       nodeId: 11,
     });
-    await expect(hostHandlers[1]?.({}, invocation(first))).resolves.toEqual(first.completionBroker);
+    await expect(hostHandlers[2]?.({}, invocation(first))).resolves.toEqual(first.completionBroker);
+    const visual = {
+      version: 1, objectId: "python-object", operation: "checkpoint", token: "first-token", nodeId: 11,
+      node: { clientKey: "answer", icon: "box", title: "Answer", detail: "Fallback", kind: "concept" },
+      detail: { clear: false, components: [{ id: "main", markup: { strings: ["<p>Answer</p>"], values: [] }, styles: "" }] },
+    };
+    await expect(hostHandlers[1]?.(visual, invocation(first))).resolves.toMatchObject({ ok: true, value: { version: 1 } });
+    await expect(hostHandlers[1]?.(visual, invocation(second))).rejects.toThrow("another run");
+    await expect(hostHandlers[1]?.(visual, { ...invocation(first), isCurrent: () => false })).rejects.toThrow("no longer active");
+    await expect(hostHandlers[1]?.(visual, { ...invocation(first), signal: AbortSignal.abort() })).rejects.toThrow("no longer active");
+
     expect(harness.state()).toEqual({
       primeAgentSessionFile: "/tmp/prime-session.jsonl",
       primeAgentSessionPersonalPresentationVersionId: null,

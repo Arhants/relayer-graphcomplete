@@ -182,6 +182,8 @@ export interface HarnessTraceSink {
 export interface HarnessCompletionTraceContext {
   readonly productInteractionId: number;
   readonly personalPresentationVersionId?: number;
+  /** Product-owned key for the same stored pin, never the current configuration default. */
+  readonly personalPresentationVersionKey?: string;
 }
 
 export interface HarnessTraceDescriptor {

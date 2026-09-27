@@ -968,7 +968,6 @@ export class HarnessHost {
     }
     const scope = new ActiveHarnessGraphScope(capability);
     const support = session.harness.traceSupport?.() ?? NO_HARNESS_TRACE_SUPPORT;
-    const configuredPersonalPresentationVersion = session.descriptor.configuration.settings.personalPresentationVersion;
     const trace = this.traceStore?.start({
       threadId,
       interactionNodeId,
@@ -976,9 +975,9 @@ export class HarnessHost {
       ...(traceContext?.personalPresentationVersionId === undefined ? {} : {
         personalPresentationVersionId: traceContext.personalPresentationVersionId,
       }),
-      ...(typeof configuredPersonalPresentationVersion === "string" ? {
-        personalPresentationVersionKey: configuredPersonalPresentationVersion,
-      } : {}),
+      ...(traceContext?.personalPresentationVersionKey === undefined ? {} : {
+        personalPresentationVersionKey: traceContext.personalPresentationVersionKey,
+      }),
       implementation: session.descriptor.configuration.implementation,
       configurationName: session.descriptor.configuration.name,
       support,
@@ -2693,7 +2692,7 @@ function isNativeExecutionHandle(value: Promise<void> | NativeExecutionHandle): 
 function readTraceContext(value: unknown): HarnessCompletionTraceContext | undefined {
   if (!isRecord(value) || value.traceContext === undefined) return undefined;
   if (!isRecord(value.traceContext)) throw new Error("Harness completion contains an invalid trace context");
-  const { productInteractionId, personalPresentationVersionId } = value.traceContext;
+  const { productInteractionId, personalPresentationVersionId, personalPresentationVersionKey } = value.traceContext;
   if (typeof productInteractionId !== "number" || !Number.isSafeInteger(productInteractionId) || productInteractionId < 1) {
     throw new Error("Harness completion trace context requires a positive product interaction id");
   }
@@ -2703,9 +2702,16 @@ function readTraceContext(value: unknown): HarnessCompletionTraceContext | undef
       || personalPresentationVersionId < 1)) {
     throw new Error("Harness completion trace context personal presentation version must be a positive integer");
   }
+  if (personalPresentationVersionKey !== undefined
+    && (personalPresentationVersionId === undefined
+      || typeof personalPresentationVersionKey !== "string"
+      || !/^personal-presentation-v[0-3]$/.test(personalPresentationVersionKey))) {
+    throw new Error("Harness completion trace context presentation key requires its pinned version id and a supported key");
+  }
   return {
     productInteractionId,
     ...(personalPresentationVersionId === undefined ? {} : { personalPresentationVersionId }),
+    ...(personalPresentationVersionKey === undefined ? {} : { personalPresentationVersionKey }),
   };
 }
 

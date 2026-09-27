@@ -292,7 +292,7 @@ describe("HarnessHost", () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-host-"));
     const stateFile = join(directory, "sessions.json");
     const capability = graph(1, "graph-token");
-    const descriptor = { threadId: 1, permissionProfileId: "auto", configuration: testConfiguration, workingDirectory: directory };
+    const descriptor = { threadId: 1, permissionProfileId: "auto", configuration: { ...testConfiguration, settings: { personalPresentationVersion: "personal-presentation-v3" } }, workingDirectory: directory };
     let restoredState: HarnessSessionState | undefined;
     vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
       ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
@@ -320,14 +320,16 @@ describe("HarnessHost", () => {
       await expect(failing.complete(descriptor.threadId, 1, capability, undefined, undefined, {
         productInteractionId: 7,
         personalPresentationVersionId: 90,
+        personalPresentationVersionKey: "personal-presentation-v1",
       })).rejects.toThrow("model failed");
       const exportedTrace = await failing.exportCandidateTrace(7, join(directory, "failed-export"), {
         runId: "run", executionId: "execution", interactionId: "7", harnessConfigurationName: "test-default",
       });
-      expect(exportedTrace).toMatchObject({ status: "failed", personalPresentationVersionId: 90 });
+      expect(exportedTrace).toMatchObject({ status: "failed", personalPresentationVersionId: 90, personalPresentationVersionKey: "personal-presentation-v1" });
       expect(JSON.parse(await readFile(join(directory, "failed-export", "manifest.json"), "utf8"))).toMatchObject({
         status: "failed",
         personalPresentationVersionId: 90,
+        personalPresentationVersionKey: "personal-presentation-v1",
       });
       await expect(failing.createSession({ ...descriptor, configuration: { ...testConfiguration, name: "other" } })).rejects.toThrow("already pinned");
 
@@ -2920,6 +2922,28 @@ describe("HarnessHost", () => {
       expect(await invalid.json()).toEqual({ error: "invalid_completion_id" });
     } finally {
       await running?.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects trace presentation keys without a corresponding valid pin before execution", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-trace-pin-validation-"));
+    const running = await startHarnessHost({ stateFile: join(directory, "sessions.json"), controlToken: "control", implementations: {} });
+    try {
+      for (const traceContext of [
+        { productInteractionId: 1, personalPresentationVersionKey: "personal-presentation-v3" },
+        { productInteractionId: 1, personalPresentationVersionId: 90, personalPresentationVersionKey: "unknown" },
+        { productInteractionId: 1, personalPresentationVersionId: 90, personalPresentationVersionKey: 3 },
+      ]) {
+        const response = await fetch(`${running.url}/sessions/1/complete`, {
+          method: "POST", headers: { authorization: "Bearer control", "content-type": "application/json" },
+          body: JSON.stringify({ interactionId: 1, graph: graph(), traceContext }),
+        });
+        expect(response.status).toBe(500);
+        expect(JSON.stringify(await response.json())).toContain("presentation key requires");
+      }
+    } finally {
+      await running.close();
       await rm(directory, { recursive: true, force: true });
     }
   });

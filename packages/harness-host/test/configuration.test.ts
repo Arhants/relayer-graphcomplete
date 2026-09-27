@@ -357,6 +357,15 @@ describe("harness configuration", () => {
     expect(digestHarnessConfiguration(changed)).not.toBe(digestHarnessConfiguration(left));
   });
 
+  it("treats only Prime presentation selection as per-run Product metadata", () => {
+    const base = parseHarnessConfiguration({ schemaVersion: 1, name: "prime", implementation: "prime.agent", implementationVersion: 1, permissionBindings: { full: {} }, settings: { thinkingLevel: "medium" } });
+    const promoted = { ...base, settings: { ...base.settings, personalPresentationVersion: "personal-presentation-v3" } };
+    expect(sameHarnessExecutionConfiguration(base, promoted)).toBe(true);
+    expect(digestHarnessConfiguration(base)).not.toBe(digestHarnessConfiguration(promoted));
+    expect(sameHarnessExecutionConfiguration(base, { ...promoted, settings: { ...promoted.settings, thinkingLevel: "high" } })).toBe(false);
+    expect(sameHarnessExecutionConfiguration({ ...base, implementation: "claude.basic" }, { ...promoted, implementation: "claude.basic" })).toBe(false);
+  });
+
   it("allows many named configurations to select the same implementation", async () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-config-"));
     const fast = join(directory, "fast.yaml");
