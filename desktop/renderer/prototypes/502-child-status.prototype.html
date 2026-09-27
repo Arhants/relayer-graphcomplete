@@ -225,18 +225,37 @@
   @media (prefers-reduced-motion: reduce) {
     .badge.moved::after { animation: none; }
   }
+
+  .toast {
+    position: absolute; right: 12px; top: 12px; z-index: 3; display: inline-flex; align-items: center; gap: 6px;
+    background: var(--panel); border: 1px solid var(--line-strong); border-radius: 999px; padding: 5px 10px;
+    font-size: 11px; color: var(--muted); box-shadow: var(--shadow);
+  }
+  .toast .dot { background: var(--accent); }
+  #nodes.fresh .node { animation: settle .5s ease-out 1; }
+  @keyframes settle { from { opacity: .35; transform: translate(-50%, -17px); } to { opacity: 1; transform: translate(-50%, -23px); } }
+  .thread-header .nav button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px; font-size: 15px; display: inline-grid; }
+  .thread-header .nav button:disabled { color: var(--faint); opacity: .5; cursor: default; }
+  .breadcrumb button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0; }
+  .breadcrumb button:hover { color: var(--text); text-decoration: underline; }
+  .turn-option { cursor: pointer; width: 100%; border: 0; background: none; text-align: left; color: var(--text); }
+  .turn-option:hover { background: var(--hover); }
+  .activity { display: flex; gap: 3px; align-items: center; }
+  .activity i { width: 6px; height: 6px; border-radius: 2px; background: var(--accent); opacity: .75; }
+  .activity i.done { background: var(--green); opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { #nodes.fresh .node { animation: none; } }
 </style>
 
 <section class="proto-bar" aria-label="Prototype controls">
   <div class="proto-top">
     <span class="proto-tag">Prototype</span>
-    <h1>How a parent's graph shows its running children</h1>
-    <p>Replays paid delegation run 0fc27a06: the Lantern beta task, one root and three semantic children, 3 min 30 s. Pick the variant you want; the Jump to current chip is in all three.</p>
+    <h1>How a parent's screen shows its running workstreams</h1>
+    <p>Replays the Lantern beta task: one plan delegated to three reviews that run in parallel, 3 min 30 s. Click a workstream, then "Open review", to follow it while it works. Use the back arrow to leave a view behind and see Jump to latest.</p>
   </div>
   <div class="variant-tabs" role="tablist" aria-label="Variants">
-    <button class="variant-tab" role="tab" id="tab-A" data-variant="A"><b>A</b>Root's own layers only</button>
-    <button class="variant-tab" role="tab" id="tab-B" data-variant="B"><b>B</b>Status on each workstream</button>
-    <button class="variant-tab" role="tab" id="tab-C" data-variant="C"><b>C</b>Children strip</button>
+    <button class="variant-tab" role="tab" id="tab-A" data-variant="A"><b>A</b>Plan only</button>
+    <button class="variant-tab" role="tab" id="tab-B" data-variant="B"><b>B</b>Marks on each workstream</button>
+    <button class="variant-tab" role="tab" id="tab-C" data-variant="C"><b>C</b>Workstreams strip</button>
   </div>
   <p class="variant-note" id="variantNote"></p>
   <div class="replay">
@@ -249,21 +268,20 @@
     </select>
     <input type="range" id="scrubber" min="0" max="212" step="0.5" value="0" aria-label="Replay position">
     <span class="clock" id="clock">0:00 / 3:32</span>
-    <select id="lookSelect" aria-label="What the user is looking at">
-      <option value="follow">Viewing: current layer (following)</option>
-      <option value="plan">Viewing: the plan layer (pinned)</option>
-    </select>
   </div>
 </section>
 
 <main class="workspace" aria-label="Relayer thread workspace mock">
   <header class="thread-header">
-    <span class="nav" aria-hidden="true"><i data-lucide="arrow-left"></i><i data-lucide="arrow-right"></i></span>
+    <span class="nav">
+      <button type="button" id="backButton" aria-label="Back"><i data-lucide="arrow-left"></i></button>
+      <button type="button" id="forwardButton" aria-label="Forward" disabled><i data-lucide="arrow-right"></i></button>
+    </span>
     Lantern private beta plan
   </header>
   <section class="banner">
     <span class="prompt-icon" aria-hidden="true">›_</span>
-    <span class="prompt">Plan a six-week private beta for Lantern. Delegate onboarding, runtime and abuse as three parallel workstreams, then integrate.</span>
+    <span class="prompt">Plan a six-week private beta for Lantern. Review onboarding, runtime and abuse in parallel, then bring them together into one plan.</span>
     <span class="turn-stepper">
       <button type="button" id="turnButton" aria-expanded="false">Turn 1 of 4</button>
       <div class="turn-popover" id="turnPopover" hidden></div>
@@ -278,93 +296,109 @@
       <svg class="edges" id="edges" viewBox="0 0 960 640" preserveAspectRatio="none" aria-hidden="true"></svg>
       <div id="nodes"></div>
       <button type="button" class="jump-chip" id="jumpChip" hidden></button>
-      <div class="stage-foot" id="stageFoot"></div>
+      <span class="toast" id="toast" hidden></span>
     </div>
   </div>
 
   <aside class="inspector" id="inspector" aria-label="Node details"></aside>
 </main>
 
-<p class="footnote">Timings are the run's own: when each completion's pointer moved, when children returned, and the one refused move. Layer contents are rebuilt from the node titles each completion authored, so node placement is approximate. In the real app, actions sit in the inspector, not on node cards, so variant B marks the workstream node and puts the live status on its action.</p>
+<p class="footnote">Timings come from the run: when each review produced a new view and when it finished. The plan's own views are rewritten to show what the root should present: moves only at real findings, in the task's own words. The reviews' contents are rebuilt from the titles they authored, so placement is approximate.</p>
 
 <script>
 (() => {
   const RUN_END = 212;
-  const WORKSTREAMS = {
-    ux: { id: 20, key: "ux", icon: "users", name: "Onboarding, consent & recovery UX", action: "Delegate UX review" },
-    runtime: { id: 21, key: "runtime", icon: "shield-check", name: "Runtime isolation, updates & failure recovery", action: "Delegate runtime review" },
-    abuse: { id: 22, key: "abuse", icon: "alert-triangle", name: "Abuse scenarios & operational risks", action: "Delegate abuse review" },
+  const STREAMS = {
+    ux: { icon: "users", name: "Onboarding, consent & recovery", review: "Onboarding review", start: 21.5, end: 140.9 },
+    runtime: { icon: "shield-check", name: "Runtime isolation & updates", review: "Runtime review", start: 21.5, end: 77.2 },
+    abuse: { icon: "alert-triangle", name: "Abuse & operational risk", review: "Abuse review", start: 21.4, end: 90.7 },
   };
-  // Pointer moves, returns and the refused move, in seconds from the root's start.
-  const CHILDREN = {
-    ux: { start: 21.5, moves: [{ t: 50.9, layer: 8 }, { t: 126.0, layer: 23 }, { t: 137.8, layer: 25 }], end: 140.9 },
-    runtime: { start: 21.5, moves: [{ t: 77.0, layer: 10 }], end: 77.2 },
-    abuse: { start: 21.4, moves: [{ t: 60.1, layer: 9 }], refused: [79.1], end: 90.7 },
+  const ORDER = ["ux", "runtime", "abuse"];
+  // Each review's own views, at the moments it produced them in the run.
+  const STREAM_VIEWS = {
+    ux: [
+      { t: 50.9, nodes: ["shield-check|Ship with scoped, just-in-time consent", "route|First run reaches value before any permission", "key|Consent stays separate, narrow, and revocable", "rotate-ccw|Recovery: stop, explain, undo where possible", "clipboard-check|Beta gate: prove people understand what they allow"] },
+      { t: 126.0, nodes: ["route|First-run flow in three steps", "sprout|Explain and configure without blocking", "folder-tree|Bind file access to one chosen project", "search|Preview first; ask only when needed", "shield|Rules for remembered consent"] },
+      { t: 137.8, nodes: ["alert-triangle|Biggest risk: broad or misunderstood consent", "alert-circle|Next risk: prompt fatigue and unsafe workarounds", "check-circle|Accept when prompts are clear and denial is safe", "clipboard-check|Accept when access is contained and revocable", "calendar|Six-week sequence and stop criteria"] },
+    ],
+    runtime: [
+      { t: 77.0, nodes: ["shield-check|Isolate every run; no ambient shell", "lock|Least privilege for every task", "rotate-ccw|Signed updates, with safe recovery", "check-circle|Launch only on measured gates"] },
+    ],
+    abuse: [
+      { t: 60.1, nodes: ["shield-check|Staged private beta, gated on containment", "alert-triangle|Top abuse paths", "lock|Launch controls", "clipboard-check|Six-week operating gates"] },
+    ],
   };
-  const CHILD_LAYERS = {
-    8: ["shield-check|Decision: ship with scoped, just-in-time consent", "route|First run: reach value before permissions", "key|Consent: separate, narrow, and revocable", "rotate-ccw|Recovery: stop, explain, undo where possible", "clipboard-check|Beta gate: prove comprehension and containment"],
-    23: ["sprout|1. Explain and configure without blocking", "folder-tree|2. Bind file access to a chosen project", "search|3. Preview first, request when needed", "clipboard-check|Prompt: action, scope, effect, choice", "shield|Rules for saved consent"],
-    25: ["alert-triangle|P0: broad or misunderstood consent", "alert-circle|P1: fatigue and unsafe workarounds", "check-circle|Acceptance: prompt clarity and safe denial", "clipboard-check|Acceptance: containment and revocation", "calendar|Six-week sequence and beta stop criteria"],
-    10: ["shield-check|Beta recommendation: isolate every run; no ambient shell", "lock|Isolation and least privilege", "rotate-ccw|Signed updates; recover safely", "check-circle|Launch only on measured gates"],
-    9: ["shield-check|Recommendation: staged private beta, gated on containment", "alert-triangle|Top abuse paths", "lock|Launch controls", "clipboard-check|Six-week operating gates"],
-  };
-  const ws = (key, title) => `${WORKSTREAMS[key].icon}|${title}`;
-  // The root's own current layers: each advance the event loop made, with what it showed.
-  const ROOT_LAYERS = [
-    { t: 20.1, rev: 1, plan: true, nodes: ["compass|Lantern beta plan: parallel workstreams", ws("ux", WORKSTREAMS.ux.name), ws("runtime", WORKSTREAMS.runtime.name), ws("abuse", WORKSTREAMS.abuse.name)] },
-    { t: 34.4, rev: 2, nodes: ["loader|Parallel review in progress", ws("ux", "UX: active, awaiting first layer"), ws("runtime", "Runtime: active, awaiting first layer"), ws("abuse", "Abuse: active, awaiting first layer")] },
-    { t: 39.1, rev: 3, nodes: ["loader|Three parallel reviews are active", ws("ux", "UX: active; no layer published"), ws("runtime", "Runtime: active; no layer published"), ws("abuse", "Abuse: active; no layer published")] },
-    { t: 67.7, rev: 4, nodes: ["loader|First workstream layer is available", ws("ux", "UX: layer 8 published; review active"), ws("runtime", "Runtime: active; awaiting layer"), ws("abuse", "Abuse: active; awaiting layer")] },
-    { t: 74.1, rev: 5, nodes: ["loader|UX and abuse reviews have published working layers", ws("ux", "UX: working layer 8; active"), ws("runtime", "Runtime: active; no layer yet"), ws("abuse", "Abuse: working layer 9; active")] },
-    { t: 82.0, rev: 6, nodes: ["check-circle|Runtime review completed; two reviews remain active", ws("ux", "UX: active on layer 8"), ws("runtime", "Runtime: completed on final layer 10"), ws("abuse", "Abuse: active on layer 9")] },
-    { t: 94.7, rev: 7, nodes: ["check-circle|Runtime and abuse reviews completed", ws("ux", "UX: active on layer 8"), ws("runtime", "Runtime: complete; final layer 10"), ws("abuse", "Abuse: complete; final layer 9")] },
-    { t: 131.1, rev: 8, nodes: ["loader|UX has added a newer working layer", ws("ux", "UX: active; latest layer 23"), ws("runtime", "Runtime: complete; final layer 10"), ws("abuse", "Abuse: complete; final layer 9")] },
-    { t: 142.7, rev: 9, nodes: ["loader|UX review continues; latest snapshot is layer 25", ws("ux", "UX: active; latest layer 25"), ws("runtime", "Runtime: complete; final layer 10"), ws("abuse", "Abuse: complete; final layer 9")] },
-    { t: 149.5, rev: 10, nodes: ["check-circle|All workstreams complete; integration can begin", ws("ux", "UX: complete; final layer 25"), ws("runtime", "Runtime: complete; final layer 10"), ws("abuse", "Abuse: complete; final layer 9")] },
-    { t: 204.6, rev: 11, nodes: ["shield-check|Recommendation: run a gated six-week beta, not an open launch", "key|Resolve usability vs. safety at the permission boundary", "alert-triangle|Five launch risks, ranked by impact", "kanban|Six-week delivery and cohort milestones", "clipboard-check|Go/no-go checklist: every critical gate must pass"] },
+  // What the plan should present: it moves only at findings the user would want to see.
+  const PLAN_VIEWS = [
+    { t: 20.1, plan: true, why: "The plan", nodes: ["compass|Six-week private beta for 100 technical users", "users|Onboarding, consent & recovery", "shield-check|Runtime isolation & updates", "alert-triangle|Abuse & operational risk"],
+      details: ["Three reviews run in parallel; the plan comes together when they finish.", "How people get started, grant access, and recover when something goes wrong.", "How every run stays contained, and how updates ship safely.", "How the beta could be misused, and what would stop it."] },
+    { t: 82.0, why: "First finding", nodes: ["compass|The beta takes shape around contained runs", "shield-check|Runtime: isolate every run; no ambient shell", "users|Onboarding, consent & recovery: still in review", "alert-triangle|Abuse & operational risk: still in review"] },
+    { t: 94.7, why: "Second finding", nodes: ["compass|Contained runs and a gated rollout", "shield-check|Runtime: isolate every run; no ambient shell", "alert-triangle|Abuse: stage the beta, gated on containment", "users|Onboarding, consent & recovery: still in review"] },
+    { t: 149.5, why: "All reviews in", nodes: ["compass|All three reviews are in; bringing them together", "users|Onboarding: scoped, just-in-time consent", "shield-check|Runtime: isolate every run; no ambient shell", "alert-triangle|Abuse: stage the beta, gated on containment"] },
+    { t: 204.6, why: "Recommendation", nodes: ["shield-check|Run a gated six-week beta, not an open launch", "key|Resolve usability vs. safety at the permission boundary", "alert-triangle|Five launch risks, ranked by impact", "kanban|Weekly milestones for each cohort", "clipboard-check|Go/no-go checklist: every critical gate must pass"] },
   ];
-  const ROOT_RETURN = 207.1;
+  const PLAN_DONE = 207.1;
   const NOTES = {
-    A: "<b>A. Root's own layers only.</b> The desktop adds nothing. The root agent reorganizes its layer on every child event, and the view follows it. Children otherwise appear only as turns in the turn picker.",
-    B: "<b>B. Status on each workstream.</b> The workstream nodes that launched children carry a live badge, and their action in the inspector shows the child's state and opens its current layer. It only exists on the plan layer, where those actions live. Pin the plan layer to judge it.",
-    C: "<b>C. Children strip.</b> A strip above the graph lists every child with its state, current layer, and pointer moves, whatever root layer is on screen. Click a child to open its current layer.",
+    A: "<b>A. Plan only.</b> The desktop adds nothing. The plan's own views say what the reviews have found. To watch a review work, open it from its workstream on the plan, or from the turn picker.",
+    B: "<b>B. Marks on each workstream.</b> On the plan, each workstream shows whether its review is working or done, and its details say when it last updated. The marks live where the workstreams are, so they appear on the plan view only.",
+    C: "<b>C. Workstreams strip.</b> A strip above the graph shows every review, its latest headline, and when it last updated, whatever the plan is showing. Click one to follow it.",
   };
 
-  const state = { variant: "A", t: 0, playing: true, speed: 8, target: "root", follow: true, pinned: null, selected: 1, turnOpen: false };
+  // A view is what the user is looking at: the plan or one review, and whether it follows the latest.
+  const state = {
+    variant: "A", t: 24, playing: true, speed: 8,
+    view: { of: "plan", follow: true, index: 0 },
+    back: [], forward: [], selected: 1, turnOpen: false, toast: null,
+  };
   try { const saved = localStorage.getItem("childProgressVariant"); if (saved && NOTES[saved]) state.variant = saved; } catch {}
   const hash = location.hash.replace("#", "").toUpperCase();
   if (NOTES[hash]) state.variant = hash;
 
   const $ = (id) => document.getElementById(id);
   const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-  const escape = (text) => text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-
-  function rootLayerAt(t) {
-    let current = null;
-    for (const layer of ROOT_LAYERS) if (layer.t <= t) current = layer;
-    return current;
-  }
-  function childAt(key, t) {
-    const child = CHILDREN[key];
-    if (t < child.start) return { state: "waiting", layer: null, moves: 0, lastMove: null, refused: 0 };
-    const moves = child.moves.filter((m) => m.t <= t);
-    const last = moves.at(-1) ?? null;
+  const escape = (text) => String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const views = (of) => (of === "plan" ? PLAN_VIEWS : STREAM_VIEWS[of]);
+  const latestIndex = (of, t) => {
+    let index = -1;
+    views(of).forEach((v, i) => { if (v.t <= t) index = i; });
+    return index;
+  };
+  const stream = (key, t) => {
+    const s = STREAMS[key];
+    const latest = latestIndex(key, t);
+    const updated = latest >= 0 ? STREAM_VIEWS[key][latest].t : s.start;
     return {
-      state: t >= child.end ? "accepted" : "running",
-      layer: last ? last.layer : null,
-      moves: moves.length,
-      lastMove: last ? last.t : child.start,
-      refused: (child.refused ?? []).filter((r) => r <= t).length,
+      status: t < s.start ? "waiting" : t >= s.end ? "accepted" : "running",
+      latest, updated,
+      headline: latest >= 0 ? STREAM_VIEWS[key][latest].nodes[0].split("|")[1] : "Getting started",
+      updates: STREAM_VIEWS[key].filter((v) => v.t <= t).length,
     };
+  };
+  const shownIndex = () => (state.view.follow ? latestIndex(state.view.of, state.t) : state.view.index);
+  const labelOf = (of) => (of === "plan" ? "Plan" : STREAMS[of].review);
+
+  function navigate(next) {
+    const index = shownIndex();
+    state.back.push({ of: state.view.of, index: Math.max(index, 0) });
+    state.forward = [];
+    state.view = next;
+    state.selected = 0;
+    lastKey = "";
   }
-  function shownLayer() {
-    if (state.target === "root") {
-      if (!state.follow) return { kind: "root", layer: state.pinned };
-      return { kind: "root", layer: rootLayerAt(state.t) };
-    }
-    const child = childAt(state.target, state.t);
-    const id = state.follow ? child.layer : state.pinned;
-    return { kind: "child", key: state.target, id, layer: id ? { nodes: CHILD_LAYERS[id] } : null };
+  function goBack() {
+    const previous = state.back.pop(); if (!previous) return;
+    state.forward.push({ of: state.view.of, index: Math.max(shownIndex(), 0) });
+    // Going back shows the view as the user left it; it no longer follows.
+    const latest = latestIndex(previous.of, state.t);
+    state.view = { of: previous.of, follow: previous.index === latest, index: previous.index };
+    state.selected = 0; lastKey = "";
+  }
+  function goForward() {
+    const next = state.forward.pop(); if (!next) return;
+    state.back.push({ of: state.view.of, index: Math.max(shownIndex(), 0) });
+    const latest = latestIndex(next.of, state.t);
+    state.view = { of: next.of, follow: next.index === latest, index: next.index };
+    state.selected = 0; lastKey = "";
   }
   function place(count) {
     if (count === 4) return [[.5, .2], [.18, .7], [.5, .7], [.82, .7]];
@@ -373,146 +407,128 @@
   }
 
   let lastKey = "";
+  let lastShown = "";
   function render() {
     const t = state.t;
     $("clock").textContent = `${fmt(t)} / ${fmt(RUN_END)}`;
     $("scrubber").value = String(t);
-    for (const tab of document.querySelectorAll(".variant-tab")) {
-      tab.setAttribute("aria-selected", String(tab.dataset.variant === state.variant));
-    }
-    $("variantNote").innerHTML = NOTES[state.variant];
-    $("lookSelect").value = state.target === "root" && !state.follow ? "plan" : "follow";
-
-    const view = shownLayer();
-    const children = Object.fromEntries(Object.keys(CHILDREN).map((key) => [key, childAt(key, t)]));
-    const rootCurrent = rootLayerAt(t);
-    const rootDone = t >= ROOT_RETURN;
-
-    // Everything that changes the DOM structure; clock-only changes skip the rebuild.
+    const streams = Object.fromEntries(ORDER.map((k) => [k, stream(k, t)]));
+    const index = shownIndex();
+    const planDone = t >= PLAN_DONE;
     const key = JSON.stringify([
-      state.variant, state.target, state.follow, view.kind, view.id ?? view.layer?.rev ?? null, state.selected,
-      Object.values(children).map((c) => [c.state, c.layer, c.moves, c.refused]), rootCurrent?.rev ?? 0, rootDone,
-      state.turnOpen, Math.floor(t / 5),
+      state.variant, state.view, index, state.selected, state.turnOpen, state.back.length, state.forward.length,
+      ORDER.map((k) => [streams[k].status, streams[k].latest]), latestIndex("plan", t), planDone, Math.floor(t / 5),
+      state.toast && t - state.toast.t < 3 ? state.toast.text : null,
     ]);
     if (key === lastKey) return;
     lastKey = key;
 
-    // Status pill.
-    const pill = $("statusPill");
-    pill.innerHTML = rootDone
-      ? `<span class="dot accepted"></span>Accepted`
-      : `<span class="dot running"></span>Running`;
+    for (const tab of document.querySelectorAll(".variant-tab")) tab.setAttribute("aria-selected", String(tab.dataset.variant === state.variant));
+    $("variantNote").innerHTML = NOTES[state.variant];
+    $("backButton").disabled = state.back.length === 0;
+    $("forwardButton").disabled = state.forward.length === 0;
+    $("statusPill").innerHTML = planDone ? `<span class="dot accepted"></span>Accepted` : `<span class="dot running"></span>Running`;
 
-    // Turn picker: how children are reachable today.
-    const turns = [["Plan a six-week private beta…", rootDone ? "accepted" : "running", "Turn 1"]].concat(
-      Object.keys(WORKSTREAMS).map((k, i) => [WORKSTREAMS[k].action, t < CHILDREN[k].start ? "waiting" : children[k].state, `Turn ${i + 2}`]),
-    );
+    // Turn picker: how reviews are reachable in the product today.
     $("turnPopover").hidden = !state.turnOpen;
     $("turnButton").setAttribute("aria-expanded", String(state.turnOpen));
-    $("turnPopover").innerHTML = turns.map(([label, status, turn]) =>
-      `<div class="turn-option"><span class="dot ${status}"></span><span>${escape(label)}</span><span>${turn}</span></div>`).join("");
+    $("turnPopover").innerHTML = [["plan", "Lantern beta plan", planDone ? "accepted" : "running", "Turn 1"]]
+      .concat(ORDER.map((k, i) => [k, STREAMS[k].review, streams[k].status, `Turn ${i + 2}`]))
+      .map(([of, label, status, turn]) => `<button type="button" class="turn-option" data-open="${of}"${of !== "plan" && status === "waiting" ? " disabled" : ""}><span class="dot ${status}"></span><span>${escape(label)}</span><span>${turn}</span></button>`).join("");
 
-    // Breadcrumb.
-    const crumbs = ["Lantern private beta plan"];
-    if (view.kind === "root") {
-      crumbs.push(view.layer ? `Root layer ${view.layer.rev}${state.follow ? " (current)" : ""}` : "Waiting for the first layer");
-    } else {
-      crumbs.push(WORKSTREAMS[view.key].action, view.id ? `Layer ${view.id}${state.follow ? " (current)" : ""}` : "No layer yet");
-    }
-    $("breadcrumb").innerHTML = crumbs.map((c, i) =>
-      `${i ? '<span class="sep">›</span>' : ""}<span class="${i === crumbs.length - 1 ? "here" : ""}">${escape(c)}</span>`).join("");
+    // Breadcrumb in the task's words.
+    const crumbs = [`<button type="button" data-open="plan">Lantern private beta plan</button>`];
+    if (state.view.of !== "plan") crumbs.push(`<span class="sep">›</span><span class="here">${escape(STREAMS[state.view.of].review)}</span>`);
+    const shownView = index >= 0 ? views(state.view.of)[index] : null;
+    if (state.view.of === "plan" && shownView && !state.view.follow) crumbs.push(`<span class="sep">›</span><span class="here">${escape(shownView.why)} (earlier view)</span>`);
+    $("breadcrumb").innerHTML = crumbs.join(" ");
 
-    // Children strip (variant C).
+    // Workstreams strip (variant C).
     const strip = $("childrenStrip");
     strip.hidden = state.variant !== "C";
     if (state.variant === "C") {
-      strip.innerHTML = Object.keys(WORKSTREAMS).map((k) => {
-        const w = WORKSTREAMS[k]; const c = children[k]; const child = CHILDREN[k];
-        const label = c.state === "waiting" ? "Not launched" : c.state === "accepted" ? "Returned" : "Running";
-        const since = c.state === "running" ? ` · moved ${Math.max(0, Math.round(t - c.lastMove))}s ago` : "";
-        const ticks = child.moves.filter((m) => m.t <= t).map((m) => `<i style="left:${(m.t / RUN_END) * 100}%"></i>`).join("")
-          + (t >= child.end ? `<i class="end" style="left:${(child.end / RUN_END) * 100}%"></i>` : "");
-        const layerTitle = c.layer ? CHILD_LAYERS[c.layer][0].split("|")[1] : "No layer published yet";
-        return `<button type="button" class="child-card${state.target === k ? " viewing" : ""}" data-child="${k}">
-          <span class="row"><i data-lucide="${w.icon}"></i><span class="name">${escape(w.name)}</span></span>
-          <span class="row"><span class="dot ${c.state}"></span><span class="meta">${label}${c.layer ? ` · layer ${c.layer}` : ""}${since}${c.refused ? " · 1 move refused" : ""}</span></span>
-          <span class="layer">${escape(layerTitle)}</span>
-          <span class="ticks" aria-hidden="true">${ticks}<span class="now" style="left:${(t / RUN_END) * 100}%"></span></span>
+      strip.innerHTML = ORDER.map((k) => {
+        const s = streams[k]; const meta = STREAMS[k];
+        const label = s.status === "waiting" ? "Not started" : s.status === "accepted" ? "Done" : `Working · updated ${Math.max(0, Math.round(t - s.updated))}s ago`;
+        const activity = Array.from({ length: s.updates }, (_, i) => `<i class="${s.status === "accepted" && i === s.updates - 1 ? "done" : ""}"></i>`).join("");
+        return `<button type="button" class="child-card${state.view.of === k ? " viewing" : ""}" data-open="${k}"${s.status === "waiting" ? " disabled" : ""}>
+          <span class="row"><i data-lucide="${meta.icon}"></i><span class="name">${escape(meta.name)}</span></span>
+          <span class="row"><span class="dot ${s.status}"></span><span class="meta">${label}</span></span>
+          <span class="layer">${escape(s.headline)}</span>
+          <span class="activity" aria-label="${s.updates} updates so far">${activity}</span>
         </button>`;
       }).join("");
     }
 
-    // Graph stage.
-    const nodes = view.layer?.nodes ?? [];
+    // Stage.
+    const nodes = shownView?.nodes ?? [];
     const positions = place(nodes.length);
     $("edges").innerHTML = nodes.slice(1).map((_, i) => {
       const [x1, y1] = positions[0]; const [x2, y2] = positions[i + 1];
       return `<line x1="${x1 * 960}" y1="${y1 * 640 + 14}" x2="${x2 * 960}" y2="${y2 * 640 - 10}"></line>`;
     }).join("");
-    const planWorkstreams = view.kind === "root" && view.layer?.plan ? ["ux", "runtime", "abuse"] : [];
+    const onPlan = state.view.of === "plan" && shownView?.plan;
+    const shownId = `${state.view.of}:${index}`;
+    const fresh = shownId !== lastShown && lastShown.startsWith(`${state.view.of}:`);
+    lastShown = shownId;
+    $("nodes").className = fresh ? "fresh" : "";
     $("nodes").innerHTML = nodes.length ? nodes.map((entry, i) => {
       const [icon, title] = entry.split("|");
       const [x, y] = positions[i];
       let badge = "";
-      const wsKey = i > 0 ? planWorkstreams[i - 1] : undefined;
-      if (state.variant === "B" && wsKey && children[wsKey].state !== "waiting") {
-        const c = children[wsKey];
-        const moved = c.state === "running" && t - c.lastMove < 2.5 ? " moved" : "";
-        badge = c.state === "accepted"
-          ? `<span class="badge accepted" title="Returned"><i data-lucide="check"></i></span>`
-          : `<span class="badge running${moved}" title="Running"></span>`;
+      const k = onPlan && i > 0 ? ORDER[i - 1] : undefined;
+      if (state.variant === "B" && k && streams[k].status !== "waiting") {
+        const s = streams[k];
+        badge = s.status === "accepted"
+          ? `<span class="badge accepted" title="Done"><i data-lucide="check"></i></span>`
+          : `<span class="badge running${t - s.updated < 2.5 ? " moved" : ""}" title="Working"></span>`;
       }
       return `<button type="button" class="node${state.selected === i ? " selected" : ""}" data-node="${i}" style="left:${x * 100}%;top:${y * 100}%">
         <span class="glyph"><i data-lucide="${icon}"></i>${badge}</span><b>${escape(title)}</b></button>`;
-    }).join("") : `<div class="stage-empty">${view.kind === "child" ? "This child has not published a layer yet." : "The root has not published a layer yet."}</div>`;
+    }).join("") : `<div class="stage-empty">${state.view.of === "plan" ? "Planning the work…" : `The ${escape(STREAMS[state.view.of].review.toLowerCase())} is getting started…`}</div>`;
 
-    // Jump to current: shown whenever the view is pinned and the thing it pins has moved on.
-    const chip = $("jumpChip");
-    let chipText = "";
-    if (!state.follow) {
-      if (view.kind === "root" && rootCurrent && view.layer && rootCurrent.rev !== view.layer.rev) {
-        chipText = `Newer view · root layer ${rootCurrent.rev} <span class="accent">Jump to current</span>`;
-      }
-    } else if (view.kind === "child" && rootCurrent) {
-      chipText = `Root moved on to layer ${rootCurrent.rev} <span class="accent">Back to the root</span>`;
-    }
-    chip.hidden = !chipText;
-    chip.innerHTML = chipText;
-    $("stageFoot").textContent = view.kind === "root"
-      ? (rootCurrent ? `Root pointer: revision ${rootCurrent.rev}${rootDone ? ", returned" : ""}` : "Root pointer: revision 0")
-      : `Child pointer: ${view.id ? `layer ${view.id}` : "no layer"}`;
+    // Jump to latest: only when the user left a view behind and it has moved on.
+    const latest = latestIndex(state.view.of, t);
+    const stale = !state.view.follow && latest > index;
+    $("jumpChip").hidden = !stale;
+    $("jumpChip").innerHTML = stale ? `There's a newer version <span class="accent">Jump to latest</span>` : "";
 
-    renderInspector(view, children);
+    // A quiet note when a followed view updates in place.
+    const toast = $("toast");
+    const toastOn = state.toast && t - state.toast.t < 3;
+    toast.hidden = !toastOn;
+    toast.innerHTML = toastOn ? `<span class="dot"></span>${escape(state.toast.text)}` : "";
+
+    renderInspector(shownView, streams, onPlan);
     drawIcons();
   }
 
-  function renderInspector(view, children) {
-    const nodes = view.layer?.nodes ?? [];
-    const entry = nodes[state.selected] ?? nodes[0];
+  function renderInspector(shownView, streams, onPlan) {
+    const nodes = shownView?.nodes ?? [];
+    const i = Math.min(state.selected, Math.max(nodes.length - 1, 0));
+    const entry = nodes[i];
     const inspector = $("inspector");
-    if (!entry) { inspector.innerHTML = `<span class="label">Node details</span><p class="detail">Nothing selected.</p>`; return; }
+    if (!entry) { inspector.innerHTML = `<span class="label">Node details</span><p class="detail">Nothing to show yet.</p>`; return; }
     const [icon, title] = entry.split("|");
-    const index = nodes.indexOf(entry);
-    const wsKey = view.kind === "root" && view.layer?.plan && index > 0 ? ["ux", "runtime", "abuse"][index - 1] : undefined;
+    const detail = shownView.details?.[i] ?? (state.view.of === "plan" ? "Part of the plan." : `From the ${STREAMS[state.view.of].review.toLowerCase()}.`);
     let actions = "";
-    if (wsKey) {
-      const w = WORKSTREAMS[wsKey]; const c = children[wsKey]; const launched = c.state !== "waiting";
+    const k = onPlan && i > 0 ? ORDER[i - 1] : undefined;
+    if (k) {
+      const s = streams[k];
+      const started = s.status !== "waiting";
       let status = "";
-      if (state.variant === "B" && launched) {
-        const text = c.state === "accepted" ? `Returned · final layer ${c.layer}`
-          : `${c.layer ? `On layer ${c.layer}` : "No layer yet"} · moved ${Math.max(0, Math.round(state.t - c.lastMove))}s ago${c.refused ? " · 1 move refused" : ""}`;
-        status = `<span class="action-status"><span class="dot ${c.state}"></span>${text}${c.layer ? ` · <span class="open-current">Open current layer</span>` : ""}</span>`;
+      if (state.variant === "B" && started) {
+        status = `<span class="action-status"><span class="dot ${s.status}"></span>${s.status === "accepted" ? "Done" : `Working · updated ${Math.max(0, Math.round(state.t - s.updated))}s ago`}</span>`;
       }
-      const disabled = launched && state.variant !== "B" ? " disabled" : "";
       actions = `<div class="actions"><span class="label">Actions</span>
-        <button type="button" class="action-card" data-open="${wsKey}"${disabled}>
-          <span class="icon"><i data-lucide="play"></i></span>
-          <span><strong>${escape(w.action)}</strong><small>Runs this workstream as its own semantic child.</small>${status}</span>
+        <button type="button" class="action-card" data-open="${k}"${started ? "" : " disabled"}>
+          <span class="icon"><i data-lucide="${started ? "arrow-up-right" : "play"}"></i></span>
+          <span><strong>${started ? `Open ${escape(STREAMS[k].review.toLowerCase())}` : `Start ${escape(STREAMS[k].review.toLowerCase())}`}</strong><small>${started ? "Shows the review's latest view and keeps up with it." : "Runs this review alongside the others."}</small>${status}</span>
         </button></div>`;
     }
     inspector.innerHTML = `<span class="label">Node details</span>
       <div class="node-heading"><span class="node-icon"><i data-lucide="${icon}"></i></span><h2>${escape(title)}</h2></div>
-      <p class="detail">${view.kind === "root" ? "Authored by the root agent." : `Authored by the ${escape(WORKSTREAMS[view.key].action.replace("Delegate ", ""))} child.`}</p>${actions}`;
+      <p class="detail">${escape(detail)}</p>${actions}`;
   }
 
   function drawIcons() {
@@ -523,15 +539,29 @@
     }
   }
 
-  function openChild(key) {
-    state.target = key; state.follow = true; state.selected = 0; lastKey = ""; render();
+  function open(of) {
+    if (of === state.view.of && state.view.follow) return;
+    if (of !== "plan" && stream(of, state.t).status === "waiting") return;
+    navigate({ of, follow: true, index: 0 });
+    render();
+  }
+
+  // Watch for followed views updating, to show the in-place update note.
+  let followedIndex = null;
+  function noteUpdates() {
+    if (!state.view.follow) { followedIndex = null; return; }
+    const latest = latestIndex(state.view.of, state.t);
+    const id = `${state.view.of}:${latest}`;
+    if (followedIndex && followedIndex !== id && followedIndex.startsWith(`${state.view.of}:`) && latest >= 0) {
+      state.toast = { t: state.t, text: `${labelOf(state.view.of)} updated` };
+    }
+    followedIndex = id;
   }
 
   document.querySelector(".variant-tabs").addEventListener("click", (event) => {
     const tab = event.target.closest(".variant-tab"); if (!tab) return;
     state.variant = tab.dataset.variant;
     try { localStorage.setItem("childProgressVariant", state.variant); } catch {}
-    if (state.variant !== "C" && state.variant !== "B" && state.target !== "root") { state.target = "root"; state.follow = true; }
     lastKey = ""; render();
   });
   $("playButton").addEventListener("click", () => {
@@ -540,37 +570,29 @@
     $("playButton").textContent = state.playing ? "Pause" : "Play";
   });
   $("speedSelect").addEventListener("change", (e) => { state.speed = Number(e.target.value); });
-  $("scrubber").addEventListener("input", (e) => { state.t = Number(e.target.value); lastKey = ""; render(); });
-  $("lookSelect").addEventListener("change", (e) => {
-    state.target = "root"; state.selected = 1;
-    if (e.target.value === "plan") { state.follow = false; state.pinned = ROOT_LAYERS[0]; if (state.t < ROOT_LAYERS[0].t) state.t = ROOT_LAYERS[0].t; }
-    else state.follow = true;
-    lastKey = ""; render();
-  });
+  $("scrubber").addEventListener("input", (e) => { state.t = Number(e.target.value); followedIndex = null; state.toast = null; lastKey = ""; render(); });
+  $("backButton").addEventListener("click", () => { goBack(); render(); });
+  $("forwardButton").addEventListener("click", () => { goForward(); render(); });
   $("turnButton").addEventListener("click", () => { state.turnOpen = !state.turnOpen; lastKey = ""; render(); });
-  $("jumpChip").addEventListener("click", () => { state.target = "root"; state.follow = true; state.selected = 0; lastKey = ""; render(); });
+  $("jumpChip").addEventListener("click", () => { state.view = { of: state.view.of, follow: true, index: 0 }; state.selected = 0; lastKey = ""; render(); });
   $("nodes").addEventListener("click", (event) => {
     const node = event.target.closest(".node"); if (!node) return;
     state.selected = Number(node.dataset.node); lastKey = ""; render();
   });
-  $("childrenStrip").addEventListener("click", (event) => {
-    const card = event.target.closest(".child-card"); if (card) openChild(card.dataset.child);
-  });
-  $("inspector").addEventListener("click", (event) => {
-    const action = event.target.closest(".action-card"); if (!action || action.disabled) return;
-    if (state.variant === "B" && childAt(action.dataset.open, state.t).layer) openChild(action.dataset.open);
-  });
+  for (const id of ["childrenStrip", "inspector", "breadcrumb", "turnPopover"]) {
+    $(id).addEventListener("click", (event) => {
+      const target = event.target.closest("[data-open]"); if (!target || target.disabled) return;
+      state.turnOpen = false; open(target.dataset.open);
+    });
+  }
   document.addEventListener("keydown", (event) => {
     if (event.target.closest("input, select, textarea")) return;
     const order = ["A", "B", "C"];
     if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
-      const step = event.key === "ArrowRight" ? 1 : 2;
-      state.variant = order[(order.indexOf(state.variant) + step) % 3]; lastKey = ""; render();
+      state.variant = order[(order.indexOf(state.variant) + (event.key === "ArrowRight" ? 1 : 2)) % 3]; lastKey = ""; render();
     }
   });
 
-  // Start just after the root publishes its plan, so the first frame shows the real graph.
-  state.t = 24;
   let previous = performance.now();
   function tick(now) {
     const delta = (now - previous) / 1000; previous = now;
@@ -578,6 +600,7 @@
       state.t = Math.min(RUN_END, state.t + delta * state.speed);
       if (state.t >= RUN_END) { state.playing = false; $("playButton").textContent = "Replay"; }
     }
+    noteUpdates();
     render();
     requestAnimationFrame(tick);
   }
