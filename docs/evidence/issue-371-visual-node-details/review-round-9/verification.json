@@ -1,0 +1,11 @@
+{
+  "check": "passed: 2361 Vitest, 3 skipped; 2 secret-boundary tests; all native/types/Python/repository checks passed",
+  "build": "passed via desktop entry point",
+  "desktop": "passed",
+  "manifestSha256": "1a3b0906e970143c80c3ec219b5cf2324934d57e7f5bdf0d28886ffe10d49bdd",
+  "pixelsMatchPreviouslyInspected": true,
+  "source": {
+    "crates/relayer-graph-core/src/graph/writer.rs": "f9db7cd73f9f311e0789321094208a3a97b9f07c71b0d9a9f03a976eefa80c9d",
+    "crates/relayer-graph-core/tests/graph_database.rs": "309c63fc3625fbad76824b3cf525181630c92903437e9724a23e82d8e25baa40"
+  }
+}

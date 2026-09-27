@@ -1,3 +1,4 @@
+import { runEvidenceCleanup } from "../scripts/evidence-service-cleanup.mjs";
 import { EventEmitter } from "node:events";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -875,6 +876,7 @@ describe("desktop skeleton", () => {
     let suppliedToken = "";
     const unexpectedStops = [];
     const invocations = [];
+    const fetchRequest = vi.fn(async () => new Response(null, { status: 204 }));
     const child = Object.assign(new EventEmitter(), {
       stdin: new Writable({ write(chunk, _encoding, callback) { suppliedToken += String(chunk); callback(); } }),
       stdout: new PassThrough(),
@@ -884,6 +886,7 @@ describe("desktop skeleton", () => {
       kill: vi.fn(),
     });
     const service = new GraphCompleteRuntimeService({
+      fetchRequest,
       userDataDirectory: directory,
       graphServerBinary: "/test/bin/relayer-graph-server",
       configurationPaths: [configurationPath],
@@ -916,6 +919,16 @@ describe("desktop skeleton", () => {
       expect(session.harnessControlToken).toMatch(/^[a-f0-9]{64}$/);
       expect(session.harnessControlToken).not.toBe(session.graphControlToken);
       expect(session.graphUrl).toBe("http://127.0.0.1:43125");
+      expect(fetchRequest).toHaveBeenCalledOnce();
+      const [bridgeUrl, bridgeRequest] = fetchRequest.mock.calls[0];
+      expect(String(bridgeUrl)).toBe("http://127.0.0.1:43125/api/control/visual-assets/bridge");
+      expect(bridgeRequest.headers.Authorization).toBe(`Bearer ${session.graphControlToken}`);
+      const bridge = JSON.parse(bridgeRequest.body);
+      expect(bridge).toMatchObject({ url: session.harnessUrl });
+      expect(bridge.token).toMatch(/^[a-f0-9]{64}$/);
+      expect(bridge.token).not.toBe(session.graphControlToken);
+      expect(bridge.generation).toBeGreaterThan(0);
+      expect(session).not.toHaveProperty("visualAssetsToken");
       expect(service.graphOperationRecorder).toBeNull();
       expect(session.configurationNames).toEqual(["codex-basic"]);
       const catalog = JSON.parse(await readFile(session.catalogPath, "utf8"));
@@ -1003,6 +1016,7 @@ describe("desktop skeleton", () => {
       kill: vi.fn(function kill() { this.exitCode = 0; this.emit("exit", 0, null); }),
     });
     const service = new GraphCompleteRuntimeService({
+      fetchRequest: async () => new Response(null, { status: 204 }),
       userDataDirectory: directory,
       graphServerBinary: "/test/bin/relayer-graph-server",
       configurationPaths: [configurationPath],
@@ -1056,6 +1070,7 @@ describe("desktop skeleton", () => {
         kill: vi.fn(function kill() { this.exitCode = 0; this.emit("exit", 0, null); }),
       });
       const service = new GraphCompleteRuntimeService({
+      fetchRequest: async () => new Response(null, { status: 204 }),
         userDataDirectory: directory,
         graphServerBinary: "/test/bin/relayer-graph-server",
         configurationPaths: [configurationPath],
@@ -1124,6 +1139,7 @@ describe("desktop skeleton", () => {
       export const startHarnessHost = async () => { throw new Error("must not start"); };
     `)}`;
     const service = new GraphCompleteRuntimeService({
+      fetchRequest: async () => new Response(null, { status: 204 }),
       userDataDirectory: directory,
       graphServerBinary: "/test/bin/relayer-graph-server",
       configurationPaths: [],
@@ -1186,6 +1202,7 @@ describe("desktop skeleton", () => {
       export const startHarnessHost = async () => { throw new Error("must not start"); };
     `)}`;
     const service = new GraphCompleteRuntimeService({
+      fetchRequest: async () => new Response(null, { status: 204 }),
       userDataDirectory: directory,
       graphServerBinary: "/test/bin/relayer-graph-server",
       configurationPaths: [],
@@ -1257,6 +1274,7 @@ describe("desktop skeleton", () => {
       }),
     });
     const service = new GraphCompleteRuntimeService({
+      fetchRequest: async () => new Response(null, { status: 204 }),
       userDataDirectory: directory,
       graphServerBinary: "/test/bin/relayer-graph-server",
       configurationPaths: [],
@@ -1363,6 +1381,7 @@ describe("desktop skeleton", () => {
       }),
     });
     const service = new GraphCompleteRuntimeService({
+      fetchRequest: async () => new Response(null, { status: 204 }),
       userDataDirectory: directory,
       graphServerBinary: "/test/bin/relayer-graph-server",
       configurationPaths: [],
@@ -1442,6 +1461,7 @@ describe("desktop skeleton", () => {
       }),
     });
     const service = new GraphCompleteRuntimeService({
+      fetchRequest: async () => new Response(null, { status: 204 }),
       userDataDirectory: directory,
       graphServerBinary: "/test/bin/relayer-graph-server",
       configurationPaths: [],
@@ -1528,6 +1548,7 @@ describe("desktop skeleton", () => {
       }),
     });
     const service = new GraphCompleteRuntimeService({
+      fetchRequest: async () => new Response(null, { status: 204 }),
       userDataDirectory: directory,
       graphServerBinary: "/test/bin/relayer-graph-server",
       configurationPaths: [],
@@ -1611,6 +1632,7 @@ describe("desktop skeleton", () => {
       kill: vi.fn(() => true),
     });
     const service = new GraphCompleteRuntimeService({
+      fetchRequest: async () => new Response(null, { status: 204 }),
       userDataDirectory: directory,
       graphServerBinary: "/test/bin/relayer-graph-server",
       configurationPaths: [],
@@ -2867,12 +2889,47 @@ describe("desktop skeleton", () => {
         writeFile(join(bundledCodexBrowserRoot, "package.json"), `${JSON.stringify({ name: "chrome-devtools-mcp", version: "1.8.0" })}\n`),
         writeFile(bundledCodexBrowserScript, "helper-fixture"),
       ]);
+      // Exercise the pinned package's actual layout, not an obsolete Sharp fixture.
+      const sharpManifest = JSON.parse(await readFile(new URL("../node_modules/sharp/package.json", import.meta.url), "utf8"));
+      expect(sharpManifest.main).toBe("./dist/index.cjs");
+      expect(sharpManifest.module).toBe("./dist/index.mjs");
+      for (const entry of [sharpManifest.main, sharpManifest.module]) {
+        expect((await stat(new URL(`../node_modules/sharp/${entry}`, import.meta.url))).isFile()).toBe(true);
+      }
+      const nativeFiles = await readdir(new URL(`../node_modules/@img/sharp-${process.platform}-${process.arch}/lib/`, import.meta.url));
+      expect(nativeFiles).toContain(`sharp-${process.platform}-${process.arch}-${sharpManifest.version}.node`);
+      const sharpLock = JSON.parse(await readFile(new URL("../package-lock.json", import.meta.url), "utf8"));
+      const readSharpPackage = async (path) => {
+        const root = path.replace(/\/package\.json$/, "");
+        return JSON.stringify({ ...sharpLock.packages[root], exports: { "./lib": "./lib/index.js", "./binary": "./lib/libvips-cpp.8.18.6.dylib" } });
+      };
       const packagedRuntimeEntries = () => [
+        "node_modules/sharp/package.json",
+        ...["darwin-arm64", "darwin-x64", "win32-arm64", "win32-x64"].flatMap((target) => [
+          `node_modules/@img/sharp-${target}/package.json`,
+          `node_modules/@img/sharp-${target}/index.cjs`,
+        ]),
+        ...["win32-arm64", "win32-x64"].flatMap((target) => [
+          `node_modules/@img/sharp-${target}/lib/libvips-42.dll`,
+          `node_modules/@img/sharp-${target}/lib/libvips-cpp-8.18.6.dll`,
+        ]),
+        ...["darwin-arm64", "darwin-x64"].flatMap((target) => [
+          `node_modules/@img/sharp-libvips-${target}/package.json`,
+          `node_modules/@img/sharp-libvips-${target}/lib/index.js`,
+          `node_modules/@img/sharp-libvips-${target}/lib/libvips-cpp.8.18.6.dylib`,
+        ]),
         "main/single-instance.mjs",
         "main/services/codex-browser-mcp-runtime.mjs",
         "node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
         "node_modules/@relayer/graph-client/dist/index.js",
         "node_modules/@relayer/harness-host/dist/index.js",
+        "node_modules/@relayer/visual-assets/dist/index.js",
+        "node_modules/sharp/dist/index.cjs",
+        "node_modules/sharp/dist/index.mjs",
+        "node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.35.4.node",
+        "node_modules/@img/sharp-darwin-x64/lib/sharp-darwin-x64-0.35.4.node",
+        "node_modules/@img/sharp-win32-x64/lib/sharp-win32-x64-0.35.4.node",
+        "node_modules/@img/sharp-win32-arm64/lib/sharp-win32-arm64-0.35.4.node",
         "node_modules/@relayer/harness-host/dist/implementations/claude-basic-browser.js",
         "node_modules/@relayer/eval-runner/dist/index.js",
       ];
@@ -2883,6 +2940,7 @@ describe("desktop skeleton", () => {
       });
       const verifyNotices = async () => ({ notices: 29 });
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2891,6 +2949,7 @@ describe("desktop skeleton", () => {
         verifyNotices,
       })).resolves.toEqual({ binaryPath: bundledBinary, architecture: "arm64" });
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "x86_64\n", stderr: "" }),
         expectedArchitecture: "x86_64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2899,6 +2958,7 @@ describe("desktop skeleton", () => {
         verifyNotices,
       })).resolves.toEqual({ binaryPath: bundledBinary, architecture: "x86_64" });
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "x86_64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2907,6 +2967,7 @@ describe("desktop skeleton", () => {
         verifyNotices,
       })).rejects.toThrow("must contain only arm64");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: () => packagedRuntimeEntries().filter((entry) => entry !== "node_modules/@relayer/graph-client/dist/index.js"),
@@ -2914,8 +2975,22 @@ describe("desktop skeleton", () => {
         verifyPrimeAgent,
         verifyNotices,
       })).rejects.toThrow("missing node_modules/@relayer/graph-client/dist/index.js");
+      for (const missing of [
+        "node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.35.4.node",
+        "node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.6.dylib",
+        "node_modules/@img/sharp-libvips-darwin-arm64/lib/index.js",
+      ]) {
+        await expect(verifyBundledAppServer(appPath, {
+          readSharpPackage,
+          expectedArchitecture: "arm64",
+          listPackageEntries: () => [...packagedRuntimeEntries().filter((entry) => entry !== missing),
+            "node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.34.0.node"],
+          verifyGraphServer, verifyPrimeAgent, verifyNotices,
+        })).rejects.toThrow(`missing ${missing}`);
+      }
       await writeFile(bundledGraphClient, "export class RelayerGraphClient {}\n");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2925,6 +3000,7 @@ describe("desktop skeleton", () => {
       })).rejects.toThrow("missing RelayerGraphClient.prototype.search");
       await writeFile(bundledGraphClient, "export class RelayerGraphClient { search() {} }\n");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: () => packagedRuntimeEntries().filter((entry) => entry !== "node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"),
@@ -2933,6 +3009,7 @@ describe("desktop skeleton", () => {
         verifyNotices,
       })).rejects.toThrow("missing node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: () => packagedRuntimeEntries().filter((entry) => entry !== "node_modules/@relayer/harness-host/dist/implementations/claude-basic-browser.js"),
@@ -2942,6 +3019,7 @@ describe("desktop skeleton", () => {
       })).rejects.toThrow("missing node_modules/@relayer/harness-host/dist/implementations/claude-basic-browser.js");
       await rm(bundledCodexBrowserScript);
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2953,6 +3031,7 @@ describe("desktop skeleton", () => {
       await rm(bundledCodexBrowserScript);
       await mkdir(bundledCodexBrowserScript);
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2963,6 +3042,7 @@ describe("desktop skeleton", () => {
       await rm(bundledCodexBrowserScript, { recursive: true });
       await writeFile(bundledCodexBrowserScript, "helper-fixture");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2971,6 +3051,7 @@ describe("desktop skeleton", () => {
         verifyNotices,
       })).rejects.toThrow("missing nested Prime asset");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2986,6 +3067,7 @@ describe("desktop skeleton", () => {
       const darwinNoticesDir = join(appPath, "Contents", "Resources", noticesExtra.to);
       await cp(noticesExtra.from, darwinNoticesDir, { recursive: true });
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -2996,6 +3078,7 @@ describe("desktop skeleton", () => {
       // must fail through the default path.
       await writeFile(join(darwinNoticesDir, "stray-LICENSE"), "stray\n");
       await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
         execute: async () => ({ stdout: "arm64\n", stderr: "" }),
         expectedArchitecture: "arm64",
         listPackageEntries: packagedRuntimeEntries,
@@ -3018,10 +3101,18 @@ describe("desktop skeleton", () => {
         writeFile(join(windowsCodexBrowserRoot, "package.json"), `${JSON.stringify({ name: "chrome-devtools-mcp", version: "1.8.0" })}\n`),
         writeFile(join(windowsCodexBrowserRoot, "build", "src", "bin", "chrome-devtools-mcp.js"), "helper-fixture"),
       ]);
+      for (const missing of ["libvips-42.dll", "libvips-cpp-8.18.6.dll"]) {
+        await expect(verifyBundledAppServer(windowsPath, {
+          platform: "win32", expectedArchitecture: "x86_64", readSharpPackage,
+          listPackageEntries: () => packagedRuntimeEntries().filter((entry) => !entry.endsWith(`/${missing}`)),
+          verifyGraphServer, verifyPrimeAgent, verifyNotices,
+        })).rejects.toThrow(`missing node_modules/@img/sharp-win32-x64/lib/${missing}`);
+      }
       // The Windows resources layout exercises the same default notice verifier
       // (not a stub), so the win32 bundle path is covered too.
       await cp(noticesExtra.from, join(windowsPath, "resources", noticesExtra.to), { recursive: true });
       await expect(verifyBundledAppServer(windowsPath, {
+        readSharpPackage,
         platform: "win32",
         execute: async () => { throw new Error("lipo must not run for Windows"); },
         listPackageEntries: () => packagedRuntimeEntries().map((entry) => `\\${entry.replaceAll("/", "\\")}`),
@@ -4016,5 +4107,45 @@ describe("desktop skeleton", () => {
     expect(isSafeMarkdownLink("http://127.0.0.1:3000/help")).toBe(true);
     expect(isSafeMarkdownLink("javascript:alert(1)")).toBe(false);
     expect(isSafeMarkdownLink("data:text/html,bad")).toBe(false);
+  });
+});
+
+describe("visual Node Detail proof cancellation", () => {
+  it.each(["SIGINT", "SIGTERM"])("preserves forwarded %s instead of reporting a failed proof", (signal) => {
+    const preload = `
+      import childProcess from 'node:child_process';
+      import { EventEmitter } from 'node:events';
+      import { syncBuiltinESMExports } from 'node:module';
+      childProcess.spawn = () => {
+        const child = new EventEmitter();
+        const alive = setInterval(() => {}, 100);
+        child.kill = (signal) => { clearInterval(alive); queueMicrotask(() => child.emit('exit', null, signal)); return true; };
+        setTimeout(() => process.kill(process.pid, ${JSON.stringify(signal)}), 20);
+        return child;
+      };
+      syncBuiltinESMExports();
+    `;
+    const result = spawnSync(process.execPath, [
+      "--import", `data:text/javascript;base64,${Buffer.from(preload).toString("base64")}`,
+      fileURLToPath(new URL("../scripts/run-desktop-visual-node-details-test.mjs", import.meta.url)),
+    ], { encoding: "utf8", timeout: 5000 });
+    expect(result.error).toBeUndefined();
+    expect({ status: result.status, signal: result.signal, stderr: result.stderr }).toMatchObject({ signal });
+    expect(result.stderr).not.toContain("Electron proof failed");
+  });
+});
+
+describe("evidence cleanup", () => {
+  it("attempts every shutdown and reset and preserves each failure", async () => {
+    const calls = [];
+    const first = new Error("product close failed");
+    const second = new Error("graph close failed");
+    const cleanup = runEvidenceCleanup([
+      () => { calls.push("product"); throw first; },
+      async () => { calls.push("graph"); throw second; },
+      () => { calls.push("reset"); },
+    ]);
+    await expect(cleanup).rejects.toMatchObject({ errors: [first, second] });
+    expect(calls).toEqual(["product", "graph", "reset"]);
   });
 });

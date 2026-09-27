@@ -1,0 +1,235 @@
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/05b1/relayer-graphcomplete
+
+ ❯ |isolated| test/node-detail-runtime.test.mjs (43 tests | 2 failed) 265ms
+     × lets Eval navigate trusted authored controls while retaining read-only and disposal boundaries 11ms
+     × resolves context-preview images from their original presenting interaction and layer 23ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |isolated| test/node-detail-runtime.test.mjs > compiled Node Detail product runtime > lets Eval navigate trusted authored controls while retaining read-only and disposal boundaries
+AssertionError: expected [ { name: 'Expand', …(3) }, …(3) ] to deeply equal [ { name: 'Expand', …(3) }, …(3) ]
+
+- Expected
++ Received
+
+@@ -19,8 +19,8 @@
+    },
+    {
+      "actionId": "14",
+      "disabled": true,
+      "kind": "input-action",
+-     "name": "Constraint",
++     "name": "Hidden constraint",
+    },
+  ]
+
+ ❯ test/node-detail-runtime.test.mjs:175:104
+    173|       windowObject: window, getPresentationState: () => state, navigat…
+    174|     const controls = adapter.snapshot().controls;
+    175|     expect(controls.map(({ name, kind, actionId, disabled }) => ({ nam…
+       |                                                                                                        ^
+    176|       { name: "Expand", kind: "navigate-action", actionId: "11", disab…
+    177|       { name: "Reference", kind: "navigate-action", actionId: "12", di…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |isolated| test/node-detail-runtime.test.mjs > compiled Node Detail product runtime > resolves context-preview images from their original presenting interaction and layer
+AssertionError: expected "vi.fn()" to be called with arguments: [ { id: 'context-image', …(3) }, …(1) ]
+
+Received:
+
+  1st vi.fn() call:
+
+@@ -3,21 +3,39 @@
+      "digestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "id": "context-image",
+      "mediaType": "image/png",
+      "representation": "image",
+    },
+-   ObjectContaining {
++   {
+      "interaction": {
+        "completionOutput": {
+          "rootLayer": {
+            "actions": [],
+            "edges": [],
+            "layer": {
+-             "id": 99,
++             "id": 100,
+            },
+            "nodes": [
+              {
++               "detail": "Other",
++               "icon": "box",
++               "id": 8,
++               "kind": "concept",
++               "title": "Other node",
++             },
++           ],
++         },
++       },
++       "completionStatus": "accepted",
++       "graphNodeId": 60,
++       "id": 6,
++       "sequence": 2,
++       "text": "Later",
++       "threadId": 3,
++     },
++     "layerId": 100,
++     "node": {
+        "authoredDetail": {
+          "assets": [
+            {
+              "digestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "id": "context-image",
+@@ -50,23 +68,26 @@
+        "icon": "box",
+        "id": 7,
+        "kind": "concept",
+        "state": "accepted",
+        "title": "Context illustration",
+-             },
+-           ],
+      },
+-       },
+-       "completionStatus": "accepted",
+-       "graphNodeId": 50,
+-       "id": 5,
+-       "sequence": 1,
+-       "text": "Original",
+-       "threadId": 3,
++     "state": {
++       "actionInvocations": [],
++       "actions": [],
++       "currentInteractionId": 6,
++       "interactions": [
++         {
++           "completionOutput": {
++             "rootLayer": {
++               "actions": [],
++               "edges": [],
++               "layer": {
++                 "id": 99,
+                },
+-     "layerId": 99,
+-     "node": {
++               "nodes": [
++                 {
+                    "authoredDetail": {
+                      "assets": [
+                        {
+                          "digestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          "id": "context-image",
+@@ -99,10 +120,91 @@
+                    "icon": "box",
+                    "id": 7,
+                    "kind": "concept",
+                    "state": "accepted",
+                    "title": "Context illustration",
++                 },
++               ],
++             },
++           },
++           "completionStatus": "accepted",
++           "graphNodeId": 50,
++           "id": 5,
++           "sequence": 1,
++           "text": "Original",
++           "threadId": 3,
++         },
++         {
++           "completionOutput": {
++             "rootLayer": {
++               "actions": [],
++               "edges": [],
++               "layer": {
++                 "id": 100,
++               },
++               "nodes": [
++                 {
++                   "detail": "Other",
++                   "icon": "box",
++                   "id": 8,
++                   "kind": "concept",
++                   "title": "Other node",
++                 },
++               ],
++             },
++           },
++           "completionStatus": "accepted",
++           "graphNodeId": 60,
++           "id": 6,
++           "sequence": 2,
++           "text": "Later",
++           "threadId": 3,
++         },
++       ],
++       "modelCatalog": [],
++       "modelSettings": {
++         "defaults": {
++           "harnessId": "fixture",
++         },
++         "families": [],
++         "harnesses": [
++           {
++             "available": true,
++             "id": "fixture",
++           },
++         ],
++         "providers": [],
++       },
++       "nodes": [
++         {
++           "detail": "Other",
++           "icon": "box",
++           "id": 8,
++           "kind": "concept",
++           "title": "Other node",
++         },
++       ],
++       "pendingActionInvocations": [],
++       "permissionProfiles": [],
++       "projects": [],
++       "status": "accepted",
++       "visibleLayer": {
++         "actions": [],
++         "edges": [],
++         "layer": {
++           "id": 100,
++         },
++         "nodes": [
++           {
++             "detail": "Other",
++             "icon": "box",
++             "id": 8,
++             "kind": "concept",
++             "title": "Other node",
++           },
++         ],
++       },
+      },
+      "thread": {
+        "harnessId": "fixture",
+        "id": 3,
+        "rootInteractionId": 5,
+
+
+Number of calls: 1
+
+ ❯ test/node-detail-runtime.test.mjs:755:24
+    753|       window.document.querySelector('[aria-label="Open Context illustr…
+    754|       await window.happyDOM.waitUntilComplete();
+    755|       expect(resolver).toHaveBeenCalledWith(asset, expect.objectContai…
+       |                        ^
+    756|       expect(window.document.querySelector("#detailContent [data-node-…
+    757|     } finally { workspace.dispose(); }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 41 passed (43)
+   Start at  19:19:46
+   Duration  669ms (transform 108ms, setup 0ms, import 337ms, tests 265ms, environment 0ms)
+

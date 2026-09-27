@@ -12,6 +12,7 @@ import { nativeBinaryName } from "../shared/target.mjs";
 
 import {
   graphMemoryFixtureFactory,
+  nodeDetailFixtureFactory,
   gradeInputRoundTripSet,
   gradeInputRoundTripControlSet,
   InputOperatorController,
@@ -92,6 +93,7 @@ const graphRuntime = new GraphCompleteRuntimeService({
   configurationPaths,
   additionalImplementations: {
     "fixture.task-system": taskSystemFixtureFactory,
+    "fixture.node-detail": nodeDetailFixtureFactory,
     "fixture.graph-memory": graphMemoryFixtureFactory,
   },
   ...(codexBrowserMcpInspection.available ? { codexBrowserMcpRuntime: codexBrowserMcpInspection } : {}),

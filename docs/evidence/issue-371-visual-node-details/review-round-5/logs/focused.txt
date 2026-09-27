@@ -1,0 +1,14 @@
+Command: npm run build -w @relayer/graph-client
+Result: passed
+
+Command: npx vitest run packages/graph-client/test/detail.test.ts packages/eval-runner/test/node-detail-grading.test.ts
+Result: 2 files passed; 59 tests passed
+
+Command: npm run check -w @relayer/eval-runner
+Result: passed (tsc --noEmit)
+
+Command: git diff --check
+Result: passed
+
+Command: npm install --offline --ignore-scripts
+Result: removed the obsolete eval-runner-local parse5 package; audit reported 0 vulnerabilities

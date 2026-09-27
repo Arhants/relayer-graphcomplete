@@ -1,0 +1,40 @@
+{
+  "reviewer": "astra_standards",
+  "model": "GPT-6-Astra",
+  "base": "d9438f851ef765158ff985257699e01648cabcc9",
+  "review_kind": "independent source review",
+  "scope": {
+    "crates/relayer-graph-core/src/graph/writer.rs": "f9db7cd73f9f311e0789321094208a3a97b9f07c71b0d9a9f03a976eefa80c9d",
+    "crates/relayer-graph-core/tests/graph_database.rs": "309c63fc3625fbad76824b3cf525181630c92903437e9724a23e82d8e25baa40"
+  },
+  "verdict": "CLEAN",
+  "standards": {
+    "verdict": "CLEAN",
+    "findings": [],
+    "assessment": "Narrow check at the existing core ownership boundary; no new abstraction or duplicated authority. Validation precedes mutation; existing transaction owns content integrity and rollback."
+  },
+  "spec": {
+    "verdict": "CLEAN",
+    "findings": [],
+    "assessment": "PRD6.4 exact accepted asset persistence: every replacement must provide the complete ordered prepared snapshot; None is empty. Asset-free replacement remains valid. Retain leaves package and snapshots untouched; Clear removes both. Existing writer authority and immutable accepted-node checks remain intact."
+  },
+  "callers_reviewed": [
+    "GraphWriter convenience methods delegate to the guarded method.",
+    "Graph-server submit_node prepares nonempty package assets under existing completion/bridge authority before submitting; asset-free and absent/null package cases remain valid.",
+    "Remaining valid direct Rust callers use asset-free packages or prepared snapshots; unsupported/corrupt packages still fail schema validation first.",
+    "AuthoredDetailAssetTable::replace checks actual byte digest/length and existing content consistency inside the same transaction."
+  ],
+  "test_subsumption": "Original image package caller-mutation and reopen boundary preserved using a valid prepared snapshot; adds reopened byte/provenance assertions. New convenience-entry-point rejection test observes no draft mutation and valid replacement/retain behavior. No tests deleted.",
+  "test_evidence": {
+    "builder_reported": "Focused 7/7 and graph_database 75/75 pass; reviewer did not rerun tests.",
+    "logs": {
+      "docs/evidence/issue-371-visual-node-details/review-round-9/logs/writer-asset-snapshot-focused.log": "8e6620c78b83c8c45cfac127f99d5196bbc807d8ddf5ae56519471b881c501fb",
+      "docs/evidence/issue-371-visual-node-details/review-round-9/logs/graph-database-full.log": "2996a413d3268acd571457597e12fdd9eab7dcab0b7945caf471dff05a9cb591"
+    }
+  },
+  "limits": [
+    "Source-only assertion for the exact two file hashes.",
+    "Opaque trusted fixture bytes test graph persistence, not raster decoding; host media validation remains a separate boundary.",
+    "Full check/build, desktop visual proof, CI and PR assertion attachment remain parent-owned."
+  ]
+}
