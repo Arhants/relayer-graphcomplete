@@ -8,9 +8,9 @@
 //! `complete_prepared_child` or `stop_completion` calls for it, in the same
 //! order. `observe` reads the graph current and the product rows back as the
 //! spec's variables, and the replay compares them with the trace after every
-//! step. Start-failure cleanup is the real background task. The fake harness
-//! holds its first call (cancel) until the replay reaches `CleanCancel`, so the
-//! task cannot run ahead of the trace; its later loops cannot be paused, so the
+//! step. Start-failure cleanup is the real background task: it fails and
+//! settles the child, then cancels. The fake harness holds that cancel until the
+//! replay reaches `CleanCancel`; the task's other loops cannot be paused, so the
 //! replay compares state once the task has run. The semantic and exit observers,
 //! set off by a child's Return and its provider's exit, are compared the same way.
 
@@ -118,6 +118,9 @@ struct World {
     attachment: Option<Value>,
     /// Whether the semantic and exit observers are running.
     observed: bool,
+    /// A start-failure cleanup the handler has spawned but whose task has not run yet;
+    /// it starts at the trace's first cleanup step.
+    pending_cleanup: Option<(PreparedInteraction, LaunchFailure, Option<i64>)>,
     pool: sqlx::SqlitePool,
     root: PathBuf,
     tasks: Vec<tokio::task::JoinHandle<Result<(), std::io::Error>>>,
@@ -559,6 +562,7 @@ impl World {
             selected,
             admission: None,
             observed: false,
+            pending_cleanup: None,
             attachment: None,
             pool,
             root,
@@ -647,15 +651,11 @@ impl World {
                         // A refused admission started nothing, so its cleanup must not
                         // cancel. Arming the gate makes a cancel hang and the replay diverge.
                         self.harness.cancel_gated.store(true, Ordering::SeqCst);
-                        spawn_failed_recursive_start_cleanup(
-                            self.state.clone(),
-                            self.thread.clone(),
-                            self.child.clone(),
+                        self.pending_cleanup = Some((
                             activated,
-                            self.origin_digest.clone(),
                             LaunchFailure::AdmissionRefused(refusal.reason),
                             None,
-                        );
+                        ));
                     }
                 }
             }
@@ -691,19 +691,15 @@ impl World {
                     return;
                 }
                 assert!(started.is_err(), "a {mode} start must fail");
-                // Hold the cleanup at its first call until the trace releases it.
+                // The cleanup's cancel waits for the trace's CleanCancel step.
                 self.harness.cancel_gated.store(true, Ordering::SeqCst);
-                spawn_failed_recursive_start_cleanup(
-                    self.state.clone(),
-                    self.thread.clone(),
-                    self.child.clone(),
+                self.pending_cleanup = Some((
                     activated,
-                    self.origin_digest.clone(),
                     LaunchFailure::StartFailed,
                     self.admission
                         .as_ref()
                         .map(|admission| admission.attempt_id),
-                );
+                ));
             }
             // Attach, then spawn both observers, as complete_prepared_child does (THR:1508).
             "LaunchAttach" => {
@@ -835,6 +831,21 @@ impl World {
             // Settlement reconciles the terminal attempt's lease inline, inside cleanup.
             "CleanCancel" | "CleanFail" | "CleanFinalize" | "CleanDiscard" | "ExitObserve"
             | "ExitCheckAndFail" | "ExitDiscard" | "AttemptEnd" | "LeaseReconcile" => {
+                // The handler spawned the cleanup at the failed start; its task first runs
+                // here, which the trace may reach after a child's Return or a stop.
+                if name.starts_with("Clean")
+                    && let Some((prepared, failure, attempt_id)) = self.pending_cleanup.take()
+                {
+                    spawn_failed_recursive_start_cleanup(
+                        self.state.clone(),
+                        self.thread.clone(),
+                        self.child.clone(),
+                        prepared,
+                        self.origin_digest.clone(),
+                        failure,
+                        attempt_id,
+                    );
+                }
                 if name == "CleanCancel" {
                     self.harness.cancel_gate.add_permits(1);
                 }
@@ -1854,5 +1865,43 @@ async fn a_restart_keeps_a_launching_childs_leases_held() {
         "its attempt stays held: {state}"
     );
     assert_eq!(state["lease"], "held", "and so do its leases: {state}");
+    world.finish();
+}
+
+/// A failed start fails and settles its child before cancelling, so a harness that cannot
+/// take the cancel does not hold the child's result open: here the cancel never returns,
+/// yet the child is failed and settled.
+#[tokio::test]
+async fn a_failed_start_settles_while_its_cancel_cannot_reach_the_harness() {
+    let mut world = World::new("start-failed-cancel-held", true).await;
+    for step in [
+        serde_json::json!(["LaunchCheck", 1]),
+        serde_json::json!(["LaunchReserve", 1]),
+        serde_json::json!(["LaunchClaim", 1]),
+        serde_json::json!(["LaunchActivate", 1, "ok"]),
+        serde_json::json!(["LaunchAdmit", 1, "ok"]),
+        serde_json::json!(["LaunchStart", 1, "fail"]),
+        // Starts the cleanup; the harness then holds its cancel for good.
+        serde_json::json!(["CleanFail"]),
+    ] {
+        world.apply(step.as_array().unwrap(), true).await;
+    }
+    let deadline = Instant::now() + CLEANUP_QUIESCENCE;
+    let state = loop {
+        let state = world.observe().await;
+        if state["phase"] == "settled" || Instant::now() >= deadline {
+            break state;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    };
+    assert_eq!(
+        state["life"], "failed",
+        "the child fails without waiting on the cancel: {state}"
+    );
+    assert_eq!(state["phase"], "settled", "and settles: {state}");
+    assert_eq!(
+        state["attempt"], "running",
+        "its attempt stays held until the run is confirmed ended: {state}"
+    );
     world.finish();
 }

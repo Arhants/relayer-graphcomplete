@@ -213,11 +213,11 @@ LaunchStart(l, outcome) ==                            \* THR:1479-1506
         /\ lpc' = [lpc EXCEPT ![l] = "attach"]
         /\ UNCHANGED <<cleanPc, cleanKey>>
      \/ /\ outcome = "fail"
-        /\ cleanPc' = "cancel" /\ cleanKey' = "start"  \* spawn cleanup (:1497)
+        /\ cleanPc' = "fail" /\ cleanKey' = "start"  \* spawn cleanup (:1497)
         /\ lpc' = [lpc EXCEPT ![l] = "done"]
         /\ UNCHANGED <<prov, launches>>
      \/ /\ outcome = "lost"
-        /\ cleanPc' = "cancel" /\ cleanKey' = "start"  \* the start ran but its
+        /\ cleanPc' = "fail" /\ cleanKey' = "start"  \* the start ran but its
         /\ lpc' = [lpc EXCEPT ![l] = "done"]  \* acknowledgement was lost (THR :3229)
         /\ prov' = "running" /\ launches' = launches + 1
   /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, appUp, semPc, exitPc,
@@ -315,11 +315,14 @@ ExitDiscard ==
                  cleanPc, stopPc, stopSeen, stopReport, restartPc, admissionVars>>
 
 -----------------------------------------------------------------------------
-(* Start-failure cleanup (THR:1554-1623): four sequential loops, each     *)
-(* retrying every 250 ms until its step succeeds.                         *)
+(* Start-failure cleanup (THR spawn_failed_recursive_start_cleanup): loops *)
+(* retrying every 250 ms until each step succeeds. It fails and settles    *)
+(* the child first, so an unreachable harness cannot hold its result open, *)
+(* then cancels a start that may have run. A refused admission started     *)
+(* nothing and skips the cancel.                                          *)
 CleanCancel ==
   /\ appUp /\ cleanPc = "cancel"
-  /\ cleanPc' = "fail"
+  /\ cleanPc' = "discard"
   /\ prov' = IF prov = "running" THEN "cancelled" ELSE prov
   /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, launches, appUp, lpc,
                  semPc, exitPc, stopPc, stopSeen, stopReport, restartPc, admissionVars>>
@@ -340,10 +343,11 @@ CleanFinalize ==
   /\ IF TerminalReadSettlesCleanup /\ life = "succeeded"
      THEN IF CanFinalizeAccepted
           THEN /\ phase' = "settled" /\ status' = "accepted" /\ execWhy' = "none"
-               /\ cleanPc' = "discard"
+               /\ cleanPc' = IF cleanKey = "start" THEN "cancel" ELSE "discard"
           ELSE UNCHANGED <<phase, execWhy, status, cleanPc, attempt>>
      ELSE IF CanFinalizeFailed
-     THEN /\ phase' = "settled" /\ status' = "failed" /\ cleanPc' = "discard"
+     THEN /\ phase' = "settled" /\ status' = "failed"
+          /\ cleanPc' = IF cleanKey = "start" THEN "cancel" ELSE "discard"
           \* Today the reason is fixed; with the fix it is the graph's.
           /\ execWhy' = IF TerminalReadSettlesCleanup THEN why ELSE "provider_start_failed"
      ELSE UNCHANGED <<phase, execWhy, status, cleanPc, attempt>>
@@ -390,7 +394,9 @@ StopCancel ==
 -----------------------------------------------------------------------------
 (* Application restart. Every in-memory actor dies, the harness run and   *)
 (* graph sessions end, and startup reconciles launched executions         *)
-(* (APP:293-376) before serving.                                          *)
+(* (APP:293-376) before serving. Attempts and their lease records survive *)
+(* in the product; after restart the resumed provider-end wait ends them  *)
+(* (AttemptEnd) and the reconciler releases their leases.                 *)
 Crash ==
   /\ appUp /\ restartPc = "none"
   /\ appUp' = FALSE
@@ -400,11 +406,20 @@ Crash ==
   /\ semPc' = "dead" /\ exitPc' = "dead" /\ cleanPc' = "dead"
   /\ stopPc' = IF stopPc = "done" THEN "done" ELSE "dead"
   /\ restartPc' = "reconcile"
-  \* Restart turns a running attempt to unknown; the host's leases die with it.
-  /\ attempt' = IF attempt = "running" THEN "terminal" ELSE attempt
-  /\ lease' = IF lease = "held" THEN "released" ELSE lease
   /\ UNCHANGED <<graphVars, phase, execWhy, status, launches, stopSeen, stopReport,
-                 selected, cleanKey>>
+                 selected, attempt, lease, cleanKey>>
+
+\* Only the product server restarts. The harness host and the child's provider
+\* run survive, so the run keeps its leases until observation confirms it ended.
+AppRestart ==
+  /\ appUp /\ restartPc = "none"
+  /\ appUp' = FALSE
+  /\ lpc' = [l \in Launchers |-> "dead"]
+  /\ semPc' = "dead" /\ exitPc' = "dead" /\ cleanPc' = "dead"
+  /\ stopPc' = IF stopPc = "done" THEN "done" ELSE "dead"
+  /\ restartPc' = "reconcile"
+  /\ UNCHANGED <<graphVars, auth, prov, phase, execWhy, status, launches, stopSeen,
+                 stopReport, selected, attempt, lease, cleanKey>>
 
 \* A launched row maps the graph lifecycle into the product; an active one
 \* is failed with application_restart first. Any error aborts startup (`?`).
@@ -421,8 +436,9 @@ RestartReconcile ==
      THEN /\ phase' = "settled"
           /\ status' = IF life = "succeeded" THEN "accepted" ELSE "failed"
           /\ execWhy' = IF life = "succeeded" THEN "none" ELSE why
-          /\ restartPc' = "done" /\ appUp' = TRUE /\ EndAttempt
-          /\ UNCHANGED graphVars
+          \* The attempt stays running: a surviving harness may still run the child.
+          /\ restartPc' = "done" /\ appUp' = TRUE
+          /\ UNCHANGED <<graphVars, attempt>>
      ELSE /\ restartPc' = "aborted"
           /\ UNCHANGED <<graphVars, phase, execWhy, status, appUp, attempt>>
   /\ UNCHANGED <<auth, prov, launches, lpc, semPc, exitPc, cleanPc, stopPc,
@@ -435,6 +451,16 @@ AttemptEnd ==
   /\ attempt' = "terminal"
   /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, prov, launches, appUp,
                  actorVars, selected, lease, cleanKey>>
+
+\* Whoever waits for a stopped or failed child's provider (the exit observer,
+\* or the wait resumed after restart) cancels it again on every poll while it
+\* still runs, so a lost cancel cannot leave it working (THR cancel_if_terminal).
+CancelTerminal ==
+  /\ appUp /\ prov = "running" /\ life \in {"stopped", "failed"}
+  /\ (exitPc = "wait" \/ attempt = "running")
+  /\ prov' = "cancelled"
+  /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, launches, appUp, actorVars,
+                 admissionVars>>
 
 \* The lease-debt reconciler releases a terminal attempt's provider leases
 \* (app_server reconcile_terminal_execution_lease).
@@ -461,6 +487,7 @@ SystemStep ==
   \/ StopPost \/ StopCancel
   \/ RestartReconcile
   \/ AttemptEnd
+  \/ CancelTerminal
   \/ LeaseReconcile
 
 Next ==
@@ -468,7 +495,7 @@ Next ==
   \/ StopRead                     \* the parent may stop, but need not
   \/ ChildAdvance \/ ChildReturn \/ ProviderExitAny
   \/ SemObservationFault
-  \/ Crash
+  \/ Crash \/ AppRestart
 
 \* Every system actor keeps running while enabled, and a provider run
 \* eventually ends. The child's model is not obliged to Advance or Return,
@@ -488,6 +515,7 @@ Fairness ==
   /\ WF_vars(StopPost) /\ WF_vars(StopCancel)
   /\ WF_vars(RestartReconcile)
   /\ WF_vars(AttemptEnd)
+  /\ WF_vars(CancelTerminal)
   /\ WF_vars(LeaseReconcile)
   /\ WF_vars(ProviderExitAny)
 
@@ -519,6 +547,8 @@ Act(s) ==
     [] n = "StopPost" -> StopPost
     [] n = "StopCancel" -> StopCancel
     [] n = "Crash" -> Crash
+    [] n = "AppRestart" -> AppRestart
+    [] n = "CancelTerminal" -> CancelTerminal
     [] n = "RestartReconcile" -> RestartReconcile
     [] n = "AttemptEnd" -> AttemptEnd
     [] n = "LeaseReconcile" -> LeaseReconcile
@@ -565,17 +595,17 @@ RestartNeverAborts == restartPc /= "aborted"
 \* A lease is released only once the attempt it belongs to is terminal, so a
 \* running child keeps its providers (terminal acknowledgement).
 LeaseReleasedOnlyAfterSettlement ==
-  (lease = "released" /\ restartPc = "none") => attempt = "terminal"
+  lease = "released" => attempt = "terminal"
 
 \* An admitted child's provider runs only under a held lease, settled or not,
 \* so provider removal waits for the run itself (architecture.md drain rule).
 ProviderRunsUnderLease ==
-  (selected /\ prov = "running" /\ restartPc = "none") => lease = "held"
+  (selected /\ prov = "running") => lease = "held"
 
 \* An attempt ends only once its child has settled and its provider no longer
 \* runs; until then it is the drain reference that keeps the provider in use.
 AttemptEndsOnlyAfterProvider ==
-  (attempt = "terminal" /\ restartPc = "none") => (phase = "settled" /\ prov /= "running")
+  attempt = "terminal" => (phase = "settled" /\ prov /= "running")
 
 (* Liveness. PRD: a never-settling result is not the contract.            *)
 Settled == life /= "active" /\ phase = "settled" /\ status \in {"accepted", "failed"}

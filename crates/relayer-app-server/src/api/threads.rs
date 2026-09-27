@@ -1877,23 +1877,8 @@ fn spawn_failed_recursive_start_cleanup(
         let Some(runtime) = state.runtime.as_ref() else {
             return;
         };
-        // Only a requested start can have left a run to cancel. A refused admission goes
-        // straight to failing the child, so an unreachable harness cannot hold it active.
-        if failure == LaunchFailure::StartFailed {
-            loop {
-                match runtime
-                    .cancel_invoked_completion(thread.id.value(), completion_id)
-                    .await
-                {
-                    Ok(_) => break,
-                    Err(error) => eprintln!(
-                        "recursive completion {completion_id} start-failure cancellation retry: {error}"
-                    ),
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-            }
-        }
-        // Another actor may terminate the current first: the parent's stop, or the
+        // The child fails and settles first, so an unreachable harness cannot hold its
+        // result open. Another actor may terminate the current first: the parent's stop, or the
         // child's own Return when the start ran but its acknowledgement was lost.
         // Whatever terminal current the graph holds is what the product records.
         let current = loop {
@@ -1934,6 +1919,22 @@ fn spawn_failed_recursive_start_cleanup(
         .await
         {
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+        // Only a requested start can have left a run to cancel; a refused admission
+        // started nothing. The cancel retries until the harness answers.
+        if failure == LaunchFailure::StartFailed {
+            loop {
+                match runtime
+                    .cancel_invoked_completion(thread.id.value(), completion_id)
+                    .await
+                {
+                    Ok(_) => break,
+                    Err(error) => eprintln!(
+                        "recursive completion {completion_id} start-failure cancellation retry: {error}"
+                    ),
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
         }
         // A start that failed may still have run (its acknowledgement was lost), so the
         // attempt and its leases end only once the host no longer runs the child.
@@ -2456,12 +2457,16 @@ pub(crate) async fn resume_unwinding_recursive_children(
     runtime: crate::runtime::RuntimeClient,
     reconciler: Option<crate::app_server::ExecutionLeaseReconciler>,
 ) {
-    let unwinding = match product.unwinding_recursive_attempts().await {
-        Ok(unwinding) => unwinding,
-        Err(error) => {
-            eprintln!("could not read recursive children still unwinding after restart: {error}");
-            return;
+    // Nothing else finds these children again until the next restart, so a failed read
+    // is retried rather than abandoned.
+    let unwinding = loop {
+        match product.unwinding_recursive_attempts().await {
+            Ok(unwinding) => break unwinding,
+            Err(error) => eprintln!(
+                "could not read recursive children still unwinding after restart; retrying: {error}"
+            ),
         }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     };
     for child in unwinding {
         let product = product.clone();

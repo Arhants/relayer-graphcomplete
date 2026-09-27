@@ -226,13 +226,13 @@
           "fail"
         ],
         [
-          "CleanCancel"
-        ],
-        [
           "CleanFail"
         ],
         [
           "CleanFinalize"
+        ],
+        [
+          "CleanCancel"
         ],
         [
           "CleanDiscard"
@@ -289,13 +289,13 @@
           "fail"
         ],
         [
-          "CleanCancel"
-        ],
-        [
           "CleanFail"
         ],
         [
           "CleanFinalize"
+        ],
+        [
+          "CleanCancel"
         ],
         [
           "CleanDiscard"
@@ -346,13 +346,13 @@
           "ChildReturn"
         ],
         [
-          "CleanCancel"
-        ],
-        [
           "CleanFail"
         ],
         [
           "CleanFinalize"
+        ],
+        [
+          "CleanCancel"
         ],
         [
           "CleanDiscard"
@@ -453,13 +453,13 @@
           "fail"
         ],
         [
-          "CleanCancel"
-        ],
-        [
           "CleanFail"
         ],
         [
           "CleanFinalize"
+        ],
+        [
+          "CleanCancel"
         ],
         [
           "CleanDiscard"
@@ -520,13 +520,13 @@
           "ChildReturn"
         ],
         [
-          "CleanCancel"
-        ],
-        [
           "CleanFail"
         ],
         [
           "CleanFinalize"
+        ],
+        [
+          "CleanCancel"
         ],
         [
           "CleanDiscard"

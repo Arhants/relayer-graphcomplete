@@ -431,51 +431,6 @@
         "attempt": "none",
         "auth": true,
         "cleanKey": "start",
-        "cleanPc": "cancel",
-        "execWhy": "none",
-        "exitPc": "off",
-        "head": 1,
-        "launches": 0,
-        "lease": "none",
-        "life": "stopped",
-        "lpc": {
-          "1": "done",
-          "2": "idle"
-        },
-        "phase": "launching",
-        "prov": "none",
-        "receipt": {
-          "activate": 99,
-          "admit": 99,
-          "attach": 99,
-          "exit": 99,
-          "obs": 99,
-          "restart": 99,
-          "start": 99,
-          "stop": 0
-        },
-        "restartPc": "none",
-        "selected": false,
-        "semPc": "off",
-        "status": "running",
-        "stopPc": "done",
-        "stopReport": "stopped",
-        "stopSeen": {
-          "h": 0,
-          "l": "active"
-        },
-        "why": "cancelled_by_user"
-      }
-    },
-    {
-      "action": [
-        "CleanCancel"
-      ],
-      "state": {
-        "appUp": true,
-        "attempt": "none",
-        "auth": true,
-        "cleanKey": "start",
         "cleanPc": "fail",
         "execWhy": "none",
         "exitPc": "off",
@@ -560,6 +515,51 @@
     {
       "action": [
         "CleanFinalize"
+      ],
+      "state": {
+        "appUp": true,
+        "attempt": "none",
+        "auth": true,
+        "cleanKey": "start",
+        "cleanPc": "cancel",
+        "execWhy": "cancelled_by_user",
+        "exitPc": "off",
+        "head": 1,
+        "launches": 0,
+        "lease": "none",
+        "life": "stopped",
+        "lpc": {
+          "1": "done",
+          "2": "idle"
+        },
+        "phase": "settled",
+        "prov": "none",
+        "receipt": {
+          "activate": 99,
+          "admit": 99,
+          "attach": 99,
+          "exit": 99,
+          "obs": 99,
+          "restart": 99,
+          "start": 99,
+          "stop": 0
+        },
+        "restartPc": "none",
+        "selected": false,
+        "semPc": "off",
+        "status": "failed",
+        "stopPc": "done",
+        "stopReport": "stopped",
+        "stopSeen": {
+          "h": 0,
+          "l": "active"
+        },
+        "why": "cancelled_by_user"
+      }
+    },
+    {
+      "action": [
+        "CleanCancel"
       ],
       "state": {
         "appUp": true,
