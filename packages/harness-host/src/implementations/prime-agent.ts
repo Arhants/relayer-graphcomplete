@@ -1,6 +1,7 @@
 import { PrimeVisualAuthoring } from "./prime-visual-authoring.js";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { lstat, mkdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { GraphCapability } from "@relayer/graph-client";
@@ -73,6 +74,8 @@ async function resolvedManagedSessionFile(
 }
 
 interface PrimeAgentSession {
+  readonly agent: { readonly state: { thinkingLevel: string } };
+  readonly sessionManager: { appendThinkingLevelChange(level: string): void };
   readonly sessionFile?: string;
   promptAndWait(text: string, options: {
     readonly runContext: PrimeAgentRunContext;
@@ -470,6 +473,18 @@ export class PrimeAgentHarness implements Harness {
         managedKernel: { version: 1, pythonExecutable: managedRuntime.executable },
       } : {}),
       resourceLoaderOptions: {
+        // Native discovery walks to filesystem root. A selected workspace must
+        // not inherit instructions from the app's storage/development ancestors.
+        agentsFilesOverride: (input: { agentsFiles: { path: string; content: string }[] }) => ({
+          agentsFiles: input.agentsFiles.filter((file) => {
+            try {
+              const canonicalFile = realpathSync(file.path);
+              return confinedDescendant(realpathSync(workspaceRoot), canonicalFile)
+                || (managedAgentDir !== undefined
+                  && confinedDescendant(realpathSync(managedAgentDir), canonicalFile));
+            } catch { return false; }
+          }),
+        }),
         appendSystemPromptOverride: (base: string[]) => presentationInstructions.current === ""
           ? [...base]
           : [...base, presentationInstructions.current],
@@ -493,6 +508,19 @@ export class PrimeAgentHarness implements Harness {
         ...(configuration.rlmMaxDepth === undefined ? {} : { rlmMaxDepth: configuration.rlmMaxDepth }),
         ...(prewarmIpythonKernel === undefined ? {} : { prewarmIpythonKernel }),
       });
+      // The SDK clamps this setting against its absent ambient model during
+      // construction. Restore the harness preference only; each run still owns
+      // its selected model, whose capability gates the outgoing provider payload.
+      if (configuration.thinkingLevel !== undefined) {
+        if (session.agent?.state === undefined || typeof session.sessionManager?.appendThinkingLevelChange !== "function") {
+          session.dispose();
+          throw new Error("Installed Prime Agent package does not expose thinking configuration");
+        }
+        if (session.agent.state.thinkingLevel !== configuration.thinkingLevel) {
+          session.agent.state.thinkingLevel = configuration.thinkingLevel;
+          session.sessionManager.appendThinkingLevelChange(configuration.thinkingLevel);
+        }
+      }
       if (typeof session.waitForRlmQuiescence !== "function") {
         session.dispose();
         throw new Error("Installed Prime Agent package does not expose recursive quiescence");
@@ -1593,7 +1621,7 @@ function primeAgentModel(route: HarnessAdmittedModelRoute, access: Extract<Harne
     // Use exact provider-discovered limits when the execution lease carries
     // them. Keep the legacy conservative values when discovery has no limits;
     // model IDs are never used to infer capabilities.
-    reasoning: false,
+    reasoning: capabilities?.reasoning === true,
     input: Object.freeze(["text"] as const),
     // Prime requires numeric prices; zero is an unknown-cost sentinel here.
     // Relayer billing never treats this transport metadata as authoritative.
@@ -1602,7 +1630,10 @@ function primeAgentModel(route: HarnessAdmittedModelRoute, access: Extract<Harne
     maxTokens: hasDiscoveredTokenCapabilities
       ? Math.min(capabilities.maxOutputTokens, capabilities.contextWindow)
       : 4_096,
-    ...(mapping.compat === undefined ? {} : { compat: mapping.compat }),
+    ...(mapping.compat === undefined ? {} : { compat: {
+      ...mapping.compat,
+      ...(capabilities?.reasoningEffort === undefined ? {} : { supportsReasoningEffort: capabilities.reasoningEffort }),
+    } }),
   });
 }
 

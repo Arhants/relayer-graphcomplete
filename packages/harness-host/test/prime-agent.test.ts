@@ -212,6 +212,8 @@ describe("PrimeAgentHarness", () => {
   it("aborts once and uses native synchronous Prime Agent disposal for forced shutdown", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -235,6 +237,8 @@ describe("PrimeAgentHarness", () => {
     const abortFinished = new Promise<void>((resolve) => { markAbortFinished = resolve; });
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => {
@@ -257,6 +261,8 @@ describe("PrimeAgentHarness", () => {
   it("contains a native abort rejection and still force-disposes the Prime Agent session", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => { throw new Error("abort failed"); }),
@@ -274,6 +280,8 @@ describe("PrimeAgentHarness", () => {
   it("contains a synchronous native abort failure and still force-disposes the Prime Agent session", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(() => { throw new Error("abort failed synchronously"); }),
@@ -294,6 +302,8 @@ describe("PrimeAgentHarness", () => {
       if (nativeAttempts === 1) throw new Error("forced native disposal failed");
     });
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -315,6 +325,8 @@ describe("PrimeAgentHarness", () => {
   it("uses native asynchronous Prime Agent disposal for graceful shutdown", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -334,6 +346,8 @@ describe("PrimeAgentHarness", () => {
   it("does not force-dispose again after successful graceful fallback disposal", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -351,6 +365,8 @@ describe("PrimeAgentHarness", () => {
   it("preserves native graceful disposal failures when force did not take ownership", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -369,6 +385,8 @@ describe("PrimeAgentHarness", () => {
   it("publishes one graceful disposal promise and lets force win before it starts", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -395,6 +413,8 @@ describe("PrimeAgentHarness", () => {
     const gracefulGate = new Promise<void>((resolve) => { releaseGraceful = resolve; });
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -426,6 +446,8 @@ describe("PrimeAgentHarness", () => {
     const gracefulGate = new Promise<void>((resolve) => { releaseGraceful = resolve; });
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -453,6 +475,8 @@ describe("PrimeAgentHarness", () => {
     const prompts: { text: string; runContext: unknown; modelScope: unknown }[] = [];
     const session = {
       sessionFile: "/tmp/prime-session.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (text: string, options: { runContext: unknown; modelScope: unknown }) => { prompts.push({ text, ...options }); }),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -620,6 +644,8 @@ describe("PrimeAgentHarness", () => {
     const quiescenceGate = new Promise<void>((resolve) => { releaseQuiescence = resolve; });
     const root = primeSession("/tmp/root.jsonl");
     const cancelledChild = primeSession("/tmp/cancelled.jsonl", {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => promptGate),
       waitForRlmQuiescence: vi.fn(async () => quiescenceGate),
       abort: vi.fn(async () => { releasePrompt(); }),
@@ -676,6 +702,8 @@ describe("PrimeAgentHarness", () => {
     const creationGate = new Promise<void>((resolve) => { releaseCreation = resolve; });
     const root = primeSession("/tmp/root.jsonl");
     const activeChild = primeSession("/tmp/active-child.jsonl", {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => {
         markActiveStarted();
         await activeGate;
@@ -731,6 +759,8 @@ describe("PrimeAgentHarness", () => {
     let listener: ((event: unknown) => void) | undefined;
     const session = {
       sessionFile: "/tmp/family-session.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (_text: string, options: { modelScope: ControlledRunScope }) => {
         const scope = options.modelScope;
         try {
@@ -860,6 +890,8 @@ describe("PrimeAgentHarness", () => {
 
   it("rejects unsupported and mismatched adapter access before starting Prime", async () => {
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -895,6 +927,8 @@ describe("PrimeAgentHarness", () => {
   it("uses discovered per-model token capabilities with a conservative fallback", async () => {
     const scopes: ControlledRunScope[] = [];
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (_text: string, options: { modelScope: ControlledRunScope }) => { options.modelScope.revoke(); }),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -918,7 +952,7 @@ describe("PrimeAgentHarness", () => {
         40 + index,
         adapterId,
         adapterId === "openrouter"
-          ? { contextWindow: 196_608, maxOutputTokens: 131_072 }
+          ? { contextWindow: 196_608, maxOutputTokens: 131_072, reasoning: true }
           : adapterId === "vercel-ai-router"
             ? { contextWindow: 1_000_000, maxOutputTokens: 384_000 }
             : undefined,
@@ -936,6 +970,7 @@ describe("PrimeAgentHarness", () => {
       "https://provider-45.test/proxy/anthropic/v1/",
     ));
 
+    expect(session.agent.state.thinkingLevel).toBe("medium");
     expect(scopes.map(({ input }) => ({
       api: input.root.api,
       baseUrl: input.root.baseUrl,
@@ -948,15 +983,65 @@ describe("PrimeAgentHarness", () => {
     }))).toEqual([
       { api: "openai-responses", baseUrl: "https://provider-40.test/v1", compat: undefined, reasoning: false, input: ["text"], contextWindow: 32_768, maxTokens: 4_096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       { api: "anthropic-messages", baseUrl: "https://provider-41.test", compat: undefined, reasoning: false, input: ["text"], contextWindow: 32_768, maxTokens: 4_096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
-      { api: "openai-completions", baseUrl: "https://provider-42.test/v1", compat: { thinkingFormat: "openrouter", openRouterRouting: {} }, reasoning: false, input: ["text"], contextWindow: 196_608, maxTokens: 131_072, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+      { api: "openai-completions", baseUrl: "https://provider-42.test/v1", compat: { thinkingFormat: "openrouter", openRouterRouting: {} }, reasoning: true, input: ["text"], contextWindow: 196_608, maxTokens: 131_072, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       { api: "openai-completions", baseUrl: "https://provider-43.test/v1", compat: { vercelGatewayRouting: {} }, reasoning: false, input: ["text"], contextWindow: 1_000_000, maxTokens: 384_000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       { api: "openai-completions", baseUrl: "https://provider-44.test/v1", compat: { thinkingFormat: "openrouter", openRouterRouting: {} }, reasoning: false, input: ["text"], contextWindow: 32_768, maxTokens: 2_048, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       { api: "anthropic-messages", baseUrl: "https://provider-45.test/proxy/anthropic", compat: undefined, reasoning: false, input: ["text"], contextWindow: 32_768, maxTokens: 4_096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
     ]);
   });
 
+  it.each([
+    { reasoning: true, reasoningEffort: true, expected: { effort: "medium" } },
+    { reasoning: true, reasoningEffort: false, expected: { enabled: true } },
+    { reasoning: false, reasoningEffort: false, expected: undefined },
+  ])("preserves configured thinking through the actual native request ($reasoning/$reasoningEffort)", async ({ reasoning, reasoningEffort, expected }) => {
+    const native = await import("@earendil-works/pi-coding-agent");
+    const workspace = await mkdtemp(join(tmpdir(), "prime-reasoning-"));
+    const payloads: Record<string, unknown>[] = [];
+    let session: Awaited<ReturnType<typeof native.createAgentSessionFromServices>>["session"] | undefined;
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7, workingDirectory: workspace, ...fullPermission,
+      configuration: { ...configuration, settings: { thinkingLevel: "medium", prewarmIpythonKernel: false } },
+    }, { loadModule: async () => ({
+      ...native,
+      createAgentSessionServices: async (options: Parameters<typeof native.createAgentSessionServices>[0]) => native.createAgentSessionServices({
+        ...options, agentDir: join(workspace, "agent"), authStorage: native.AuthStorage.inMemory(),
+        settingsManager: native.SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }),
+        resourceLoaderOptions: { ...options.resourceLoaderOptions, noExtensions: true, noSkills: true, noPromptTemplates: true },
+      }),
+      createAgentSessionFromServices: async (options: Parameters<typeof native.createAgentSessionFromServices>[0]) => {
+        const result = await native.createAgentSessionFromServices({ ...options, tools: [], prewarmIpythonKernel: false });
+        session = result.session;
+        expect(session.model?.provider).toBe("unknown");
+        expect(session.thinkingLevel).toBe("off");
+        session.agent.onPayload = (payload) => {
+          payloads.push(payload as Record<string, unknown>);
+          throw new Error("deterministic payload capture: no network request");
+        };
+        return result;
+      },
+    }) as never });
+    try {
+      expect(session!.thinkingLevel).toBe("medium");
+      expect(session!.sessionManager.buildSessionContext().thinkingLevel).toBe("medium");
+      for (const nodeId of [51, 52]) {
+        await harness.complete(singleAdapterRunContext(nodeId, "openrouter", {
+          contextWindow: 196_608, maxOutputTokens: 131_072, reasoning, reasoningEffort,
+        })).catch(() => undefined);
+      }
+      expect(payloads).toHaveLength(2);
+      expect(payloads.map((payload) => payload.reasoning)).toEqual([expected, expected]);
+      expect(session!.model?.provider).toBe("unknown");
+    } finally {
+      await harness.dispose();
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a discovered context that cannot satisfy Prime's compaction reserve", async () => {
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (_text: string, _options: { modelScope: ControlledRunScopeInput }) => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -977,6 +1062,8 @@ describe("PrimeAgentHarness", () => {
     const waiting = new Promise<void>((resolve) => { release = resolve; });
     const session = {
       sessionFile: "/tmp/saved.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => waiting),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => { release(); }),
@@ -1017,6 +1104,8 @@ describe("PrimeAgentHarness", () => {
     let listener: ((event: unknown) => void) | undefined;
     let resourceLoaderOptions: { appendSystemPromptOverride(base: string[]): string[] } | undefined;
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (text: string) => {
         prompt = text;
         listener?.({
@@ -1147,6 +1236,8 @@ describe("PrimeAgentHarness", () => {
     let listener: ((event: unknown) => void) | undefined;
     const session = primeSession("/tmp/prime-v3-prompt.jsonl", {
       subscribe: vi.fn((next) => { listener = next; return vi.fn(); }),
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (text: string) => {
         prompt = text;
         listener?.({ type: "tool_execution_start", toolCallId: "old-child", toolName: "ipython", args: { task: legacyBlock } });
@@ -1176,6 +1267,8 @@ describe("PrimeAgentHarness", () => {
   it("includes Python graph-search guidance only for a query-v1 capability profile", async () => {
     let disabledPrompt = "";
     const disabled = await createHarness(primeSession("/tmp/search-disabled.jsonl", {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (text: string) => { disabledPrompt = text; }),
     }), {
       ...configuration,
@@ -1185,12 +1278,16 @@ describe("PrimeAgentHarness", () => {
 
     let omittedPrompt = "";
     const omitted = await createHarness(primeSession("/tmp/search-omitted.jsonl", {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (text: string) => { omittedPrompt = text; }),
     }), configuration);
     await omitted.complete(runContext(13, "omitted-token"));
 
     let enabledPrompt = "";
     const enabled = await createHarness(primeSession("/tmp/search-enabled.jsonl", {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (text: string) => { enabledPrompt = text; }),
     }), {
       ...configuration,
@@ -1271,6 +1368,8 @@ describe("PrimeAgentHarness", () => {
     let resourceLoaderOptions: { appendSystemPromptOverride(base: string[]): string[] } | undefined;
     const reload = vi.fn().mockRejectedValueOnce(new Error("reload failed")).mockResolvedValueOnce(undefined);
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: vi.fn(), reload,
     };
@@ -1316,11 +1415,15 @@ describe("PrimeAgentHarness", () => {
     const firstDispose = vi.fn();
     const firstSession = {
       sessionFile: "/tmp/prime-v1.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: firstDispose, reload: vi.fn(async () => undefined),
     };
     const secondSession = {
       sessionFile: "/tmp/prime-neutral.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: vi.fn(), reload: vi.fn(async () => undefined),
     };
@@ -1355,6 +1458,8 @@ describe("PrimeAgentHarness", () => {
     let resourceLoaderOptions: { appendSystemPromptOverride(base: string[]): string[] } | undefined;
     const session = {
       sessionFile: "/tmp/saved-v1.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: vi.fn(), reload: vi.fn(async () => undefined),
     };
@@ -1400,6 +1505,8 @@ describe("PrimeAgentHarness", () => {
     const reloadGate = new Promise<void>((resolve) => { releaseReload = resolve; });
     const nativeDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: nativeDispose,
       reload: vi.fn(async () => {
@@ -1436,11 +1543,15 @@ describe("PrimeAgentHarness", () => {
     const replacementStarted = new Promise<void>((resolve) => { markReplacementStarted = resolve; });
     const replacementGate = new Promise<void>((resolve) => { releaseReplacement = resolve; });
     const firstSession = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: vi.fn(), reload: vi.fn(async () => undefined),
     };
     const replacementDispose = vi.fn();
     const replacementSession = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: replacementDispose,
     };
@@ -1474,6 +1585,8 @@ describe("PrimeAgentHarness", () => {
   it("does not resume legacy Prime state whose presentation pin is unknown", async () => {
     const session = {
       sessionFile: "/tmp/fresh.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: vi.fn(), reload: vi.fn(async () => undefined),
     };
@@ -1499,6 +1612,8 @@ describe("PrimeAgentHarness", () => {
   it("delivers the same ordered normalized context to Prime and its native children", async () => {
     let prompt = "";
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (text: string) => { prompt = text; }),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -1520,6 +1635,8 @@ describe("PrimeAgentHarness", () => {
 
   it("does not start a prompt when the run was already cancelled", async () => {
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -1547,6 +1664,8 @@ describe("PrimeAgentHarness", () => {
 
   it("aborts without prompting when cancellation races listener registration", async () => {
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -1575,6 +1694,8 @@ describe("PrimeAgentHarness", () => {
     let releaseQuiescence!: () => void;
     const waitingForQuiescence = new Promise<void>((resolve) => { releaseQuiescence = resolve; });
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => waitingForPrompt),
       waitForRlmQuiescence: vi.fn(async () => waitingForQuiescence),
       abort: vi.fn(async () => {
@@ -1605,6 +1726,8 @@ describe("PrimeAgentHarness", () => {
     let releaseQuiescence!: () => void;
     const waitingForQuiescence = new Promise<void>((resolve) => { releaseQuiescence = resolve; });
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => waitingForQuiescence),
       abort: vi.fn(async () => undefined),
@@ -1626,6 +1749,8 @@ describe("PrimeAgentHarness", () => {
 
   it("aggregates root and recursive-quiescence failures", async () => {
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => { throw new Error("root failed"); }),
       waitForRlmQuiescence: vi.fn(async () => { throw new Error("barrier failed"); }),
       abort: vi.fn(async () => undefined),
@@ -1644,6 +1769,8 @@ describe("PrimeAgentHarness", () => {
     let releasePrompt!: () => void;
     const waitingForPrompt = new Promise<void>((resolve) => { releasePrompt = resolve; });
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => waitingForPrompt),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => {
@@ -1687,6 +1814,8 @@ describe("PrimeAgentHarness", () => {
   it("disables base kernel prewarming for bounded sessions", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "relayer-prime-no-prewarm-"));
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -1762,6 +1891,8 @@ describe("PrimeAgentHarness", () => {
       });
       const observedAuthorizations: unknown[] = [];
       const session = {
+        agent: { state: { thinkingLevel: "off" } },
+        sessionManager: { appendThinkingLevelChange: vi.fn() },
         promptAndWait: vi.fn(async (_text: string, options: any) => {
           const boundary = options.kernelBoundaryScope.input;
           const execution = { executionId: "root-execution", sessionId: "prime-session", recursionDepth: 0, cwd: workspace, signal: new AbortController().signal };
@@ -1832,6 +1963,8 @@ describe("PrimeAgentHarness", () => {
     try {
       const decisions: unknown[] = [];
       const boundedSession = {
+        agent: { state: { thinkingLevel: "off" } },
+        sessionManager: { appendThinkingLevelChange: vi.fn() },
         promptAndWait: vi.fn(async (_text: string, options: any) => {
           const boundary = options.kernelBoundaryScope.input;
           const signal = new AbortController().signal;
@@ -1857,7 +1990,9 @@ describe("PrimeAgentHarness", () => {
         { decision: "deny", reason: "Relayer does not recognize this Prime tool request" },
       ]);
 
-      const fullSession = { promptAndWait: vi.fn(async (_text: string, options: any) => {
+      const fullSession = { agent: { state: { thinkingLevel: "off" } },
+        sessionManager: { appendThinkingLevelChange: vi.fn() },
+        promptAndWait: vi.fn(async (_text: string, options: any) => {
         expect(options).not.toHaveProperty("toolAuthorityScope");
         expect(options).not.toHaveProperty("kernelBoundaryScope");
       }), waitForRlmQuiescence: vi.fn(async () => undefined), abort: vi.fn(async () => undefined), dispose: vi.fn() };
@@ -1873,6 +2008,8 @@ describe("PrimeAgentHarness", () => {
     try {
       let executed = false;
       const session = {
+        agent: { state: { thinkingLevel: "off" } },
+        sessionManager: { appendThinkingLevelChange: vi.fn() },
         promptAndWait: vi.fn(async (_text: string, options: any) => {
           const boundary = options.kernelBoundaryScope.input;
           const run = { executionId: "denied-root", sessionId: "session", recursionDepth: 0, cwd: workspace };
@@ -1904,6 +2041,8 @@ describe("PrimeAgentHarness", () => {
     let listener: ((event: unknown) => void) | undefined;
     const unsubscribe = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => {
         listener?.({ type: "turn_start" });
         listener?.({ type: "message_end", message: { role: "assistant", content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "Visible" }], usage: { input: 2, output: 3 } } });
@@ -1931,6 +2070,8 @@ describe("PrimeAgentHarness", () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-prime-usage-trace-"));
     let listener: ((event: unknown) => void) | undefined;
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => {
         listener?.({
           type: "message_end",
@@ -2000,6 +2141,8 @@ describe("PrimeAgentHarness", () => {
       secret: "must-not-trace",
     });
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -2030,6 +2173,8 @@ describe("PrimeAgentHarness", () => {
       })),
     });
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -2114,6 +2259,8 @@ function primeSession(
 ): PrimeAgentSessionFixture & { readonly sessionFile: string } {
   return {
     sessionFile,
+    agent: { state: { thinkingLevel: "off" } },
+    sessionManager: { appendThinkingLevelChange: vi.fn() },
     promptAndWait: vi.fn(async () => undefined),
     waitForRlmQuiescence: vi.fn(async () => undefined),
     abort: vi.fn(async () => undefined),
@@ -2216,6 +2363,8 @@ async function createBoundedHarness(
 }
 
 interface PrimeAgentSessionFixture {
+  readonly agent: { readonly state: { thinkingLevel: string } };
+  readonly sessionManager: { appendThinkingLevelChange(level: string): void };
   readonly promptAndWait: ReturnType<typeof vi.fn>;
   readonly waitForRlmQuiescence: ReturnType<typeof vi.fn>;
   readonly abort: ReturnType<typeof vi.fn>;
@@ -2356,7 +2505,7 @@ function familyRunContext(
 function singleAdapterRunContext(
   nodeId: number,
   adapterId: string,
-  modelCapabilities?: { readonly contextWindow: number; readonly maxOutputTokens: number },
+  modelCapabilities?: { readonly contextWindow: number; readonly maxOutputTokens: number; readonly reasoning?: boolean; readonly reasoningEffort?: boolean },
   endpoint = `https://provider-${nodeId}.test/v1`,
 ): HarnessRunContext {
   const base = runContext(nodeId, `token-${nodeId}`);

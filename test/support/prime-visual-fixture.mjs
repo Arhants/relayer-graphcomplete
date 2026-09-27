@@ -19,6 +19,8 @@ export function primeVisualFixtureFactory(context) {
     createAgentSessionFromServices: async ({ hostRequestHandlers }) => {
       let process;
       return { session: {
+        agent: { state: { thinkingLevel: "off" } },
+        sessionManager: { appendThinkingLevelChange() {} },
         async promptAndWait(prompt, { runContext }) {
           let python = PYTHON;
           if (prompt.includes("Authored visual Node Details:")) {

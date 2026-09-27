@@ -3164,6 +3164,8 @@ describe("HarnessHost", () => {
       if (nativeAttempts === 1) throw new Error("late Prime native cleanup failed");
     });
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),

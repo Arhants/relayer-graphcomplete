@@ -445,3 +445,12 @@ Rust authority plus a scoped human annotation credential. Browser-supplied
 cookies never become upstream credentials. Judges use fresh Chromium contexts
 and the shared production renderer. The terminal owns shutdown; browser tabs do
 not own execution. See ADR 0003 and PRD section 9 for the product contract.
+
+## Prime instruction discovery boundary
+
+Prime filters native context-file admission to canonical descendants of the selected
+workspace and its managed private agent directory. This preserves workspace-owned
+instructions while preventing a standalone app workspace nested under a development
+checkout from inheriting that checkout’s AGENTS.md. The same filter runs on resource
+reload and excludes symlinks that resolve outside the admitted roots. This boundary
+controls model instructions; it does not redefine filesystem read permissions.

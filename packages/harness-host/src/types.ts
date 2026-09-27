@@ -268,6 +268,8 @@ export type HarnessExecutionAccess =
       readonly modelCapabilities?: Readonly<Record<string, Readonly<{
         readonly contextWindow: number;
         readonly maxOutputTokens: number;
+        readonly reasoning?: boolean;
+        readonly reasoningEffort?: boolean;
       }>>>;
       readonly runtime?: HarnessManagedRuntimeAccess;
     }
