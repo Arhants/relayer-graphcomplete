@@ -19,6 +19,123 @@ afterEach(async () => {
 });
 
 describe("first-message composer integration", () => {
+  it.each(["personal-presentation-v1", "personal-presentation-v3"])("promotes new Codex threads while preserving reopened %s follow-up and invoke pins", async (previousVersion) => {
+    const dataDirectory = await mkdtemp(join(tmpdir(), "relayer-codex-presentation-"));
+    directories.push(dataDirectory);
+    const configurationPath = join(dataDirectory, "codex-basic.yaml");
+    const shipped = await readFile(join(repositoryRoot, "harnesses/codex-basic.yaml"), "utf8");
+    // Exercise both the original implicit default and the immediately preceding visual default.
+    await writeFile(configurationPath, shipped.replace(/^  personalPresentationVersion:.*\n/m, previousVersion === "personal-presentation-v1" ? "" : `  personalPresentationVersion: ${previousVersion}\n`));
+    const observed = [];
+    const start = async () => {
+      const runtime = new GraphCompleteRuntimeService({
+        userDataDirectory: dataDirectory,
+        graphServerBinary: join(repositoryRoot, "target/debug/relayer-graph-server"),
+        configurationPaths: [configurationPath],
+        candidateTrace: {
+          directory: join(dataDirectory, "traces"),
+          policy: { mode: "required", requiredFeatures: {}, includeNativeArtifacts: false, maxBytesPerTurn: 100_000, maxEventsPerTurn: 200 },
+        },
+        // Only replace paid provider execution; keep configuration selection, graph
+        // attachment, acceptance, and durable Product storage on production paths.
+        additionalImplementations: {
+          "codex.basic": (context) => {
+            const fixture = taskSystemFixtureFactory(context);
+            const complete = fixture.complete.bind(fixture);
+            fixture.complete = async (run) => {
+              observed.push({ graphNodeId: run.inputGraph.id, presentation: structuredClone(run.personalPresentation) });
+              await complete(run);
+            };
+            return fixture;
+          },
+        },
+        acquireProviderExecution: async (providerId) => ({
+          definition: { id: providerId, adapterId: "codex-subscription", accessContract: "managed-runtime@1" },
+          descriptor: { adapterId: "codex-subscription", accessContract: "managed-runtime@1", implementationVersion: "1" },
+          runtime: { async executionAccess() { return { kind: "managed-runtime", environment: {} }; } },
+          async release() {},
+        }),
+      });
+      services.push(runtime);
+      const product = new RelayerAppServerService({
+        userDataDirectory: dataDirectory,
+        binaryPath: join(repositoryRoot, "target/debug/relayer-app-server"),
+        webDirectory: join(repositoryRoot, "desktop/renderer"),
+        permissionCatalogPath: join(repositoryRoot, "permissions/desktop.json"),
+        runtimeSession: await runtime.start(),
+        defaultHarnessConfiguration: "codex-basic",
+      });
+      services.push(product);
+      const session = await product.start();
+      await product.publishProviderCatalog(fixtureCatalogSnapshot());
+      return { product, runtime, session };
+    };
+    const before = await start();
+    const family = await productRequest(before.session, "/api/model-families", {
+      method: "POST",
+      body: JSON.stringify({ name: "Fixture models", enabled: true, members: [{ providerId: "codex", modelId: "fixture-model" }] }),
+    });
+    const modelSelection = { familyId: family.id, providerId: "codex", modelId: "fixture-model" };
+    const createThread = (session) => productRequest(session, "/api/threads", {
+      method: "POST",
+      body: JSON.stringify({ title: "Presentation selection", initialMessage: "Show the task system.", modelSelection }),
+    });
+    const oldThread = await createThread(before.session);
+    const oldAccepted = await waitForAcceptedThread(before.session, oldThread.id);
+    const oldPresentation = observed[0].presentation;
+    expect(oldPresentation).toBeDefined();
+    await before.product.close();
+    await before.runtime.close();
+    services.splice(services.indexOf(before.product), 1);
+    services.splice(services.indexOf(before.runtime), 1);
+
+    await writeFile(configurationPath, shipped);
+    const after = await start();
+    const failureEvidence = async (interaction) => {
+      const target = join(dataDirectory, `failed-trace-${interaction.id}`);
+      const trace = await after.runtime.exportCandidateTrace(interaction.id, target).catch((error) => ({ exportError: String(error) }));
+      const receipts = await readFile(join(target, "graph-operations.jsonl"), "utf8").catch(() => "");
+      return { trace, graphOperations: receipts };
+    };
+    const reopened = await productRequest(after.session, `/api/threads/${oldThread.id}`);
+    expect(reopened.interactions[0]).toEqual(oldAccepted.interactions[0]);
+    const followUp = await productRequest(after.session, `/api/threads/${oldThread.id}/interactions`, {
+      method: "POST", body: JSON.stringify({ text: "Explain the next task.", modelSelection }),
+    });
+    const continued = await waitForAcceptedInteractions(after.session, oldThread.id, 2, failureEvidence);
+    const followUpResult = continued.interactions.find(({ id }) => id === followUp.id);
+    expect(followUpResult).toBeDefined();
+    const source = oldAccepted.interactions[0];
+    const invoke = source.completionOutput.rootLayer.actions.find(({ kind }) => kind === "invoke");
+    const invoked = await productRequest(after.session, `/api/threads/${oldThread.id}/interactions/${source.id}/actions/${invoke.id}/invoke`, { method: "POST" });
+    const invokedThread = await waitForAcceptedInteractions(after.session, oldThread.id, 3, failureEvidence);
+    const child = invokedThread.interactions.find(({ id }) => id === invoked.invocation.resultInteractionId);
+    expect(child).toBeDefined();
+    for (const interaction of [followUpResult, child]) {
+      const presentation = observed.find(({ graphNodeId }) => graphNodeId === interaction.graphNodeId)?.presentation;
+      expect(presentation?.attachment).toMatchObject({
+        versionInteractionNodeId: oldPresentation.attachment.versionInteractionNodeId,
+        rootLayerId: oldPresentation.attachment.rootLayerId,
+      });
+      const trace = await after.runtime.exportCandidateTrace(interaction.id, join(dataDirectory, `trace-${interaction.id}`));
+      expect(trace.personalPresentationVersionId).toBe(oldPresentation.attachment.versionInteractionNodeId);
+      expect(trace.personalPresentationVersionKey).toBe(previousVersion);
+    }
+    const expectedSourceOutput = structuredClone(source.completionOutput);
+    expectedSourceOutput.rootLayer.actions.find(({ id }) => id === invoke.id).targetLayerId = child.completionOutput.rootLayer.layer.id;
+    expect(invokedThread.interactions.find(({ id }) => id === source.id).completionOutput).toEqual(expectedSourceOutput);
+    const newThread = await createThread(after.session);
+    const newAccepted = await waitForAcceptedThread(after.session, newThread.id);
+    const newPresentation = observed.find(({ graphNodeId }) => graphNodeId === newAccepted.interactions[0].graphNodeId).presentation;
+    expect(newPresentation.attachment.versionInteractionNodeId).not.toBe(oldPresentation.attachment.versionInteractionNodeId);
+    const titles = (presentation) => presentation.graph.layers.flatMap(({ nodes }) => nodes.map(({ title }) => title));
+    expect(titles(oldPresentation)).not.toContain("Explanatory presentation");
+    expect(titles(newPresentation)).toContain("Authored visual Node Details");
+    expect(titles(newPresentation)).toContain("Explanatory presentation");
+    const newTrace = await after.runtime.exportCandidateTrace(newAccepted.interactions[0].id, join(dataDirectory, "new-trace"));
+    expect(newTrace.personalPresentationVersionKey).toBe("personal-presentation-v4");
+  }, 20_000);
+
   it("submits on Enter and accepts a graph through the zero-inference fixture harness", async () => {
     const dataDirectory = await mkdtemp(join(tmpdir(), "relayer-first-message-test-"));
     directories.push(dataDirectory);
@@ -222,18 +339,21 @@ async function waitForAcceptedThread(session, threadId) {
   throw new Error("The zero-inference first-message thread did not complete in time.");
 }
 
-async function waitForAcceptedInteractions(session, threadId, count) {
+async function waitForAcceptedInteractions(session, threadId, count, failureEvidence = async () => null) {
   const deadline = Date.now() + 10_000;
+  let latest;
   while (Date.now() < deadline) {
     const detail = await productRequest(session, `/api/threads/${threadId}`);
-    const failed = detail.interactions.find((interaction) => interaction.completionStatus === "failed");
-    if (failed) throw new Error(`The zero-inference invoked interaction failed: ${JSON.stringify(failed)}`);
+    latest = detail;
+    const failed = detail.interactions.find((interaction) => interaction.completionStatus === "failed"
+      || (interaction.latestAttempt?.finishedAt && interaction.latestAttempt.outcome !== "accepted"));
+    if (failed) throw new Error(`The zero-inference interaction failed: ${JSON.stringify({ interaction: failed, evidence: await failureEvidence(failed) })}`);
     if (detail.interactions.length === count && detail.interactions.every((interaction) => interaction.completionStatus === "accepted")) {
       return detail;
     }
     await new Promise((resolveWait) => setTimeout(resolveWait, 20));
   }
-  throw new Error("The zero-inference invoked interaction did not complete in time.");
+  throw new Error(`The zero-inference interaction did not complete in time: ${JSON.stringify(latest?.interactions.map(({ completionOutput, ...rest }) => rest))}`);
 }
 
 async function productRequest(session, path, options = {}) {

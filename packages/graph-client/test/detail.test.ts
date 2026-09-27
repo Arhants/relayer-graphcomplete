@@ -11,6 +11,7 @@ import {
   DetailCompilationError,
   DETAIL_AUTHORING_LIMITS,
   detailCapability,
+  detailAuthoringReference,
   html,
   type ActionObject,
   type InputActionObject,
@@ -19,6 +20,18 @@ import { assetRef } from "../src/detail.js";
 
 describe("typed Node Detail authoring compiler", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("exposes detached compiler vocabulary without allowing callers to alter validation", () => {
+    const reference = detailAuthoringReference();
+    expect(reference.cssProperties).toContain("display");
+    expect(reference.elements).not.toContain("script");
+    reference.elements.push("script");
+    reference.cssProperties.push("background-image");
+    const authoring = new NodeDetailAuthoring();
+    authoring.setComponent("unsafe", html`<script>bad()</script>`);
+    expect(() => authoring.checkpoint()).toThrow(DetailCompilationError);
+    expect(detailAuthoringReference().elements).not.toContain("script");
+  });
 
   it("matches one parsed compiled mount to its declared host", () => {
     const detail = {

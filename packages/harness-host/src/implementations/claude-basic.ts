@@ -261,7 +261,7 @@ export class ClaudeBasicHarness implements Harness {
 function redactPersonalPresentationResult(context: HarnessRunContext, text: string): string {
   const traceValues = personalPresentationTraceValues(context);
   if (traceValues === undefined) return text;
-  return [traceValues.exactBlock, ...traceValues.fragments].reduce(
+  return [traceValues.exactBlock, ...traceValues.legacyBlocks, ...traceValues.fragments].reduce(
     (sanitized, value) => sanitized.split(value).join("[redacted-personal-presentation]"),
     text,
   );

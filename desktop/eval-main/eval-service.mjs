@@ -347,12 +347,12 @@ export function visualNodeDetailCheck(output, personalPresentationVersion) {
     && Array.isArray(authoredDetail.assets)
     && /^[a-f0-9]{64}$/.test(authoredDetail.integritySha256 || "")
   ));
-  const treatment = personalPresentationVersion === "personal-presentation-v3";
+  const treatment = ["personal-presentation-v3", "personal-presentation-v4"].includes(personalPresentationVersion);
   return {
     name: "visual-node-detail:authored-output",
     passed: treatment ? nodes.length > 0 && compiledNodes.length === nodes.length : authoredNodes.length === 0,
     detail: treatment
-      ? `The V3 treatment must accept a compiled visual Node Detail for every accepted node; observed ${compiledNodes.length} valid package${compiledNodes.length === 1 ? "" : "s"} across ${nodes.length} node${nodes.length === 1 ? "" : "s"}.`
+      ? `The authored presentation must accept a compiled visual Node Detail for every accepted node; observed ${compiledNodes.length} valid package${compiledNodes.length === 1 ? "" : "s"} across ${nodes.length} node${nodes.length === 1 ? "" : "s"}.`
       : `The pre-#404 V2 control must retain plain node details; observed ${authoredNodes.length} authored visual Node Detail${authoredNodes.length === 1 ? "" : "s"}.`,
   };
 }
@@ -423,7 +423,8 @@ export function recursiveCompleteChecks(execution, { requireChildWhenEnabled = f
   });
   const personalPresentationVersion = execution.harnessConfiguration?.settings?.personalPresentationVersion;
   if ((personalPresentationVersion === "personal-presentation-v2"
-    || personalPresentationVersion === "personal-presentation-v3") && children.length > 0) {
+    || personalPresentationVersion === "personal-presentation-v3"
+    || personalPresentationVersion === "personal-presentation-v4") && children.length > 0) {
     for (const child of children.filter((candidate) => candidate.status === "accepted")) {
       checks.push({
         ...visualNodeDetailCheck(

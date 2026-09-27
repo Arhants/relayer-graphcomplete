@@ -54,6 +54,9 @@ describe("CodexBasicHarness", () => {
     const codexProviderPrompt = buildLayeredNavigationPrompt(personalPresentationRunContext(true), "@relayer/graph-client", undefined, false);
 
     expect(neutral).toBe(baseline);
+    for (const fragment of ["html`", "css`", "detailCapability", "setComponent", "checkpointNodeDetail", "submitNode", "graph.addAction"]) {
+      expect(visualTreatment).toContain(fragment);
+    }
     expect(treatment).toContain("Personal graph presentation preferences:");
     expect(treatment).toContain("Decision-useful center: The user prefers central layers");
     expect(treatment).toContain("every native child that can author graph content");
@@ -125,6 +128,7 @@ describe("CodexBasicHarness", () => {
 
     expect(submitted[0]?.threadParams.developerInstructions).toContain("If you are the root agent");
     expect(submitted[0]?.threadParams.developerInstructions).toContain("only when assigning a native child to author graph content");
+    expect(submitted[0]?.threadParams.developerInstructions).toContain("relevant language-specific public API recipes");
     expect(submitted[0]?.threadParams.developerInstructions).toContain("Never include that block in an unrelated delegate's task");
     expect(submitted[0]?.threadParams.developerInstructions).toContain("only when that exact rendered block is present in your assigned task");
     expect(submitted[0]?.threadParams.developerInstructions).toContain("every native child that can author graph content");
