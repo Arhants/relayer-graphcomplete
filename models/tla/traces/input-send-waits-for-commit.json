@@ -26,6 +26,7 @@
           "val": 0
         },
         "raced": false,
+        "reload": false,
         "running": false,
         "send": {
           "expected": 0,
@@ -64,6 +65,7 @@
           "val": 0
         },
         "raced": false,
+        "reload": false,
         "running": false,
         "send": {
           "expected": 0,
@@ -101,6 +103,7 @@
           "val": 1
         },
         "raced": false,
+        "reload": false,
         "running": false,
         "send": {
           "expected": 0,
@@ -138,6 +141,7 @@
           "val": 1
         },
         "raced": true,
+        "reload": false,
         "running": false,
         "send": {
           "expected": 0,
@@ -175,6 +179,7 @@
           "val": 1
         },
         "raced": true,
+        "reload": false,
         "running": false,
         "send": {
           "expected": 0,
@@ -212,6 +217,7 @@
           "val": 0
         },
         "raced": true,
+        "reload": false,
         "running": false,
         "send": {
           "expected": 2,
@@ -249,6 +255,7 @@
           "val": 0
         },
         "raced": true,
+        "reload": false,
         "running": false,
         "send": {
           "expected": 2,
@@ -286,6 +293,7 @@
           "val": 0
         },
         "raced": true,
+        "reload": false,
         "running": true,
         "send": {
           "expected": 0,

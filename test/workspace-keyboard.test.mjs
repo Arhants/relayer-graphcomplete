@@ -1447,7 +1447,7 @@ describe("product workspace keyboard behavior", () => {
         interactionId: "turn-2",
         currentPromptValue,
         currentPromptRevision,
-        olderScopes: [{ scopeKey: older, persistedText: currentPromptValue }],
+        olderScopeKeys: [older],
         inFlightSubmission,
       })
     );
@@ -1462,6 +1462,28 @@ describe("product workspace keyboard behavior", () => {
     expect(stillSending.promptValue).toBe("");
     expect(stillSending.carriedFromScopeKey).toBeNull();
     expect(stillSending.state.drafts.get(older).promptValue).toBe("sent text");
+  });
+
+  it("keeps the user's persisted draft when a restored retry arrives in its scope", () => {
+    const render = (state, currentPromptValue, currentPromptRevision) => transitionComposerDraftScope(state, {
+      threadId: "thread-a",
+      interactionId: "turn-2",
+      currentPromptValue,
+      currentPromptRevision,
+      restoredDraft: { text: "failed turn text" },
+      persistedDraftText: "typed while it ran",
+    });
+    const entered = transitionComposerDraftScope(createComposerDraftScopeState(), {
+      threadId: "thread-a",
+      interactionId: "turn-2",
+      currentPromptValue: "",
+      persistedDraftText: "typed while it ran",
+    });
+    const restored = render(entered.state, entered.promptValue, entered.promptRevision);
+    expect(restored.promptValue).toBe("typed while it ran");
+    const next = render(restored.state, restored.promptValue, restored.promptRevision);
+    expect(next.promptValue).toBe("typed while it ran");
+    expect(next.promptRevision).toBe(restored.promptRevision);
   });
 
   it("retains a newer prompt revision across unrelated renders in the same scope", () => {

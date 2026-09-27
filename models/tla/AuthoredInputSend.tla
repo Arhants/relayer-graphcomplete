@@ -46,14 +46,17 @@ VARIABLES
   put,          \* the commit request: [st, expected, val, tracked, result, rev]
   send,         \* the Send: [st, expected, result, reserved value]
   running,      \* the renderer shows the new turn as running
+  reload,       \* a draft reload is queued behind the commit in flight
+                \* (the controller serializes them, NIC:455-464)
   \* --- ghosts ---
   intended,     \* the answer the user had entered when they clicked Send
   raced,        \* a commit was in flight when they clicked Send
   sentWith,     \* the answer the accepted Send reserved, or NoVal
-  outcome       \* how the last Send ended: none | sent | rejected_by_own_commit | rejected
+  outcome       \* how the last Send ended: none | sent | stopped (its answer did
+                \* not save) | rejected_by_own_commit | rejected
 
 vars == <<srvRev, srvVal, srvOther, active, snap, crev, cval, field, put, send,
-          running, intended, raced, sentWith, outcome>>
+          running, reload, intended, raced, sentWith, outcome>>
 
 Init ==
   /\ srvRev = 1 /\ srvVal = NoVal /\ srvOther \in BOOLEAN
@@ -61,33 +64,33 @@ Init ==
   /\ crev = 1 /\ cval = NoVal /\ field = NoVal
   /\ put = Idle
   /\ send = [st |-> "idle", expected |-> 0, result |-> "none", reserved |-> NoVal]
-  /\ running = FALSE
+  /\ running = FALSE /\ reload = FALSE
   /\ intended = NoVal /\ raced = FALSE /\ sentWith = NoVal /\ outcome = "none"
 
 -----------------------------------------------------------------------------
 (* The user.                                                              *)
 
 \* Typing changes only the DOM (RT:397-406). The host is disabled while its
-\* own commit is busy (RT:284), and, like the legacy controls, while a Send
-\* is in flight or the turn is pending (contextStagingDisabled).
+\* own commit is busy (RT:284), and while a Send is in flight. A commit
+\* during a run goes to the next turn's draft (ADR 0008).
 Type(v) ==
-  /\ v # field /\ put.st = "none" /\ send.st = "idle" /\ ~running
+  /\ v # field /\ put.st = "none" /\ send.st = "idle"
   /\ field' = v
   /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, crev, cval, put, send,
-                 running, intended, raced, sentWith, outcome>>
+                 running, reload, intended, raced, sentWith, outcome>>
 
 \* Leaving the field fires change, which commits through onInput
 \* (RT:380-388, 409; WS:4959-4993) at the controller's revision
 \* (NIC:486-497). Pressing the mouse on Send blurs the field first.
 Commit ==
-  /\ put.st = "none" /\ field # NoVal /\ field # cval /\ send.st = "idle" /\ ~running
+  /\ put.st = "none" /\ field # NoVal /\ field # cval /\ send.st = "idle"
   /\ put' = [st |-> "inflight", expected |-> crev, val |-> field,
              tracked |-> FALSE, result |-> "none", rev |-> 0]
   /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, crev, cval, field, send,
-                 running, intended, raced, sentWith, outcome>>
+                 running, reload, intended, raced, sentWith, outcome>>
 
 \* Send is enabled when no send is in flight and the turn is not running
-\* (WS:3113-3123). Its intent is rebuilt with the controller's revision
+\* (WS:3113-3123; while it runs, the button is Stop). Its intent is rebuilt with the controller's revision
 \* after the input reconciliation await (WS:710-731); that await resolves
 \* without yielding unless an authored commit is pending and awaited.
 ClickSend ==
@@ -99,7 +102,7 @@ ClickSend ==
   /\ raced' = (put.st # "none")
   /\ outcome' = "none"
   /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, crev, cval, field, put,
-                 running, sentWith>>
+                 running, reload, sentWith>>
 
 -----------------------------------------------------------------------------
 (* The server.                                                            *)
@@ -118,8 +121,16 @@ ServeCommit ==
              /\ put' = [put EXCEPT !.st = "answered", !.result = "ok", !.rev = srvRev + 1]
         ELSE /\ put' = [put EXCEPT !.st = "answered", !.result = "conflict"]
              /\ UNCHANGED <<srvRev, srvVal>>
-  /\ UNCHANGED <<srvOther, active, snap, crev, cval, field, send, running, intended, raced,
-                 sentWith, outcome>>
+  /\ UNCHANGED <<srvOther, active, snap, crev, cval, field, send, running, reload,
+                 intended, raced, sentWith, outcome>>
+
+\* The commit fails in transport or on the server without applying (a 5xx
+\* or a lost connection).
+CommitFails ==
+  /\ put.st = "inflight"
+  /\ put' = [put EXCEPT !.st = "answered", !.result = "failed"]
+  /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, crev, cval, field, send, running,
+                 reload, intended, raced, sentWith, outcome>>
 
 \* The follow-up POST reserves the draft in one transaction (IC:166-324):
 \* an active interaction refuses it; a changed revision refuses it; with
@@ -139,24 +150,40 @@ ServeSend ==
           /\ srvRev' = IF inputs THEN srvRev + 1 ELSE srvRev
           /\ active' = TRUE
           /\ send' = [send EXCEPT !.st = "answered", !.result = "ok", !.reserved = srvVal]
-  /\ UNCHANGED <<crev, cval, field, put, running, intended, raced, sentWith, outcome>>
+  /\ UNCHANGED <<crev, cval, field, put, running, reload, intended, raced, sentWith, outcome>>
 
 -----------------------------------------------------------------------------
 (* Replies reaching the renderer.                                         *)
 
 \* The commit returns; a conflict adopts the server draft (NIC:465-474) and
-\* shows the error on the mount. A Send waiting on it then captures the
-\* controller's revision.
+\* shows the error on the mount. A reload queued behind it then runs. A Send
+\* waiting on it captures the controller's revision, or stops if the commit
+\* failed.
 CommitReturns ==
   /\ put.st = "answered"
-  /\ LET rev == IF put.result = "ok" THEN put.rev ELSE srvRev IN
-     /\ crev' = rev
-     /\ cval' = IF put.result = "ok" THEN put.val ELSE srvVal
-     /\ send' = IF send.st = "waiting" THEN [send EXCEPT !.st = "inflight", !.expected = rev]
-               ELSE send
+  /\ LET ok == put.result = "ok"
+         \* Only a conflict adopts the server draft; another failure keeps
+         \* the controller's draft (NIC:465-474).
+         adopt == reload \/ put.result = "conflict"
+         rev == IF adopt THEN srvRev ELSE IF ok THEN put.rev ELSE crev
+         waiting == send.st = "waiting"
+     IN /\ crev' = rev
+        /\ cval' = IF adopt THEN srvVal ELSE IF ok THEN put.val ELSE cval
+        /\ reload' = FALSE
+        /\ send' = IF waiting /\ put.result = "ok"
+                   THEN [send EXCEPT !.st = "inflight", !.expected = rev]
+                   ELSE IF waiting THEN [st |-> "idle", expected |-> 0, result |-> "none", reserved |-> NoVal]
+                   ELSE send
+        /\ outcome' = IF waiting /\ put.result # "ok" THEN "stopped" ELSE outcome
   /\ put' = Idle
   /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, field, running,
-                 intended, raced, sentWith, outcome>>
+                 intended, raced, sentWith>>
+
+\* A draft reload: immediate, or queued behind the commit in flight.
+Reload ==
+  IF put.st = "none"
+  THEN crev' = srvRev /\ cval' = srvVal /\ reload' = FALSE
+  ELSE UNCHANGED <<crev, cval>> /\ reload' = TRUE
 
 \* The POST returns. Success reloads the draft after the thread refresh
 \* (WS:3220-3228); failure reloads it too (WS:3296-3298). Re-rendering the
@@ -165,7 +192,7 @@ CommitReturns ==
 SendReturns ==
   /\ send.st = "answered"
   /\ running' = (send.result = "ok")
-  /\ crev' = srvRev /\ cval' = srvVal
+  /\ Reload
   /\ field' = IF put.st = "none" THEN srvVal ELSE field
   /\ sentWith' = IF send.result = "ok" THEN send.reserved ELSE sentWith
   /\ outcome' = CASE send.result = "ok" -> "sent"
@@ -178,7 +205,7 @@ SendReturns ==
 TurnSettles ==
   /\ running /\ ~active
   /\ running' = FALSE
-  /\ crev' = srvRev /\ cval' = srvVal
+  /\ Reload
   /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, field, put, send,
                  intended, raced, sentWith, outcome>>
 
@@ -194,13 +221,13 @@ TurnEndsServer(accepted) ==
           /\ srvOther' = (srvOther \/ snap.other)
           /\ srvRev' = srvRev + 1
   /\ snap' = [val |-> NoVal, other |-> FALSE]
-  /\ UNCHANGED <<crev, cval, field, put, send, running, intended, raced, sentWith, outcome>>
+  /\ UNCHANGED <<crev, cval, field, put, send, running, reload, intended, raced, sentWith, outcome>>
 
 -----------------------------------------------------------------------------
 Next ==
   \/ \E v \in 1..MaxVal : Type(v)
   \/ Commit \/ ClickSend
-  \/ ServeCommit \/ ServeSend
+  \/ ServeCommit \/ CommitFails \/ ServeSend
   \/ \E ok \in BOOLEAN : TurnEndsServer(ok)
   \/ CommitReturns \/ SendReturns \/ TurnSettles
 
@@ -212,6 +239,7 @@ Act(s) ==
     [] n = "Commit" -> Commit
     [] n = "ClickSend" -> ClickSend
     [] n = "ServeCommit" -> ServeCommit
+    [] n = "CommitFails" -> CommitFails
     [] n = "ServeSend" -> ServeSend
     [] n = "TurnEnds" -> TurnEndsServer(s[2] = "accepted")
     [] n = "CommitReturns" -> CommitReturns

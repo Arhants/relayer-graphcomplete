@@ -1,7 +1,7 @@
 {
-  "scenario": "input-commit-then-send",
+  "scenario": "input-failed-answer-stops-send",
   "module": "AuthoredInputSend",
-  "summary": "An authored answer is committed, then sent, and the Send reserves it.",
+  "summary": "Clicking Send commits the authored answer on blur; the commit fails, and the Send stops instead of going without it.",
   "promises": [
     "SendCarriesEnteredAnswer",
     "SendNotRefusedByOwnAnswer"
@@ -123,31 +123,31 @@
     },
     {
       "action": [
-        "ServeCommit"
+        "ClickSend"
       ],
       "state": {
         "active": false,
         "crev": 1,
         "cval": 0,
         "field": 1,
-        "intended": 0,
+        "intended": 1,
         "outcome": "none",
         "put": {
           "expected": 1,
-          "result": "ok",
-          "rev": 2,
-          "st": "answered",
+          "result": "none",
+          "rev": 0,
+          "st": "inflight",
           "tracked": false,
           "val": 1
         },
-        "raced": false,
+        "raced": true,
         "reload": false,
         "running": false,
         "send": {
           "expected": 0,
           "reserved": 0,
           "result": "none",
-          "st": "idle"
+          "st": "waiting"
         },
         "sentWith": 0,
         "snap": {
@@ -155,8 +155,46 @@
           "val": 0
         },
         "srvOther": false,
-        "srvRev": 2,
-        "srvVal": 1
+        "srvRev": 1,
+        "srvVal": 0
+      }
+    },
+    {
+      "action": [
+        "CommitFails"
+      ],
+      "state": {
+        "active": false,
+        "crev": 1,
+        "cval": 0,
+        "field": 1,
+        "intended": 1,
+        "outcome": "none",
+        "put": {
+          "expected": 1,
+          "result": "failed",
+          "rev": 0,
+          "st": "answered",
+          "tracked": false,
+          "val": 1
+        },
+        "raced": true,
+        "reload": false,
+        "running": false,
+        "send": {
+          "expected": 0,
+          "reserved": 0,
+          "result": "none",
+          "st": "waiting"
+        },
+        "sentWith": 0,
+        "snap": {
+          "other": false,
+          "val": 0
+        },
+        "srvOther": false,
+        "srvRev": 1,
+        "srvVal": 0
       }
     },
     {
@@ -165,125 +203,11 @@
       ],
       "state": {
         "active": false,
-        "crev": 2,
-        "cval": 1,
-        "field": 1,
-        "intended": 0,
-        "outcome": "none",
-        "put": {
-          "expected": 0,
-          "result": "none",
-          "rev": 0,
-          "st": "none",
-          "tracked": false,
-          "val": 0
-        },
-        "raced": false,
-        "reload": false,
-        "running": false,
-        "send": {
-          "expected": 0,
-          "reserved": 0,
-          "result": "none",
-          "st": "idle"
-        },
-        "sentWith": 0,
-        "snap": {
-          "other": false,
-          "val": 0
-        },
-        "srvOther": false,
-        "srvRev": 2,
-        "srvVal": 1
-      }
-    },
-    {
-      "action": [
-        "ClickSend"
-      ],
-      "state": {
-        "active": false,
-        "crev": 2,
-        "cval": 1,
-        "field": 1,
-        "intended": 1,
-        "outcome": "none",
-        "put": {
-          "expected": 0,
-          "result": "none",
-          "rev": 0,
-          "st": "none",
-          "tracked": false,
-          "val": 0
-        },
-        "raced": false,
-        "reload": false,
-        "running": false,
-        "send": {
-          "expected": 2,
-          "reserved": 0,
-          "result": "none",
-          "st": "inflight"
-        },
-        "sentWith": 0,
-        "snap": {
-          "other": false,
-          "val": 0
-        },
-        "srvOther": false,
-        "srvRev": 2,
-        "srvVal": 1
-      }
-    },
-    {
-      "action": [
-        "ServeSend"
-      ],
-      "state": {
-        "active": true,
-        "crev": 2,
-        "cval": 1,
-        "field": 1,
-        "intended": 1,
-        "outcome": "none",
-        "put": {
-          "expected": 0,
-          "result": "none",
-          "rev": 0,
-          "st": "none",
-          "tracked": false,
-          "val": 0
-        },
-        "raced": false,
-        "reload": false,
-        "running": false,
-        "send": {
-          "expected": 2,
-          "reserved": 1,
-          "result": "ok",
-          "st": "answered"
-        },
-        "sentWith": 0,
-        "snap": {
-          "other": false,
-          "val": 1
-        },
-        "srvOther": false,
-        "srvRev": 3,
-        "srvVal": 0
-      }
-    },
-    {
-      "action": [
-        "SendReturns"
-      ],
-      "state": {
-        "active": true,
-        "crev": 3,
+        "crev": 1,
         "cval": 0,
-        "field": 0,
+        "field": 1,
         "intended": 1,
-        "outcome": "sent",
+        "outcome": "stopped",
         "put": {
           "expected": 0,
           "result": "none",
@@ -292,22 +216,22 @@
           "tracked": false,
           "val": 0
         },
-        "raced": false,
+        "raced": true,
         "reload": false,
-        "running": true,
+        "running": false,
         "send": {
           "expected": 0,
           "reserved": 0,
           "result": "none",
           "st": "idle"
         },
-        "sentWith": 1,
+        "sentWith": 0,
         "snap": {
           "other": false,
-          "val": 1
+          "val": 0
         },
         "srvOther": false,
-        "srvRev": 3,
+        "srvRev": 1,
         "srvVal": 0
       }
     }

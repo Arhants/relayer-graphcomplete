@@ -192,6 +192,10 @@ export class AuthoredInputSendWorld {
         put.draft = this.#draft();
         break;
       }
+      case "CommitFails": {
+        this.put.result = "failed";
+        break;
+      }
       case "ServeSend": {
         const { post, server } = this;
         if (server.active) post.result = "in_progress";
@@ -211,9 +215,13 @@ export class AuthoredInputSendWorld {
         const { put } = this;
         this.put = null;
         if (put.result === "ok") put.response.resolve(put.draft);
+        else if (put.result === "failed") put.response.reject(Object.assign(new Error("The input could not be saved."), { status: 503 }));
         else put.response.reject(Object.assign(new Error("This interaction-input draft changed."), {
           status: 409, code: "input_draft_revision_conflict",
         }));
+        // The model stops a Send waiting on a failed commit; if the real one
+        // posts anyway, the POST shows up and the replay diverges.
+        if (put.result !== "ok") this.clicked = false;
         break;
       }
       case "SendReturns": {

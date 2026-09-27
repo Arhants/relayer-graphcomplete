@@ -92,6 +92,8 @@ export class NodeInspectorWorld {
     }, { get: (target, key) => target[key] ?? {} }));
     this.window.document.body.innerHTML = '<section id="threadView"></section><div id="toast" class="hidden"></div>';
     this.srev = 1;
+    this.layerId = 99;
+    this.visible = Object.keys(NODE_ID);
     this.saves = [];
     this.discards = [];
     this.assets = [];
@@ -153,9 +155,10 @@ export class NodeInspectorWorld {
     return this;
   }
 
-    // A refresh brings new node objects with the same accepted content.
+    // A refresh brings new node objects with the same accepted content; a new
+  // view brings another layer with the given nodes.
   #loadState() {
-    const nodes = Object.entries(NODE_ID).map(([key, id]) => ({
+    const nodes = Object.entries(NODE_ID).filter(([key]) => this.visible.includes(key)).map(([key, id]) => ({
       id,
       kind: "concept",
       icon: "box",
@@ -165,7 +168,7 @@ export class NodeInspectorWorld {
     }));
     const layer = {
       layer: {
-        id: 99,
+        id: this.layerId,
         layout: { version: 1, placements: nodes.map((node, index) => ({ nodeId: node.id, x: 0.3 + index * 0.4, y: 0.5 })) },
       },
       nodes,
@@ -254,7 +257,10 @@ export class NodeInspectorWorld {
         break;
       }
       case "StatePush": {
-        if (args[0] !== "same") throw new Error("StatePush: only the same view is replayed");
+        if (args[0] !== "same") {
+          this.layerId = 100 + this.srev;
+          this.visible = args.slice(1);
+        }
         this.srev += 1;
         this.#loadState();
         this.workspace.render();
@@ -317,7 +323,11 @@ export class NodeInspectorWorld {
 const values = (set) => Object.values(set ?? {});
 
 const quiet = (model) => values(model.slots).every((slot) => slot.st === "free")
-  && model.prep.st === "free" && model.op === 0;
+  && model.prep.st === "free" && model.op.eid === 0;
+
+// A draft is <<node, view>>; it is usable only in the view it was made in.
+const hasDraftHere = (model, node) => values(model.drafts)
+  .some((draft) => draft["1"] === node && draft["2"] === model.vid);
 
 // The same projection of a trace state. The dock shows the editor only for
 // the selected node's draft (renderNodeContextDock, WS:2587-2626). It is
@@ -333,7 +343,8 @@ export function comparable(real, state) {
 
 export function projectModelState(state) {
   const { editor, sel } = state;
-  const docked = editor.node !== "none" && editor.node === sel && values(state.drafts).includes(sel);
+  const docked = editor.node !== "none" && editor.node === sel && editor.vid === state.vid
+    && hasDraftHere(state, sel);
   return {
     sel,
     open: state.open,
@@ -355,5 +366,5 @@ export const PROMISES = {
   ),
   LastRequestWins: (real, model) => !quiet(model) || real.sel === model.want,
   DraftedSelectionHasEditor: (real, model) => !quiet(model) || real.sel === "none"
-    || !values(model.drafts).includes(real.sel) || real.dock.node === real.sel,
+    || !hasDraftHere(model, real.sel) || real.dock.node === real.sel,
 };

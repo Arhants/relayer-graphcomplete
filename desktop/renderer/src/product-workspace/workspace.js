@@ -734,11 +734,13 @@ export function rebuildInteractionSendIntentAfterInputReconciliation({
   clickedIntent,
   currentIntent,
   inputDraftRevision,
+  inputCompositionRevision,
 }) {
   return Object.freeze({
     ...(clickedIntent || currentIntent),
     contextConfirmationIds: currentIntent.contextConfirmationIds,
     inputDraftRevision,
+    ...(inputCompositionRevision === undefined ? {} : { inputCompositionRevision }),
   });
 }
 
@@ -1144,14 +1146,16 @@ export function createComposerDraftScopeState() {
 }
 
 /**
- * The newest unsent follow-up text left in an older turn's scope of the same
- * thread, unless it is still the submission in flight, unchanged since Send.
- * `olderScopes` lists `{ scopeKey, persistedText }`, newest first.
+ * The newest unsent follow-up text written this session in an older turn's
+ * scope of the same thread, unless it is still the submission in flight,
+ * unchanged since Send. Settlement deletes a sent draft, so what remains in
+ * memory is unsent; persisted text from earlier sessions is not moved.
+ * `olderScopeKeys` lists the thread's older scopes, newest first.
  */
-function unsentOlderDraft(drafts, olderScopes, inFlightSubmission) {
-  for (const { scopeKey, persistedText } of olderScopes) {
+function unsentOlderDraft(drafts, olderScopeKeys, inFlightSubmission) {
+  for (const scopeKey of olderScopeKeys) {
     const stored = drafts.get(scopeKey);
-    const text = stored?.promptValue || persistedText || "";
+    const text = stored?.promptValue || "";
     if (!text) continue;
     const submitting = inFlightSubmission?.scopeKey === scopeKey
       && Object.is(stored?.promptRevision, inFlightSubmission.promptRevision);
@@ -1167,7 +1171,7 @@ export function transitionComposerDraftScope(state, {
   currentPromptRevision = 0,
   restoredDraft = null,
   persistedDraftText = null,
-  olderScopes = [],
+  olderScopeKeys = [],
   inFlightSubmission = null,
 }) {
   const nextScopeKey = composerDraftScopeKey(threadId, interactionId);
@@ -1181,10 +1185,13 @@ export function transitionComposerDraftScope(state, {
       && String(currentDraft.restoredDraftInteractionId) !== String(interactionId);
     const persistedDraftChanged = persistedDraftText !== null
       && persistedDraftText !== currentPromptValue;
+    // A persisted draft the user wrote wins over a restoration, as it does on
+    // entering the scope; otherwise the next render would flip back to it.
+    const restores = restorationArrived && !persistedDraftText;
     const promptValue = persistedDraftChanged
       ? persistedDraftText
-      : restorationArrived ? restoredDraft.text : currentPromptValue;
-    const promptRevision = restorationArrived || persistedDraftChanged
+      : restores ? restoredDraft.text : currentPromptValue;
+    const promptRevision = restores || persistedDraftChanged
       ? currentPromptRevision + 1
       : currentPromptRevision;
     const drafts = new Map(state.drafts);
@@ -1215,7 +1222,7 @@ export function transitionComposerDraftScope(state, {
   // A newer turn's scope starts empty; unsent text typed while the previous
   // turn's scope was active moves into it, so it is not stranded there.
   const carried = !restoredDraft && persistedDraftText === null && !stored?.promptValue
-    ? unsentOlderDraft(drafts, olderScopes, inFlightSubmission)
+    ? unsentOlderDraft(drafts, olderScopeKeys, inFlightSubmission)
     : null;
   if (carried) {
     drafts.set(nextScopeKey, {
@@ -1233,6 +1240,9 @@ export function transitionComposerDraftScope(state, {
       promptRevision: Math.max(stored?.promptRevision ?? 0, currentPromptRevision) + 1,
       restoredDraftInteractionId: restoredDraft ? interactionId : null,
     });
+  } else if (persistedDraftText !== null && restoredDraft) {
+    // Unchanged persisted text keeps its revision and wins over the restoration.
+    drafts.set(nextScopeKey, { ...stored, restoredDraftInteractionId: interactionId });
   } else if (!drafts.has(nextScopeKey)) {
     drafts.set(nextScopeKey, {
       promptValue: restoredDraft?.text ?? "",
@@ -1618,14 +1628,21 @@ export function createProductWorkspace({
     void commit.catch(() => {}).finally(() => {
       commits.delete(commit);
       if (!commits.size && authoredInputCommits.get(key) === commits) authoredInputCommits.delete(key);
+      syncComposer();
     });
+    syncComposer();
     return commit;
   };
+  const pendingAuthoredInputCommits = (threadId) => authoredInputCommits.get(String(threadId))?.size ?? 0;
+  // Whether every awaited commit succeeded.
   const settleAuthoredInputCommits = async (threadId) => {
+    let committed = true;
     let commits;
     while ((commits = authoredInputCommits.get(String(threadId)))?.size) {
-      await Promise.allSettled([...commits]);
+      const results = await Promise.allSettled([...commits]);
+      committed &&= results.every((result) => result.status === "fulfilled");
     }
+    return committed;
   };
   const inputRailScroll = new Map();
   let inputFocusRequest = null;
@@ -1708,7 +1725,10 @@ export function createProductWorkspace({
     let settle;
     const resolution = new Promise((resolve) => { settle = resolve; });
     editorResolution = resolution;
+    let ended = false;
     return ({ refresh = true } = {}) => {
+      if (ended) return;
+      ended = true;
       editor.resolving = false;
       if (editorResolution === resolution) editorResolution = null;
       settle();
@@ -1735,28 +1755,36 @@ export function createProductWorkspace({
     const editor = contextEditor;
     if (!editor?.durable) return true;
     const endResolution = beginEditorResolution(editor);
-    renderNodeContextDock();
-    const saved = await saveContextDraftBeforeSelection({
-      controller: contextDraftController,
-      editor,
-      textarea: $("#nodeContextDock #contextAnnotationEditor"),
-    });
+    let saved = false;
+    try {
+      renderNodeContextDock();
+      saved = await saveContextDraftBeforeSelection({
+        controller: contextDraftController,
+        editor,
+        textarea: $("#nodeContextDock #contextAnnotationEditor"),
+      });
+    } catch {
+      saved = false;
+    } finally {
+      const current = requestSequence === nodeSelectionSequence;
+      const again = current && contextEditor !== editor && saved;
+      const proceeds = current && contextEditor === editor && saved;
+      // A proceeding or repeated prepare renders what follows; otherwise the
+      // selection is re-rendered now that the draft has resolved.
+      endResolution({ refresh: !proceeds && !again });
+    }
     if (requestSequence !== nodeSelectionSequence) {
       if (contextEditor === editor) renderComposerContexts();
-      endResolution();
       return false;
     }
     if (contextEditor !== editor && saved) {
       // The editor was replaced meanwhile; prepare again for the one open now.
-      endResolution({ refresh: false });
       return prepareNodeContextSelectionChange();
     }
     if (contextEditor !== editor || !saved) {
       if (contextEditor === editor) renderComposerContexts();
-      endResolution();
       return false;
     }
-    endResolution({ refresh: false });
     return true;
   };
 
@@ -2833,17 +2861,18 @@ export function createProductWorkspace({
       if (contextStagingDisabled()) return;
       const discardingEditor = contextEditor;
       const endResolution = beginEditorResolution(discardingEditor);
-      clearContextEditorError(discardingEditor);
-      renderNodeContextDock();
       try {
+        clearContextEditorError(discardingEditor);
+        renderNodeContextDock();
         await contextDraftController.discard(threadId, selectedNode.id);
         clearContextEditorError(discardingEditor);
         closeDurableEditor(threadId, discardingEditor.draftId);
       } catch (discardError) {
         rememberContextEditorError(discardingEditor, discardError.message);
+      } finally {
+        endResolution();
       }
       renderComposerContexts();
-      endResolution();
     };
 
     const confirm = graphDocument.createElement("button");
@@ -2856,9 +2885,9 @@ export function createProductWorkspace({
       if (contextStagingDisabled()) return;
       const confirmingEditor = contextEditor;
       const endResolution = beginEditorResolution(confirmingEditor);
-      clearContextEditorError(confirmingEditor);
-      renderNodeContextDock();
       try {
+        clearContextEditorError(confirmingEditor);
+        renderNodeContextDock();
         const confirmation = await contextDraftController.confirm(threadId, selectedNode.id);
         if (!confirmation) {
           rememberContextEditorError(
@@ -2874,9 +2903,10 @@ export function createProductWorkspace({
         }
       } catch (confirmError) {
         rememberContextEditorError(confirmingEditor, confirmError.message);
+      } finally {
+        endResolution();
       }
       renderComposerContexts();
-      endResolution();
     };
 
     textarea.oninput = () => {
@@ -3232,7 +3262,11 @@ export function createProductWorkspace({
     const inputThreadId = String(thread.id);
     const inputDraftsReady = !inputDraftController
       || (loadedInputDraftThreads.has(inputThreadId) && !inputDraftLoads.has(inputThreadId));
-    const inputAttachments = inputDraftController?.current(thread.id)?.attachments || [];
+    const committedInputs = inputDraftController?.current(thread.id)?.attachments || [];
+    // An answer still committing counts: Send waits for it (and stops if it fails).
+    const inputAttachments = pendingAuthoredInputCommits(thread.id)
+      ? [...committedInputs, { pending: true }]
+      : committedInputs;
     const failedConfirmationSend = failedConfirmationSends.get(String(thread.id));
     const replayIntent = confirmationSendReplayIntent({
       intent: failedConfirmationSend?.intent,
@@ -3341,8 +3375,7 @@ export function createProductWorkspace({
     if (String(getThread()?.id) !== String(submission.threadId)
       || activeScopeKey === submission.scopeKey
       || prompt.value) return;
-    const text = composerDraftScopeState.drafts.get(submission.scopeKey)?.promptValue
-      || threadFollowupDraft(submission.scopeKey);
+    const text = composerDraftScopeState.drafts.get(submission.scopeKey)?.promptValue;
     if (!text) return;
     const drafts = new Map(composerDraftScopeState.drafts);
     drafts.delete(submission.scopeKey);
@@ -3491,7 +3524,9 @@ export function createProductWorkspace({
           : null,
         preserve: preserveReplay,
       });
-      restoreStrandedSubmission(submission);
+      // Only a definite rejection: after a network or server error the send
+      // may have committed, and the newer turn may be this very submission.
+      if (!confirmationSendFailureMayHaveCommitted(error)) restoreStrandedSubmission(submission);
       toast(error.message);
     } finally {
       if (inFlightSubmissions.get(String(submittedThreadId)) === inFlightSubmission) {
@@ -3569,7 +3604,10 @@ export function createProductWorkspace({
         });
         intent = await selectInteractionSendIntentAfterInputReconciliation({
           awaitInputDraft: async () => {
-            await settleAuthoredInputCommits(threadId);
+            if (!await settleAuthoredInputCommits(threadId)) {
+              // The answer the user entered did not save; the input shows why.
+              throw new Error("An answer in Node Details could not be saved, so the message was not sent.");
+            }
             if (inputDraftController) await ensureInputDraftLoaded(threadId);
           },
           selectionIsCurrent: () => sendIntentIsCurrentThread(getThread()?.id, threadId)
@@ -3589,6 +3627,7 @@ export function createProductWorkspace({
             clickedIntent: clickTimeIntentWithoutDraftAuthority(),
             currentIntent: sendRequest.freshIntent,
             inputDraftRevision: reconciledInputDraftRevision(),
+            inputCompositionRevision: currentInputCompositionRevision(threadId),
           }),
         });
         if (!intent || !sendIntentIsCurrentThread(threadId, intent.threadId)) return;
@@ -4092,10 +4131,8 @@ export function createProductWorkspace({
       persistedDraftText: threadFollowupDraft(
         composerDraftScopeKey(threadId, latestInteraction?.id),
       ),
-      olderScopes: turns.slice(0, -1).reverse().map((turn) => {
-        const scopeKey = composerDraftScopeKey(threadId, turn.id);
-        return { scopeKey, persistedText: threadFollowupDraft(scopeKey) };
-      }),
+      olderScopeKeys: turns.slice(0, -1).reverse()
+        .map((turn) => composerDraftScopeKey(threadId, turn.id)),
       inFlightSubmission: inFlightSubmissions.get(threadId) ?? null,
     });
     composerDraftScopeState = draftTransition.state;
@@ -4956,9 +4993,13 @@ export function createProductWorkspace({
     if (contextEditor?.resolving) {
       // A refresh is dropped: the resolution re-renders the selection when it
       // ends. A user's click waits its turn and uses the state it finds then.
-      if (!userInitiated || !await awaitUserRequestTurn()) return false;
+      if (!userInitiated) return false;
+      const viewKey = graphViewKey;
+      if (!await awaitUserRequestTurn()) return false;
       const latest = getState();
-      if (!resolveInteractionContextNode(id, latest.nodes, composerContextState.value, contextNodeOverrides)) {
+      // A click made in a view the user has since left is void.
+      if (graphViewKey !== viewKey
+        || !resolveInteractionContextNode(id, latest.nodes, composerContextState.value, contextNodeOverrides)) {
         refreshSelection();
         return false;
       }
@@ -4991,24 +5032,30 @@ export function createProductWorkspace({
       const previousEditor = contextEditor;
       const mountedTextarea = $("#nodeContextDock #contextAnnotationEditor");
       const endResolution = beginEditorResolution(previousEditor);
-      renderNodeContextDock();
-      const saved = await saveContextDraftBeforeSelection({
-        controller: contextDraftController,
-        editor: previousEditor,
-        textarea: mountedTextarea,
-      });
+      let saved = false;
+      try {
+        renderNodeContextDock();
+        saved = await saveContextDraftBeforeSelection({
+          controller: contextDraftController,
+          editor: previousEditor,
+          textarea: mountedTextarea,
+        });
+      } catch {
+        saved = false;
+      } finally {
+        if (!saved) endResolution();
+      }
       if (requestSequence !== nodeSelectionSequence
         || String(getThread()?.id) !== sourceThreadId) {
-        if (contextEditor === previousEditor) renderComposerContexts();
         endResolution();
+        if (contextEditor === previousEditor) renderComposerContexts();
         return false;
       }
       if (!saved) {
-        // The switch is refused and the kept node, whose own detail this
-        // request superseded, is re-rendered.
+        // The switch is refused; the kept node, whose own detail this
+        // request superseded, was re-rendered as the draft resolved.
         contextEditor = previousEditor;
         renderComposerContexts();
-        endResolution();
         return false;
       }
       contextEditor = null;
@@ -5106,13 +5153,14 @@ export function createProductWorkspace({
           : null;
         authoredCapabilityState[mount.id] = {
           value: initialInputStageValue(action, attachment),
-          // Locked like the legacy controls while a Send is in flight or the
-          // turn is pending, so no commit races the Send's reservation.
+          // Locked while a Send is in flight, so no commit races its
+          // reservation. A commit during a run goes to the next draft (ADR 0008).
           disabled: mode === "review"
             || !inputDraftController
             || !loadedInputDraftThreads.has(String(getThread()?.id))
             || occurrence === null
-            || contextStagingDisabled(),
+            || sendAttemptBlocksThread(sendAttempt?.threadId, getThread()?.id)
+            || threadHasInFlightSend(inFlightSendThreads, getThread()?.id),
         };
       }
     }

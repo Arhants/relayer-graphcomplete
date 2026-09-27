@@ -409,48 +409,18 @@
       "finding": "Moving unsent text to the newest turn's scope and keeping a scope's revision unless its text changes restore every composer promise."
     },
     {
-      "id": "inspector-dropped-request",
+      "id": "inspector-promises",
       "module": "NodeInspector",
       "preset": "inspector-today",
       "invariants": [
         "TypeOK",
-        "LastRequestWins"
-      ],
-      "expect": "pass",
-      "finding": "A click, Close, or turn change made while an annotation draft resolves waits and the latest one proceeds (fixed; #514: it was ignored, and a dropped Close also cancelled a pending click)."
-    },
-    {
-      "id": "inspector-detail-left-dead",
-      "module": "NodeInspector",
-      "preset": "inspector-today",
-      "invariants": [
-        "TypeOK",
-        "InspectorShowsSelection"
-      ],
-      "expect": "pass",
-      "finding": "The inspector shows the selected node's live detail once a draft resolves (fixed; #515: a refused switch left the kept node's detail disposed, and a view change during the save left the inspector hidden)."
-    },
-    {
-      "id": "inspector-stale-state",
-      "module": "NodeInspector",
-      "preset": "inspector-today",
-      "invariants": [
-        "TypeOK",
-        "InspectorIsCurrent"
-      ],
-      "expect": "pass",
-      "finding": "The inspector is rendered from the latest state once a draft resolves (fixed; #515)."
-    },
-    {
-      "id": "inspector-draft-editor-restored",
-      "module": "NodeInspector",
-      "preset": "inspector-today",
-      "invariants": [
-        "TypeOK",
+        "LastRequestWins",
+        "InspectorShowsSelection",
+        "InspectorIsCurrent",
         "DraftedSelectionHasEditor"
       ],
       "expect": "pass",
-      "finding": "Selecting a node with an unconfirmed draft reopens its editor (PRD L2203)."
+      "finding": "Input made while an annotation draft resolves waits and the latest proceeds (fixed; #514), the selection is re-rendered from the latest state once the draft resolves (fixed; #515), and a drafted node reopens its editor (PRD L2203)."
     },
     {
       "id": "input-send-carries-answer",

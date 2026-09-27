@@ -23,7 +23,8 @@
         "editor": {
           "eid": 0,
           "node": "none",
-          "resolving": false
+          "resolving": false,
+          "vid": 0
         },
         "eids": 0,
         "graph": {
@@ -31,12 +32,22 @@
           "2": "n2"
         },
         "mounted": "none",
-        "op": 0,
+        "op": {
+          "eid": 0,
+          "key": {
+            "1": "none",
+            "2": 0
+          }
+        },
         "open": false,
         "prep": {
           "cur": false,
           "eid": 0,
           "fresh": false,
+          "key": {
+            "1": "none",
+            "2": 0
+          },
           "node": "none",
           "rev": 0,
           "st": "free"
@@ -51,6 +62,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -59,6 +74,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -67,6 +86,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -75,6 +98,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -86,6 +113,7 @@
           "rev": 0
         },
         "unsaved": {},
+        "vid": 1,
         "want": "none"
       }
     },
@@ -106,7 +134,8 @@
         "editor": {
           "eid": 0,
           "node": "none",
-          "resolving": false
+          "resolving": false,
+          "vid": 0
         },
         "eids": 0,
         "graph": {
@@ -114,12 +143,22 @@
           "2": "n2"
         },
         "mounted": "none",
-        "op": 0,
+        "op": {
+          "eid": 0,
+          "key": {
+            "1": "none",
+            "2": 0
+          }
+        },
         "open": true,
         "prep": {
           "cur": false,
           "eid": 0,
           "fresh": false,
+          "key": {
+            "1": "none",
+            "2": 0
+          },
           "node": "none",
           "rev": 0,
           "st": "free"
@@ -134,6 +173,10 @@
             "cur": true,
             "eid": 0,
             "fresh": true,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "n1",
             "rev": 1,
             "st": "mounting"
@@ -142,6 +185,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -150,6 +197,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -158,6 +209,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -169,6 +224,7 @@
           "rev": 1
         },
         "unsaved": {},
+        "vid": 1,
         "want": "n1"
       }
     },
@@ -189,7 +245,8 @@
         "editor": {
           "eid": 0,
           "node": "none",
-          "resolving": false
+          "resolving": false,
+          "vid": 0
         },
         "eids": 0,
         "graph": {
@@ -197,12 +254,22 @@
           "2": "n2"
         },
         "mounted": "none",
-        "op": 0,
+        "op": {
+          "eid": 0,
+          "key": {
+            "1": "none",
+            "2": 0
+          }
+        },
         "open": true,
         "prep": {
           "cur": false,
           "eid": 0,
           "fresh": false,
+          "key": {
+            "1": "none",
+            "2": 0
+          },
           "node": "none",
           "rev": 0,
           "st": "free"
@@ -217,6 +284,10 @@
             "cur": false,
             "eid": 0,
             "fresh": true,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "n1",
             "rev": 1,
             "st": "mounting"
@@ -225,6 +296,10 @@
             "cur": true,
             "eid": 0,
             "fresh": true,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "n1",
             "rev": 2,
             "st": "mounting"
@@ -233,6 +308,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -241,6 +320,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -252,6 +335,7 @@
           "rev": 2
         },
         "unsaved": {},
+        "vid": 1,
         "want": "n1"
       }
     },
@@ -272,7 +356,8 @@
         "editor": {
           "eid": 0,
           "node": "none",
-          "resolving": false
+          "resolving": false,
+          "vid": 0
         },
         "eids": 0,
         "graph": {
@@ -280,12 +365,22 @@
           "2": "n2"
         },
         "mounted": "none",
-        "op": 0,
+        "op": {
+          "eid": 0,
+          "key": {
+            "1": "none",
+            "2": 0
+          }
+        },
         "open": true,
         "prep": {
           "cur": false,
           "eid": 0,
           "fresh": false,
+          "key": {
+            "1": "none",
+            "2": 0
+          },
           "node": "none",
           "rev": 0,
           "st": "free"
@@ -300,6 +395,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -308,6 +407,10 @@
             "cur": true,
             "eid": 0,
             "fresh": true,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "n1",
             "rev": 2,
             "st": "mounting"
@@ -316,6 +419,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -324,6 +431,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -335,6 +446,7 @@
           "rev": 2
         },
         "unsaved": {},
+        "vid": 1,
         "want": "n1"
       }
     },
@@ -351,12 +463,16 @@
           "slot": 2
         },
         "drafts": {
-          "1": "n1"
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
         },
         "editor": {
           "eid": 1,
           "node": "n1",
-          "resolving": false
+          "resolving": false,
+          "vid": 1
         },
         "eids": 1,
         "graph": {
@@ -364,12 +480,22 @@
           "2": "n2"
         },
         "mounted": "none",
-        "op": 0,
+        "op": {
+          "eid": 0,
+          "key": {
+            "1": "none",
+            "2": 0
+          }
+        },
         "open": true,
         "prep": {
           "cur": false,
           "eid": 0,
           "fresh": false,
+          "key": {
+            "1": "none",
+            "2": 0
+          },
           "node": "none",
           "rev": 0,
           "st": "free"
@@ -384,6 +510,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -392,6 +522,10 @@
             "cur": true,
             "eid": 0,
             "fresh": true,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "n1",
             "rev": 2,
             "st": "mounting"
@@ -400,6 +534,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -408,6 +546,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -419,8 +561,12 @@
           "rev": 2
         },
         "unsaved": {
-          "1": "n1"
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
         },
+        "vid": 1,
         "want": "n1"
       }
     },
@@ -437,12 +583,16 @@
           "slot": 2
         },
         "drafts": {
-          "1": "n1"
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
         },
         "editor": {
           "eid": 1,
           "node": "n1",
-          "resolving": false
+          "resolving": false,
+          "vid": 1
         },
         "eids": 1,
         "graph": {
@@ -450,12 +600,22 @@
           "2": "n2"
         },
         "mounted": "none",
-        "op": 0,
+        "op": {
+          "eid": 0,
+          "key": {
+            "1": "none",
+            "2": 0
+          }
+        },
         "open": true,
         "prep": {
           "cur": false,
           "eid": 0,
           "fresh": false,
+          "key": {
+            "1": "none",
+            "2": 0
+          },
           "node": "none",
           "rev": 0,
           "st": "free"
@@ -470,6 +630,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -478,6 +642,10 @@
             "cur": true,
             "eid": 0,
             "fresh": true,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "n1",
             "rev": 2,
             "st": "mounting"
@@ -486,6 +654,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -494,6 +666,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -505,8 +681,12 @@
           "rev": 2
         },
         "unsaved": {
-          "1": "n1"
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
         },
+        "vid": 1,
         "want": "n1"
       }
     },
@@ -524,12 +704,16 @@
           "slot": 2
         },
         "drafts": {
-          "1": "n1"
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
         },
         "editor": {
           "eid": 1,
           "node": "n1",
-          "resolving": true
+          "resolving": true,
+          "vid": 1
         },
         "eids": 1,
         "graph": {
@@ -537,12 +721,22 @@
           "2": "n2"
         },
         "mounted": "none",
-        "op": 0,
+        "op": {
+          "eid": 0,
+          "key": {
+            "1": "none",
+            "2": 0
+          }
+        },
         "open": true,
         "prep": {
           "cur": false,
           "eid": 0,
           "fresh": false,
+          "key": {
+            "1": "none",
+            "2": 0
+          },
           "node": "none",
           "rev": 0,
           "st": "free"
@@ -557,6 +751,10 @@
             "cur": true,
             "eid": 1,
             "fresh": false,
+            "key": {
+              "1": "n1",
+              "2": 1
+            },
             "node": "n2",
             "rev": 2,
             "st": "saving"
@@ -565,6 +763,10 @@
             "cur": false,
             "eid": 0,
             "fresh": true,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "n1",
             "rev": 2,
             "st": "mounting"
@@ -573,6 +775,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -581,6 +787,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -592,8 +802,12 @@
           "rev": 2
         },
         "unsaved": {
-          "1": "n1"
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
         },
+        "vid": 1,
         "want": "n2"
       }
     },
@@ -612,12 +826,16 @@
           "slot": 1
         },
         "drafts": {
-          "1": "n1"
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
         },
         "editor": {
           "eid": 1,
           "node": "n1",
-          "resolving": false
+          "resolving": false,
+          "vid": 1
         },
         "eids": 1,
         "graph": {
@@ -625,12 +843,22 @@
           "2": "n2"
         },
         "mounted": "none",
-        "op": 0,
+        "op": {
+          "eid": 0,
+          "key": {
+            "1": "none",
+            "2": 0
+          }
+        },
         "open": true,
         "prep": {
           "cur": false,
           "eid": 0,
           "fresh": false,
+          "key": {
+            "1": "none",
+            "2": 0
+          },
           "node": "none",
           "rev": 0,
           "st": "free"
@@ -645,6 +873,10 @@
             "cur": true,
             "eid": 0,
             "fresh": true,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "n1",
             "rev": 2,
             "st": "mounting"
@@ -653,6 +885,10 @@
             "cur": false,
             "eid": 0,
             "fresh": true,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "n1",
             "rev": 2,
             "st": "mounting"
@@ -661,6 +897,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -669,6 +909,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -680,8 +924,12 @@
           "rev": 2
         },
         "unsaved": {
-          "1": "n1"
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
         },
+        "vid": 1,
         "want": "n1"
       }
     },
@@ -699,12 +947,16 @@
           "slot": 1
         },
         "drafts": {
-          "1": "n1"
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
         },
         "editor": {
           "eid": 1,
           "node": "n1",
-          "resolving": false
+          "resolving": false,
+          "vid": 1
         },
         "eids": 1,
         "graph": {
@@ -712,12 +964,22 @@
           "2": "n2"
         },
         "mounted": "none",
-        "op": 0,
+        "op": {
+          "eid": 0,
+          "key": {
+            "1": "none",
+            "2": 0
+          }
+        },
         "open": true,
         "prep": {
           "cur": false,
           "eid": 0,
           "fresh": false,
+          "key": {
+            "1": "none",
+            "2": 0
+          },
           "node": "none",
           "rev": 0,
           "st": "free"
@@ -732,6 +994,10 @@
             "cur": true,
             "eid": 0,
             "fresh": true,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "n1",
             "rev": 2,
             "st": "mounting"
@@ -740,6 +1006,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -748,6 +1018,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -756,6 +1030,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -767,8 +1045,12 @@
           "rev": 2
         },
         "unsaved": {
-          "1": "n1"
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
         },
+        "vid": 1,
         "want": "n1"
       }
     },
@@ -786,12 +1068,16 @@
           "slot": 1
         },
         "drafts": {
-          "1": "n1"
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
         },
         "editor": {
           "eid": 1,
           "node": "n1",
-          "resolving": false
+          "resolving": false,
+          "vid": 1
         },
         "eids": 1,
         "graph": {
@@ -799,12 +1085,22 @@
           "2": "n2"
         },
         "mounted": "n1",
-        "op": 0,
+        "op": {
+          "eid": 0,
+          "key": {
+            "1": "none",
+            "2": 0
+          }
+        },
         "open": true,
         "prep": {
           "cur": false,
           "eid": 0,
           "fresh": false,
+          "key": {
+            "1": "none",
+            "2": 0
+          },
           "node": "none",
           "rev": 0,
           "st": "free"
@@ -819,6 +1115,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -827,6 +1127,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -835,6 +1139,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -843,6 +1151,10 @@
             "cur": false,
             "eid": 0,
             "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
             "node": "none",
             "rev": 0,
             "st": "free"
@@ -854,8 +1166,12 @@
           "rev": 2
         },
         "unsaved": {
-          "1": "n1"
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
         },
+        "vid": 1,
         "want": "n1"
       }
     }

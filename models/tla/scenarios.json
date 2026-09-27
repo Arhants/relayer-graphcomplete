@@ -1276,6 +1276,80 @@
           1
         ]
       ]
+    },
+    {
+      "id": "input-failed-answer-stops-send",
+      "module": "AuthoredInputSend",
+      "preset": "input",
+      "init": "srvOther = FALSE",
+      "promises": [
+        "SendCarriesEnteredAnswer",
+        "SendNotRefusedByOwnAnswer"
+      ],
+      "summary": "Clicking Send commits the authored answer on blur; the commit fails, and the Send stops instead of going without it.",
+      "steps": [
+        [
+          "Type",
+          1
+        ],
+        [
+          "Commit"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "CommitFails"
+        ],
+        [
+          "CommitReturns"
+        ]
+      ]
+    },
+    {
+      "id": "inspector-view-change-during-discard",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor"
+      ],
+      "summary": "A new view that keeps the selected node arrives while a draft discard is in flight; the inspector reopens on it once the discard resolves.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "Autosave",
+          "n1"
+        ],
+        [
+          "Discard"
+        ],
+        [
+          "StatePush",
+          "enter",
+          "n1",
+          "n2"
+        ],
+        [
+          "DiscardReturns",
+          "ok"
+        ],
+        [
+          "MountReturns",
+          1
+        ]
+      ]
     }
   ]
 }

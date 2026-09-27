@@ -23,7 +23,7 @@ npm run check:models
 Pass check ids to run a subset. The runner needs Java 11 or newer and the
 pinned `tla2tools.jar` (version and sha256 in `checks.json`). It never
 downloads the jar; place it at `~/.cache/tlaplus/tla2tools-1.8.0.jar` or set
-`TLA2TOOLS_JAR`. All checks and scenarios together take about two and a half minutes.
+`TLA2TOOLS_JAR`. All checks and scenarios together take about a minute.
 `--render` rewrites the scenario traces (see below).
 
 `check:models` is not part of `npm run check` yet. Adding it there requires a
@@ -249,7 +249,7 @@ picker, and the unconfirmed-draft warning are not modeled.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `composer-typing-during-send` | Fixed; now passes | Before the fix (#512): `submitInteraction` disables the prompt, but any `renderThread()` during the POST re-enables it through `renderInteractionState`, because the loaded latest turn still reads as settled; the environment refresh renders every 5 s on project threads and on window focus. Text typed then stayed in the old turn's draft scope, and when the new turn loaded the composer moved to that turn's empty scope, so the text was never shown again. Entering a newer turn's empty scope now moves the thread's unsent text into it, and a send that fails after its turn arrived restores its text. Scenarios: `composer-typing-during-send`, `composer-failed-send-restores-draft`. |
+| `composer-typing-during-send` | Fixed; now passes | Before the fix (#512): `submitInteraction` disables the prompt, but any `renderThread()` during the POST re-enables it through `renderInteractionState`, because the loaded latest turn still reads as settled; the environment refresh renders every 5 s on project threads and on window focus. Text typed then stayed in the old turn's draft scope, and when the new turn loaded the composer moved to that turn's empty scope, so the text was never shown again. Entering a newer turn's empty scope now moves the thread's unsent text written this session into it (settlement deletes a sent draft, so what remains is unsent; persisted text from earlier sessions is not moved), and a send definitely rejected after its turn arrived restores its text. A user's persisted draft also wins over a restored retry that arrives in its scope, so the prompt no longer flips between them. Scenarios: `composer-typing-during-send`, `composer-failed-send-restores-draft`. |
 | `composer-typing-during-send-without-renders` | Fixed; now passes | The same loss, reached by leaving the thread and returning during the POST before the server records the turn. Scenario: `composer-return-during-send`. |
 | `composer-without-carry` | Records the bug | With `CarryUnsentDraft` off, text typed during a send is stranded. |
 | `composer-settlement-erases-edit` | Fixed; now passes | Before the fix (#513): re-entering a scope with persisted text assigned `currentPromptRevision + 1`, which could repeat a revision the scope already had. An edit after Send could then reach the submitted revision, and settlement cleared the prompt and deleted the persisted draft. A scope's revision now only moves forward. Scenario: `composer-settlement-erases-edit`. |
@@ -287,17 +287,16 @@ inspector with a durable annotation draft:
 - the dock reconciliation in `renderNodeContextDock`;
 - reuse or disposal of the mounted Node Detail runtime.
 
-`nodeSelectionSequence` is compared only for equality, so each request in
+A draft's target includes the layer it was made in, so drafts and editors
+belong to a view: entering a new view drops the editor, and a draft is
+reopened only in its own view. `nodeSelectionSequence` is compared only for equality, so each request in
 flight carries whether it is still the latest. Historical context
 selections, node inputs, annotation comments, and confirm are not modeled;
 confirm resolves like discard.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `inspector-dropped-request` | Fixed; now passes | Before the fix (#514): while a draft save, confirm, or discard was in flight, `selectNode` returned at once and `prepareNodeContextSelectionChange` returned false, so a node click, Close, or turn change did nothing; a dropped Close or turn change also incremented `nodeSelectionSequence`, cancelling a pending click or the first Close, so a double-clicked Close closed nothing. Such a request now waits for the draft to resolve, and the latest one proceeds; a prepare whose editor was replaced meanwhile prepares again. Scenarios: `inspector-click-during-discard`, `inspector-close-during-flush`, `inspector-double-close`. |
-| `inspector-detail-left-dead` | Fixed; now passes | Before the fix (#515): a switch refused by a failed flush returned without re-rendering the kept node; if the switch had superseded that node's own Node Detail mount, the inspector showed its header over a disposed, empty page, and a view change during the flush left the inspector hidden. A resolved draft now re-renders the selection from the latest state unless a waiting request or the continuing switch will. Scenario: `inspector-refused-switch-rerenders`. |
-| `inspector-stale-state` | Fixed; now passes | Before the fix (#515): a render during a draft save or discard was dropped, and a switch continued from the state read before its flush. A switch now continues from the latest state. Model only: within one accepted layer this has no user-visible observable to replay. |
-| `inspector-draft-editor-restored` | passes | Selecting a node with an unconfirmed draft reopens its editor (PRD L2203). |
+| `inspector-promises` | Fixed; now passes | Before the fixes: (#514) while a draft save, confirm, or discard was in flight, `selectNode` returned at once and `prepareNodeContextSelectionChange` returned false, so a node click, Close, or turn change did nothing; a dropped Close or turn change also incremented `nodeSelectionSequence`, cancelling a pending click or the first Close, so a double-clicked Close closed nothing. (#515) A switch refused by a failed flush returned without re-rendering the kept node; if the switch had superseded that node's own Node Detail mount, the inspector showed its header over a disposed, empty page. A render during the flush was dropped, so the inspector kept older state or, on entering a new view, stayed hidden. Now such a request waits for the draft to resolve and the latest one proceeds; a click made in a view the user has since left is void; a prepare whose editor was replaced prepares again. A switch continues from the latest state, and a resolved draft re-renders the selection unless a waiting request or the switch will. Selecting a node with an unconfirmed draft still reopens its editor (PRD L2203). Scenarios: `inspector-click-during-discard`, `inspector-close-during-flush`, `inspector-double-close`, `inspector-refused-switch-rerenders`, `inspector-view-change-during-discard`. |
 | `inspector-without-queue` | Records the bug | With `QueueWhileResolving` off, input made while a draft resolves is dropped. |
 | `inspector-without-refresh` | Records the bug | With `RefreshAfterResolve` off, a refused switch can leave the kept node's detail disposed. |
 
@@ -331,12 +330,14 @@ follow-up Send:
 - Send's gates and the draft revision it captures;
 - the server's commit rule and its reservation of committed attachments;
 - the turn ending, with the failure restore;
-- the lock on authored inputs while a Send is in flight or the turn is pending;
+- a commit that fails in transport or on the server;
+- draft reloads, which the controller queues behind a commit in flight;
+- the lock on authored inputs while a Send is in flight;
 - the renderer's reloads after each response.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `input-send-carries-answer` | Fixed; now passes | Before the fix (#521): legacy input controls registered each commit with `inputPending`, which kept Send disabled; an authored input's commit did not. Mousedown on Send blurs the input, whose `change` commits it, so the commit and the Send went out together at the same revision. A Send served first went without the answer, which then landed in the next turn's draft; a commit served first got the Send refused with `input_draft_revision_conflict`. Send now waits for the thread's authored commits before it captures the draft revision, and authored inputs are locked while a Send is in flight or the turn is pending, as legacy controls are. Scenario: `input-send-waits-for-commit`. |
+| `input-send-carries-answer` | Fixed; now passes | Before the fix (#521): legacy input controls registered each commit with `inputPending`, which kept Send disabled; an authored input's commit did not. Mousedown on Send blurs the input, whose `change` commits it, so the commit and the Send went out together at the same revision. A Send served first went without the answer, which then landed in the next turn's draft; a commit served first got the Send refused with `input_draft_revision_conflict`. Send now waits for the thread's authored commits before it captures the draft revision, and stops if one fails, since the answer did not save; a commit still in flight counts toward Send being ready. Authored inputs are locked while a Send is in flight; a commit during a run still goes to the next turn's draft (ADR 0008). Scenarios: `input-send-waits-for-commit`, `input-failed-answer-stops-send`. |
 | `input-send-without-waiting` | Records the bug | With `SendAwaitsAuthoredCommits` off, a Send served before the commit goes without the answer. |
 
 Send waits rather than being disabled during the commit, because disabling it
