@@ -2,7 +2,7 @@
 
 ## Required verification
 
-Integrate main at 76bfe5fe without changing canonical Complete, native recursion,
+Integrate main at 8157411d without changing canonical Complete, native recursion,
 publication authority, or historical presentation pins. Resolve two demonstrated
 merge blockers: duplicate migration 32 and an incorrect packaged Prime closure pin.
 Theme-aware visual output is a separate follow-up, #519.
@@ -69,9 +69,9 @@ and CI remain the final packaging gate.
 ## Final checks and reviews
 
 /root/ready_standards and /root/ready_spec independently reviewed all 72 changed
-non-evidence files against main 76bfe5fe. Both report no unresolved actionable
+non-evidence files against main 8157411d. Both report no unresolved actionable
 findings. Exact source digest (sorted path + NUL + bytes + NUL):
-160945547fa9d1dca517ab8ef625f9ff15d2fadc73019e6391cc93b819e913b0.
+1a17c9f7eee54d8e2ae46b0cda8b2b6a85b264e9528727afbe109a3b8b7e086f.
 Neither independently ran tests. Scope includes defaults/pins, native retry,
 compiler/assets authority, publication, Stop integration, migration and corrected
 package pins. Reviews do not certify unrun CI, scoped compaction, native-child
@@ -85,7 +85,7 @@ Adding agent.state.thinkingLevel and appendThinkingLevelChange to that fixture
 restored all 12 Stop cases without altering behavior or assertions. Both reviewers
 reviewed this final delta and renewed the digest above.
 
-Final aggregate check passed Rust format/Clippy/workspace/crash, package/type
+The earlier integrated aggregate check passed Rust format/Clippy/workspace/crash, package/type
 checks, and all 2,448 Vitest cases (3 skipped). The separate native Codex
 secret-boundary stage then failed only in teardown with ENOTEMPTY inside a
 background plugin-clone .git directory; its assertions had completed. The
@@ -93,7 +93,25 @@ aggregate remains failed, not retrospectively green. An attempted isolated
 rerun overlapped package rebuilding and failed setup; excluded from proof.
 After build finished, the unchanged isolated native Codex suite passed 2/2.
 Remaining Python 34, receipt lint and PRD readability stages passed separately.
-Final npm run build passed. Real Prime KernelManager integration passed 2/2.
+That snapshot npm run build passed. Real Prime KernelManager integration passed 2/2.
 
 Current-head CI, including actual macOS native packaging, is pending at commit;
 its exact run and conclusion will be recorded in the PR without changing source.
+
+## Latest main integration
+
+Main advanced through #497 and #504 during verification. The integration retains
+semantic child work, CompletionWatch, graph-history navigation and public Python
+API guidance alongside compiler-derived visual guidance and publication ordering.
+The combined Python tree SHA256 is
+38f7273ca0c9ce3bc6ee4e2b87667063021c797052c9d2a1034091979dba1019;
+manifest, runtime verifier and managed recipe agree. The real packaged Prime
+verifier passed again after refreshing these resources in the diagnostic ASAR.
+This remains integrity-seam evidence, not full native packaging proof.
+
+Both reviews above were renewed for this integrated source. Build passed;
+focused production prompt/Complete/Stop/packaging tests passed 177/177, Python
+passed 37/37, and real Prime KernelManager passed 2/2. The full repository check
+passed: Rust format/Clippy/workspace/crash, package/type checks, 2,453 Vitest
+cases (3 skipped), native Codex 2/2, Python 37/37, receipt lint and PRD readability.
+Current-head CI follows the integration commit.
