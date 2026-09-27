@@ -103,9 +103,9 @@ impl SqliteProductStore {
         })?;
 
         if let Some(row) = sqlx::query(
-            "SELECT i.id,i.thread_id,i.sequence,i.text,i.created_at,i.graph_node_id,i.completion_status,i.harness_configuration_name,i.harness_configuration_digest,i.completion_output_json,i.completion_error,i.permission_profile_id,i.effective_execution_digest,i.effective_permission_receipt_json,i.model_provider_id,i.provider_model_id,i.model_family_id,a.id,a.attempt_number,a.started_at,a.finished_at,a.family_id,a.family_revision,a.harness_configuration_name,a.harness_configuration_revision,a.harness_configuration_digest,a.provider_id,a.adapter_id,a.adapter_implementation_version,a.model_id,a.access_contract,a.outcome,a.failure_category,a.effect_boundary,a.attempt_admission_id,a.admitted_plan_json,a.admitted_plan_digest,i.input_digest FROM interactions i LEFT JOIN interaction_attempts a ON a.id=(SELECT latest.id FROM interaction_attempts latest WHERE latest.interaction_id=i.id ORDER BY latest.attempt_number DESC LIMIT 1) WHERE i.thread_id=?1 AND i.input_identity=?2",
+            "SELECT i.id,i.thread_id,i.sequence,i.text,i.created_at,i.graph_node_id,i.completion_status,i.harness_configuration_name,i.harness_configuration_digest,i.completion_output_json,i.completion_error,i.permission_profile_id,i.effective_execution_digest,i.effective_permission_receipt_json,i.model_provider_id,i.provider_model_id,i.model_family_id,a.id,a.attempt_number,a.started_at,a.finished_at,a.family_id,a.family_revision,a.harness_configuration_name,a.harness_configuration_revision,a.harness_configuration_digest,a.provider_id,a.adapter_id,a.adapter_implementation_version,a.model_id,a.access_contract,a.outcome,a.failure_category,a.effect_boundary,a.attempt_admission_id,a.admitted_plan_json,a.admitted_plan_digest,EXISTS(SELECT 1 FROM interaction_stop_requests stop WHERE stop.interaction_id=i.id),(SELECT error FROM interaction_stop_requests stop WHERE stop.interaction_id=i.id),i.input_digest FROM interactions i LEFT JOIN interaction_attempts a ON a.id=(SELECT latest.id FROM interaction_attempts latest WHERE latest.interaction_id=i.id ORDER BY latest.attempt_number DESC LIMIT 1) WHERE i.thread_id=?1 AND i.input_identity=?2",
         ).bind(thread_id.value()).bind(input.input_identity).fetch_optional(&mut *tx).await? {
-            let stored_digest: String = row.try_get(37)?;
+            let stored_digest: String = row.try_get(39)?;
             if stored_digest != input.input_digest {
                 return Err(StorageError::IncompatibleSchema(
                     "interaction input identity was reused with different content".into(),
@@ -329,6 +329,8 @@ impl SqliteProductStore {
             .execute(&mut *tx)
             .await?;
         let interaction = Interaction {
+            stop_requested: false,
+            stop_error: None,
             id: crate::product::InteractionId::from_database(id),
             thread_id,
             sequence,

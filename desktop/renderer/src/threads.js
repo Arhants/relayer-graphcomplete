@@ -1395,3 +1395,12 @@ function clearSuccessfulNewThreadInput(input) {
 export function connectEvents() {
   // Live harness events are intentionally outside this product-persistence slice.
 }
+
+export async function stopInteraction(threadId, interactionId) {
+  const interaction = await request(`/api/threads/${threadId}/interactions/${interactionId}/stop`, { method: "POST" });
+  cancelPendingRefresh();
+  const existing = appState.interactions?.find((turn) => turn.id === interactionId && turn.threadId === threadId);
+  if (existing) Object.assign(existing, interaction);
+  renderThread();
+  schedulePendingRefresh(viewState.currentThreadId);
+}

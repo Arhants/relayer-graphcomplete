@@ -259,6 +259,56 @@ async fn reconcile_interrupted_interaction(
                     interaction.id
                 )));
             }
+        } else if interaction.stop_requested {
+            let current = runtime
+                .completion_current(graph_node_id)
+                .await
+                .map_err(StartupReconciliationError::from_runtime)?;
+            if current.lifecycle == relayer_graph_core::CompletionLifecycle::Succeeded {
+                let output = runtime
+                    .completion_output(graph_node_id)
+                    .await
+                    .map_err(StartupReconciliationError::from_runtime)?
+                    .ok_or_else(|| {
+                        StartupReconciliationError::retryable(anyhow::anyhow!(
+                            "accepted output not yet readable"
+                        ))
+                    })?;
+                if !storage
+                    .recover_interaction_accepted(interaction.id, &output)
+                    .await
+                    .map_err(StartupReconciliationError::retryable)?
+                {
+                    return Err(StartupReconciliationError::retryable(anyhow::anyhow!(
+                        "interaction changed during Stop recovery"
+                    )));
+                }
+                return Ok(());
+            }
+            if current.lifecycle == relayer_graph_core::CompletionLifecycle::Active {
+                runtime
+                    .fail_graph_completion(
+                        graph_node_id,
+                        &format!("interrupted-product-stop:{}", interaction.id),
+                        "application_restart",
+                    )
+                    .await
+                    .map_err(StartupReconciliationError::from_runtime)?;
+            }
+            // The previous process is gone, but an interrupted Stop is not a
+            // native terminal acknowledgment. Preserve the failure honestly and
+            // never replay work the user asked to stop.
+            storage
+                .fail_interaction_completion(
+                    interaction.id,
+                    interaction
+                        .harness_configuration_name
+                        .as_deref()
+                        .unwrap_or("unknown"),
+                    "Stop was interrupted when Relayer restarted. Send a follow-up to continue.",
+                )
+                .await
+                .map_err(StartupReconciliationError::retryable)?;
         } else if let Some(durable_input) = durable_input.as_ref() {
             if durable_input.submitted_inputs.is_empty() {
                 storage.recover_identified_interaction_submitted(
@@ -290,7 +340,7 @@ async fn reconcile_interrupted_interaction(
     Ok(())
 }
 
-async fn reconcile_interrupted_recursive_completion_executions(
+pub(crate) async fn reconcile_interrupted_recursive_completion_executions(
     storage: &SqliteProductStore,
     runtime: &RuntimeClient,
 ) -> anyhow::Result<usize> {
@@ -635,7 +685,8 @@ impl RelayerAppServer {
                     let context_only_identified = durable_input
                         .as_ref()
                         .is_some_and(|input| input.submitted_inputs.is_empty());
-                    if error.is_retryable()
+                    if !interaction.stop_requested
+                        && error.is_retryable()
                         && !has_submitted_inputs
                         && (graph_lease_recoverable || context_only_identified)
                     {
@@ -670,7 +721,10 @@ impl RelayerAppServer {
                     if has_submitted_inputs {
                         let pending_error =
                             format!("{} {error}", crate::product::RECONCILIATION_PENDING_PREFIX);
-                        if error.is_retryable() && interaction.graph_node_id.is_some() {
+                        if !interaction.stop_requested
+                            && error.is_retryable()
+                            && interaction.graph_node_id.is_some()
+                        {
                             storage
                                 .quarantine_interrupted_submitted_input(
                                     interaction.id,
@@ -761,6 +815,13 @@ impl RelayerAppServer {
             reconciler.schedule();
             reconciler
         });
+        if let Some(runtime) = runtime.clone() {
+            tokio::spawn(api::threads::resume_unwinding_recursive_children(
+                product.clone(),
+                runtime,
+                execution_lease_reconciler.clone(),
+            ));
+        }
         Ok(Self {
             product,
             web_directory: config.web_directory,
