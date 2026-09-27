@@ -501,6 +501,7 @@ describe("secret-backed API adapters", () => {
           id: "z-ai/glm-5.3",
           name: "GLM 5.3",
           supported_parameters: ["reasoning", "reasoning_effort"],
+          architecture: { input_modalities: ["text", "image", "video"] },
           context_length: 202_752,
           top_provider: { context_length: 196_608, max_completion_tokens: 131_072 },
         },
@@ -508,6 +509,7 @@ describe("secret-backed API adapters", () => {
           id: "small-output-model",
           name: "Small output model",
           supported_parameters: ["reasoning"],
+          architecture: { input_modalities: ["text"] },
           context_length: 32_768,
           top_provider: { context_length: 32_768, max_completion_tokens: 2_048 },
         },
@@ -524,8 +526,8 @@ describe("secret-backed API adapters", () => {
 
     expect(adapter.executionAccess()).toMatchObject({
       modelCapabilities: {
-        "z-ai/glm-5.3": { contextWindow: 196_608, maxOutputTokens: 131_072, reasoning: true, reasoningEffort: true },
-        "small-output-model": { contextWindow: 32_768, maxOutputTokens: 2_048, reasoning: true, reasoningEffort: false },
+        "z-ai/glm-5.3": { contextWindow: 196_608, maxOutputTokens: 131_072, reasoning: true, reasoningEffort: true, imageInput: true },
+        "small-output-model": { contextWindow: 32_768, maxOutputTokens: 2_048, reasoning: true, reasoningEffort: false, imageInput: false },
       },
     });
     expect(adapter.executionAccess().modelCapabilities).not.toHaveProperty("unknown-limits");

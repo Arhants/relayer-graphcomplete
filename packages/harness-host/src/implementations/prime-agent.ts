@@ -1622,7 +1622,7 @@ function primeAgentModel(route: HarnessAdmittedModelRoute, access: Extract<Harne
     // them. Keep the legacy conservative values when discovery has no limits;
     // model IDs are never used to infer capabilities.
     reasoning: capabilities?.reasoning === true,
-    input: Object.freeze(["text"] as const),
+    input: Object.freeze(capabilities?.imageInput === true ? ["text", "image"] as const : ["text"] as const),
     // Prime requires numeric prices; zero is an unknown-cost sentinel here.
     // Relayer billing never treats this transport metadata as authoritative.
     cost: Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }),

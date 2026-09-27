@@ -23,7 +23,10 @@ function tokenCapabilities(model) {
   const reasoning = Array.isArray(parameters) && parameters.every((value) => typeof value === "string")
     ? parameters.includes("reasoning") || parameters.includes("reasoning_effort")
     : undefined;
-  return { contextWindow, maxOutputTokens, ...(reasoning === undefined ? {} : { reasoning, reasoningEffort: parameters.includes("reasoning_effort") }) };
+  const inputs = model?.architecture?.input_modalities;
+  const imageInput = Array.isArray(inputs) && inputs.every((value) => typeof value === "string")
+    ? inputs.includes("image") : undefined;
+  return { contextWindow, maxOutputTokens, ...(imageInput === undefined ? {} : { imageInput }), ...(reasoning === undefined ? {} : { reasoning, reasoningEffort: parameters.includes("reasoning_effort") }) };
 }
 
 function usesCanonicalEndpoint(endpoint) {

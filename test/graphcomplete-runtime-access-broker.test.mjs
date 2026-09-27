@@ -106,7 +106,7 @@ describe("desktop provider execution access broker", () => {
         endpoint: "https://api.example.test/v1",
         fields: { "api-key": "secret" },
         modelCapabilities: {
-          "z-ai/glm-5.3": { contextWindow: 202_752, maxOutputTokens: 131_072, reasoning: true, reasoningEffort: true },
+          "z-ai/glm-5.3": { contextWindow: 202_752, maxOutputTokens: 131_072, reasoning: true, reasoningEffort: true, imageInput: true },
         },
       },
     });
@@ -119,13 +119,13 @@ describe("desktop provider execution access broker", () => {
     );
 
     expect(acquired.access.modelCapabilities).toEqual({
-      "z-ai/glm-5.3": { contextWindow: 202_752, maxOutputTokens: 131_072, reasoning: true, reasoningEffort: true },
+      "z-ai/glm-5.3": { contextWindow: 202_752, maxOutputTokens: 131_072, reasoning: true, reasoningEffort: true, imageInput: true },
     });
     expect(Object.isFrozen(acquired.access.modelCapabilities["z-ai/glm-5.3"])).toBe(true);
     await acquired.release();
   });
 
-  it.each(["reasoning", "reasoningEffort"])("rejects malformed %s before admitting provider access", async (field) => {
+  it.each(["reasoning", "reasoningEffort", "imageInput"])("rejects malformed %s before admitting provider access", async (field) => {
     const fixture = providerLease({ providerId: "openrouter-work", adapterId: "openrouter", resolved: {
       kind: "secret", endpoint: "https://api.example.test/v1", fields: { "api-key": "secret" },
       modelCapabilities: { "qwen-model": { contextWindow: 202_752, maxOutputTokens: 131_072, [field]: "true" } },

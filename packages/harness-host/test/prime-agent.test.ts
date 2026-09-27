@@ -952,7 +952,7 @@ describe("PrimeAgentHarness", () => {
         40 + index,
         adapterId,
         adapterId === "openrouter"
-          ? { contextWindow: 196_608, maxOutputTokens: 131_072, reasoning: true }
+          ? { contextWindow: 196_608, maxOutputTokens: 131_072, reasoning: true, imageInput: true }
           : adapterId === "vercel-ai-router"
             ? { contextWindow: 1_000_000, maxOutputTokens: 384_000 }
             : undefined,
@@ -983,7 +983,7 @@ describe("PrimeAgentHarness", () => {
     }))).toEqual([
       { api: "openai-responses", baseUrl: "https://provider-40.test/v1", compat: undefined, reasoning: false, input: ["text"], contextWindow: 32_768, maxTokens: 4_096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       { api: "anthropic-messages", baseUrl: "https://provider-41.test", compat: undefined, reasoning: false, input: ["text"], contextWindow: 32_768, maxTokens: 4_096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
-      { api: "openai-completions", baseUrl: "https://provider-42.test/v1", compat: { thinkingFormat: "openrouter", openRouterRouting: {} }, reasoning: true, input: ["text"], contextWindow: 196_608, maxTokens: 131_072, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+      { api: "openai-completions", baseUrl: "https://provider-42.test/v1", compat: { thinkingFormat: "openrouter", openRouterRouting: {} }, reasoning: true, input: ["text", "image"], contextWindow: 196_608, maxTokens: 131_072, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       { api: "openai-completions", baseUrl: "https://provider-43.test/v1", compat: { vercelGatewayRouting: {} }, reasoning: false, input: ["text"], contextWindow: 1_000_000, maxTokens: 384_000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       { api: "openai-completions", baseUrl: "https://provider-44.test/v1", compat: { thinkingFormat: "openrouter", openRouterRouting: {} }, reasoning: false, input: ["text"], contextWindow: 32_768, maxTokens: 2_048, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       { api: "anthropic-messages", baseUrl: "https://provider-45.test/proxy/anthropic", compat: undefined, reasoning: false, input: ["text"], contextWindow: 32_768, maxTokens: 4_096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
@@ -991,10 +991,10 @@ describe("PrimeAgentHarness", () => {
   });
 
   it.each([
-    { reasoning: true, reasoningEffort: true, expected: { effort: "medium" } },
-    { reasoning: true, reasoningEffort: false, expected: { enabled: true } },
-    { reasoning: false, reasoningEffort: false, expected: undefined },
-  ])("preserves configured thinking through the actual native request ($reasoning/$reasoningEffort)", async ({ reasoning, reasoningEffort, expected }) => {
+    { imageInput: true, reasoning: true, reasoningEffort: true, expected: { effort: "medium" } },
+    { imageInput: false, reasoning: true, reasoningEffort: false, expected: { enabled: true } },
+    { imageInput: undefined, reasoning: false, reasoningEffort: false, expected: undefined },
+  ])("preserves configured thinking through the actual native request ($reasoning/$reasoningEffort)", async ({ imageInput, reasoning, reasoningEffort, expected }) => {
     const native = await import("@earendil-works/pi-coding-agent");
     const workspace = await mkdtemp(join(tmpdir(), "prime-reasoning-"));
     const payloads: Record<string, unknown>[] = [];
@@ -1025,11 +1025,13 @@ describe("PrimeAgentHarness", () => {
       expect(session!.thinkingLevel).toBe("medium");
       expect(session!.sessionManager.buildSessionContext().thinkingLevel).toBe("medium");
       for (const nodeId of [51, 52]) {
+        session!.agent.state.messages = [...session!.agent.state.messages, { role: "user", content: [{ type: "image", data: "aW1hZ2UtcHJvYmU=", mimeType: "image/png" }], timestamp: Date.now() }];
         await harness.complete(singleAdapterRunContext(nodeId, "openrouter", {
-          contextWindow: 196_608, maxOutputTokens: 131_072, reasoning, reasoningEffort,
+          contextWindow: 196_608, maxOutputTokens: 131_072, reasoning, reasoningEffort, ...(imageInput === undefined ? {} : { imageInput }),
         })).catch(() => undefined);
       }
       expect(payloads).toHaveLength(2);
+      expect(payloads.map((payload) => JSON.stringify(payload).includes("data:image/png;base64,aW1hZ2UtcHJvYmU="))).toEqual([imageInput === true, imageInput === true]);
       expect(payloads.map((payload) => payload.reasoning)).toEqual([expected, expected]);
       expect(session!.model?.provider).toBe("unknown");
     } finally {
@@ -2505,7 +2507,7 @@ function familyRunContext(
 function singleAdapterRunContext(
   nodeId: number,
   adapterId: string,
-  modelCapabilities?: { readonly contextWindow: number; readonly maxOutputTokens: number; readonly reasoning?: boolean; readonly reasoningEffort?: boolean },
+  modelCapabilities?: { readonly contextWindow: number; readonly maxOutputTokens: number; readonly reasoning?: boolean; readonly reasoningEffort?: boolean; readonly imageInput?: boolean },
   endpoint = `https://provider-${nodeId}.test/v1`,
 ): HarnessRunContext {
   const base = runContext(nodeId, `token-${nodeId}`);

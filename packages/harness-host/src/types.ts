@@ -270,6 +270,7 @@ export type HarnessExecutionAccess =
         readonly maxOutputTokens: number;
         readonly reasoning?: boolean;
         readonly reasoningEffort?: boolean;
+        readonly imageInput?: boolean;
       }>>>;
       readonly runtime?: HarnessManagedRuntimeAccess;
     }
