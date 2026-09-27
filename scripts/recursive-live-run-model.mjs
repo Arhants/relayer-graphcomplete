@@ -18,6 +18,8 @@ export const LIVE_RUN_AUTH = Object.freeze({
 
 /** Harness implementations that run a task through the managed Codex executable. */
 const CODEX_IMPLEMENTATIONS = new Set(["codex.basic"]);
+/** Harness implementations whose runtime this runner provisions and checks before a turn. */
+const LIVE_RUN_IMPLEMENTATIONS = new Set(["codex.basic", "prime.agent"]);
 
 /** Names the profiles a credentials document defines, for an error a human can act on. */
 export function liveRunProfileNames(document) {
@@ -54,7 +56,14 @@ export function resolveRunProfile(document, name, { implementation, path = "live
   if (auth.contract === "managed-runtime@1" && apiKey) {
     throw new Error(`${path} run ${name} must leave auth.apiKey null for ${kind}; its login lives in codexHome.`);
   }
+  if (!LIVE_RUN_IMPLEMENTATIONS.has(implementation)) {
+    throw new Error(`${path} run ${name} selects ${implementation}, whose runtime this runner does not provision. It runs: ${[...LIVE_RUN_IMPLEMENTATIONS].join(", ")}.`);
+  }
   const codex = CODEX_IMPLEMENTATIONS.has(implementation);
+  if (codex && auth.contract === "secret@1") {
+    // Codex routes only through the built-in codex provider, which is subscription-only.
+    throw new Error(`${path} run ${name} selects ${implementation} with ${kind}; this runner routes Codex only through a codex-subscription login.`);
+  }
   if (!codex && auth.contract === "managed-runtime@1") {
     throw new Error(`${path} run ${name} selects ${implementation}, which accepts a key rather than a ${kind} login.`);
   }
@@ -114,6 +123,9 @@ export const LIVE_RUN_TASKS = Object.freeze({
   delegate: Object.freeze({
     text: RECURSIVE_LIVE_RUN_DELEGATION_TASK,
     verificationLevel: "delegation-mechanics",
+    // The task names three independent workstreams and asks for all of them to launch
+    // before any is awaited.
+    expectedChildren: 3,
   }),
 });
 
@@ -267,6 +279,8 @@ export function summarizeRun({
   completionMetadata = [],
   completionExecutions = [],
   traces = [],
+  verificationLevel = "check1",
+  expectedChildren,
 }) {
   const normalizedRequestedTemporalFeatures = normalizedTemporalFeatures(requestedTemporalFeatures);
   const normalizedActualTemporalFeatures = normalizedTemporalFeatures(actualTemporalFeatures, { requireExplicit: true });
@@ -276,7 +290,24 @@ export function summarizeRun({
   const children = semanticChildren(rootCompletionId, completionMetadata);
   const relevantCompletionIds = [rootCompletionId, ...children];
   if (recursionEnabled && children.length === 0) {
-    findings.push("no semantic child was created by the agent's own decision");
+    findings.push(verificationLevel === "check1"
+      ? "no semantic child was created by the agent's own decision"
+      : "no semantic child was created");
+  }
+  if (recursionEnabled && expectedChildren !== undefined) {
+    if (children.length !== expectedChildren) {
+      findings.push(`the task asked for ${expectedChildren} semantic children, and ${children.length} were created`);
+    }
+    // Durable evidence that every child launched before the parent could have needed any
+    // result: no child settled before the last one was created.
+    const executions = completionExecutions.filter(({ completionId }) => children.includes(completionId));
+    const lastLaunch = Math.max(...executions.map(({ createdAt }) => Number(createdAt)));
+    const firstSettlement = Math.min(...executions
+      .filter(({ phase }) => phase === "settled")
+      .map(({ updatedAt }) => Number(updatedAt)));
+    if (executions.length === children.length && children.length > 0 && firstSettlement < lastLaunch) {
+      findings.push("a semantic child settled before every child had launched");
+    }
   }
   if (!recursionEnabled && children.length > 0) {
     findings.push("recursion-disabled execution created a semantic child");
@@ -372,7 +403,12 @@ export function summarizeRun({
     findings,
     passed: findings.length === 0,
     // Semantic coherence is graded separately and blocks merge on its own.
-    judge: { verdict: "not-run", reason: "Gate 2 grades this run; Check 1 does not." },
+    judge: {
+      verdict: "not-run",
+      reason: verificationLevel === "check1"
+        ? "Gate 2 grades this run; Check 1 does not."
+        : `A ${verificationLevel} run proves child launch, settlement, and integration; it is not graded.`,
+    },
   };
 }
 
