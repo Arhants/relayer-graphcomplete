@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { GraphCapability } from "@relayer/graph-client";
+import { RELAYER_ICON_NAMES, type GraphCapability } from "@relayer/graph-client";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
 import { MAX_HARNESS_APPROVAL_TEXT_LENGTH } from "../approval.js";
 import { INTERACTION_INPUT_GUIDANCE, renderInteractionInput } from "../interaction-input.js";
@@ -830,19 +830,27 @@ ${renderInteractionInput(context.interactionInput)}
 
 ${INTERACTION_INPUT_GUIDANCE} In Python, call await graph.get_interaction_input() to re-read it.
 
-Use this entry point:
+Use this entry point. Top-level cell code starts at column 0; never indent it.
 
+\`\`\`python
 from relayer_graph import GraphSession
 graph = await GraphSession.current()
+\`\`\`
+
+${PYTHON_GRAPH_API_REFERENCE}
 
 ${currentWorkspaceMechanicsPython()}
 ${semanticChildGuidancePython(context)}${graphSearchGuidancePython(this.context.configuration.graphCapabilityProfile?.search === "query-v1")}
 
 The graph scope is supplied by the host for this complete() execution and is inherited by your RLM children. Do not read graph credentials from environment variables or files. Give every persisted NodeObject, EdgeObject, LayerObject, navigate action, and invoke action an explicit descriptive client_key that is unique within this interaction and stable across edits and reruns. Never rely on generated client keys in authored code.
 
-Author nodes, edges, layers, and useful expand, reference, or invoke actions. For supporting evidence or reusable context, use await graph.add_navigate_action(node, "View evidence", evidence_layer, relation="reference", source_layer=response_layer, client_key="node-evidence") after submitting the referenced layer. The visible response layer must contain 1 to 8 connected nodes. Finish the root execution only by calling:
+Author nodes, edges, layers, and useful expand, reference, or invoke actions. For supporting evidence or reusable context, use await graph.add_navigate_action(node, "View evidence", evidence_layer, relation="reference", source_layer=response_layer, client_key="node-evidence") after submitting the referenced layer. The visible response layer must contain 1 to 8 connected nodes. The interaction node needs exactly one new root navigate action, relation="expand" with no source_layer; on a rerun, reuse its client_key rather than adding another.
+
+${PYTHON_GRAPH_AUTHORING_RULES}
 
 Import NodePlacementObject and LayerLayoutObject from relayer_graph. Every new layer requires a version-1 LayerLayoutObject with exactly one NodePlacementObject(node, x, y) per member node. Coordinates are normalized numbers from 0 through 1 and express semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, anchor hierarchy with a parent or summary, group related nodes, align comparisons, and avoid accidental overlap or edge crossings. Do not derive coordinates from pixels, window size, or inspector state.
+
+Finish the root execution only by calling:
 
 await graph.submit(${interaction.id})
 
@@ -862,10 +870,14 @@ ${renderInteractionInput(context.interactionInput)}
 
 ${INTERACTION_INPUT_GUIDANCE} In Python, call await graph.get_interaction_input() to re-read it.
 
-Use this entry point:
+Use this entry point. Top-level cell code starts at column 0; never indent it.
 
+\`\`\`python
 from relayer_graph import GraphSession
 graph = await GraphSession.current()
+\`\`\`
+
+${PYTHON_GRAPH_API_REFERENCE}
 
 ${currentWorkspaceMechanicsPython()}
 ${semanticChildGuidancePython(context)}${graphSearchGuidancePython(this.context.configuration.graphCapabilityProfile?.search === "query-v1")}
@@ -890,7 +902,11 @@ Layers normally contain 1 to 5 nodes. A layer may contain 6 to 8 nodes only when
 
 Import NodePlacementObject and LayerLayoutObject from relayer_graph. Every new root, expansion, and reference layer requires a version-1 LayerLayoutObject with exactly one NodePlacementObject(node, x, y) per member node. Coordinates are normalized numbers from 0 through 1 and express semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, use a parent or summary node to anchor hierarchy, group related nodes spatially, align comparisons deliberately, and avoid accidental overlap or edge crossings where a clearer arrangement is available. Do not use pixels, window size, or inspector state. Example: layout = LayerLayoutObject((NodePlacementObject(first, 0.25, 0.5), NodePlacementObject(second, 0.75, 0.5))); layer = LayerObject((first, second), (edge,), layout, client_key="response-layer").
 
-Layer edges are exactly what the user sees and are undirected. Use supported Relayer icons and useful markdown detail. At any layer, add expand, reference, or invoke actions only when they materially improve the response.
+Layer edges are exactly what the user sees and are undirected. Give every node useful markdown detail.
+
+${PYTHON_GRAPH_AUTHORING_RULES}
+
+At any layer, add expand, reference, or invoke actions only when they materially improve the response.
 
 The graph service enforces exact provenance, target visibility, layer size, expansion cycles, and accepted closure. If a call fails, read every natural-language issue, edit the same authoring code, and rerun it with the same client_key values; stable keys make the whole-program rerun update the same drafts instead of creating duplicates. Do not add fake navigate or reference actions merely to make abandoned draft layers reachable. Only when graph.submit identifies a genuinely abandoned orphan draft, recover with await graph.discard_layer(layer); this preserves that layer as stopped history without discarding its nodes, edges, actions, or child layers. A model turn ending is not completion. The task is complete only when the final graph.submit call succeeds.`;
   }
@@ -918,8 +934,20 @@ function primeSessionAttachment(session: PrimeAgentSession): JsonObject {
 }
 
 function currentWorkspaceMechanicsPython(): string {
-  return `Read current with current = await graph.get_current(). After submitting a layer, you may update the pointer with await graph.advance_current(layer, expected_revision=current["headRevision"], operation_key="a-stable-operation-key").`;
+  return `Read current with current = await graph.get_current(). After submitting a layer, you may update the pointer with await graph.advance_current(layer, expected_revision=current["headRevision"], operation_key="a-stable-operation-key"). Once a layer is current, the next current layer must keep a navigation path back to it, so the user can always return to what they saw. This applies to every later advance_current and to the root layer of your final graph.submit. After submitting the new layer and before advancing to it or submitting, add await graph.add_navigate_action(node, "Earlier view", current["currentLayerId"], relation="reference", source_layer=new_layer, client_key="back-to-earlier-view") from one of its draft nodes created for this interaction. Reused accepted nodes cannot take new actions, so every layer you make current needs at least one new draft node to carry that reference.`;
 }
+
+/** The graph client calls a Prime cell uses, as the Python client declares them. Every method is async. */
+export const PYTHON_GRAPH_API_REFERENCE = `Graph client reference (every graph method is async; always await it):
+- NodeObject(icon, title, detail, kind="concept", client_key=...), EdgeObject((left_node, right_node), client_key=...), LayerObject(nodes, edges, layout, client_key=...), LayerLayoutObject(placements), NodePlacementObject(node, x, y); import them from relayer_graph.
+- await graph.submit_node(node) -> node; await graph.create_edge(left, right, client_key=...) -> edge; await graph.submit_layer(layer, size_justification=None) -> layer.
+- await graph.add_navigate_action(source_node, label, target_layer, relation="expand" | "reference", client_key=..., source_layer=None, variant="pill", icon=None, description=None).
+- await graph.add_invoke_action(source_node, label, interaction_text, source_layer=..., client_key=..., variant="pill", icon=None, description=None).
+- await graph.get_current(); await graph.advance_current(layer, expected_revision=..., operation_key=...); await graph.get_interaction_input(); await graph.discard_layer(layer); await graph.submit(interaction_node).
+- Graph objects do not expose client_key after submission; keep your own references to the objects you submitted.`;
+
+/** Rules the graph service enforces on authored objects, stated so the first attempt passes. */
+const PYTHON_GRAPH_AUTHORING_RULES = `Every node and every optional action icon must be one of: ${RELAYER_ICON_NAMES.join(", ")}. Action variants are "chip", "pill", "wide", or "card". Only a card accepts description, and a card requires one. Apart from the interaction node's one root expand action, add actions only on draft nodes created for this interaction; an accepted node you reuse keeps its existing actions.`;
 
 // Present only when the product granted this completion a broker, as in codex.basic.
 function semanticChildGuidancePython(context: HarnessRunContext): string {
