@@ -16,7 +16,10 @@ const directory = await mkdtemp(join(tmpdir(), "relayer-eval-web-proof-"));
 const resources = [];
 const shutdownShim = join(directory, "shutdown-shim.mjs");
 await writeFile(shutdownShim, 'process.on("message", (message) => { if (message === "shutdown") process.emit("SIGINT"); });\n');
-const hostArguments = ["--import", pathToFileURL(shutdownShim).href, "desktop/eval-main/index.mjs"];
+const { scripts } = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+assert.equal(scripts["eval-app:dev"], "node desktop/eval-main/index.mjs", "Eval launch must not build or package");
+assert.equal(scripts["eval:input-roundtrip:live"], "RELAYER_EVAL_AUTORUN_INPUT_ROUNDTRIP=1 node desktop/eval-main/index.mjs");
+const hostArguments = ["--import", pathToFileURL(shutdownShim).href, scripts["eval-app:dev"].slice("node ".length)];
 function requestShutdown(child) {
   // Windows kill(SIGINT) terminates rather than dispatching the Node handler.
   if (process.platform === "win32") child.send("shutdown");
