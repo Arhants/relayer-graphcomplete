@@ -44,12 +44,18 @@ pub(crate) async fn transition(
     } else {
         None
     };
+    let expiry = database.expiry();
+    // Rebuild needs the publication barrier and SQLite itself. Never wait for
+    // it while holding either; authority is still revalidated in the write
+    // transaction after this cancellable, bounded readiness wait.
+    if publishes_graph {
+        super::deadline(expiry, database.search_index.wait_until_available(target)).await?;
+    }
     let _publication = if publishes_graph {
         Some(database.enter_search_publication().await)
     } else {
         None
     };
-    let expiry = database.expiry();
     let mut transaction = database.storage.begin_write().await?;
     scope.require_active_authority(&mut transaction).await?;
     if let Some(receipt) = CurrentTable::new(&mut transaction)
@@ -134,8 +140,15 @@ pub(crate) async fn transition(
             .await?;
             let digest = snapshot_digest(&plan);
             accept::publish(&mut transaction, scope, &plan, Some(revision)).await?;
-            let root_action = plan.root_action()?.clone();
             accept::finalize(&mut transaction, scope, &plan).await?;
+            // The plan contains pre-acceptance drafts. Publish the canonical
+            // accepted action, otherwise ordinary reopen sees a draft EXPANDS
+            // relationship in Ladybug despite matching revision receipts.
+            let root_action = crate::storage::sqlite::actions::ActionTable::new(&mut transaction)
+                .record(scope, plan.root_action()?.id)
+                .await?
+                .ok_or_else(|| GraphError::Internal("accepted root action is missing".into()))?
+                .action;
             let publication =
                 read_accepted_publication_on(&mut transaction, scope, *layer_id, Some(root_action))
                     .await?;

@@ -795,9 +795,12 @@ describe("compiled Node Detail product runtime", () => {
       await window.happyDOM.waitUntilComplete();
       window.document.querySelector('[aria-label="Show Context illustration annotations"]').click();
       window.document.querySelector('[aria-label="Open Context illustration details"]').click();
-      await window.happyDOM.waitUntilComplete();
-      expect(resolver).toHaveBeenCalledWith(asset, expect.objectContaining({ interaction: source, layerId: 99, thread, node }));
-      expect(window.document.querySelector("#detailContent [data-node-detail-runtime]").shadowRoot.querySelector("img").src).toBe("blob:http://127.0.0.1:3000/context-image");
+      // Package integrity uses native WebCrypto, outside Happy DOM's task tracking.
+      // Observe the completed asset mount rather than only draining DOM tasks.
+      await vi.waitFor(() => {
+        expect(resolver).toHaveBeenCalledWith(asset, expect.objectContaining({ interaction: source, layerId: 99, thread, node }));
+        expect(window.document.querySelector("#detailContent [data-node-detail-runtime]")?.shadowRoot?.querySelector("img")?.src).toBe("blob:http://127.0.0.1:3000/context-image");
+      });
     } finally { workspace.dispose(); }
   });
 

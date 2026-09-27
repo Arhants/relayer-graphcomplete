@@ -14,6 +14,8 @@ from urllib.request import Request, urlopen
 from .exceptions import (APIError, AuthenticationError, ConfigurationError,
                          GraphQueryError, NotFound, TransportError,
                          ValidationError, ValidationIssue)
+from .detail import NodeDetailAuthoring
+from .visual_assets import GraphVisualAssets
 from .query import GraphSearchRequest, GraphSearchResult
 from .query_errors_generated import (GRAPH_QUERY_CONTRACT_VERSION,
                                      GRAPH_QUERY_ERROR_PHASES)
@@ -28,13 +30,15 @@ class GraphNode:
     detail: str
     state: str
     leased_action_id: int | None = None
+    authored_detail: Mapping[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "GraphNode":
         leased_action_id = value.get("leasedActionId")
         return cls(int(value["id"]), str(value["kind"]), str(value["icon"]),
                    str(value["title"]), str(value["detail"]), str(value["state"]),
-                   None if leased_action_id is None else int(leased_action_id))
+                   None if leased_action_id is None else int(leased_action_id),
+                   value.get("authoredDetail"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +157,7 @@ class NodeObject:
     kind: str = "concept"
     client_key: str = field(default_factory=lambda: str(uuid.uuid4()))
     ref: GraphNode | None = field(default=None, init=False)
+    detail_authoring: NodeDetailAuthoring = field(default_factory=NodeDetailAuthoring, init=False)
 
 
 @dataclass(slots=True)
@@ -213,6 +218,7 @@ class RelayerGraphClient:
         self.token = token
         self.node_id = node_id
         self.timeout = timeout
+        self.visual_assets = GraphVisualAssets(self)
 
     async def __aenter__(self) -> "RelayerGraphClient":
         return self
@@ -240,6 +246,8 @@ class RelayerGraphClient:
         return InteractionInput.from_dict(await self._request("GET", "/api/graph/input"))
 
     async def submit_node(self, node: NodeObject) -> GraphNode:
+        if node.detail_authoring._components or node.detail_authoring._cleared:
+            raise ConfigurationError("Visual details require GraphSession.current() in Prime")
         value = await self._request("POST", "/api/graph/nodes", {
             "clientKey": node.client_key, "kind": node.kind, "icon": node.icon,
             "title": node.title, "detail": node.detail,
@@ -338,6 +346,18 @@ class RelayerGraphClient:
         if minimum_selections is not None:
             payload["minimumSelections"] = minimum_selections
         return await self._request("POST", "/api/graph/actions", payload)
+
+    async def add_action(self, source: NodeReference, action: Any) -> Mapping[str, Any]:
+        presentation = {"variant": action.variant, "icon": action.icon, "description": action.description}
+        common = {"source_layer": action.source_layer, "client_key": action.client_key, **presentation}
+        if action.kind == "navigate":
+            return await self.add_navigate_action(source, action.label, action.target, relation=action.relation, **common)
+        if action.kind == "invoke":
+            return await self.add_invoke_action(source, action.label, action.interaction_text, **common)
+        if action.kind == "input":
+            return await self.add_input_action(source, action.label, action.prompt, control=action.control,
+                options=action.options, minimum_selections=action.minimum_selections, **common)
+        raise ValueError("Unknown graph action kind")
 
     async def get_layer(self, layer: LayerReference) -> Mapping[str, Any]:
         return await self._request("GET", f"/api/graph/layers/{_layer_id(layer)}")

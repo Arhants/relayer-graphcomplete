@@ -109,6 +109,8 @@ export async function stopRunFixture() {
             createHostRequestHandler: (handler) => handler,
             createAgentSessionServices: async () => ({}),
             createAgentSessionFromServices: async () => ({ session: {
+              agent: { state: { thinkingLevel: "off" } },
+              sessionManager: { appendThinkingLevelChange() {} },
               sessionFile: join(directory, `prime-${factoryContext.threadId}.jsonl`),
               promptAndWait: begin,
               abort,

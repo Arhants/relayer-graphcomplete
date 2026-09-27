@@ -6,6 +6,15 @@ pub(crate) const PROVIDER_DEFAULT_FAMILY_POLICY_ID: &str = "provider-default-fam
 pub(crate) const OPENROUTER_DEFAULT_FAMILY_POLICY_ID: &str = "openrouter-default-family";
 pub(crate) const VERCEL_AI_ROUTER_DEFAULT_FAMILY_POLICY_ID: &str =
     "vercel-ai-router-default-family";
+pub(crate) const PRIME_DEFAULT_FAMILY_POLICY_ID: &str = "prime-default-family";
+const CODEX_DEFAULT_FAMILY_V3_MODELS: [&str; 3] = ["gpt-6-sol", "gpt-6-astra", "gpt-6-luna"];
+const PRIME_DEFAULT_FAMILY_V1_MODELS: [&str; 5] = [
+    "qwen/qwen3.8-max",
+    "alibaba/qwen3.8-max",
+    "deepseek/deepseek-v4-pro-0813",
+    "z-ai/glm-5.3",
+    "zai/glm-5.3",
+];
 const CODEX_DEFAULT_FAMILY_V2_MODELS: [&str; 3] = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"];
 const OPENAI_API_DEFAULT_FAMILY_V1_MODELS: [&str; 5] = [
     "gpt-5.6-sol",
@@ -34,6 +43,10 @@ pub(crate) fn applies_to_adapter(policy: &FamilyPolicyReference, adapter_id: &st
                 PROVIDER_DEFAULT_FAMILY_POLICY_ID,
                 "openai-api" | "anthropic-api"
             )
+            | (
+                PRIME_DEFAULT_FAMILY_POLICY_ID,
+                "openrouter" | "vercel-ai-router"
+            )
             | (OPENROUTER_DEFAULT_FAMILY_POLICY_ID, "openrouter")
             | (
                 VERCEL_AI_ROUTER_DEFAULT_FAMILY_POLICY_ID,
@@ -45,11 +58,11 @@ pub(crate) fn applies_to_adapter(policy: &FamilyPolicyReference, adapter_id: &st
 pub(crate) fn fallback_for_adapter(adapter_id: &str) -> Option<FamilyPolicyReference> {
     match adapter_id {
         "openrouter" => Some(FamilyPolicyReference {
-            id: OPENROUTER_DEFAULT_FAMILY_POLICY_ID.into(),
+            id: PRIME_DEFAULT_FAMILY_POLICY_ID.into(),
             version: 1,
         }),
         "vercel-ai-router" => Some(FamilyPolicyReference {
-            id: VERCEL_AI_ROUTER_DEFAULT_FAMILY_POLICY_ID.into(),
+            id: PRIME_DEFAULT_FAMILY_POLICY_ID.into(),
             version: 1,
         }),
         "openai-api" | "anthropic-api" => Some(FamilyPolicyReference {
@@ -85,8 +98,13 @@ pub(crate) fn derive_managed_family_members(
                 })
                 .collect())
         }
-        (CODEX_DEFAULT_FAMILY_POLICY_ID, 2) => {
-            let mut models = CODEX_DEFAULT_FAMILY_V2_MODELS
+        (CODEX_DEFAULT_FAMILY_POLICY_ID, 2 | 3) => {
+            let preferences = if policy.version == 3 {
+                CODEX_DEFAULT_FAMILY_V3_MODELS
+            } else {
+                CODEX_DEFAULT_FAMILY_V2_MODELS
+            };
+            let mut models = preferences
                 .iter()
                 .filter_map(|model_id| {
                     snapshot
@@ -182,6 +200,21 @@ pub(crate) fn derive_managed_family_members(
                 position,
             })
             .collect()),
+        (PRIME_DEFAULT_FAMILY_POLICY_ID, 1) => Ok(PRIME_DEFAULT_FAMILY_V1_MODELS
+            .iter()
+            .filter_map(|model_id| {
+                snapshot
+                    .models
+                    .iter()
+                    .find(|model| model.visible && model.available && model.id == *model_id)
+            })
+            .enumerate()
+            .map(|(position, model)| ModelFamilyMember {
+                provider_id: snapshot.provider_id.clone(),
+                model_id: model.id.clone(),
+                position,
+            })
+            .collect()),
         (VERCEL_AI_ROUTER_DEFAULT_FAMILY_POLICY_ID, 1) => {
             Ok(VERCEL_AI_ROUTER_DEFAULT_FAMILY_V1_MODELS
                 .iter()
@@ -242,6 +275,61 @@ mod tests {
             replacement_model_id: None,
             metadata: serde_json::json!({}),
         }
+    }
+
+    #[test]
+    fn production_policies_prefer_sol_and_each_router_qwen_identity() {
+        let codex = FamilyPolicyReference {
+            id: CODEX_DEFAULT_FAMILY_POLICY_ID.into(),
+            version: 3,
+        };
+        let members = derive_managed_family_members(
+            &codex,
+            &snapshot(vec![
+                model("gpt-6-luna", 0, true, false),
+                model("gpt-6-astra", 1, true, true),
+                model("gpt-6-sol", 2, true, false),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            members
+                .iter()
+                .map(|m| m.model_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["gpt-6-sol", "gpt-6-astra", "gpt-6-luna"]
+        );
+        let prime = FamilyPolicyReference {
+            id: PRIME_DEFAULT_FAMILY_POLICY_ID.into(),
+            version: 1,
+        };
+        for (adapter, qwen, glm) in [
+            ("openrouter", "qwen/qwen3.8-max", "z-ai/glm-5.3"),
+            ("vercel-ai-router", "alibaba/qwen3.8-max", "zai/glm-5.3"),
+        ] {
+            assert!(applies_to_adapter(&prime, adapter));
+            let mut catalog = snapshot(vec![
+                model("deepseek/deepseek-v4-pro-0813", 0, true, true),
+                model(qwen, 2, true, false),
+                model(glm, 1, true, false),
+                model("arbitrary", 3, true, true),
+            ]);
+            let members = derive_managed_family_members(&prime, &catalog).unwrap();
+            assert_eq!(
+                members
+                    .iter()
+                    .map(|m| m.model_id.as_str())
+                    .collect::<Vec<_>>(),
+                vec![qwen, "deepseek/deepseek-v4-pro-0813", glm]
+            );
+            catalog.models[1].available = false;
+            assert_eq!(
+                derive_managed_family_members(&prime, &catalog).unwrap()[0].model_id,
+                "deepseek/deepseek-v4-pro-0813"
+            );
+        }
+        assert!(!applies_to_adapter(&prime, "openai-api"));
+        assert!(!applies_to_adapter(&prime, "codex-subscription"));
     }
 
     #[test]
@@ -438,11 +526,11 @@ mod tests {
             assert!(applies_to_adapter(&policy, adapter_id));
         }
         let openrouter = fallback_for_adapter("openrouter").expect("OpenRouter fallback policy");
-        assert_eq!(openrouter.id, OPENROUTER_DEFAULT_FAMILY_POLICY_ID);
+        assert_eq!(openrouter.id, PRIME_DEFAULT_FAMILY_POLICY_ID);
         assert_eq!(openrouter.version, 1);
         assert!(applies_to_adapter(&openrouter, "openrouter"));
         let vercel = fallback_for_adapter("vercel-ai-router").expect("Vercel fallback policy");
-        assert_eq!(vercel.id, VERCEL_AI_ROUTER_DEFAULT_FAMILY_POLICY_ID);
+        assert_eq!(vercel.id, PRIME_DEFAULT_FAMILY_POLICY_ID);
         assert_eq!(vercel.version, 1);
         assert!(applies_to_adapter(&vercel, "vercel-ai-router"));
         assert!(!applies_to_adapter(
