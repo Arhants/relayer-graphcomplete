@@ -329,15 +329,6 @@ impl SqliteProductStore {
                 ));
             }
         }
-        sqlx::query(
-            "UPDATE interaction_attempts
-             SET finished_at=?1,outcome='accepted',failure_category=NULL,effect_boundary='graph_write'
-             WHERE interaction_id=?2 AND outcome='running'",
-        )
-        .bind(timestamp)
-        .bind(completion.interaction_id.value())
-        .execute(&mut *transaction)
-        .await?;
         transaction.commit().await?;
         Ok(execution_changed || interaction.rows_affected() == 1)
     }
@@ -428,17 +419,52 @@ impl SqliteProductStore {
                 ));
             }
         }
-        sqlx::query(
+        transaction.commit().await?;
+        Ok(execution_changed || interaction.rows_affected() == 1)
+    }
+
+    /// Ends a settled recursive child's running attempt, with the outcome its settlement
+    /// recorded, once its provider run has ended. Only then does the attempt's lease become
+    /// debt the reconciler releases, so the provider keeps its leases while it runs.
+    pub(crate) async fn end_completion_execution_attempt(
+        &self,
+        interaction_id: InteractionId,
+        timestamp: &str,
+    ) -> Result<bool, StorageError> {
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let settled: Option<(String, String)> = sqlx::query_as(
+            "SELECT e.phase,i.completion_status FROM completion_executions e JOIN interactions i ON i.id=e.interaction_id WHERE e.interaction_id=?1",
+        )
+        .bind(interaction_id.value())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let Some((phase, status)) = settled else {
+            return Ok(false);
+        };
+        if phase != "settled" {
+            return Err(conflict(
+                "a recursive attempt ends only after its execution settles",
+            ));
+        }
+        let (outcome, failure_category, effect_boundary) = if status == "accepted" {
+            ("accepted", None, "graph_write")
+        } else {
+            ("execution_failed", Some("recursive_completion"), "unknown")
+        };
+        let ended = sqlx::query(
             "UPDATE interaction_attempts
-             SET finished_at=?1,outcome='execution_failed',failure_category='recursive_completion',effect_boundary='unknown'
-             WHERE interaction_id=?2 AND outcome='running'",
+             SET finished_at=?1,outcome=?2,failure_category=?3,effect_boundary=?4
+             WHERE interaction_id=?5 AND outcome='running'",
         )
         .bind(timestamp)
+        .bind(outcome)
+        .bind(failure_category)
+        .bind(effect_boundary)
         .bind(interaction_id.value())
         .execute(&mut *transaction)
         .await?;
         transaction.commit().await?;
-        Ok(execution_changed || interaction.rows_affected() == 1)
+        Ok(ended.rows_affected() == 1)
     }
 
     /// Atomically makes an interrupted recursive execution non-launchable and projects the

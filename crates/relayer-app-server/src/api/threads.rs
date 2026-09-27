@@ -1276,6 +1276,21 @@ pub(super) async fn complete_prepared_child(
     headers: HeaderMap,
     Json(input): Json<CompletePreparedChildRequest>,
 ) -> Result<(StatusCode, Json<CompletePreparedChildResponse>), ApiError> {
+    // The launch runs to its end even if the caller disconnects. Dropped midway, it would
+    // leave a claimed child, and an admitted attempt with its leases, that nothing observes.
+    tokio::spawn(launch_prepared_child(state, headers, input))
+        .await
+        .map_err(|error| {
+            eprintln!("recursive child launch did not finish: {error}");
+            ApiError::internal("recursive child launch did not finish")
+        })?
+}
+
+async fn launch_prepared_child(
+    state: ApiState,
+    headers: HeaderMap,
+    input: CompletePreparedChildRequest,
+) -> Result<(StatusCode, Json<CompletePreparedChildResponse>), ApiError> {
     if input.interaction_node < 1 {
         return Err(ApiError::invalid(
             "interactionNode must be a positive integer",
@@ -1473,17 +1488,17 @@ pub(super) async fn complete_prepared_child(
     .await
     {
         Ok(admission) => admission,
-        Err(error) => {
+        Err(refusal) => {
             spawn_failed_recursive_start_cleanup(
                 state.clone(),
                 thread,
                 outcome.interaction,
                 prepared,
                 permission_origin_digest,
-                "model_unavailable",
+                refusal.reason,
                 None,
             );
-            return Err(error);
+            return Err(refusal.error);
         }
     };
     let attempt_id = admission.as_ref().map(|admission| admission.attempt_id);
@@ -1593,6 +1608,16 @@ struct RecursiveChildAdmission {
     attempt_id: i64,
 }
 
+/// Why a recursive child was not admitted: the graph failure reason its cleanup records.
+struct RecursiveAdmissionRefusal {
+    reason: &'static str,
+    error: ApiError,
+}
+
+fn refused(reason: &'static str) -> impl FnOnce(ApiError) -> RecursiveAdmissionRefusal {
+    move |error| RecursiveAdmissionRefusal { reason, error }
+}
+
 /// Admits a recursive child as a root turn is admitted. Its inherited selection resolves
 /// to the family plan current at launch, the host leases every provider in that plan, and
 /// the product records the running attempt that owns those leases until the child settles.
@@ -1604,21 +1629,27 @@ async fn admit_recursive_child(
     thread: &Thread,
     interaction: &Interaction,
     prepared: &PreparedInteraction,
-) -> Result<Option<RecursiveChildAdmission>, ApiError> {
+) -> Result<Option<RecursiveChildAdmission>, RecursiveAdmissionRefusal> {
     let Some(selection) = interaction.model_selection.as_ref() else {
         return Ok(None);
     };
     let (model_plan, route) = state
         .product
         .resolve_execution_model_plan(&thread.harness_configuration_name, selection)
-        .await?;
+        .await
+        .map_err(|error| refused("model_unavailable")(error.into()))?;
     let harness_policy = prepared.harness_policy().ok_or_else(|| {
-        ApiError::internal("a recursive child with a model selection requires its harness policy")
+        refused("configuration")(ApiError::internal(
+            "a recursive child with a model selection requires its harness policy",
+        ))
     })?;
-    let working_directory = thread_working_directory(state, thread).await?;
+    let working_directory = thread_working_directory(state, thread)
+        .await
+        .map_err(refused("configuration"))?;
     let permission_profile = state
         .permission_catalog
-        .profile(&thread.permission_profile_id)?;
+        .profile(&thread.permission_profile_id)
+        .map_err(|error| refused("configuration")(error.into()))?;
     let attempt_admission_id = uuid::Uuid::new_v4().to_string();
     let command = CompleteInteraction {
         project_id: thread.project_id.map(ProjectId::value),
@@ -1641,7 +1672,13 @@ async fn admit_recursive_child(
         personal_presentation: None,
         submitted_inputs: &[],
     };
-    let admission = runtime.admit_invoked_execution(&command).await?;
+    let admission = runtime
+        .admit_invoked_execution(&command)
+        .await
+        .map_err(|error| RecursiveAdmissionRefusal {
+            reason: error.completion_failure_reason(),
+            error: error.into(),
+        })?;
     let attempt = state
         .product
         .begin_interaction_attempt(crate::product::BeginInteractionAttempt {
@@ -1663,7 +1700,7 @@ async fn admit_recursive_child(
             let _ = runtime
                 .release_provider_execution(thread.id.value(), &admission.execution_lease_id)
                 .await;
-            return Err(error.into());
+            return Err(refused("execution")(error.into()));
         }
     };
     Ok(Some(RecursiveChildAdmission {
@@ -1675,9 +1712,8 @@ async fn admit_recursive_child(
 }
 
 /// Projects one terminal graph current into the recursive child's product rows,
-/// and reports whether the product accepted it. A caller retries a refusal. Once the
-/// child's attempt is terminal, its provider leases are released as attempt debt.
-#[allow(clippy::too_many_arguments)]
+/// and reports whether the product accepted it. A caller retries a refusal. The
+/// child's attempt, and with it its leases, ends only once its provider run ends too.
 async fn settle_terminal_recursive_child(
     state: &ApiState,
     runtime: &crate::runtime::RuntimeClient,
@@ -1686,7 +1722,6 @@ async fn settle_terminal_recursive_child(
     prepared: &PreparedInteraction,
     permission_origin_digest: &str,
     current: &relayer_graph_core::CompletionState,
-    attempt_id: Option<i64>,
 ) -> bool {
     let completion_id = prepared.graph_node_id;
     let settled = if current.lifecycle == relayer_graph_core::CompletionLifecycle::Succeeded {
@@ -1736,20 +1771,7 @@ async fn settle_terminal_recursive_child(
             .map(|_| ())
     };
     match settled {
-        Ok(()) => {
-            if let Some(attempt_id) = attempt_id
-                && !crate::app_server::reconcile_terminal_execution_lease(
-                    &state.product,
-                    runtime,
-                    attempt_id,
-                )
-                .await
-                && let Some(execution) = &state.interaction_execution
-            {
-                execution.schedule_execution_lease_reconciliation();
-            }
-            true
-        }
+        Ok(()) => true,
         Err(error) => {
             eprintln!(
                 "recursive completion {completion_id} {} settlement could not be projected: {error}",
@@ -1823,11 +1845,22 @@ fn spawn_failed_recursive_start_cleanup(
             &prepared,
             &permission_origin_digest,
             &current,
-            attempt_id,
         )
         .await
         {
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+        // A start that failed may still have run (its acknowledgement was lost), so the
+        // attempt and its leases end only once the host no longer runs the child.
+        if let Some(attempt_id) = attempt_id {
+            let _ = await_provider_end(
+                runtime,
+                thread.id.value(),
+                completion_id,
+                PROVIDER_END_RETRY_STEP,
+            )
+            .await;
+            end_child_attempt(&state, runtime, interaction.id, attempt_id).await;
         }
         loop {
             match runtime.discard_prepared(prepared.clone()).await {
@@ -2110,7 +2143,6 @@ fn spawn_recursive_completion_observers(
                         &semantic_prepared,
                         &semantic_origin_digest,
                         &current,
-                        attempt_id,
                     )
                     .await
                     {
@@ -2159,16 +2191,20 @@ fn spawn_recursive_completion_observers(
     tokio::spawn(async move {
         let _broker_lease = broker_lease;
         let runtime = state.runtime.as_ref().expect("recursive runtime");
-        let provider = runtime
-            .observe_invoked_completion(thread.id.value(), completion_id)
-            .await;
-        if provider.is_err()
-            && runtime
-                .completion_current(completion_id)
-                .await
-                .is_ok_and(|current| {
-                    current.lifecycle == relayer_graph_core::CompletionLifecycle::Active
-                })
+        // A run that ends without Return is a failure, never success, however it ended.
+        let _ = await_provider_end(
+            runtime,
+            thread.id.value(),
+            completion_id,
+            PROVIDER_END_RETRY_STEP,
+        )
+        .await;
+        if runtime
+            .completion_current(completion_id)
+            .await
+            .is_ok_and(|current| {
+                current.lifecycle == relayer_graph_core::CompletionLifecycle::Active
+            })
         {
             let _ = runtime
                 .fail_graph_completion(
@@ -2178,8 +2214,89 @@ fn spawn_recursive_completion_observers(
                 )
                 .await;
         }
+        if let Some(attempt_id) = attempt_id {
+            end_child_attempt(&state, runtime, interaction.id, attempt_id).await;
+        }
         let _ = runtime.discard_prepared(prepared).await;
     });
+}
+
+/// The first pause after the harness cannot be reached while a child runs. Each further
+/// failure waits one step longer, up to ten steps.
+const PROVIDER_END_RETRY_STEP: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// Consecutive unreachable observations after which the child is cancelled.
+const PROVIDER_END_UNREACHABLE_LIMIT: u32 = 20;
+
+/// Waits until the harness reports that a child's provider run has ended. The host answers
+/// only when the run ends, so only its answer ends the wait. A timeout means the run is still
+/// going. A request that never reached the host proves nothing, so it is retried. Once the
+/// host has been unreachable for long enough, the child is cancelled; if the cancel is
+/// accepted, the next answer reports the end, and if it fails too the wait gives up.
+async fn await_provider_end(
+    runtime: &crate::runtime::RuntimeClient,
+    thread_id: i64,
+    completion_id: i64,
+    retry_step: std::time::Duration,
+) -> Result<Value, RuntimeError> {
+    let mut unreachable = 0_u32;
+    loop {
+        match runtime
+            .observe_invoked_completion(thread_id, completion_id)
+            .await
+        {
+            Err(error) if error.is_timeout() => unreachable = 0,
+            Err(error) if !error.is_host_answer() => {
+                unreachable += 1;
+                if unreachable >= PROVIDER_END_UNREACHABLE_LIMIT {
+                    eprintln!(
+                        "recursive completion {completion_id} provider could not be observed; cancelling it: {error}"
+                    );
+                    if runtime
+                        .cancel_invoked_completion(thread_id, completion_id)
+                        .await
+                        .is_err()
+                    {
+                        return Err(error);
+                    }
+                    unreachable = 0;
+                    continue;
+                }
+                tokio::time::sleep(retry_step * unreachable.min(10)).await;
+            }
+            ended => return ended,
+        }
+    }
+}
+
+/// Ends a child's attempt once both its provider run has ended and its execution has
+/// settled, then releases the attempt's leases. Until then the provider keeps its leases,
+/// so provider removal waits for it.
+async fn end_child_attempt(
+    state: &ApiState,
+    runtime: &crate::runtime::RuntimeClient,
+    interaction_id: InteractionId,
+    attempt_id: i64,
+) {
+    loop {
+        match state
+            .product
+            .end_completion_execution_attempt(interaction_id, &completion_timestamp())
+            .await
+        {
+            Ok(_) => break,
+            Err(error) => eprintln!(
+                "recursive completion attempt {attempt_id} waits for settlement before it ends: {error}"
+            ),
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    if !crate::app_server::reconcile_terminal_execution_lease(&state.product, runtime, attempt_id)
+        .await
+        && let Some(execution) = &state.interaction_execution
+    {
+        execution.schedule_execution_lease_reconciliation();
+    }
 }
 
 pub(super) async fn invoke_action(
@@ -2891,6 +3008,8 @@ mod tests {
         current: Arc<Mutex<Value>>,
         transitions: Arc<Mutex<Vec<Value>>>,
         cancellations: Arc<AtomicUsize>,
+        start_held: Arc<std::sync::atomic::AtomicBool>,
+        start_release: Arc<tokio::sync::Notify>,
         _lease: CompletionBrokerLease,
         graph_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
         harness_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
@@ -3131,15 +3250,26 @@ mod tests {
             );
         let starts = Arc::new(AtomicUsize::new(0));
         let cancellations = Arc::new(AtomicUsize::new(0));
+        let start_held = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let start_release = Arc::new(tokio::sync::Notify::new());
+        let held_start = start_held.clone();
+        let released_start = start_release.clone();
         let observed_starts = starts.clone();
         let observed_cancellations = cancellations.clone();
+        let run_cancellations = cancellations.clone();
+        let run_current = current.clone();
         let harness = Router::new()
             .route(
                 "/sessions/{id}/invoked-completions",
                 routing::post(move |axum::Json(body): axum::Json<Value>| {
                     let starts = observed_starts.clone();
+                    let held = held_start.clone();
+                    let release = released_start.clone();
                     async move {
                         starts.fetch_add(1, Ordering::SeqCst);
+                        if held.load(Ordering::SeqCst) {
+                            release.notified().await;
+                        }
                         assert_eq!(body["capability"]["nodeId"], 202);
                         assert_eq!(
                             body["traceContext"]["productInteractionId"], 2,
@@ -3160,9 +3290,22 @@ mod tests {
                     }
                 }),
             )
+            // The host answers only when the child's run ends: once it is cancelled, or
+            // once its current is no longer active.
             .route(
                 "/sessions/{id}/invoked-completions/202",
-                routing::get(|| async { axum::Json(serde_json::json!({"settled":true})) }),
+                routing::get(move || {
+                    let cancellations = run_cancellations.clone();
+                    let current = run_current.clone();
+                    async move {
+                        while cancellations.load(Ordering::SeqCst) == 0
+                            && current.lock().unwrap()["lifecycle"] == "active"
+                        {
+                            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                        }
+                        axum::Json(serde_json::json!({"settled":true}))
+                    }
+                }),
             )
             .route(
                 "/sessions/{id}/cancel",
@@ -3311,10 +3454,59 @@ mod tests {
             current,
             transitions,
             cancellations,
+            start_held,
+            start_release,
             _lease: lease,
             graph_task,
             harness_task,
         }
+    }
+
+    #[tokio::test]
+    async fn a_launch_whose_caller_disconnects_still_attaches_and_observes_the_child() {
+        let fixture = broker_fixture("caller-disconnects", "active").await;
+        fixture.start_held.store(true, Ordering::SeqCst);
+        let call = complete_prepared_child(
+            State(fixture.state.clone()),
+            fixture.headers.clone(),
+            Json(CompletePreparedChildRequest {
+                interaction_node: 202,
+            }),
+        );
+        // The broker's request goes away while the host is still starting the child.
+        let dropped = tokio::time::timeout(std::time::Duration::from_millis(300), call).await;
+        assert!(
+            dropped.is_err(),
+            "the start was held, so the call cannot finish"
+        );
+        assert_eq!(fixture.starts.load(Ordering::SeqCst), 1);
+        fixture.start_release.notify_one();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            let child = fixture
+                .product
+                .get_action_invocation(fixture.thread.root_interaction_id, 41)
+                .await
+                .unwrap()
+                .unwrap()
+                .interaction;
+            let execution = fixture
+                .product
+                .completion_execution(child.id)
+                .await
+                .unwrap()
+                .unwrap();
+            if execution.phase != CompletionExecutionPhase::Launching {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the started child was left launching with nothing observing it"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        fixture.finish();
     }
 
     #[tokio::test]

@@ -5,7 +5,7 @@
   "promises": [
     "SettledExecutionAgreesWithGraph",
     "LeaseReleasedOnlyAfterSettlement",
-    "SettledChildEndsItsAttempt"
+    "AttemptEndsOnlyAfterProvider"
   ],
   "finalPromises": [
     "ChildSettles",
@@ -431,7 +431,7 @@
       ],
       "state": {
         "appUp": true,
-        "attempt": "terminal",
+        "attempt": "running",
         "auth": true,
         "cleanKey": "start",
         "cleanPc": "discard",
@@ -473,6 +473,51 @@
     {
       "action": [
         "CleanDiscard"
+      ],
+      "state": {
+        "appUp": true,
+        "attempt": "running",
+        "auth": false,
+        "cleanKey": "start",
+        "cleanPc": "done",
+        "execWhy": "provider_start_failed",
+        "exitPc": "off",
+        "head": 1,
+        "launches": 0,
+        "lease": "held",
+        "life": "failed",
+        "lpc": {
+          "1": "done",
+          "2": "idle"
+        },
+        "phase": "settled",
+        "prov": "none",
+        "receipt": {
+          "activate": 99,
+          "admit": 99,
+          "attach": 99,
+          "exit": 99,
+          "obs": 99,
+          "restart": 99,
+          "start": 0,
+          "stop": 99
+        },
+        "restartPc": "none",
+        "selected": true,
+        "semPc": "off",
+        "status": "failed",
+        "stopPc": "idle",
+        "stopReport": "none",
+        "stopSeen": {
+          "h": 0,
+          "l": "active"
+        },
+        "why": "provider_start_failed"
+      }
+    },
+    {
+      "action": [
+        "AttemptEnd"
       ],
       "state": {
         "appUp": true,

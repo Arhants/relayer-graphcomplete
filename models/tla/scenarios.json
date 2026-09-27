@@ -361,6 +361,58 @@
       "init": "selected = FALSE"
     },
     {
+      "id": "completion-admission-refused",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "init": "selected = TRUE",
+      "promises": [
+        "SettledExecutionAgreesWithGraph",
+        "LeaseReleasedOnlyAfterSettlement",
+        "AttemptEndsOnlyAfterProvider"
+      ],
+      "finalPromises": [
+        "ChildSettles",
+        "LeaseReleased"
+      ],
+      "summary": "The host refuses a selected child's admission; the child never starts, holds no lease or attempt, and cleanup fails it with the refusal's reason.",
+      "steps": [
+        [
+          "LaunchCheck",
+          1
+        ],
+        [
+          "LaunchReserve",
+          1
+        ],
+        [
+          "LaunchClaim",
+          1
+        ],
+        [
+          "LaunchActivate",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchAdmit",
+          1,
+          "fail"
+        ],
+        [
+          "CleanCancel"
+        ],
+        [
+          "CleanFail"
+        ],
+        [
+          "CleanFinalize"
+        ],
+        [
+          "CleanDiscard"
+        ]
+      ]
+    },
+    {
       "id": "completion-admitted-start-failure",
       "module": "CompletionCurrent",
       "preset": "completion-today",
@@ -368,7 +420,7 @@
       "promises": [
         "SettledExecutionAgreesWithGraph",
         "LeaseReleasedOnlyAfterSettlement",
-        "SettledChildEndsItsAttempt"
+        "AttemptEndsOnlyAfterProvider"
       ],
       "finalPromises": [
         "ChildSettles",
@@ -416,6 +468,9 @@
           "CleanDiscard"
         ],
         [
+          "AttemptEnd"
+        ],
+        [
           "LeaseReconcile"
         ]
       ]
@@ -428,7 +483,7 @@
       "promises": [
         "SettledExecutionAgreesWithGraph",
         "LeaseReleasedOnlyAfterSettlement",
-        "SettledChildEndsItsAttempt",
+        "AttemptEndsOnlyAfterProvider",
         "ProviderRunsUnderLease"
       ],
       "finalPromises": [
@@ -478,6 +533,158 @@
         ],
         [
           "CleanDiscard"
+        ],
+        [
+          "AttemptEnd"
+        ],
+        [
+          "LeaseReconcile"
+        ]
+      ]
+    },
+    {
+      "id": "completion-admitted-returns-while-provider-runs",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "init": "selected = TRUE",
+      "promises": [
+        "SettledExecutionAgreesWithGraph",
+        "LeaseReleasedOnlyAfterSettlement",
+        "AttemptEndsOnlyAfterProvider",
+        "ProviderRunsUnderLease"
+      ],
+      "finalPromises": [
+        "ChildSettles",
+        "LeaseReleased"
+      ],
+      "summary": "An admitted child returns and settles while its provider still runs; its attempt and lease end only after the provider exits.",
+      "steps": [
+        [
+          "LaunchCheck",
+          1
+        ],
+        [
+          "LaunchReserve",
+          1
+        ],
+        [
+          "LaunchClaim",
+          1
+        ],
+        [
+          "LaunchActivate",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchAdmit",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchStart",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchAttach",
+          1,
+          "ok"
+        ],
+        [
+          "ChildReturn"
+        ],
+        [
+          "SemFinalize"
+        ],
+        [
+          "ProviderExit",
+          "exited_ok"
+        ],
+        [
+          "ExitObserve"
+        ],
+        [
+          "ExitCheckAndFail"
+        ],
+        [
+          "ExitDiscard"
+        ],
+        [
+          "AttemptEnd"
+        ],
+        [
+          "LeaseReconcile"
+        ]
+      ]
+    },
+    {
+      "id": "completion-admitted-exits-without-return",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "init": "selected = TRUE",
+      "promises": [
+        "SettledExecutionAgreesWithGraph",
+        "LeaseReleasedOnlyAfterSettlement",
+        "AttemptEndsOnlyAfterProvider",
+        "ProviderRunsUnderLease"
+      ],
+      "finalPromises": [
+        "ChildSettles",
+        "LeaseReleased"
+      ],
+      "summary": "An admitted child's provider exits cleanly without Return; the exit observer fails it, and its attempt and lease end once it settles.",
+      "steps": [
+        [
+          "LaunchCheck",
+          1
+        ],
+        [
+          "LaunchReserve",
+          1
+        ],
+        [
+          "LaunchClaim",
+          1
+        ],
+        [
+          "LaunchActivate",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchAdmit",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchStart",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchAttach",
+          1,
+          "ok"
+        ],
+        [
+          "ProviderExit",
+          "exited_ok"
+        ],
+        [
+          "ExitObserve"
+        ],
+        [
+          "ExitCheckAndFail"
+        ],
+        [
+          "SemFinalize"
+        ],
+        [
+          "ExitDiscard"
+        ],
+        [
+          "AttemptEnd"
         ],
         [
           "LeaseReconcile"

@@ -130,6 +130,8 @@ pub(crate) struct RuntimeClient {
     configurations: HashMap<String, CatalogEntry>,
     unavailable_configurations: HashMap<String, UnavailableCatalogEntry>,
     temporal_features: relayer_graph_core::TemporalFeatureConfig,
+    /// How long one invoked-completion observation waits before the caller asks again.
+    observation_poll: std::time::Duration,
 }
 
 /// A recursive child's family admission, forwarded to its start exactly as a root run's.
@@ -461,7 +463,13 @@ impl RuntimeClient {
             configurations,
             unavailable_configurations,
             temporal_features,
+            observation_poll: CONTROL_REQUEST_TIMEOUT,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_observation_poll(&mut self, poll: std::time::Duration) {
+        self.observation_poll = poll;
     }
 
     pub(crate) fn has_configuration(&self, name: &str) -> bool {
@@ -1011,9 +1019,12 @@ impl RuntimeClient {
                 "invoked completion observation identifiers must be positive".into(),
             ));
         }
-        self.control_harness_get(&format!(
-            "sessions/{thread_id}/invoked-completions/{completion_id}"
-        ))
+        // The host answers only when the run ends, so this is a bounded long poll: a
+        // timeout means the run is still going, and the caller asks again.
+        self.control_harness_get(
+            &format!("sessions/{thread_id}/invoked-completions/{completion_id}"),
+            self.observation_poll,
+        )
         .await
     }
 
@@ -1792,12 +1803,16 @@ impl RuntimeClient {
         response_json(response, StatusCode::OK).await
     }
 
-    async fn control_harness_get(&self, path: &str) -> Result<Value, RuntimeError> {
+    async fn control_harness_get(
+        &self,
+        path: &str,
+        timeout: std::time::Duration,
+    ) -> Result<Value, RuntimeError> {
         let response = self
             .client
             .get(self.harness_url.join(path)?)
             .bearer_auth(&self.harness_control_token)
-            .timeout(CONTROL_REQUEST_TIMEOUT)
+            .timeout(timeout)
             .send()
             .await?;
         response_json(response, StatusCode::OK).await
@@ -2384,6 +2399,46 @@ pub(crate) fn harness_policy_value_digest(policy: &Value) -> Result<String, Runt
     hasher.update(b"relayer.harness-policy.v1\0");
     hasher.update(serde_json::to_vec(policy)?);
     Ok(format!("sha256:{:x}", hasher.finalize()))
+}
+
+impl RuntimeError {
+    /// Whether the request ran out of time rather than receiving an answer.
+    pub(crate) fn is_timeout(&self) -> bool {
+        match self {
+            Self::Timeout(_) => true,
+            Self::Http(error) => error.is_timeout(),
+            _ => false,
+        }
+    }
+
+    /// Whether the harness itself answered, as opposed to the request never reaching it.
+    pub(crate) fn is_host_answer(&self) -> bool {
+        matches!(self, Self::Remote { .. } | Self::ResponseDecode(_))
+    }
+
+    /// The graph failure reason for an error that ends a completion before its provider
+    /// runs: the category the harness reported, or `execution` when it reported none.
+    pub(crate) fn completion_failure_reason(&self) -> &'static str {
+        const REASONS: &[&str] = &[
+            "authentication",
+            "model_not_found",
+            "rate_limit",
+            "provider_5xx",
+            "provider_timeout",
+            "transport",
+            "provider_disconnected",
+            "model_unavailable",
+            "configuration",
+            "permission_receipt_mismatch",
+            "application_restart",
+        ];
+        let (category, _, _) = self.attempt_failure();
+        REASONS
+            .iter()
+            .copied()
+            .find(|reason| *reason == category)
+            .unwrap_or("execution")
+    }
 }
 
 #[derive(Debug, Error)]

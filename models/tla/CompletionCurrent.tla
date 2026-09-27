@@ -27,7 +27,8 @@ CONSTANTS
   MaxRev,           \* bound on head_revision
   ValidFailReasons, \* CUR validate_terminal_reason FAILURE_REASONS
   ObserveTimesOut,  \* RT CONTROL_REQUEST_TIMEOUT (5 s) can expire on the
-                    \* observe GET that HH answers only when the run ends
+                    \* observe GET that HH answers only when the run ends;
+                    \* FALSE once the observer polls again on a timeout
   CleanExitIsChecked, \* FALSE today: only an observe Err leads to the
                     \* active-current check (THR:1998); a clean exit does not
   ActivationFailureSettlesGraph, \* FALSE today: a lost or failed
@@ -133,7 +134,7 @@ TermNowOk(k) == TermOutcome(k, head, life) /= "error"
 
 \* finalize_completion_execution_accepted / _failed (CEX:242-442): one
 \* transaction; any mismatch rolls back and the caller retries.
-\* A finalize moves the child's running attempt to its terminal outcome (CEX:333, 536).
+\* Restart ends a running attempt as unknown (CEX reconcile_on_restart).
 EndAttempt == attempt' = IF attempt = "running" THEN "terminal" ELSE attempt
 
 CanFinalizeAccepted == phase \in {"launching", "attached"} /\ status = "running"
@@ -267,14 +268,14 @@ SemFinalize ==
   /\ IF life = "succeeded"
      THEN IF CanFinalizeAccepted
           THEN /\ phase' = "settled" /\ status' = "accepted" /\ execWhy' = "none"
-               /\ semPc' = "done" /\ EndAttempt
+               /\ semPc' = "done"
           ELSE UNCHANGED <<phase, execWhy, status, semPc, attempt>>       \* retry forever
      ELSE IF CanFinalizeFailed
           THEN /\ phase' = "settled" /\ status' = "failed" /\ execWhy' = why
-               /\ semPc' = "done" /\ EndAttempt
+               /\ semPc' = "done"
           ELSE UNCHANGED <<phase, execWhy, status, semPc, attempt>>
   /\ UNCHANGED <<graphVars, auth, prov, launches, appUp, lpc, exitPc, cleanPc,
-                 stopPc, stopSeen, stopReport, restartPc, selected, lease, cleanKey>>
+                 stopPc, stopSeen, stopReport, restartPc, selected, attempt, lease, cleanKey>>
 
 \* Twenty consecutive projection errors: cancel, then Fail(graph_observation_failed).
 SemObservationFault ==
@@ -338,15 +339,15 @@ CleanFinalize ==
   /\ IF TerminalReadSettlesCleanup /\ life = "succeeded"
      THEN IF CanFinalizeAccepted
           THEN /\ phase' = "settled" /\ status' = "accepted" /\ execWhy' = "none"
-               /\ cleanPc' = "discard" /\ EndAttempt
+               /\ cleanPc' = "discard"
           ELSE UNCHANGED <<phase, execWhy, status, cleanPc, attempt>>
      ELSE IF CanFinalizeFailed
-     THEN /\ phase' = "settled" /\ status' = "failed" /\ cleanPc' = "discard" /\ EndAttempt
+     THEN /\ phase' = "settled" /\ status' = "failed" /\ cleanPc' = "discard"
           \* Today the reason is fixed; with the fix it is the graph's.
           /\ execWhy' = IF TerminalReadSettlesCleanup THEN why ELSE "provider_start_failed"
      ELSE UNCHANGED <<phase, execWhy, status, cleanPc, attempt>>
   /\ UNCHANGED <<graphVars, auth, prov, launches, appUp, lpc, semPc, exitPc,
-                 stopPc, stopSeen, stopReport, restartPc, selected, lease, cleanKey>>
+                 stopPc, stopSeen, stopReport, restartPc, selected, attempt, lease, cleanKey>>
 
 CleanDiscard ==
   /\ appUp /\ cleanPc = "discard"
@@ -426,6 +427,14 @@ RestartReconcile ==
   /\ UNCHANGED <<auth, prov, launches, lpc, semPc, exitPc, cleanPc, stopPc,
                  stopSeen, stopReport, selected, lease, cleanKey>>
 
+\* The exit observer, or start-failure cleanup, ends a settled child's attempt
+\* only once its provider run has ended (THR end_child_attempt).
+AttemptEnd ==
+  /\ appUp /\ attempt = "running" /\ phase = "settled" /\ prov /= "running"
+  /\ attempt' = "terminal"
+  /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, prov, launches, appUp,
+                 actorVars, selected, lease, cleanKey>>
+
 \* The lease-debt reconciler releases a terminal attempt's provider leases
 \* (app_server reconcile_terminal_execution_lease).
 LeaseReconcile ==
@@ -450,6 +459,7 @@ SystemStep ==
   \/ CleanCancel \/ CleanFail \/ CleanFinalize \/ CleanDiscard
   \/ StopPost \/ StopCancel
   \/ RestartReconcile
+  \/ AttemptEnd
   \/ LeaseReconcile
 
 Next ==
@@ -476,6 +486,7 @@ Fairness ==
   /\ WF_vars(CleanDiscard)
   /\ WF_vars(StopPost) /\ WF_vars(StopCancel)
   /\ WF_vars(RestartReconcile)
+  /\ WF_vars(AttemptEnd)
   /\ WF_vars(LeaseReconcile)
   /\ WF_vars(ProviderExitAny)
 
@@ -508,6 +519,7 @@ Act(s) ==
     [] n = "StopCancel" -> StopCancel
     [] n = "Crash" -> Crash
     [] n = "RestartReconcile" -> RestartReconcile
+    [] n = "AttemptEnd" -> AttemptEnd
     [] n = "LeaseReconcile" -> LeaseReconcile
 
 Spec == Init /\ [][Next]_vars
@@ -554,14 +566,15 @@ RestartNeverAborts == restartPc /= "aborted"
 LeaseReleasedOnlyAfterSettlement ==
   (lease = "released" /\ restartPc = "none") => attempt = "terminal"
 
-\* A selected child's provider runs only under a held lease until the child
-\* settles, so provider removal waits for it.
+\* An admitted child's provider runs only under a held lease, settled or not,
+\* so provider removal waits for the run itself (architecture.md drain rule).
 ProviderRunsUnderLease ==
-  (selected /\ prov = "running" /\ phase /= "settled" /\ restartPc = "none")
-    => lease = "held"
+  (selected /\ prov = "running" /\ restartPc = "none") => lease = "held"
 
-\* A settled child keeps no running attempt.
-SettledChildEndsItsAttempt == phase = "settled" => attempt /= "running"
+\* An attempt ends only once its child has settled and its provider no longer
+\* runs; until then it is the drain reference that keeps the provider in use.
+AttemptEndsOnlyAfterProvider ==
+  (attempt = "terminal" /\ restartPc = "none") => (phase = "settled" /\ prov /= "running")
 
 (* Liveness. PRD: a never-settling result is not the contract.            *)
 Settled == life /= "active" /\ phase = "settled" /\ status \in {"accepted", "failed"}

@@ -1759,6 +1759,17 @@ impl ProductService {
             .await?)
     }
 
+    pub(crate) async fn end_completion_execution_attempt(
+        &self,
+        interaction_id: InteractionId,
+        timestamp: &str,
+    ) -> Result<bool, ProductError> {
+        Ok(self
+            .storage
+            .end_completion_execution_attempt(interaction_id, timestamp)
+            .await?)
+    }
+
     pub(crate) async fn stage_conversation_import(
         &self,
         input: NewConversationImport<'_>,

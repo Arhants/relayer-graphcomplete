@@ -11,7 +11,8 @@
 //! step. Start-failure cleanup is the real background task. The fake harness
 //! holds its first call (cancel) until the replay reaches `CleanCancel`, so the
 //! task cannot run ahead of the trace; its later loops cannot be paused, so the
-//! replay compares state once the task has run.
+//! replay compares state once the task has run. The semantic and exit observers,
+//! set off by a child's Return and its provider's exit, are compared the same way.
 
 use super::*;
 use crate::{
@@ -82,10 +83,15 @@ fn sign_admission(body: &Value) -> Value {
 struct HarnessControl {
     /// "fail" refuses a start; "lost" runs it but acknowledges another identity.
     start: Mutex<&'static str>,
-    /// "ok" admits a family plan by signing it as the host does; "fail" refuses it.
+    /// "ok" admits a family plan by signing it as the host does; "fail" refuses it;
+    /// "unrecorded" admits it while the family is disabled, so no attempt can record it.
     admission: Mutex<&'static str>,
-    /// The child's provider run: none | running | cancelled.
+    /// The execution leases granted and not yet released.
+    granted: Mutex<std::collections::HashSet<String>>,
+    /// The child's provider run: none | running | cancelled | exited_ok | exited_err.
     prov: Mutex<&'static str>,
+    /// The graph completion a successful start acknowledges.
+    completion_id: Mutex<i64>,
     /// Once armed, a cancellation waits for the replay to release it.
     cancel_gated: AtomicBool,
     cancel_gate: tokio::sync::Semaphore,
@@ -107,6 +113,7 @@ struct World {
     harness: Arc<HarnessControl>,
     selected: bool,
     admission: Option<RecursiveChildAdmission>,
+    attachment: Option<Value>,
     pool: sqlx::SqlitePool,
     root: PathBuf,
     tasks: Vec<tokio::task::JoinHandle<Result<(), std::io::Error>>>,
@@ -275,14 +282,49 @@ impl World {
         let harness_control = Arc::new(HarnessControl {
             start: Mutex::new("fail"),
             admission: Mutex::new("ok"),
+            granted: Mutex::new(std::collections::HashSet::new()),
             prov: Mutex::new("none"),
+            completion_id: Mutex::new(0),
             cancel_gated: AtomicBool::new(false),
             cancel_gate: tokio::sync::Semaphore::new(0),
         });
         let start_control = harness_control.clone();
         let cancel_control = harness_control.clone();
         let admission_control = harness_control.clone();
+        let release_control = harness_control.clone();
+        let admission_pool = pool.clone();
+        let observe_control = harness_control.clone();
         let harness = Router::new()
+            // Like the host: a run it never registered is an error, a live run is
+            // answered only when it ends, and an ended run answers at once.
+            .route(
+                "/sessions/{id}/invoked-completions/{completion}",
+                routing::get(move || {
+                    let control = observe_control.clone();
+                    async move {
+                        loop {
+                            let prov = *control.prov.lock().unwrap();
+                            match prov {
+                                "none" => {
+                                    return (
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        axum::Json(serde_json::json!({
+                                            "error":"Invoked completion is not registered"
+                                        })),
+                                    );
+                                }
+                                "running" => tokio::time::sleep(Duration::from_millis(20)).await,
+                                _ => {
+                                    return (
+                                        StatusCode::OK,
+                                        axum::Json(serde_json::json!({"completionId":0})),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }),
+            )
             .route(
                 "/sessions",
                 // The thread's live session is held by the running root turn, which
@@ -300,27 +342,67 @@ impl World {
                 "/sessions/{id}/execution-leases",
                 routing::post(move |axum::Json(body): axum::Json<Value>| {
                     let control = admission_control.clone();
+                    let pool = admission_pool.clone();
                     async move {
-                        if *control.admission.lock().unwrap() != "ok" {
+                        let mode = *control.admission.lock().unwrap();
+                        if mode == "unrecorded" {
+                            sqlx::query("UPDATE model_families SET enabled=0 WHERE id=1")
+                                .execute(&pool)
+                                .await
+                                .unwrap();
+                        } else if mode != "ok" {
                             return (
                                 StatusCode::CONFLICT,
-                                axum::Json(serde_json::json!({"error":"provider unavailable"})),
+                                axum::Json(serde_json::json!({
+                                    "error": "the plan's model is not admitted",
+                                    "failureCategory": "model_unavailable",
+                                    "effectBoundary": "none",
+                                })),
                             );
                         }
-                        (StatusCode::CREATED, axum::Json(sign_admission(&body)))
+                        let admission = sign_admission(&body);
+                        control
+                            .granted
+                            .lock()
+                            .unwrap()
+                            .insert(admission["executionLeaseId"].as_str().unwrap().to_owned());
+                        (StatusCode::CREATED, axum::Json(admission))
                     }
                 }),
             )
             .route(
                 "/sessions/{id}/execution-leases/{lease}",
-                routing::delete(|| async { axum::Json(serde_json::json!({"released":true})) }),
+                routing::delete(
+                    move |axum::extract::Path((_, lease)): axum::extract::Path<(
+                        String,
+                        String,
+                    )>| {
+                        let control = release_control.clone();
+                        async move {
+                            let released = control.granted.lock().unwrap().remove(&lease);
+                            axum::Json(serde_json::json!({"released":released}))
+                        }
+                    },
+                ),
             )
             .route(
                 "/sessions/{id}/invoked-completions",
                 routing::post(move || {
                     let control = start_control.clone();
                     async move {
-                        if *control.start.lock().unwrap() == "lost" {
+                        let mode = *control.start.lock().unwrap();
+                        if mode == "ok" {
+                            *control.prov.lock().unwrap() = "running";
+                            let completion_id = *control.completion_id.lock().unwrap();
+                            return (
+                                StatusCode::CREATED,
+                                axum::Json(serde_json::json!({
+                                    "completionId":completion_id,
+                                    "attachment":{"schemaVersion":1,"provider":"test"}
+                                })),
+                            );
+                        }
+                        if mode == "lost" {
                             *control.prov.lock().unwrap() = "running";
                             (
                                 StatusCode::CREATED,
@@ -358,7 +440,7 @@ impl World {
             );
         let (graph_url, graph_task) = serve(graph_app).await;
         let (harness_url, harness_task) = serve(harness).await;
-        let runtime = RuntimeClient::open(
+        let mut runtime = RuntimeClient::open(
             &graph_url,
             &harness_url,
             "graph-control".into(),
@@ -367,6 +449,8 @@ impl World {
         )
         .await
         .unwrap();
+        // Observations of a live run time out and are polled again; keep that fast.
+        runtime.set_observation_poll(Duration::from_millis(100));
         let permission_catalog = crate::permissions::PermissionCatalog::load(
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../permissions/desktop.json"),
         )
@@ -424,7 +508,10 @@ impl World {
             product,
             runtime,
             thread,
-            completion_id: seeded.graph_node_id,
+            completion_id: {
+                *harness_control.completion_id.lock().unwrap() = seeded.graph_node_id;
+                seeded.graph_node_id
+            },
             child,
             seeded,
             activated: None,
@@ -435,6 +522,7 @@ impl World {
             harness: harness_control,
             selected,
             admission: None,
+            attachment: None,
             pool,
             root,
             tasks: vec![graph_task, harness_task],
@@ -517,7 +605,7 @@ impl World {
                         assert!(ok, "the fake harness refused this admission");
                         self.admission = admission;
                     }
-                    Err(_) => {
+                    Err(refusal) => {
                         assert!(!ok, "the admission was expected to succeed");
                         self.harness.cancel_gated.store(true, Ordering::SeqCst);
                         spawn_failed_recursive_start_cleanup(
@@ -526,7 +614,7 @@ impl World {
                             self.child.clone(),
                             activated,
                             self.origin_digest.clone(),
-                            "model_unavailable",
+                            refusal.reason,
                             None,
                         );
                     }
@@ -534,6 +622,7 @@ impl World {
             }
             "LaunchStart" => {
                 let mode = match argument(2) {
+                    "ok" => "ok",
                     "fail" => "fail",
                     "lost" => "lost",
                     other => panic!("the adapter cannot start with outcome {other}"),
@@ -557,6 +646,11 @@ impl World {
                         }),
                     )
                     .await;
+                if mode == "ok" {
+                    let started = started.unwrap_or_else(|error| panic!("start: {error}"));
+                    self.attachment = started.attachment.map(Value::Object);
+                    return;
+                }
                 assert!(started.is_err(), "a {mode} start must fail");
                 // Hold the cleanup at its first call until the trace releases it.
                 self.harness.cancel_gated.store(true, Ordering::SeqCst);
@@ -571,6 +665,43 @@ impl World {
                         .as_ref()
                         .map(|admission| admission.attempt_id),
                 );
+            }
+            // Attach, then spawn both observers, as complete_prepared_child does (THR:1508).
+            "LaunchAttach" => {
+                assert_eq!(
+                    argument(2),
+                    "ok",
+                    "the adapter drives successful attachment only"
+                );
+                let attachment = self.attachment.clone().expect("started before attach");
+                self.product
+                    .attach_completion_execution(
+                        self.child.id,
+                        &self.origin_digest,
+                        &attachment,
+                        &completion_timestamp(),
+                    )
+                    .await
+                    .unwrap();
+                spawn_recursive_completion_observers(
+                    self.state.clone(),
+                    self.thread.clone(),
+                    self.child.clone(),
+                    self.activated.clone().expect("activated before attach"),
+                    self.origin_digest.clone(),
+                    None,
+                    self.admission
+                        .as_ref()
+                        .map(|admission| admission.attempt_id),
+                );
+            }
+            // The semantic observer projects the terminal current on its own.
+            "SemFinalize" => self.await_settled().await,
+            "ProviderExit" => {
+                *self.harness.prov.lock().unwrap() = match argument(1) {
+                    "exited_ok" => "exited_ok",
+                    _ => "exited_err",
+                };
             }
             // stop_completion's GET and POSTs are one terminate call here (THR:1732).
             "StopRead" => {}
@@ -662,7 +793,8 @@ impl World {
                     .unwrap();
             }
             // Settlement reconciles the terminal attempt's lease inline, inside cleanup.
-            "CleanCancel" | "CleanFail" | "CleanFinalize" | "CleanDiscard" | "LeaseReconcile" => {
+            "CleanCancel" | "CleanFail" | "CleanFinalize" | "CleanDiscard" | "ExitObserve"
+            | "ExitCheckAndFail" | "ExitDiscard" | "AttemptEnd" | "LeaseReconcile" => {
                 if name == "CleanCancel" {
                     self.harness.cancel_gate.add_permits(1);
                 }
@@ -674,16 +806,23 @@ impl World {
         }
     }
 
+    async fn await_settled(&self) {
+        let deadline = Instant::now() + CLEANUP_QUIESCENCE;
+        while Instant::now() < deadline && self.observe().await["phase"] != "settled" {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    }
+
     async fn await_cleanup(&self) {
         let deadline = Instant::now() + CLEANUP_QUIESCENCE;
         while Instant::now() < deadline {
-            let settled = self
-                .product
-                .completion_execution(self.child.id)
-                .await
-                .unwrap()
-                .is_some_and(|execution| execution.phase == CompletionExecutionPhase::Settled);
-            if settled {
+            // Cleanup is done once the child settled, its attempt ended, and its lease
+            // (if it was admitted) was released.
+            let state = self.observe().await;
+            if state["phase"] == "settled"
+                && state["attempt"] != "running"
+                && state["lease"] != "held"
+            {
                 // Let the discard loop finish after settlement.
                 tokio::time::sleep(Duration::from_millis(50)).await;
                 return;
@@ -811,10 +950,11 @@ fn promise_holds(name: &str, state: &Value) -> bool {
             state["lease"] != "released" || state["attempt"] == "terminal"
         }
         "ProviderRunsUnderLease" => {
-            !(state["selected"] == true && state["prov"] == "running" && phase != "settled")
-                || state["lease"] == "held"
+            !(state["selected"] == true && state["prov"] == "running") || state["lease"] == "held"
         }
-        "SettledChildEndsItsAttempt" => phase != "settled" || state["attempt"] != "running",
+        "AttemptEndsOnlyAfterProvider" => {
+            state["attempt"] != "terminal" || (phase == "settled" && state["prov"] != "running")
+        }
         "LeaseReleased" => state["lease"] != "held",
         "ChildSettles" => {
             life != "active" && phase == "settled" && matches!(status, "accepted" | "failed")
@@ -846,7 +986,13 @@ async fn replay(trace: &Value) {
     let steps = trace["steps"].as_array().unwrap();
     let is_cleanup = |step: Option<&Value>| {
         step.and_then(|step| step["action"][0].as_str())
-            .is_some_and(|name| name.starts_with("Clean") || name == "LeaseReconcile")
+            .is_some_and(|name| {
+                name.starts_with("Clean")
+                    || name.starts_with("Exit")
+                    || name == "SemFinalize"
+                    || name == "AttemptEnd"
+                    || name == "LeaseReconcile"
+            })
     };
     for (index, step) in steps.iter().enumerate() {
         let action = step["action"].as_array();
@@ -854,8 +1000,16 @@ async fn replay(trace: &Value) {
         if let Some(action) = action {
             world.apply(action, next_is_cleanup).await;
         }
-        // The cleanup task's internal steps are compared once it has run.
-        if is_cleanup(Some(step)) && next_is_cleanup {
+        // Background work is compared once it has run: start-failure cleanup, the semantic
+        // observer settling the child, the exit observer, and the attempt end. A child's
+        // Return and its provider's exit set off observers that nothing holds, so each is
+        // compared with the background work that follows it.
+        let sets_off_background = is_cleanup(Some(step))
+            || matches!(
+                step["action"][0].as_str(),
+                Some("ChildReturn" | "ProviderExit")
+            );
+        if sets_off_background && next_is_cleanup {
             continue;
         }
         let real = world.observe().await;
@@ -912,4 +1066,252 @@ async fn completion_current_traces_replay_against_launch_and_cleanup() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+/// A provider run outlives several observation polls: each timeout is asked again, never
+/// read as the provider exiting, while a real answer or error ends the wait at once.
+#[tokio::test]
+async fn provider_end_waits_through_observation_timeouts() {
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let observed_calls = calls.clone();
+    let harness = Router::new()
+        .route(
+            "/sessions/{id}/invoked-completions/7",
+            routing::get(move || {
+                let calls = observed_calls.clone();
+                async move {
+                    if calls.fetch_add(1, Ordering::SeqCst) < 3 {
+                        tokio::time::sleep(Duration::from_millis(400)).await;
+                    }
+                    axum::Json(serde_json::json!({"completionId":7}))
+                }
+            }),
+        )
+        .route(
+            "/sessions/{id}/invoked-completions/8",
+            routing::get(|| async {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(serde_json::json!({"error":"Invoked completion is not registered"})),
+                )
+            }),
+        );
+    let graph = Router::new().route(
+        "/api/control/temporal-features",
+        routing::get(|| async {
+            axum::Json(serde_json::json!({
+                "configVersion":1,"schemaRead":true,"rootCurrentWrite":true,
+                "projectionUi":true,"invokeResolution":true,"providerRecursion":true
+            }))
+        }),
+    );
+    let (graph_url, graph_task) = serve(graph).await;
+    let (harness_url, harness_task) = serve(harness).await;
+    let root = std::env::temp_dir().join(format!(
+        "relayer-provider-end-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let catalog = root.join("catalog.json");
+    fs::write(
+        &catalog,
+        serde_json::json!({"schemaVersion":1,"configurations":[]}).to_string(),
+    )
+    .unwrap();
+    let mut runtime = RuntimeClient::open(
+        &graph_url,
+        &harness_url,
+        "graph-control".into(),
+        "harness-control".into(),
+        &catalog,
+    )
+    .await
+    .unwrap();
+    runtime.set_observation_poll(Duration::from_millis(100));
+
+    let ended = await_provider_end(&runtime, 1, 7, Duration::from_millis(1)).await;
+    assert_eq!(ended.unwrap()["completionId"], 7);
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        4,
+        "each timed-out poll was asked again"
+    );
+    assert!(
+        await_provider_end(&runtime, 1, 8, Duration::from_millis(1))
+            .await
+            .is_err()
+    );
+
+    graph_task.abort();
+    harness_task.abort();
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A harness that closes each connection unanswered while `drops` lasts, then answers every
+/// request with the ended run. It records each request line it read.
+async fn unreachable_harness(
+    drops: usize,
+) -> (String, Arc<Mutex<Vec<String>>>, tokio::task::JoinHandle<()>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/", listener.local_addr().unwrap());
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = requests.clone();
+    let task = tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut head = Vec::new();
+            let mut buffer = [0_u8; 1024];
+            while !head.windows(4).any(|window| window == b"\r\n\r\n") {
+                match socket.read(&mut buffer).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(read) => head.extend_from_slice(&buffer[..read]),
+                }
+            }
+            let line = String::from_utf8_lossy(&head)
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .to_owned();
+            let answered = {
+                let mut seen = seen.lock().unwrap();
+                seen.push(line);
+                seen.len() > drops
+            };
+            if answered {
+                let body = r#"{"completionId":9,"cancelled":true}"#;
+                let _ = socket
+                    .write_all(
+                        format!(
+                            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                            body.len()
+                        )
+                        .as_bytes(),
+                    )
+                    .await;
+            }
+        }
+    });
+    (url, requests, task)
+}
+
+/// A request that never reached the harness says nothing about the child's provider, so the
+/// wait retries it rather than reading it as the run ending. A harness that stays unreachable
+/// is asked to cancel the child before the wait gives up.
+#[tokio::test]
+async fn provider_end_waits_through_an_unreachable_harness() {
+    let graph = Router::new().route(
+        "/api/control/temporal-features",
+        routing::get(|| async {
+            axum::Json(serde_json::json!({
+                "configVersion":1,"schemaRead":true,"rootCurrentWrite":true,
+                "projectionUi":true,"invokeResolution":true,"providerRecursion":true
+            }))
+        }),
+    );
+    let (graph_url, graph_task) = serve(graph).await;
+    let root = std::env::temp_dir().join(format!(
+        "relayer-provider-unreachable-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let catalog = root.join("catalog.json");
+    fs::write(
+        &catalog,
+        serde_json::json!({"schemaVersion":1,"configurations":[]}).to_string(),
+    )
+    .unwrap();
+    let step = Duration::from_millis(1);
+
+    let (harness_url, requests, harness_task) = unreachable_harness(3).await;
+    let runtime = RuntimeClient::open(
+        &graph_url,
+        &harness_url,
+        "graph-control".into(),
+        "harness-control".into(),
+        &catalog,
+    )
+    .await
+    .unwrap();
+    let ended = await_provider_end(&runtime, 1, 9, step).await;
+    assert_eq!(ended.unwrap()["completionId"], 9);
+    assert!(
+        requests
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|line| line.starts_with("GET /sessions/1/invoked-completions/9")),
+        "a brief outage is waited out without cancelling the child: {:?}",
+        requests.lock().unwrap()
+    );
+    harness_task.abort();
+
+    let (harness_url, requests, harness_task) = unreachable_harness(usize::MAX).await;
+    let runtime = RuntimeClient::open(
+        &graph_url,
+        &harness_url,
+        "graph-control".into(),
+        "harness-control".into(),
+        &catalog,
+    )
+    .await
+    .unwrap();
+    assert!(await_provider_end(&runtime, 1, 9, step).await.is_err());
+    let requests = requests.lock().unwrap().clone();
+    let cancel = requests
+        .iter()
+        .position(|line| line.starts_with("POST /sessions/1/cancel?completionId=9"))
+        .expect("an unreachable child is cancelled before the wait gives up");
+    assert!(
+        cancel >= PROVIDER_END_UNREACHABLE_LIMIT as usize,
+        "the child is cancelled only after repeated unreachable observations: {requests:?}"
+    );
+    harness_task.abort();
+
+    graph_task.abort();
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// The host granted a child's leases, but the product could not record the attempt that
+/// owns them: the family was disabled meanwhile. No attempt records the leases, so they are
+/// released at once, and the child fails without an attempt.
+#[tokio::test]
+async fn a_child_whose_attempt_cannot_be_recorded_releases_its_leases() {
+    let mut world = World::new("attempt-unrecorded", true).await;
+    for step in [
+        serde_json::json!(["LaunchCheck", 1]),
+        serde_json::json!(["LaunchReserve", 1]),
+        serde_json::json!(["LaunchClaim", 1]),
+        serde_json::json!(["LaunchActivate", 1, "ok"]),
+    ] {
+        world.apply(step.as_array().unwrap(), false).await;
+    }
+    *world.harness.admission.lock().unwrap() = "unrecorded";
+    let activated = world.activated.clone().unwrap();
+    let Err(refusal) = admit_recursive_child(
+        &world.state,
+        &world.runtime,
+        &world.thread,
+        &world.child,
+        &activated,
+    )
+    .await
+    else {
+        panic!("a disabled family cannot record the child's attempt");
+    };
+    assert_eq!(refusal.reason, "execution");
+    assert!(
+        world.harness.granted.lock().unwrap().is_empty(),
+        "leases no attempt records are released"
+    );
+    assert_eq!(world.observe().await["attempt"], "none");
+    world.finish();
 }

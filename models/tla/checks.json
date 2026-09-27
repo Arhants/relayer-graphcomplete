@@ -15,8 +15,8 @@
       "Launchers": "{1, 2}",
       "MaxRev": "3",
       "ValidFailReasons": "{\"provider_exited_without_return\", \"application_restart\", \"execution\", \"provider_start_failed\", \"provider_attachment_persist_failed\", \"graph_observation_failed\", \"model_unavailable\"}",
-      "ObserveTimesOut": "TRUE",
-      "CleanExitIsChecked": "FALSE",
+      "ObserveTimesOut": "FALSE",
+      "CleanExitIsChecked": "TRUE",
       "ActivationFailureSettlesGraph": "FALSE",
       "TerminalReadSettlesCleanup": "TRUE",
       "ChildAdmission": "TRUE"
@@ -104,13 +104,13 @@
         "StopReportIsTruthful",
         "LeaseReleasedOnlyAfterSettlement",
         "ProviderRunsUnderLease",
-        "SettledChildEndsItsAttempt"
+        "AttemptEndsOnlyAfterProvider"
       ],
       "properties": [
         "TerminalIsAbsorbing"
       ],
       "expect": "pass",
-      "finding": "One launch per reservation; stop reports what the graph holds; terminal states are absorbing; an admitted child holds its leases until its attempt is terminal."
+      "finding": "One launch per reservation; stop reports what the graph holds; terminal states are absorbing; an admitted child ends its attempt and releases its leases only after it settles and its provider run ends."
     },
     {
       "id": "completion-observe-timeout",
@@ -125,10 +125,8 @@
         "TypeOK",
         "NoExitFailureWhileRunning"
       ],
-      "expect": {
-        "violated": "NoExitFailureWhileRunning"
-      },
-      "finding": "The 5 s observe timeout fails a child whose provider is still running."
+      "expect": "pass",
+      "finding": "A child whose provider is still running is never failed for it: an observation that times out is polled again (fixed; was: the 5 s control timeout failed running children)."
     },
     {
       "id": "completion-activation-failure",
@@ -162,10 +160,28 @@
       "properties": [
         "LaunchedChildSettles"
       ],
+      "expect": "pass",
+      "finding": "A child whose provider exits cleanly without Return is failed and settles (fixed; was: it never settled, and with admission its attempt and leases were held forever)."
+    },
+    {
+      "id": "completion-clean-exit-reverted",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "constants": {
+        "Launchers": "{1}",
+        "ObserveTimesOut": "FALSE",
+        "ActivationFailureSettlesGraph": "TRUE",
+        "TerminalReadSettlesCleanup": "TRUE",
+        "CleanExitIsChecked": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "LaunchedChildSettles"
+      ],
       "expect": {
         "violated": "LaunchedChildSettles"
       },
-      "finding": "A child whose provider exits cleanly without Return never settles."
+      "finding": "Without the clean-exit check, a child whose provider exits cleanly without Return never settles."
     },
     {
       "id": "completion-start-failure-reason",
@@ -242,7 +258,7 @@
         "SettledExecutionAgreesWithGraph",
         "LeaseReleasedOnlyAfterSettlement",
         "ProviderRunsUnderLease",
-        "SettledChildEndsItsAttempt"
+        "AttemptEndsOnlyAfterProvider"
       ],
       "properties": [
         "TerminalIsAbsorbing"
