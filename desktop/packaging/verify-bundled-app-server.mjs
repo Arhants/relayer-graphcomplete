@@ -79,9 +79,12 @@ export async function verifyBundledAppServer(
     "node_modules/sharp/dist/index.cjs",
     "node_modules/sharp/dist/index.mjs",
     "node_modules/@relayer/harness-host/dist/implementations/claude-basic-browser.js",
-    "node_modules/@relayer/eval-runner/dist/index.js",
   ]) {
     if (!packagedEntries.has(entry)) throw new Error(`Bundled Relayer runtime is missing ${entry}.`);
+  }
+  if ([...packagedEntries].some((entry) => entry === "node_modules/@relayer/eval-runner"
+    || entry.startsWith("node_modules/@relayer/eval-runner/"))) {
+    throw new Error("Bundled Relayer runtime contains developer-only @relayer/eval-runner.");
   }
   await verifyPackagedSharp(packagedEntries, platform, expectedArchitecture, readSharpPackage);
   await verifyPackagedCodexBrowserMcp(resourcesPath);

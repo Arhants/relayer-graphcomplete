@@ -251,6 +251,22 @@ contract tests, so it selects the Rust closure of `relayer-graph-core`.
 query-error code and the Python client contract, so it selects the
 `@relayer/graph-client` workspace closure and the Python chapter.
 
+Eval-only host and dashboard paths (`desktop/eval-main/` and
+`desktop/eval-renderer/`) retain the desktop owner's complete source Vitest and
+runtime prerequisites but do not select packaging. These checkout-only paths
+are excluded from the public Electron application (PRD §9.1, ADR 0003).
+The exclusion applies per changed path: mixed edits to shipped desktop code,
+shared renderer, packaging, release, or dependency inputs still select packaging,
+and unknown inputs still select the full portfolio. `@relayer/eval-runner`
+remains a checkout workspace for Eval and evidence tooling, not a production
+desktop dependency; the bundle verifier rejects it in the assembled application.
+Desktop explicitly retains `@modelcontextprotocol/sdk@1.30.0`, the optional peer
+of Prime's Google SDK previously supplied by Eval-runner, to preserve the pinned
+Prime dependency closure.
+Planner and bundle-verifier checkpoints live in `test/ci-affected-plan.test.mjs`
+and `test/desktop-shell.test.mjs`. This does not narrow the source test portfolio
+or the local pre-commit gates.
+
 ## Development packaging acceleration
 
 `npm run desktop:pack` still assembles a fresh application and executes its
