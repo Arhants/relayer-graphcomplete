@@ -729,7 +729,7 @@ mod tests {
         let catalog_file = directory.path().join("catalog.json");
         let token = "test-visual-assets-bridge-token-32-bytes".to_owned();
         let source = r#"
-            import { writeFile } from "node:fs/promises";
+            import { rename, writeFile } from "node:fs/promises";
             import { createFileVisualAssetsLibrary } from "@relayer/visual-assets";
             import { startHarnessHost } from "@relayer/harness-host";
             const [stateFile, catalogFile, readyFile, token] = process.argv.slice(1);
@@ -743,7 +743,9 @@ mod tests {
               controlToken: "unused-test-control-token",
               visualAssets: { token, generation: 1, library },
             });
-            await writeFile(readyFile, running.url, "utf8");
+            const readyFileTemp = `${readyFile}.tmp`;
+            await writeFile(readyFileTemp, running.url, "utf8");
+            await rename(readyFileTemp, readyFile);
             process.on("SIGTERM", () => { void running.close().then(() => process.exit(0)); });
         "#;
         let mut child = Command::new("node")
