@@ -2023,7 +2023,7 @@ interface NativeExecutionHandle {
 <p>Required context and identity come from GraphComplete rather than hidden provider history. The attachment retains the harness's ordinary native helper infrastructure. A helper may ask its owning orchestrator to create semantic work, but helper topology is never mirrored automatically.</p>
 <p>Codex binds a semantic child to a fresh app-server thread and turn whose orchestrator receives the child scope. Codex-native subagents remain internal helpers for that orchestrator. Claude binds a semantic child to a fresh Agent SDK query that neither resumes nor replaces the root session. Prime binds a semantic child to a fresh ordinary Prime session and execution. Prime's RLM and subagents remain internal helpers unless that execution explicitly calls Complete again.</p>
 <p>Codex and Prime teach explicit semantic child work in their prompts, and only when the product grants that execution a completion broker.</p>
-<p>A parent treats each change to a child's current as an event. It responds by advancing its own current to organize the work. The parent awaits these events itself; nothing wakes it automatically.</p>
+<p>A parent treats each change to a child's current as an event it may act on. It advances its own current when that gives the user a more useful view, not on every change. The parent awaits these events itself; nothing wakes it automatically.</p>
 <h3>12.2 Persistent Node harness host</h3>
 <p>The Node harness host is a long-lived child process of the evaluator or Relayer app server. It resolves a small code-owned implementation map and lazily constructs one harness object per thread:</p>
 <pre><code class="language-ts">const harnessImplementations: Record&lt;string, HarnessFactory&gt; = {
@@ -2131,6 +2131,7 @@ settings:
 <h3>4.2 Result states</h3>
 <p>Each Complete call ends in one explicit state: accepted, stopped, or failed. An accepted result contains the resolved first layer. A stopped or failed result contains a retry decision and a short user-facing message.</p>
 <p>A model turn ending is not acceptance. Only <code>graph.submit(interactionNode)</code> can accept the response graph.</p>
+<p>Graph content is the user's interface. It speaks about the user's task: findings, decisions, open questions, and progress in the task's own terms. It never exposes execution mechanics such as layers, revisions, pointers, completions, child agents, or internal identifiers.</p>
 <h3>4.3 Personal presentation profile</h3>
 <p>Relayer owns one hidden, versioned personal presentation graph that guides how supported harnesses author response graphs. This guidance is a preference, not a mandatory output schema. Explicit user instructions take precedence. Graph integrity remains deterministic, and a flat accepted answer remains valid.</p>
 <p>Each version is an ordinary immutable accepted GraphComplete completion in one dedicated product-owned profile thread. Neutral V0 contains no renderable preference. Active V1 contains exactly two <code>presentation-preference</code> nodes with authored layout and their ordinary graph relationship:</p>
