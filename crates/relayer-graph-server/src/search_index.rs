@@ -681,6 +681,21 @@ impl LadybugSearchIndex {
 }
 
 impl SearchIndex for LadybugSearchIndex {
+    fn wait_until_available(&self, target: SearchTarget) -> SearchIndexFuture<()> {
+        let index = self.clone();
+        Box::pin(async move {
+            loop {
+                // Register before reading state so rebuild completion cannot
+                // be lost between the readiness check and the await.
+                let notified = index.runtime.notify.notified();
+                if index.target_readiness(target) != SearchTargetReadiness::Rebuilding {
+                    return index.require_store_available(target);
+                }
+                notified.await;
+            }
+        })
+    }
+
     fn revision(&self, target: SearchTarget) -> SearchIndexFuture<Option<SearchIndexRevision>> {
         let index = self.clone();
         Box::pin(async move {

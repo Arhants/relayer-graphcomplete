@@ -18,7 +18,7 @@ export class RelayerGraphClient {
   readonly #submissionEnvelopes = new WeakMap<NodeObject, NodeSubmissionEnvelope>();
   readonly #submittedNodes = new WeakMap<NodeObject, Promise<GraphNode>>();
 
-  constructor(capability: GraphCapability) {
+  constructor(capability: GraphCapability, private readonly requestScope?: { readonly beforeRequest: (path: string) => void; readonly signal: AbortSignal }) {
     this.capability = { ...capability, url: capability.url.replace(/\/$/, "") };
     this.visualAssets = new GraphVisualAssets((path, init) => this.request<unknown>(path, init));
   }
@@ -356,11 +356,16 @@ export class RelayerGraphClient {
   }
 
   private async request<T>(path: string, init: RequestInit = {}, errorKind: "api" | "query" = "api"): Promise<T> {
+    this.requestScope?.beforeRequest(path);
     const response = await fetch(`${this.capability.url}${path}`, {
       ...init,
+      ...(this.requestScope === undefined ? {} : {
+        signal: init.signal ? AbortSignal.any([this.requestScope.signal, init.signal]) : this.requestScope.signal,
+      }),
       headers: { "content-type": "application/json", authorization: `Bearer ${this.capability.token}`, ...init.headers },
     });
     const body = await response.json().catch(() => ({})) as T & GraphApiErrorBody & GraphQueryErrorBody;
+    this.requestScope?.beforeRequest(path);
     if (!response.ok) {
       if (errorKind === "query" && isGraphQueryErrorBody(body)) {
         throw new GraphQueryError(

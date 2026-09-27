@@ -2,7 +2,7 @@ schemaVersion: 1
 name: prime-agent-deep
 implementation: prime.agent
 implementationVersion: 1
-revision: 2
+revision: 4
 permissionBindings:
   ask:
     boundary: workspace-write@1
@@ -25,9 +25,14 @@ modelRules:
       modelIdRegex: ".*"
   deny: []
 executionAccessContracts: [secret@1]
+modelDefaults:
+  familyPolicy:
+    id: prime-default-family
+    version: 1
 graphCapabilityProfile:
   search: disabled
 settings:
+  personalPresentationVersion: personal-presentation-v4
   thinkingLevel: high
   rlmMaxDepth: 4
   prewarmIpythonKernel: true

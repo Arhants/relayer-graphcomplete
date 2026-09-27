@@ -53,6 +53,8 @@ try {
     && result?.passed === true
     && result.cleanupCompleted === true
     && result.paidInferenceCalls === 0
+    && (!process.env.RELAYER_PRIME_VISUAL_EXPORT || (manifest?.assertions?.primeVisual?.renderedAsset?.naturalWidth > 0
+      && manifest?.assertions?.primeVisual?.screenshot?.tileCount >= 1))
     && manifest?.schemaVersion === 1
     && manifest?.paidInferenceCalls === 0
     && manifest?.screenshot?.mode === "full"

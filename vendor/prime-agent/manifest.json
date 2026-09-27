@@ -3,7 +3,7 @@
   "source": {
     "repository": "https://github.com/vishaltandale00/prime-agent",
     "commit": "f6130839ad3043f1cd3d5294fe03023035bfcd5c",
-    "bridgeCommit": "8f33cfc30a3ce5f52f158122f34d523418aeca3e",
+    "bridgeCommit": "3635b59066ebf4facf1a6d0285b005056644226b",
     "bridgePublication": "local-reviewed-commit"
   },
   "packages": [
@@ -24,9 +24,9 @@
     {
       "name": "@earendil-works/pi-coding-agent",
       "version": "0.8.1",
-      "file": "earendil-works-pi-coding-agent-0.8.1-sha256-a5608c3d617d345a4f1315e9f314c61dfb047c0741d41d0d3eb918ba2c082aaf.tgz",
-      "sha256": "a5608c3d617d345a4f1315e9f314c61dfb047c0741d41d0d3eb918ba2c082aaf",
-      "treeSha256": "93cf3da2c0777fd7cf88db0e7a524895625c6c2507541eaeb3d6f325ab4ee89f"
+      "file": "earendil-works-pi-coding-agent-0.8.1-sha256-e1aaf66cb2c79c42f12920a4bc3faf02db34e42a26ac144571f2f987e8bbde9e.tgz",
+      "sha256": "e1aaf66cb2c79c42f12920a4bc3faf02db34e42a26ac144571f2f987e8bbde9e",
+      "treeSha256": "7e6d1580a6b08b0ad37f52f5b38902705a93374def95bb603fbd7bbc33a3be6f"
     },
     {
       "name": "@earendil-works/pi-tui",
@@ -58,14 +58,14 @@
   },
   "assets": {
     "harnessConfigurations": {
-      "prime-agent-basic.yaml": "f0875609467c9727662bf7a78fbda9ba4470a034a2f85b6a50b87a2820145c0e"
+      "prime-agent-basic.yaml": "51e96a50ca5cba7240437fcd5846d120b01b62c0de738a1d126afadf048848bf"
     },
-    "pythonPackageTreeSha256": "501b35589f70ff67f34a200fc1a7fd05b4c2a7256400fb7c4d260848a122995a"
+    "pythonPackageTreeSha256": "38f7273ca0c9ce3bc6ee4e2b87667063021c797052c9d2a1034091979dba1019"
   },
   "dependencyClosureSha256ByTarget": {
-    "darwin-arm64": "8c86ed5c66b6022559fb9903426fec212a757bd4837eff2f7dafea6fe1f54062"
+    "darwin-arm64": "1253fd136c0d63e751fffdae68327a1b5cbb3176f2b9780de372744f8b83ef41"
   },
-  "repositoryDependencyClosureSha256": "afd4e30957510486bc8ca473a41a616313783a4243000bb32f5f2536797b5af6",
+  "repositoryDependencyClosureSha256": "02f15fb2ce6366f1e9709e66336a94476dc6605bb8618885afea9e7d2e19766f",
   "harnessConfigurations": ["prime-agent-basic.yaml"],
   "pythonPackage": "relayer_graph"
 }

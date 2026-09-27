@@ -553,6 +553,8 @@ Codex native subagents are available when useful. Subagents may directly author,
 Answer the current user interaction by authoring and accepting a useful graph layer that truthfully presents the completed work or genuine blocker.
 
 ${GRAPH_PRESENTATION_GUIDANCE}
+${CODEX_VISUAL_GUIDANCE}
+${CODEX_ASSET_GUIDANCE}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interactionNode.id}
@@ -689,6 +691,8 @@ Do not turn a node, relationship, path, list, record, or arbitrary string into a
 After doing the underlying work, answer the current user interaction with a useful graph that truthfully presents the result, evidence, and limitations. A flat answer is valid. Add navigation only when opening it would materially improve understanding or support; apply that same test again inside every layer you author.
 
 ${GRAPH_PRESENTATION_GUIDANCE}
+${CODEX_VISUAL_GUIDANCE}
+${CODEX_ASSET_GUIDANCE}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation && context !== undefined ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interactionNode.id}
@@ -733,7 +737,7 @@ The graph service enforces exact provenance, target visibility, layer size, expa
 }
 
 function currentWorkspaceMechanicsJs(): string {
-  return `Read current with const current = await graph.getCurrent(). After submitting a layer, you may update the pointer with await graph.advanceCurrent(layer, current.headRevision, "a-stable-operation-key"). Once a layer is current, the next current layer must keep a navigation path back to it, so the user can always return to what they saw. This applies to every later advanceCurrent and to the root layer of your final graph.submit. After submitting the new layer and before advancing to it or submitting, add a reference navigate action from one of its draft nodes created for this interaction to current.currentLayerId. Reused accepted nodes cannot take new actions, so every layer you make current needs at least one new draft node to carry that reference.`;
+  return `Read current with const current = await graph.getCurrent(). After submitting the complete closure and registering all its actions, you may publish it and update the pointer with await graph.advanceCurrent(layer, current.headRevision, "a-stable-operation-key"). Once a layer is current, the next current layer must keep a navigation path back to it, so the user can always return to what they saw. This applies to every later advanceCurrent and to the root layer of your final graph.submit. After submitting the new layer and before advancing to it or submitting, add a reference navigate action from one of its draft nodes created for this interaction to current.currentLayerId. Reused accepted nodes cannot take new actions, so every layer you make current needs at least one new draft node to carry that reference.`;
 }
 
 function semanticCompletionGuidanceJs(
@@ -817,8 +821,8 @@ function redactPersonalPresentationTraceData(
   if (traceValues === undefined) return value;
   if (typeof value === "string") {
     const values = includeFragments
-      ? [traceValues.exactBlock, ...traceValues.fragments]
-      : [traceValues.exactBlock];
+      ? [traceValues.exactBlock, ...traceValues.legacyBlocks, ...traceValues.fragments]
+      : [traceValues.exactBlock, ...traceValues.legacyBlocks];
     return values.reduce(
       (sanitized, traceValue) => sanitized.split(traceValue).join("[redacted-personal-presentation]"),
       value,
@@ -1177,7 +1181,7 @@ function parseCodexBasicConfiguration(context: HarnessFactoryContext): ResolvedC
   const additionalDirectories = optionalStringArray(configuration.additionalDirectories, "additionalDirectories");
   const promptProfile = optionalEnum(configuration.promptProfile, ["layered-navigation-v1", "layered-navigation-multi-agent-v1"] as const, "promptProfile");
   const rootSessionMode = optionalEnum(configuration.rootSessionMode, ["resume", "fresh"] as const, "rootSessionMode");
-  optionalEnum(configuration.personalPresentationVersion, ["personal-presentation-v0", "personal-presentation-v1", "personal-presentation-v2", "personal-presentation-v3"] as const, "personalPresentationVersion");
+  optionalEnum(configuration.personalPresentationVersion, ["personal-presentation-v0", "personal-presentation-v1", "personal-presentation-v2", "personal-presentation-v3", "personal-presentation-v4"] as const, "personalPresentationVersion");
   const permission = parseCodexPermissionBinding(context.permissionProfileId, context.permissionBinding);
 
   return {
@@ -1254,3 +1258,7 @@ function optionalStringArray(value: unknown, field: string): readonly string[] |
 export function createCodexBasicFactory(dependencies: CodexBasicDependencies = {}): HarnessFactory {
   return (context) => new CodexBasicHarness(context, dependencies);
 }
+
+const CODEX_VISUAL_GUIDANCE = "The following public API recipe demonstrates authoring mechanics only; its placeholder content and layout are not a recommended response design. For visual Node Details: Import the exported html, css, and detailCapability helpers. At minimum, call node.detailAuthoring.setComponent(\"main\", html`<section><h2>Summary</h2><p>Details</p></section>`, css`section { display: grid; gap: 0.75rem; }`), await graph.checkpointNodeDetail(node), and then await graph.submitNode(node). When a node has actions, create each stable action object with its sourceLayer before checkpointing, bind that same object in the page with the matching detailCapability helper, and pass it to graph.addAction after submitting the layer.";
+
+const CODEX_ASSET_GUIDANCE = `For image assets, import assetRef from the supplied clientModuleUrl. Use const scope = await graph.visualAssets.scope(); await graph.visualAssets.listAssets({ scope }); await graph.visualAssets.listTags({ scope }); await graph.visualAssets.inspect(assetId, scope). Register caller-read bytes with await graph.visualAssets.add({ scope, name, file: { name, mediaType, async read() { return bytes; } } }); bind the returned asset.id with html\`<img asset=\${assetRef(asset.id)} alt="Description">\`. The host resolves and pins content. Never supply compiled packages, mounts, hashes, raw image URLs, or executable JavaScript.`;
