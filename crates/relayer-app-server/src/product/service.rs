@@ -1759,6 +1759,23 @@ impl ProductService {
             .await?)
     }
 
+    pub(crate) async fn unwinding_recursive_attempts(
+        &self,
+    ) -> Result<Vec<super::UnwindingRecursiveAttempt>, ProductError> {
+        Ok(self.storage.unwinding_recursive_attempts().await?)
+    }
+
+    pub(crate) async fn end_completion_execution_attempt(
+        &self,
+        interaction_id: InteractionId,
+        timestamp: &str,
+    ) -> Result<bool, ProductError> {
+        Ok(self
+            .storage
+            .end_completion_execution_attempt(interaction_id, timestamp)
+            .await?)
+    }
+
     pub(crate) async fn stage_conversation_import(
         &self,
         input: NewConversationImport<'_>,
@@ -1776,6 +1793,28 @@ impl ProductService {
     ) -> Result<crate::storage::StagedConversationTurnSummary, ProductError> {
         self.storage
             .append_conversation_import_turn(import_id, turn)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn append_conversation_import_visual_asset_content(
+        &self,
+        import_id: &str,
+        content: &crate::conversation_export::ExportVisualAssetContent,
+    ) -> Result<(), ProductError> {
+        self.storage
+            .append_conversation_import_visual_asset_content(import_id, content)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn next_conversation_import_visual_asset_content(
+        &self,
+        import_id: &str,
+        after_digest: &str,
+    ) -> Result<Option<crate::conversation_export::ExportVisualAssetContent>, ProductError> {
+        self.storage
+            .next_conversation_import_visual_asset_content(import_id, after_digest)
             .await
             .map_err(Into::into)
     }

@@ -1,0 +1,26 @@
+{
+  "reviewer": "/root/merge_494_review",
+  "baseHead": "fe39d412bd5c542a45b3e1e40050db6e12dd98a2",
+  "integratedMain": "b85d50a0a76f43c6233b586ae1c1d3ee69522266",
+  "verdict": "clean",
+  "findings": [],
+  "scope": "Only CI owner mapping, matching regression and documentation. No application source changes. Visual-assets and proof script owners preserved.",
+  "files": {
+    "docs/agents/ci.md": "43517f2ad4d74b813c31a0deacda0fdd0ef23b03afa99e57bc5a082d53ec23a2",
+    "scripts/ci/affected-modules.v1.json": "b6952395135de8eb88226ba48457d7ae73c6d6420015980f1e6e4c45f0f553ff",
+    "test/ci-affected-plan.test.mjs": "ef2d7049fb17ea96da9e41eca2bf05b1af074a31d5dc40a953444eb2d2465a0f"
+  },
+  "focusedTests": {
+    "passed": 55,
+    "log": "logs/main-integration-focused.log"
+  },
+  "limits": "No application source changes; desktop evidence remains bound to identical application source in source-snapshot.json.",
+  "verification": {
+    "check": "passed: 2351 Vitest, 3 skipped; 2 secret-boundary tests; native, types, Python and repository checks passed",
+    "build": "passed",
+    "logs": [
+      "logs/main-integration-check.log",
+      "logs/main-integration-build.log"
+    ]
+  }
+}

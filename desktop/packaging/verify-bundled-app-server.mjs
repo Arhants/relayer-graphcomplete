@@ -52,6 +52,7 @@ export async function verifyBundledAppServer(
     verifyPrimeAgent = verifyPackagedPrimeAgent,
     verifyGraphServer = verifyPackagedMacOSGraphServer,
     verifyNotices = verifyPackagedLadybugNotices,
+    readSharpPackage = (path) => extractFile(join(resourcesPathFor(appPath, platform), "app.asar"), asarEntryPath(path, platform)),
     primeAgentTargetKey = `${platform}-${expectedArchitecture === "x86_64" ? "x64" : expectedArchitecture}`,
     primeAgentIntegrityPhase = "unsigned",
   } = {},
@@ -72,11 +73,15 @@ export async function verifyBundledAppServer(
     "node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
     "node_modules/@relayer/graph-client/dist/index.js",
     "node_modules/@relayer/harness-host/dist/index.js",
+    "node_modules/@relayer/visual-assets/dist/index.js",
+    "node_modules/sharp/dist/index.cjs",
+    "node_modules/sharp/dist/index.mjs",
     "node_modules/@relayer/harness-host/dist/implementations/claude-basic-browser.js",
     "node_modules/@relayer/eval-runner/dist/index.js",
   ]) {
     if (!packagedEntries.has(entry)) throw new Error(`Bundled Relayer runtime is missing ${entry}.`);
   }
+  await verifyPackagedSharp(packagedEntries, platform, expectedArchitecture, readSharpPackage);
   await verifyPackagedCodexBrowserMcp(resourcesPath);
   await verifyPrimeAgent(resourcesPath, packagedEntries, {
     integrityPhase: primeAgentIntegrityPhase,
@@ -96,6 +101,58 @@ export async function verifyBundledAppServer(
     await verifyGraphServer(graphBinaryPath, { execute });
   }
   return { binaryPath, architecture: architectures };
+}
+
+function resourcesPathFor(appPath, platform) {
+  return platform === "darwin" ? join(appPath, "Contents", "Resources") : join(appPath, "resources");
+}
+
+export async function verifyPackagedSharp(entries, platform, architecture, readPackage) {
+  const arch = architecture === "x86_64" ? "x64" : architecture;
+  const lock = JSON.parse(await readFile(new URL("../../package-lock.json", import.meta.url), "utf8"));
+  const nativeName = `@img/sharp-${platform}-${arch}`;
+  const nativeRoot = `node_modules/${nativeName}`;
+  const locked = lock.packages[nativeRoot];
+  if (!locked) throw new Error(`No locked Sharp native dependency for ${platform}-${arch}.`);
+  const requireEntry = (path) => {
+    if (!entries.has(path)) throw new Error(`Bundled Relayer runtime is missing ${path}.`);
+  };
+  const packageMetadata = async (root) => {
+    requireEntry(`${root}/package.json`);
+    const metadata = JSON.parse(String(await readPackage(`${root}/package.json`)));
+    if (metadata.version !== lock.packages[root]?.version) {
+      throw new Error(`Bundled Sharp dependency version differs from lock: ${root}.`);
+    }
+    return metadata;
+  };
+  await packageMetadata("node_modules/sharp");
+  const native = await packageMetadata(nativeRoot);
+  requireEntry(`${nativeRoot}/index.cjs`);
+  requireEntry(`${nativeRoot}/lib/sharp-${platform}-${arch}-${locked.version}.node`);
+  if (platform === "win32") {
+    // Windows ships libvips inside the native package rather than a separate
+    // optional dependency. Fail closed until an updated locked layout is reviewed.
+    const vipsVersion = { "0.35.4": "8.18.6" }[locked.version];
+    if (!vipsVersion) throw new Error(`Unreviewed Sharp Windows payload version: ${locked.version}.`);
+    requireEntry(`${nativeRoot}/lib/libvips-42.dll`);
+    requireEntry(`${nativeRoot}/lib/libvips-cpp-${vipsVersion}.dll`);
+  }
+  for (const [name, version] of Object.entries(locked.optionalDependencies ?? {})) {
+    if (!name.startsWith("@img/sharp-libvips-")) continue;
+    if (native.optionalDependencies?.[name] !== version) throw new Error("Bundled Sharp libvips declaration differs from lock.");
+    const root = `node_modules/${name}`;
+    const metadata = await packageMetadata(root);
+    if (metadata.version !== version) throw new Error("Bundled Sharp libvips version differs from native requirement.");
+    // Verify the package's actual loader and binary exports, including its exact
+    // versioned dylib. Package metadata alone cannot prove the payload survived pruning.
+    for (const key of ["./lib", "./binary"]) {
+      const target = metadata.exports?.[key];
+      if (typeof target !== "string" || !target.startsWith("./lib/") || target.split("/").includes("..")) {
+        throw new Error(`Bundled Sharp libvips has invalid ${key} export.`);
+      }
+      requireEntry(`${root}/${target.slice(2)}`);
+    }
+  }
 }
 
 export async function verifyPackagedLadybugNotices(

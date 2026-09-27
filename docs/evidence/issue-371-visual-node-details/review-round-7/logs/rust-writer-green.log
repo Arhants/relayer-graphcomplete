@@ -1,0 +1,15 @@
+   Compiling relayer-graph-core v0.0.0 (/Users/vishaltandale/.codex/worktrees/05b1/relayer-graphcomplete/crates/relayer-graph-core)
+   Compiling relayer-graph-server v0.0.0 (/Users/vishaltandale/.codex/worktrees/05b1/relayer-graphcomplete/crates/relayer-graph-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.19s
+     Running tests/import_visual_asset_transport.rs (target/debug/deps/import_visual_asset_transport-3452cf30188d3a3e)
+
+running 6 tests
+test writer_asset_reads_require_visible_nodes_and_live_authority ... ok
+test staged_content_is_import_scoped_and_missing_pins_roll_back_publication ... ok
+test draft_asset_replace_clear_and_failed_replace_reclaim_transactionally ... ok
+test staging_cleanup_failure_rolls_back_materialization_and_can_retry ... ok
+test removing_imports_reclaims_only_unreferenced_accepted_content ... ok
+test shared_large_content_crosses_real_import_routes_once_without_relaxing_body_limit ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.21s
+
