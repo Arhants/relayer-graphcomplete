@@ -127,6 +127,16 @@ function fixtureJsonl({ status = "accepted", includeFailedTurn = false } = {}) {
 }
 
 describe("public share V1 reader", () => {
+  it("rejects bytes above the frozen 16 MiB share contract before parsing", () => {
+    try {
+      parsePublicSnapshot(new Uint8Array((16 * 1024 * 1024) + 1));
+      expect.fail("expected the oversized snapshot to be rejected");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PublicSnapshotError);
+      expect(error.code).toBe("file_too_large");
+    }
+  });
+
   it("validates the existing header/turn contract and exposes only accepted turns", () => {
     const snapshot = parsePublicSnapshot(fixtureJsonl({ includeFailedTurn: true }));
     expect(snapshot.interactions).toHaveLength(1);
