@@ -1,0 +1,25 @@
+{
+  "reviewer": "/root/merge_494_review",
+  "verdict": "clean",
+  "findings": [],
+  "scope": "Move exact parsed mount-host inspection into graph-client existing parse5 ownership; preserve Eval grading checks while removing direct Eval parser dependency and lock entry. No Prime manifest reseal.",
+  "files": {
+    "packages/graph-client/src/detail.ts": "2d7a19b1edf03e74a4a338ca00ccc490ed9b45cc3bbff3f4305e701aa857d4a3",
+    "packages/graph-client/src/index.ts": "f90b97b3d582bb2aa555a7cfb087c0028e8a8e4980857f27abace5719e6190f6",
+    "packages/graph-client/test/detail.test.ts": "72ca1d688f9d48b0b463d13564000961a57df63be6e1bd84975436dedbc17a31",
+    "packages/eval-runner/src/fixtures/node-detail.ts": "7b4292f890200fffe6004f5bdf8a436eccc978a76bbec64ad95da7fd8ce95ff2",
+    "packages/eval-runner/package.json": "5cef632ed2af845e653103f9bfa4772128ac5e86ddf35b93b00b045dd0052f5b",
+    "package-lock.json": "98879a967b85ab7e583f8bdc1c3fe20c8f236f0de533b695fb696017a94423a6"
+  },
+  "assertions": [
+    "Same parse5 element and exact attribute matching semantics; mismatched tags and duplicate mounts reject. Duplicate component IDs additionally reject.",
+    "Shared traversal is iterative. Helper is inspection-only, not canonical validation or compiler authority; current caller consumes accepted graph packages with existing bounds.",
+    "No change to compiler authentication, host asset authority, or sealed Prime manifest. Required packaged CI closure proof remains separate."
+  ],
+  "verification": {
+    "independentCommand": "npx vitest run packages/graph-client/test/detail.test.ts",
+    "independentResult": "51 passed, 71 milliseconds test time; 261 milliseconds total",
+    "builderReported": "Graph build, combined graph/Eval focused 59 passed, Eval type check, diff check. Diagnostic ASAR closure matched existing seal after prune.",
+    "limits": "Reviewer did not reproduce packaged ASAR closure. Required CI must verify existing sealed dependency closure; no reseal permitted."
+  }
+}

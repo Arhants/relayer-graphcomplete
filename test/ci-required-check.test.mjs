@@ -221,6 +221,40 @@ describe("CI workflow contract", () => {
     ),
   );
 
+  test("installs Node dependencies before executing the Rust test lane", () => {
+    const rustTestSteps = workflow.jobs["rust-tests"].steps;
+    const nodeDependenciesIndex = rustTestSteps.findIndex(
+      (step) => step.uses === "./.github/actions/setup-node-dependencies",
+    );
+    const rustTestsIndex = rustTestSteps.findIndex(
+      (step) => step.name === "Run fresh Rust tests",
+    );
+    const nodeDependencies = rustTestSteps[nodeDependenciesIndex];
+    const setupNodeDependencies = parse(
+      readFileSync(
+        join(
+          repositoryRoot,
+          ".github",
+          "actions",
+          "setup-node-dependencies",
+          "action.yml",
+        ),
+        "utf8",
+      ),
+    );
+    const npmInstall = setupNodeDependencies.runs.steps.find(
+      (step) => step.name === "Install Node dependencies",
+    );
+
+    expect(nodeDependenciesIndex).toBeGreaterThanOrEqual(0);
+    expect(nodeDependenciesIndex).toBeLessThan(rustTestsIndex);
+    expect(nodeDependencies.if).toBeUndefined();
+    expect(nodeDependencies["continue-on-error"]).toBeUndefined();
+    expect(npmInstall.run).toContain("npm ci");
+    expect(npmInstall.if).toBeUndefined();
+    expect(npmInstall["continue-on-error"]).toBeUndefined();
+  });
+
   test("cancels superseded PR runs and warms integration branches", () => {
     expect(workflow.concurrency["cancel-in-progress"]).toBe(true);
     expect(workflow.on.push.branches).toContain("integration/**");
@@ -343,8 +377,10 @@ describe("CI workflow contract", () => {
       "${{ steps.plan.outputs.runtime_packages_key }}",
     );
 
-    // One Ladybug key serves the plan lookup, the prebuilt job, every lane
-    // (through the shared install action), and the runtime fallback.
+    // One feature-independent Ladybug key serves the plan lookup, the
+    // prebuilt job, every lane (through the shared install action), and the
+    // runtime fallback. The verifier, rather than the key, checks that the
+    // restored native bytes match the pinned source and toolchain.
     const lbugKeys = [
       lbugLookup.with.key,
       workflow.jobs["lbug-prebuilt"].steps.find(
@@ -359,6 +395,7 @@ describe("CI workflow contract", () => {
     ].map(normalize);
     expect(new Set(lbugKeys).size).toBe(1);
     expect(lbugKeys[0]).toContain("-v1-${{ hashFiles('Cargo.lock') }}");
+    expect(lbugKeys[0]).not.toMatch(/feature/i);
 
     // One runtime key serves the plan lookup, the trusted save, and the
     // shard restore; it binds the Rust input digest and the sealed package

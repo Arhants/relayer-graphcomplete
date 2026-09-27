@@ -1,0 +1,13 @@
+{
+  "reviewer": "/root",
+  "implementer": "/root/astra_spec",
+  "baseHead": "e6bb4bdd46c903f646bd8da8789d84ca978792ac",
+  "scope": "Bounded image resolution at renderer mount; preserve per-pin promise and release cache, fallback handling, registration before images and disposal after async mount. Regression observes concurrency and complete images/releases.",
+  "verdict": "clean",
+  "unresolvedFindings": [],
+  "files": {
+    "desktop/renderer/src/product-workspace/node-detail-runtime.js": "f4a5cbc7a0e55c87f25320cdd0674b5c4394a594020609bfc87350b61119614c",
+    "test/node-detail-runtime.test.mjs": "bc295f4d4833abeade4d8222cf0c2d79e996023ca14611ba79cf1693c1364935"
+  },
+  "limits": "Existing async mounting still returns after images settle; no cancellation API introduced. Pool bounds temporary response/decode concurrency, not total bytes of final displayed images."
+}

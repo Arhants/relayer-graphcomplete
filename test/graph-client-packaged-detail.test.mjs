@@ -58,13 +58,17 @@ describe("packaged graph-client authored detail boundary", () => {
     ]);
   });
 
-  it("does not advertise unresolved asset authoring through either public module", async () => {
+  it("advertises the production asset authoring contract through both public modules", async () => {
     const [packaged, development] = await Promise.all([
       import(graphClientIndexUrl.href),
       import(graphClientDevelopmentUrl.href),
     ]);
-    expect(packaged.assetRef).toBeUndefined();
-    expect(development.assetRef).toBeUndefined();
+    expect(typeof packaged.assetRef).toBe("function");
+    expect(typeof development.assetRef).toBe("function");
+    expect(typeof packaged.GraphVisualAssets).toBe("function");
+    expect(typeof development.GraphVisualAssets).toBe("function");
+    const client = new packaged.RelayerGraphClient({ url: "http://127.0.0.1:1", token: "token", nodeId: 1 });
+    expect(client.visualAssets).toBeInstanceOf(packaged.GraphVisualAssets);
   });
 
   it("registers submit and detail single-flight promises before synchronous transport re-entry", async () => {
@@ -1182,7 +1186,7 @@ describe("packaged graph-client authored detail boundary", () => {
       ]);
       const exactDynamicPath = 'pathToFileURL(join(process.resourcesPath, "graph-client", "index.js")).href';
       expect(desktopMain).toContain(exactDynamicPath);
-      expect(evalMain).toContain(exactDynamicPath);
+      expect(evalMain).not.toContain("process.resourcesPath");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

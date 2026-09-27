@@ -1250,6 +1250,28 @@ function visitElements(node: HtmlRoot | HtmlElement, visitor: (element: HtmlElem
   }
 }
 
+/**
+ * Checks one compiled mount against its parsed component without granting any
+ * authoring or acceptance authority. Review and evaluation surfaces use this
+ * to reject packages that declare a host different from the bound HTML tag.
+ */
+export function compiledNodeDetailHasExactMountHost(
+  detail: Pick<CompiledNodeDetail, "components">,
+  mount: Pick<CompiledDetailMount, "componentId" | "host" | "id" | "kind">,
+): boolean {
+  const components = detail.components.filter((component) => component.id === mount.componentId);
+  if (components.length !== 1) return false;
+  const attribute = mount.kind === "asset" ? "data-asset-mount" : "data-gc-mount";
+  let matches = 0;
+  let matchesDeclaredHost = false;
+  visitElements(parseFragment(components[0]!.html), (element) => {
+    if (!element.attrs.some((candidate) => candidate.name === attribute && candidate.value === mount.id)) return;
+    matches += 1;
+    matchesDeclaredHost = element.tagName === mount.host;
+  });
+  return matches === 1 && matchesDeclaredHost;
+}
+
 function validateHtmlTreeLimits(componentId: string, root: HtmlRoot, issues: DetailCompilationIssue[]): boolean {
   const pending = [...root.childNodes].reverse().map((child) => ({ child, depth: 1 }));
   let elements = 0;

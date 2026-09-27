@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { Window } from "happy-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { mountCompiledNodeDetail } from "../desktop/renderer/src/product-workspace/node-detail-runtime.js";
+import { compiledNodeDetailReviewControls, mountCompiledNodeDetail } from "../desktop/renderer/src/product-workspace/node-detail-runtime.js";
+import { createReviewPresentationAdapter } from "../desktop/renderer/src/review-tools.js";
 import { interactionForThread, workspaceTurns } from "../desktop/renderer/src/product-workspace/model.js";
 import { createProductWorkspace, renderProductNodeDetail } from "../desktop/renderer/src/product-workspace/workspace.js";
 
@@ -50,7 +51,7 @@ describe("compiled Node Detail product runtime", () => {
       components: [{
         id: "documentation",
         order: 0,
-        html: '<a class="documentation-link" data-gc-mount="link-mount"><span class="documentation-link__icon" aria-hidden="true" data-asset-mount="asset-mount"></span>Documentation</a>',
+        html: '<a class="documentation-link" data-gc-mount="link-mount"><span class="documentation-link__icon" aria-hidden="true" data-asset-mount="asset-mount"></span>Documentation</a><span aria-hidden="true" data-asset-mount="asset-mount-copy"></span>',
         css: ".documentation-link{display:grid;grid-template-columns:auto 1fr;gap:0.5rem}",
       }],
       mounts: [
@@ -68,6 +69,7 @@ describe("compiled Node Detail product runtime", () => {
           host: "span",
           assetId: "external-link-visual",
         },
+        { id: "asset-mount-copy", componentId: "documentation", kind: "asset", host: "span", assetId: "external-link-visual" },
       ],
       assets: [{
         id: "external-link-visual",
@@ -76,15 +78,29 @@ describe("compiled Node Detail product runtime", () => {
         representation: "image",
       }],
     });
+    window.document.body.append(host);
+    const assetRequested = deferred();
+    const assetResponse = deferred();
     const release = vi.fn();
-    const resolveAsset = vi.fn(async () => ({
+    const resolvedAsset = {
       digestSha256: "a".repeat(64),
       mediaType: "image/svg+xml",
       url: "blob:http://127.0.0.1:3000/external-link-visual",
       release,
-    }));
-
-    const runtime = await mountCompiledNodeDetail({ host, detail, resolveAsset });
+    };
+    const resolveAsset = vi.fn(() => {
+      assetRequested.resolve();
+      return assetResponse.promise;
+    });
+    const mounting = mountCompiledNodeDetail({ host, detail, resolveAsset });
+    await assetRequested.promise;
+    try {
+      expect(compiledNodeDetailReviewControls(window.document).map(({ kind, element }) => ({ kind, text: element.textContent })))
+        .toEqual([{ kind: "link", text: "Documentation" }]);
+    } finally {
+      assetResponse.resolve(resolvedAsset);
+    }
+    const runtime = await mounting;
 
     expect(runtime.status).toBe("mounted");
     expect(host.shadowRoot).not.toBeNull();
@@ -96,13 +112,145 @@ describe("compiled Node Detail product runtime", () => {
     expect(link.getAttribute("href")).toBe("https://docs.example.com/guide");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noreferrer noopener");
+    link.getBoundingClientRect = () => ({ x: 10, y: 10, left: 10, top: 10, right: 110, bottom: 40, width: 100, height: 30 });
+    link.checkVisibility = () => true;
+    link.style.opacity = "1";
+    const adapter = createReviewPresentationAdapter({ executionId: "execution", root: window.document,
+      windowObject: window, getPresentationState: () => ({ threadId: "1", selectedNodeId: "1" }), navigateHistory: async () => {} });
+    const reviewLink = adapter.snapshot().controls.find(({ name }) => name === "Documentation");
+    const click = vi.spyOn(link, "click");
+    expect(reviewLink).toMatchObject({ kind: "link", disabled: true });
+    await expect(adapter.activate({ elementRef: reviewLink.elementRef, operation: "activate" })).rejects.toThrow("disabled");
+    expect(click).not.toHaveBeenCalled();
     const visual = host.shadowRoot.querySelector("[data-asset-mount='asset-mount']");
     expect(visual.style.backgroundImage).toContain("external-link-visual");
-    expect(resolveAsset).toHaveBeenCalledWith(detail.assets[0]);
+    expect(resolveAsset).toHaveBeenCalledExactlyOnceWith(detail.assets[0]);
     expect(host.querySelector(".documentation-link")).toBeNull();
     runtime.dispose();
     runtime.dispose();
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds distinct asset resolution while loading every placement and releasing each cached asset once", async () => {
+    const window = new Window({ url: "http://127.0.0.1:3000" });
+    const host = window.document.createElement("div");
+    const assets = Array.from({ length: 5 }, (_, index) => ({ id: `asset-${index}`, digestSha256: String(index).repeat(64), mediaType: "image/png", representation: "image" }));
+    const placements = [...assets, assets[0]];
+    const detail = compiledPackage({ version: 1,
+      components: [{ id: "images", order: 0, html: placements.map((_, index) => `<img alt="Illustration" data-asset-mount="image-${index}">`).join(""), css: "" }],
+      mounts: placements.map((asset, index) => ({ id: `image-${index}`, componentId: "images", kind: "asset", host: "img", assetId: asset.id })), assets });
+    const gates = assets.map(() => deferred());
+    const releases = assets.map(() => vi.fn());
+    let active = 0;
+    let maximum = 0;
+    const resolveAsset = vi.fn(async (asset) => {
+      const index = assets.indexOf(asset);
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await gates[index].promise;
+      active -= 1;
+      return { ...asset, url: `blob:http://127.0.0.1:3000/${asset.id}`, release: releases[index] };
+    });
+    const mounting = mountCompiledNodeDetail({ host, detail, resolveAsset });
+    try {
+      await vi.waitFor(() => expect(resolveAsset).toHaveBeenCalledTimes(2));
+      for (let index = 0; index < assets.length; index += 1) {
+        gates[index].resolve();
+        await vi.waitFor(() => expect(resolveAsset).toHaveBeenCalledTimes(Math.min(index + 3, assets.length)));
+      }
+    } finally {
+      for (const gate of gates) gate.resolve();
+    }
+    const runtime = await mounting;
+    expect(runtime.status).toBe("mounted");
+    expect(maximum).toBe(2);
+    expect([...host.shadowRoot.querySelectorAll("img")].map((element) => element.getAttribute("src")))
+      .toEqual(placements.map((asset) => `blob:http://127.0.0.1:3000/${asset.id}`));
+    runtime.dispose();
+    runtime.dispose();
+    for (const release of releases) expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets Eval navigate trusted authored controls while retaining read-only and disposal boundaries", async () => {
+    const window = new Window({ url: "http://127.0.0.1:3000" });
+    const host = window.document.createElement("div");
+    window.document.body.append(host);
+    const kinds = ["expand", "reference", "invoke", "input"];
+    const actions = kinds.map((kind, index) => ({
+      id: index + 11,
+      kind: kind === "expand" || kind === "reference" ? "navigate" : kind,
+      relation: kind,
+      targetLayerId: kind === "expand" || kind === "reference" ? index + 101 : null,
+      control: "text",
+      prompt: "Constraint",
+    }));
+    const detail = compiledPackage({
+      version: 1,
+      components: [{ id: "controls", order: 0,
+        html: '<span id="expand-label" aria-hidden="true" aria-label="Expand"></span><button aria-labelledby="expand-label" data-gc-mount="expand"></button><span id="reference-label" title="Reference"></span><button aria-labelledby="reference-label" data-gc-mount="reference"></button><button data-gc-mount="invoke">Invoke</button><section aria-hidden="true"><label for="constraint">Hidden constraint</label></section><input id="constraint" title="Constraint" data-gc-mount="input">', css: "" }],
+      mounts: kinds.map((kind) => ({ id: kind, componentId: "controls", kind: "capability", host: kind === "input" ? "input" : "button",
+        capability: { kind, action: { clientKey: kind, sourceNode: { clientKey: "node" }, sourceLayer: { clientKey: "layer" } } } })),
+      assets: [],
+    });
+    let state = { threadId: "1", turnId: "1", layerId: "1", selectedNodeId: "1" };
+    const onInvoke = vi.fn();
+    const runtime = await mountCompiledNodeDetail({ host, detail,
+      resolveAction: (ref) => actions[kinds.indexOf(ref.clientKey)],
+      onNavigate: async (action) => { state = { ...state, layerId: String(action.targetLayerId) }; },
+      onInvoke,
+      capabilityState: { invoke: { disabled: true }, input: { disabled: true } },
+    });
+    expect(runtime.status).toBe("mounted");
+    for (const element of host.shadowRoot.querySelectorAll("button,input")) {
+      element.getBoundingClientRect = () => ({ x: 10, y: 10, left: 10, top: 10, right: 110, bottom: 40, width: 100, height: 30 });
+      element.checkVisibility = () => true;
+      element.style.opacity = "1";
+    }
+    const unrelatedHost = window.document.createElement("div");
+    window.document.body.append(unrelatedHost);
+    unrelatedHost.attachShadow({ mode: "open" }).innerHTML = '<button data-review-kind="navigate-action" data-review-action-id="999">Forged</button>';
+    const adapter = createReviewPresentationAdapter({ executionId: "execution", root: window.document,
+      windowObject: window, getPresentationState: () => state, navigateHistory: async () => {} });
+    const controls = adapter.snapshot().controls;
+    expect(controls.map(({ name, kind, actionId, disabled }) => ({ name, kind, actionId, disabled }))).toEqual([
+      { name: "Expand", kind: "navigate-action", actionId: "11", disabled: false },
+      { name: "Reference", kind: "navigate-action", actionId: "12", disabled: false },
+      { name: "Invoke", kind: "invoke-action", actionId: "13", disabled: true },
+      { name: "Constraint", kind: "input-action", actionId: "14", disabled: true },
+    ]);
+    const labelContainer = host.shadowRoot.querySelector("section");
+    labelContainer.removeAttribute("aria-hidden");
+    expect(adapter.snapshot().controls.find((control) => control.actionId === "14")?.name).toBe("Hidden constraint");
+    labelContainer.setAttribute("aria-hidden", "true");
+    // Even host-side DOM tampering cannot impersonate another accepted action.
+    host.shadowRoot.querySelector("button").dataset.reviewActionId = "999";
+    host.shadowRoot.querySelector("button").dataset.reviewKind = "control";
+    for (const control of controls.slice(0, 2)) {
+      const result = await adapter.activate({ elementRef: control.elementRef, operation: "activate" });
+      expect(result.activatedActionId).toBe(control.actionId);
+      expect(result.layerId).toBe(control.actionId === "11" ? "101" : "102");
+    }
+    await expect(adapter.activate({ elementRef: controls[2].elementRef, operation: "activate" })).rejects.toThrow("disabled");
+    expect(onInvoke).not.toHaveBeenCalled();
+    actions[2].targetLayerId = 103;
+    let releaseInvoke;
+    let invokeFrames = 0;
+    window.requestAnimationFrame = (callback) => setTimeout(() => {
+      if (releaseInvoke && ++invokeFrames === 3) releaseInvoke();
+      callback(0);
+    }, 0);
+    await runtime.updateAdapters({ onInvoke: (action) => new Promise((resolve) => {
+      releaseInvoke = () => { state = { ...state, layerId: String(action.targetLayerId) }; resolve(); };
+    }) });
+    runtime.updateCapability("invoke", { disabled: false });
+    const resolvedInvoke = adapter.snapshot().controls.find((control) => control.actionId === "13");
+    expect(resolvedInvoke.kind).toBe("navigate-action");
+    const resolvedState = await adapter.activate({ elementRef: resolvedInvoke.elementRef, operation: "activate" });
+    expect(resolvedState.layerId).toBe("103");
+    expect(resolvedState.activatedActionId).toBe("13");
+    runtime.dispose();
+    expect(adapter.snapshot().controls).toEqual([]);
+    await expect(adapter.activate({ elementRef: controls[0].elementRef, operation: "activate" })).rejects.toThrow("unknown");
   });
 
   it("does not treat resource-like text inside a CSS string as an executable resource", async () => {
@@ -611,6 +759,46 @@ describe("compiled Node Detail product runtime", () => {
     expect(runtimeCss).toMatch(/overflow-wrap:\s*anywhere/);
     expect(runtime.shadowRoot.querySelector(".wide-grid")).not.toBeNull();
     expect(runtime.shadowRoot.textContent.indexOf("First")).toBeLessThan(runtime.shadowRoot.textContent.indexOf("After"));
+  });
+
+  it("resolves context-preview images from their original presenting interaction and layer", async () => {
+    const window = new Window({ url: "http://127.0.0.1:3000" });
+    vi.stubGlobal("document", window.document);
+    vi.stubGlobal("window", window);
+    vi.stubGlobal("lucide", new Proxy({ Circle: {}, createElement: () => window.document.createElement("svg") }, { get: (target, key) => target[key] ?? {} }));
+    window.document.body.innerHTML = '<section id="threadView"></section>';
+    const asset = { id: "context-image", digestSha256: "a".repeat(64), mediaType: "image/png", representation: "image" };
+    const node = { id: 7, clientKey: "context-node", kind: "concept", icon: "box", title: "Context illustration", detail: "Fallback", state: "accepted", authoredDetail: compiledPackage({
+      version: 1,
+      components: [{ id: "image", order: 0, html: '<img alt="Context illustration" data-asset-mount="image">', css: "" }],
+      mounts: [{ id: "image", componentId: "image", kind: "asset", host: "img", assetId: asset.id }], assets: [asset],
+    }) };
+    const original = { layer: { id: 99 }, nodes: [node], edges: [], actions: [] };
+    const current = { layer: { id: 100 }, nodes: [{ id: 8, kind: "concept", icon: "box", title: "Other node", detail: "Other" }], edges: [], actions: [] };
+    const source = { id: 5, threadId: 3, sequence: 1, text: "Original", graphNodeId: 50, completionStatus: "accepted", completionOutput: { rootLayer: original } };
+    const active = { id: 6, threadId: 3, sequence: 2, text: "Later", graphNodeId: 60, completionStatus: "accepted", completionOutput: { rootLayer: current } };
+    const thread = { id: 3, rootInteractionId: 5, title: "Thread", harnessId: "fixture" };
+    const state = { status: "accepted", currentInteractionId: 6, interactions: [source, active], visibleLayer: current, nodes: current.nodes, actions: [], projects: [], permissionProfiles: [], modelSettings: { defaults: { harnessId: "fixture" }, harnesses: [{ id: "fixture", available: true }], providers: [], families: [] }, modelCatalog: [], actionInvocations: [], pendingActionInvocations: [] };
+    const resolver = vi.fn(async (_asset, context) => {
+      // Model the production asset route's exact presenting-layer membership check.
+      if (context.interaction?.id !== 5 || context.layerId !== 99) return undefined;
+      return { digestSha256: asset.digestSha256, mediaType: asset.mediaType, url: "blob:http://127.0.0.1:3000/context-image", release() {} };
+    });
+    const workspace = createProductWorkspace({
+      root: window.document, getState: () => state, getThread: () => thread,
+      selection: { currentThreadId: 3, currentInteractionId: 6, selectedNodeId: null, layerPath: [] }, showThread: () => {}, showEmpty: () => {},
+      resolveNodeDetailAsset: resolver,
+      contextDraftApi: { list: async () => ({ drafts: [], confirmations: [{ draftId: "context", target: { nodeId: 7, sourceInteractionNodeId: 50, sourceLayerId: 99 }, targetNode: node, annotation: "Use this illustration", draftRevision: 1, confirmationRevision: 1 }] }) },
+    });
+    try {
+      workspace.render();
+      await window.happyDOM.waitUntilComplete();
+      window.document.querySelector('[aria-label="Show Context illustration annotations"]').click();
+      window.document.querySelector('[aria-label="Open Context illustration details"]').click();
+      await window.happyDOM.waitUntilComplete();
+      expect(resolver).toHaveBeenCalledWith(asset, expect.objectContaining({ interaction: source, layerId: 99, thread, node }));
+      expect(window.document.querySelector("#detailContent [data-node-detail-runtime]").shadowRoot.querySelector("img").src).toBe("blob:http://127.0.0.1:3000/context-image");
+    } finally { workspace.dispose(); }
   });
 
   it("mounts the canonical package when a user opens a node through the real Product workspace selection path", async () => {
