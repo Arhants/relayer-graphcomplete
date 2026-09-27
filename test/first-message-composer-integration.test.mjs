@@ -19,13 +19,13 @@ afterEach(async () => {
 });
 
 describe("first-message composer integration", () => {
-  it("promotes new Codex threads while preserving reopened follow-up and invoke presentation pins", async () => {
+  it.each(["personal-presentation-v1", "personal-presentation-v3"])("promotes new Codex threads while preserving reopened %s follow-up and invoke pins", async (previousVersion) => {
     const dataDirectory = await mkdtemp(join(tmpdir(), "relayer-codex-presentation-"));
     directories.push(dataDirectory);
     const configurationPath = join(dataDirectory, "codex-basic.yaml");
     const shipped = await readFile(join(repositoryRoot, "harnesses/codex-basic.yaml"), "utf8");
-    // Reproduce the previous production selection: no explicit presentation override.
-    await writeFile(configurationPath, shipped.replace(/^  personalPresentationVersion:.*\n/m, ""));
+    // Exercise both the original implicit default and the immediately preceding visual default.
+    await writeFile(configurationPath, shipped.replace(/^  personalPresentationVersion:.*\n/m, previousVersion === "personal-presentation-v1" ? "" : `  personalPresentationVersion: ${previousVersion}\n`));
     const observed = [];
     const start = async () => {
       const runtime = new GraphCompleteRuntimeService({
@@ -119,7 +119,7 @@ describe("first-message composer integration", () => {
       });
       const trace = await after.runtime.exportCandidateTrace(interaction.id, join(dataDirectory, `trace-${interaction.id}`));
       expect(trace.personalPresentationVersionId).toBe(oldPresentation.attachment.versionInteractionNodeId);
-      expect(trace.personalPresentationVersionKey).toBe("personal-presentation-v1");
+      expect(trace.personalPresentationVersionKey).toBe(previousVersion);
     }
     const expectedSourceOutput = structuredClone(source.completionOutput);
     expectedSourceOutput.rootLayer.actions.find(({ id }) => id === invoke.id).targetLayerId = child.completionOutput.rootLayer.layer.id;
@@ -129,10 +129,11 @@ describe("first-message composer integration", () => {
     const newPresentation = observed.find(({ graphNodeId }) => graphNodeId === newAccepted.interactions[0].graphNodeId).presentation;
     expect(newPresentation.attachment.versionInteractionNodeId).not.toBe(oldPresentation.attachment.versionInteractionNodeId);
     const titles = (presentation) => presentation.graph.layers.flatMap(({ nodes }) => nodes.map(({ title }) => title));
-    expect(titles(oldPresentation)).not.toContain("Authored visual Node Details");
+    expect(titles(oldPresentation)).not.toContain("Explanatory presentation");
     expect(titles(newPresentation)).toContain("Authored visual Node Details");
+    expect(titles(newPresentation)).toContain("Explanatory presentation");
     const newTrace = await after.runtime.exportCandidateTrace(newAccepted.interactions[0].id, join(dataDirectory, "new-trace"));
-    expect(newTrace.personalPresentationVersionKey).toBe("personal-presentation-v3");
+    expect(newTrace.personalPresentationVersionKey).toBe("personal-presentation-v4");
   }, 20_000);
 
   it("submits on Enter and accepts a graph through the zero-inference fixture harness", async () => {

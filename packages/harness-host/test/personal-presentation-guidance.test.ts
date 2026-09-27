@@ -94,6 +94,16 @@ Visible working state: For work that will not finish immediately, prefer establi
     expect(trace?.fragments).toContain(rendered.split("\n\n")[1]);
   });
 
+  it("renders V4 explanatory guidance verbatim without changing earlier preferences", () => {
+    const source = readFileSync(new URL("../../../crates/relayer-app-server/src/runtime.rs", import.meta.url), "utf8");
+    const encoded = source.match(/title: "Explanatory presentation",\s*detail: ("(?:[^"\\]|\\.)*")/)?.[1];
+    expect(encoded).toBeDefined();
+    const detail = JSON.parse(encoded!);
+    const pinned = presentation([{ id: 93, kind: "presentation-preference", icon: "palette", title: "Explanatory presentation", detail, state: "accepted" }]);
+    expect(renderPersonalPresentationGuidance(pinned)).toBe(`Personal graph presentation preferences:\n\nExplanatory presentation: ${detail}`);
+    expect(personalPresentationTraceValues({ personalPresentation: pinned } as Parameters<typeof personalPresentationTraceValues>[0])?.legacyBlocks).toEqual([]);
+  });
+
   it("fails closed when the attachment and resolved graph disagree", () => {
     const valid = presentation([]);
     const invalid = {

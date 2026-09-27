@@ -232,6 +232,9 @@ describe("Relayer Eval application service", () => {
     expect(visualNodeDetailCheck(partialVisualOutput, "personal-presentation-v3").passed).toBe(false);
     expect(visualNodeDetailCheck(malformedOutput, "personal-presentation-v3").passed).toBe(false);
     expect(visualNodeDetailCheck(visualOutput, "personal-presentation-v3").passed).toBe(true);
+    expect(visualNodeDetailCheck(visualOutput, "personal-presentation-v4").passed).toBe(true);
+    expect(visualNodeDetailCheck(plainOutput, "personal-presentation-v4").passed).toBe(false);
+    expect(visualNodeDetailCheck(partialVisualOutput, "personal-presentation-v4").passed).toBe(false);
     const acceptedClosure = acceptedTopologyNodes({ layers: [
       { nodes: [{ id: 1, title: "Root", authoredDetail: compiledDetail }] },
       { nodes: [{ id: 2, title: "Nested" }] },

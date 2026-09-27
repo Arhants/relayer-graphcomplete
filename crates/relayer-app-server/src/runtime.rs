@@ -596,6 +596,7 @@ impl RuntimeClient {
                         | "personal-presentation-v1"
                         | "personal-presentation-v2"
                         | "personal-presentation-v3"
+                        | "personal-presentation-v4"
                 ) =>
             {
                 Ok(Some(value))
@@ -1961,6 +1962,7 @@ impl RuntimeClient {
     }
 }
 
+#[derive(Clone, Copy)]
 struct PersonalPresentationNodeDefinition {
     client_key: &'static str,
     kind: &'static str,
@@ -2057,6 +2059,26 @@ const PERSONAL_PRESENTATION_V3_NODES: &[PersonalPresentationNodeDefinition] = &[
     },
 ];
 
+const PERSONAL_PRESENTATION_V4_NODES: &[PersonalPresentationNodeDefinition] = &[
+    PERSONAL_PRESENTATION_V2_NODES[0],
+    PERSONAL_PRESENTATION_V2_NODES[1],
+    PERSONAL_PRESENTATION_V2_NODES[2],
+    PersonalPresentationNodeDefinition {
+        client_key: "authored-visual-node-details",
+        kind: "presentation-preference",
+        icon: "layout-template",
+        title: "Authored visual Node Details",
+        detail: "Author a compiled visual Node Detail for every node you create; do not leave any authored node on plain Markdown alone. Use the active harness client to author and checkpoint components before submitting the node. When a node has actions, create each stable action object with its exact source layer before checkpointing, bind that same object in the page, and add it to the graph after submitting the layer. Keep every authored page self-contained, keyboard operable, and accessible. Mount every action belonging to the node inside its detail page.",
+    },
+    PersonalPresentationNodeDefinition {
+        client_key: "explanatory-presentation",
+        kind: "presentation-preference",
+        icon: "palette",
+        title: "Explanatory presentation",
+        detail: "Shape the response around what the user needs to understand or do. When relationships, mechanisms, comparisons, quantities, sequences, or spatial structure carry the explanation, make those relationships visible through an appropriate representation. Let the content determine the form and level of detail. Visual elements should communicate information, not merely decorate prose. Keep the central answer clear, readable, accessible, and proportionate to the task. Use images or controls when they materially improve understanding or help the user act. Concise prose is appropriate when it communicates the task well.",
+    },
+];
+
 fn personal_presentation_definition(
     version_key: &str,
 ) -> Result<PersonalPresentationDefinition, RuntimeError> {
@@ -2084,6 +2106,18 @@ fn personal_presentation_definition(
             nodes: PERSONAL_PRESENTATION_V3_NODES,
             edges: &[[0, 1], [0, 2], [0, 3]],
             placements: &[[0.5, 0.2], [0.25, 0.75], [0.75, 0.75], [0.9, 0.35]],
+        }),
+        "personal-presentation-v4" => Ok(PersonalPresentationDefinition {
+            interaction_text: "Personal presentation V4",
+            nodes: PERSONAL_PRESENTATION_V4_NODES,
+            edges: &[[0, 1], [0, 2], [0, 3], [0, 4]],
+            placements: &[
+                [0.5, 0.15],
+                [0.2, 0.5],
+                [0.8, 0.5],
+                [0.3, 0.85],
+                [0.7, 0.85],
+            ],
         }),
         _ => Err(RuntimeError::Configuration(format!(
             "unknown personal presentation version {version_key}"
@@ -3672,6 +3706,27 @@ mod tests {
             .ensure_personal_presentation_version("personal-presentation-v3")
             .await
             .unwrap();
+        let v4 = runtime
+            .ensure_personal_presentation_version("personal-presentation-v4")
+            .await
+            .unwrap();
+        assert_eq!(v4.closure.layers[0].nodes.len(), 5);
+        assert_eq!(v4.closure.layers[0].edges.len(), 4);
+        assert_eq!(
+            v4.closure.layers[0].nodes[4].title,
+            "Explanatory presentation"
+        );
+        assert!(
+            v4.closure.layers[0].nodes[4]
+                .detail
+                .contains("Let the content determine")
+        );
+        assert!(
+            !v4.closure.layers[0].nodes[3]
+                .detail
+                .contains("detailAuthoring")
+        );
+        assert_ne!(v3.interaction_node_id, v4.interaction_node_id);
         assert_eq!(v3.closure.layers[0].nodes.len(), 4);
         assert_eq!(v3.closure.layers[0].edges.len(), 3);
         assert_eq!(

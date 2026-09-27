@@ -50,7 +50,7 @@ export function personalPresentationNativeInstructions(context: HarnessRunContex
   if (context.personalPresentation === undefined) return "";
   const rendered = renderPersonalPresentationGuidance(context.personalPresentation);
   if (rendered === "") return "";
-  return `If you are the root agent, include the exact rendered Personal graph presentation preferences block from the current root task only when assigning a native child to author graph content. Never include that block in an unrelated delegate's task. If you are a native child, apply personal presentation preferences only when that exact rendered block is present in your assigned task; otherwise do not infer, retrieve, or apply them. ${personalPresentationAuthority}`;
+  return `If you are the root agent, include the exact rendered Personal graph presentation preferences block from the current root task only when assigning a native child to author graph content. Include the available presentation capabilities and relevant language-specific public API recipes from the current root task in that authoring handoff, including its supplied client module reference when present. Never include that block in an unrelated delegate's task. If you are a native child, apply personal presentation preferences only when that exact rendered block is present in your assigned task; otherwise do not infer, retrieve, or apply them. ${personalPresentationAuthority}`;
 }
 
 export function personalPresentationTraceValues(context: HarnessRunContext): {

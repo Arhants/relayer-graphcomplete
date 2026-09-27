@@ -1,6 +1,9 @@
 import { expect } from "vitest";
 
 export function expectGraphPresentationGuidance(prompt: string): void {
+  expect(prompt).toContain("Available presentation capabilities:");
+  expect(prompt).toContain("without image files");
+  expect(prompt).toContain("native image inspection");
   expect(prompt).toContain("Each layer should explain its scope as a coherent whole");
   expect(prompt).toContain('Choose "expand" when another layer should deepen one part');
   expect(prompt).toContain('Choose "reference" for supporting evidence or reusable context');

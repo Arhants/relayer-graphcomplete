@@ -554,6 +554,7 @@ Answer the current user interaction by authoring and accepting a useful graph la
 
 ${GRAPH_PRESENTATION_GUIDANCE}
 ${CODEX_VISUAL_GUIDANCE}
+${CODEX_ASSET_GUIDANCE}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interactionNode.id}
@@ -691,6 +692,7 @@ After doing the underlying work, answer the current user interaction with a usef
 
 ${GRAPH_PRESENTATION_GUIDANCE}
 ${CODEX_VISUAL_GUIDANCE}
+${CODEX_ASSET_GUIDANCE}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation && context !== undefined ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interactionNode.id}
@@ -1179,7 +1181,7 @@ function parseCodexBasicConfiguration(context: HarnessFactoryContext): ResolvedC
   const additionalDirectories = optionalStringArray(configuration.additionalDirectories, "additionalDirectories");
   const promptProfile = optionalEnum(configuration.promptProfile, ["layered-navigation-v1", "layered-navigation-multi-agent-v1"] as const, "promptProfile");
   const rootSessionMode = optionalEnum(configuration.rootSessionMode, ["resume", "fresh"] as const, "rootSessionMode");
-  optionalEnum(configuration.personalPresentationVersion, ["personal-presentation-v0", "personal-presentation-v1", "personal-presentation-v2", "personal-presentation-v3"] as const, "personalPresentationVersion");
+  optionalEnum(configuration.personalPresentationVersion, ["personal-presentation-v0", "personal-presentation-v1", "personal-presentation-v2", "personal-presentation-v3", "personal-presentation-v4"] as const, "personalPresentationVersion");
   const permission = parseCodexPermissionBinding(context.permissionProfileId, context.permissionBinding);
 
   return {
@@ -1257,4 +1259,6 @@ export function createCodexBasicFactory(dependencies: CodexBasicDependencies = {
   return (context) => new CodexBasicHarness(context, dependencies);
 }
 
-const CODEX_VISUAL_GUIDANCE = "For visual Node Details: Import the exported html, css, and detailCapability helpers. At minimum, call node.detailAuthoring.setComponent(\"main\", html`<section><h2>Summary</h2><p>Details</p></section>`, css`section { display: grid; gap: 0.75rem; }`), await graph.checkpointNodeDetail(node), and then await graph.submitNode(node). When a node has actions, create each stable action object with its sourceLayer before checkpointing, bind that same object in the page with the matching detailCapability helper, and pass it to graph.addAction after submitting the layer.";
+const CODEX_VISUAL_GUIDANCE = "The following public API recipe demonstrates authoring mechanics only; its placeholder content and layout are not a recommended response design. For visual Node Details: Import the exported html, css, and detailCapability helpers. At minimum, call node.detailAuthoring.setComponent(\"main\", html`<section><h2>Summary</h2><p>Details</p></section>`, css`section { display: grid; gap: 0.75rem; }`), await graph.checkpointNodeDetail(node), and then await graph.submitNode(node). When a node has actions, create each stable action object with its sourceLayer before checkpointing, bind that same object in the page with the matching detailCapability helper, and pass it to graph.addAction after submitting the layer.";
+
+const CODEX_ASSET_GUIDANCE = `For image assets, import assetRef from the supplied clientModuleUrl. Use const scope = await graph.visualAssets.scope(); await graph.visualAssets.listAssets({ scope }); await graph.visualAssets.listTags({ scope }); await graph.visualAssets.inspect(assetId, scope). Register caller-read bytes with await graph.visualAssets.add({ scope, name, file: { name, mediaType, async read() { return bytes; } } }); bind the returned asset.id with html\`<img asset=\${assetRef(asset.id)} alt="Description">\`. The host resolves and pins content. Never supply compiled packages, mounts, hashes, raw image URLs, or executable JavaScript.`;

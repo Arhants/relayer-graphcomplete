@@ -34,7 +34,7 @@ modelDefaults:
 graphCapabilityProfile:
   search: query-v1
 settings:
-  personalPresentationVersion: personal-presentation-v3
+  personalPresentationVersion: personal-presentation-v4
   thinkingLevel: medium
   rlmMaxDepth: 1
   prewarmIpythonKernel: true

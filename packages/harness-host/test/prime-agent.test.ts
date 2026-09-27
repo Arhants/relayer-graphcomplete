@@ -1221,6 +1221,7 @@ describe("PrimeAgentHarness", () => {
     const nativeInstructions = resourceLoaderOptions?.appendSystemPromptOverride(["base prompt"]);
     expect(nativeInstructions).toHaveLength(2);
     expect(nativeInstructions?.[1]).toContain("If you are the root agent");
+    expect(nativeInstructions?.[1]).toContain("relevant language-specific public API recipes");
     expect(nativeInstructions?.[1]).toContain("only when assigning a native child to author graph content");
     expect(nativeInstructions?.[1]).toContain("Never include that block in an unrelated delegate's task");
     expect(nativeInstructions?.[1]).toContain("only when that exact rendered block is present in your assigned task");
@@ -1255,6 +1256,8 @@ describe("PrimeAgentHarness", () => {
     try {
       await harness.complete({ ...context, trace: trace.sink });
       expect(prompt).toContain("every node you create");
+      expect(prompt).toContain("not a recommended response design");
+      expect(prompt).not.toContain("Start from this runnable");
       expect(prompt).toContain("await graph.checkpoint_node_detail(node)");
       expect(prompt).toContain("await graph.submit(11)");
       expect(prompt).not.toMatch(/detailAuthoring|checkpointNodeDetail|detailCapability|html`/);
@@ -1493,6 +1496,7 @@ describe("PrimeAgentHarness", () => {
     expect(session.promptAndWait).toHaveBeenCalledTimes(2);
     const nativeInstructions = resourceLoaderOptions?.appendSystemPromptOverride(["base"]);
     expect(nativeInstructions?.[1]).toContain("If you are the root agent");
+    expect(nativeInstructions?.[1]).toContain("relevant language-specific public API recipes");
     expect(nativeInstructions?.[1]).not.toContain("Decision-useful center");
     expect(harness.state()).toEqual({
       primeAgentSessionFile: "/tmp/saved-v1.jsonl",
