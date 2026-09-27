@@ -27,7 +27,7 @@ export const PRIME_AGENT_PACKAGE_TREE_SHA256 = Object.freeze({
   "@earendil-works/pi-tui": "f86a8ab553edaf05e1fc4f4d6cb48c313e5a93f2f3490f74e510661c52d74447",
 });
 export const PRIME_AGENT_PACKAGED_DEPENDENCY_CLOSURE_SHA256_BY_TARGET = Object.freeze({
-  "darwin-arm64": "7d25b7c2c5aa3ede2cf731770f11f37e0de0eaba454dc3c62cbe561e4b2f4160",
+  "darwin-arm64": "1253fd136c0d63e751fffdae68327a1b5cbb3176f2b9780de372744f8b83ef41",
 });
 export const PRIME_AGENT_REPOSITORY_DEPENDENCY_CLOSURE_SHA256 = "02f15fb2ce6366f1e9709e66336a94476dc6605bb8618885afea9e7d2e19766f";
 export const PRIME_AGENT_HARNESS_CONFIGURATIONS = Object.freeze([

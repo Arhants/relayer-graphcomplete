@@ -1,3 +1,4 @@
+import { NativeExecutionCancelled } from "../src/completion-execution.js";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
@@ -1444,6 +1445,108 @@ describe("HarnessHost", () => {
     }
   });
 
+  it("claims an invoked child's family admission exactly as a root run's", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-invoked-admission-"));
+    const releases: string[] = [];
+    let observedContext: HarnessRunContext | undefined;
+    const plan: HarnessModelPlan = {
+      familyId: 5,
+      familyRevision: 2,
+      orchestrator: { providerId: "openrouter-work", adapterId: "openrouter", accessContract: "secret@1", modelId: "luna" },
+      roster: [{ providerId: "openrouter-work", adapterId: "openrouter", accessContract: "secret@1", modelId: "luna" }],
+    };
+    const policy = {
+      configurationRevision: 1,
+      configurationDigest: `sha256:${"c".repeat(64)}`,
+      executionAccessContracts: ["secret@1"],
+      modelRules: { allow: [{ adapterId: "openrouter", modelIdRegex: ".*" }], deny: [] },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : graphReadResponse(url, 2, [], 102)));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire(route) {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: route.providerId, adapterId: route.adapterId!,
+              adapterImplementationVersion: "2", endpoint: "https://openrouter.test", fields: { "api-key": "secret" },
+            },
+            release() { releases.push(route.providerId); },
+          };
+        } },
+        implementations: { test: () => ({
+          supportsInvokedComplete: true,
+          async complete(context) { observedContext = context; },
+          state: emptyState,
+        }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: {
+          ...completeEnabledConfiguration,
+          revision: 1,
+          modelRules: policy.modelRules,
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      // The product admits the child under its own product interaction, then starts it.
+      const admission = await host.admitModelPlanExecution(
+        1, 29, "attempt-child-29", plan, new AbortController().signal, policy,
+      );
+      await host.startInvokedCompletion(1, {
+        ...invoked(graph(2, "child-token")),
+        traceContext: { productInteractionId: 29 },
+        harnessPolicy: policy,
+        modelPlan: plan,
+        executionLeaseId: admission.executionLeaseId,
+        attemptAdmissionId: "attempt-child-29",
+      });
+      await expect(host.observeInvokedCompletion(1, 2)).resolves.toEqual({ completionId: 2 });
+
+      expect(observedContext?.modelPlan).toEqual(admission.admittedPlan);
+      expect(observedContext?.accessBundle?.byProviderId["openrouter-work"]?.adapterImplementationVersion).toBe("2");
+      // The child's leases stay held until the product releases them after settlement.
+      expect(releases).toEqual([]);
+      expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
+      expect(releases).toEqual(["openrouter-work"]);
+    } finally {
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an invoked child that carries only part of an admission", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-invoked-partial-admission-"));
+    let running: Awaited<ReturnType<typeof startHarnessHost>> | undefined;
+    try {
+      running = await startHarnessHost({
+        stateFile: join(directory, "sessions.json"),
+        controlToken: "control",
+        implementations: { test: () => ({ async complete() {}, state: emptyState }) },
+      });
+      const response = await fetch(`${running.url}/sessions/1/invoked-completions`, {
+        method: "POST",
+        headers: { authorization: "Bearer control", "content-type": "application/json" },
+        body: JSON.stringify({
+          ...invoked(graph(2, "child-token")),
+          traceContext: { productInteractionId: 29 },
+          executionLeaseId: "00000000-0000-4000-8000-000000000000",
+        }),
+      });
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({
+        error: "invalid_invoked_completion",
+        message: expect.stringContaining("together"),
+      });
+    } finally {
+      await running?.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("rolls back already-acquired family access when a later provider cannot be acquired", async () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-family-rollback-"));
     const release = vi.fn();
@@ -1811,7 +1914,7 @@ describe("HarnessHost", () => {
     }
   });
 
-  it("starts an invoked completion over HTTP once, acknowledges native attachment, and cancels its exact completion", async () => {
+  it.each(["reason", "typed", "ordinary"])("starts an invoked completion once and classifies %s cancellation over HTTP", async (cancellationKind) => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-recursive-start-route-"));
     const nativeFetch = globalThis.fetch;
     let running: Awaited<ReturnType<typeof startHarnessHost>> | undefined;
@@ -1850,7 +1953,7 @@ describe("HarnessHost", () => {
             observedCompletionBroker = context.completionBroker;
             context.trace.emit({ type: "message", data: { text: "attributed invoked completion" } });
             const execution = new Promise<void>((_resolve, reject) => {
-              signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+              signal?.addEventListener("abort", () => reject(cancellationKind === "typed" ? new NativeExecutionCancelled("cancelled for thread 1") : cancellationKind === "ordinary" ? new Error("cancelled for thread 1") : signal.reason), { once: true });
             });
             return nativeExecutionHandle(execution, undefined, attached);
           },
@@ -1914,6 +2017,21 @@ describe("HarnessHost", () => {
       await expect(malformed.json()).resolves.toMatchObject({ error: "invalid_invoked_completion" });
       expect(starts).toBe(1);
 
+      // A bounded observation of a running child answers that it still runs, rather than
+      // leaving the request waiting after the observer has moved on.
+      const stillRunning = await fetch(`${running.url}/sessions/1/invoked-completions/2?waitMs=20`, {
+        headers: { authorization: "Bearer control" },
+      });
+      expect(stillRunning.status).toBe(200);
+      await expect(stillRunning.json()).resolves.toEqual({ completionId: 2, running: true });
+      for (const wait of ["0", "-5", "1.5", "60001", "soon"]) {
+        const invalid = await fetch(`${running.url}/sessions/1/invoked-completions/2?waitMs=${wait}`, {
+          headers: { authorization: "Bearer control" },
+        });
+        expect(invalid.status).toBe(400);
+        await expect(invalid.json()).resolves.toEqual({ error: "invalid_observation_wait" });
+      }
+
       const cancelled = await fetch(`${running.url}/sessions/1/cancel?completionId=2`, {
         method: "POST",
         headers: { authorization: "Bearer control" },
@@ -1921,7 +2039,12 @@ describe("HarnessHost", () => {
       expect(cancelled.status).toBe(200);
       await expect(cancelled.json()).resolves.toEqual({ cancelled: true });
       await expect(running.host.observeInvokedCompletion(1, 2)).rejects.toThrow("cancelled for thread 1");
+      // A bounded observation of an ended run answers with that end at once.
+      await expect(running.host.observeInvokedCompletion(1, 2, 60_000)).rejects.toThrow("cancelled for thread 1");
       expect(running.host.cancel(1, 2)).toBe(false);
+      const observed = await fetch(`${running.url}/sessions/1/invoked-completions/2`, { headers: { authorization: "Bearer control" } });
+      expect(observed.status).toBe(cancellationKind === "ordinary" ? 500 : 409);
+      expect((await observed.json()).cancellationSettled).toBe(cancellationKind === "ordinary" ? undefined : true);
       const exported = join(directory, "exported-child-trace");
       const descriptor = await running.host.exportCandidateTrace(29, exported, {
         runId: "recursive-live-run",

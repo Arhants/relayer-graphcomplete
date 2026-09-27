@@ -131,13 +131,15 @@ Select one profile per invocation, so a run never spends more than intended:
 
 ```sh
 RELAYER_RECURSIVE_LIVE_RUN=1 npm run live:recursive-complete -- --profile prime-openrouter
-RELAYER_RECURSIVE_LIVE_RUN=1 npm run live:recursive-complete -- --profile codex-openai
+RELAYER_RECURSIVE_LIVE_RUN=1 npm run live:recursive-complete -- --profile codex-subscription
 ```
 
-A `codex.basic` profile also needs `codexExecutable` and `codexHome`, and runs
-inside that home so it never picks up an unrelated provider login. A
-`prime.agent` profile needs neither; it reaches its provider directly and
-accepts only a key.
+The runner provisions `prime.agent` and `codex.basic` harnesses and refuses any
+other. A `codex.basic` profile also needs `codexExecutable` and `codexHome`,
+runs inside that home so it never picks up an unrelated provider login, and
+takes only a `codex-subscription` login: Codex routes through the built-in
+`codex` provider, which has no key contract. A `prime.agent` profile needs
+neither; it reaches its provider directly and accepts only a key.
 
 Each attempt writes an immutable
 `.relayer/live/recursive-complete/<profile>/<run-id>/run.json`; `latest.json`
@@ -230,13 +232,23 @@ service access. Unsupported bounded runtimes fail before inference.
 
 ## Relayer Eval
 
-Relayer Eval is a separate internal application and profile. Its dashboard configures cases, named harness configurations, and a judge; shows persisted test runs and aggregate results by harness; and opens any specific case × harness execution in a separate read-only production workspace window.
+Relayer Eval is a developer-only browser application with a separate profile. Its dashboard configures cases, named harness configurations, and a judge; shows persisted test runs and aggregate results by harness; and opens any specific case × harness execution in a separate read-only production workspace window.
+
+Prepare the shared product runtime once with `npm run build`. Then launch Eval:
 
 ```sh
 npm run eval-app:dev
 ```
 
-The default `fixture-task-system` harness is the safe deterministic path: it exercises the real Rust app server, Node harness host, graph client, product workspace, and Eval UI without credentials or inference. `npm run eval-app:dev` still needs the native Rust/Ladybug build prerequisites below because the backend is built before the Node host starts. `codex-basic`, `codex-basic-high`, and the other provider-backed configurations are paid live-Eval paths; selecting one and approving a run is explicit, and live runs are excluded from `npm run check`. Development Eval exposes Prime configurations when the checked-in runtime passes preflight and supplies the trusted Python graph client to their IPython kernels. Eval runs from the checkout and has no desktop package. Run `npm run test:eval-web` after building for inference-free browser proof.
+Launching does not compile or package anything. Dashboard, renderer, and host
+JavaScript edits need only a page reload or host restart. Run `npm run build`
+after compiled Rust/TypeScript source, checkout, or dependency changes, then
+restart Eval. This includes the root `dist/index.js` used by recursive Complete;
+`npm run build:packages` alone does not rebuild it. Eval has no separate build
+or packaged mode. Artifact freshness and Cargo output selection remain the
+developer's responsibility.
+
+The default `fixture-task-system` harness is the safe deterministic path: it exercises the real Rust app server, Node harness host, graph client, product workspace, and Eval UI without credentials or inference. Initial runtime preparation needs the native Rust/Ladybug build prerequisites below. `codex-basic`, `codex-basic-high`, and the other provider-backed configurations are paid live-Eval paths; selecting one and approving a run is explicit, and live runs are excluded from `npm run check`. Development Eval exposes Prime configurations when the checked-in runtime passes preflight and supplies the trusted Python graph client to their IPython kernels. Eval runs from the checkout and has no desktop package. Run `npm run test:eval-web` after building for inference-free browser proof.
 
 The dashboard also exposes the non-default **Visual Node Details · recursive
 baseline** case and its required Codex pair:

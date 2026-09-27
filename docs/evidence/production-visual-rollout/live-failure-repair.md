@@ -1,5 +1,7 @@
 # Live Prime failures and repair — 2026-09-27
 
+Historical checkpoint: later live acceptance is recorded in [authoring-contract.md](authoring-contract.md); current integration gates are tracked in [merge-readiness.md](merge-readiness.md). Draft requirements below describe this earlier snapshot.
+
 The PR500 live Max run was cancelled by user request after extended tool
 execution. Flash failed with an upstream 429 and then an invalid
 unknown/unknown model retry. Neither live attempt is acceptance evidence.

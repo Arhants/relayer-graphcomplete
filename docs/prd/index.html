@@ -2016,6 +2016,7 @@ interface NativeExecutionHandle {
 <p>An explicit <code>complete(inputGraph)</code> call creates a new semantic completion and a distinct provider execution attachment. The adapter may use a fresh provider session or safely multiplex an existing session.</p>
 <p>Required context and identity come from GraphComplete rather than hidden provider history. The attachment retains the harness's ordinary native helper infrastructure. A helper may ask its owning orchestrator to create semantic work, but helper topology is never mirrored automatically.</p>
 <p>Codex binds a semantic child to a fresh app-server thread and turn whose orchestrator receives the child scope. Codex-native subagents remain internal helpers for that orchestrator. Claude binds a semantic child to a fresh Agent SDK query that neither resumes nor replaces the root session. Prime binds a semantic child to a fresh ordinary Prime session and execution. Prime's RLM and subagents remain internal helpers unless that execution explicitly calls Complete again.</p>
+<p>An invoked child resolves its inherited model selection to the family plan current at launch. It is admitted like a root turn, with its own attempt record, before its provider starts. It holds its provider leases until its provider run has ended, even when its graph current settles first. A child that cannot be admitted never starts, and it fails with the admission's reason.</p>
 <h3>12.2 Persistent Node harness host</h3>
 <p>The Node harness host is a long-lived child process of the evaluator or Relayer app server. It resolves a small code-owned implementation map and lazily constructs one harness object per thread:</p>
 <pre><code class="language-ts">const harnessImplementations: Record&lt;string, HarnessFactory&gt; = {
@@ -2171,12 +2172,12 @@ settings:
 <p><strong>Acceptance:</strong> Stop and failure never create an accepted response layer.</p>
 </section>
 <p><strong>Current state:</strong> Relayer persists running, accepted, and failed interactions. It recovers interrupted work as failed. The renderer does not expose Stop or Retry controls.</p>
-<p>The composer changes its primary control to <strong>Stop</strong> while Complete is active. The user can stop the interaction without leaving the thread.</p>
+<p>The composer changes its primary control to a square <strong>Stop</strong> icon while Complete is active. The user can stop the interaction without leaving the thread.</p>
 <p>A stopped or failed interaction stays visible in history. Relayer shows its exact state, message, and retry availability.</p>
 <h3>5.1 Stop</h3>
 <ul>
 <li>Stop requests cancellation through the product-owned runtime boundary.</li>
-<li>The composer shows <strong>Stopping</strong> until the runtime confirms a terminal state.</li>
+<li>While <strong>Stopping</strong>, a loading circle surrounds the square until the runtime confirms a terminal state. The Send icon returns once stopped. Stop controls and the stopped notice use neutral theme colors. The button stays vertically centered beside the text input.</li>
 <li>Stop must preserve all graph state accepted before the active interaction.</li>
 <li>Draft work from the stopped interaction must not appear as accepted output.</li>
 </ul>
@@ -2190,6 +2191,20 @@ settings:
 <h3>5.3 Verification</h3>
 <p>Product tests must cover stop during agent work, stop during graph submission, retry after failure, and repeated control selections.</p>
 <p>The tests must prove that stopped or failed work cannot appear as an accepted result.</p>
+<h3>5.4 Stop verification checkpoints (#506)</h3>
+<p><a href="https://github.com/vishaltandale00/relayer-graphcomplete/issues/506">Issue #506</a> supplies the user Stop decision. The product route binds a Stop request to one stored interaction. The agent-only child Stop route keeps its direct-parent authority.</p>
+<table>
+<thead><tr><th>Checkpoint</th><th>Promise or boundary</th><th>Deterministic proof</th></tr></thead>
+<tbody>
+<tr><td><code>STOP-001</code></td><td>Durable requests, exact ownership, duplicate selections, failure feedback, and retry of a failed Stop.</td><td><code>storage::sqlite::stops::tests</code> and the authority/failed-dispatch scenario in <code>test/stop-run-integration.test.mjs</code>.</td></tr>
+<tr><td><code>STOP-002</code></td><td>Native cancellation for Prime and Codex, retained current, unaccepted drafts, unrelated-run isolation, and a new follow-up.</td><td>The provider retention scenarios in <code>test/stop-run-integration.test.mjs</code>. Existing provider tests cover native interrupt and recursive quiescence.</td></tr>
+<tr><td><code>STOP-003</code></td><td>Acceptance wins a late Stop. Failed native abort remains failed. Stopping waits for native settlement.</td><td>The acceptance-race and abort-failure scenarios in <code>test/stop-run-integration.test.mjs</code>; pre-attachment cancellation and failed force-close in <code>packages/harness-host/test/codex-app-server.test.ts</code>, plus HTTP host cancellation classification in <code>host.test.ts</code>.</td></tr>
+<tr><td><code>STOP-004</code></td><td>A Stop received during admission prevents native execution. Approval cancellation alone does not claim settlement.</td><td>Admission, rejected-admission, graph/cleanup/persistence failure scenarios in <code>test/stop-run-integration.test.mjs</code>; SQLite attempt-failure tests for unsent restoration; and <code>stop_closes_approval_without_claiming_provider_settlement</code>.</td></tr>
+<tr><td><code>STOP-005</code></td><td>Reopen preserves confirmed stopped history. An interrupted Stop is failed honestly and is never replayed.</td><td>The restart scenarios before and after Stop dispatch in <code>test/stop-run-integration.test.mjs</code> and the SQLite reopen scenario in <code>storage::sqlite::stops::tests</code>.</td></tr>
+<tr><td><code>STOP-006</code></td><td>The composer shows a square Stop icon, adds a loading circle while Stopping, then restores Send. Repeated clicks are disabled during Stopping.</td><td><code>npm run test:desktop:stop</code> drives the production renderer, app server, and native adapters with injected deterministic providers. It captures both providers' three visible states. <code>test/environment-rail.test.mjs</code> covers root-versus-child targeting; <code>test/workspace-navigation-integration.test.mjs</code> covers stale refresh rejection and continued automatic polling.</td></tr>
+</tbody>
+</table>
+<p>The warm loop uses the focused Rust storage tests and provider tests. Before handoff, run the product integration scenarios, <code>npm run test:desktop:stop</code>, <code>npm run check</code>, and <code>npm run build</code>. The desktop runner uses no inference and makes no signed-release claim. See <a href="../evidence/issue-506-stop/README.md">the Stop evidence ledger</a> for seams, results, and limits.</p>
 <h2 data-prd-layer="Product" data-prd-order="7">7. Act on the result</h2>
 <section class="capability-summary" aria-label="Act on the result summary">
 <p><strong>User goal:</strong> Use a node in the next interaction.</p>
@@ -2870,6 +2885,8 @@ submitReview({ turnId, rootLayerResult, evidence, criterionJudgments, summary, f
 <p>The terminal owns Eval service lifetime. Closing a tab leaves evaluations running. Ctrl-C stops owned services. Startup locks the selected profile to prevent concurrent hosts. The dashboard and human review pages use separate origins and scoped capabilities. Rust credentials stay in the backend. Prime development credentials are loaded from the selected profile on each launch and kept in memory.</p>
 <p>Automated judges use isolated contexts in the pinned Chromium browser. They receive read-only authority and no human annotation credential. A commissioned input operator keeps its separate write authority in the backend. Browser Eval verifies the shared production workspace; Electron-specific behavior still requires desktop proof.</p>
 <p>Deterministic host authority checks run in <code>test/eval-web-host.test.mjs</code>. The inference-free browser and process proof is <code>npm run test:eval-web</code>, after <code>npm run build</code> and <code>npx playwright install chromium</code>. It covers real product execution, review, capture, and restart. Paid judges remain opt-in.</p>
+<p>Eval launch does not build or package an application. Developers prepare the shared runtime once and rebuild it when compiled sources or dependencies change. Dashboard, renderer, and host JavaScript edits need only reload or restart. Eval has no packaged mode or packaged-startup maintenance.</p>
+<p>The existing <code>npm run build</code> refreshes shared runtime artifacts, including the root Complete output. Developers own artifact freshness and Cargo output selection, then restart Eval after rebuilding. Eval adds no preparation command or artifact-isolation guarantee. After building, <code>npm run test:eval-compiled-runtime</code> exercises the real recursive-Complete scenarios through the compiled root entry point.</p>
 <h3>9.2 Production-workspace review</h3>
 <p>Product workspace opens the production renderer with server-enforced read-only authority. It does not translate the graph into a second evaluation view.</p>
 <p>The review workspace uses normal product behavior:</p>

@@ -140,7 +140,7 @@ function primeRecipe(target) {
       primeSourceCommit: "f6130839ad3043f1cd3d5294fe03023035bfcd5c",
       primeBridgeCommit: "3635b59066ebf4facf1a6d0285b005056644226b",
       javascript: {
-        dependencyClosureSha256: "7d25b7c2c5aa3ede2cf731770f11f37e0de0eaba454dc3c62cbe561e4b2f4160",
+        dependencyClosureSha256: "1253fd136c0d63e751fffdae68327a1b5cbb3176f2b9780de372744f8b83ef41",
         repositoryDependencyClosureSha256: "02f15fb2ce6366f1e9709e66336a94476dc6605bb8618885afea9e7d2e19766f",
         packages: [{
           name: "@earendil-works/pi-agent-core", version: "0.8.1",

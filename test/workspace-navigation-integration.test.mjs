@@ -544,6 +544,38 @@ describe("workspace navigation integration", () => {
     expect(controller.viewState).toMatchObject({ currentThreadId: 20, currentInteractionId: 2 });
   });
 
+  it("keeps Stop pending when a pre-Stop poll arrives late and continues terminal polling", async () => {
+    vi.useFakeTimers();
+    try {
+      const turn = { ...interaction(1, 10, rootLayer(101, 11)), completionStatus: "running", stopRequested: false };
+      const initial = productState([{ id: 10, title: "Running" }], [turn]);
+      const stale = deferred();
+      let reads = 0;
+      requestImplementation = vi.fn(async (path) => {
+        if (path.endsWith("/interactions/1/stop")) return { ...turn, stopRequested: true };
+        if (path.startsWith("/api/state?threadId=10")) {
+          reads++;
+          if (reads === 1) return structuredClone(initial);
+          if (reads === 2) return stale.promise;
+          return productState(initial.threads, [{ ...turn, stopRequested: true, completionStatus: "stopped" }]);
+        }
+        throw new Error(`Unexpected request: ${path}`);
+      });
+      const controller = await loadModules();
+      await controller.loadThread(10);
+      const polling = controller.refreshState(10);
+      await controller.stopInteraction(10, 1);
+      stale.resolve(initial);
+      expect(await polling).toBe(false);
+      expect(controller.appState.interactions[0].stopRequested).toBe(true);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(controller.appState.interactions[0].completionStatus).toBe("stopped");
+    } finally {
+      retireOwnedControllers();
+      vi.useRealTimers();
+    }
+  });
+
   it("discards a stale poll that resolves after direct descendant navigation", async () => {
     const root = rootLayer(101, 11);
     root.actions = [{ id: 501, kind: "navigate", sourceNodeId: 11, targetLayerId: 102 }];

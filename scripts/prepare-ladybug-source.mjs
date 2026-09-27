@@ -348,7 +348,7 @@ export async function relativeFiles(
   return output;
 }
 
-export async function buildPinnedOpenSsl({ jobs, manifest, outputDirectory, target }) {
+export async function buildPinnedOpenSsl({ jobs, manifest, outputDirectory, target, environment: inputEnvironment = process.env }) {
   const configuration = targetConfiguration(manifest, target);
   const sourceDirectory = resolve(outputDirectory, "openssl-3.5.8");
   const prefix = resolve(outputDirectory, "openssl-prefix");
@@ -367,7 +367,7 @@ export async function buildPinnedOpenSsl({ jobs, manifest, outputDirectory, targ
   if (target.endsWith("-apple-darwin")) {
     configureArguments.push(`-mmacosx-version-min=${manifest.build.minimumMacOSVersion}`);
   }
-  const buildEnvironment = { ...process.env };
+  const buildEnvironment = { ...inputEnvironment };
   if (target.endsWith("-apple-darwin")) {
     buildEnvironment.MACOSX_DEPLOYMENT_TARGET = manifest.build.minimumMacOSVersion;
   }
