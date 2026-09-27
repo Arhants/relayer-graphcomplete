@@ -34,6 +34,13 @@ therefore no longer short-circuits the Rust spend; the accepted trade buys
 the quick-job duration back on every run. Cache saves remain gated on their
 own success conditions, never on quick.
 
+The four Rust lanes, their Rust aggregate, and Vitest use `!cancelled()` so a
+superseded workflow stops spending runner time. Their acceleration dependencies
+remain fail-open: a failed or skipped Ladybug build does not prevent the Rust
+lanes from restoring a trusted bundle or building Ladybug from source, and a
+failed runtime-cache build remains visible to Vitest and the stable `check`
+aggregate.
+
 Tests are always invoked for the current source snapshot. Cache entries contain
 dependency and compilation artifacts only; they are untrusted acceleration and
 never verification evidence. Rust Clippy, default tests, crash reconciliation,
@@ -225,6 +232,8 @@ unmapped paths still fail open to the full portfolio. Scripts that Vitest import
 owning test files, and `scripts/prepare-ladybug-source.mjs` additionally
 selects packaging because the pinned Ladybug build consumes it and receipts
 because the native-receipt authority imports its hashing helpers.
+Native receipt verification also selects packaging and the packaged-lifecycle
+checkpoint because the pinned packaging module imports that verifier.
 `docs/graph-query-v1.md` is a compile-time input of the graph-core query
 contract tests, so it selects the Rust closure of `relayer-graph-core`.
 `docs/graph-query-v1-errors.json` is the source of the generated

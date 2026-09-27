@@ -370,6 +370,10 @@ fn imported_invoke_conversation() -> ImportedConversation {
 #[tokio::test]
 async fn imported_conversation_is_materialized_read_only_and_removable() {
     let database = GraphDatabase::in_memory().await.unwrap();
+    database
+        .remove_imported_conversation("missing-import")
+        .await
+        .unwrap();
     let input = imported_conversation("interaction-1");
     let receipt = database.import_accepted_conversation(&input).await.unwrap();
     let turn = &receipt.turns[0];
@@ -413,6 +417,46 @@ async fn imported_conversation_is_materialized_read_only_and_removable() {
             .await
             .is_err()
     );
+    database
+        .remove_imported_conversation(&input.import_id)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn imported_stage_without_publications_can_be_removed() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    database
+        .begin_imported_conversation(&ImportedConversationStage {
+            import_id: "empty-stage".into(),
+            source_sha256: "source-digest".into(),
+            project_id: None,
+            thread_id: ThreadId::new(7001).unwrap(),
+            created_at: "2026-09-25T00:00:00Z".into(),
+        })
+        .await
+        .unwrap();
+
+    database
+        .remove_imported_conversation("empty-stage")
+        .await
+        .unwrap();
+    // Reusing the same import identity and thread proves the staged row was
+    // removed even though there were no graph publications to inspect.
+    database
+        .begin_imported_conversation(&ImportedConversationStage {
+            import_id: "empty-stage".into(),
+            source_sha256: "source-digest".into(),
+            project_id: None,
+            thread_id: ThreadId::new(7001).unwrap(),
+            created_at: "2026-09-25T00:00:00Z".into(),
+        })
+        .await
+        .unwrap();
+    database
+        .remove_imported_conversation("empty-stage")
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -894,6 +938,17 @@ async fn imported_submitted_input_value_must_satisfy_the_accepted_action() {
     // this layer. Only the answer is fabricated -- an option key and label the accepted
     // action never offered. The live send path rejects exactly this as
     // `input_option_unknown`, so import must not accept it either.
+    let fallback_action = InputAction {
+        control: InputControl::SingleSelect,
+        prompt: "Rejected-only legacy question".into(),
+        options: vec![InputOption {
+            key: "fallback".into(),
+            label: "Fallback".into(),
+            unsupported_fields: Default::default(),
+        }],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
     let forged = ImportedSubmittedInput {
         id: "input-child-forged".into(),
         source: ImportedInputSource {
@@ -907,7 +962,66 @@ async fn imported_submitted_input_value_must_satisfy_the_accepted_action() {
                 unsupported_fields: Default::default(),
             }],
         },
+        action: fallback_action.clone(),
         ..honest.clone()
+    };
+    let authored_text = InputAction {
+        control: InputControl::Text,
+        prompt: "Authored question".into(),
+        options: vec![],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    resolved.actions.push(ImportedAction {
+        id: "input-action-authored-text".into(),
+        client_key: None,
+        source_node_id: "node-1".into(),
+        source_layer_id: Some("layer-1".into()),
+        kind: "input".into(),
+        relation: None,
+        label: "Authored text".into(),
+        variant: "pill".into(),
+        icon: None,
+        description: None,
+        target_layer_id: None,
+        interaction_text: None,
+        input: Some(authored_text.clone()),
+    });
+    let conflicting_snapshot = InputAction {
+        control: InputControl::SingleSelect,
+        prompt: "Conflicting child snapshot".into(),
+        options: vec![InputOption {
+            key: "choice".into(),
+            label: "Choice".into(),
+            unsupported_fields: Default::default(),
+        }],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    let authored_text_source = ImportedInputSource {
+        interaction_node_id: "interaction-1".into(),
+        layer_id: "layer-1".into(),
+        action_id: "input-action-authored-text".into(),
+        node_id: "node-1".into(),
+    };
+    let conflicting_child = ImportedSubmittedInput {
+        id: "input-child-conflicting-authored-snapshot".into(),
+        root_turn_id: "turn-2".into(),
+        source: authored_text_source.clone(),
+        action: conflicting_snapshot.clone(),
+        value: SubmittedInputValue::Selected {
+            selected: conflicting_snapshot.options.clone(),
+        },
+    };
+    let authored_text_value = SubmittedInputValue::Text {
+        text: "Keep the authored control".into(),
+    };
+    let legitimate_child = ImportedSubmittedInput {
+        id: "input-child-authored-text".into(),
+        root_turn_id: "turn-2".into(),
+        source: authored_text_source,
+        action: authored_text.clone(),
+        value: authored_text_value.clone(),
     };
     input.turns.push(ImportedTurn {
         source_turn_id: "turn-2".into(),
@@ -915,19 +1029,26 @@ async fn imported_submitted_input_value_must_satisfy_the_accepted_action() {
         interaction_node_id: Some("input-root-2".into()),
         invoke_origin: None,
         contexts: vec![],
-        submitted_inputs: vec![honest, forged],
+        submitted_inputs: vec![honest, forged, conflicting_child, legitimate_child],
         accepted_view: None,
     });
 
     let receipt = database.import_accepted_conversation(&input).await.unwrap();
 
     // The fabricated answer is dropped, and dropping it is visible rather than silent.
-    assert_eq!(receipt.skipped_submitted_inputs.len(), 1);
+    assert_eq!(receipt.skipped_submitted_inputs.len(), 2);
     let skipped = &receipt.skipped_submitted_inputs[0];
     assert_eq!(skipped.submitted_input_id, "input-child-forged");
     assert_eq!(skipped.source_turn_id, "turn-2");
     assert_eq!(skipped.code, "input_option_unknown");
     assert_eq!(skipped.path, "submittedInputs[1].value");
+    let conflicting = &receipt.skipped_submitted_inputs[1];
+    assert_eq!(
+        conflicting.submitted_input_id,
+        "input-child-conflicting-authored-snapshot"
+    );
+    assert_eq!(conflicting.code, "input_action_snapshot_mismatch");
+    assert_eq!(conflicting.path, "submittedInputs[2].action");
 
     // The honest answer on the same turn still imports, and nothing the file claimed
     // about the fabricated option reached the projection.
@@ -936,8 +1057,27 @@ async fn imported_submitted_input_value_must_satisfy_the_accepted_action() {
     let projected = writer.interaction_input().await.unwrap();
     assert_eq!(
         projected.submitted_inputs,
-        vec![SubmittedInput { action, value }]
+        vec![
+            SubmittedInput { action, value },
+            SubmittedInput {
+                action: authored_text.clone(),
+                value: authored_text_value,
+            },
+        ]
     );
+    let accepted_actions = &receipt.turns[0].output.as_ref().unwrap().root_layer.actions;
+    let fallback_payloads = accepted_actions
+        .iter()
+        .filter(|candidate| candidate.client_key.as_deref() == Some("input-action-2"))
+        .collect::<Vec<_>>();
+    assert_eq!(fallback_payloads.len(), 1);
+    let fallback_payload = fallback_payloads[0];
+    assert_eq!(fallback_payload.input.as_ref(), Some(&fallback_action));
+    let authored_action = accepted_actions
+        .iter()
+        .find(|candidate| candidate.input.as_ref() == Some(&authored_text))
+        .unwrap();
+    assert_eq!(authored_action.input.as_ref(), Some(&authored_text));
 }
 
 #[tokio::test]
