@@ -2329,9 +2329,9 @@ const PROVIDER_END_UNREACHABLE_LIMIT: u32 = 20;
 /// Waits until the harness reports that a child's provider run has ended. The host answers
 /// only when the run ends, so only its answer ends the wait. A timeout means the run is still
 /// going. A request that never reached the host proves nothing, so it is retried. Once the
-/// host has been unreachable for long enough, the child is cancelled. If the host reports
-/// no such run, it has ended; otherwise the wait goes on, cancelling again after each run
-/// of unreachable observations. Until the host confirms the end, the child's attempt and
+/// host has been unreachable for long enough, the child is cancelled, and the wait goes on,
+/// cancelling again after each run of unreachable observations: only the host's answer to
+/// an observation ends it. Until the host confirms the end, the child's attempt and
 /// leases stay held: an unreachable host proves nothing about its provider. A child that is
 /// already stopped or failed is cancelled again on every poll while it still runs.
 async fn await_provider_end(
@@ -2361,13 +2361,12 @@ async fn await_provider_end(
                     eprintln!(
                         "recursive completion {completion_id} provider could not be observed; cancelling it: {error}"
                     );
-                    // The host answered that it runs no such child: the run has ended.
-                    if let Ok(false) = runtime
+                    // A cancel's answer says nothing about the provider having exited: the host
+                    // also answers false for a run it already aborted that is still unwinding.
+                    // Only an observation answer ends the wait.
+                    let _ = runtime
                         .cancel_invoked_completion(thread_id, completion_id)
-                        .await
-                    {
-                        return Ok(serde_json::json!({"cancelled": false}));
-                    }
+                        .await;
                     unreachable = 0;
                     continue;
                 }

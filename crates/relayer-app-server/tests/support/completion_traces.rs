@@ -1359,7 +1359,8 @@ async fn provider_end_waits_through_an_unreachable_harness() {
     );
     harness_task.abort();
 
-    // A host that cannot be observed but answers the cancel with no such run has ended it.
+    // A cancel answered false proves nothing: the host also says false for a run it already
+    // aborted that is still unwinding. Only an observation answer ends the wait.
     let (harness_url, requests, harness_task) = unreachable_harness(usize::MAX, Some(false)).await;
     let runtime = RuntimeClient::open(
         &graph_url,
@@ -1370,22 +1371,24 @@ async fn provider_end_waits_through_an_unreachable_harness() {
     )
     .await
     .unwrap();
-    let ended = tokio::time::timeout(
-        Duration::from_secs(5),
-        await_provider_end(&runtime, 1, 9, step),
-    )
-    .await
-    .expect("a host that reports no such run ends the wait");
-    assert!(ended.is_ok());
-    assert_eq!(
+    assert!(
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            await_provider_end(&runtime, 1, 9, step)
+        )
+        .await
+        .is_err(),
+        "a cancel answered false must not release the child's leases"
+    );
+    assert!(
         requests
             .lock()
             .unwrap()
             .iter()
             .filter(|line| line.starts_with("POST"))
-            .count(),
-        1,
-        "the wait ends at the first cancel the host answers"
+            .count()
+            >= 2,
+        "the wait keeps cancelling while the host cannot be observed"
     );
     harness_task.abort();
 
