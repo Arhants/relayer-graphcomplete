@@ -1759,6 +1759,23 @@ impl ProductService {
             .await?)
     }
 
+    pub(crate) async fn unwinding_recursive_attempts(
+        &self,
+    ) -> Result<Vec<super::UnwindingRecursiveAttempt>, ProductError> {
+        Ok(self.storage.unwinding_recursive_attempts().await?)
+    }
+
+    pub(crate) async fn end_completion_execution_attempt(
+        &self,
+        interaction_id: InteractionId,
+        timestamp: &str,
+    ) -> Result<bool, ProductError> {
+        Ok(self
+            .storage
+            .end_completion_execution_attempt(interaction_id, timestamp)
+            .await?)
+    }
+
     pub(crate) async fn stage_conversation_import(
         &self,
         input: NewConversationImport<'_>,
@@ -1926,6 +1943,39 @@ impl ProductService {
     ) -> Result<Vec<ActionInvocation>, ProductError> {
         self.storage
             .action_invocations_for_export(thread_id)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn request_interaction_stop(
+        &self,
+        thread: ThreadId,
+        interaction: super::InteractionId,
+    ) -> Result<(), ProductError> {
+        self.ensure_interaction_mutable(interaction).await?;
+        self.storage
+            .request_interaction_stop(thread, interaction)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn record_stop_error(
+        &self,
+        interaction: super::InteractionId,
+        error: &str,
+    ) -> Result<(), ProductError> {
+        self.storage
+            .record_stop_error(interaction, error)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn finish_interaction_stopped(
+        &self,
+        interaction: super::InteractionId,
+    ) -> Result<(), ProductError> {
+        self.storage
+            .finish_interaction_stopped(interaction, &now())
             .await
             .map_err(Into::into)
     }

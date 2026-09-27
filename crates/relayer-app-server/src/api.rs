@@ -296,6 +296,10 @@ pub(crate) fn router(
             get(threads::list_interactions).post(threads::create_interaction),
         )
         .route(
+            "/api/threads/{thread_id}/interactions/{interaction_id}/stop",
+            axum::routing::post(threads::stop_interaction),
+        )
+        .route(
             "/api/threads/{thread_id}/interactions/{interaction_id}/retry",
             axum::routing::post(threads::retry_interaction),
         )

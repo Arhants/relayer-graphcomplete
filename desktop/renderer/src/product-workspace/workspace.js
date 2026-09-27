@@ -402,7 +402,13 @@ export function graphTurnNavigationDelta(event, graphFocused) {
 
 export { workspaceTurns } from "./model.js";
 
+export function productStopTarget(state, thread) {
+  const childIds = new Set((state.actionInvocations || []).map((item) => String(item.resultInteractionId)));
+  return workspaceTurns(state, thread).findLast((turn) => !childIds.has(String(turn.id)) && ["submitted", "running", "waiting_for_approval"].includes(turn.completionStatus)) || null;
+}
+
 export function turnStatusPresentation(status) {
+  if (status === "stopping") return { kind: "running", label: "Stopping…" };
   if (status === "waiting_for_approval") {
     return { kind: "approval", label: "Needs approval" };
   }
@@ -496,8 +502,13 @@ export function untrackedFilesLabel(count = 0) {
 
 const TERMINAL_TEMPORAL_LIFECYCLES = ["succeeded", "stopped", "failed"];
 
-/** The status a turn shows: its terminal graph lifecycle when it has one, else its product status. */
+/** Product Stop waits for native settlement; otherwise terminal graph state can lead product projection. */
 export function viewedInteractionStatus(interaction, fallbackStatus = "idle", temporalLifecycle = null) {
+  if (interaction?.stopRequested) {
+    return PENDING_COMPLETION_STATUSES.has(interaction.completionStatus) && !interaction.stopError
+      ? "stopping"
+      : interaction.completionStatus || fallbackStatus;
+  }
   return TERMINAL_TEMPORAL_LIFECYCLES.includes(temporalLifecycle)
     ? temporalLifecycle
     : interaction?.completionStatus || fallbackStatus;
@@ -506,6 +517,7 @@ export function viewedInteractionStatus(interaction, fallbackStatus = "idle", te
 /** Changes whenever the shown status would, including a graph lifecycle ahead of the product status. */
 export function interactionStatusRenderKey(interaction, fallbackStatus = "idle", temporalLifecycle = null) {
   const key = `${interaction?.id ?? "none"}:${interaction?.completionStatus || fallbackStatus}`;
+  if (interaction?.stopRequested) return `${key}:${viewedInteractionStatus(interaction, fallbackStatus, temporalLifecycle)}`;
   return TERMINAL_TEMPORAL_LIFECYCLES.includes(temporalLifecycle) ? `${key}:${temporalLifecycle}` : key;
 }
 
@@ -1471,6 +1483,7 @@ export function createProductWorkspace({
   onExportConversation = null,
   shareApi = null,
   onSubmitInteraction = async () => {},
+  onStopInteraction = async () => {},
   onOpenSettings = () => {},
   onNavigateLayer = async () => {},
   onNavigateResolvedInvoke = async () => {},
@@ -2416,6 +2429,13 @@ export function createProductWorkspace({
   };
   const prompt = $("#threadPrompt");
   const send = $("#sendInteraction");
+  const pendingStops = new Set();
+  const stopErrors = new Map();
+  const activeRun = () => {
+    const thread = getThread();
+    if (mode !== "interactive" || thread?.imported === true || getState().capabilities?.stopRuns !== true) return null;
+    return productStopTarget(getState(), thread);
+  };
   const contextDraftSendWarning = $("#contextDraftSendWarning");
   const cancelContextDraftSend = $("#cancelContextDraftSend");
   const confirmContextDraftSend = $("#confirmContextDraftSend");
@@ -3108,6 +3128,21 @@ export function createProductWorkspace({
       tray.classList.add("hidden");
       return;
     }
+    const run = activeRun();
+    const stopping = run && (pendingStops.has(run.id) || (run.stopRequested && !run.stopError));
+    send.classList.toggle("stop-button", Boolean(run));
+    send.classList.toggle("is-stopping", Boolean(stopping));
+    send.textContent = run ? "" : "↑";
+    send.setAttribute("aria-busy", String(Boolean(stopping)));
+    send.setAttribute("aria-label", run ? (stopping ? "Stopping" : "Stop run") : "Send");
+    if (run) {
+      send.disabled = Boolean(stopping);
+      send.title = stopping ? "Waiting for the run to stop" : "Stop this run";
+      const message = $("#composerRetryMessage");
+      const error = stopErrors.get(run.id) || run.stopError;
+      if (error) { message.textContent = error; message.classList.remove("hidden"); }
+      return;
+    }
     const contextDraftsReady = !contextDraftController
       || loadedContextDraftThreads.has(String(thread.id));
     const inputThreadId = String(thread.id);
@@ -3503,7 +3538,18 @@ export function createProductWorkspace({
     if (!modelPicker?.isReady()) modelPicker?.open("model");
     else send.click();
   });
-  send.onclick = () => { void requestInteractionSend(); };
+  send.onclick = async () => {
+    const run = activeRun();
+    if (!run) { void requestInteractionSend(); return; }
+    if (send.disabled || pendingStops.has(run.id)) return;
+    const threadId = getThread().id;
+    pendingStops.add(run.id);
+    stopErrors.delete(run.id);
+    syncComposer();
+    try { await onStopInteraction(threadId, run.id); }
+    catch (error) { stopErrors.set(run.id, error.message || "Stop could not be confirmed. Try again."); }
+    finally { pendingStops.delete(run.id); syncComposer(); }
+  };
   $("#attachNodeContext").onclick = () => {
     const node = resolveInteractionContextNode(
       selection.selectedNodeId,
@@ -3615,7 +3661,7 @@ export function createProductWorkspace({
 
     const rows = turns.map((turn, index) => {
       const current = index === turnIndex;
-      const status = turnStatusPresentation(turn.completionStatus);
+      const status = turnStatusPresentation(turn.stopRequested && !turn.stopError && PENDING_COMPLETION_STATUSES.has(turn.completionStatus) ? "stopping" : turn.completionStatus);
       const row = graphDocument.createElement("button");
       row.type = "button";
       row.className = `turn-option${status && !status.hidden ? ` turn-status-${status.kind}` : ""}`;
@@ -3916,8 +3962,12 @@ export function createProductWorkspace({
       });
     }
     const retryMessage = $("#composerRetryMessage");
-    retryMessage.classList.toggle("hidden", !restoredDraft);
-    retryMessage.textContent = restoredDraft?.message ?? "";
+    const stopMessage = latestInteraction?.stopRequested
+      ? latestInteraction.stopError || latestInteraction.completionError
+      : null;
+    retryMessage.classList.toggle("is-stopped", latestInteraction?.completionStatus === "stopped" && !latestInteraction.stopError);
+    retryMessage.classList.toggle("hidden", !restoredDraft && !stopMessage);
+    retryMessage.textContent = stopMessage || restoredDraft?.message || "";
     const draftTransition = transitionComposerDraftScope(composerDraftScopeState, {
       threadId,
       interactionId: latestInteraction?.id,
@@ -4049,7 +4099,7 @@ export function createProductWorkspace({
     const viewedStatus = viewedInteractionStatus(interaction, state.status || "idle", state.temporalLifecycle);
     const presentation = turnStatusPresentation(viewedStatus);
     const statusElement = $("#interactionStatus");
-    const safeReason = state.temporalSafeReason || null;
+    const safeReason = interaction?.stopRequested ? null : state.temporalSafeReason || null;
     const statusKey = `${interactionStatusRenderKey(interaction, state.status || "idle", state.temporalLifecycle)}:${safeReason ?? ""}`;
     if (statusKey !== renderedInteractionStatusKey) {
       statusElement.className = presentation.hidden
