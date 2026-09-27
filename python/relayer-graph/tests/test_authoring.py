@@ -454,14 +454,9 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
             os.environ.clear()
             os.environ.update(previous)
 
-    async def test_a_watch_reports_each_childs_change_as_its_own_event(self):
-        def snapshot(completion_id, revision, lifecycle="active"):
-            return CompletionCurrentSnapshot(completion_id, lifecycle, revision, revision, None)
-
-        async def turns():
-            for _ in range(5):
-                await asyncio.sleep(0)
-
+    @staticmethod
+    def _held_children():
+        """Children whose next() calls stay open until the test releases them by id:after_revision."""
         releases: dict[str, asyncio.Future] = {}
         asked: list[str] = []
 
@@ -480,6 +475,17 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
                 self.completion_id = completion_id
                 self.current = Current(completion_id)
 
+        return releases, asked, Child
+
+    async def test_a_watch_reports_each_childs_change_as_its_own_event(self):
+        def snapshot(completion_id, revision, lifecycle="active"):
+            return CompletionCurrentSnapshot(completion_id, lifecycle, revision, revision, None)
+
+        async def turns():
+            for _ in range(5):
+                await asyncio.sleep(0)
+
+        releases, asked, Child = self._held_children()
         watch = CompletionWatch([Child(1), Child(2)])
         first = asyncio.ensure_future(watch.changes())
         await turns()
@@ -506,6 +512,25 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(watch.settled)
         self.assertEqual(await watch.changes(), [])
         self.assertEqual(asked, ["1:-", "2:-", "1:0", "1:1", "2:0"])
+
+    async def test_overlapping_watch_calls_each_return_their_own_event(self):
+        async def turns():
+            for _ in range(5):
+                await asyncio.sleep(0)
+
+        releases, asked, Child = self._held_children()
+        watch = CompletionWatch([Child(1), Child(2)])
+        first = asyncio.ensure_future(watch.changes())
+        second = asyncio.ensure_future(watch.changes())
+        await turns()
+        releases["1:-"].set_result(CompletionCurrentSnapshot(1, "active", 0, 0, None))
+        self.assertEqual([(child.completion_id, current.revision) for child, current in await first], [(1, 0)])
+
+        # The second call starts after the first returns, so it waits for the next event.
+        await turns()
+        releases["2:-"].set_result(CompletionCurrentSnapshot(2, "active", 0, 0, None))
+        self.assertEqual([(child.completion_id, current.revision) for child, current in await second], [(2, 0)])
+        self.assertEqual(asked, ["1:-", "2:-", "1:0"])
 
     async def test_completion_current_rejects_coerced_identity_fields(self):
         with self.assertRaisesRegex(TransportError, "invalid revision"):
