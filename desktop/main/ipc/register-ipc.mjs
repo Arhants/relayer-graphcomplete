@@ -82,7 +82,8 @@ export function registerComposerDraftIpc({ ipcMain, settings }) {
 export function registerSharePublishIpc({ ipcMain, coordinator }) {
   if (!coordinator) return;
   if (typeof coordinator.preflight !== "function"
-    || typeof coordinator.create !== "function" || typeof coordinator.retry !== "function") {
+    || typeof coordinator.create !== "function" || typeof coordinator.retry !== "function"
+    || typeof coordinator.pending !== "function" || typeof coordinator.dismiss !== "function") {
     throw new TypeError("Share publication coordinator is invalid.");
   }
   ipcMain.handle("relayer:share-preflight", (_event, { threadId } = {}) => (
@@ -93,6 +94,10 @@ export function registerSharePublishIpc({ ipcMain, coordinator }) {
   ));
   ipcMain.handle("relayer:share-retry", (_event, { attemptReferenceId } = {}) => (
     coordinator.retry(attemptReferenceId)
+  ));
+  ipcMain.handle("relayer:share-pending", (_event, { threadId } = {}) => coordinator.pending({ threadId }));
+  ipcMain.handle("relayer:share-dismiss", (_event, { attemptReferenceId } = {}) => (
+    coordinator.dismiss(attemptReferenceId)
   ));
 }
 

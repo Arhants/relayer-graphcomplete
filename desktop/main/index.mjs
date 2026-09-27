@@ -21,6 +21,7 @@ import {
 import { registerDesktopIpc } from "./ipc/register-ipc.mjs";
 import { createConversationExportService } from "./services/conversation-export.mjs";
 import { createSharePublishCoordinator } from "./services/share-publish-coordinator.mjs";
+import { createSharePublishAttemptStore } from "./services/share-publish-attempt-store.mjs";
 import { createShareServiceClient } from "./services/share-service-client.mjs";
 import { resolveShareServiceEndpoint } from "./services/share-service-endpoint.mjs";
 import { createShareSourceThreadIdentity } from "./services/share-source-thread-identity.mjs";
@@ -573,6 +574,9 @@ if (primaryInstance) {
       issueHandledShareFailureReporter: (identity) => (
         authenticatedErrorReporting?.issueHandledShareFailureReporter(identity) ?? null
       ),
+      attemptStore: createSharePublishAttemptStore({
+        directory: join(userDataPath, "share-publish-attempts"),
+      }),
     });
 
     registerDesktopIpc({

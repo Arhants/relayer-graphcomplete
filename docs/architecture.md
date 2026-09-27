@@ -345,6 +345,17 @@ the durable publish-attempt owner must preserve the same identity for restart
 deduplication. Renderer and public viewer receive no reporting or network
 authority.
 
+The Electron-main publish coordinator writes a versioned, atomically replaced
+attempt record beneath private desktop user data before any upload. The record
+contains the exact frozen bytes, attempt/reference identity, original owner,
+source-thread identity, last closed result, and handled-failure deduplication
+keys, but never a bearer token or signed upload fields. Recovery is visible only
+for the matching open source thread after the original owner is verified. A
+successful response replaces snapshot bytes with a lightweight URL receipt;
+closing the result or explicitly dismissing a failure removes only that local
+record. Invalid or corrupt records fail closed, and capacity rejects new
+records instead of evicting an undisclosed frozen attempt.
+
 Authenticated transport failures may enter one `safeStorage`-encrypted queue. The
 queue holds at most 32 records and 256 KiB of encrypted bytes. Records expire after
 seven days. Overflow evicts the oldest record. Any corrupt queue is deleted rather

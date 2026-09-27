@@ -37,6 +37,33 @@ function referenceId() {
   return `SHR-${randomBytes(6).toString("hex").toUpperCase()}`;
 }
 
+function validPublishedUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" && parsed.username === "" && parsed.password === "" && parsed.hostname !== "";
+  } catch {
+    return false;
+  }
+}
+
+function createMemoryAttemptStore() {
+  const records = new Map();
+  return Object.freeze({
+    async load() {
+      return [...records.values()].map((record) => structuredClone(record));
+    },
+    async save(record) {
+      if (!records.has(record.reference) && records.size >= MAX_ATTEMPTS) {
+        throw new Error("Share publish attempt capacity is exhausted.");
+      }
+      records.set(record.reference, structuredClone(record));
+    },
+    async delete(reference) {
+      return records.delete(reference);
+    },
+  });
+}
+
 function exactAccount(value) {
   if (!value || typeof value !== "object"
     || typeof value.ownerKey !== "string" || !value.ownerKey
@@ -114,9 +141,9 @@ function telemetryRecord(error, reference) {
 }
 
 /**
- * Electron-main authority for one in-session share attempt. Snapshot bytes,
- * bearer authority, and the stable attempt ID never cross the renderer seam.
- * Durable restart recovery is intentionally a later #466 seam.
+ * Electron-main authority for durable share attempts. Snapshot bytes, bearer
+ * authority, stable attempt identity, and persisted owner binding never cross
+ * the renderer seam.
  */
 export function createSharePublishCoordinator({
   exportSnapshot,
@@ -125,27 +152,129 @@ export function createSharePublishCoordinator({
   publish,
   preflightPublication = async () => Object.freeze({ status: "ready" }),
   issueHandledShareFailureReporter = () => null,
+  attemptStore = createMemoryAttemptStore(),
   createAttemptId = attemptId,
   createReferenceId = referenceId,
+  now = Date.now,
 } = {}) {
   if (typeof exportSnapshot !== "function"
     || typeof accountSession !== "function"
     || typeof sourceThreadIdentity !== "function"
     || typeof publish !== "function"
     || typeof preflightPublication !== "function"
-    || typeof issueHandledShareFailureReporter !== "function") {
+    || typeof issueHandledShareFailureReporter !== "function"
+    || typeof attemptStore?.load !== "function"
+    || typeof attemptStore?.save !== "function"
+    || typeof attemptStore?.delete !== "function"
+    || typeof now !== "function") {
     throw new TypeError("Share publication coordinator dependencies are invalid.");
   }
   const attempts = new Map();
+  let loading = null;
+
+  function persistedRecord(record) {
+    return Object.freeze({
+      reference: record.reference,
+      attemptId: record.attemptId,
+      ownerKey: record.ownerKey,
+      threadId: record.threadId,
+      sourceThreadId: record.sourceThreadId,
+      title: record.completed ? "" : record.title,
+      snapshotBytes: record.completed ? [] : [...record.snapshotBytes],
+      createdAt: record.createdAt,
+      lastFailure: record.lastFailure ? { ...record.lastFailure } : null,
+      reportedFailures: [...record.reportedFailures],
+      publishedUrl: record.publishedUrl ?? null,
+    });
+  }
+
+  function restoredRecord(value) {
+    if (!value || typeof value !== "object"
+      || typeof value.reference !== "string" || !/^SHR-[A-Z0-9]{8,32}$/u.test(value.reference)
+      || typeof value.attemptId !== "string" || !/^[a-f0-9]{32}$/u.test(value.attemptId)
+      || typeof value.ownerKey !== "string" || !value.ownerKey
+      || !Number.isSafeInteger(value.threadId) || value.threadId <= 0
+      || typeof value.sourceThreadId !== "string" || !value.sourceThreadId
+      || typeof value.title !== "string"
+      || (!Array.isArray(value.snapshotBytes) && !(value.snapshotBytes instanceof Uint8Array))
+      || (Array.isArray(value.snapshotBytes)
+        && value.snapshotBytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255))
+      || !Number.isSafeInteger(value.createdAt) || value.createdAt < 0
+      || !Array.isArray(value.reportedFailures)
+      || value.reportedFailures.some((key) => typeof key !== "string" || key.length > 128)) return null;
+    const snapshotBytes = Uint8Array.from(value.snapshotBytes);
+    const publishedUrl = validPublishedUrl(value.publishedUrl)
+      ? value.publishedUrl
+      : null;
+    const lastFailure = value.lastFailure && typeof value.lastFailure === "object"
+      && value.lastFailure.status === "failed"
+      && value.lastFailure.attemptReferenceId === value.reference
+      && CLOSED_FAILURE_CODES.has(value.lastFailure.code)
+      && typeof value.lastFailure.retryable === "boolean"
+      ? Object.freeze({
+        status: "failed",
+        attemptReferenceId: value.reference,
+        code: value.lastFailure.code,
+        retryable: value.lastFailure.retryable,
+        ...(typeof value.lastFailure.resetAt === "string" && value.lastFailure.resetAt
+          ? { resetAt: value.lastFailure.resetAt }
+          : {}),
+      })
+      : null;
+    try {
+      const metadata = publishedUrl === null ? snapshotMetadata(snapshotBytes) : null;
+      return {
+        reference: value.reference,
+        attemptId: value.attemptId,
+        ownerKey: value.ownerKey,
+        threadId: value.threadId,
+        sourceThreadId: value.sourceThreadId,
+        title: value.title,
+        snapshotBytes,
+        metadata,
+        createdAt: value.createdAt,
+        lastFailure,
+        reportedFailures: new Set(value.reportedFailures),
+        completed: publishedUrl !== null,
+        publishedUrl,
+        running: false,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async function ensureLoaded() {
+    if (!loading) loading = (async () => {
+      const saved = await attemptStore.load();
+      if (!Array.isArray(saved)) throw new Error("Share attempt store returned invalid records.");
+      for (const value of saved) {
+        const record = restoredRecord(value);
+        if (record) remember(record);
+        else if (typeof value?.reference === "string") await attemptStore.delete(value.reference).catch(() => undefined);
+      }
+    })();
+    await loading;
+  }
+
+  async function save(record) {
+    await attemptStore.save(persistedRecord(record));
+  }
 
   function remember(record) {
     attempts.set(record.reference, record);
-    while (attempts.size > MAX_ATTEMPTS) attempts.delete(attempts.keys().next().value);
   }
 
-  async function report(error, reference, reporter) {
+  async function report(error, reference, reporter, attempt = null) {
     const record = telemetryRecord(error, reference);
-    if (record && reporter) await Promise.resolve(reporter.report(record)).catch(() => undefined);
+    if (!record || !reporter) return;
+    const key = `${record.failureStage}:${record.code}`;
+    if (attempt?.reportedFailures.has(key)) return;
+    if (attempt) {
+      attempt.reportedFailures.add(key);
+      await save(attempt).catch(() => undefined);
+    }
+    await Promise.resolve(reporter.report(record)).catch(() => undefined);
   }
 
   async function run(record, authority) {
@@ -178,13 +307,21 @@ export function createSharePublishCoordinator({
         }),
         snapshotBytes: new Uint8Array(record.snapshotBytes),
       });
-      if (!result || typeof result.url !== "string" || !result.url) throw new Error("share_service_failed");
+      if (!result || !validPublishedUrl(result.url)) throw new Error("share_service_failed");
       await assertAuthority();
       record.completed = true;
+      record.publishedUrl = result.url;
+      record.lastFailure = null;
+      await save(record);
       return Object.freeze({ status: "created", attemptReferenceId: record.reference, url: result.url });
     } catch (error) {
-      await report(error, record.reference, authority.failureReporter);
-      return closedFailure(error, record.reference);
+      record.completed = false;
+      record.publishedUrl = null;
+      const result = closedFailure(error, record.reference);
+      record.lastFailure = result;
+      await save(record).catch(() => undefined);
+      await report(error, record.reference, authority.failureReporter, record);
+      return result;
     } finally {
       record.running = false;
     }
@@ -227,6 +364,7 @@ export function createSharePublishCoordinator({
       const reference = createReferenceId();
       let failureReporter = null;
       try {
+        await ensureLoaded();
         if (!Number.isSafeInteger(threadId) || threadId <= 0 || typeof title !== "string") {
           throw new TypeError("Share creation input is invalid.");
         }
@@ -253,9 +391,14 @@ export function createSharePublishCoordinator({
           title,
           snapshotBytes,
           metadata: snapshotMetadata(snapshotBytes),
+          createdAt: now(),
+          lastFailure: null,
+          reportedFailures: new Set(),
           completed: false,
+          publishedUrl: null,
           running: false,
         };
+        await save(record);
         remember(record);
         return run(record, { generation: account.generation, failureReporter });
       } catch (error) {
@@ -265,11 +408,15 @@ export function createSharePublishCoordinator({
     },
 
     async retry(reference) {
-      const record = attempts.get(reference);
-      if (!record || record.completed) {
-        return Object.freeze({ status: "failed", attemptReferenceId: reference, code: "share_attempt_unavailable", retryable: false });
-      }
       try {
+        await ensureLoaded();
+        const record = attempts.get(reference);
+        if (!record) {
+          return Object.freeze({ status: "failed", attemptReferenceId: reference, code: "share_attempt_unavailable", retryable: false });
+        }
+        if (record.completed && record.publishedUrl) {
+          return Object.freeze({ status: "created", attemptReferenceId: reference, url: record.publishedUrl });
+        }
         const account = exactAccount(await accountSession());
         if (account.ownerKey !== record.ownerKey) {
           return Object.freeze({ status: "failed", attemptReferenceId: reference, code: "share_attempt_unavailable", retryable: false });
@@ -280,6 +427,60 @@ export function createSharePublishCoordinator({
         });
       } catch (error) {
         await report(error, reference, null);
+        return closedFailure(error, reference);
+      }
+    },
+
+    async pending({ threadId } = {}) {
+      try {
+        if (!Number.isSafeInteger(threadId) || threadId <= 0) return null;
+        await ensureLoaded();
+        const account = exactAccount(await accountSession());
+        const candidates = [...attempts.values()]
+          .filter((record) => record.ownerKey === account.ownerKey
+            && record.threadId === threadId)
+          .sort((left, right) => right.createdAt - left.createdAt);
+        const record = candidates[0];
+        if (!record) return null;
+        if (record.completed && record.publishedUrl) {
+          return Object.freeze({ status: "created", attemptReferenceId: record.reference, url: record.publishedUrl });
+        }
+        if (record.lastFailure) {
+          const recoverable = ![
+            "daily_quota_exhausted",
+            "reservation_limit_exhausted",
+          ].includes(record.lastFailure.code);
+          return Object.freeze({
+            ...record.lastFailure,
+            code: ["share_sign_in_required", "share_attempt_unavailable"].includes(record.lastFailure.code)
+              ? "share_service_failed"
+              : record.lastFailure.code,
+            retryable: recoverable,
+          });
+        }
+        return Object.freeze({
+          status: "failed",
+          attemptReferenceId: record.reference,
+          code: "share_service_failed",
+          retryable: true,
+        });
+      } catch {
+        return null;
+      }
+    },
+
+    async dismiss(reference) {
+      try {
+        await ensureLoaded();
+        const account = exactAccount(await accountSession());
+        const record = attempts.get(reference);
+        if (!record || record.ownerKey !== account.ownerKey) {
+          return Object.freeze({ status: "failed", attemptReferenceId: reference, code: "share_attempt_unavailable", retryable: false });
+        }
+        await attemptStore.delete(reference);
+        attempts.delete(reference);
+        return Object.freeze({ status: "dismissed", attemptReferenceId: reference });
+      } catch (error) {
         return closedFailure(error, reference);
       }
     },

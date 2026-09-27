@@ -59,10 +59,13 @@ export function createSharePublishController({
   let title = "";
   let result = null;
   let failureOrigin = null;
+  let attemptResult = false;
   let accountSubject = null;
   let operationVersion = 0;
   let returnFocus = null;
   let disposed = false;
+  let recoveryThreadKey = null;
+  let dialogThreadKey = null;
 
   const setBackgroundInert = (value) => {
     for (const child of host.parentElement?.children ?? []) {
@@ -77,8 +80,17 @@ export function createSharePublishController({
     phase = "closed";
     result = null;
     failureOrigin = null;
+    attemptResult = false;
     title = "";
+    dialogThreadKey = null;
     renderDialog();
+  }
+
+  async function dismissAndClose() {
+    if (!attemptResult || typeof result?.attemptReferenceId !== "string"
+      || typeof share.dismiss !== "function") return close();
+    const dismissed = await share.dismiss(result.attemptReferenceId).catch(() => null);
+    if (dismissed?.status === "dismissed" || dismissed?.code === "share_attempt_unavailable") close();
   }
 
   function renderDialog() {
@@ -178,6 +190,8 @@ export function createSharePublishController({
         }));
         if (disposed || phase === "closed" || operation !== operationVersion) return;
         result = next;
+        attemptResult = true;
+        dialogThreadKey = String(threadId);
         failureOrigin = next?.status === "created" ? null : "attempt";
         if (next?.status === "created") phase = "ready";
         else if (next?.code === "share_cancelled") return close();
@@ -204,7 +218,7 @@ export function createSharePublishController({
         <div class="share-link-row"><input type="text" readonly value="${escapeHtml(result.url)}" aria-label="Share link" /><button class="primary" data-share-action="copy" type="button">Copy</button></div>
         <p class="share-dialog-note">Read-only snapshot · known secrets and paths removed</p>
       </section>`;
-      host.querySelector('[data-share-action="close"]').onclick = close;
+      host.querySelector('[data-share-action="close"]').onclick = dismissAndClose;
       host.querySelector('[data-share-action="copy"]').onclick = async () => {
         await clipboard?.writeText?.(result.url);
         host.querySelector('[data-share-action="copy"]').textContent = "Copied";
@@ -222,7 +236,7 @@ export function createSharePublishController({
       ${generic ? `<p class="share-dialog-note">Reference <span class="share-reference">${escapeHtml(result?.attemptReferenceId ?? "SHR-UNAVAILABLE")}</span></p>` : ""}
       <div class="share-dialog-actions"><button data-share-action="close" type="button">Close</button>${canRetry ? '<button class="primary" data-share-action="retry" type="button">Retry</button>' : ""}</div>
     </section>`;
-    host.querySelector('[data-share-action="close"]').onclick = close;
+    host.querySelector('[data-share-action="close"]').onclick = dismissAndClose;
     const retry = host.querySelector('[data-share-action="retry"]');
     if (retry) retry.onclick = async () => {
       phase = "creating";
@@ -282,10 +296,35 @@ export function createSharePublishController({
     renderDialog();
   }
 
+  async function recoverPending() {
+    if (disposed || phase !== "closed" || typeof share.pending !== "function") return false;
+    const threadId = getThread()?.id;
+    if (!Number.isSafeInteger(threadId) || threadId <= 0) return false;
+    const threadKey = String(threadId);
+    if (recoveryThreadKey === threadKey) return false;
+    recoveryThreadKey = threadKey;
+    const operation = ++operationVersion;
+    const pending = await share.pending(threadId).catch(() => null);
+    if (disposed || phase !== "closed" || operation !== operationVersion
+      || String(getThread()?.id) !== threadKey || !pending) return false;
+    result = pending;
+    attemptResult = true;
+    failureOrigin = "attempt";
+    dialogThreadKey = threadKey;
+    phase = pending.status === "created" ? "ready" : "error";
+    renderDialog();
+    return true;
+  }
+
   headerButton.onclick = open;
   menuButton.onclick = open;
   const unsubscribe = account.onChanged?.((value) => {
-    if (disposed || phase === "closed") return;
+    if (disposed) return;
+    if (phase === "closed") {
+      recoveryThreadKey = null;
+      if (normalizedAccount(value) === "signed-in") void recoverPending();
+      return;
+    }
     if (phase === "blocked") return;
     const status = normalizedAccount(value);
     const nextSubject = typeof value?.subject === "string" ? value.subject : null;
@@ -295,8 +334,14 @@ export function createSharePublishController({
       title = "";
       result = null;
       failureOrigin = null;
+      attemptResult = false;
       accountSubject = nextSubject;
-      void runPreflight();
+      phase = "closed";
+      recoveryThreadKey = null;
+      renderDialog();
+      void recoverPending().then((recovered) => {
+        if (!recovered && !disposed && phase === "closed") void runPreflight();
+      });
       return;
     }
     else if (status !== "signed-in") {
@@ -304,6 +349,7 @@ export function createSharePublishController({
       title = "";
       result = null;
       failureOrigin = null;
+      attemptResult = false;
       accountSubject = null;
       phase = "signin";
     }
@@ -312,12 +358,15 @@ export function createSharePublishController({
 
   return Object.freeze({
     render() {
+      const threadKey = getThread()?.id == null ? null : String(getThread().id);
+      if (phase !== "closed" && dialogThreadKey !== null && dialogThreadKey !== threadKey) close();
       const eligibility = shareEligibility({ thread: getThread(), interactions: getInteractions() });
       headerButton.disabled = !getThread();
       menuButton.disabled = !getThread();
       headerButton.setAttribute("aria-disabled", String(!eligibility.eligible));
       menuButton.setAttribute("aria-disabled", String(!eligibility.eligible));
       headerButton.title = eligibility.eligible ? "Share" : "Share unavailable";
+      if (phase === "closed" && recoveryThreadKey !== threadKey) void recoverPending();
     },
     dispose() {
       disposed = true;

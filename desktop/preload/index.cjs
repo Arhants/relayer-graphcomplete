@@ -118,6 +118,8 @@ if (contextBridge) contextBridge.exposeInMainWorld("relayerDesktop", {
     preflight: (threadId) => ipcRenderer.invoke("relayer:share-preflight", { threadId }),
     create: (threadId, title) => ipcRenderer.invoke("relayer:share-create", { threadId, title }),
     retry: (attemptReferenceId) => ipcRenderer.invoke("relayer:share-retry", { attemptReferenceId }),
+    pending: (threadId) => ipcRenderer.invoke("relayer:share-pending", { threadId }),
+    dismiss: (attemptReferenceId) => ipcRenderer.invoke("relayer:share-dismiss", { attemptReferenceId }),
   },
   models: {
     settingsOpened: () => ipcRenderer.invoke("relayer:model-catalog-settings-open"),

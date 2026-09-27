@@ -11,6 +11,8 @@ describe("share publication IPC authority", () => {
       preflight: vi.fn(async () => ({ status: "ready" })),
       create: vi.fn(async (input) => ({ status: "created", attemptReferenceId: "SHR-1", url: "https://share.test/t/1" })),
       retry: vi.fn(async (reference) => ({ status: "failed", attemptReferenceId: reference, code: "share_service_failed", retryable: true })),
+      pending: vi.fn(async () => null),
+      dismiss: vi.fn(async (reference) => ({ status: "dismissed", attemptReferenceId: reference })),
     };
 
     registerSharePublishIpc({ ipcMain, coordinator });
@@ -23,6 +25,10 @@ describe("share publication IPC authority", () => {
     expect(coordinator.create).toHaveBeenCalledWith({ threadId: 7, title: "Public" });
     await handlers.get("relayer:share-retry")(null, { attemptReferenceId: "SHR-1" });
     expect(coordinator.retry).toHaveBeenCalledWith("SHR-1");
+    await handlers.get("relayer:share-pending")(null, { threadId: 7 });
+    expect(coordinator.pending).toHaveBeenCalledWith({ threadId: 7 });
+    await handlers.get("relayer:share-dismiss")(null, { attemptReferenceId: "SHR-1" });
+    expect(coordinator.dismiss).toHaveBeenCalledWith("SHR-1");
   });
 
   it("exposes only create/retry through preload with no bearer, bytes, or upload fields", async () => {
@@ -30,6 +36,8 @@ describe("share publication IPC authority", () => {
     expect(preload).toContain('create: (threadId, title) => ipcRenderer.invoke("relayer:share-create", { threadId, title })');
     expect(preload).toContain('preflight: (threadId) => ipcRenderer.invoke("relayer:share-preflight", { threadId })');
     expect(preload).toContain('retry: (attemptReferenceId) => ipcRenderer.invoke("relayer:share-retry", { attemptReferenceId })');
+    expect(preload).toContain('pending: (threadId) => ipcRenderer.invoke("relayer:share-pending", { threadId })');
+    expect(preload).toContain('dismiss: (attemptReferenceId) => ipcRenderer.invoke("relayer:share-dismiss", { attemptReferenceId })');
     const exposedShare = preload.slice(preload.indexOf("share: {"), preload.indexOf("models: {"));
     expect(exposedShare).not.toMatch(/authorization|bearer|snapshotBytes|upload|signed/i);
   });

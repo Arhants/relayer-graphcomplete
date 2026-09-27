@@ -43,10 +43,13 @@ read-only host. It starts at the first accepted turn, leaves the URL unchanged
 during navigation, disables execution, and has no client telemetry or snapshot
 fetch authority.
 
-Durable attempt recovery across application restart is owned by Slice 3 (#466)
-after exporter and service contracts stabilize. A local Gate B path may exercise
-the same contract with deterministic storage, authentication, cache, and
-transport fakes; it is not deployed-service evidence.
+Electron main durably persists the frozen attempt before publication. Recovery
+is scoped to the original owner and the currently open source thread, reuses the
+same bytes and attempt identity, and records handled-failure deduplication keys.
+Success replaces the bytes with a lightweight URL receipt until the Link ready
+dialog closes; failure remains until its owner explicitly dismisses it. A local
+process-restart path may exercise this contract with deterministic storage,
+authentication, cache, and transport fakes; it is not deployed-service evidence.
 
 ## Consequences
 

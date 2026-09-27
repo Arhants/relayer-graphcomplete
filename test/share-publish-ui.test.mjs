@@ -33,6 +33,8 @@ function fixture({ accountStatus = "signed-in", preflightResult, result } = {}) 
       url: "https://share.example.test/t/abc",
     })),
     retry: vi.fn(),
+    pending: vi.fn(async () => null),
+    dismiss: vi.fn(async (attemptReferenceId) => ({ status: "dismissed", attemptReferenceId })),
   };
   const clipboard = { writeText: vi.fn(async () => {}) };
   const controller = createSharePublishController({
@@ -98,6 +100,23 @@ describe("share publish renderer boundary", () => {
     expect(test.share.create).not.toHaveBeenCalled();
   });
 
+  it("restores the original account's pending result after sign-in instead of collecting a new title", async () => {
+    const test = fixture({ accountStatus: "signed-out" });
+    await test.window.document.querySelector("#shareConversation").onclick();
+    test.share.pending.mockResolvedValue({
+      status: "created",
+      attemptReferenceId: "SHR-RETURN01",
+      url: "https://share.example.test/t/already-created",
+    });
+
+    test.changed({ status: "signed-in", channel: "stable", subject: "owner-a" });
+    await vi.waitFor(() => expect(test.window.document.querySelector('[aria-label="Share link"]')?.value)
+      .toBe("https://share.example.test/t/already-created"));
+    expect(test.window.document.querySelector("#shareTitle")).toBeNull();
+    expect(test.share.preflight).not.toHaveBeenCalled();
+    expect(test.share.create).not.toHaveBeenCalled();
+  });
+
   it("freezes through Main only after a nonblank title and presents the simplified success dialog", async () => {
     const test = fixture();
     await test.window.document.querySelector("#shareConversation").onclick();
@@ -119,6 +138,8 @@ describe("share publish renderer boundary", () => {
     expect(dialog.querySelector('[aria-label="Share link"]').value).toBe("https://share.example.test/t/abc");
     await dialog.querySelector('[data-share-action="copy"]').onclick();
     expect(test.clipboard.writeText).toHaveBeenCalledWith("https://share.example.test/t/abc");
+    await dialog.querySelector('[data-share-action="close"]').onclick();
+    expect(test.share.dismiss).toHaveBeenCalledWith("SHR-ABC123");
   });
 
   it("shows only the closed reference and retry action for a generic failure", async () => {
@@ -139,6 +160,39 @@ describe("share publish renderer boundary", () => {
     expect(dialog.textContent).toContain("SHR-SAFE123");
     expect(dialog.textContent).not.toContain("share_service_failed");
     expect(dialog.querySelector('[data-share-action="retry"]')).not.toBeNull();
+    await dialog.querySelector('[data-share-action="close"]').onclick();
+    expect(test.share.dismiss).toHaveBeenCalledWith("SHR-SAFE123");
+    expect(dialog.classList.contains("hidden")).toBe(true);
+  });
+
+  it("reopens Retry/Close only for the currently opened source thread", async () => {
+    const test = fixture();
+    test.controller.dispose();
+    test.share.pending.mockResolvedValue({
+      status: "failed",
+      code: "share_upload_failed",
+      retryable: true,
+      attemptReferenceId: "SHR-RECOVER1",
+    });
+    const controller = createSharePublishController({
+      root: test.window.document,
+      getThread: () => test.thread,
+      getInteractions: () => test.interactions,
+      account: test.account,
+      share: test.share,
+      clipboard: test.clipboard,
+    });
+
+    controller.render();
+    await vi.waitFor(() => expect(test.window.document.querySelector("#shareDialog").textContent)
+      .toContain("SHR-RECOVER1"));
+    expect(test.share.pending).toHaveBeenCalledWith(7);
+    expect(test.window.document.querySelector('[data-share-action="retry"]')).not.toBeNull();
+    expect(test.window.document.querySelector("#shareTitle")).toBeNull();
+    expect(test.share.create).not.toHaveBeenCalled();
+    await test.window.document.querySelector('[data-share-action="close"]').onclick();
+    expect(test.share.dismiss).toHaveBeenCalledWith("SHR-RECOVER1");
+    controller.dispose();
   });
 
   it("re-runs preflight instead of retrying a nonexistent attempt after a preflight failure", async () => {

@@ -9,6 +9,187 @@ const snapshot = new TextEncoder().encode(`${JSON.stringify({
 })}\n${JSON.stringify({ recordType: "turn" })}\n`);
 
 describe("share publication coordinator", () => {
+  it("persists frozen bytes before publishing and reopens the same owner-bound attempt", async () => {
+    const records = new Map();
+    const attemptStore = {
+      load: vi.fn(async () => [...records.values()].map((record) => structuredClone(record))),
+      save: vi.fn(async (record) => { records.set(record.reference, structuredClone(record)); }),
+      delete: vi.fn(async (reference) => records.delete(reference)),
+    };
+    const firstPublish = vi.fn(async () => {
+      expect(attemptStore.save).toHaveBeenCalledOnce();
+      throw Object.assign(new Error("lost response"), {
+        code: "share_upload_failed",
+        failureStage: "upload",
+      });
+    });
+    const first = createSharePublishCoordinator({
+      exportSnapshot: vi.fn(async () => snapshot),
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer first", generation: 1 }),
+      sourceThreadIdentity: async (threadId) => `installation:test:thread:${threadId}`,
+      publish: firstPublish,
+      attemptStore,
+      createAttemptId: () => "00112233445566778899aabbccddeeff",
+      createReferenceId: () => "SHR-DURABLE1",
+      now: () => 1_000,
+    });
+
+    await expect(first.create({ threadId: 42, title: "Public title" })).resolves.toMatchObject({
+      status: "failed",
+      attemptReferenceId: "SHR-DURABLE1",
+      retryable: true,
+    });
+    expect(records.get("SHR-DURABLE1").snapshotBytes).toEqual([...snapshot]);
+
+    const exportAfterRestart = vi.fn();
+    const secondPublish = vi.fn(async ({ attempt, snapshotBytes }) => {
+      expect(attempt.attemptId).toBe("00112233445566778899aabbccddeeff");
+      expect(snapshotBytes).toEqual(snapshot);
+      return { url: "https://share.example.test/t/recovered" };
+    });
+    const reopened = createSharePublishCoordinator({
+      exportSnapshot: exportAfterRestart,
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer second", generation: 2 }),
+      sourceThreadIdentity: async () => { throw new Error("must not recalculate identity"); },
+      publish: secondPublish,
+      attemptStore,
+    });
+
+    await expect(reopened.pending({ threadId: 42 })).resolves.toMatchObject({
+      status: "failed",
+      attemptReferenceId: "SHR-DURABLE1",
+      code: "share_upload_failed",
+      retryable: true,
+    });
+    await expect(reopened.retry("SHR-DURABLE1")).resolves.toEqual({
+      status: "created",
+      attemptReferenceId: "SHR-DURABLE1",
+      url: "https://share.example.test/t/recovered",
+    });
+    expect(exportAfterRestart).not.toHaveBeenCalled();
+    expect(secondPublish).toHaveBeenCalledOnce();
+    expect(records.get("SHR-DURABLE1")).toMatchObject({
+      snapshotBytes: [],
+      title: "",
+      publishedUrl: "https://share.example.test/t/recovered",
+    });
+    await expect(reopened.pending({ threadId: 42 })).resolves.toEqual({
+      status: "created",
+      attemptReferenceId: "SHR-DURABLE1",
+      url: "https://share.example.test/t/recovered",
+    });
+    await reopened.dismiss("SHR-DURABLE1");
+    expect(records.has("SHR-DURABLE1")).toBe(false);
+  });
+
+  it("hides another owner's durable attempt and deletes it only for an authenticated dismissal", async () => {
+    const stored = {
+      reference: "SHR-DURABLE2",
+      attemptId: "ffeeddccbbaa99887766554433221100",
+      ownerKey: "owner-a",
+      threadId: 42,
+      sourceThreadId: "installation:test:thread:42",
+      title: "Public title",
+      snapshotBytes: [...snapshot],
+      createdAt: 1_000,
+      lastFailure: {
+        status: "failed",
+        attemptReferenceId: "SHR-DURABLE2",
+        code: "share_service_failed",
+        retryable: true,
+      },
+      reportedFailures: [],
+    };
+    let account = { ownerKey: "owner-b", authorization: "Bearer b", generation: 2 };
+    const attemptStore = {
+      load: vi.fn(async () => [structuredClone(stored)]),
+      save: vi.fn(),
+      delete: vi.fn(async () => true),
+    };
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot: vi.fn(),
+      accountSession: async () => account,
+      sourceThreadIdentity: vi.fn(),
+      publish: vi.fn(),
+      attemptStore,
+    });
+
+    await expect(coordinator.pending({ threadId: 42 })).resolves.toBeNull();
+    await expect(coordinator.dismiss("SHR-DURABLE2")).resolves.toMatchObject({
+      status: "failed",
+      code: "share_attempt_unavailable",
+    });
+    expect(attemptStore.delete).not.toHaveBeenCalled();
+
+    account = { ownerKey: "owner-a", authorization: "Bearer a", generation: 3 };
+    await expect(coordinator.pending({ threadId: 7 })).resolves.toBeNull();
+    await expect(coordinator.dismiss("SHR-DURABLE2")).resolves.toEqual({
+      status: "dismissed",
+      attemptReferenceId: "SHR-DURABLE2",
+    });
+    expect(attemptStore.delete).toHaveBeenCalledWith("SHR-DURABLE2");
+  });
+
+  it("does not publish when the frozen attempt cannot be persisted", async () => {
+    const publish = vi.fn();
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot: async () => snapshot,
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer a", generation: 1 }),
+      sourceThreadIdentity: async (threadId) => `installation:test:thread:${threadId}`,
+      publish,
+      attemptStore: {
+        load: async () => [],
+        save: async () => { throw new Error("local storage unavailable"); },
+        delete: async () => false,
+      },
+      createReferenceId: () => "SHR-NOSTORE1",
+    });
+
+    await expect(coordinator.create({ threadId: 42, title: "Public title" })).resolves.toMatchObject({
+      status: "failed",
+      code: "share_service_failed",
+    });
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("persists handled-failure deduplication across coordinator restart", async () => {
+    const records = new Map();
+    const attemptStore = {
+      load: async () => [...records.values()].map((record) => structuredClone(record)),
+      save: async (record) => { records.set(record.reference, structuredClone(record)); },
+      delete: async (reference) => records.delete(reference),
+    };
+    const reportBeforeRestart = vi.fn(async () => ({ accepted: true }));
+    const failingPublish = async () => {
+      throw Object.assign(new Error("offline"), { code: "share_upload_failed", failureStage: "upload" });
+    };
+    const first = createSharePublishCoordinator({
+      exportSnapshot: async () => snapshot,
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer first", generation: 1 }),
+      sourceThreadIdentity: async (threadId) => `installation:test:thread:${threadId}`,
+      publish: failingPublish,
+      attemptStore,
+      issueHandledShareFailureReporter: () => ({ report: reportBeforeRestart }),
+      createAttemptId: () => "00112233445566778899aabbccddeeff",
+      createReferenceId: () => "SHR-REPORT01",
+      now: () => 1_000,
+    });
+    await first.create({ threadId: 42, title: "Public title" });
+    expect(reportBeforeRestart).toHaveBeenCalledOnce();
+
+    const reportAfterRestart = vi.fn();
+    const reopened = createSharePublishCoordinator({
+      exportSnapshot: vi.fn(),
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer second", generation: 2 }),
+      sourceThreadIdentity: vi.fn(),
+      publish: failingPublish,
+      attemptStore,
+      issueHandledShareFailureReporter: () => ({ report: reportAfterRestart }),
+    });
+    await reopened.retry("SHR-REPORT01");
+    expect(reportAfterRestart).not.toHaveBeenCalled();
+  });
+
   it("preflights export eligibility/size and quota without retaining an attempt", async () => {
     const exportSnapshot = vi.fn(async () => snapshot);
     const preflightPublication = vi.fn(async ({ authorization, assertAuthority }) => {

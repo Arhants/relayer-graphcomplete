@@ -1,6 +1,6 @@
 # Shared-thread Gate B implementation Kanban
 
-Source baseline: `origin/main` at `8dc9220fd3dbc403c3a3c75df72eb6e75550473c`.
+Source baseline: `origin/main` at `73c3d9f279e6ee36bb0803574d6d7eff08aeac2c`.
 UX reference only: `prototype/share-slice-1` at
 `b7449a1a246abc2e87ecc175a0c56d7c2bd14062`.
 
@@ -28,12 +28,11 @@ Sentry submission, or promotion of prototype code.
 - [x] `SHR-SPLIT-6` Private preview stack: deterministic AWS adapters, Lambda
   composition, exact artifact verification, isolated template, and a manual
   protected-environment workflow.
-- [ ] `SHR-SPLIT-7` Run cross-repository conformance against exact clean public
+- [x] `SHR-SPLIT-7` Run cross-repository conformance against exact clean public
   and private commits, then obtain fresh adversarial reviews of both snapshots.
-
-The earlier Gate B verification and reviews below describe the pre-split source
-snapshot. They remain useful regression history but do not certify the current
-two-repository state until `SHR-SPLIT-7` is complete.
+  Exact reviewed pair before Slice 3: public
+  `f6d43884085890ab5904696d19aafc60e0e5ab2d`, private
+  `8ce3bee4a6119fe058700cf01cf843c8a15f788a`.
 
 ## Done locally
 
@@ -44,8 +43,20 @@ two-repository state until `SHR-SPLIT-7` is complete.
 - [x] `SHR-466-1` Freeze the coordinator contract shared by exporter and service:
   immutable bytes, owner-bound attempt/reference identity, closed progress and
   failure states, and renderer-without-network-authority. Proof: contract tests
-  beside the main/preload boundary. Durable reopen remains blocked until
-  `SHR-462-*` and `SHR-464-*` are stable.
+  beside the main/preload boundary.
+- [x] `SHR-466-2` Persist the frozen attempt before upload with atomic local
+  writes, strict validation, bounded non-evicting capacity, original-owner and
+  source-thread scope, and durable handled-failure keys. Proof: production-store
+  reopen/corruption/size tests plus coordinator persistence-failure tests.
+- [x] `SHR-466-3` Reopen Retry/Close only while the original source thread and
+  owner are active; never re-export on retry. Replace successful snapshot bytes
+  and title with a lightweight URL receipt until Link ready closes. Proof:
+  coordinator, safe IPC, and renderer recovery/dismissal tests.
+- [x] `SHR-466-4` Cross a real process boundary with the production coordinator
+  and attempt store. Proof: `npm run evidence:share-publish-restart` launches two
+  Node processes and verifies identical attempt/bytes, same URL, one quota
+  charge, two requests, no re-export, and final receipt cleanup. This is process
+  restart proof, not packaged Electron restart evidence.
 - [x] `SHR-467-1` Admit only export/upload/service/oversize handled failures from
   a verified account generation through Electron main. Proof: extend the real
   authenticated-error-gateway tests with local transport and account fakes.
@@ -129,10 +140,10 @@ two-repository state until `SHR-SPLIT-7` is complete.
   does not claim #468's later Shared-links management surface.
 - [x] Run focused checkpoints, declared heavy evidence, `npm run check`, and
   `npm run build`; record exact commands and failures separately from the plan.
-- [ ] GPT-6 Astra adversarial review of semantic/UX/authority boundaries against
-  the exact reconciled public and private commits. The pre-split review is
-  invalidated by this ownership change; without a private PR, its replacement
-  remains non-certifying.
+- [x] GPT-6 Astra adversarial review of semantic/UX/authority boundaries against
+  the exact reconciled public/private pair above passed with no blocking finding.
+  It remains non-certifying until recorded durably in a PR. Slice 3 changes need
+  their own exact-source review before handoff.
 
 ## Gate C / approval required
 
@@ -152,19 +163,18 @@ two-repository state until `SHR-SPLIT-7` is complete.
   `bootPublicViewer`/`ProductWorkspace`. The ordinary public-only invocation
   retains its protocol fixture, and the private runner fails closed when the
   selected public checkout lacks the joined hook.
-- Focused checkpoints: 109 integrated share/service/viewer/telemetry/template
-  tests, Rust share redaction tests, and the persisted-product export seam passed.
-- Declared evidence: focused suites, package/TypeScript checks, telemetry,
-  secret-boundary, Python, Ladybug receipts, PRD readability, and `npm run build`
-  passed. The outer `npm run check` did not pass: its Rust portfolio hit the
-  fixed 500 ms hostile-git-environment timeout after 246 passing tests. That
-  focused Rust case passed on the one permitted unchanged retry. A later full
-  Vitest run exposed and then cleared a telemetry inventory mapping, while the
-  evidence-capture integrity child remained unavailable because Node denied its
-  loopback listen permission. These failures are not represented as a green
-  outer command.
+- Reconciled Gate B verification before Slice 3: public `npm run check` passed
+  with 192 test files passing and one skipped, 2,445 tests passing and three
+  skipped, secret-boundary 2/2, Python 29/29, and all Rust/Ladybug/PRD chapters
+  green. Public `npm run build`, private 54/54 service tests plus TypeScript, the
+  joined journey, package smoke, and exact artifact/package verification passed.
 - `SHR-463-5` is backed by the opt-in production Electron capture and its
   source/viewport/image hashes; the fixture is synthetic and makes no network
   or live-infrastructure claim.
-- Durable reopen recovery under #466 remains blocked from completion claims;
-  the in-session coordinator contract is stable, but no restart store exists.
+- Slice 3 focused proof covers durable reopen, owner/thread isolation,
+  persistence-before-publish, lost response, reporting deduplication, successful
+  receipt recovery, dismissal, and a two-process restart. Post-Slice-3
+  `npm run check` completed every chapter with 194 Vitest files passing and one
+  skipped, 2,456 tests passing and three skipped, secret-boundary 2/2, Python
+  29/29, and green Rust, Ladybug, and PRD checks. `npm run build` passed. The
+  exact-source Slice 3 adversarial review remains due before handoff.

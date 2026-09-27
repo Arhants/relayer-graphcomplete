@@ -118,6 +118,7 @@ export const APPROVED_TELEMETRY_MODULES = Object.freeze({
     "desktop/main/services/relayer-app-server.mjs",
     "desktop/main/services/sentry-error-transport.mjs",
     "desktop/main/services/settings-store.mjs",
+    "desktop/main/services/share-publish-attempt-store.mjs",
     "desktop/main/services/share-publish-coordinator.mjs",
     "desktop/main/services/share-service-client.mjs",
     "desktop/main/services/share-service-endpoint.mjs",

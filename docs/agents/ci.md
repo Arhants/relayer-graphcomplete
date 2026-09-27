@@ -125,8 +125,10 @@ not reject an otherwise intact bundle. The production Cargo-resolved source
 path is separately checked against the reviewed lbug version, crates.io
 checksum, and canonical full-package tree digest. The source-preparation path
 checks the same complete package tree after extracting the checksum-pinned
-crate; its only resolved-tree exclusion is Cargo's generated root `.cargo-ok`
-registry marker, which is absent from the crate archive. Re-review this native
+crate; its resolved-tree exclusions are Cargo's generated root `.cargo-ok`
+registry marker, which is absent from the crate archive, and lbug's generated
+crate-root `.cache` build directory. A file or symlink at `.cache`, and any
+nested source `.cache`, remain reviewed bytes. Re-review this native
 source contract before changing the lbug pin or any package source bytes. The manifest also
 carries a digest over every packaged file plus the library size, so a
 truncated include tree or a failed debug strip is rejected before any lane
