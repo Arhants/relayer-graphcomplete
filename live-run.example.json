@@ -4,7 +4,8 @@
     "Never commit a real key, and never paste one into a chat, an issue, or a PR.",
     "Each entry under `runs` is one named profile. Select one with --profile <name>.",
     "auth.kind is one of: openrouter, openai-api, anthropic-api, codex-subscription.",
-    "codexExecutable and codexHome are required only by codex.basic harnesses."
+    "codexExecutable and codexHome are required only by codex.basic harnesses.",
+    "The runner provisions prime.agent and codex.basic. Codex runs only with a codex-subscription login."
   ],
 
   "runs": {
@@ -18,15 +19,14 @@
       }
     },
 
-    "codex-openai": {
+    "codex-subscription": {
       "harness": "codex-basic",
       "modelId": "gpt-5-codex",
       "codexExecutable": "/absolute/path/to/managed/codex",
-      "codexHome": "/absolute/path/to/an/empty/codex-home",
+      "codexHome": "/absolute/path/to/a/codex-home-with-your-login",
       "auth": {
-        "kind": "openai-api",
-        "apiKey": "REPLACE_WITH_YOUR_OPENAI_KEY",
-        "endpoint": null
+        "kind": "codex-subscription",
+        "apiKey": null
       }
     }
   }
