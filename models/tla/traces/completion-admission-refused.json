@@ -1,7 +1,7 @@
 {
   "scenario": "completion-admission-refused",
   "module": "CompletionCurrent",
-  "summary": "The host refuses a selected child's admission; the child never starts, holds no lease or attempt, and cleanup fails it with the refusal's reason.",
+  "summary": "The host refuses a selected child's admission; the child never starts, holds no lease or attempt, and cleanup fails it with the refusal's reason without cancelling anything.",
   "promises": [
     "SettledExecutionAgreesWithGraph",
     "LeaseReleasedOnlyAfterSettlement",
@@ -246,51 +246,6 @@
         "LaunchAdmit",
         1,
         "fail"
-      ],
-      "state": {
-        "appUp": true,
-        "attempt": "none",
-        "auth": true,
-        "cleanKey": "admit",
-        "cleanPc": "cancel",
-        "execWhy": "none",
-        "exitPc": "off",
-        "head": 0,
-        "launches": 0,
-        "lease": "none",
-        "life": "active",
-        "lpc": {
-          "1": "done",
-          "2": "idle"
-        },
-        "phase": "launching",
-        "prov": "none",
-        "receipt": {
-          "activate": 99,
-          "admit": 99,
-          "attach": 99,
-          "exit": 99,
-          "obs": 99,
-          "restart": 99,
-          "start": 99,
-          "stop": 99
-        },
-        "restartPc": "none",
-        "selected": true,
-        "semPc": "off",
-        "status": "running",
-        "stopPc": "idle",
-        "stopReport": "none",
-        "stopSeen": {
-          "h": 0,
-          "l": "active"
-        },
-        "why": "none"
-      }
-    },
-    {
-      "action": [
-        "CleanCancel"
       ],
       "state": {
         "appUp": true,

@@ -446,11 +446,8 @@ impl SqliteProductStore {
                 "a recursive attempt ends only after its execution settles",
             ));
         }
-        let (outcome, failure_category, effect_boundary) = if status == "accepted" {
-            ("accepted", None, "graph_write")
-        } else {
-            ("execution_failed", Some("recursive_completion"), "unknown")
-        };
+        let (outcome, failure_category, effect_boundary) =
+            crate::product::settled_recursive_attempt_outcome(&status);
         let ended = sqlx::query(
             "UPDATE interaction_attempts
              SET finished_at=?1,outcome=?2,failure_category=?3,effect_boundary=?4

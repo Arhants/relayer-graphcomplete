@@ -2014,6 +2014,21 @@ describe("HarnessHost", () => {
       await expect(malformed.json()).resolves.toMatchObject({ error: "invalid_invoked_completion" });
       expect(starts).toBe(1);
 
+      // A bounded observation of a running child answers that it still runs, rather than
+      // leaving the request waiting after the observer has moved on.
+      const stillRunning = await fetch(`${running.url}/sessions/1/invoked-completions/2?waitMs=20`, {
+        headers: { authorization: "Bearer control" },
+      });
+      expect(stillRunning.status).toBe(200);
+      await expect(stillRunning.json()).resolves.toEqual({ completionId: 2, running: true });
+      for (const wait of ["0", "-5", "1.5", "60001", "soon"]) {
+        const invalid = await fetch(`${running.url}/sessions/1/invoked-completions/2?waitMs=${wait}`, {
+          headers: { authorization: "Bearer control" },
+        });
+        expect(invalid.status).toBe(400);
+        await expect(invalid.json()).resolves.toEqual({ error: "invalid_observation_wait" });
+      }
+
       const cancelled = await fetch(`${running.url}/sessions/1/cancel?completionId=2`, {
         method: "POST",
         headers: { authorization: "Bearer control" },
@@ -2021,6 +2036,8 @@ describe("HarnessHost", () => {
       expect(cancelled.status).toBe(200);
       await expect(cancelled.json()).resolves.toEqual({ cancelled: true });
       await expect(running.host.observeInvokedCompletion(1, 2)).rejects.toThrow("cancelled for thread 1");
+      // A bounded observation of an ended run answers with that end at once.
+      await expect(running.host.observeInvokedCompletion(1, 2, 60_000)).rejects.toThrow("cancelled for thread 1");
       expect(running.host.cancel(1, 2)).toBe(false);
       const exported = join(directory, "exported-child-trace");
       const descriptor = await running.host.exportCandidateTrace(29, exported, {

@@ -137,6 +137,9 @@ pub(crate) struct RuntimeClient {
 /// A recursive child's family admission, forwarded to its start exactly as a root run's.
 pub(crate) struct InvokedCompletionAdmission<'a> {
     pub(crate) model_plan: &'a ExecutionModelPlan,
+    /// The policy the admission leased under; the start carries it in place of the
+    /// policy captured when the child was prepared.
+    pub(crate) harness_policy: &'a ExecutionHarnessPolicy,
     pub(crate) execution_lease_id: &'a str,
     pub(crate) attempt_admission_id: &'a str,
 }
@@ -210,13 +213,6 @@ pub(crate) struct PreparedInteraction {
     /// The policy this execution was admitted under. A recursive child launch must carry it
     /// too: once a session has taken a dynamic policy update, every later execution needs one.
     harness_policy: Option<ExecutionHarnessPolicy>,
-}
-
-impl PreparedInteraction {
-    /// The policy this execution was prepared under, which its admission must match.
-    pub(crate) fn harness_policy(&self) -> Option<&ExecutionHarnessPolicy> {
-        self.harness_policy.as_ref()
-    }
 }
 
 #[derive(Debug)]
@@ -978,7 +974,11 @@ impl RuntimeClient {
                 "modelId": &model_selection.model_id,
             });
         }
-        if let Some(harness_policy) = prepared.harness_policy.as_ref() {
+        if let Some(harness_policy) = admission
+            .as_ref()
+            .map(|admission| admission.harness_policy)
+            .or(prepared.harness_policy.as_ref())
+        {
             body["harnessPolicy"] = serde_json::to_value(harness_policy)?;
         }
         if let Some(completion_broker) = completion_broker {
@@ -1019,10 +1019,12 @@ impl RuntimeClient {
                 "invoked completion observation identifiers must be positive".into(),
             ));
         }
-        // The host answers only when the run ends, so this is a bounded long poll: a
-        // timeout means the run is still going, and the caller asks again.
+        // A bounded long poll. The host answers when the run ends, or with `running` once
+        // the wait passes, which it sets shorter than this request's timeout so that no
+        // request is abandoned while the host still holds it. A timeout means the same.
+        let wait_ms = (self.observation_poll.as_millis() * 4 / 5).max(1);
         self.control_harness_get(
-            &format!("sessions/{thread_id}/invoked-completions/{completion_id}"),
+            &format!("sessions/{thread_id}/invoked-completions/{completion_id}?waitMs={wait_ms}"),
             self.observation_poll,
         )
         .await

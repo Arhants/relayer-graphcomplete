@@ -56,6 +56,20 @@ pub(crate) struct Thread {
     pub(crate) imported: bool,
 }
 
+/// The outcome, failure category and effect boundary a recursive child's attempt takes
+/// once its execution has settled with `completion_status`. The outcome is fixed at
+/// settlement; the attempt row stays `running` only while the child's provider unwinds,
+/// so that its leases stay held until the run ends.
+pub(crate) fn settled_recursive_attempt_outcome(
+    completion_status: &str,
+) -> (&'static str, Option<&'static str>, &'static str) {
+    if completion_status == "accepted" {
+        ("accepted", None, "graph_write")
+    } else {
+        ("execution_failed", Some("recursive_completion"), "unknown")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct InteractionAttempt {
     pub(crate) id: i64,

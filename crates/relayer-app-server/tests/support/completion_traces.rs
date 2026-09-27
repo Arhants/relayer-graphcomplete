@@ -88,6 +88,9 @@ struct HarnessControl {
     admission: Mutex<&'static str>,
     /// The execution leases granted and not yet released.
     granted: Mutex<std::collections::HashSet<String>>,
+    /// The harness-policy revisions the last admission and the last start carried.
+    admitted_policy_revision: Mutex<Option<u64>>,
+    started_policy_revision: Mutex<Option<u64>>,
     /// The child's provider run: none | running | cancelled | exited_ok | exited_err.
     prov: Mutex<&'static str>,
     /// The graph completion a successful start acknowledges.
@@ -285,6 +288,8 @@ impl World {
             start: Mutex::new("fail"),
             admission: Mutex::new("ok"),
             granted: Mutex::new(std::collections::HashSet::new()),
+            admitted_policy_revision: Mutex::new(None),
+            started_policy_revision: Mutex::new(None),
             prov: Mutex::new("none"),
             completion_id: Mutex::new(0),
             cancel_gated: AtomicBool::new(false),
@@ -301,31 +306,54 @@ impl World {
             // answered only when it ends, and an ended run answers at once.
             .route(
                 "/sessions/{id}/invoked-completions/{completion}",
-                routing::get(move || {
-                    let control = observe_control.clone();
-                    async move {
-                        loop {
-                            let prov = *control.prov.lock().unwrap();
-                            match prov {
-                                "none" => {
+                routing::get(
+                    move |axum::extract::Query(query): axum::extract::Query<
+                        HashMap<String, String>,
+                    >| {
+                        let control = observe_control.clone();
+                        // Like the host, a bounded observation answers `running` once its wait
+                        // passes while the child still runs.
+                        let deadline = query
+                            .get("waitMs")
+                            .and_then(|wait| wait.parse::<u64>().ok())
+                            .map(|wait| Instant::now() + Duration::from_millis(wait));
+                        async move {
+                            loop {
+                                let prov = *control.prov.lock().unwrap();
+                                if prov == "running"
+                                    && deadline.is_some_and(|deadline| Instant::now() >= deadline)
+                                {
                                     return (
-                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        StatusCode::OK,
                                         axum::Json(serde_json::json!({
-                                            "error":"Invoked completion is not registered"
+                                            "completionId": 0,
+                                            "running": true
                                         })),
                                     );
                                 }
-                                "running" => tokio::time::sleep(Duration::from_millis(20)).await,
-                                _ => {
-                                    return (
-                                        StatusCode::OK,
-                                        axum::Json(serde_json::json!({"completionId":0})),
-                                    );
+                                match prov {
+                                    "none" => {
+                                        return (
+                                            StatusCode::INTERNAL_SERVER_ERROR,
+                                            axum::Json(serde_json::json!({
+                                                "error":"Invoked completion is not registered"
+                                            })),
+                                        );
+                                    }
+                                    "running" => {
+                                        tokio::time::sleep(Duration::from_millis(20)).await
+                                    }
+                                    _ => {
+                                        return (
+                                            StatusCode::OK,
+                                            axum::Json(serde_json::json!({"completionId":0})),
+                                        );
+                                    }
                                 }
                             }
                         }
-                    }
-                }),
+                    },
+                ),
             )
             .route(
                 "/sessions",
@@ -362,6 +390,8 @@ impl World {
                                 })),
                             );
                         }
+                        *control.admitted_policy_revision.lock().unwrap() =
+                            body["harnessPolicy"]["configurationRevision"].as_u64();
                         let admission = sign_admission(&body);
                         control
                             .granted
@@ -389,9 +419,11 @@ impl World {
             )
             .route(
                 "/sessions/{id}/invoked-completions",
-                routing::post(move || {
+                routing::post(move |axum::Json(body): axum::Json<Value>| {
                     let control = start_control.clone();
                     async move {
+                        *control.started_policy_revision.lock().unwrap() =
+                            body["harnessPolicy"]["configurationRevision"].as_u64();
                         let mode = *control.start.lock().unwrap();
                         if mode == "ok" {
                             *control.prov.lock().unwrap() = "running";
@@ -595,14 +627,8 @@ impl World {
                 let ok = argument(2) == "ok";
                 *self.harness.admission.lock().unwrap() = if ok { "ok" } else { "fail" };
                 let activated = self.activated.clone().expect("activated before admission");
-                match admit_recursive_child(
-                    &self.state,
-                    &self.runtime,
-                    &self.thread,
-                    &self.child,
-                    &activated,
-                )
-                .await
+                match admit_recursive_child(&self.state, &self.runtime, &self.thread, &self.child)
+                    .await
                 {
                     Ok(admission) => {
                         assert!(ok, "the fake harness refused this admission");
@@ -610,6 +636,8 @@ impl World {
                     }
                     Err(refusal) => {
                         assert!(!ok, "the admission was expected to succeed");
+                        // A refused admission started nothing, so its cleanup must not
+                        // cancel. Arming the gate makes a cancel hang and the replay diverge.
                         self.harness.cancel_gated.store(true, Ordering::SeqCst);
                         spawn_failed_recursive_start_cleanup(
                             self.state.clone(),
@@ -617,7 +645,7 @@ impl World {
                             self.child.clone(),
                             activated,
                             self.origin_digest.clone(),
-                            refusal.reason,
+                            LaunchFailure::AdmissionRefused(refusal.reason),
                             None,
                         );
                     }
@@ -643,6 +671,7 @@ impl World {
                         self.admission.as_ref().map(|admission| {
                             crate::runtime::InvokedCompletionAdmission {
                                 model_plan: &admission.model_plan,
+                                harness_policy: &admission.harness_policy,
                                 execution_lease_id: &admission.execution_lease_id,
                                 attempt_admission_id: &admission.attempt_admission_id,
                             }
@@ -663,7 +692,7 @@ impl World {
                     self.child.clone(),
                     activated,
                     self.origin_digest.clone(),
-                    "provider_start_failed",
+                    LaunchFailure::StartFailed,
                     self.admission
                         .as_ref()
                         .map(|admission| admission.attempt_id),
@@ -1079,6 +1108,8 @@ async fn completion_current_traces_replay_against_launch_and_cleanup() {
 async fn provider_end_waits_through_observation_timeouts() {
     let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let observed_calls = calls.clone();
+    let pending_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let observed_pending_calls = pending_calls.clone();
     let harness = Router::new()
         .route(
             "/sessions/{id}/invoked-completions/7",
@@ -1089,6 +1120,20 @@ async fn provider_end_waits_through_observation_timeouts() {
                         tokio::time::sleep(Duration::from_millis(400)).await;
                     }
                     axum::Json(serde_json::json!({"completionId":7}))
+                }
+            }),
+        )
+        // A host that answers a bounded observation with `running` while the run goes on.
+        .route(
+            "/sessions/{id}/invoked-completions/10",
+            routing::get(move || {
+                let calls = observed_pending_calls.clone();
+                async move {
+                    if calls.fetch_add(1, Ordering::SeqCst) < 3 {
+                        axum::Json(serde_json::json!({"completionId":10,"running":true}))
+                    } else {
+                        axum::Json(serde_json::json!({"completionId":10}))
+                    }
                 }
             }),
         )
@@ -1149,6 +1194,15 @@ async fn provider_end_waits_through_observation_timeouts() {
         await_provider_end(&runtime, 1, 8, Duration::from_millis(1))
             .await
             .is_err()
+    );
+    let ended = await_provider_end(&runtime, 1, 10, Duration::from_millis(1))
+        .await
+        .unwrap();
+    assert_eq!(ended, serde_json::json!({"completionId":10}));
+    assert_eq!(
+        pending_calls.load(Ordering::SeqCst),
+        4,
+        "each `running` answer was asked again"
     );
 
     graph_task.abort();
@@ -1213,7 +1267,7 @@ async fn unreachable_harness(
 
 /// A request that never reached the harness says nothing about the child's provider, so the
 /// wait retries it rather than reading it as the run ending. A harness that stays unreachable
-/// is asked to cancel the child before the wait gives up.
+/// is asked to cancel the child again and again, and the wait ends only when it answers.
 #[tokio::test]
 async fn provider_end_waits_through_an_unreachable_harness() {
     let graph = Router::new().route(
@@ -1276,14 +1330,30 @@ async fn provider_end_waits_through_an_unreachable_harness() {
     )
     .await
     .unwrap();
-    assert!(await_provider_end(&runtime, 1, 9, step).await.is_err());
-    let requests = requests.lock().unwrap().clone();
-    let cancel = requests
-        .iter()
-        .position(|line| line.starts_with("POST /sessions/1/cancel?completionId=9"))
-        .expect("an unreachable child is cancelled before the wait gives up");
+    // A host that stays unreachable never confirms the end, so the wait never gives up:
+    // it keeps observing, and cancels again after each run of unreachable observations.
     assert!(
-        cancel >= PROVIDER_END_UNREACHABLE_LIMIT as usize,
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            await_provider_end(&runtime, 1, 9, step)
+        )
+        .await
+        .is_err(),
+        "an unconfirmed provider end must keep the child's leases held"
+    );
+    let requests = requests.lock().unwrap().clone();
+    let cancels = requests
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.starts_with("POST /sessions/1/cancel?completionId=9"))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    assert!(
+        cancels.len() >= 2,
+        "an unreachable child is cancelled again while the wait goes on: {requests:?}"
+    );
+    assert!(
+        cancels[0] >= PROVIDER_END_UNREACHABLE_LIMIT as usize,
         "the child is cancelled only after repeated unreachable observations: {requests:?}"
     );
     harness_task.abort();
@@ -1337,15 +1407,8 @@ async fn a_child_whose_attempt_cannot_be_recorded_releases_its_leases() {
         world.apply(step.as_array().unwrap(), false).await;
     }
     *world.harness.admission.lock().unwrap() = "unrecorded";
-    let activated = world.activated.clone().unwrap();
-    let Err(refusal) = admit_recursive_child(
-        &world.state,
-        &world.runtime,
-        &world.thread,
-        &world.child,
-        &activated,
-    )
-    .await
+    let Err(refusal) =
+        admit_recursive_child(&world.state, &world.runtime, &world.thread, &world.child).await
     else {
         panic!("a disabled family cannot record the child's attempt");
     };
@@ -1355,5 +1418,116 @@ async fn a_child_whose_attempt_cannot_be_recorded_releases_its_leases() {
         "leases no attempt records are released"
     );
     assert_eq!(world.observe().await["attempt"], "none");
+    world.finish();
+}
+
+/// A harness-policy revision that lands after the child was prepared is the one it is
+/// admitted under, as for a root turn: the host leases, the product records the attempt,
+/// and the start runs, all under the policy current at launch.
+#[tokio::test]
+async fn a_child_admits_under_the_harness_policy_current_at_launch() {
+    let mut world = World::new("policy-revised", true).await;
+    for step in [
+        serde_json::json!(["LaunchCheck", 1]),
+        serde_json::json!(["LaunchReserve", 1]),
+        serde_json::json!(["LaunchClaim", 1]),
+        serde_json::json!(["LaunchActivate", 1, "ok"]),
+    ] {
+        world.apply(step.as_array().unwrap(), false).await;
+    }
+    let prepared_revision = u64::from(
+        world
+            .product
+            .execution_harness_policy(HARNESS)
+            .await
+            .unwrap()
+            .configuration_revision,
+    );
+    sqlx::query(
+        "UPDATE product_harnesses SET configuration_revision=configuration_revision+1 WHERE configuration_name=?1",
+    )
+    .bind(HARNESS)
+    .execute(&world.pool)
+    .await
+    .unwrap();
+    for step in [
+        serde_json::json!(["LaunchAdmit", 1, "ok"]),
+        serde_json::json!(["LaunchStart", 1, "ok"]),
+    ] {
+        world.apply(step.as_array().unwrap(), false).await;
+    }
+    assert!(
+        world.admission.is_some(),
+        "the revised policy admits the child"
+    );
+    assert_eq!(
+        *world.harness.admitted_policy_revision.lock().unwrap(),
+        Some(prepared_revision + 1)
+    );
+    assert_eq!(
+        *world.harness.started_policy_revision.lock().unwrap(),
+        Some(prepared_revision + 1),
+        "the start carries the policy the admission leased under"
+    );
+    assert_eq!(world.observe().await["attempt"], "running");
+    world.finish();
+}
+
+/// A child that returned while its provider still runs is accepted, and its attempt stays
+/// running only as the reference that keeps its leases held. Its outcome was decided when it
+/// settled, so the conversation exports it as accepted, and a restart in that window ends
+/// the attempt as accepted rather than as interrupted.
+#[tokio::test]
+async fn a_child_returned_while_its_provider_runs_exports_and_restarts_as_accepted() {
+    let mut world = World::new("unwinding-provider", true).await;
+    for step in [
+        serde_json::json!(["LaunchCheck", 1]),
+        serde_json::json!(["LaunchReserve", 1]),
+        serde_json::json!(["LaunchClaim", 1]),
+        serde_json::json!(["LaunchActivate", 1, "ok"]),
+        serde_json::json!(["LaunchAdmit", 1, "ok"]),
+        serde_json::json!(["LaunchStart", 1, "ok"]),
+        serde_json::json!(["LaunchAttach", 1, "ok"]),
+        serde_json::json!(["ChildReturn"]),
+        serde_json::json!(["SemFinalize"]),
+    ] {
+        world.apply(step.as_array().unwrap(), false).await;
+    }
+    let unwinding = world.observe().await;
+    assert_eq!(
+        (unwinding["status"].as_str(), unwinding["attempt"].as_str()),
+        (Some("accepted"), Some("running")),
+        "the provider still runs, so the accepted child's attempt stays open"
+    );
+
+    // The export reports the outcome settlement decided, which its validation requires
+    // of an accepted child, rather than the in-flight attempt.
+    let child = world.product.get_interaction(world.child.id).await.unwrap();
+    assert_eq!(
+        crate::conversation_export_service::settled_attempt_outcome(&world.product, &child)
+            .await
+            .unwrap(),
+        Some("accepted")
+    );
+
+    let restarted = SqliteProductStore::open(&world.root.join("product.sqlite3"))
+        .await
+        .unwrap();
+    restarted
+        .recover_interrupted_interactions("restart", false)
+        .await
+        .unwrap();
+    let (outcome, boundary): (String, String) = sqlx::query_as(
+        "SELECT outcome,effect_boundary FROM interaction_attempts WHERE interaction_id=?1",
+    )
+    .bind(world.child.id.value())
+    .fetch_one(&world.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (outcome.as_str(), boundary.as_str()),
+        ("accepted", "graph_write")
+    );
+    assert_eq!(world.observe().await["status"], "accepted");
     world.finish();
 }

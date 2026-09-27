@@ -123,6 +123,15 @@ export interface HarnessInvokedCompletionObservation {
   readonly completionId: GraphId;
 }
 
+/** A bounded observation's answer while the child still runs. */
+export interface HarnessInvokedCompletionPending {
+  readonly completionId: GraphId;
+  readonly running: true;
+}
+
+/** The longest an observation may wait before answering that the child still runs. */
+const MAX_OBSERVATION_WAIT_MS = 60_000;
+
 interface InvokedCompletionRun {
   readonly invocationDigest: string;
   readonly run: Promise<HarnessInvokedCompletionObservation>;
@@ -491,13 +500,40 @@ export class HarnessHost {
     return this.invokedCompletion(threadId, invocation, signal).started;
   }
 
-  observeInvokedCompletion(threadId: number, completionId: GraphId): Promise<HarnessInvokedCompletionObservation> {
+  observeInvokedCompletion(threadId: number, completionId: GraphId): Promise<HarnessInvokedCompletionObservation>;
+  observeInvokedCompletion(
+    threadId: number,
+    completionId: GraphId,
+    waitMs: number,
+  ): Promise<HarnessInvokedCompletionObservation | HarnessInvokedCompletionPending>;
+  /**
+   * Answers when the child's run ends. With `waitMs`, it answers that the child still runs
+   * once that long has passed instead, so an observer that polls never leaves a request
+   * waiting on a run after it has given up on it.
+   */
+  async observeInvokedCompletion(
+    threadId: number,
+    completionId: GraphId,
+    waitMs?: number,
+  ): Promise<HarnessInvokedCompletionObservation | HarnessInvokedCompletionPending> {
     if (!Number.isSafeInteger(completionId) || completionId < 1) {
       throw new Error("Invoked completion ID must be a positive integer");
     }
+    if (waitMs !== undefined && (!Number.isSafeInteger(waitMs) || waitMs < 1 || waitMs > MAX_OBSERVATION_WAIT_MS)) {
+      throw new Error(`Invoked completion observation wait must be 1 to ${MAX_OBSERVATION_WAIT_MS} ms`);
+    }
     const run = this.liveSession(threadId).invokedCompletionRuns.get(completionId);
     if (run === undefined) throw new Error("Invoked completion is not registered");
-    return run.run;
+    if (waitMs === undefined) return run.run;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const pending = new Promise<HarnessInvokedCompletionPending>((resolve) => {
+      timer = setTimeout(() => resolve({ completionId, running: true }), waitMs);
+    });
+    try {
+      return await Promise.race([run.run, pending]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private invokedCompletion(
@@ -1486,7 +1522,13 @@ async function route(host: HarnessHost, token: string, request: IncomingMessage,
       if (threadId === undefined || completionId === undefined) {
         return reply(response, 400, { error: "invalid_completion_identity" });
       }
-      return reply(response, 200, await host.observeInvokedCompletion(threadId, completionId));
+      const wait = url.searchParams.get("waitMs");
+      if (wait === null) return reply(response, 200, await host.observeInvokedCompletion(threadId, completionId));
+      const waitMs = /^[1-9][0-9]*$/.test(wait) ? Number(wait) : Number.NaN;
+      if (!Number.isSafeInteger(waitMs) || waitMs > MAX_OBSERVATION_WAIT_MS) {
+        return reply(response, 400, { error: "invalid_observation_wait" });
+      }
+      return reply(response, 200, await host.observeInvokedCompletion(threadId, completionId, waitMs));
     }
     const approvalDecisionMatch = /^\/sessions\/([^/]+)\/approvals\/([^/]+)\/decision$/.exec(url.pathname);
     if (request.method === "POST" && approvalDecisionMatch?.[1] !== undefined && approvalDecisionMatch[2] !== undefined) {

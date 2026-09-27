@@ -111,6 +111,7 @@ pub(crate) async fn build_conversation_export(
     let mut closures = Vec::with_capacity(detail.interactions.len());
     let mut context_inputs = Vec::with_capacity(detail.interactions.len());
     let mut submitted_evidence = Vec::with_capacity(detail.interactions.len());
+    let mut settled_attempt_outcomes = Vec::with_capacity(detail.interactions.len());
     for interaction in &detail.interactions {
         let closure = if interaction.completion_status == "accepted" {
             let node_id = interaction.graph_node_id.ok_or_else(|| {
@@ -143,6 +144,7 @@ pub(crate) async fn build_conversation_export(
         };
         context_inputs.push(context_input);
         submitted_evidence.push(product.submitted_input_evidence(interaction.id).await?);
+        settled_attempt_outcomes.push(settled_attempt_outcome(product, interaction).await?);
     }
     for invocation in conversation_invocations {
         let source_index = *interaction_indexes
@@ -217,12 +219,14 @@ pub(crate) async fn build_conversation_export(
         turns,
     }));
     let mut records = vec![header];
-    for (((interaction, closure), context_input), submitted_evidence) in detail
-        .interactions
-        .iter()
-        .zip(closures.iter())
-        .zip(context_inputs.iter())
-        .zip(submitted_evidence.iter())
+    for ((((interaction, closure), context_input), submitted_evidence), settled_attempt_outcome) in
+        detail
+            .interactions
+            .iter()
+            .zip(closures.iter())
+            .zip(context_inputs.iter())
+            .zip(submitted_evidence.iter())
+            .zip(settled_attempt_outcomes.iter().copied())
     {
         records.push(ConversationExportRecord::Turn(Box::new(export_turn(
             interaction,
@@ -237,6 +241,7 @@ pub(crate) async fn build_conversation_export(
                 },
                 turn_sequences: &turn_sequences,
                 redactor: &redactor,
+                settled_attempt_outcome,
             },
             &mut ids,
         )?)));
@@ -276,6 +281,29 @@ enum ContextInput {
     Durable(DurableInteractionInput),
 }
 
+/// The outcome a recursive child's still-running attempt already took, if its execution
+/// has settled. The attempt stays running only while the child's provider unwinds, so the
+/// export reports the outcome settlement decided rather than an in-flight attempt.
+pub(crate) async fn settled_attempt_outcome(
+    product: &ProductService,
+    interaction: &Interaction,
+) -> Result<Option<&'static str>, ConversationExportBuildError> {
+    let running = interaction
+        .latest_attempt
+        .as_ref()
+        .is_some_and(|attempt| attempt.outcome == "running");
+    if !running {
+        return Ok(None);
+    }
+    Ok(product
+        .completion_execution(interaction.id)
+        .await?
+        .filter(|execution| execution.phase == crate::storage::CompletionExecutionPhase::Settled)
+        .map(|_| {
+            crate::product::settled_recursive_attempt_outcome(&interaction.completion_status).0
+        }))
+}
+
 struct TurnExportContext<'a> {
     closure: Option<&'a AcceptedGraphClosure>,
     context_input: Option<&'a ContextInput>,
@@ -284,6 +312,8 @@ struct TurnExportContext<'a> {
     imported: ImportedExportContext<'a>,
     turn_sequences: &'a HashMap<InteractionId, i64>,
     redactor: &'a ProjectPathRedactor,
+    /// The outcome a still-running attempt already took when its execution settled.
+    settled_attempt_outcome: Option<&'static str>,
 }
 
 fn export_turn(
@@ -299,6 +329,7 @@ fn export_turn(
         imported,
         turn_sequences,
         redactor,
+        settled_attempt_outcome,
     } = context;
     if let (Some(node_id), Some(imported_turn)) = (
         interaction.graph_node_id,
@@ -414,7 +445,7 @@ fn export_turn(
             attempt_outcome: interaction
                 .latest_attempt
                 .as_ref()
-                .map(|attempt| attempt_outcome(&attempt.outcome))
+                .map(|attempt| attempt_outcome(settled_attempt_outcome.unwrap_or(&attempt.outcome)))
                 .transpose()?
                 .or_else(|| imported_completion.and_then(|completion| completion.attempt_outcome)),
             harness_configuration_name: interaction.harness_configuration_name.clone(),
@@ -2722,6 +2753,7 @@ mod tests {
                 },
                 turn_sequences: &turn_sequences,
                 redactor: &ProjectPathRedactor::new(None),
+                settled_attempt_outcome: None,
             },
             &mut ids,
         )

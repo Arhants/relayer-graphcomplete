@@ -1478,29 +1478,22 @@ async fn launch_prepared_child(
             return Err(error);
         }
     };
-    let admission = match admit_recursive_child(
-        &state,
-        runtime,
-        &thread,
-        &outcome.interaction,
-        &prepared,
-    )
-    .await
-    {
-        Ok(admission) => admission,
-        Err(refusal) => {
-            spawn_failed_recursive_start_cleanup(
-                state.clone(),
-                thread,
-                outcome.interaction,
-                prepared,
-                permission_origin_digest,
-                refusal.reason,
-                None,
-            );
-            return Err(refusal.error);
-        }
-    };
+    let admission =
+        match admit_recursive_child(&state, runtime, &thread, &outcome.interaction).await {
+            Ok(admission) => admission,
+            Err(refusal) => {
+                spawn_failed_recursive_start_cleanup(
+                    state.clone(),
+                    thread,
+                    outcome.interaction,
+                    prepared,
+                    permission_origin_digest,
+                    LaunchFailure::AdmissionRefused(refusal.reason),
+                    None,
+                );
+                return Err(refusal.error);
+            }
+        };
     let attempt_id = admission.as_ref().map(|admission| admission.attempt_id);
 
     let broker_url = runtime
@@ -1533,6 +1526,7 @@ async fn launch_prepared_child(
                 .as_ref()
                 .map(|admission| crate::runtime::InvokedCompletionAdmission {
                     model_plan: &admission.model_plan,
+                    harness_policy: &admission.harness_policy,
                     execution_lease_id: &admission.execution_lease_id,
                     attempt_admission_id: &admission.attempt_admission_id,
                 }),
@@ -1547,7 +1541,7 @@ async fn launch_prepared_child(
                 outcome.interaction,
                 prepared,
                 permission_origin_digest,
-                "provider_start_failed",
+                LaunchFailure::StartFailed,
                 attempt_id,
             );
             return Err(error.into());
@@ -1605,6 +1599,7 @@ async fn launch_prepared_child(
 /// What a recursive child was admitted with, and the attempt that owns its leases.
 struct RecursiveChildAdmission {
     model_plan: crate::product::ExecutionModelPlan,
+    harness_policy: crate::product::ExecutionHarnessPolicy,
     execution_lease_id: String,
     attempt_admission_id: String,
     attempt_id: i64,
@@ -1630,7 +1625,6 @@ async fn admit_recursive_child(
     runtime: &crate::runtime::RuntimeClient,
     thread: &Thread,
     interaction: &Interaction,
-    prepared: &PreparedInteraction,
 ) -> Result<Option<RecursiveChildAdmission>, RecursiveAdmissionRefusal> {
     let Some(selection) = interaction.model_selection.as_ref() else {
         return Ok(None);
@@ -1640,11 +1634,13 @@ async fn admit_recursive_child(
         .resolve_execution_model_plan(&thread.harness_configuration_name, selection)
         .await
         .map_err(|error| refused("model_unavailable")(error.into()))?;
-    let harness_policy = prepared.harness_policy().ok_or_else(|| {
-        refused("configuration")(ApiError::internal(
-            "a recursive child with a model selection requires its harness policy",
-        ))
-    })?;
+    // The harness policy current at launch, as a root turn loads it, so the host
+    // leases under the same revision the product records the attempt against.
+    let harness_policy = state
+        .product
+        .execution_harness_policy(&thread.harness_configuration_name)
+        .await
+        .map_err(|error| refused("configuration")(error.into()))?;
     let working_directory = thread_working_directory(state, thread)
         .await
         .map_err(refused("configuration"))?;
@@ -1666,7 +1662,7 @@ async fn admit_recursive_child(
         model_plan: Some(&model_plan),
         attempt_admission_id: Some(&attempt_admission_id),
         execution_lease_id: None,
-        harness_policy: Some(harness_policy),
+        harness_policy: Some(&harness_policy),
         invocation: None,
         input_identity: None,
         input_digest: None,
@@ -1691,7 +1687,7 @@ async fn admit_recursive_child(
             model_plan: model_plan.clone(),
             admitted_plan: admission.admitted_plan.clone(),
             adapter_version: admission.adapter_implementation_version,
-            expected_harness_policy: Some(harness_policy),
+            expected_harness_policy: Some(&harness_policy),
             execution_lease_id: &admission.execution_lease_id,
         })
         .await;
@@ -1707,6 +1703,7 @@ async fn admit_recursive_child(
     };
     Ok(Some(RecursiveChildAdmission {
         model_plan,
+        harness_policy,
         execution_lease_id: admission.execution_lease_id,
         attempt_admission_id,
         attempt_id,
@@ -1784,13 +1781,31 @@ async fn settle_terminal_recursive_child(
     }
 }
 
+/// How a recursive child's launch failed, which decides what its cleanup must undo.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LaunchFailure {
+    /// Admission refused the child with this reason, so no provider run was ever started.
+    AdmissionRefused(&'static str),
+    /// The start was requested and reported failure; it may still have run.
+    StartFailed,
+}
+
+impl LaunchFailure {
+    fn reason(self) -> &'static str {
+        match self {
+            Self::AdmissionRefused(reason) => reason,
+            Self::StartFailed => "provider_start_failed",
+        }
+    }
+}
+
 fn spawn_failed_recursive_start_cleanup(
     state: ApiState,
     thread: Thread,
     interaction: Interaction,
     prepared: PreparedInteraction,
     permission_origin_digest: String,
-    reason: &'static str,
+    failure: LaunchFailure,
     attempt_id: Option<i64>,
 ) {
     tokio::spawn(async move {
@@ -1798,17 +1813,21 @@ fn spawn_failed_recursive_start_cleanup(
         let Some(runtime) = state.runtime.as_ref() else {
             return;
         };
-        loop {
-            match runtime
-                .cancel_invoked_completion(thread.id.value(), completion_id)
-                .await
-            {
-                Ok(_) => break,
-                Err(error) => eprintln!(
-                    "recursive completion {completion_id} start-failure cancellation retry: {error}"
-                ),
+        // Only a requested start can have left a run to cancel. A refused admission goes
+        // straight to failing the child, so an unreachable harness cannot hold it active.
+        if failure == LaunchFailure::StartFailed {
+            loop {
+                match runtime
+                    .cancel_invoked_completion(thread.id.value(), completion_id)
+                    .await
+                {
+                    Ok(_) => break,
+                    Err(error) => eprintln!(
+                        "recursive completion {completion_id} start-failure cancellation retry: {error}"
+                    ),
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             }
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
         // Another actor may terminate the current first: the parent's stop, or the
         // child's own Return when the start ran but its acknowledgement was lost.
@@ -1818,7 +1837,7 @@ fn spawn_failed_recursive_start_cleanup(
                 .fail_graph_completion(
                     completion_id,
                     &format!("recursive-provider-start:{}", interaction.id),
-                    reason,
+                    failure.reason(),
                 )
                 .await
             {
@@ -2247,8 +2266,9 @@ const PROVIDER_END_UNREACHABLE_LIMIT: u32 = 20;
 /// only when the run ends, so only its answer ends the wait. A timeout means the run is still
 /// going. A request that never reached the host proves nothing, so it is retried. Once the
 /// host has been unreachable for long enough, the child is cancelled. If the host reports
-/// no such run, it has ended; if the cancel is accepted, the next answer reports the end;
-/// and if the cancel fails too, the wait gives up.
+/// no such run, it has ended; otherwise the wait goes on, cancelling again after each run
+/// of unreachable observations. Until the host confirms the end, the child's attempt and
+/// leases stay held: an unreachable host proves nothing about its provider.
 async fn await_provider_end(
     runtime: &crate::runtime::RuntimeClient,
     thread_id: i64,
@@ -2261,6 +2281,8 @@ async fn await_provider_end(
             .observe_invoked_completion(thread_id, completion_id)
             .await
         {
+            // The host still runs the child, whether it said so or the wait timed out.
+            Ok(observation) if observation["running"] == true => unreachable = 0,
             Err(error) if error.is_timeout() => unreachable = 0,
             Err(error) if !error.is_host_answer() => {
                 unreachable += 1;
@@ -2268,14 +2290,12 @@ async fn await_provider_end(
                     eprintln!(
                         "recursive completion {completion_id} provider could not be observed; cancelling it: {error}"
                     );
-                    match runtime
+                    // The host answered that it runs no such child: the run has ended.
+                    if let Ok(false) = runtime
                         .cancel_invoked_completion(thread_id, completion_id)
                         .await
                     {
-                        Err(_) => return Err(error),
-                        // The host answered that it runs no such child: the run has ended.
-                        Ok(false) => return Ok(serde_json::json!({"cancelled": false})),
-                        Ok(true) => {}
+                        return Ok(serde_json::json!({"cancelled": false}));
                     }
                     unreachable = 0;
                     continue;

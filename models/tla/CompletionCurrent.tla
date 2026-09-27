@@ -187,7 +187,8 @@ LaunchActivate(l, ok) ==
 
 \* admit_recursive_child: a selected child resolves its plan, the host leases every
 \* provider in it, and the product records the running attempt before the start. A
-\* failed admission holds no lease or attempt and fails the child through cleanup.
+\* failed admission holds no lease or attempt and fails the child through cleanup,
+\* which skips the cancel: no run was started, so none can be left to stop.
 \* An unselected child, and every child before ChildAdmission, passes straight on.
 LaunchAdmit(l, ok) ==
   /\ appUp /\ lpc[l] = "admit"
@@ -197,7 +198,7 @@ LaunchAdmit(l, ok) ==
                /\ lpc' = [lpc EXCEPT ![l] = "start"]
                /\ UNCHANGED <<cleanPc, cleanKey>>
           ELSE /\ lpc' = [lpc EXCEPT ![l] = "done"]
-               /\ cleanPc' = "cancel" /\ cleanKey' = "admit"
+               /\ cleanPc' = "fail" /\ cleanKey' = "admit"
                /\ UNCHANGED <<attempt, lease>>
      ELSE /\ ok
           /\ lpc' = [lpc EXCEPT ![l] = "start"]

@@ -374,7 +374,7 @@
         "ChildSettles",
         "LeaseReleased"
       ],
-      "summary": "The host refuses a selected child's admission; the child never starts, holds no lease or attempt, and cleanup fails it with the refusal's reason.",
+      "summary": "The host refuses a selected child's admission; the child never starts, holds no lease or attempt, and cleanup fails it with the refusal's reason without cancelling anything.",
       "steps": [
         [
           "LaunchCheck",
@@ -397,9 +397,6 @@
           "LaunchAdmit",
           1,
           "fail"
-        ],
-        [
-          "CleanCancel"
         ],
         [
           "CleanFail"
