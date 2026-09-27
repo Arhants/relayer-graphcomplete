@@ -305,7 +305,11 @@ impl World {
             .route(
                 "/sessions/{id}/invoked-completions/{completion}",
                 routing::get(
-                    move |axum::extract::Query(query): axum::extract::Query<
+                    move |axum::extract::Path((_, completion)): axum::extract::Path<(
+                        String,
+                        i64,
+                    )>,
+                          axum::extract::Query(query): axum::extract::Query<
                         HashMap<String, String>,
                     >| {
                         let control = observe_control.clone();
@@ -324,7 +328,7 @@ impl World {
                                     return (
                                         StatusCode::OK,
                                         axum::Json(serde_json::json!({
-                                            "completionId": 0,
+                                            "completionId": completion,
                                             "running": true
                                         })),
                                     );
@@ -344,7 +348,9 @@ impl World {
                                     _ => {
                                         return (
                                             StatusCode::OK,
-                                            axum::Json(serde_json::json!({"completionId":0})),
+                                            axum::Json(
+                                                serde_json::json!({"completionId":completion}),
+                                            ),
                                         );
                                     }
                                 }
@@ -1111,6 +1117,8 @@ async fn provider_end_waits_through_observation_timeouts() {
     let observed_calls = calls.clone();
     let pending_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let observed_pending_calls = pending_calls.clone();
+    let malformed_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let observed_malformed_calls = malformed_calls.clone();
     let harness = Router::new()
         .route(
             "/sessions/{id}/invoked-completions/7",
@@ -1121,6 +1129,22 @@ async fn provider_end_waits_through_observation_timeouts() {
                         tokio::time::sleep(Duration::from_millis(400)).await;
                     }
                     axum::Json(serde_json::json!({"completionId":7}))
+                }
+            }),
+        )
+        // A 200 that cannot be read, or that names another run, is not the run's end.
+        .route(
+            "/sessions/{id}/invoked-completions/12",
+            routing::get(move || {
+                let calls = observed_malformed_calls.clone();
+                async move {
+                    let call = calls.fetch_add(1, Ordering::SeqCst);
+                    let body = match call {
+                        0 | 1 => "{\"completionId\":".to_owned(),
+                        2 => serde_json::json!({"completionId": 99}).to_string(),
+                        _ => serde_json::json!({"completionId": 12}).to_string(),
+                    };
+                    (StatusCode::OK, [("content-type", "application/json")], body)
                 }
             }),
         )
@@ -1204,6 +1228,15 @@ async fn provider_end_waits_through_observation_timeouts() {
         pending_calls.load(Ordering::SeqCst),
         4,
         "each `running` answer was asked again"
+    );
+    let ended = await_provider_end(&runtime, 1, 12, Duration::from_millis(1))
+        .await
+        .unwrap();
+    assert_eq!(ended, serde_json::json!({"completionId":12}));
+    assert_eq!(
+        malformed_calls.load(Ordering::SeqCst),
+        4,
+        "unreadable and mismatched answers are asked again, not read as the run's end"
     );
 
     graph_task.abort();
@@ -1782,5 +1815,44 @@ async fn a_child_stopped_by_a_cancelled_approval_settles_and_ends_its_attempt() 
             .await
             .unwrap();
     assert_eq!(outcome, "cancelled");
+    world.finish();
+}
+
+/// A product-server restart that finds a child still launching fails its graph, since the
+/// server cannot resume observing it, but a harness that outlived the server may still run
+/// it. The child's attempt, and its leases, stay held for the resumed provider-end wait.
+#[tokio::test]
+async fn a_restart_keeps_a_launching_childs_leases_held() {
+    let mut world = World::new("restart-launching", true).await;
+    for step in [
+        serde_json::json!(["LaunchCheck", 1]),
+        serde_json::json!(["LaunchReserve", 1]),
+        serde_json::json!(["LaunchClaim", 1]),
+        serde_json::json!(["LaunchActivate", 1, "ok"]),
+        serde_json::json!(["LaunchAdmit", 1, "ok"]),
+        serde_json::json!(["LaunchStart", 1, "ok"]),
+    ] {
+        world.apply(step.as_array().unwrap(), false).await;
+    }
+    let restarted = SqliteProductStore::open(&world.root.join("product.sqlite3"))
+        .await
+        .unwrap();
+    crate::app_server::reconcile_interrupted_recursive_completion_executions(
+        &restarted,
+        &world.runtime,
+    )
+    .await
+    .unwrap();
+    let state = world.observe().await;
+    assert_eq!(
+        state["phase"], "settled",
+        "restart settles the launching child: {state}"
+    );
+    assert_eq!(state["life"], "failed", "its graph is failed: {state}");
+    assert_eq!(
+        state["attempt"], "running",
+        "its attempt stays held: {state}"
+    );
+    assert_eq!(state["lease"], "held", "and so do its leases: {state}");
     world.finish();
 }

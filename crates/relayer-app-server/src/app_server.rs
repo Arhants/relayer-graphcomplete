@@ -290,7 +290,7 @@ async fn reconcile_interrupted_interaction(
     Ok(())
 }
 
-async fn reconcile_interrupted_recursive_completion_executions(
+pub(crate) async fn reconcile_interrupted_recursive_completion_executions(
     storage: &SqliteProductStore,
     runtime: &RuntimeClient,
 ) -> anyhow::Result<usize> {

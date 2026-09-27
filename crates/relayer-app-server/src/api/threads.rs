@@ -2351,6 +2351,12 @@ async fn await_provider_end(
                 unreachable = 0;
                 cancel_if_terminal(runtime, thread_id, completion_id).await;
             }
+            // Only an observation naming this child, and not saying it still runs, reports
+            // its end; any other shape is retried rather than read as the provider exiting.
+            Ok(observation) if observation["completionId"].as_i64() != Some(completion_id) => {
+                unreachable += 1;
+                tokio::time::sleep(retry_step * unreachable.min(10)).await;
+            }
             Err(error) if error.is_timeout() => {
                 unreachable = 0;
                 cancel_if_terminal(runtime, thread_id, completion_id).await;
@@ -3508,7 +3514,7 @@ mod tests {
                         {
                             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                         }
-                        axum::Json(serde_json::json!({"settled":true}))
+                        axum::Json(serde_json::json!({"completionId":202}))
                     }
                 }),
             )

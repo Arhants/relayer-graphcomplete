@@ -529,32 +529,27 @@ impl SqliteProductStore {
         }
 
         let previous_phase = phase_name(existing.phase);
-        let (settlement_json, safe_reason, status, output, error, attempt_outcome, failure) =
-            match settlement {
-                CompletionExecutionRestartSettlement::Accepted { output } => (
-                    Some(encode_json(&output)?),
-                    None,
-                    "accepted",
-                    Some(encode_json(&output)?),
-                    None,
-                    "accepted",
-                    None,
-                ),
-                CompletionExecutionRestartSettlement::Failed { safe_reason } => {
-                    if safe_reason.is_empty() {
-                        return Err(conflict("restart failure requires a safe reason"));
-                    }
-                    (
-                        None,
-                        Some(safe_reason.clone()),
-                        "failed",
-                        None,
-                        Some(safe_reason),
-                        "execution_failed",
-                        Some("application_restart"),
-                    )
+        let (settlement_json, safe_reason, status, output, error) = match settlement {
+            CompletionExecutionRestartSettlement::Accepted { output } => (
+                Some(encode_json(&output)?),
+                None,
+                "accepted",
+                Some(encode_json(&output)?),
+                None,
+            ),
+            CompletionExecutionRestartSettlement::Failed { safe_reason } => {
+                if safe_reason.is_empty() {
+                    return Err(conflict("restart failure requires a safe reason"));
                 }
-            };
+                (
+                    None,
+                    Some(safe_reason.clone()),
+                    "failed",
+                    None,
+                    Some(safe_reason),
+                )
+            }
+        };
         let fence = sqlx::query(
             "UPDATE completion_executions
              SET settlement_json=?1,safe_reason=?2,phase='settled',updated_at=?3
@@ -588,9 +583,7 @@ impl SqliteProductStore {
         .execute(&mut *transaction)
         .await?;
         // A cancelled approval may already have stopped the interaction; a failed
-        // settlement keeps that stop, and its attempt ends as cancelled.
-        let mut attempt_outcome = attempt_outcome;
-        let mut failure = failure;
+        // settlement keeps that stop.
         if interaction.rows_affected() != 1 {
             let stopped: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM interactions WHERE id=?1 AND completion_status='stopped' AND completion_output_json IS NULL)",
@@ -603,25 +596,11 @@ impl SqliteProductStore {
                     "product interaction changed during restart reconciliation",
                 ));
             }
-            attempt_outcome = "cancelled";
-            failure = None;
         }
-        sqlx::query(
-            "UPDATE interaction_attempts
-             SET finished_at=?1,outcome=?2,failure_category=?3,effect_boundary=?4
-             WHERE interaction_id=?5 AND outcome='running'",
-        )
-        .bind(timestamp)
-        .bind(attempt_outcome)
-        .bind(failure)
-        .bind(if status == "accepted" {
-            "graph_write"
-        } else {
-            "unknown"
-        })
-        .bind(interaction_id.value())
-        .execute(&mut *transaction)
-        .await?;
+        // The attempt stays running: a harness that outlived this server may still be
+        // running the child. Startup resumes the provider-end wait, which cancels the
+        // now-terminal child and ends the attempt, with its settled outcome, only once the
+        // harness confirms the run ended.
         transaction.commit().await?;
         Ok(true)
     }

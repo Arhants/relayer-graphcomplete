@@ -2486,9 +2486,10 @@ impl RuntimeError {
         }
     }
 
-    /// Whether the harness itself answered, as opposed to the request never reaching it.
+    /// Whether the harness itself answered with an error, as opposed to the request never
+    /// reaching it or its answer arriving unreadable.
     pub(crate) fn is_host_answer(&self) -> bool {
-        matches!(self, Self::Remote { .. } | Self::ResponseDecode(_))
+        matches!(self, Self::Remote { .. })
     }
 
     /// The graph failure reason for an error that ends a completion before its provider
