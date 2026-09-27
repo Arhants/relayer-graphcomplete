@@ -45,4 +45,29 @@ Adversarial review by /root/contract_review found no blocking findings across th
 Review covered lifecycle, reference correctness, child handoff and production
 integration mapping; it did not independently run tests or certify live output.
 Existing PR CI migration-number collision and packaged dependency closure findings
-remain unresolved. No test was deleted. Fresh live result pending.
+remain unresolved. No test was deleted. Fresh live result follows.
+
+## Live result on 5e99a30295a77c4995e878ee9f3924326eea00fe
+
+Thread8 / interaction8 / graph completion62 accepted in 413.172 seconds with
+52 tool calls. Exact query/model/settings were preserved. Trace user prompt
+contains the compiler reference, publication contract and connected-layer example.
+The author created 19 nodes in five layers (six root nodes), registered all
+navigation, advanced root successfully and submitted successfully. A redundant
+post-submit get_current call correctly failed on terminal authority; the product
+still persisted outcome=accepted. No cancellation was needed.
+
+The live app visibly rendered the sunset child layer and its authored HTML/CSS
+relative-air-path bar chart. This proves a rendered visual rather than just
+compiled markup; it is not an exhaustive visual/scientific-quality review. No
+image assets or native image inspection were exercised.
+
+Residual inefficiency: ten initial API/source exploration calls, then authoring
+and repairs including HTML literal/binding count, unsupported CSS, and descriptions
+on pill actions (descriptions require card variant). Prompt delivery did not
+eliminate exploratory behavior. No immutable_action_source failure occurred.
+
+Local receipt: .relayer/live/pr500/live-smoke-authoring-contract-2026-09-27.json.
+Native trace basename: 01a0e4de-e87a-74a7-aa70-5e8f2dfce574.jsonl.
+Product URL during this dev session: http://127.0.0.1:54975/?threadId=8&interactionId=8.
+PR remains draft; no merge or release proof is claimed.
