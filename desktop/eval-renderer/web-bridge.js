@@ -65,8 +65,4 @@
     },
   };
   window.relayerEvalTrace = { load: (id, turn) => call("loadCandidateTrace", id, turn) };
-  window.relayerEvalReview = {
-    context: () => fetch("/eval-api/context").then(result),
-    registerPresentationAdapter: (adapter) => { window.__evalPresentation = adapter; },
-  };
 })();

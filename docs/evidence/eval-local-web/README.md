@@ -1,5 +1,9 @@
 # Developer-only Eval web host
 
+The subsequent [product consolidation](../eval-product-consolidation/README.md)
+replaces the human review proxy and legacy dashboard evidence preload. This
+record describes the original web migration; the successor maps current seams.
+
 The explicit product decision is in ADR 0003 and PRD section 9: Eval runs from a
 checkout, its terminal owns the local backend, and it has no desktop package.
 The production renderer, product persistence, graph authority, harness-native

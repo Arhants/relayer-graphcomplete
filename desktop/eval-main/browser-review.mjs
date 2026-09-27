@@ -1,28 +1,16 @@
 import { chromium } from "playwright";
+import { createProductReview } from "../main/services/product-review.mjs";
 import { ReviewSession } from "./review-session.mjs";
 
 // Every judge gets a fresh context: no dashboard or human annotation authority.
 export async function openBrowserReview({ productSession, context, executionId, threadId, turnId,
   rootLayerId, artifactDirectory, inputOperatorAvailable = false, browser }) {
-  const execution = context.cases.find((item) => item.executionId === executionId);
-  if (!context.readOnly || !execution?.threadIds?.some((id) => String(id) === String(threadId))) {
-    throw new Error("The review thread does not belong to its execution.");
-  }
-  const isolated = await browser.newContext({ viewport: { width: 1480, height: 920 }, deviceScaleFactor: 1 });
+  const review = await createProductReview({ productSession, context, threadId, turnId, inputOperatorAvailable });
+  let isolated;
   try {
-    const cookie = productSession.readOnlyCookie;
-    if (!cookie) throw new Error("Review requires read-only authority.");
-    await isolated.addCookies([{ name: cookie.name, value: cookie.value, url: productSession.origin, httpOnly: true, sameSite: "Strict" }]);
-    await isolated.addInitScript((reviewContext) => {
-      window.relayerEvalReview = {
-        context: async () => reviewContext,
-        registerPresentationAdapter: (adapter) => { window.__evalPresentation = adapter; },
-      };
-    }, context);
+    isolated = await browser.newContext({ viewport: { width: 1480, height: 920 }, deviceScaleFactor: 1 });
     const page = await isolated.newPage();
-    const url = new URL("/", productSession.origin);
-    url.search = new URLSearchParams({ threadId: String(threadId), interactionId: String(turnId), review: "1", ...(inputOperatorAvailable ? { inputOperator: "1" } : {}) });
-    await page.goto(url.href);
+    await page.goto(review.url);
     await page.waitForFunction(({ executionId, threadId, turnId }) => {
       const state = window.__evalPresentation?.snapshot();
       return state?.executionId === executionId && String(state.threadId) === String(threadId) && String(state.turnId) === String(turnId);
@@ -42,17 +30,15 @@ export async function openBrowserReview({ productSession, context, executionId, 
     };
     const session = new ReviewSession({ executionId, readOnly: true, transport, artifactDirectory,
       loadInputDraftRevision: async (id) => {
-        const response = await fetch(new URL(`/api/state?threadId=${encodeURIComponent(id)}`, productSession.origin), {
-          headers: { Cookie: `${cookie.name}=${cookie.value}` },
-        });
+        const response = await review.read(`/api/state?threadId=${encodeURIComponent(id)}`);
         if (!response.ok) throw new Error("Could not read the input draft revision.");
         return (await response.json()).inputDraftRevision;
       },
     });
     const state = await session.open();
     if (String(state.layerId) !== String(rootLayerId)) throw new Error("Review did not open the accepted root layer.");
-    return { session, state, release: () => isolated.close() };
-  } catch (error) { await isolated.close(); throw error; }
+    return { session, state, release: async () => { try { await isolated.close(); } finally { await review.close(); } } };
+  } catch (error) { try { await isolated?.close(); } finally { await review.close(); } throw error; }
 }
 
 export function createJudgeBrowser() {

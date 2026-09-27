@@ -79,10 +79,39 @@ pub(super) async fn product_state(
     State(state): State<ApiState>,
     headers: HeaderMap,
     Query(query): Query<StateQuery>,
+    review: Option<axum::Extension<super::review_sessions::ReviewSession>>,
 ) -> Result<Json<ProductStateResponse>, ApiError> {
     authorize_read(&state, &headers)?;
     let thread_id = query.thread_id.map(ThreadId::try_from).transpose()?;
+    let review = review.map(|axum::Extension(scope)| scope);
+    if let Some(scope) = &review {
+        let selected = thread_id.ok_or_else(|| ApiError::forbidden("review requires a thread"))?;
+        if !scope.thread_ids.contains(&selected.value()) {
+            return Err(ApiError::forbidden("thread outside review"));
+        }
+        state.product.get_thread(selected).await?;
+    }
     let mut product_state = state.product.load_state(thread_id).await?;
+    if let Some(scope) = review {
+        if !product_state
+            .threads
+            .iter()
+            .any(|view| Some(view.thread.id) == thread_id && view.active)
+        {
+            return Err(ApiError::not_found("review thread unavailable"));
+        }
+        product_state
+            .threads
+            .retain(|view| scope.thread_ids.contains(&view.thread.id.value()));
+        let projects: std::collections::HashSet<_> = product_state
+            .threads
+            .iter()
+            .filter_map(|view| view.thread.project_id)
+            .collect();
+        product_state
+            .projects
+            .retain(|project| projects.contains(&project.id));
+    }
     let input_draft_revision = match thread_id {
         Some(id)
             if product_state
@@ -174,6 +203,9 @@ pub(super) async fn product_state(
 }
 
 fn annotation_capability(state: &ApiState, headers: &HeaderMap) -> bool {
+    if let Some(review) = super::review_sessions::session(state, headers) {
+        return review.annotation.is_some();
+    }
     state
         .authenticator
         .annotation_token(headers)

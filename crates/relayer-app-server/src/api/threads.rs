@@ -1019,6 +1019,7 @@ pub(super) async fn get_action_destination(
     State(state): State<ApiState>,
     headers: HeaderMap,
     Path((thread_id, interaction_id, action_id)): Path<(i64, i64, i64)>,
+    review: Option<axum::Extension<super::review_sessions::ReviewSession>>,
 ) -> Result<Json<ActionDestinationResponse>, ApiError> {
     authorize_read(&state, &headers)?;
     let thread_id = ThreadId::try_from(thread_id)?;
@@ -1062,6 +1063,11 @@ pub(super) async fn get_action_destination(
         .product
         .get_interaction_by_graph_node_id(layer_owner.owner_interaction_node_id)
         .await?;
+    if let Some(axum::Extension(review)) = review
+        && !review.thread_ids.contains(&destination.thread_id.value())
+    {
+        return Err(ApiError::forbidden("destination outside review"));
+    }
     if is_reconciliation_pending(&destination) {
         reconcile_quarantined_interaction(&state.product, runtime, &mut destination).await?;
     }
@@ -3197,6 +3203,7 @@ mod tests {
             },
             approval_decisions: Arc::new(Mutex::new(HashMap::new())),
             annotation_sessions: Arc::new(Mutex::new(HashMap::new())),
+            review_sessions: Arc::new(Mutex::new(HashMap::new())),
             input_operator_sessions: Arc::new(Mutex::new(HashMap::new())),
             annotations_enabled: false,
             environment_inspector: crate::environment::EnvironmentInspector::new(),

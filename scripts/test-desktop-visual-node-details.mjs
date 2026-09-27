@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import { nodeDetailFixtureFactory } from "@relayer/eval-runner";
 
 import { EvalService } from "../desktop/eval-main/eval-service.mjs";
+import { createElectronReviewTransport } from "./lib/electron-review-transport.mjs";
 import { ReviewSession } from "../desktop/eval-main/review-session.mjs";
 import { loadReadyReviewWorkspace } from "../desktop/eval-main/review-workspace-readiness.mjs";
 import { GraphCompleteRuntimeService } from "../desktop/main/services/graphcomplete-runtime.mjs";
@@ -149,9 +150,8 @@ async function openReview({ execution, threadId, turnId, rootLayerId }) {
   const session = new ReviewSession({
     executionId: execution.id,
     readOnly: true,
-    webContents: window.webContents,
+    transport: createElectronReviewTransport({ webContents: window.webContents, ipc: ipcMain }),
     artifactDirectory,
-    ipc: ipcMain,
     loadInputDraftRevision: async (selectedThreadId) => {
       const state = await productRequest(productSession, `/api/state?threadId=${encodeURIComponent(selectedThreadId)}`);
       return state.inputDraftRevision;

@@ -22,6 +22,11 @@ impl DesktopSessionAuthenticator {
         }
     }
 
+    pub(crate) fn is_reserved_token(&self, token: &str) -> bool {
+        token == self.control_token.as_ref()
+            || self.read_only_control_token.as_deref() == Some(token)
+    }
+
     fn supplied_token<'a>(&self, headers: &'a HeaderMap) -> Option<&'a str> {
         cookie(headers, CONTROL_COOKIE)
     }
@@ -95,6 +100,9 @@ impl DesktopSessionAuthenticator {
 }
 
 pub(crate) fn authorize_read(state: &ApiState, headers: &HeaderMap) -> Result<(), ApiError> {
+    if super::review_sessions::session(state, headers).is_some() {
+        return Ok(());
+    }
     state.authenticator.authorize_read(headers)
 }
 

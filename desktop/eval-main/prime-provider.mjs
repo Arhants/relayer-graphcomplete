@@ -1,11 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { createProductManagedRuntimeInstaller } from "../main/managed-runtimes/product-installer.mjs";
 import { createManagedRuntimeResolver } from "../main/managed-runtimes/resolver.mjs";
-import { createProviderComposition } from "../main/providers/provider-composition.mjs";
-import { productionProviderAdapterRegistry, productionHarnessRuntimeDescriptor, productionProviderRuntimeDependencies } from "../main/providers/provider-adapter-registry.mjs";
-import { checkPrimeManagedRuntime } from "../main/services/prime-managed-runtime.mjs";
-import { createHarnessReadinessCoordinator } from "../main/services/harness-readiness.mjs";
-import { HARNESS_MANAGED_RUNTIME_REQUIREMENTS, managedRuntimeRequirementForHarness } from "../shared/managed-runtime-requirements.mjs";
+import { createProductProviderComposition } from "../main/providers/product-provider-composition.mjs";
+import { productionHarnessRuntimeDescriptor, productionProviderRuntimeDependencies } from "../main/providers/provider-adapter-registry.mjs";
+import { managedRuntimeRequirementForHarness } from "../shared/managed-runtime-requirements.mjs";
 
 // Explicit development opt-in. Credentials never become part of an Eval selection
 // or run record; the Eval host retains them in memory until shutdown.
@@ -48,7 +46,7 @@ export function createEvalManagedPrimeRuntime({ root, appRoot, pythonClientRoot,
 
 export function createEvalPrimeProvider({ userDataDirectory, productServer, productSession,
   runtimeSession, graphRuntime, managedPrimeRuntime, managedCodexRuntime,
-  fetchImpl = fetch, createComposition = createProviderComposition }) {
+  fetchImpl = fetch, createComposition }) {
   const request = async (path, { method = "GET", body } = {}) => {
     const response = await fetchImpl(new URL(path, productSession.origin), {
       method, headers: { "Content-Type": "application/json",
@@ -62,16 +60,6 @@ export function createEvalPrimeProvider({ userDataDirectory, productServer, prod
   const configurations = new Map([...runtimeSession.configurations].filter(([, configuration]) => (
     configuration.implementation === "prime.agent"
   )));
-  const readiness = createHarnessReadinessCoordinator({ configurations,
-    digestConfiguration: runtimeSession.digestConfiguration,
-    runtimeRequirements: HARNESS_MANAGED_RUNTIME_REQUIREMENTS,
-    prepareRecipe: () => managedPrimeRuntime.prepare(),
-    checkers: { "prime.agent": ({ runtime }) => checkPrimeManagedRuntime({ runtime }) },
-    publishAvailability: async (updates) => {
-      await productServer.publishHarnessReadiness(updates);
-      await graphRuntime.recordHarnessReadiness(updates);
-    },
-  });
   const entries = new Map();
   const credentialStore = {
     set: async (reference, value) => { entries.set(reference, structuredClone(value)); },
@@ -79,11 +67,10 @@ export function createEvalPrimeProvider({ userDataDirectory, productServer, prod
     delete: async (reference) => entries.delete(reference),
     listReferences: async () => [...entries.keys()],
   };
-  const composition = createComposition({
-    registry: productionProviderAdapterRegistry,
-    definitionStore: productServer.providerDefinitionStore(),
+  const composition = createProductProviderComposition({
+    runtimeSession, graphRuntime, productServer, configurations, createComposition,
+    prepareRecipe: () => managedPrimeRuntime.prepare(),
     credentialStore,
-    providerStatuses: () => productServer.providerStatuses(),
     runtimeDependencies: async (definition) => {
       if (definition.accessContract === "secret@1") {
         return productionProviderRuntimeDependencies(definition, {});
@@ -99,8 +86,6 @@ export function createEvalPrimeProvider({ userDataDirectory, productServer, prod
         environment: { ...runtime.environment, RELAYER_CODEX_BINARY: runtime.executable },
       };
     },
-    evaluateReadiness: (input) => readiness.evaluate(input),
-    publishCatalog: (snapshot, options) => productServer.publishProviderCatalog(snapshot, options),
   });
   let modelIds;
   let familyId;

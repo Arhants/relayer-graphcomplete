@@ -235,7 +235,7 @@ describe("desktop skeleton", () => {
     expect(rendererMain).toContain('import { bindComposerKeydown } from "./product-workspace/workspace.js";');
     expect(rendererMain).toContain('bindComposerKeydown($("#newThreadPrompt"), () => {');
     expect(rendererMain).toContain('openNewThreadModelPicker("model")');
-    expect(desktopMain).toContain("RelayerAppServerService");
+    expect(desktopMain).toContain("createProductBackend");
     expect(desktopMain.match(/issueErrorCapability,/gu)).toHaveLength(2);
     expect(desktopMain).toContain("authenticatedErrorReporting?.issueCapability({ component, processGeneration }) ?? null");
     expect(desktopMain).toContain("createDesktopAccountTelemetry");
@@ -246,7 +246,7 @@ describe("desktop skeleton", () => {
     expect(desktopMain).toContain("productServer?.refreshErrorCapability()");
     expect(desktopMain).toContain('allowHarnessOverride: !app.isPackaged && defaultHarnessConfiguration.startsWith("prime-agent-")');
     expect(desktopMain).toContain("productServer.start()");
-    expect(desktopMain).toContain("productServer.close()");
+    expect(desktopMain).toContain("backend.close()");
     expect(desktopMain).not.toContain("startModelCatalogRefreshServer");
     expect(desktopMain).not.toContain("providerCatalogRefreshSession");
     expect(desktopPreload).not.toContain("provider-catalog/refresh");
@@ -407,10 +407,10 @@ describe("desktop skeleton", () => {
     expect(productPackaging).toContain('"!eval-renderer/**/*"');
     expect(productPackaging).toContain('"!preload/eval-*.cjs"');
     expect(evalMain).toContain("GraphCompleteRuntimeService");
-    expect(evalMain).toContain("RelayerAppServerService");
+    expect(evalMain).toContain("createProductBackend");
     expect(evalMain).toContain("allowHarnessOverride: true");
     expect(evalMain).toContain("enableReadOnlySession: true");
-    expect(webHost).toContain("productSession.readOnlyCookie");
+    expect(webHost).not.toContain("productSession.readOnlyCookie");
     expect(evalMain).toContain("createEvalDashboard");
     expect(evalMain).toContain("createReview(executionId)");
     expect(evalMain).toContain("evalRuntimeTarget({ isPackaged: false, environment: process.env })");

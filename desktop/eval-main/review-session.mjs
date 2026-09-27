@@ -2,7 +2,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-const COMMAND_CHANNEL = "relayer-eval:review-command";
 
 function sha256(value) {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
@@ -102,25 +101,18 @@ export class ReviewSession {
   constructor({
     executionId,
     readOnly,
-    webContents,
     transport,
     artifactDirectory,
-    ipc,
     loadInputDraftRevision,
     commandTimeoutMs = 5_000,
   }) {
     if (!executionId) throw new Error("ReviewSession requires an execution ID.");
     if (readOnly !== true) throw new Error("ReviewSession requires server-enforced read-only authority.");
-    if (!transport && (!webContents?.send || !webContents?.capturePage || !webContents?.getURL)) {
-      throw new Error("ReviewSession requires Electron WebContents.");
-    }
+    if (!transport?.command || !transport?.capture || !transport?.url || !transport?.isClosed) throw new Error("ReviewSession requires a review transport.");
     if (!artifactDirectory) throw new Error("ReviewSession requires a local artifact directory.");
-    if (!transport && (!ipc?.on || !ipc?.removeListener)) throw new Error("ReviewSession requires Electron ipcMain.");
     this.transport = transport;
     this.executionId = executionId;
-    this.webContents = webContents;
     this.artifactDirectory = artifactDirectory;
-    this.ipc = ipc;
     this.loadInputDraftRevision = loadInputDraftRevision;
     this.commandTimeoutMs = commandTimeoutMs;
     this.opened = false;
@@ -129,7 +121,7 @@ export class ReviewSession {
   }
 
   async open() {
-    const location = new URL(this.transport ? this.transport.url() : this.webContents.getURL());
+    const location = new URL(this.transport.url());
     if (
       location.protocol !== "http:"
       || location.hostname !== "127.0.0.1"
@@ -163,11 +155,10 @@ export class ReviewSession {
         const prepared = target.kind === "viewport"
           ? { index: tile.index, clip: plan.clip }
           : await this.#rendererCommand("prepareCaptureTile", tile);
-        const capture = this.transport ? await this.transport.capture(prepared.clip) : null;
-        const image = capture ? null : await this.webContents.capturePage(prepared.clip);
-        const bytes = capture ? capture.bytes : image.toPNG();
+        const capture = await this.transport.capture(prepared.clip);
+        const bytes = capture.bytes;
         if (!bytes.length) throw new Error(`Review screenshot tile ${tile.index} is empty.`);
-        const size = capture || image.getSize();
+        const size = capture;
         tileArtifacts.push({
           index: tile.index,
           row: tile.row,
@@ -338,7 +329,7 @@ export class ReviewSession {
 
   #assertOpen() {
     if (!this.opened) throw new Error("ReviewSession must be opened before using tools.");
-    if ((this.transport ? this.transport.isClosed() : this.webContents.isDestroyed?.())) throw new Error("The production review window is closed.");
+    if (this.transport.isClosed()) throw new Error("The production review window is closed.");
   }
 
   async #snapshot() {
@@ -360,32 +351,10 @@ export class ReviewSession {
   }
 
   #rendererCommand(command, payload) {
-    if (this.transport) {
-      let timer;
-      return Promise.race([
-        this.transport.command(command, payload),
-        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Production review command timed out: ${command}`)), this.commandTimeoutMs); }),
-      ]).finally(() => clearTimeout(timer));
-    }
-    if ((this.transport ? this.transport.isClosed() : this.webContents.isDestroyed?.())) return Promise.reject(new Error("The production review window is closed."));
-    const responseChannel = `relayer-eval:review-response:${randomUUID()}`;
-    return new Promise((resolve, reject) => {
-      const cleanup = () => {
-        clearTimeout(timeout);
-        this.ipc.removeListener(responseChannel, onResponse);
-      };
-      const onResponse = (event, response) => {
-        if (event.sender !== this.webContents) return;
-        cleanup();
-        if (response?.error) reject(new Error(response.error));
-        else resolve(response?.result);
-      };
-      const timeout = setTimeout(() => {
-        cleanup();
-        reject(new Error(`Production review command timed out: ${command}`));
-      }, this.commandTimeoutMs);
-      this.ipc.on(responseChannel, onResponse);
-      this.webContents.send(COMMAND_CHANNEL, { responseChannel, command, payload });
-    });
+    let timer;
+    return Promise.race([
+      this.transport.command(command, payload),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Production review command timed out: ${command}`)), this.commandTimeoutMs); }),
+    ]).finally(() => clearTimeout(timer));
   }
 }

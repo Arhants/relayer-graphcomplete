@@ -310,6 +310,13 @@ fn annotation_session(
     headers: &HeaderMap,
     thread_id: ThreadId,
 ) -> Result<AnnotationSession, ApiError> {
+    if let Some(review) = super::review_sessions::session(state, headers) {
+        let annotation = review.annotation.ok_or_else(ApiError::read_only)?;
+        if !annotation.thread_ids.contains(&thread_id.value()) {
+            return Err(ApiError::forbidden("thread outside review"));
+        }
+        return Ok(annotation);
+    }
     // Annotation authority is an additive capability on a read-only product
     // session, not an alternative way to authenticate to the product server.
     authorize_read(state, headers)?;

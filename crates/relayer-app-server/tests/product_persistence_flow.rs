@@ -2541,6 +2541,37 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
         })
     );
 
+    // Native browser sessions constrain the resolved destination as well as its source.
+    for (token, roster, expected) in [
+        (
+            "a".repeat(64),
+            vec![source_thread_id],
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            "b".repeat(64),
+            vec![source_thread_id, result_thread_id],
+            StatusCode::OK,
+        ),
+    ] {
+        assert_eq!(app.clone().oneshot(api_request("POST", "/api/internal/review-sessions", Some(json!({"token": token, "context": {"readOnly": true, "cases": [{"threadIds": roster}]}})), true)).await.unwrap().status(), StatusCode::CREATED);
+        let mut request = api_request(
+            "GET",
+            &format!(
+                "/api/threads/{source_thread_id}/interactions/{source_interaction_id}/actions/41/destination"
+            ),
+            None,
+            true,
+        );
+        request
+            .headers_mut()
+            .insert("authorization", format!("Bearer {token}").parse().unwrap());
+        assert_eq!(
+            app.clone().oneshot(request).await.unwrap().status(),
+            expected
+        );
+    }
+
     let state = response_json(
         app.clone()
             .oneshot(api_request_with_token(
@@ -8812,4 +8843,401 @@ fn test_execution_admission(body: &Value, lease_id: &str, version: &str) -> Valu
         "adapterImplementationVersion": version,
         "admittedPlan": admitted_plan,
     })
+}
+
+#[tokio::test]
+async fn native_review_sessions_scope_reads_annotations_and_revoke_without_cookie_upgrade() {
+    let root = tempfile::tempdir().unwrap();
+    let app = open_app(&root.path().join("product.sqlite3"), root.path()).await;
+    let mut ids = Vec::new();
+    let mut projects = Vec::new();
+    for message in ["reviewed", "unrelated"] {
+        let path = root.path().join(message);
+        fs::create_dir_all(&path).unwrap();
+        let project = response_json(
+            app.clone()
+                .oneshot(api_request(
+                    "POST",
+                    "/api/projects",
+                    Some(json!({"path": path, "name": message})),
+                    true,
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        projects.push(project["id"].as_i64().unwrap());
+        let response = app
+            .clone()
+            .oneshot(api_request(
+                "POST",
+                "/api/threads",
+                Some(json!({"initialMessage": message, "projectId": projects.last().unwrap()})),
+                true,
+            ))
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+        ids.push(response_json(response).await["id"].as_i64().unwrap());
+    }
+    let human = "a".repeat(64);
+    let judge = "b".repeat(64);
+    let context = json!({"readOnly": true, "executionId": "e1", "cases": [{"executionId": "e1", "threadIds": [ids[0]]}]});
+    for (token, author) in [
+        (&human, json!({"id": "reviewer", "displayName": "Reviewer"})),
+        (&judge, Value::Null),
+    ] {
+        let register = json!({"token": token, "context": context, "author": author});
+        let denied = app
+            .clone()
+            .oneshot(api_request(
+                "POST",
+                "/api/internal/review-sessions",
+                Some(register.clone()),
+                false,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
+        let accepted = app
+            .clone()
+            .oneshot(api_request(
+                "POST",
+                "/api/internal/review-sessions",
+                Some(register.clone()),
+                true,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(accepted.status(), StatusCode::CREATED);
+        let replacement = app
+            .clone()
+            .oneshot(api_request(
+                "POST",
+                "/api/internal/review-sessions",
+                Some(register),
+                true,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(replacement.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+    // Every request deliberately includes higher-authority cookies. The bearer wins.
+    let request = |token: &str, method: &str, path: &str, body: Option<Value>| {
+        let mut request = api_request(method, path, body, true);
+        request
+            .headers_mut()
+            .insert("authorization", format!("Bearer {token}").parse().unwrap());
+        request.headers_mut().insert(
+            "cookie",
+            "relayer_control=control; relayer_annotation=forged; relayer_input_operator=forged"
+                .parse()
+                .unwrap(),
+        );
+        request
+    };
+    let context_response = app
+        .clone()
+        .oneshot(request(&human, "GET", "/api/review-context", None))
+        .await
+        .unwrap();
+    assert_eq!(context_response.headers()["cache-control"], "no-store");
+    assert_eq!(context_response.headers()["referrer-policy"], "no-referrer");
+    assert_eq!(
+        context_response.headers()["content-security-policy"],
+        "frame-ancestors 'none'"
+    );
+    assert_eq!(
+        context_response.headers()["x-content-type-options"],
+        "nosniff"
+    );
+    let state = response_json(
+        app.clone()
+            .oneshot(request(
+                &human,
+                "GET",
+                &format!("/api/state?threadId={}", ids[0]),
+                None,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(state["threads"].as_array().unwrap().len(), 1);
+    assert_eq!(state["threads"][0]["id"], ids[0]);
+    assert_eq!(state["projects"].as_array().unwrap().len(), 1);
+    assert_eq!(state["projects"][0]["id"], projects[0]);
+    assert_eq!(
+        app.clone()
+            .oneshot(request(
+                &human,
+                "GET",
+                &format!("/api/projects/{}/environment", projects[0]),
+                None
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(request(
+                &human,
+                "GET",
+                &format!("/api/projects/{}/environment", projects[1]),
+                None
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    let grown = "c".repeat(64);
+    let grown_context = json!({"readOnly": true, "cases": [{"threadIds": ids}]});
+    assert_eq!(
+        app.clone()
+            .oneshot(api_request(
+                "POST",
+                "/api/internal/review-sessions",
+                Some(json!({"token": grown, "context": grown_context})),
+                true
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(request(
+                &grown,
+                "GET",
+                &format!("/api/threads/{}", ids[1]),
+                None
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+    assert!(
+        state["interactions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["threadId"] == ids[0])
+    );
+    for path in [
+        format!("/api/threads/{}", ids[1]),
+        format!("/api/state?threadId={}", ids[1]),
+        "/api/state".into(),
+        "/api/threads".into(),
+        "/api/projects".into(),
+        "/api/completions/1".into(),
+        "/api/completions/1/current".into(),
+        "/api/completions/1/result".into(),
+        format!("/api/threads/{}/unknown", ids[0]),
+    ] {
+        assert_eq!(
+            app.clone()
+                .oneshot(request(&human, "GET", &path, None))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN,
+            "{path}"
+        );
+    }
+    // Completion-broker admission must not turn a review token into execution
+    // authority, even when the caller also supplies the product control cookie.
+    for path in [
+        "/api/completions",
+        "/api/completions/1/stop",
+        "/api/internal/review-sessions",
+    ] {
+        assert_eq!(
+            app.clone()
+                .oneshot(request(&human, "POST", path, Some(json!({}))))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN,
+            "{path}"
+        );
+    }
+    // An unknown broker bearer must not inherit cookie authority on either
+    // execution routes or the separate internal provider-publication routes.
+    for (method, path) in [
+        ("POST", "/api/completions"),
+        ("GET", "/api/completions/1/current"),
+        ("GET", "/api/completions/1/result"),
+        ("POST", "/api/completions/1/stop"),
+        ("PUT", "/api/internal/provider-catalog"),
+    ] {
+        assert_eq!(
+            app.clone()
+                .oneshot(request(&"f".repeat(64), method, path, Some(json!({}))))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED,
+            "{path}"
+        );
+    }
+    let duplicate = format!("/api/state?threadId={}&threadId={}", ids[0], ids[1]);
+    assert_eq!(
+        app.clone()
+            .oneshot(request(&human, "GET", &duplicate, None))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    let path = format!("/api/threads/{}/annotations", ids[0]);
+    assert_eq!(
+        app.clone()
+            .oneshot(request(
+                &human,
+                "POST",
+                &format!("/api/threads/{}/annotations", ids[1]),
+                Some(json!({"anchor": {"kind":"thread"}, "comment":"foreign"}))
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(request(&"e".repeat(64), "GET", "/api/review-context", None))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let annotation = json!({"anchor": {"kind": "thread"}, "comment": "A review"});
+    assert_eq!(
+        app.clone()
+            .oneshot(request(&judge, "POST", &path, Some(annotation.clone())))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    let response = app
+        .clone()
+        .oneshot(request(&human, "POST", &path, Some(annotation)))
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    let saved = response_json(response).await;
+    assert_eq!(saved["revisions"][0]["authorId"], "reviewer");
+    assert_eq!(
+        app.clone()
+            .oneshot(request(
+                &human,
+                "POST",
+                &format!("/api/threads/{}/interactions", ids[0]),
+                Some(json!({"text": "blocked"}))
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    let encoded = format!(
+        "/api/threads/{}/interactions/999/nodes/999/detail-assets/image%20%E5%9C%96%2F%25?layerId=1",
+        ids[0]
+    );
+    // The encoded opaque asset reaches the typed product handler (missing interaction), not a percent-path rejection.
+    assert_eq!(
+        app.clone()
+            .oneshot(request(&human, "GET", &encoded, None))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    let mut cross_origin = request(&human, "GET", "/api/review-context", None);
+    cross_origin
+        .headers_mut()
+        .insert("origin", "https://foreign.invalid".parse().unwrap());
+    assert_eq!(
+        app.clone().oneshot(cross_origin).await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(api_request(
+                "DELETE",
+                "/api/internal/review-sessions",
+                Some(json!({"token": human})),
+                true
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    for path in [
+        "/api/review-context".to_owned(),
+        format!("/api/state?threadId={}", ids[0]),
+        path,
+    ] {
+        assert_eq!(
+            app.clone()
+                .oneshot(request(&human, "GET", &path, None))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    let pool = sqlite_pool(&root.path().join("product.sqlite3")).await;
+    let removed = response_json(
+        app.clone()
+            .oneshot(api_request(
+                "POST",
+                "/api/threads",
+                Some(json!({"initialMessage": "Removed"})),
+                true,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let removed_id = removed["id"].as_i64().unwrap();
+    let removed_token = "d".repeat(64);
+    assert_eq!(app.clone().oneshot(api_request("POST", "/api/internal/review-sessions", Some(json!({"token": removed_token, "context": {"readOnly": true, "cases": [{"threadIds": [removed_id]}]}})), true)).await.unwrap().status(), StatusCode::CREATED);
+    sqlx::query("PRAGMA foreign_keys=OFF")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM threads WHERE id=?1")
+        .bind(removed_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        app.clone()
+            .oneshot(request(
+                &removed_token,
+                "GET",
+                &format!("/api/state?threadId={removed_id}"),
+                None
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    pool.close().await;
+    assert_eq!(
+        app.oneshot(request(&judge, "GET", "/api/review-context", None))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
 }

@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
-import { createEvalDashboard, openHumanReview } from "./web-host.mjs";
+import { createEvalDashboard } from "./web-host.mjs";
+import { createProductReview } from "../main/services/product-review.mjs";
 import { createJudgeBrowser, openBrowserReview } from "./browser-review.mjs";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -41,7 +42,7 @@ import {
   RECURSIVE_TEMPORAL_FEATURES,
 } from "../main/services/graphcomplete-runtime.mjs";
 import { inspectCodexBrowserMcpRuntime } from "../main/services/codex-browser-mcp-runtime.mjs";
-import { RelayerAppServerService } from "../main/services/relayer-app-server.mjs";
+import { createProductBackend } from "../main/services/product-backend.mjs";
 import {
   createEvalCodexExecutionLease,
   createEvalCodexCatalogProvisioner,
@@ -84,7 +85,6 @@ const managedPrimeRuntime = createEvalManagedPrimeRuntime({
 });
 let primeProvider;
 let dashboard;
-const reviewSurfaces = new Set();
 const judgeBrowser = createJudgeBrowser();
 const evalStateFile = join(userDataDirectory, "eval-data", "test-runs.json");
 const graphRuntime = new GraphCompleteRuntimeService({
@@ -121,6 +121,7 @@ const graphRuntime = new GraphCompleteRuntimeService({
   onUnexpectedStop: () => shutdown(1),
 });
 let productServer;
+let backend;
 let evalService;
 let stopPromise;
 let stopping = false;
@@ -130,22 +131,15 @@ const profileLock = join(userDataDirectory, "eval-web.lock");
 let localAutorunStarted = false;
 
 async function createReview(executionId) {
-  const pending = openHumanReview({
-    executionId,
-    reviewContext: (id) => evalService.reviewContext(id),
-    productSession: () => productServer.start(),
-    assertRunning: requireRunning,
-    registerAnnotations: (session, scope) => controlProductRequest(session, "/api/internal/annotation-sessions", {
-      method: "POST", body: {
-        ...scope,
-        authorId: `local:${userInfo().username}`,
-        authorDisplayName: String(process.env.RELAYER_EVAL_ANNOTATOR_NAME || userInfo().username).trim(),
-      },
-    }),
+  requireRunning();
+  const context = evalService.reviewContext(executionId);
+  const threadId = context.cases.find((item) => item.executionId === executionId)?.threadIds?.[0];
+  const review = await createProductReview({
+    productSession: await productServer.start(), context, threadId,
+    author: { id: `local:${userInfo().username}`, displayName: String(process.env.RELAYER_EVAL_ANNOTATOR_NAME || userInfo().username).trim() },
   });
-  reviewSurfaces.add(pending);
-  pending.catch(() => reviewSurfaces.delete(pending));
-  return (await pending).url;
+  requireRunning();
+  return review.url;
 }
 
 async function openAutomatedReviewSession(input) {
@@ -173,10 +167,8 @@ async function start() {
     ));
   }
   requireRunning();
-  const runtimeSession = await graphRuntime.start();
-  requireRunning();
-  // Prime has an explicit readiness path; fixture and existing Codex startup stay
-  // unchanged. Publish the initial unavailable state before the product opens.
+  backend = createProductBackend({ graphRuntime,
+    beforeProductStart: async (runtimeSession) => {
   await graphRuntime.recordHarnessReadiness([...runtimeSession.configurations.values()]
     .filter(({ implementation }) => implementation === "prime.agent")
     .map((configuration) => ({
@@ -186,14 +178,12 @@ async function start() {
       available: false,
       unavailableReason: { code: "harness_readiness_pending", message: "Prime Eval runtime is not ready." },
     })));
-
-  requireRunning();
-  productServer = new RelayerAppServerService({
+    },
+    productOptions: {
     userDataDirectory,
     binaryPath: appServerBinary,
     webDirectory: productRendererDirectory,
     permissionCatalogPath,
-    runtimeSession,
     defaultHarnessConfiguration: "fixture-task-system",
     allowHarnessOverride: true,
     allowConversationImport: true,
@@ -205,8 +195,10 @@ async function start() {
       architecture: process.arch,
     },
     onUnexpectedStop: () => shutdown(1),
+    },
   });
-  const productSession = await productServer.start();
+  const { runtimeSession, productSession, productServer: startedProductServer } = await backend.start();
+  productServer = startedProductServer;
   requireRunning();
   if (primeProfile) {
     primeProvider = createEvalPrimeProvider({
@@ -578,14 +570,10 @@ function stop() {
     const attempt = async (operation) => { try { await operation(); } catch (error) { errors.push(error); } };
     const cancellation = Promise.all([attempt(() => managedCodexRuntime.cancelAll()), attempt(() => managedPrimeRuntime.installer.cancelAll())]);
     await attempt(() => dashboard?.close());
-    await attempt(() => productServer?.close());
-    for (const pending of reviewSurfaces) {
-      const surface = await pending.catch(() => null);
-      if (surface) await attempt(() => surface.close());
-    }
     await attempt(() => judgeBrowser.close());
+    await attempt(() => backend?.close());
     await cancellation;
-    await attempt(() => graphRuntime.close());
+    if (!backend) await attempt(() => graphRuntime.close());
     await attempt(() => primeProvider?.close());
     if (ownsProfileLock) await attempt(() => unlink(profileLock));
     if (errors.length) throw new AggregateError(errors, "Relayer Eval services did not stop cleanly.");

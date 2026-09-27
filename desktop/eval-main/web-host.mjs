@@ -6,7 +6,6 @@ import { tmpdir } from "node:os";
 
 const bridge = new URL("../eval-renderer/web-bridge.js", import.meta.url);
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
-const detailAssetPath = /^\/api\/threads\/([1-9][0-9]*)\/interactions\/[1-9][0-9]*\/nodes\/[1-9][0-9]*\/detail-assets\/[^/]+$/;
 const fail = (status, message) => Object.assign(new Error(message), { status });
 
 async function body(request, limit = 1024 * 1024) {
@@ -47,10 +46,7 @@ export async function serveEvalSurface(handle) {
       if (request.headers.origin && request.headers.origin !== origin) throw fail(403, "Unexpected origin.");
       if (request.headers["sec-fetch-site"] === "cross-site") throw fail(403, "Cross-site request rejected.");
       const url = new URL(request.url, origin);
-      // Only the final opaque asset identifier may contain encoded characters.
-      // Keep it encoded when forwarding: decoding a slash would change the route.
-      if (url.pathname.includes("//") || (url.pathname.includes("%") && !detailAssetPath.test(url.pathname))) throw fail(400, "Invalid path.");
-      if (detailAssetPath.test(url.pathname)) decodeURIComponent(url.pathname.split("/").at(-1));
+      if (url.pathname.includes("%") || url.pathname.includes("//")) throw fail(400, "Invalid path.");
       if (url.origin !== origin) throw fail(403, "Unexpected origin.");
       if (url.pathname === "/eval-bridge.js" && request.method === "GET") {
         response.setHeader("Content-Type", "text/javascript");
@@ -71,74 +67,15 @@ export async function serveEvalSurface(handle) {
     server.listen(0, "127.0.0.1", resolvePromise);
   });
   origin = `http://127.0.0.1:${server.address().port}`;
+  let closing;
   return {
     origin,
     url: `${origin}/#${token}`,
-    close: () => new Promise((resolvePromise, reject) => {
+    close: () => closing ??= new Promise((resolvePromise, reject) => {
       server.close((error) => error ? reject(error) : resolvePromise());
       server.closeAllConnections();
     }),
   };
-}
-
-export async function createReviewSurface({ productSession, context, annotationToken, fetchImpl = fetch }) {
-  if (!productSession.readOnlyCookie) throw new Error("Review requires read-only authority.");
-  const cookie = productSession.readOnlyCookie;
-  const allowedThreads = new Set(context.cases.flatMap((item) => item.threadIds).map(String));
-  let allowedProjects = new Set();
-  return serveEvalSurface(async ({ request, response, url }) => {
-    if (url.pathname === "/eval-api/context" && request.method === "GET") return json(response, context);
-    if (url.pathname.startsWith("/eval-api/")) throw fail(404, "Not found.");
-    const isApi = url.pathname.startsWith("/api/");
-    const annotation = /^\/api\/threads\/([1-9][0-9]*)\/annotations(?:\/[^/]+\/(?:revisions|retract))?$/.exec(url.pathname);
-    if (request.method !== "GET" && !(request.method === "POST" && annotationToken && annotation && allowedThreads.has(annotation[1]))) {
-      throw fail(403, "Review does not permit product writes.");
-    }
-    const stateRead = url.pathname === "/api/state";
-    const stateThread = url.searchParams.get("threadId");
-    if (request.method === "GET" && isApi) {
-      const threadRead = /^\/api\/threads\/([1-9][0-9]*)(?:\/annotations|\/interactions\/[1-9][0-9]*\/(?:layers\/[1-9][0-9]*|actions\/[^/%]+\/destination))?$/.exec(url.pathname) || detailAssetPath.exec(url.pathname);
-      const environment = /^\/api\/projects\/([1-9][0-9]*)\/environment$/.exec(url.pathname);
-      const bootstrap = ["/api/model-settings", "/api/permission-profiles"].includes(url.pathname);
-      const permitted = stateRead
-        ? url.searchParams.getAll("threadId").length === 1 && allowedThreads.has(stateThread)
-        : threadRead ? allowedThreads.has(threadRead[1])
-          : environment ? allowedProjects.has(environment[1]) : bootstrap;
-      if (!permitted) throw fail(403, "Read is outside this review session.");
-    }
-    const upstream = await fetchImpl(new URL(`${url.pathname}${url.search}`, productSession.origin), {
-      method: request.method,
-      redirect: "error",
-      headers: {
-        Cookie: `${cookie.name}=${cookie.value}${annotationToken ? `; relayer_annotation=${annotationToken}` : ""}`,
-        ...(request.method === "POST" ? { "Content-Type": "application/json" } : {}),
-      },
-      ...(request.method === "POST" ? { body: await body(request) } : {}),
-    });
-    response.statusCode = upstream.status;
-    response.setHeader("Content-Type", upstream.headers.get("content-type") || "application/octet-stream");
-    let bytes = Buffer.from(await upstream.arrayBuffer());
-    if (upstream.ok && stateRead) {
-      const state = JSON.parse(bytes.toString());
-      // Rust falls back to another thread when a requested thread has disappeared.
-      // Never return that fallback's interaction/projection payload.
-      if (!state.threads.some((thread) => String(thread.id) === stateThread && thread.active)) {
-        throw fail(404, "The selected review thread is unavailable.");
-      }
-      state.threads = state.threads.filter((thread) => allowedThreads.has(String(thread.id)));
-      allowedProjects = new Set(state.threads.map((thread) => String(thread.projectId)));
-      state.projects = state.projects.filter((project) => allowedProjects.has(String(project.id)));
-      bytes = Buffer.from(JSON.stringify(state));
-    }
-    if (upstream.ok && url.pathname.endsWith("/destination")) {
-      const destination = JSON.parse(bytes.toString());
-      if (!allowedThreads.has(String(destination.threadId))) throw fail(403, "Destination is outside this review session.");
-    }
-    if (!isApi && upstream.headers.get("content-type")?.includes("text/html")) {
-      bytes = Buffer.from(bytes.toString().replace("<head>", '<head><script src="/eval-bridge.js"></script>'));
-    }
-    response.end(bytes);
-  });
 }
 
 export async function createEvalDashboard({ service, rendererDirectory, refreshCatalog, openReview, loadScreenshot }) {
@@ -174,24 +111,4 @@ export async function createEvalDashboard({ service, rendererDirectory, refreshC
     if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/eval-api/")) throw fail(404, "Not found.");
     await asset(response, rendererDirectory, url.pathname);
   });
-}
-
-// Snapshot a fresh roster on every opening; existing tabs keep their own scope.
-export async function openHumanReview({ executionId, reviewContext, productSession,
-  registerAnnotations, assertRunning }) {
-  assertRunning();
-  const context = reviewContext(executionId);
-  const threadId = context.cases.find((item) => item.executionId === executionId)?.threadIds?.[0];
-  if (!threadId) throw new Error("This execution has no product thread to review.");
-  const session = await productSession();
-  const annotationToken = randomBytes(32).toString("hex");
-  await registerAnnotations(session, {
-    token: annotationToken,
-    threadIds: [...new Set(context.cases.flatMap((item) => item.threadIds || []))],
-  });
-  assertRunning();
-  const surface = await createReviewSurface({ productSession: session, context, annotationToken });
-  const url = new URL(surface.url);
-  url.search = new URLSearchParams({ threadId: String(threadId), review: "1" });
-  return { ...surface, url: url.href };
 }
