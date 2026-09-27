@@ -78,6 +78,9 @@ describe("CodexBasicHarness", () => {
     expect(codexProviderPrompt).toBe(baseline);
     expect(baseline).toContain("graph with other live agents");
     expect(baseline).toContain("live, user-facing workspace");
+    // The graph is the user's interface, so mechanics never appear in its content.
+    expect(baseline).toContain("Never expose execution mechanics in graph content");
+    expect(baseline).toContain("rather than on every change");
     expect(baseline).toContain("await graph.getCurrent()");
     expect(baseline).toContain("await graph.advanceCurrent(");
     expect(baseline).toContain("Advancing current does not complete the interaction");
@@ -88,9 +91,9 @@ describe("CodexBasicHarness", () => {
     expect(brokerAuthorized).toContain("graph.prepareComplete(invokeAction)");
     // A root that ends its turn with children in flight fails, so it must await them first.
     expect(brokerAuthorized).toContain("Your turn ending does not wait for children");
-    // Each change to a child's current is an event the root answers by reorganizing its own.
+    // Each child event is one the root may act on; it moves its own current only when that helps the user.
     expect(brokerAuthorized).toContain("const watch = watchCompletions(children)");
-    expect(brokerAuthorized).toContain("advance your current to it. Repeat until watch.settled is true.");
+    expect(brokerAuthorized).toContain("Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting.");
     expect(brokerAuthorized).toContain("Import complete and watchCompletions from");
     // The graph refuses a pointer move that loses the path back to the previous current layer.
     expect(brokerAuthorized).toContain("the next current layer must keep a navigation path back to it");

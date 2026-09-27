@@ -82,21 +82,7 @@ describe("Codex browser MCP runtime", () => {
     });
   });
 
-  it("pins and unpacks the helper in product and Eval desktop packages", async () => {
-    const previousTarget = process.env.RELAYER_DESKTOP_TARGET;
-    let evalBuilderConfig;
-    try {
-      process.env.RELAYER_DESKTOP_TARGET = "macos-arm64";
-      evalBuilderConfig = await import("../desktop/packaging/eval-electron-builder.mjs").then(
-        ({ default: config }) => config,
-      );
-    } finally {
-      if (previousTarget === undefined) {
-        delete process.env.RELAYER_DESKTOP_TARGET;
-      } else {
-        process.env.RELAYER_DESKTOP_TARGET = previousTarget;
-      }
-    }
+  it("pins and unpacks the helper in the product desktop package", async () => {
     const desktopManifest = JSON.parse(await readFile(new URL("../desktop/package.json", import.meta.url), "utf8"));
     const contract = resolveDesktopReleaseContract({
       environment: { RELAYER_DESKTOP_TARGET: "macos-arm64" },
@@ -105,7 +91,10 @@ describe("Codex browser MCP runtime", () => {
     const productConfig = createDesktopBuilderConfig(contract, { argv: ["--dir"] });
 
     expect(desktopManifest.dependencies[CODEX_BROWSER_MCP_PACKAGE]).toBe(CODEX_BROWSER_MCP_VERSION);
-    expect(productConfig.asarUnpack).toEqual(["node_modules/chrome-devtools-mcp/**/*"]);
-    expect(evalBuilderConfig.asarUnpack).toEqual(["node_modules/chrome-devtools-mcp/**/*"]);
+    expect(productConfig.asarUnpack).toEqual([
+      "node_modules/chrome-devtools-mcp/**/*",
+      "node_modules/sharp/**/*",
+      "node_modules/@img/**/*",
+    ]);
   });
 });

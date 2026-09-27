@@ -504,6 +504,9 @@ describe("PrimeAgentHarness", () => {
     expect(prompts[0]!.text).toContain("await graph.submit(11)");
     expect(prompts[0]!.text).toContain("graph with other live agents");
     expect(prompts[0]!.text).toContain("live, user-facing workspace");
+    // The graph is the user's interface, so mechanics never appear in its content.
+    expect(prompts[0]!.text).toContain("Never expose execution mechanics in graph content");
+    expect(prompts[0]!.text).toContain("rather than on every change");
     expect(prompts[0]!.text).toContain("await graph.get_current()");
     expect(prompts[0]!.text).toContain("await graph.advance_current(");
     expect(prompts[0]!.text).toContain("Advancing current does not complete the interaction");
@@ -514,10 +517,10 @@ describe("PrimeAgentHarness", () => {
     expect(prompts[0]!.text).toContain("do not create semantic children by themselves");
     // A root that ends its turn with children in flight fails, so it must await them first.
     expect(prompts[0]!.text).toContain("Your turn ending does not wait for children");
-    // Each change to a child's current is an event the root answers by reorganizing its own.
+    // Each child event is one the root may act on; it moves its own current only when that helps the user.
     expect(prompts[0]!.text).toContain("from relayer_graph import complete, CompletionWatch");
     expect(prompts[0]!.text).toContain("changes = await watch.changes()");
-    expect(prompts[0]!.text).toContain("advance your current to it. Repeat until watch.settled is true.");
+    expect(prompts[0]!.text).toContain("Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting.");
     expect(prompts[0]!.text).toContain("never leave them in a background task");
     expect(prompts[1]!.text).not.toContain("prepare_complete");
     expect(prompts[1]!.text).not.toContain("from relayer_graph import complete");

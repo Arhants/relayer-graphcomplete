@@ -1,0 +1,427 @@
+{
+  "scenario": "completion-admission-refused",
+  "module": "CompletionCurrent",
+  "summary": "The host refuses a selected child's admission; the child never starts, holds no lease or attempt, and cleanup fails it with the refusal's reason without cancelling anything.",
+  "promises": [
+    "SettledExecutionAgreesWithGraph",
+    "LeaseReleasedOnlyAfterSettlement",
+    "AttemptEndsOnlyAfterProvider"
+  ],
+  "finalPromises": [
+    "ChildSettles",
+    "LeaseReleased"
+  ],
+  "generatedBy": "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
+  "steps": [
+    {
+      "action": null,
+      "state": {
+        "appUp": true,
+        "attempt": "none",
+        "auth": false,
+        "cleanKey": "start",
+        "cleanPc": "off",
+        "execWhy": "none",
+        "exitPc": "off",
+        "head": 0,
+        "launches": 0,
+        "lease": "none",
+        "life": "active",
+        "lpc": {
+          "1": "idle",
+          "2": "idle"
+        },
+        "phase": "none",
+        "prov": "none",
+        "receipt": {
+          "activate": 99,
+          "admit": 99,
+          "attach": 99,
+          "exit": 99,
+          "obs": 99,
+          "restart": 99,
+          "start": 99,
+          "stop": 99
+        },
+        "restartPc": "none",
+        "selected": true,
+        "semPc": "off",
+        "status": "submitted",
+        "stopPc": "idle",
+        "stopReport": "none",
+        "stopSeen": {
+          "h": 0,
+          "l": "active"
+        },
+        "why": "none"
+      }
+    },
+    {
+      "action": [
+        "LaunchCheck",
+        1
+      ],
+      "state": {
+        "appUp": true,
+        "attempt": "none",
+        "auth": false,
+        "cleanKey": "start",
+        "cleanPc": "off",
+        "execWhy": "none",
+        "exitPc": "off",
+        "head": 0,
+        "launches": 0,
+        "lease": "none",
+        "life": "active",
+        "lpc": {
+          "1": "reserve",
+          "2": "idle"
+        },
+        "phase": "none",
+        "prov": "none",
+        "receipt": {
+          "activate": 99,
+          "admit": 99,
+          "attach": 99,
+          "exit": 99,
+          "obs": 99,
+          "restart": 99,
+          "start": 99,
+          "stop": 99
+        },
+        "restartPc": "none",
+        "selected": true,
+        "semPc": "off",
+        "status": "submitted",
+        "stopPc": "idle",
+        "stopReport": "none",
+        "stopSeen": {
+          "h": 0,
+          "l": "active"
+        },
+        "why": "none"
+      }
+    },
+    {
+      "action": [
+        "LaunchReserve",
+        1
+      ],
+      "state": {
+        "appUp": true,
+        "attempt": "none",
+        "auth": false,
+        "cleanKey": "start",
+        "cleanPc": "off",
+        "execWhy": "none",
+        "exitPc": "off",
+        "head": 0,
+        "launches": 0,
+        "lease": "none",
+        "life": "active",
+        "lpc": {
+          "1": "claim",
+          "2": "idle"
+        },
+        "phase": "reserved",
+        "prov": "none",
+        "receipt": {
+          "activate": 99,
+          "admit": 99,
+          "attach": 99,
+          "exit": 99,
+          "obs": 99,
+          "restart": 99,
+          "start": 99,
+          "stop": 99
+        },
+        "restartPc": "none",
+        "selected": true,
+        "semPc": "off",
+        "status": "submitted",
+        "stopPc": "idle",
+        "stopReport": "none",
+        "stopSeen": {
+          "h": 0,
+          "l": "active"
+        },
+        "why": "none"
+      }
+    },
+    {
+      "action": [
+        "LaunchClaim",
+        1
+      ],
+      "state": {
+        "appUp": true,
+        "attempt": "none",
+        "auth": false,
+        "cleanKey": "start",
+        "cleanPc": "off",
+        "execWhy": "none",
+        "exitPc": "off",
+        "head": 0,
+        "launches": 0,
+        "lease": "none",
+        "life": "active",
+        "lpc": {
+          "1": "activate",
+          "2": "idle"
+        },
+        "phase": "launching",
+        "prov": "none",
+        "receipt": {
+          "activate": 99,
+          "admit": 99,
+          "attach": 99,
+          "exit": 99,
+          "obs": 99,
+          "restart": 99,
+          "start": 99,
+          "stop": 99
+        },
+        "restartPc": "none",
+        "selected": true,
+        "semPc": "off",
+        "status": "submitted",
+        "stopPc": "idle",
+        "stopReport": "none",
+        "stopSeen": {
+          "h": 0,
+          "l": "active"
+        },
+        "why": "none"
+      }
+    },
+    {
+      "action": [
+        "LaunchActivate",
+        1,
+        "ok"
+      ],
+      "state": {
+        "appUp": true,
+        "attempt": "none",
+        "auth": true,
+        "cleanKey": "start",
+        "cleanPc": "off",
+        "execWhy": "none",
+        "exitPc": "off",
+        "head": 0,
+        "launches": 0,
+        "lease": "none",
+        "life": "active",
+        "lpc": {
+          "1": "admit",
+          "2": "idle"
+        },
+        "phase": "launching",
+        "prov": "none",
+        "receipt": {
+          "activate": 99,
+          "admit": 99,
+          "attach": 99,
+          "exit": 99,
+          "obs": 99,
+          "restart": 99,
+          "start": 99,
+          "stop": 99
+        },
+        "restartPc": "none",
+        "selected": true,
+        "semPc": "off",
+        "status": "running",
+        "stopPc": "idle",
+        "stopReport": "none",
+        "stopSeen": {
+          "h": 0,
+          "l": "active"
+        },
+        "why": "none"
+      }
+    },
+    {
+      "action": [
+        "LaunchAdmit",
+        1,
+        "fail"
+      ],
+      "state": {
+        "appUp": true,
+        "attempt": "none",
+        "auth": true,
+        "cleanKey": "admit",
+        "cleanPc": "fail",
+        "execWhy": "none",
+        "exitPc": "off",
+        "head": 0,
+        "launches": 0,
+        "lease": "none",
+        "life": "active",
+        "lpc": {
+          "1": "done",
+          "2": "idle"
+        },
+        "phase": "launching",
+        "prov": "none",
+        "receipt": {
+          "activate": 99,
+          "admit": 99,
+          "attach": 99,
+          "exit": 99,
+          "obs": 99,
+          "restart": 99,
+          "start": 99,
+          "stop": 99
+        },
+        "restartPc": "none",
+        "selected": true,
+        "semPc": "off",
+        "status": "running",
+        "stopPc": "idle",
+        "stopReport": "none",
+        "stopSeen": {
+          "h": 0,
+          "l": "active"
+        },
+        "why": "none"
+      }
+    },
+    {
+      "action": [
+        "CleanFail"
+      ],
+      "state": {
+        "appUp": true,
+        "attempt": "none",
+        "auth": true,
+        "cleanKey": "admit",
+        "cleanPc": "finalize",
+        "execWhy": "none",
+        "exitPc": "off",
+        "head": 1,
+        "launches": 0,
+        "lease": "none",
+        "life": "failed",
+        "lpc": {
+          "1": "done",
+          "2": "idle"
+        },
+        "phase": "launching",
+        "prov": "none",
+        "receipt": {
+          "activate": 99,
+          "admit": 0,
+          "attach": 99,
+          "exit": 99,
+          "obs": 99,
+          "restart": 99,
+          "start": 99,
+          "stop": 99
+        },
+        "restartPc": "none",
+        "selected": true,
+        "semPc": "off",
+        "status": "running",
+        "stopPc": "idle",
+        "stopReport": "none",
+        "stopSeen": {
+          "h": 0,
+          "l": "active"
+        },
+        "why": "model_unavailable"
+      }
+    },
+    {
+      "action": [
+        "CleanFinalize"
+      ],
+      "state": {
+        "appUp": true,
+        "attempt": "none",
+        "auth": true,
+        "cleanKey": "admit",
+        "cleanPc": "discard",
+        "execWhy": "model_unavailable",
+        "exitPc": "off",
+        "head": 1,
+        "launches": 0,
+        "lease": "none",
+        "life": "failed",
+        "lpc": {
+          "1": "done",
+          "2": "idle"
+        },
+        "phase": "settled",
+        "prov": "none",
+        "receipt": {
+          "activate": 99,
+          "admit": 0,
+          "attach": 99,
+          "exit": 99,
+          "obs": 99,
+          "restart": 99,
+          "start": 99,
+          "stop": 99
+        },
+        "restartPc": "none",
+        "selected": true,
+        "semPc": "off",
+        "status": "failed",
+        "stopPc": "idle",
+        "stopReport": "none",
+        "stopSeen": {
+          "h": 0,
+          "l": "active"
+        },
+        "why": "model_unavailable"
+      }
+    },
+    {
+      "action": [
+        "CleanDiscard"
+      ],
+      "state": {
+        "appUp": true,
+        "attempt": "none",
+        "auth": false,
+        "cleanKey": "admit",
+        "cleanPc": "done",
+        "execWhy": "model_unavailable",
+        "exitPc": "off",
+        "head": 1,
+        "launches": 0,
+        "lease": "none",
+        "life": "failed",
+        "lpc": {
+          "1": "done",
+          "2": "idle"
+        },
+        "phase": "settled",
+        "prov": "none",
+        "receipt": {
+          "activate": 99,
+          "admit": 0,
+          "attach": 99,
+          "exit": 99,
+          "obs": 99,
+          "restart": 99,
+          "start": 99,
+          "stop": 99
+        },
+        "restartPc": "none",
+        "selected": true,
+        "semPc": "off",
+        "status": "failed",
+        "stopPc": "idle",
+        "stopReport": "none",
+        "stopSeen": {
+          "h": 0,
+          "l": "active"
+        },
+        "why": "model_unavailable"
+      }
+    }
+  ]
+}

@@ -24,6 +24,7 @@ import {
   environmentPresentation,
   inspectorEscapeShouldClose,
   interactionStatusRenderKey,
+  viewedInteractionStatus,
   trackedChangesLabel,
   untrackedFilesLabel,
   workspaceBreadcrumbShouldRender,
@@ -408,6 +409,18 @@ describe("desktop environment rail", () => {
       .toBe("8:accepted");
     expect(interactionStatusRenderKey({ id: 9, completionStatus: "running" }, "running"))
       .toBe("9:running");
+  });
+
+  it("re-renders the status when the graph lifecycle ends before the product status changes", () => {
+    const running = { id: 8, completionStatus: "running" };
+    // A child can return, or be stopped, while its product row still reads running.
+    for (const lifecycle of ["succeeded", "stopped", "failed"]) {
+      expect(interactionStatusRenderKey(running, "running", lifecycle))
+        .not.toBe(interactionStatusRenderKey(running, "running", "active"));
+      expect(viewedInteractionStatus(running, "running", lifecycle)).toBe(lifecycle);
+    }
+    expect(interactionStatusRenderKey(running, "running", "active")).toBe("8:running");
+    expect(viewedInteractionStatus(running, "running", "active")).toBe("running");
   });
 
   it("lets only the topmost surface consume Escape before restoring graph focus", () => {
