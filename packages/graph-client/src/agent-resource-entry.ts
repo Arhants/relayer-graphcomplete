@@ -6,6 +6,7 @@ export {
   assetRef,
   css,
   detailCapability,
+  detailAuthoringReference,
   html,
 } from "./detail.js";
 export type {

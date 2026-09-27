@@ -2051,7 +2051,7 @@ describe("PrimeAgentHarness", () => {
       sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => {
         listener?.({ type: "turn_start" });
-        listener?.({ type: "message_end", message: { role: "assistant", content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "Visible" }], usage: { input: 2, output: 3 } } });
+        listener?.({ type: "message_end", message: { role: "assistant", content: [{ type: "thinking", thinking: "private-reasoning-sentinel" }, { type: "text", text: "Visible" }], usage: { input: 2, output: 3 } } });
         listener?.({ type: "rlm_child_update", child: { id: "child-1", label: "Research", status: "completed", answerPreview: "Evidence", toolUseCount: 1 } });
         listener?.({ type: "turn_end" });
       }),
@@ -2067,7 +2067,7 @@ describe("PrimeAgentHarness", () => {
 
     expect(session.subscribe).toHaveBeenCalledOnce();
     expect(unsubscribe).toHaveBeenCalledOnce();
-    expect(JSON.stringify(trace.events)).not.toContain("hidden");
+    expect(JSON.stringify(trace.events)).not.toContain("private-reasoning-sentinel");
     expect(trace.events.map((event) => event.type)).toEqual(expect.arrayContaining(["provider.event", "message", "usage", "model.call.started", "model.call.completed"]));
     expect(harness.traceSupport()).toMatchObject({ childStreams: "summary", reasoningSummaries: "none" });
   });

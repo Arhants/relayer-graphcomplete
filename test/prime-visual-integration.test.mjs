@@ -16,6 +16,7 @@ it.each(["prime-agent-basic", "prime-agent-deep"])("%s accepts Python authored a
   const configuration = shipped.replace('  personalPresentationVersion: personal-presentation-v4\n', '');
   await writeFile(configurationPath, configuration);
   const runtimeOptions = { userDataDirectory: directory,
+    temporalFeatures: { schemaRead: true, rootCurrentWrite: true },
     graphServerBinary: join(root, 'target/debug/relayer-graph-server'), configurationPaths: [configurationPath],
     candidateTrace: { directory: join(directory, 'traces'), policy: { mode: 'required', requiredFeatures: {}, includeNativeArtifacts: false, maxBytesPerTurn: 100_000, maxEventsPerTurn: 200 } },
     additionalImplementations: { 'prime.agent': primeVisualFixtureFactory },
@@ -93,6 +94,14 @@ it.each(["prime-agent-basic", "prime-agent-deep"])("%s accepts Python authored a
     expect(freshTurn.completionOutput.rootLayer.nodes).toHaveLength(1);
     expect(freshTurn.completionOutput.rootLayer.nodes[0].authoredDetail).toBeDefined();
     expect(freshTurn.completionOutput.rootLayer.nodes[0].title).toBe('Answer');
+    expect(freshTurn.completionOutput.rootLayer.nodes[0].authoredDetail.mounts).toHaveLength(1);
+    expect(freshTurn.completionOutput.rootLayer.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'navigate', relation: 'expand', label: 'Details' }),
+    ]));
+    const expansion = freshTurn.completionOutput.rootLayer.actions.find((action) => action.label === 'Details');
+    const child = await request(session, `/api/threads/${fresh.id}/interactions/${freshTurn.id}/layers/${expansion.targetLayerId}`);
+    expect(child.nodes[0].title).toBe('Details');
+    expect(child.nodes[0].authoredDetail.components[0].html).toContain('useful depth');
 
   } finally {
     await product?.close(); await runtime.close(); await rm(directory, { recursive: true, force: true });

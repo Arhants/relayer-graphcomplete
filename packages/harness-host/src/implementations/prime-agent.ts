@@ -971,7 +971,7 @@ function primeSessionAttachment(session: PrimeAgentSession): JsonObject {
 }
 
 function currentWorkspaceMechanicsPython(): string {
-  return `Read current with current = await graph.get_current(). After submitting a layer, you may update the pointer with await graph.advance_current(layer, expected_revision=current["headRevision"], operation_key="a-stable-operation-key").`;
+  return `Read current with current = await graph.get_current(). After submitting the complete closure and registering all its actions, you may publish it and update the pointer with await graph.advance_current(layer, expected_revision=current["headRevision"], operation_key="a-stable-operation-key").`;
 }
 
 function graphSearchGuidancePython(enabled: boolean): string {
@@ -1720,22 +1720,32 @@ function optionalEnum<const T extends readonly string[]>(value: unknown, allowed
   return value as T[number];
 }
 
-const PRIME_VISUAL_GUIDANCE = `For visual Node Details, import html, asset_ref, external_link, action_capability, ActionObject, and VisualAssetFile from relayer_graph. node.detail_authoring.set_component("main", html("<h2>Answer</h2>"), "h2 { color: blue; }") authors a component; node.detail remains the Markdown fallback. Use html(["<button gc=", ">Continue</button>"], action_capability("continue", action)) for a declared ActionObject. Its source_layer must be the exact LayerObject containing that node. Reuse the same action in await graph.add_action(node, action) after submitting nodes and layers. Navigate actions use kind="navigate", relation="expand" or "reference", and target=layer; invoke actions use interaction_text; input actions use control, prompt, and options. Checkpoint with await graph.checkpoint_node_detail(node). Submit freezes that object's detail; use a fresh NodeObject with the same client_key for an edited draft. Untouched detail retains its prior package; detail_authoring.clear() explicitly removes it.
+const PRIME_VISUAL_GUIDANCE = `For visual Node Details, import html, asset_ref, external_link, action_capability, ActionObject, and VisualAssetFile from relayer_graph. node.detail_authoring.set_component("main", html("<h2>Answer</h2>"), "h2 { color: blue; }") authors a component; node.detail remains the Markdown fallback. Use html(["<button gc=", ">Continue</button>"], action_capability("continue", action)) for a declared ActionObject. Its source_layer must be the exact LayerObject containing that node. Reuse the same action in await graph.add_action(node, action) after submitting nodes and layers. Navigate actions use kind="navigate", relation="expand" or "reference", and target=layer; invoke actions use interaction_text; input actions use control, prompt, and options. Checkpoint with await graph.checkpoint_node_detail(node). submit_node freezes the local object's detail; while the record remains a draft, use a fresh NodeObject with the same client_key for repairs. Published records are immutable. Untouched detail retains its prior package; detail_authoring.clear() explicitly removes it.
 Discover assets with graph.visual_assets.scope(), list_assets(scope=scope), list_tags(scope=scope), and inspect(asset_id, scope). Add caller-read bytes with VisualAssetFile(name, media_type, bytes) and await graph.visual_assets.add(file=file, scope=scope, name=name). Bind logical asset IDs with html(['<img asset=', ' alt="Description">'], asset_ref(asset_id)); the host resolves and pins content. Never supply compiled packages, mounts, hashes, raw image URLs, or executable JavaScript.`;
 
 function primeVisualExample(interactionNodeId: number): string {
   return `This runnable example demonstrates the Python client lifecycle and required call ordering only. Its placeholder content and layout are not a recommended response design. Choose the representation for the task and attached presentation preferences. Use the public client API; inspect a specific signature or error only when needed instead of reading compiler or server internals. Discover assets when the chosen explanation benefits from them.
 
 \`\`\`python
-from relayer_graph import GraphSession, NodeObject, LayerObject, LayerLayoutObject, NodePlacementObject, html
+from relayer_graph import GraphSession, NodeObject, LayerObject, LayerLayoutObject, NodePlacementObject, ActionObject, html, action_capability
 graph = await GraphSession.current()
 node = NodeObject("info", "Answer", "Replace with the answer.", client_key="answer")
-node.detail_authoring.set_component("main", html("<section><h2>Answer</h2><p>Replace with the answer.</p></section>"), "section { display: grid; gap: 0.75rem; }")
-await graph.checkpoint_node_detail(node)
-await graph.submit_node(node)
+child = NodeObject("info", "Details", "Replace with useful depth.", client_key="details")
 layer = LayerObject([node], [], LayerLayoutObject([NodePlacementObject(node, 0.5, 0.5)]), client_key="answer-layer")
+child_layer = LayerObject([child], [], LayerLayoutObject([NodePlacementObject(child, 0.5, 0.5)]), client_key="details-layer")
+expand = ActionObject("navigate", "Details", layer, "details-action", relation="expand", target=child_layer)
+node.detail_authoring.set_component("main", html(["<section><h2>Answer</h2><p>Replace with the answer.</p><button gc=", ">Details</button></section>"], action_capability("details-control", expand)), "section { display: grid; gap: 0.75rem; }")
+child.detail_authoring.set_component("main", html("<p>Replace with useful depth.</p>"))
+for item in [node, child]:
+    await graph.checkpoint_node_detail(item)
+    await graph.submit_node(item)
+await graph.submit_layer(child_layer)
 await graph.submit_layer(layer)
+await graph.add_action(node, expand)
 await graph.add_navigate_action(${interactionNodeId}, "Answer", layer, relation="expand", client_key="response")
+# Optional progress publication: all actions must already exist.
+current = await graph.get_current()
+await graph.advance_current(layer, expected_revision=current["headRevision"], operation_key="answer-ready")
 await graph.submit(${interactionNodeId})
 \`\`\`
 The final submit accepts the graph; do not run this placeholder unchanged. Additional nodes and controls should serve the user's task.`;
