@@ -1,7 +1,9 @@
 # TLA+ models
 
-These models find bugs in the two parts of Relayer with the most concurrent
-state. The method is model, counterexample, reproduce, fix:
+These models find bugs in the parts of Relayer with the most concurrent
+state: provider connections, the completion current, and the Product
+workspace's follow-up composer, node inspector, and node-authored inputs. The method is model,
+counterexample, reproduce, fix:
 
 1. Model one race-prone state machine, citing the code each action abstracts.
 2. Let TLC search every interleaving for a trace that breaks a stated promise.
@@ -21,7 +23,7 @@ npm run check:models
 Pass check ids to run a subset. The runner needs Java 11 or newer and the
 pinned `tla2tools.jar` (version and sha256 in `checks.json`). It never
 downloads the jar; place it at `~/.cache/tlaplus/tla2tools-1.8.0.jar` or set
-`TLA2TOOLS_JAR`. All checks and scenarios together take about 40 seconds.
+`TLA2TOOLS_JAR`. All checks and scenarios together take about two and a half minutes.
 `--render` rewrites the scenario traces (see below).
 
 `check:models` is not part of `npm run check` yet. Adding it there requires a
@@ -99,6 +101,37 @@ replays against the real app-server code:
 
 The first replay found a model error. The IPC layer releases a renderer
 binding once its connection settles, and the model did not.
+
+For `TurnComposer` and `NodeInspector`, the adapters render the real
+Product workspace (`createProductWorkspace`) in happy-dom:
+
+- [`test/support/turn-composer-trace-adapter.mjs`](../../test/support/turn-composer-trace-adapter.mjs)
+  types into `#threadPrompt`, clicks Send, and switches threads by calling
+  `render()`, as `renderThread()` does. A fake `threads.submitInteraction`
+  holds the POST, the refresh that loads the new turn, and the await before
+  settlement on deferreds. `observe()` reads the prompt's value and disabled
+  state and the drafts persisted in `composer-drafts`.
+- [`test/support/node-inspector-trace-adapter.mjs`](../../test/support/node-inspector-trace-adapter.mjs)
+  clicks graph nodes, `+`, `×`, and Close, and types in the annotation
+  editor, with the real node context draft controller. Every draft save and
+  discard request and every Node Detail asset is held on a deferred, and the
+  controller's 350 ms autosave runs on fake timers. `observe()` reads the
+  selection, the inspector, its header, the Node Detail host and whether its
+  page is shown, and the annotation dock.
+
+- [`test/support/authored-input-send-trace-adapter.mjs`](../../test/support/authored-input-send-trace-adapter.mjs)
+  types into an authored Node Detail input, commits it with `change`, and
+  clicks Send, with the real input draft controller. A fake app server
+  applies the commit and reservation rules of the SQLite storage it cites;
+  the replay checks what the renderer decides: whether Send is enabled and
+  which draft revision each request carries.
+
+A scenario may list `violatedAtEnd`: promises of an open bug. The replay must
+match the model at every step, and those promises must hold until the final
+step and break at it. This records the bug on the real code while the suite
+stays green. A fix removes them from `violatedAtEnd`, and the replay then
+requires them to hold. Deleting the guard a scenario depends on makes its
+replay diverge at the step the guard governs.
 
 A bug fix follows these steps:
 
@@ -184,11 +217,126 @@ Fix 3 conflicts with the retryable activation path. That path restores the
 interaction to `submitted` for a retry, and resetting the execution to
 `reserved` is the alternative. Choosing between them is a product decision.
 
+### `TurnComposer.tla`
+
+This model covers the follow-up composer across two threads:
+
+- typing, which persists the draft under the active scope `thread:latest turn`;
+- Send, the follow-up POST, the server recording the turn before it answers,
+  and its `interaction_in_progress` rule;
+- the refresh that loads the new turn, or skips it when the navigation entry
+  `[thread, turn, layer path]` changed or the refresh failed;
+- settlement of the submitted draft and its revision comparison;
+- thread switches, which load the thread's state, and `renderThread()` for
+  unrelated reasons (the environment refresh every 5 s and on window focus,
+  which does not fetch `/api/state`);
+- the new turn arriving by polling, and finishing.
+
+Context annotations, input attachments, restored retry drafts, the model
+picker, and the unconfirmed-draft warning are not modeled.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `composer-typing-during-send` | Confirmed; replayed | `submitInteraction` disables the prompt, but any `renderThread()` during the POST re-enables it through `renderInteractionState`, because the loaded latest turn still reads as settled. The environment refresh renders every 5 s on project threads and on window focus. Text typed then stays in the old turn's draft scope. When the new turn loads, the composer moves to the new turn's scope, which is empty, and the text is never shown again. SCP-016 promises drafts "survive navigation". Scenario: `composer-typing-during-send`. |
+| `composer-typing-during-send-without-renders` | Plausible: narrow window | Leaving the thread and returning during the POST re-enables the prompt the same way, but only if both switches load state before the server records the turn; afterwards the switch loads the pending turn and the prompt stays disabled. Scenario: `composer-return-during-send`. |
+| `composer-settlement-erases-edit` | Plausible: needs a skipped refresh | Re-entering a scope with persisted text assigns `currentPromptRevision + 1`, which can repeat a revision the scope already had. An edit after Send can then reach the submitted revision, and settlement clears the prompt and deletes the persisted draft. It needs the re-entry before the server records the turn, and a skipped refresh: a send from a nested layer followed by leaving and returning (which resets the layer path), or a failed refresh. Scenario: `composer-settlement-erases-edit`. |
+| `composer-sent-text-lingers` | Plausible: same assumptions | Re-entering a scope during a send bumps its revision though the text is unchanged. With a skipped refresh, settlement no longer recognizes the sent text and leaves it in an enabled composer until the new turn loads. Scenario: `composer-sent-text-lingers`. |
+| `composer-one-send-per-thread` | passes | One follow-up per thread is in flight at a time, and every send releases its thread's Send button. |
+| `composer-fixed` | passes | With both candidate fixes, every composer promise holds. |
+
+The candidate fixes are:
+
+1. `CarryUnsentDraft`: moving a turn's unsent text into the newest turn's
+   empty scope, and restoring it into the prompt when a send fails after the
+   new turn arrived. Text still owned by an in-flight send is not moved.
+2. `StableScopeRevision`: re-entering a scope keeps its revision when its
+   text is unchanged, and otherwise takes a revision above any it had.
+
+`CarryUnsentDraft` recognizes the in-flight submission by its revision, so
+it is sound only together with `StableScopeRevision`.
+
+Why the draft is scoped per turn is a product decision. A fix might instead
+key follow-up drafts by thread.
+
+### `NodeInspector.tla`
+
+This model covers node selection on the graph canvas and the Node Details
+inspector with a durable annotation draft:
+
+- `selectNode`, including the draft flush before switching nodes and the
+  asynchronous Node Detail mount;
+- `prepareNodeContextSelectionChange` before Close and before a turn change;
+- `+`, typing, autosave, and `×` on an annotation draft;
+- `render()` with newer state, which re-selects the node or, on entering a
+  new view, may clear the selection;
+- the dock reconciliation in `renderNodeContextDock`;
+- reuse or disposal of the mounted Node Detail runtime.
+
+`nodeSelectionSequence` is compared only for equality, so each request in
+flight carries whether it is still the latest. Historical context
+selections, node inputs, annotation comments, and confirm are not modeled;
+confirm resolves like discard.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `inspector-dropped-request` | Confirmed behavior; replayed; needs a product decision | While a draft save, confirm, or discard is in flight, `selectNode` returns at once and `prepareNodeContextSelectionChange` returns false. A node click, Close, or turn change made then does nothing. A dropped Close or turn change also increments `nodeSelectionSequence`, which cancels a pending click or the first Close, so a double-clicked Close closes nothing. The PRD does not say whether input may be ignored while a draft resolves. Scenarios: `inspector-click-during-discard`, `inspector-close-during-flush`, `inspector-double-close`. |
+| `inspector-detail-left-dead` | Plausible: needs a slow Node Detail mount | A switch refused by a failed flush returns without re-rendering the kept node. If the switch superseded that node's own Node Detail mount, the mount disposes its runtime when it lands, and the inspector shows the node's header over an empty page. The mount must stay pending across a render, `+`, typing, and a click, so it needs a slow asset. A render that enters a new view during the flush hides the inspector the same way; that variant is not replayed. Scenario: `inspector-refused-switch-dead-detail`. |
+| `inspector-stale-state` | Plausible: weak; model only | A render during a draft save or discard is dropped, and a switch renders the header from the node object it read before its flush. Within one accepted layer the header does not change, so the stale state would show only in action or capability state, which is not modeled. It heals on the next render. |
+| `inspector-draft-editor-restored` | passes | Selecting a node with an unconfirmed draft reopens its editor (PRD L2203). |
+| `inspector-fixed` | passes | With both candidate fixes, every inspector promise holds. |
+
+The candidate fixes are:
+
+1. `QueueWhileResolving`: remembering the latest click, Close, or turn change
+   that arrives while a draft resolves, and replaying it afterwards; a click
+   from a view the user has since left is void. A prepare whose editor was
+   replaced prepares again.
+2. `RefreshAfterResolve`: continuing a switch from the latest state, and
+   re-rendering the selection once a draft resolves unless a current request
+   will.
+
+The replay also showed the dock keeps the previous node's locked editor
+until the new node's Node Detail mount finishes. The replay compares the
+dock only once the renderer is quiet.
+
+The model reuses the mounted runtime when the node matches; the code also
+requires the same interaction, layer, and package, which differs only on
+entering a new view. Discard is modeled only for a saved draft with no newer
+text. Other callers of `prepareNodeContextSelectionChange` (sidebar thread
+switch, Back and Forward, breadcrumbs, navigate actions) are dropped the same
+way but are not modeled.
+
+### `AuthoredInputSend.tla`
+
+This model covers one input action in an authored Node Detail and the
+follow-up Send:
+
+- typing, and the commit on `change` at the controller's draft revision;
+- Send's gates and the draft revision it captures;
+- the server's commit rule and its reservation of committed attachments;
+- the turn ending, with the failure restore;
+- the renderer's reloads after each response.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `input-answer-skipped` | Confirmed; replayed | Legacy input controls register each commit with `inputPending`, which keeps Send disabled; an authored input's commit does not. Mousedown on Send blurs the input, whose `change` commits it, so the commit and the Send are in flight together at the same revision. If the Send is served first, it is accepted without the answer, which then lands in the next turn's draft. With other committed inputs, the commit is refused instead. Scenario: `input-answer-skipped`. |
+| `input-send-refused` | Confirmed; replayed | If the commit is served first, the Send's revision is stale and it is refused with `input_draft_revision_conflict`. Scenario: `input-send-refused`. |
+| `input-fixed` | passes | Gating Send on authored commits (`AuthoredGatesSend`) restores both promises. |
+
+Disabling Send during the commit would swallow the click that caused the
+blur; letting Send await pending commits is the alternative. Authored input
+mounts also stay enabled during a Send and a running turn, unlike legacy
+controls; ADR 0008 allows a newer commit during a run, so that is not
+modeled as a defect.
+
 ## Limits
 
 - **Bounds:** one provider plus one new connection, one renderer, one lease,
-  and a single child at depth 1 with head revision at most 3. A bug that needs
-  more actors is out of reach.
+  and a single child at depth 1 with head revision at most 3. The composer
+  has two threads, two turns each, and two typed values; the inspector has
+  two nodes, three state revisions, and three editors. A bug that needs more
+  actors is out of reach. `composer-fixed` also passes with three turns and
+  three values (2.7 million states), which is not part of the suite.
 - **Queue order:** the provider queue is FIFO for queued cancels, but requests
   that queue behind an interior await may start in either order.
 - **Not modeled:**
@@ -201,6 +349,11 @@ interaction to `submitted` for a retry, and resetting the execution to
   - remint races in the graph server;
   - the parent's `/result` long poll;
   - grandchildren.
+- **Composer assumptions:** `threads.submitInteraction` reads the thread from
+  `viewState` behind a dynamic `import()`, assumed to resolve in the same
+  task; if it took a task, a thread switch could send one thread's text on
+  another's POST. The model always views the latest turn, so the `finally`
+  that reads the viewed turn's status is modeled for that case only.
 - **Candidate fixes are modeled, not designed.** A fix still needs a product
   decision wherever the PRD is silent. One example is what the default family
   should become when its managed family is tombstoned.

@@ -1,0 +1,943 @@
+{
+  "scenario": "inspector-annotate-and-switch",
+  "module": "NodeInspector",
+  "summary": "A node is annotated, the user switches to another node and back, and the draft's editor returns.",
+  "promises": [
+    "InspectorShowsSelection",
+    "LastRequestWins",
+    "DraftedSelectionHasEditor"
+  ],
+  "generatedBy": "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
+  "steps": [
+    {
+      "action": null,
+      "state": {
+        "attach": false,
+        "detail": {
+          "live": false,
+          "node": "none",
+          "owned": false,
+          "slot": 0
+        },
+        "drafts": {},
+        "editor": {
+          "eid": 0,
+          "node": "none",
+          "resolving": false
+        },
+        "eids": 0,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "none",
+        "op": 0,
+        "open": false,
+        "prep": {
+          "cur": false,
+          "eid": 0,
+          "fresh": false,
+          "node": "none",
+          "rev": 0,
+          "st": "free"
+        },
+        "queued": {
+          "kind": "none",
+          "node": "none"
+        },
+        "sel": "none",
+        "slots": {
+          "1": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 1,
+        "title": {
+          "node": "none",
+          "rev": 0
+        },
+        "unsaved": {},
+        "want": "none"
+      }
+    },
+    {
+      "action": [
+        "Click",
+        "n1"
+      ],
+      "state": {
+        "attach": false,
+        "detail": {
+          "live": true,
+          "node": "n1",
+          "owned": false,
+          "slot": 1
+        },
+        "drafts": {},
+        "editor": {
+          "eid": 0,
+          "node": "none",
+          "resolving": false
+        },
+        "eids": 0,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "none",
+        "op": 0,
+        "open": true,
+        "prep": {
+          "cur": false,
+          "eid": 0,
+          "fresh": false,
+          "node": "none",
+          "rev": 0,
+          "st": "free"
+        },
+        "queued": {
+          "kind": "none",
+          "node": "none"
+        },
+        "sel": "n1",
+        "slots": {
+          "1": {
+            "cur": true,
+            "eid": 0,
+            "fresh": true,
+            "node": "n1",
+            "rev": 1,
+            "st": "mounting"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 1,
+        "title": {
+          "node": "n1",
+          "rev": 1
+        },
+        "unsaved": {},
+        "want": "n1"
+      }
+    },
+    {
+      "action": [
+        "MountReturns",
+        1
+      ],
+      "state": {
+        "attach": true,
+        "detail": {
+          "live": true,
+          "node": "n1",
+          "owned": true,
+          "slot": 1
+        },
+        "drafts": {},
+        "editor": {
+          "eid": 0,
+          "node": "none",
+          "resolving": false
+        },
+        "eids": 0,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "n1",
+        "op": 0,
+        "open": true,
+        "prep": {
+          "cur": false,
+          "eid": 0,
+          "fresh": false,
+          "node": "none",
+          "rev": 0,
+          "st": "free"
+        },
+        "queued": {
+          "kind": "none",
+          "node": "none"
+        },
+        "sel": "n1",
+        "slots": {
+          "1": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 1,
+        "title": {
+          "node": "n1",
+          "rev": 1
+        },
+        "unsaved": {},
+        "want": "n1"
+      }
+    },
+    {
+      "action": [
+        "Annotate"
+      ],
+      "state": {
+        "attach": true,
+        "detail": {
+          "live": true,
+          "node": "n1",
+          "owned": true,
+          "slot": 1
+        },
+        "drafts": {
+          "1": "n1"
+        },
+        "editor": {
+          "eid": 1,
+          "node": "n1",
+          "resolving": false
+        },
+        "eids": 1,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "n1",
+        "op": 0,
+        "open": true,
+        "prep": {
+          "cur": false,
+          "eid": 0,
+          "fresh": false,
+          "node": "none",
+          "rev": 0,
+          "st": "free"
+        },
+        "queued": {
+          "kind": "none",
+          "node": "none"
+        },
+        "sel": "n1",
+        "slots": {
+          "1": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 1,
+        "title": {
+          "node": "n1",
+          "rev": 1
+        },
+        "unsaved": {
+          "1": "n1"
+        },
+        "want": "n1"
+      }
+    },
+    {
+      "action": [
+        "EditDraft"
+      ],
+      "state": {
+        "attach": true,
+        "detail": {
+          "live": true,
+          "node": "n1",
+          "owned": true,
+          "slot": 1
+        },
+        "drafts": {
+          "1": "n1"
+        },
+        "editor": {
+          "eid": 1,
+          "node": "n1",
+          "resolving": false
+        },
+        "eids": 1,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "n1",
+        "op": 0,
+        "open": true,
+        "prep": {
+          "cur": false,
+          "eid": 0,
+          "fresh": false,
+          "node": "none",
+          "rev": 0,
+          "st": "free"
+        },
+        "queued": {
+          "kind": "none",
+          "node": "none"
+        },
+        "sel": "n1",
+        "slots": {
+          "1": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 1,
+        "title": {
+          "node": "n1",
+          "rev": 1
+        },
+        "unsaved": {
+          "1": "n1"
+        },
+        "want": "n1"
+      }
+    },
+    {
+      "action": [
+        "Click",
+        "n2"
+      ],
+      "state": {
+        "attach": true,
+        "detail": {
+          "live": true,
+          "node": "n1",
+          "owned": true,
+          "slot": 1
+        },
+        "drafts": {
+          "1": "n1"
+        },
+        "editor": {
+          "eid": 1,
+          "node": "n1",
+          "resolving": true
+        },
+        "eids": 1,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "n1",
+        "op": 0,
+        "open": true,
+        "prep": {
+          "cur": false,
+          "eid": 0,
+          "fresh": false,
+          "node": "none",
+          "rev": 0,
+          "st": "free"
+        },
+        "queued": {
+          "kind": "none",
+          "node": "none"
+        },
+        "sel": "n1",
+        "slots": {
+          "1": {
+            "cur": true,
+            "eid": 1,
+            "fresh": false,
+            "node": "n2",
+            "rev": 1,
+            "st": "saving"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 1,
+        "title": {
+          "node": "n1",
+          "rev": 1
+        },
+        "unsaved": {
+          "1": "n1"
+        },
+        "want": "n2"
+      }
+    },
+    {
+      "action": [
+        "SaveReturns",
+        1,
+        "ok"
+      ],
+      "state": {
+        "attach": true,
+        "detail": {
+          "live": true,
+          "node": "n2",
+          "owned": false,
+          "slot": 1
+        },
+        "drafts": {
+          "1": "n1"
+        },
+        "editor": {
+          "eid": 0,
+          "node": "none",
+          "resolving": false
+        },
+        "eids": 1,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "n1",
+        "op": 0,
+        "open": true,
+        "prep": {
+          "cur": false,
+          "eid": 0,
+          "fresh": false,
+          "node": "none",
+          "rev": 0,
+          "st": "free"
+        },
+        "queued": {
+          "kind": "none",
+          "node": "none"
+        },
+        "sel": "n2",
+        "slots": {
+          "1": {
+            "cur": true,
+            "eid": 0,
+            "fresh": true,
+            "node": "n2",
+            "rev": 1,
+            "st": "mounting"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 1,
+        "title": {
+          "node": "n2",
+          "rev": 1
+        },
+        "unsaved": {},
+        "want": "n2"
+      }
+    },
+    {
+      "action": [
+        "MountReturns",
+        1
+      ],
+      "state": {
+        "attach": true,
+        "detail": {
+          "live": true,
+          "node": "n2",
+          "owned": true,
+          "slot": 1
+        },
+        "drafts": {
+          "1": "n1"
+        },
+        "editor": {
+          "eid": 0,
+          "node": "none",
+          "resolving": false
+        },
+        "eids": 1,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "n2",
+        "op": 0,
+        "open": true,
+        "prep": {
+          "cur": false,
+          "eid": 0,
+          "fresh": false,
+          "node": "none",
+          "rev": 0,
+          "st": "free"
+        },
+        "queued": {
+          "kind": "none",
+          "node": "none"
+        },
+        "sel": "n2",
+        "slots": {
+          "1": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 1,
+        "title": {
+          "node": "n2",
+          "rev": 1
+        },
+        "unsaved": {},
+        "want": "n2"
+      }
+    },
+    {
+      "action": [
+        "Click",
+        "n1"
+      ],
+      "state": {
+        "attach": true,
+        "detail": {
+          "live": true,
+          "node": "n1",
+          "owned": false,
+          "slot": 1
+        },
+        "drafts": {
+          "1": "n1"
+        },
+        "editor": {
+          "eid": 2,
+          "node": "n1",
+          "resolving": false
+        },
+        "eids": 2,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "n2",
+        "op": 0,
+        "open": true,
+        "prep": {
+          "cur": false,
+          "eid": 0,
+          "fresh": false,
+          "node": "none",
+          "rev": 0,
+          "st": "free"
+        },
+        "queued": {
+          "kind": "none",
+          "node": "none"
+        },
+        "sel": "n1",
+        "slots": {
+          "1": {
+            "cur": true,
+            "eid": 0,
+            "fresh": true,
+            "node": "n1",
+            "rev": 1,
+            "st": "mounting"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 1,
+        "title": {
+          "node": "n1",
+          "rev": 1
+        },
+        "unsaved": {},
+        "want": "n1"
+      }
+    },
+    {
+      "action": [
+        "MountReturns",
+        1
+      ],
+      "state": {
+        "attach": true,
+        "detail": {
+          "live": true,
+          "node": "n1",
+          "owned": true,
+          "slot": 1
+        },
+        "drafts": {
+          "1": "n1"
+        },
+        "editor": {
+          "eid": 2,
+          "node": "n1",
+          "resolving": false
+        },
+        "eids": 2,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "n1",
+        "op": 0,
+        "open": true,
+        "prep": {
+          "cur": false,
+          "eid": 0,
+          "fresh": false,
+          "node": "none",
+          "rev": 0,
+          "st": "free"
+        },
+        "queued": {
+          "kind": "none",
+          "node": "none"
+        },
+        "sel": "n1",
+        "slots": {
+          "1": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 1,
+        "title": {
+          "node": "n1",
+          "rev": 1
+        },
+        "unsaved": {},
+        "want": "n1"
+      }
+    },
+    {
+      "action": [
+        "Close"
+      ],
+      "state": {
+        "attach": true,
+        "detail": {
+          "live": true,
+          "node": "n1",
+          "owned": true,
+          "slot": 1
+        },
+        "drafts": {
+          "1": "n1"
+        },
+        "editor": {
+          "eid": 0,
+          "node": "none",
+          "resolving": false
+        },
+        "eids": 2,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "n1",
+        "op": 0,
+        "open": false,
+        "prep": {
+          "cur": false,
+          "eid": 0,
+          "fresh": false,
+          "node": "none",
+          "rev": 0,
+          "st": "free"
+        },
+        "queued": {
+          "kind": "none",
+          "node": "none"
+        },
+        "sel": "none",
+        "slots": {
+          "1": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 1,
+        "title": {
+          "node": "n1",
+          "rev": 1
+        },
+        "unsaved": {},
+        "want": "none"
+      }
+    }
+  ]
+}

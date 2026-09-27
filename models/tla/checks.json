@@ -28,6 +28,67 @@
       "CleanExitIsChecked": "TRUE",
       "ActivationFailureSettlesGraph": "TRUE",
       "TerminalReadSettlesCleanup": "TRUE"
+    },
+    "composer-today": {
+      "Threads": "{\"A\", \"B\"}",
+      "MaxTurns": "2",
+      "MaxText": "2",
+      "MaxRev": "5",
+      "BackgroundRenders": "TRUE",
+      "CarryUnsentDraft": "FALSE",
+      "StableScopeRevision": "FALSE"
+    },
+    "composer-fixed": {
+      "Threads": "{\"A\", \"B\"}",
+      "MaxTurns": "2",
+      "MaxText": "2",
+      "MaxRev": "5",
+      "BackgroundRenders": "TRUE",
+      "CarryUnsentDraft": "TRUE",
+      "StableScopeRevision": "TRUE"
+    },
+    "composer-replay": {
+      "Threads": "{\"A\", \"B\"}",
+      "MaxTurns": "2",
+      "MaxText": "2",
+      "MaxRev": "12",
+      "BackgroundRenders": "TRUE",
+      "CarryUnsentDraft": "FALSE",
+      "StableScopeRevision": "FALSE"
+    },
+    "inspector-today": {
+      "Nodes": "{\"n1\", \"n2\"}",
+      "MaxRev": "3",
+      "MaxEditors": "3",
+      "Slots": "{1, 2, 3}",
+      "QueueWhileResolving": "FALSE",
+      "RefreshAfterResolve": "FALSE"
+    },
+    "inspector-fixed": {
+      "Nodes": "{\"n1\", \"n2\"}",
+      "MaxRev": "3",
+      "MaxEditors": "3",
+      "Slots": "{1, 2, 3}",
+      "QueueWhileResolving": "TRUE",
+      "RefreshAfterResolve": "TRUE"
+    },
+    "inspector-replay": {
+      "Nodes": "{\"n1\", \"n2\"}",
+      "MaxRev": "6",
+      "MaxEditors": "6",
+      "Slots": "{1, 2, 3, 4}",
+      "QueueWhileResolving": "FALSE",
+      "RefreshAfterResolve": "FALSE"
+    },
+    "input-today": {
+      "MaxVal": "2",
+      "MaxRev": "5",
+      "AuthoredGatesSend": "FALSE"
+    },
+    "input-fixed": {
+      "MaxVal": "2",
+      "MaxRev": "5",
+      "AuthoredGatesSend": "TRUE"
     }
   },
   "checks": [
@@ -244,6 +305,208 @@
       ],
       "expect": "pass",
       "finding": "With the candidate fixes, every claimed child settles."
+    },
+    {
+      "id": "composer-typing-during-send",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "StableScopeRevision": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives"
+      ],
+      "expect": {
+        "violated": "UnsentDraftSurvives"
+      },
+      "finding": "Text typed while a follow-up is in flight stays in the old turn's draft scope; when the new turn loads the composer shows an empty draft and the text is never shown again."
+    },
+    {
+      "id": "composer-typing-during-send-without-renders",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "StableScopeRevision": "TRUE",
+        "BackgroundRenders": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives"
+      ],
+      "expect": {
+        "violated": "UnsentDraftSurvives"
+      },
+      "finding": "Without any unrelated render, leaving the thread and returning during the POST re-enables the prompt and reaches the same loss."
+    },
+    {
+      "id": "composer-settlement-erases-edit",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "invariants": [
+        "TypeOK",
+        "SettlementClearsOnlySentText"
+      ],
+      "expect": {
+        "violated": "SettlementClearsOnlySentText"
+      },
+      "finding": "Re-entering a scope can restore a revision it already had, so a successful send can clear and delete text typed after Send (revision ABA)."
+    },
+    {
+      "id": "composer-sent-text-lingers",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "invariants": [
+        "TypeOK",
+        "SentTextIsNotShownAgain"
+      ],
+      "expect": {
+        "violated": "SentTextIsNotShownAgain"
+      },
+      "finding": "Re-entering a scope during a send bumps its revision without a text change, so a settled send whose refresh was skipped leaves the sent text in an enabled composer."
+    },
+    {
+      "id": "composer-one-send-per-thread",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "invariants": [
+        "TypeOK",
+        "OneSendPerThread"
+      ],
+      "properties": [
+        "SendReleases"
+      ],
+      "fair": true,
+      "expect": "pass",
+      "finding": "At most one follow-up per thread is in flight, and every send releases its thread's Send button.",
+      "constants": {
+        "MaxRev": "4"
+      }
+    },
+    {
+      "id": "composer-fixed",
+      "module": "TurnComposer",
+      "preset": "composer-fixed",
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain",
+        "OneSendPerThread"
+      ],
+      "expect": "pass",
+      "finding": "Moving unsent text to the newest turn's scope and keeping a scope's revision unless its text changes restore every composer promise."
+    },
+    {
+      "id": "inspector-dropped-request",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "constants": {
+        "RefreshAfterResolve": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "LastRequestWins"
+      ],
+      "expect": {
+        "violated": "LastRequestWins"
+      },
+      "finding": "A node click, Close, or turn change made while an annotation draft saves, confirms, or discards is ignored; a dropped Close or turn change also cancels a pending click."
+    },
+    {
+      "id": "inspector-detail-left-dead",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "constants": {
+        "QueueWhileResolving": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "InspectorShowsSelection"
+      ],
+      "expect": {
+        "violated": "InspectorShowsSelection"
+      },
+      "finding": "After a draft save or discard resolves, the selected node is not re-rendered: a refused switch leaves its superseded Node Detail disposed and empty, and a view change during the save leaves the inspector hidden."
+    },
+    {
+      "id": "inspector-stale-state",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "constants": {
+        "QueueWhileResolving": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "InspectorIsCurrent"
+      ],
+      "expect": {
+        "violated": "InspectorIsCurrent"
+      },
+      "finding": "A render during a draft save or discard is dropped, and a switch continues from the state captured at the click, so the inspector shows an older state."
+    },
+    {
+      "id": "inspector-draft-editor-restored",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "invariants": [
+        "TypeOK",
+        "DraftedSelectionHasEditor"
+      ],
+      "expect": "pass",
+      "finding": "Selecting a node with an unconfirmed draft reopens its editor (PRD L2203)."
+    },
+    {
+      "id": "inspector-fixed",
+      "module": "NodeInspector",
+      "preset": "inspector-fixed",
+      "invariants": [
+        "TypeOK",
+        "InspectorShowsSelection",
+        "InspectorIsCurrent",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor"
+      ],
+      "expect": "pass",
+      "finding": "Replaying the latest request made while a draft resolves, and re-rendering the selection from the latest state afterwards, restore every inspector promise."
+    },
+    {
+      "id": "input-answer-skipped",
+      "module": "AuthoredInputSend",
+      "preset": "input-today",
+      "invariants": [
+        "TypeOK",
+        "SendCarriesEnteredAnswer"
+      ],
+      "expect": {
+        "violated": "SendCarriesEnteredAnswer"
+      },
+      "finding": "An authored input committed by clicking Send is not awaited: the Send can be accepted without the answer, which then lands in the next turn's draft."
+    },
+    {
+      "id": "input-send-refused",
+      "module": "AuthoredInputSend",
+      "preset": "input-today",
+      "invariants": [
+        "TypeOK",
+        "SendNotRefusedByOwnAnswer"
+      ],
+      "expect": {
+        "violated": "SendNotRefusedByOwnAnswer"
+      },
+      "finding": "If that commit lands first, the Send carries a stale draft revision and is refused with input_draft_revision_conflict."
+    },
+    {
+      "id": "input-fixed",
+      "module": "AuthoredInputSend",
+      "preset": "input-fixed",
+      "invariants": [
+        "TypeOK",
+        "SendCarriesEnteredAnswer",
+        "SendNotRefusedByOwnAnswer"
+      ],
+      "expect": "pass",
+      "finding": "Gating Send on authored commits, as legacy input controls already do, restores both promises."
     }
   ]
 }

@@ -341,6 +341,586 @@
           "CleanDiscard"
         ]
       ]
+    },
+    {
+      "id": "composer-send-clears-draft",
+      "module": "TurnComposer",
+      "preset": "composer-replay",
+      "init": "view = \"A\"",
+      "promises": [
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain"
+      ],
+      "summary": "A follow-up is sent, its turn loads and finishes, and the composer is empty and usable.",
+      "steps": [
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "PostInserted",
+          "A"
+        ],
+        [
+          "PostSucceeds",
+          "A"
+        ],
+        [
+          "RefreshReturns",
+          "A"
+        ],
+        [
+          "Settle",
+          "A"
+        ],
+        [
+          "TurnFinishes",
+          "A"
+        ],
+        [
+          "Type"
+        ]
+      ]
+    },
+    {
+      "id": "composer-send-failure-keeps-draft",
+      "module": "TurnComposer",
+      "preset": "composer-replay",
+      "init": "view = \"A\"",
+      "promises": [
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain"
+      ],
+      "summary": "A rejected follow-up leaves its text in the composer.",
+      "steps": [
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "PostFails",
+          "A"
+        ],
+        [
+          "SwitchThread",
+          "B"
+        ],
+        [
+          "SwitchThread",
+          "A"
+        ]
+      ]
+    },
+    {
+      "id": "composer-typing-during-send",
+      "module": "TurnComposer",
+      "preset": "composer-replay",
+      "init": "view = \"A\"",
+      "promises": [
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain"
+      ],
+      "summary": "A render during the POST re-enables the prompt; text typed then vanishes when the new turn loads.",
+      "steps": [
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "PostInserted",
+          "A"
+        ],
+        [
+          "PostSucceeds",
+          "A"
+        ],
+        [
+          "BackgroundRender"
+        ],
+        [
+          "Type"
+        ],
+        [
+          "RefreshReturns",
+          "A"
+        ]
+      ],
+      "violatedAtEnd": [
+        "UnsentDraftSurvives"
+      ]
+    },
+    {
+      "id": "composer-return-during-send",
+      "module": "TurnComposer",
+      "preset": "composer-replay",
+      "init": "view = \"A\"",
+      "promises": [
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain"
+      ],
+      "summary": "Leaving the thread and returning during the POST, before the server records the turn, re-enables the prompt; text typed then vanishes when the new turn loads.",
+      "steps": [
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "SwitchThread",
+          "B"
+        ],
+        [
+          "SwitchThread",
+          "A"
+        ],
+        [
+          "Type"
+        ],
+        [
+          "PostInserted",
+          "A"
+        ],
+        [
+          "PostSucceeds",
+          "A"
+        ],
+        [
+          "RefreshReturns",
+          "A"
+        ]
+      ],
+      "violatedAtEnd": [
+        "UnsentDraftSurvives"
+      ]
+    },
+    {
+      "id": "composer-settlement-erases-edit",
+      "module": "TurnComposer",
+      "preset": "composer-replay",
+      "init": "view = \"A\"",
+      "promises": [
+        "SentTextIsNotShownAgain"
+      ],
+      "summary": "Re-entering a thread during its send restores an old revision; an edit reaching the sent revision is cleared by settlement.",
+      "steps": [
+        [
+          "SwitchThread",
+          "B"
+        ],
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "SwitchThread",
+          "A"
+        ],
+        [
+          "SwitchThread",
+          "B"
+        ],
+        [
+          "Type"
+        ],
+        [
+          "PostInserted",
+          "B"
+        ],
+        [
+          "PostSucceeds",
+          "B"
+        ],
+        [
+          "RefreshSkipped",
+          "B"
+        ],
+        [
+          "Settle",
+          "B"
+        ]
+      ],
+      "violatedAtEnd": [
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText"
+      ]
+    },
+    {
+      "id": "composer-sent-text-lingers",
+      "module": "TurnComposer",
+      "preset": "composer-replay",
+      "init": "view = \"A\"",
+      "promises": [
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText"
+      ],
+      "summary": "Re-entering a thread during its send changes the draft's revision; the settled send leaves its text in an enabled composer.",
+      "steps": [
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "SwitchThread",
+          "B"
+        ],
+        [
+          "SwitchThread",
+          "A"
+        ],
+        [
+          "PostInserted",
+          "A"
+        ],
+        [
+          "PostSucceeds",
+          "A"
+        ],
+        [
+          "RefreshSkipped",
+          "A"
+        ],
+        [
+          "Settle",
+          "A"
+        ]
+      ],
+      "violatedAtEnd": [
+        "SentTextIsNotShownAgain"
+      ]
+    },
+    {
+      "id": "inspector-annotate-and-switch",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor"
+      ],
+      "summary": "A node is annotated, the user switches to another node and back, and the draft's editor returns.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "EditDraft"
+        ],
+        [
+          "Click",
+          "n2"
+        ],
+        [
+          "SaveReturns",
+          1,
+          "ok"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Close"
+        ]
+      ]
+    },
+    {
+      "id": "inspector-click-during-discard",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "DraftedSelectionHasEditor"
+      ],
+      "summary": "A click on another node while a draft discard is in flight is ignored.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "Autosave",
+          "n1"
+        ],
+        [
+          "Discard"
+        ],
+        [
+          "Click",
+          "n2"
+        ],
+        [
+          "DiscardReturns",
+          "ok"
+        ]
+      ],
+      "violatedAtEnd": [
+        "LastRequestWins"
+      ]
+    },
+    {
+      "id": "inspector-close-during-flush",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "DraftedSelectionHasEditor"
+      ],
+      "summary": "Close pressed while a switch flushes the draft is ignored and cancels the switch too.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "EditDraft"
+        ],
+        [
+          "Click",
+          "n2"
+        ],
+        [
+          "Close"
+        ],
+        [
+          "SaveReturns",
+          1,
+          "ok"
+        ]
+      ],
+      "violatedAtEnd": [
+        "LastRequestWins"
+      ]
+    },
+    {
+      "id": "inspector-refused-switch-dead-detail",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "LastRequestWins",
+        "DraftedSelectionHasEditor"
+      ],
+      "summary": "A failed draft save refuses a switch but leaves the kept node's superseded Node Detail disposed.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "StatePush",
+          "same"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "EditDraft"
+        ],
+        [
+          "Click",
+          "n2"
+        ],
+        [
+          "SaveReturns",
+          1,
+          "fail"
+        ],
+        [
+          "MountReturns",
+          2
+        ]
+      ],
+      "violatedAtEnd": [
+        "InspectorShowsSelection"
+      ]
+    },
+    {
+      "id": "inspector-double-close",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "DraftedSelectionHasEditor"
+      ],
+      "summary": "A second Close while the first flushes the draft supersedes the first, and neither closes the inspector.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "EditDraft"
+        ],
+        [
+          "Close"
+        ],
+        [
+          "Close"
+        ],
+        [
+          "PrepareReturns",
+          "ok"
+        ]
+      ],
+      "violatedAtEnd": [
+        "LastRequestWins"
+      ]
+    },
+    {
+      "id": "input-commit-then-send",
+      "module": "AuthoredInputSend",
+      "preset": "input-today",
+      "init": "srvOther = FALSE",
+      "promises": [
+        "SendCarriesEnteredAnswer",
+        "SendNotRefusedByOwnAnswer"
+      ],
+      "summary": "An authored answer is committed, then sent, and the Send reserves it.",
+      "steps": [
+        [
+          "Type",
+          1
+        ],
+        [
+          "Commit"
+        ],
+        [
+          "ServeCommit"
+        ],
+        [
+          "CommitReturns"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "ServeSend"
+        ],
+        [
+          "SendReturns"
+        ]
+      ]
+    },
+    {
+      "id": "input-answer-skipped",
+      "module": "AuthoredInputSend",
+      "preset": "input-today",
+      "init": "srvOther = FALSE",
+      "promises": [
+        "SendNotRefusedByOwnAnswer"
+      ],
+      "summary": "Clicking Send commits the authored answer on blur; the Send is served first and is accepted without it.",
+      "steps": [
+        [
+          "Type",
+          1
+        ],
+        [
+          "Commit"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "ServeSend"
+        ],
+        [
+          "SendReturns"
+        ]
+      ],
+      "violatedAtEnd": [
+        "SendCarriesEnteredAnswer"
+      ]
+    },
+    {
+      "id": "input-send-refused",
+      "module": "AuthoredInputSend",
+      "preset": "input-today",
+      "init": "srvOther = FALSE",
+      "promises": [
+        "SendCarriesEnteredAnswer"
+      ],
+      "summary": "Clicking Send commits the authored answer on blur; the commit is served first and the Send is refused.",
+      "steps": [
+        [
+          "Type",
+          1
+        ],
+        [
+          "Commit"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "ServeCommit"
+        ],
+        [
+          "ServeSend"
+        ],
+        [
+          "CommitReturns"
+        ],
+        [
+          "SendReturns"
+        ]
+      ],
+      "violatedAtEnd": [
+        "SendNotRefusedByOwnAnswer"
+      ]
     }
   ]
 }
