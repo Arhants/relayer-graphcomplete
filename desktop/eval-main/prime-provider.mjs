@@ -1,10 +1,9 @@
 import { readFile } from "node:fs/promises";
-import { createManagedRuntimeInstaller } from "../main/managed-runtimes/installer.mjs";
+import { createProductManagedRuntimeInstaller } from "../main/managed-runtimes/product-installer.mjs";
 import { createManagedRuntimeResolver } from "../main/managed-runtimes/resolver.mjs";
 import { createProviderComposition } from "../main/providers/provider-composition.mjs";
 import { productionProviderAdapterRegistry, productionHarnessRuntimeDescriptor, productionProviderRuntimeDependencies } from "../main/providers/provider-adapter-registry.mjs";
-import { assemblePrimeManagedRuntime, checkPrimeManagedRuntime, createPrimeReviewedTreeCopier } from "../main/services/prime-managed-runtime.mjs";
-import { PRIME_AGENT_ASSET_SHA256, selectPrimeAgentDependencyClosureSha256 } from "../main/services/prime-agent-runtime.mjs";
+import { checkPrimeManagedRuntime } from "../main/services/prime-managed-runtime.mjs";
 import { createHarnessReadinessCoordinator } from "../main/services/harness-readiness.mjs";
 import { HARNESS_MANAGED_RUNTIME_REQUIREMENTS, managedRuntimeRequirementForHarness } from "../shared/managed-runtime-requirements.mjs";
 
@@ -32,20 +31,10 @@ export async function loadEvalPrimeProfile({ isPackaged, environment = process.e
 }
 
 export function createEvalManagedPrimeRuntime({ root, appRoot, pythonClientRoot, isPackaged,
-  createInstaller = createManagedRuntimeInstaller }) {
+  createInstaller = createProductManagedRuntimeInstaller }) {
   let installer;
   let resolver;
-  const getInstaller = () => installer ??= createInstaller({ root, assembleRecipe: async (context) => {
-    if (context.recipe.runtimeId !== "prime") return;
-    await assemblePrimeManagedRuntime(context, {
-      copyReviewedTrees: createPrimeReviewedTreeCopier({ appRoot, pythonClientRoot,
-        expectedClosureSha256: selectPrimeAgentDependencyClosureSha256({
-          isPackaged, javascriptContract: context.recipe.runtimeContract.javascript,
-        }),
-        expectedPythonClientSha256: PRIME_AGENT_ASSET_SHA256.pythonPackageTree,
-      }),
-    });
-  } });
+  const getInstaller = () => installer ??= createInstaller({ root, appRoot, pythonClientRoot, isPackaged });
   const getResolver = () => resolver ??= createManagedRuntimeResolver(getInstaller());
   const recipeId = managedRuntimeRequirementForHarness("prime.agent").recipeId;
   return { installer: {

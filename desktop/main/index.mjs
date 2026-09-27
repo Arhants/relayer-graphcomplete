@@ -34,14 +34,10 @@ import { settleShutdownWithin } from "./services/update-restart.mjs";
 import { GraphCompleteRuntimeService, productTemporalFeatures } from "./services/graphcomplete-runtime.mjs";
 import {
   inspectPrimeAgentRuntime,
-  PRIME_AGENT_ASSET_SHA256,
   requirePrimeAgentRuntime,
-  selectPrimeAgentDependencyClosureSha256,
 } from "./services/prime-agent-runtime.mjs";
 import {
-  assemblePrimeManagedRuntime,
   checkPrimeManagedRuntime,
-  createPrimeReviewedTreeCopier,
 } from "./services/prime-managed-runtime.mjs";
 import { resolveDesktopHarnessConfiguration } from "./services/desktop-harness-configuration.mjs";
 import { createSettingsStore } from "./services/settings-store.mjs";
@@ -52,7 +48,7 @@ import {
   GRAPHCOMPLETE_LOGIN_URL,
 } from "./services/desktop-account-service.mjs";
 import { createDesktopUpdater, resolveUpdateChannel } from "./services/updater.mjs";
-import { createManagedRuntimeInstaller } from "./managed-runtimes/installer.mjs";
+import { createProductManagedRuntimeInstaller } from "./managed-runtimes/product-installer.mjs";
 import { createManagedRuntimeResolver } from "./managed-runtimes/resolver.mjs";
 import { createHarnessReadinessCoordinator } from "./services/harness-readiness.mjs";
 import { confirmManagedRuntimeQuit } from "./managed-runtimes/quit-guard.mjs";
@@ -96,22 +92,11 @@ const primeAppRoot = app.isPackaged ? app.getAppPath() : repositoryRoot;
 const primePythonClientRoot = app.isPackaged
   ? join(process.resourcesPath, "python", "relayer-graph", "src")
   : join(repositoryRoot, "python", "relayer-graph", "src");
-const managedRuntimeInstaller = createManagedRuntimeInstaller({
+const managedRuntimeInstaller = createProductManagedRuntimeInstaller({
   root: join(userDataPath, "managed-runtimes"),
-  assembleRecipe: async (context) => {
-    if (context.recipe.runtimeId !== "prime") return;
-    await assemblePrimeManagedRuntime(context, {
-      copyReviewedTrees: createPrimeReviewedTreeCopier({
-        appRoot: primeAppRoot,
-        pythonClientRoot: primePythonClientRoot,
-        expectedClosureSha256: selectPrimeAgentDependencyClosureSha256({
-          isPackaged: app.isPackaged,
-          javascriptContract: context.recipe.runtimeContract.javascript,
-        }),
-        expectedPythonClientSha256: PRIME_AGENT_ASSET_SHA256.pythonPackageTree,
-      }),
-    });
-  },
+  appRoot: primeAppRoot,
+  pythonClientRoot: primePythonClientRoot,
+  isPackaged: app.isPackaged,
 });
 const managedRuntimeResolver = createManagedRuntimeResolver(managedRuntimeInstaller);
 const legacyCodexHome = resolveLegacyCodexHome(userDataPath, process.env);
