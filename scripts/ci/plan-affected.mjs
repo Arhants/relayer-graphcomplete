@@ -297,7 +297,8 @@ function buildPlan(repository, config, changedFiles, forcedMode) {
       if (ownerMatches(owner, path)) {
         npmRoots.add(owner.package);
         chapters.typescript = true;
-        chapters.packaging ||= owner.packaging === true;
+        chapters.packaging ||= owner.packaging === true
+          && !(owner.packagingExcludedPrefixes ?? []).some((prefix) => path.startsWith(prefix));
         rootTypeScript ||= owner.package === "relayer-desktop";
         for (const testPath of owner.vitestFiles ?? [])
           vitestFiles.add(testPath);

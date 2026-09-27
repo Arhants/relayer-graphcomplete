@@ -115,3 +115,20 @@ passed 37/37, and real Prime KernelManager passed 2/2. The full repository check
 passed: Rust format/Clippy/workspace/crash, package/type checks, 2,453 Vitest
 cases (3 skipped), native Codex 2/2, Python 37/37, receipt lint and PRD readability.
 Current-head CI follows the integration commit.
+
+## Final merge candidate
+
+Main #518 (48d819f9) integrated cleanly. Its Eval-only packaging exclusions
+preserve runtime verification and select full verification including packaging
+for this PR. The desktop now explicitly declares its existing MCP SDK peer and
+rejects bundled developer-only Eval-runner. No production Eval-runner imports
+remain.
+
+/root/ready_standards and /root/ready_spec reviewed this integration, with no
+actionable findings. Renewed scope: 72 non-evidence files against 48d819f9,
+sorted path + NUL + bytes + NUL SHA256
+5b1ce2e14273872c665317a255068455ee373ad457cfc5e4a4e4638cdc8b9f59.
+Neither independently ran tests/build. The Python tree pin remains unchanged.
+Final local npm run check and npm run build passed: 2,466 Vitest cases
+(3 skipped), native Codex 2/2, Python 37/37, and all Rust/type/receipt/readability
+stages. Exact-head CI outcomes are recorded in the PR.
