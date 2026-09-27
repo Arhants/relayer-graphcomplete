@@ -7,6 +7,7 @@ import {
   NodePlacementObject,
   RelayerGraphClient,
   css,
+  compiledNodeDetailHasExactMountHost,
   DetailCompilationError,
   DETAIL_AUTHORING_LIMITS,
   detailCapability,
@@ -18,6 +19,20 @@ import { assetRef } from "../src/detail.js";
 
 describe("typed Node Detail authoring compiler", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("matches one parsed compiled mount to its declared host", () => {
+    const detail = {
+      components: [{ id: "main", order: 0, html: '<input data-gc-mount="input">', css: "" }],
+    };
+    const mount = { id: "input", componentId: "main", kind: "capability" as const, host: "input" };
+    expect(compiledNodeDetailHasExactMountHost(detail, mount)).toBe(true);
+    expect(compiledNodeDetailHasExactMountHost({
+      components: [{ ...detail.components[0]!, html: '<div data-gc-mount="input"></div>' }],
+    }, mount)).toBe(false);
+    expect(compiledNodeDetailHasExactMountHost({
+      components: [{ ...detail.components[0]!, html: '<input data-gc-mount="input"><input data-gc-mount="input">' }],
+    }, mount)).toBe(false);
+  });
 
   it("checkpoints incrementally authored components in stable identity order", () => {
     const detail = new NodeDetailAuthoring();

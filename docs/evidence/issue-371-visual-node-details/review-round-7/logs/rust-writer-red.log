@@ -1,0 +1,23 @@
+   Compiling relayer-graph-core v0.0.0 (/Users/vishaltandale/.codex/worktrees/05b1/relayer-graphcomplete/crates/relayer-graph-core)
+   Compiling relayer-graph-server v0.0.0 (/Users/vishaltandale/.codex/worktrees/05b1/relayer-graphcomplete/crates/relayer-graph-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.78s
+     Running tests/import_visual_asset_transport.rs (target/debug/deps/import_visual_asset_transport-3452cf30188d3a3e)
+
+running 1 test
+test writer_asset_reads_require_visible_nodes_and_live_authority ... FAILED
+
+failures:
+
+---- writer_asset_reads_require_visible_nodes_and_live_authority stdout ----
+
+thread 'writer_asset_reads_require_visible_nodes_and_live_authority' (177532261) panicked at crates/relayer-graph-server/tests/import_visual_asset_transport.rs:565:5:
+assertion failed: foreign_writer.accepted_detail_asset(node, "visual").await.is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    writer_asset_reads_require_visible_nodes_and_live_authority
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `-p relayer-graph-server --test import_visual_asset_transport`

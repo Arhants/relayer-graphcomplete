@@ -1,0 +1,27 @@
+{
+  "sourceSnapshot": "source-snapshot.json",
+  "sourceSnapshotSha256": "3c4a740c3c053f5beffa3b0f78a50ce9b2eed630c76dd497e70569fdbcea806d",
+  "npmRunCheck": {
+    "passed": true,
+    "vitestPassed": 2350,
+    "vitestSkipped": 3,
+    "secretBoundaryPassed": 2,
+    "log": "logs/full-check.log",
+    "firstAttempt": "One recursive-completion teardown failed after functional assertions. No source changes; isolated three-test replay passed, then one unchanged full rerun passed. Inner original cleanup cause was not captured; no deadline weakening. Logs retained."
+  },
+  "desktop": {
+    "passed": true,
+    "includesBuild": true,
+    "cleanupCompleted": true,
+    "manifest": "desktop/manifest.json",
+    "manifestSha256": "722139e31cf98f22383f7346b9fb7bded4a2d4245294e9062b82fd57722efd83",
+    "screenshotsMatchInspectedRound4": true,
+    "log": "logs/desktop-proof.log"
+  },
+  "paidInferenceCalls": 0,
+  "limits": [
+    "Fresh CI required before merge",
+    "Production defaults remain unchanged",
+    "No paid comparison or release proof"
+  ]
+}

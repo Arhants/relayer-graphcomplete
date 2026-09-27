@@ -2,17 +2,20 @@
 //!
 //! V1 is a JSONL stream containing one [`ConversationExportRecord::Header`]
 //! followed by the exact ordered [`ConversationExportRecord::Turn`] records
-//! declared by that header. This module owns only the portable contract and
+//! declared by that header. V2 adds digest-deduplicated visual content records
+//! between the header and turns. This module owns only the portable contract and
 //! inference-free validation; snapshot construction and persistence live at
 //! higher product boundaries.
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub const EXPORT_VERSION_V1: u32 = 1;
+pub const EXPORT_VERSION_V2: u32 = 2;
 pub const MAX_EXPORT_BYTES: usize = 256 * 1024 * 1024;
 pub const MAX_JSONL_LINE_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_TURNS: usize = 10_000;
@@ -28,6 +31,7 @@ pub const MAX_PERMISSION_RECEIPT_BYTES: usize = 64 * 1024;
 #[serde(tag = "recordType", rename_all = "camelCase")]
 pub enum ConversationExportRecord {
     Header(Box<ConversationExportHeader>),
+    VisualAssetContent(Box<ExportVisualAssetContent>),
     Turn(Box<ConversationExportTurn>),
 }
 
@@ -39,6 +43,17 @@ pub struct ConversationExportHeader {
     pub producer: ExportProducer,
     pub conversation: ExportConversation,
     pub turns: Vec<ExportTurnManifestEntry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub visual_asset_contents: Vec<ExportVisualAssetContent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportVisualAssetContent {
+    pub digest_sha256: String,
+    pub media_type: String,
+    pub byte_length: usize,
+    pub content_base64: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -373,7 +388,26 @@ pub struct ExportNode {
     /// export deliberately left out. The Markdown `detail` fallback remains.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub authored_detail_omitted: Option<ExportAuthoredDetailOmission>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub authored_detail_assets: Vec<ExportVisualAssetAssociation>,
     pub state: ExportRecordState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportVisualAssetAssociation {
+    pub asset_id: String,
+    pub digest_sha256: String,
+    pub media_type: String,
+    pub byte_length: usize,
+    pub provenance: ExportVisualAssetProvenance,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportVisualAssetProvenance {
+    pub source: String,
+    pub file_name: String,
 }
 
 /// Why an accepted node's authored detail package is absent from its export record.
@@ -546,32 +580,31 @@ pub fn validate_export_records(
         ));
     }
     let mut validator = ConversationExportValidator::new(header)?;
-    if records.len() != header.turns.len() + 1 {
-        return Err(ExportValidationError::new(
-            "turn_inventory_mismatch",
-            "records",
-            format!(
-                "Header declares {} turns but the stream contains {} turn records.",
-                header.turns.len(),
-                records.len().saturating_sub(1)
-            ),
-        ));
-    }
     for record in &records[1..] {
-        let ConversationExportRecord::Turn(turn) = record else {
-            unreachable!("additional headers were rejected above")
-        };
-        validator.push_turn(turn)?;
+        match record {
+            ConversationExportRecord::VisualAssetContent(content) => {
+                validator.push_visual_asset_content(content)?;
+            }
+            ConversationExportRecord::Turn(turn) => validator.push_turn(turn)?,
+            ConversationExportRecord::Header(_) => {
+                unreachable!("additional headers were rejected above")
+            }
+        }
     }
     validator.finish()
 }
 
-/// Inference-free V1 validator for readers that consume one JSONL turn at a time.
+struct VisualAssetContentMetadata {
+    media_type: String,
+    byte_length: usize,
+}
+
+/// Inference-free V1/V2 validator for incremental JSONL readers.
 ///
-/// The validator retains the bounded header inventory, prior invoke provenance,
-/// portable IDs, and fixed-size SHA-256 definition fingerprints. It never retains
-/// a complete turn or accepted graph payload after [`Self::push_turn`] returns.
+/// Retains inventory, provenance, definition fingerprints, and content metadata;
+/// never retains complete turn payloads or base64 content after a push returns.
 pub struct ConversationExportValidator {
+    export_version: u32,
     manifest: Vec<ExportTurnManifestEntry>,
     next_turn: usize,
     prior_invokes: HashMap<String, HashSet<String>>,
@@ -584,6 +617,8 @@ pub struct ConversationExportValidator {
     context_actions_by_id: HashMap<String, [u8; 32]>,
     input_action_ids: HashSet<String>,
     submitted_input_ids: HashSet<String>,
+    visual_asset_contents: HashMap<String, VisualAssetContentMetadata>,
+    referenced_visual_asset_digests: HashSet<String>,
     policy: ConversationExportValidationPolicy,
 }
 
@@ -610,6 +645,7 @@ impl ConversationExportValidator {
     ) -> Result<Self, ExportValidationError> {
         validate_header(header)?;
         Ok(Self {
+            export_version: header.export_version,
             manifest: header.turns.clone(),
             next_turn: 0,
             prior_invokes: HashMap::new(),
@@ -622,8 +658,49 @@ impl ConversationExportValidator {
             context_actions_by_id: HashMap::new(),
             input_action_ids: HashSet::new(),
             submitted_input_ids: HashSet::new(),
+            visual_asset_contents: HashMap::new(),
+            referenced_visual_asset_digests: HashSet::new(),
             policy,
         })
+    }
+
+    pub fn push_visual_asset_content(
+        &mut self,
+        content: &ExportVisualAssetContent,
+    ) -> Result<(), ExportValidationError> {
+        if self.export_version == EXPORT_VERSION_V1 {
+            return Err(ExportValidationError::new(
+                "record_type_not_supported",
+                "recordType",
+                "Visual asset content records require exportVersion 2.",
+            ));
+        }
+        if self.next_turn != 0 {
+            return Err(ExportValidationError::new(
+                "visual_asset_content_order_invalid",
+                "records",
+                "Visual asset content records must precede every turn record.",
+            ));
+        }
+        validate_visual_asset_content(content, "record.visualAssetContent")?;
+        if self
+            .visual_asset_contents
+            .insert(
+                content.digest_sha256.clone(),
+                VisualAssetContentMetadata {
+                    media_type: content.media_type.clone(),
+                    byte_length: content.byte_length,
+                },
+            )
+            .is_some()
+        {
+            return Err(ExportValidationError::new(
+                "visual_asset_content_duplicate",
+                "record.visualAssetContent.digestSha256",
+                "Visual asset content must be globally deduplicated by digest.",
+            ));
+        }
+        Ok(())
     }
 
     pub fn push_turn(
@@ -717,6 +794,7 @@ impl ConversationExportValidator {
                 detail: context.target.detail.clone(),
                 authored_detail: None,
                 authored_detail_omitted: None,
+                authored_detail_assets: Vec::new(),
                 state: context.target.state,
             };
             register_node_definition(
@@ -728,6 +806,14 @@ impl ConversationExportValidator {
             )?;
         }
         if let Some(view) = &turn.accepted_view {
+            for (layer_index, layer) in view.layers.iter().enumerate() {
+                for (node_index, node) in layer.nodes.iter().enumerate() {
+                    self.validate_node_visual_assets(
+                        node,
+                        &format!("{path}.acceptedView.layers[{layer_index}].nodes[{node_index}]"),
+                    )?;
+                }
+            }
             if self
                 .context_actions_by_id
                 .contains_key(&view.root_action.id)
@@ -805,6 +891,119 @@ impl ConversationExportValidator {
                 ),
             ));
         }
+        if let Some(unreachable) = self
+            .visual_asset_contents
+            .keys()
+            .find(|digest| !self.referenced_visual_asset_digests.contains(*digest))
+        {
+            return Err(ExportValidationError::new(
+                "visual_asset_content_unreachable",
+                "header.visualAssetContents",
+                format!(
+                    "Visual asset content {unreachable} is not referenced by an exported node."
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_node_visual_assets(
+        &mut self,
+        node: &ExportNode,
+        path: &str,
+    ) -> Result<(), ExportValidationError> {
+        if node.authored_detail.is_none() || node.authored_detail_omitted.is_some() {
+            if !node.authored_detail_assets.is_empty() {
+                return Err(ExportValidationError::new(
+                    "authored_detail_asset_without_detail",
+                    format!("{path}.authoredDetailAssets"),
+                    "Visual asset associations require an exported authored detail package.",
+                ));
+            }
+            return Ok(());
+        }
+        let package_assets = node
+            .authored_detail
+            .as_ref()
+            .and_then(|detail| detail.get("assets"))
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| {
+                ExportValidationError::new(
+                    "authored_detail_assets_invalid",
+                    format!("{path}.authoredDetail.assets"),
+                    "An authored detail package must declare its asset pins as an array.",
+                )
+            })?;
+        let mut asset_ids = HashSet::new();
+        for (index, association) in node.authored_detail_assets.iter().enumerate() {
+            let association_path = format!("{path}.authoredDetailAssets[{index}]");
+            require_string(&association.asset_id, format!("{association_path}.assetId"))?;
+            if !matches!(association.provenance.source.as_str(), "user" | "system") {
+                return Err(ExportValidationError::new(
+                    "visual_asset_provenance_invalid",
+                    format!("{association_path}.provenance.source"),
+                    "Visual asset provenance must be user or system.",
+                ));
+            }
+            require_string(
+                &association.provenance.file_name,
+                format!("{association_path}.provenance.fileName"),
+            )?;
+            if !asset_ids.insert(&association.asset_id) {
+                return Err(ExportValidationError::new(
+                    "authored_detail_asset_duplicate",
+                    format!("{association_path}.assetId"),
+                    "A node may associate a logical visual asset only once.",
+                ));
+            }
+            let matching_pin = package_assets.iter().find(|pin| {
+                pin.get("id").and_then(serde_json::Value::as_str)
+                    == Some(association.asset_id.as_str())
+            });
+            if matching_pin.is_none_or(|pin| {
+                pin.get("digestSha256").and_then(serde_json::Value::as_str)
+                    != Some(association.digest_sha256.as_str())
+                    || pin.get("mediaType").and_then(serde_json::Value::as_str)
+                        != Some(association.media_type.as_str())
+                    || pin
+                        .get("representation")
+                        .and_then(serde_json::Value::as_str)
+                        != Some("image")
+            }) {
+                return Err(ExportValidationError::new(
+                    "authored_detail_asset_pin_mismatch",
+                    association_path,
+                    "The exported asset association must exactly match its authored detail asset pin.",
+                ));
+            }
+            let Some(content) = self.visual_asset_contents.get(&association.digest_sha256) else {
+                return Err(ExportValidationError::new(
+                    "visual_asset_content_missing",
+                    format!("{path}.authoredDetailAssets[{index}].digestSha256"),
+                    "Every exported asset association must resolve to header content.",
+                ));
+            };
+            if content.media_type != association.media_type
+                || content.byte_length != association.byte_length
+            {
+                return Err(ExportValidationError::new(
+                    "visual_asset_content_metadata_mismatch",
+                    format!("{path}.authoredDetailAssets[{index}]"),
+                    "The exported asset association must match its header content metadata.",
+                ));
+            }
+            self.referenced_visual_asset_digests
+                .insert(association.digest_sha256.clone());
+        }
+        if !node.authored_detail_assets.is_empty()
+            && node.authored_detail_assets.len() != package_assets.len()
+        {
+            return Err(ExportValidationError::new(
+                "authored_detail_asset_inventory_mismatch",
+                format!("{path}.authoredDetailAssets"),
+                "Portable authored detail assets must include every package pin or remain absent for a legacy export.",
+            ));
+        }
         Ok(())
     }
 }
@@ -856,6 +1055,7 @@ fn register_immutable_view_records(
 struct NodeDefinitionDigest {
     base: [u8; 32],
     authored_detail: Option<[u8; 32]>,
+    authored_detail_assets: Option<[u8; 32]>,
 }
 
 fn register_node_definition(
@@ -889,8 +1089,27 @@ fn register_node_definition(
         .map_err(|error| {
             ExportValidationError::new(code, path, format!("Could not fingerprint {id}: {error}."))
         })?;
+    let authored_detail_assets = if value.authored_detail_assets.is_empty() {
+        None
+    } else {
+        Some(
+            Sha256::digest(
+                serde_json::to_vec(&value.authored_detail_assets).map_err(|error| {
+                    ExportValidationError::new(
+                        code,
+                        path,
+                        format!("Could not fingerprint {id}: {error}."),
+                    )
+                })?,
+            )
+            .into(),
+        )
+    };
     if let Some(existing) = definitions.get_mut(id) {
         if existing.base != base
+            || existing.authored_detail_assets.is_some()
+                && authored_detail_assets.is_some()
+                && existing.authored_detail_assets != authored_detail_assets
             || existing.authored_detail.is_some()
                 && authored_detail.is_some()
                 && existing.authored_detail != authored_detail
@@ -904,12 +1123,16 @@ fn register_node_definition(
         if existing.authored_detail.is_none() {
             existing.authored_detail = authored_detail;
         }
+        if existing.authored_detail_assets.is_none() {
+            existing.authored_detail_assets = authored_detail_assets;
+        }
     } else {
         definitions.insert(
             id.to_owned(),
             NodeDefinitionDigest {
                 base,
                 authored_detail,
+                authored_detail_assets,
             },
         );
     }
@@ -940,14 +1163,21 @@ fn register_definition<T: Serialize>(
 }
 
 fn validate_header(header: &ConversationExportHeader) -> Result<(), ExportValidationError> {
-    if header.export_version != EXPORT_VERSION_V1 {
+    if !matches!(header.export_version, EXPORT_VERSION_V1 | EXPORT_VERSION_V2) {
         return Err(ExportValidationError::new(
             "unsupported_export_version",
             "header.exportVersion",
             format!(
-                "V1 readers support exportVersion 1, received {}.",
+                "Readers support exportVersion 1 and 2, received {}.",
                 header.export_version
             ),
+        ));
+    }
+    if !header.visual_asset_contents.is_empty() {
+        return Err(ExportValidationError::new(
+            "visual_asset_content_record_required",
+            "header.visualAssetContents",
+            "Visual asset bytes must use dedicated bounded content records.",
         ));
     }
     require_id(
@@ -1013,6 +1243,69 @@ fn validate_header(header: &ConversationExportHeader) -> Result<(), ExportValida
         }
     }
     Ok(())
+}
+
+fn validate_visual_asset_content(
+    content: &ExportVisualAssetContent,
+    path: &str,
+) -> Result<(), ExportValidationError> {
+    if !is_plain_sha256(&content.digest_sha256) {
+        return Err(ExportValidationError::new(
+            "visual_asset_digest_invalid",
+            format!("{path}.digestSha256"),
+            "Visual asset digests must be 64 lowercase hexadecimal characters.",
+        ));
+    }
+    if !matches!(
+        content.media_type.as_str(),
+        "image/jpeg" | "image/png" | "image/svg+xml"
+    ) {
+        return Err(ExportValidationError::new(
+            "visual_asset_media_type_invalid",
+            format!("{path}.mediaType"),
+            "Visual assets support JPEG, PNG, and sanitized SVG content.",
+        ));
+    }
+    let bytes = BASE64_STANDARD
+        .decode(&content.content_base64)
+        .map_err(|_| {
+            ExportValidationError::new(
+                "visual_asset_base64_invalid",
+                format!("{path}.contentBase64"),
+                "Visual asset content must use canonical base64.",
+            )
+        })?;
+    if BASE64_STANDARD.encode(&bytes) != content.content_base64 {
+        return Err(ExportValidationError::new(
+            "visual_asset_base64_invalid",
+            format!("{path}.contentBase64"),
+            "Visual asset content must use canonical base64.",
+        ));
+    }
+    if bytes.is_empty() || bytes.len() > 8 * 1024 * 1024 {
+        return Err(ExportValidationError::new(
+            "visual_asset_content_size_invalid",
+            format!("{path}.byteLength"),
+            "Visual asset content must be nonempty and at most 8 MiB.",
+        ));
+    }
+    if bytes.len() != content.byte_length
+        || format!("{:x}", Sha256::digest(&bytes)) != content.digest_sha256
+    {
+        return Err(ExportValidationError::new(
+            "visual_asset_content_corrupt",
+            path,
+            "Visual asset bytes must match the declared length and SHA-256 digest.",
+        ));
+    }
+    Ok(())
+}
+
+fn is_plain_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn validate_turn(
