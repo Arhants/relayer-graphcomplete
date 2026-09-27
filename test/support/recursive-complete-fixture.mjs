@@ -52,6 +52,38 @@ function waitForAbort(signal) {
   });
 }
 
+function parentAbortedError() {
+  const error = new Error("parent aborted while waiting for child readiness");
+  error.name = "AbortError";
+  return error;
+}
+
+async function waitForChildReadiness(childReadiness, child, signal) {
+  if (signal?.aborted) throw parentAbortedError();
+  const childOutcomes = [
+    childReadiness.promise,
+    child.result.then(
+      () => { throw new Error("child completed before publishing its current"); },
+      (error) => { throw error; },
+    ),
+  ];
+  if (!signal) {
+    await Promise.race(childOutcomes);
+    return;
+  }
+  let onAbort;
+  const parentAborted = new Promise((_, reject) => {
+    onAbort = () => reject(parentAbortedError());
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    await Promise.race([...childOutcomes, parentAborted]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+  if (signal.aborted) throw parentAbortedError();
+}
+
 /** Production-seam fixture shared by recursive runtime and Eval Desktop integration tests. */
 export function recursiveCompleteFixtureFactory(
   observed,
@@ -171,6 +203,7 @@ async function runRecursiveFixture(
   }
 
   try {
+    if (signal?.aborted) throw parentAbortedError();
     const child = completeChild(inputGraph);
     observed.childCompletionId = child.completionId;
 
@@ -182,13 +215,8 @@ async function runRecursiveFixture(
     }
 
     if (blocksForChild) {
-      await Promise.race([
-        childReadiness.promise,
-        child.result.then(
-          () => { throw new Error("child completed before publishing its current"); },
-          (error) => { throw error; },
-        ),
-      ]);
+      await waitForChildReadiness(childReadiness, child, signal);
+      if (signal?.aborted) throw parentAbortedError();
       await child.stop("the parent no longer needs this branch");
       observed.stoppedChild = await child.current.snapshot();
     } else {

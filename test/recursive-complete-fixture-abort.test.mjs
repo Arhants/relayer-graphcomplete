@@ -51,7 +51,7 @@ function controlledChild(advanceCurrent) {
   return { controller, enteredAdvance, handle, observed };
 }
 
-function controlledParent({ childStart, childAdvance, failChildStart = false }) {
+function controlledParent({ childStart, childAdvance, failChildStart = false, parentSignal }) {
   let currentReads = 0;
   let currentAdvances = 0;
   const childAdvanceEntered = deferred();
@@ -118,7 +118,7 @@ function controlledParent({ childStart, childAdvance, failChildStart = false }) 
     inputGraph: { id: 1, detail: "Parent task" },
     completionBroker: { token: "fixture" },
     graph: { acquireCapability: () => ({ url: "http://unused", token: "fixture", nodeId: 1 }) },
-  });
+  }, parentSignal);
   return {
     childAdvanceEntered,
     childCompletionCreated,
@@ -129,13 +129,14 @@ function controlledParent({ childStart, childAdvance, failChildStart = false }) 
   };
 }
 
-function controlledRig({ routes, failingStarts = [], failingAdvances = [] }) {
+function controlledRig({ routes, failingStarts = [], failingAdvances = [], onChildCreated }) {
   const childIds = new Set([...routes.values()]);
   const parentToChild = new Map(routes);
   const childStarts = new Map([...childIds].map((id) => [id, deferred()]));
   const childAdvances = new Map([...childIds].map((id) => [id, deferred()]));
   const childAdvanceEntered = new Map([...childIds].map((id) => [id, deferred()]));
   const stopCalls = [];
+  const createdChildIds = [];
   const childCompletionCreated = new Map([...childIds].map((id) => [id, deferred()]));
   const harnessByChild = new Map();
   const observed = { childBlocks: true };
@@ -166,6 +167,7 @@ function controlledRig({ routes, failingStarts = [], failingAdvances = [] }) {
   let harness;
   const completeChild = (inputGraph) => {
     const childId = inputGraph.interactionNode;
+    createdChildIds.push(childId);
     const childResult = deferred();
     void childResult.promise.catch(() => undefined);
     const controller = new AbortController();
@@ -182,6 +184,7 @@ function controlledRig({ routes, failingStarts = [], failingAdvances = [] }) {
       current: { snapshot: async () => ({ lifecycle: "stopped", revision: childId }) },
     };
     created.resolve();
+    onChildCreated?.(childId);
     childStarts.get(childId).promise.then(async () => {
       if (failingStarts.includes(childId)) {
         childResult.reject(new Error(`child ${childId} startup failed`));
@@ -205,11 +208,15 @@ function controlledRig({ routes, failingStarts = [], failingAdvances = [] }) {
     for (const parentId of parentIds) harnessByChild.set(parentToChild.get(parentId), harness);
     return harness;
   };
-  const startParent = (parentId, selectedHarness = harness ?? createHarness()) => selectedHarness.complete({
+  const startParent = (
+    parentId,
+    selectedHarness = harness ?? createHarness(),
+    signal,
+  ) => selectedHarness.complete({
     inputGraph: { id: parentId, detail: "Parent task" },
     completionBroker: { token: "fixture" },
     graph: { acquireCapability: () => ({ url: "http://unused", token: "fixture", nodeId: parentId }) },
-  });
+  }, signal);
 
   return {
     childAdvanceEntered,
@@ -217,6 +224,7 @@ function controlledRig({ routes, failingStarts = [], failingAdvances = [] }) {
     childCompletionCreated,
     childStarts,
     createHarness,
+    createdChildIds,
     observed,
     startParent,
     stopCalls,
@@ -360,7 +368,13 @@ describe("recursive fixture cancellation readiness", () => {
   it("parent waits through delayed child startup and publication before stopping", async () => {
     const childStart = deferred();
     const childAdvance = deferred();
-    const parent = controlledParent({ childStart, childAdvance });
+    const controller = new AbortController();
+    const removeAbortListener = vi.spyOn(controller.signal, "removeEventListener");
+    const parent = controlledParent({
+      childStart,
+      childAdvance,
+      parentSignal: controller.signal,
+    });
 
     await parent.childCompletionCreated.promise;
     expect(await settlesAfterTurns(parent.parent.settled)).toBeUndefined();
@@ -375,17 +389,105 @@ describe("recursive fixture cancellation readiness", () => {
     await expect(parent.parent.settled).resolves.toMatchObject({ status: "exited" });
     expect(parent.stopCalls).toEqual(["stop"]);
     expect(parent.observed.stoppedChild).toMatchObject({ lifecycle: "stopped", revision: 2 });
+    expect(removeAbortListener).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 
   it("parent fails promptly when child startup fails before readiness", async () => {
     const childStart = deferred();
     const childAdvance = deferred();
-    const parent = controlledParent({ childStart, childAdvance, failChildStart: true });
+    const controller = new AbortController();
+    const removeAbortListener = vi.spyOn(controller.signal, "removeEventListener");
+    const parent = controlledParent({
+      childStart,
+      childAdvance,
+      failChildStart: true,
+      parentSignal: controller.signal,
+    });
 
     await parent.childCompletionCreated.promise;
     childStart.resolve();
     await expect(parent.parent.settled).resolves.toMatchObject({ status: "failed" });
     expect(parent.stopCalls).toEqual([]);
+    expect(removeAbortListener).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+
+  it("does not start an independent child when the parent is already aborted", async () => {
+    const rig = controlledRig({ routes: new Map([[1, 2]]) });
+    const controller = new AbortController();
+    controller.abort();
+
+    const parent = rig.startParent(1, rig.createHarness(), controller.signal);
+
+    await expect(parent.settled).resolves.toMatchObject({ status: "failed" });
+    expect(rig.createdChildIds).toEqual([]);
+    expect(rig.stopCalls).toEqual([]);
+  });
+
+  it("settles a parent aborted during readiness without stopping its child or sibling", async () => {
+    const rig = controlledRig({
+      routes: new Map([[1, 2], [3, 4]]),
+      failingAdvances: [2],
+    });
+    const controller = new AbortController();
+    const removeAbortListener = vi.spyOn(controller.signal, "removeEventListener");
+    const harness = rig.createHarness();
+    const parent = rig.startParent(1, harness, controller.signal);
+    const sibling = rig.startParent(3, harness);
+    await Promise.all([
+      rig.childCompletionCreated.get(2).promise,
+      rig.childCompletionCreated.get(4).promise,
+    ]);
+
+    controller.abort();
+
+    await expect(parent.settled).resolves.toMatchObject({ status: "failed" });
+    expect(removeAbortListener).toHaveBeenCalledWith("abort", expect.any(Function));
+    expect(rig.createdChildIds).toEqual([2, 4]);
+    expect(rig.stopCalls).toEqual([]);
+
+    rig.childStarts.get(2).resolve();
+    await rig.childAdvanceEntered.get(2).promise;
+    await new Promise(setImmediate);
+
+    rig.childStarts.get(4).resolve();
+    await rig.childAdvanceEntered.get(4).promise;
+    rig.childAdvances.get(4).resolve({ revision: 2 });
+    await expect(sibling.settled).resolves.toMatchObject({ status: "exited" });
+    expect(rig.stopCalls).toEqual([4]);
+  });
+
+  it("observes a child rejection after launch synchronously aborts its parent", async () => {
+    const controller = new AbortController();
+    const rig = controlledRig({
+      routes: new Map([[1, 2]]),
+      failingStarts: [2],
+      onChildCreated: () => controller.abort(),
+    });
+    const parent = rig.startParent(1, rig.createHarness(), controller.signal);
+
+    await expect(parent.settled).resolves.toMatchObject({ status: "failed" });
+    rig.childStarts.get(2).resolve();
+    await new Promise(setImmediate);
+    expect(rig.stopCalls).toEqual([]);
+  });
+
+  it("does not stop a child when readiness and parent abort happen in the same turn", async () => {
+    const rig = controlledRig({ routes: new Map([[1, 2]]) });
+    const controller = new AbortController();
+    const removeAbortListener = controller.signal.removeEventListener.bind(controller.signal);
+    vi.spyOn(controller.signal, "removeEventListener").mockImplementation((...args) => {
+      removeAbortListener(...args);
+      controller.abort();
+    });
+    const parent = rig.startParent(1, rig.createHarness(), controller.signal);
+    await rig.childCompletionCreated.get(2).promise;
+    rig.childStarts.get(2).resolve();
+    await rig.childAdvanceEntered.get(2).promise;
+
+    rig.childAdvances.get(2).resolve({ revision: 2 });
+
+    await expect(parent.settled).resolves.toMatchObject({ status: "failed" });
+    expect(rig.stopCalls).toEqual([]);
   });
 
   it("uses a fresh readiness gate for a second parent on the same harness", async () => {
