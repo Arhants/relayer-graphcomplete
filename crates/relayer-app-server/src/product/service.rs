@@ -1759,6 +1759,12 @@ impl ProductService {
             .await?)
     }
 
+    pub(crate) async fn unwinding_recursive_attempts(
+        &self,
+    ) -> Result<Vec<super::UnwindingRecursiveAttempt>, ProductError> {
+        Ok(self.storage.unwinding_recursive_attempts().await?)
+    }
+
     pub(crate) async fn end_completion_execution_attempt(
         &self,
         interaction_id: InteractionId,

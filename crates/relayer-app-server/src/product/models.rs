@@ -56,6 +56,15 @@ pub(crate) struct Thread {
     pub(crate) imported: bool,
 }
 
+/// A recursive child that settled while its provider still ran, found after a restart.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UnwindingRecursiveAttempt {
+    pub(crate) attempt_id: i64,
+    pub(crate) interaction_id: super::InteractionId,
+    pub(crate) thread_id: super::ThreadId,
+    pub(crate) graph_completion_id: i64,
+}
+
 /// The outcome, failure category and effect boundary a recursive child's attempt takes
 /// once its execution has settled with `completion_status`. The outcome is fixed at
 /// settlement; the attempt row stays `running` only while the child's provider unwinds,
@@ -63,10 +72,11 @@ pub(crate) struct Thread {
 pub(crate) fn settled_recursive_attempt_outcome(
     completion_status: &str,
 ) -> (&'static str, Option<&'static str>, &'static str) {
-    if completion_status == "accepted" {
-        ("accepted", None, "graph_write")
-    } else {
-        ("execution_failed", Some("recursive_completion"), "unknown")
+    match completion_status {
+        "accepted" => ("accepted", None, "graph_write"),
+        // The user stopped it, for example by cancelling an approval.
+        "stopped" => ("cancelled", None, "unknown"),
+        _ => ("execution_failed", Some("recursive_completion"), "unknown"),
     }
 }
 

@@ -489,7 +489,13 @@ pub(crate) async fn settled_attempt_outcome(
         .latest_attempt
         .as_ref()
         .is_some_and(|attempt| attempt.outcome == "running");
-    if !running {
+    // Only a status the snapshot already shows as settled decides the outcome. A child
+    // that settles after the snapshot was read still exports as running, consistently.
+    let settled_status = matches!(
+        interaction.completion_status.as_str(),
+        "accepted" | "failed" | "stopped"
+    );
+    if !running || !settled_status {
         return Ok(None);
     }
     Ok(product

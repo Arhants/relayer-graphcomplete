@@ -88,9 +88,8 @@ struct HarnessControl {
     admission: Mutex<&'static str>,
     /// The execution leases granted and not yet released.
     granted: Mutex<std::collections::HashSet<String>>,
-    /// The harness-policy revisions the last admission and the last start carried.
+    /// The harness-policy revision the last admission carried.
     admitted_policy_revision: Mutex<Option<u64>>,
-    started_policy_revision: Mutex<Option<u64>>,
     /// The child's provider run: none | running | cancelled | exited_ok | exited_err.
     prov: Mutex<&'static str>,
     /// The graph completion a successful start acknowledges.
@@ -289,7 +288,6 @@ impl World {
             admission: Mutex::new("ok"),
             granted: Mutex::new(std::collections::HashSet::new()),
             admitted_policy_revision: Mutex::new(None),
-            started_policy_revision: Mutex::new(None),
             prov: Mutex::new("none"),
             completion_id: Mutex::new(0),
             cancel_gated: AtomicBool::new(false),
@@ -419,11 +417,9 @@ impl World {
             )
             .route(
                 "/sessions/{id}/invoked-completions",
-                routing::post(move |axum::Json(body): axum::Json<Value>| {
+                routing::post(move || {
                     let control = start_control.clone();
                     async move {
-                        *control.started_policy_revision.lock().unwrap() =
-                            body["harnessPolicy"]["configurationRevision"].as_u64();
                         let mode = *control.start.lock().unwrap();
                         if mode == "ok" {
                             *control.prov.lock().unwrap() = "running";
@@ -627,8 +623,14 @@ impl World {
                 let ok = argument(2) == "ok";
                 *self.harness.admission.lock().unwrap() = if ok { "ok" } else { "fail" };
                 let activated = self.activated.clone().expect("activated before admission");
-                match admit_recursive_child(&self.state, &self.runtime, &self.thread, &self.child)
-                    .await
+                match admit_recursive_child(
+                    &self.state,
+                    &self.runtime,
+                    &self.thread,
+                    &self.child,
+                    &activated,
+                )
+                .await
                 {
                     Ok(admission) => {
                         assert!(ok, "the fake harness refused this admission");
@@ -671,7 +673,6 @@ impl World {
                         self.admission.as_ref().map(|admission| {
                             crate::runtime::InvokedCompletionAdmission {
                                 model_plan: &admission.model_plan,
-                                harness_policy: &admission.harness_policy,
                                 execution_lease_id: &admission.execution_lease_id,
                                 attempt_admission_id: &admission.attempt_admission_id,
                             }
@@ -1407,8 +1408,15 @@ async fn a_child_whose_attempt_cannot_be_recorded_releases_its_leases() {
         world.apply(step.as_array().unwrap(), false).await;
     }
     *world.harness.admission.lock().unwrap() = "unrecorded";
-    let Err(refusal) =
-        admit_recursive_child(&world.state, &world.runtime, &world.thread, &world.child).await
+    let activated = world.activated.clone().unwrap();
+    let Err(refusal) = admit_recursive_child(
+        &world.state,
+        &world.runtime,
+        &world.thread,
+        &world.child,
+        &activated,
+    )
+    .await
     else {
         panic!("a disabled family cannot record the child's attempt");
     };
@@ -1421,11 +1429,12 @@ async fn a_child_whose_attempt_cannot_be_recorded_releases_its_leases() {
     world.finish();
 }
 
-/// A harness-policy revision that lands after the child was prepared is the one it is
-/// admitted under, as for a root turn: the host leases, the product records the attempt,
-/// and the start runs, all under the policy current at launch.
+/// A harness-policy revision that lands after the child was prepared would split its
+/// provenance: the attempt on the new revision, its receipts on the one it was prepared
+/// under. The child is refused as a configuration change instead, before the host leases
+/// anything, and holds no attempt.
 #[tokio::test]
-async fn a_child_admits_under_the_harness_policy_current_at_launch() {
+async fn a_child_whose_harness_policy_changed_since_prepare_is_refused() {
     let mut world = World::new("policy-revised", true).await;
     for step in [
         serde_json::json!(["LaunchCheck", 1]),
@@ -1435,14 +1444,6 @@ async fn a_child_admits_under_the_harness_policy_current_at_launch() {
     ] {
         world.apply(step.as_array().unwrap(), false).await;
     }
-    let prepared_revision = u64::from(
-        world
-            .product
-            .execution_harness_policy(HARNESS)
-            .await
-            .unwrap()
-            .configuration_revision,
-    );
     sqlx::query(
         "UPDATE product_harnesses SET configuration_revision=configuration_revision+1 WHERE configuration_name=?1",
     )
@@ -1450,33 +1451,35 @@ async fn a_child_admits_under_the_harness_policy_current_at_launch() {
     .execute(&world.pool)
     .await
     .unwrap();
-    for step in [
-        serde_json::json!(["LaunchAdmit", 1, "ok"]),
-        serde_json::json!(["LaunchStart", 1, "ok"]),
-    ] {
-        world.apply(step.as_array().unwrap(), false).await;
-    }
-    assert!(
-        world.admission.is_some(),
-        "the revised policy admits the child"
-    );
+    let activated = world.activated.clone().unwrap();
+    let Err(refusal) = admit_recursive_child(
+        &world.state,
+        &world.runtime,
+        &world.thread,
+        &world.child,
+        &activated,
+    )
+    .await
+    else {
+        panic!("a child prepared under another policy revision must not be admitted");
+    };
+    assert_eq!(refusal.reason, "configuration");
     assert_eq!(
         *world.harness.admitted_policy_revision.lock().unwrap(),
-        Some(prepared_revision + 1)
+        None,
+        "the host leases nothing for a refused child"
     );
-    assert_eq!(
-        *world.harness.started_policy_revision.lock().unwrap(),
-        Some(prepared_revision + 1),
-        "the start carries the policy the admission leased under"
-    );
-    assert_eq!(world.observe().await["attempt"], "running");
+    assert!(world.harness.granted.lock().unwrap().is_empty());
+    assert_eq!(world.observe().await["attempt"], "none");
     world.finish();
 }
 
 /// A child that returned while its provider still runs is accepted, and its attempt stays
 /// running only as the reference that keeps its leases held. Its outcome was decided when it
-/// settled, so the conversation exports it as accepted, and a restart in that window ends
-/// the attempt as accepted rather than as interrupted.
+/// settled, so the conversation exports it as accepted. A product-server restart in that
+/// window leaves the attempt held, since the harness may have outlived the server, and
+/// startup resumes the wait: the attempt ends, with its decided outcome, only when the
+/// harness confirms the run ended.
 #[tokio::test]
 async fn a_child_returned_while_its_provider_runs_exports_and_restarts_as_accepted() {
     let mut world = World::new("unwinding-provider", true).await;
@@ -1510,6 +1513,19 @@ async fn a_child_returned_while_its_provider_runs_exports_and_restarts_as_accept
         Some("accepted")
     );
 
+    // A running-but-unsettled snapshot never takes a decided outcome, even if the
+    // execution settles between the two reads.
+    let stale = Interaction {
+        completion_status: "running".into(),
+        ..child.clone()
+    };
+    assert_eq!(
+        crate::conversation_export_service::settled_attempt_outcome(&world.product, &stale)
+            .await
+            .unwrap(),
+        None
+    );
+
     let restarted = SqliteProductStore::open(&world.root.join("product.sqlite3"))
         .await
         .unwrap();
@@ -1517,17 +1533,251 @@ async fn a_child_returned_while_its_provider_runs_exports_and_restarts_as_accept
         .recover_interrupted_interactions("restart", false)
         .await
         .unwrap();
-    let (outcome, boundary): (String, String) = sqlx::query_as(
-        "SELECT outcome,effect_boundary FROM interaction_attempts WHERE interaction_id=?1",
+    assert_eq!(
+        world.observe().await["attempt"],
+        "running",
+        "restart recovery leaves an unwinding child's attempt, and its leases, held"
+    );
+
+    // The harness outlived the server and still runs the child: resuming keeps waiting.
+    let resumed = tokio::spawn(resume_unwinding_recursive_children(
+        world.product.clone(),
+        world.runtime.clone(),
+        None,
+    ));
+    resumed.await.unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(world.observe().await["attempt"], "running");
+
+    // A harness that restarted with the server knows no such run, so the wait ends at once.
+    // The replay's own exit observer is still blocked on the live fake, so this proves the
+    // resumed wait ended the attempt and released its lease.
+    let restarted_harness = Router::new()
+        .route(
+            "/sessions/{id}/invoked-completions/{completion}",
+            routing::get(|| async {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(serde_json::json!({"error":"Invoked completion is not registered"})),
+                )
+            }),
+        )
+        .route(
+            "/sessions/{id}/execution-leases/{lease}",
+            routing::delete(|| async { axum::Json(serde_json::json!({"released": false})) }),
+        );
+    let graph = Router::new().route(
+        "/api/control/temporal-features",
+        routing::get(|| async {
+            axum::Json(serde_json::json!({
+                "configVersion":1,"schemaRead":true,"rootCurrentWrite":true,
+                "projectionUi":true,"invokeResolution":true,"providerRecursion":true
+            }))
+        }),
+    );
+    let (graph_url, graph_task) = serve(graph).await;
+    let (harness_url, harness_task) = serve(restarted_harness).await;
+    let catalog = world.root.join("restarted-catalog.json");
+    fs::write(
+        &catalog,
+        serde_json::json!({"schemaVersion":1,"configurations":[]}).to_string(),
     )
-    .bind(world.child.id.value())
-    .fetch_one(&world.pool)
+    .unwrap();
+    let restarted_runtime = RuntimeClient::open(
+        &graph_url,
+        &harness_url,
+        "graph-control".into(),
+        "harness-control".into(),
+        &catalog,
+    )
     .await
     .unwrap();
+    resume_unwinding_recursive_children(world.product.clone(), restarted_runtime, None).await;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let (outcome, boundary, reconciled): (String, String, Option<String>) = loop {
+        let row: (String, String, Option<String>) = sqlx::query_as(
+            "SELECT outcome,effect_boundary,execution_lease_reconciled_at FROM interaction_attempts WHERE interaction_id=?1",
+        )
+        .bind(world.child.id.value())
+        .fetch_one(&world.pool)
+        .await
+        .unwrap();
+        if row.2.is_some() || Instant::now() >= deadline {
+            break row;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
     assert_eq!(
         (outcome.as_str(), boundary.as_str()),
         ("accepted", "graph_write")
     );
+    assert!(
+        reconciled.is_some(),
+        "the lease is released once the run is confirmed ended"
+    );
     assert_eq!(world.observe().await["status"], "accepted");
+    graph_task.abort();
+    harness_task.abort();
+    world.finish();
+}
+
+/// A child whose graph is already stopped has no work left, but the one cancel sent for it
+/// may have been lost. While the harness still runs it, every poll cancels it again, so its
+/// provider cannot keep working, and holding its leases, indefinitely.
+#[tokio::test]
+async fn a_stopped_child_that_keeps_running_is_cancelled_again() {
+    let cancels = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = cancels.clone();
+    let harness = Router::new()
+        .route(
+            "/sessions/{id}/invoked-completions/11",
+            routing::get(|| async {
+                axum::Json(serde_json::json!({"completionId":11,"running":true}))
+            }),
+        )
+        .route(
+            "/sessions/{id}/cancel",
+            routing::post(move || {
+                let counted = counted.clone();
+                async move {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    axum::Json(serde_json::json!({"cancelled": true}))
+                }
+            }),
+        );
+    let temporal = serde_json::json!({
+        "configVersion":1,"schemaRead":true,"rootCurrentWrite":true,
+        "projectionUi":true,"invokeResolution":true,"providerRecursion":true
+    });
+    let features = temporal.clone();
+    let graph = Router::new()
+        .route(
+            "/api/control/temporal-features",
+            routing::get(move || {
+                let features = features.clone();
+                async move { axum::Json(features) }
+            }),
+        )
+        .route(
+            "/api/control/interactions/11/current",
+            routing::get(move || {
+                let temporal = temporal.clone();
+                async move {
+                    axum::Json(serde_json::json!({
+                        "completionId":11,"lifecycle":"stopped","headRevision":2,
+                        "currentLayerId":4,"finalLayerId":null,"safeReason":"cancelled_by_user",
+                        "temporalFeatures":temporal
+                    }))
+                }
+            }),
+        );
+    let (graph_url, graph_task) = serve(graph).await;
+    let (harness_url, harness_task) = serve(harness).await;
+    let root = std::env::temp_dir().join(format!(
+        "relayer-stopped-child-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let catalog = root.join("catalog.json");
+    fs::write(
+        &catalog,
+        serde_json::json!({"schemaVersion":1,"configurations":[]}).to_string(),
+    )
+    .unwrap();
+    let runtime = RuntimeClient::open(
+        &graph_url,
+        &harness_url,
+        "graph-control".into(),
+        "harness-control".into(),
+        &catalog,
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(500),
+            await_provider_end(&runtime, 1, 11, Duration::from_millis(1))
+        )
+        .await
+        .is_err(),
+        "the run has not ended, so the wait goes on"
+    );
+    assert!(
+        cancels.load(Ordering::SeqCst) >= 2,
+        "a stopped child is cancelled again while it still runs"
+    );
+    graph_task.abort();
+    harness_task.abort();
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// Cancelling a child's approval stops its interaction before its graph is failed. The
+/// execution still settles, keeping the user's stop, and once the provider ends the attempt
+/// ends as cancelled and releases its leases instead of retrying settlement forever.
+#[tokio::test]
+async fn a_child_stopped_by_a_cancelled_approval_settles_and_ends_its_attempt() {
+    let mut world = World::new("approval-cancelled", true).await;
+    for step in [
+        serde_json::json!(["LaunchCheck", 1]),
+        serde_json::json!(["LaunchReserve", 1]),
+        serde_json::json!(["LaunchClaim", 1]),
+        serde_json::json!(["LaunchActivate", 1, "ok"]),
+        serde_json::json!(["LaunchAdmit", 1, "ok"]),
+        serde_json::json!(["LaunchStart", 1, "ok"]),
+        serde_json::json!(["LaunchAttach", 1, "ok"]),
+    ] {
+        world.apply(step.as_array().unwrap(), false).await;
+    }
+    // What record_approval_resolution writes for a cancelled approval.
+    sqlx::query(
+        "UPDATE interactions SET completion_status='stopped',completion_error='Approval request was cancelled.' WHERE id=?1",
+    )
+    .bind(world.child.id.value())
+    .execute(&world.pool)
+    .await
+    .unwrap();
+    world
+        .runtime
+        .fail_graph_completion(world.completion_id, "approval-cancelled-test", "execution")
+        .await
+        .unwrap();
+    *world.harness.prov.lock().unwrap() = "exited_err";
+
+    let deadline = Instant::now() + CLEANUP_QUIESCENCE;
+    let state = loop {
+        let state = world.observe().await;
+        if (state["phase"] == "settled"
+            && state["attempt"] == "terminal"
+            && state["lease"] == "released")
+            || Instant::now() >= deadline
+        {
+            break state;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    };
+    assert_eq!(
+        state["phase"], "settled",
+        "the stopped child settles: {state}"
+    );
+    assert_eq!(
+        state["status"], "stopped",
+        "the user's stop is kept: {state}"
+    );
+    assert_eq!(
+        state["lease"], "released",
+        "its leases are released: {state}"
+    );
+    let outcome: String =
+        sqlx::query_scalar("SELECT outcome FROM interaction_attempts WHERE interaction_id=?1")
+            .bind(world.child.id.value())
+            .fetch_one(&world.pool)
+            .await
+            .unwrap();
+    assert_eq!(outcome, "cancelled");
     world.finish();
 }

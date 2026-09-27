@@ -761,6 +761,13 @@ impl RelayerAppServer {
             reconciler.schedule();
             reconciler
         });
+        if let Some(runtime) = runtime.clone() {
+            tokio::spawn(api::threads::resume_unwinding_recursive_children(
+                product.clone(),
+                runtime,
+                execution_lease_reconciler.clone(),
+            ));
+        }
         Ok(Self {
             product,
             web_directory: config.web_directory,

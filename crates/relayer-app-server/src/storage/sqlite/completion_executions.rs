@@ -8,6 +8,36 @@ use serde_json::Value;
 use sqlx::{Row, sqlite::SqliteRow};
 
 impl SqliteProductStore {
+    /// Recursive children whose execution settled while their provider still ran: their
+    /// attempt stays running, holding its leases, until the provider run ends.
+    pub(crate) async fn unwinding_recursive_attempts(
+        &self,
+    ) -> Result<Vec<crate::product::UnwindingRecursiveAttempt>, StorageError> {
+        let rows: Vec<(i64, i64, i64, i64)> = sqlx::query_as(
+            "SELECT attempt.id,attempt.interaction_id,interaction.thread_id,execution.graph_completion_id
+             FROM interaction_attempts attempt
+             JOIN completion_executions execution ON execution.interaction_id=attempt.interaction_id
+             JOIN interactions interaction ON interaction.id=attempt.interaction_id
+             WHERE attempt.outcome='running' AND execution.phase='settled'
+             ORDER BY attempt.id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(attempt_id, interaction_id, thread_id, graph_completion_id)| {
+                    crate::product::UnwindingRecursiveAttempt {
+                        attempt_id,
+                        interaction_id: InteractionId::from_database(interaction_id),
+                        thread_id: crate::product::ThreadId::from_database(thread_id),
+                        graph_completion_id,
+                    }
+                },
+            )
+            .collect())
+    }
+
     pub(crate) async fn interrupted_recursive_completion_executions(
         &self,
     ) -> Result<Vec<CompletionExecution>, StorageError> {
@@ -413,7 +443,14 @@ impl SqliteProductStore {
             .bind(interaction_id.value())
             .fetch_optional(&mut *transaction)
             .await?;
-            if stored.as_ref() != Some(&("failed".into(), None, Some(safe_reason.to_owned()))) {
+            // A cancelled approval already stopped the interaction. The execution still
+            // settles, so its attempt can end, and the product keeps the user's stop.
+            let already_stopped = stored
+                .as_ref()
+                .is_some_and(|(status, output, _)| status == "stopped" && output.is_none());
+            if !already_stopped
+                && stored.as_ref() != Some(&("failed".into(), None, Some(safe_reason.to_owned())))
+            {
                 return Err(conflict(
                     "product interaction changed during failed settlement",
                 ));
@@ -550,10 +587,24 @@ impl SqliteProductStore {
         .bind(existing.graph_completion_id)
         .execute(&mut *transaction)
         .await?;
+        // A cancelled approval may already have stopped the interaction; a failed
+        // settlement keeps that stop, and its attempt ends as cancelled.
+        let mut attempt_outcome = attempt_outcome;
+        let mut failure = failure;
         if interaction.rows_affected() != 1 {
-            return Err(conflict(
-                "product interaction changed during restart reconciliation",
-            ));
+            let stopped: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM interactions WHERE id=?1 AND completion_status='stopped' AND completion_output_json IS NULL)",
+            )
+            .bind(interaction_id.value())
+            .fetch_one(&mut *transaction)
+            .await?;
+            if !stopped || status != "failed" {
+                return Err(conflict(
+                    "product interaction changed during restart reconciliation",
+                ));
+            }
+            attempt_outcome = "cancelled";
+            failure = None;
         }
         sqlx::query(
             "UPDATE interaction_attempts

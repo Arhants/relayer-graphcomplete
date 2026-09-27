@@ -1525,22 +1525,29 @@ async fn launch_prepared_child(
             return Err(error);
         }
     };
-    let admission =
-        match admit_recursive_child(&state, runtime, &thread, &outcome.interaction).await {
-            Ok(admission) => admission,
-            Err(refusal) => {
-                spawn_failed_recursive_start_cleanup(
-                    state.clone(),
-                    thread,
-                    outcome.interaction,
-                    prepared,
-                    permission_origin_digest,
-                    LaunchFailure::AdmissionRefused(refusal.reason),
-                    None,
-                );
-                return Err(refusal.error);
-            }
-        };
+    let admission = match admit_recursive_child(
+        &state,
+        runtime,
+        &thread,
+        &outcome.interaction,
+        &prepared,
+    )
+    .await
+    {
+        Ok(admission) => admission,
+        Err(refusal) => {
+            spawn_failed_recursive_start_cleanup(
+                state.clone(),
+                thread,
+                outcome.interaction,
+                prepared,
+                permission_origin_digest,
+                LaunchFailure::AdmissionRefused(refusal.reason),
+                None,
+            );
+            return Err(refusal.error);
+        }
+    };
     let attempt_id = admission.as_ref().map(|admission| admission.attempt_id);
 
     let broker_url = runtime
@@ -1573,7 +1580,6 @@ async fn launch_prepared_child(
                 .as_ref()
                 .map(|admission| crate::runtime::InvokedCompletionAdmission {
                     model_plan: &admission.model_plan,
-                    harness_policy: &admission.harness_policy,
                     execution_lease_id: &admission.execution_lease_id,
                     attempt_admission_id: &admission.attempt_admission_id,
                 }),
@@ -1646,7 +1652,6 @@ async fn launch_prepared_child(
 /// What a recursive child was admitted with, and the attempt that owns its leases.
 struct RecursiveChildAdmission {
     model_plan: crate::product::ExecutionModelPlan,
-    harness_policy: crate::product::ExecutionHarnessPolicy,
     execution_lease_id: String,
     attempt_admission_id: String,
     attempt_id: i64,
@@ -1672,6 +1677,7 @@ async fn admit_recursive_child(
     runtime: &crate::runtime::RuntimeClient,
     thread: &Thread,
     interaction: &Interaction,
+    prepared: &PreparedInteraction,
 ) -> Result<Option<RecursiveChildAdmission>, RecursiveAdmissionRefusal> {
     let Some(selection) = interaction.model_selection.as_ref() else {
         return Ok(None);
@@ -1681,13 +1687,25 @@ async fn admit_recursive_child(
         .resolve_execution_model_plan(&thread.harness_configuration_name, selection)
         .await
         .map_err(|error| refused("model_unavailable")(error.into()))?;
-    // The harness policy current at launch, as a root turn loads it, so the host
-    // leases under the same revision the product records the attempt against.
-    let harness_policy = state
+    // The child runs under the policy it was prepared with: the host leases, the product
+    // records the attempt, and every receipt names that one revision. If the harness's
+    // configuration changed since, the child is refused before anything is leased.
+    let harness_policy = prepared.harness_policy().ok_or_else(|| {
+        refused("configuration")(ApiError::internal(
+            "a recursive child with a model selection requires its harness policy",
+        ))
+    })?;
+    let current_policy = state
         .product
         .execution_harness_policy(&thread.harness_configuration_name)
         .await
         .map_err(|error| refused("configuration")(error.into()))?;
+    if &current_policy != harness_policy {
+        return Err(refused("configuration")(ApiError::conflict(
+            "harness_configuration_changed",
+            "The harness configuration changed while this child was launching.",
+        )));
+    }
     let working_directory = thread_working_directory(state, thread)
         .await
         .map_err(refused("configuration"))?;
@@ -1709,7 +1727,7 @@ async fn admit_recursive_child(
         model_plan: Some(&model_plan),
         attempt_admission_id: Some(&attempt_admission_id),
         execution_lease_id: None,
-        harness_policy: Some(&harness_policy),
+        harness_policy: Some(harness_policy),
         invocation: None,
         input_identity: None,
         input_digest: None,
@@ -1734,7 +1752,7 @@ async fn admit_recursive_child(
             model_plan: model_plan.clone(),
             admitted_plan: admission.admitted_plan.clone(),
             adapter_version: admission.adapter_implementation_version,
-            expected_harness_policy: Some(&harness_policy),
+            expected_harness_policy: Some(harness_policy),
             execution_lease_id: &admission.execution_lease_id,
         })
         .await;
@@ -1750,7 +1768,6 @@ async fn admit_recursive_child(
     };
     Ok(Some(RecursiveChildAdmission {
         model_plan,
-        harness_policy,
         execution_lease_id: admission.execution_lease_id,
         attempt_admission_id,
         attempt_id,
@@ -2315,7 +2332,8 @@ const PROVIDER_END_UNREACHABLE_LIMIT: u32 = 20;
 /// host has been unreachable for long enough, the child is cancelled. If the host reports
 /// no such run, it has ended; otherwise the wait goes on, cancelling again after each run
 /// of unreachable observations. Until the host confirms the end, the child's attempt and
-/// leases stay held: an unreachable host proves nothing about its provider.
+/// leases stay held: an unreachable host proves nothing about its provider. A child that is
+/// already stopped or failed is cancelled again on every poll while it still runs.
 async fn await_provider_end(
     runtime: &crate::runtime::RuntimeClient,
     thread_id: i64,
@@ -2329,8 +2347,14 @@ async fn await_provider_end(
             .await
         {
             // The host still runs the child, whether it said so or the wait timed out.
-            Ok(observation) if observation["running"] == true => unreachable = 0,
-            Err(error) if error.is_timeout() => unreachable = 0,
+            Ok(observation) if observation["running"] == true => {
+                unreachable = 0;
+                cancel_if_terminal(runtime, thread_id, completion_id).await;
+            }
+            Err(error) if error.is_timeout() => {
+                unreachable = 0;
+                cancel_if_terminal(runtime, thread_id, completion_id).await;
+            }
             Err(error) if !error.is_host_answer() => {
                 unreachable += 1;
                 if unreachable >= PROVIDER_END_UNREACHABLE_LIMIT {
@@ -2354,6 +2378,31 @@ async fn await_provider_end(
     }
 }
 
+/// A child whose graph already stopped or failed has no work left, yet a cancel sent
+/// once may have been lost. While the host still runs it, each poll cancels it again, so
+/// its provider cannot keep working, and holding its leases, indefinitely.
+async fn cancel_if_terminal(
+    runtime: &crate::runtime::RuntimeClient,
+    thread_id: i64,
+    completion_id: i64,
+) {
+    let terminal = runtime
+        .completion_current(completion_id)
+        .await
+        .is_ok_and(|current| {
+            matches!(
+                current.lifecycle,
+                relayer_graph_core::CompletionLifecycle::Stopped
+                    | relayer_graph_core::CompletionLifecycle::Failed
+            )
+        });
+    if terminal {
+        let _ = runtime
+            .cancel_invoked_completion(thread_id, completion_id)
+            .await;
+    }
+}
+
 /// Ends a child's attempt once both its provider run has ended and its execution has
 /// settled, then releases the attempt's leases. Until then the provider keeps its leases,
 /// so provider removal waits for it.
@@ -2363,9 +2412,23 @@ async fn end_child_attempt(
     interaction_id: InteractionId,
     attempt_id: i64,
 ) {
+    if !finish_child_attempt(&state.product, runtime, interaction_id, attempt_id).await
+        && let Some(execution) = &state.interaction_execution
+    {
+        execution.schedule_execution_lease_reconciliation();
+    }
+}
+
+/// Ends a settled child's attempt with the outcome its settlement decided, then releases
+/// its leases. Returns whether the release completed; if not, the lease stays as debt.
+async fn finish_child_attempt(
+    product: &crate::product::ProductService,
+    runtime: &crate::runtime::RuntimeClient,
+    interaction_id: InteractionId,
+    attempt_id: i64,
+) -> bool {
     loop {
-        match state
-            .product
+        match product
             .end_completion_execution_attempt(interaction_id, &completion_timestamp())
             .await
         {
@@ -2376,11 +2439,44 @@ async fn end_child_attempt(
         }
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     }
-    if !crate::app_server::reconcile_terminal_execution_lease(&state.product, runtime, attempt_id)
-        .await
-        && let Some(execution) = &state.interaction_execution
-    {
-        execution.schedule_execution_lease_reconciliation();
+    crate::app_server::reconcile_terminal_execution_lease(product, runtime, attempt_id).await
+}
+
+/// After the product server restarts, resumes waiting on each child that had settled while
+/// its provider was still unwinding. Its attempt ends, and its leases are released, only
+/// once the harness confirms the run ended. A harness that restarted too knows no such run
+/// and answers at once, while one that stayed up keeps the leases held until the run ends.
+pub(crate) async fn resume_unwinding_recursive_children(
+    product: crate::product::ProductService,
+    runtime: crate::runtime::RuntimeClient,
+    reconciler: Option<crate::app_server::ExecutionLeaseReconciler>,
+) {
+    let unwinding = match product.unwinding_recursive_attempts().await {
+        Ok(unwinding) => unwinding,
+        Err(error) => {
+            eprintln!("could not read recursive children still unwinding after restart: {error}");
+            return;
+        }
+    };
+    for child in unwinding {
+        let product = product.clone();
+        let runtime = runtime.clone();
+        let reconciler = reconciler.clone();
+        tokio::spawn(async move {
+            let _ = await_provider_end(
+                &runtime,
+                child.thread_id.value(),
+                child.graph_completion_id,
+                PROVIDER_END_RETRY_STEP,
+            )
+            .await;
+            if !finish_child_attempt(&product, &runtime, child.interaction_id, child.attempt_id)
+                .await
+                && let Some(reconciler) = reconciler
+            {
+                reconciler.schedule();
+            }
+        });
     }
 }
 

@@ -58,38 +58,14 @@ impl SqliteProductStore {
             .expect("system time is before unix epoch")
             .as_millis()
             .to_string();
-        // A recursive child whose execution settled before the restart was only waiting for
-        // its provider to unwind. Its outcome was decided at settlement, so it ends with that
-        // outcome rather than as interrupted; the restart ended its provider run.
-        let settled: Vec<(i64, String)> = sqlx::query_as(
-            "SELECT attempt.id,interaction.completion_status
-             FROM interaction_attempts attempt
-             JOIN completion_executions execution ON execution.interaction_id=attempt.interaction_id
-             JOIN interactions interaction ON interaction.id=attempt.interaction_id
-             WHERE attempt.outcome='running' AND execution.phase='settled'",
-        )
-        .fetch_all(&mut *transaction)
-        .await?;
-        for (attempt_id, completion_status) in settled {
-            let (outcome, failure_category, effect_boundary) =
-                crate::product::settled_recursive_attempt_outcome(&completion_status);
-            sqlx::query(
-                "UPDATE interaction_attempts
-                 SET finished_at=?1,outcome=?2,failure_category=?3,effect_boundary=?4
-                 WHERE id=?5 AND outcome='running'",
-            )
-            .bind(&finished_at)
-            .bind(outcome)
-            .bind(failure_category)
-            .bind(effect_boundary)
-            .bind(attempt_id)
-            .execute(&mut *transaction)
-            .await?;
-        }
         sqlx::query(
             "UPDATE interaction_attempts
              SET finished_at=?1,outcome='execution_failed',failure_category='application_restart',effect_boundary='unknown'
              WHERE outcome='running'
+               -- A recursive child that settled before the restart was only waiting for its
+               -- provider to unwind. Its outcome is decided; startup resumes that wait, since a
+               -- harness that outlived this server may still be running it.
+               AND interaction_id NOT IN (SELECT interaction_id FROM completion_executions WHERE phase='settled')
                AND interaction_id NOT IN (
                  SELECT interaction.id
                  FROM interactions interaction
