@@ -595,6 +595,36 @@ describe("share publication coordinator", () => {
     });
   });
 
+  it("does not admit a handled failure unless its durable deduplication key is saved", async () => {
+    let savedRecord = null;
+    const report = vi.fn();
+    const attemptStore = {
+      load: async () => [],
+      save: async (record) => {
+        if (record.reportedFailures.length) throw new Error("deduplication persistence unavailable");
+        savedRecord = structuredClone(record);
+      },
+      delete: async () => true,
+    };
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot: async () => snapshot,
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer secret", generation: 1 }),
+      sourceThreadIdentity: async (threadId) => `installation:test:thread:${threadId}`,
+      publish: async () => {
+        throw Object.assign(new Error("offline"), { code: "share_upload_failed", failureStage: "upload" });
+      },
+      issueHandledShareFailureReporter: () => ({ report }),
+      attemptStore,
+      createReferenceId: () => "SHR-ABCDEF12",
+    });
+
+    await expect(coordinator.create({ threadId: 42, title: "Public title" })).resolves.toMatchObject({
+      code: "share_upload_failed",
+    });
+    expect(savedRecord?.reportedFailures).toEqual([]);
+    expect(report).not.toHaveBeenCalled();
+  });
+
   it("preserves the service quota reset time in the closed renderer result", async () => {
     const coordinator = createSharePublishCoordinator({
       exportSnapshot: async () => snapshot,

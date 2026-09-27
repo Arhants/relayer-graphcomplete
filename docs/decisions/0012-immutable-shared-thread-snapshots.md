@@ -14,7 +14,8 @@ owner-scoped service idempotency need one byte-stable boundary.
 
 Rust owns a share-export operation beside ordinary conversation export. At
 `Create link` it reads the persisted product and graph state once and emits
-conversation-export v1 JSONL containing only accepted completions. It refuses
+conversation-export V1 JSONL containing only accepted completions when that history is
+asset-free, or V2 when an accepted authored Node Detail carries visual content. It refuses
 imported threads and threads without accepted history. Pending, draft, stopped,
 and failed work is not promoted to accepted history.
 
@@ -23,7 +24,8 @@ action provenance, and export-local references. It removes permission receipts,
 execution and harness-configuration digests, and admitted model plans while
 retaining completion status, model selection, and the harness configuration
 name. Known secrets, credential shapes, and private paths are redacted from
-conversation content, including rich detail fragments. The chosen public title
+conversation content, including text that becomes contiguous only after rich-detail HTML is
+rendered. Unsafe rich detail is omitted as a unit rather than rewritten. The chosen public title
 replaces the exported local title, while the chosen title and project display
 name are published unchanged except for ordinary safe HTML and inert-data
 handling. The local thread is not renamed.
@@ -38,7 +40,7 @@ and identity; a deliberate new Share action creates both anew.
 The share service treats graph semantics as opaque. It validates version, total
 bytes, line bounds, and per-line JSON syntax, binds finalization to the exact
 staged object identity, and publishes one immutable object. The public viewer
-uses a versioned snapshot reader and the production ProductWorkspace in a
+uses a V1/V2 snapshot reader and the production ProductWorkspace in a
 read-only host. It starts at the first accepted turn, leaves the URL unchanged
 during navigation, disables execution, and has no client telemetry or snapshot
 fetch authority.
@@ -56,8 +58,8 @@ authentication, cache, and transport fakes; it is not deployed-service evidence.
 - `complete(inputGraph)`, graph acceptance, and draft/accepted/stopped semantics
   do not change.
 - Ordinary conversation export remains independently compatible and testable.
-- Every published format version remains readable; security exceptions for
-  already-pinned viewer assets require a separate product decision.
+- Every published format version remains readable; V2 visual content remains bound to its
+  package pins and is digest-checked again before browser presentation.
 - Real exports remain local test inputs and never enter committed fixtures or
   public evidence.
 - Deployment, IAM, live Auth0, live Sentry, and full-size network proof remain

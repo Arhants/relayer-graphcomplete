@@ -65,7 +65,8 @@ pseudonymous account fields. Electron main deduplicates one process lifetime by
 account, reference, stage, and code before the ordinary final validator, bounded
 queue, and transport. The persisted Electron-main attempt owner records the
 same reference/stage/code key before reporting, so retry and process recovery do
-not readmit the same handled failure. Titles, project names, conversation content,
+not readmit the same handled failure. If that key cannot be persisted, reporting
+is suppressed rather than admitting an event that restart could duplicate. Titles, project names, conversation content,
 credentials, raw errors, and request data remain forbidden.
 
 The accepted record contains only stable failure code or sanitized class, a

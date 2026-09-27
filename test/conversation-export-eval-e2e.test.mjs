@@ -187,7 +187,7 @@ describe("conversation export to Eval end to end", () => {
       (layer) => layer.layer.id === turnRecords[0].acceptedView.rootLayerId,
     );
     expect(contentRecords).toHaveLength(1);
-    const exportedAssetNode = exportedRoot.nodes.find((node) => node.clientKey === "root");
+    const exportedAssetNode = exportedRoot.nodes.find((node) => node.clientKey === "root-evidence");
     expect(exportedAssetNode.authoredDetailAssets).toHaveLength(1);
     expect(exportedAssetNode.authoredDetailAssets[0]).toMatchObject({
       digestSha256: contentRecords[0].digestSha256,
@@ -286,6 +286,10 @@ describe("conversation export to Eval end to end", () => {
     expect(publicationCalls).toHaveLength(2);
     expect(publicationCalls[1].attempt).toEqual(publicationCalls[0].attempt);
     expect(publicationCalls[1].snapshotBytes).toEqual(publicationCalls[0].snapshotBytes);
+    const publishedRecords = new TextDecoder().decode(publishedSnapshotBytes).trimEnd().split("\n").map(JSON.parse);
+    expect(publishedRecords[0].exportVersion).toBe(2);
+    expect(publishedRecords.filter(({ recordType }) => recordType === "visualAssetContent")).toHaveLength(1);
+    expect(publishedRecords.filter(({ recordType }) => recordType === "turn")).toHaveLength(2);
 
     const publicPage = {
       shareId,
@@ -374,6 +378,16 @@ describe("conversation export to Eval end to end", () => {
       expect(publicWindow.document.querySelector(".workspace-layout")).toBeTruthy();
       expect(publicWindow.document.querySelector(".public-share-download-card")?.parentElement?.classList.contains("workspace-layout")).toBe(true);
       expect(publicWindow.document.querySelector("#environmentPanel")).toBeNull();
+      const assetNodeButton = publicWindow.document.querySelector('[aria-label="Open Root evidence"]');
+      expect(assetNodeButton, [...publicWindow.document.querySelectorAll(".graph-node")].map((node) => node.getAttribute("aria-label"))).not.toBeNull();
+      assetNodeButton.click();
+      await vi.waitFor(() => {
+        const runtimeHost = publicWindow.document.querySelector("#detailContent [data-node-detail-runtime]");
+        const image = runtimeHost?.shadowRoot?.querySelector('img[alt="Portable status illustration"]');
+        expect(image, `detail=${publicWindow.document.querySelector("#detailContent")?.innerHTML}; shadow=${runtimeHost?.shadowRoot?.innerHTML}`).toBeTruthy();
+        expect(image?.dataset.assetState, `shadow=${runtimeHost?.shadowRoot?.innerHTML}`).toBe("available");
+        expect(image?.src).toMatch(/^blob:/u);
+      });
       expect(publicWindow.location.href).toBe(originalPublicUrl);
       viewer.dispose();
     } finally {
@@ -435,7 +449,7 @@ describe("conversation export to Eval end to end", () => {
       ))
     ))).toBe(true);
     const rootLayer = importedFirst.completionOutput.rootLayer;
-    const importedAssetNode = rootLayer.nodes.find((node) => node.clientKey === "root");
+    const importedAssetNode = rootLayer.nodes.find((node) => node.clientKey === "root-evidence");
     const importedAsset = importedAssetNode.authoredDetail.assets[0];
     const importedAssetResponse = await productRequest(
       productSession,
@@ -615,11 +629,11 @@ function complexConversationFactory(projectPath) {
           async read() { return new TextEncoder().encode(PORTABLE_SVG); },
         },
       });
-      rootNode.detailAuthoring.setComponent(
+      const rootEvidenceNode = new NodeObject("link", "Root evidence", "Portable layout keeps this evidence offset from the answer.", "evidence", "root-evidence");
+      rootEvidenceNode.detailAuthoring.setComponent(
         "portable-visual",
         html`<figure><img alt="Portable status illustration" asset=${assetRef(asset.id)}></figure>`,
       );
-      const rootEvidenceNode = new NodeObject("link", "Root evidence", "Portable layout keeps this evidence offset from the answer.", "evidence", "root-evidence");
       const expandedNode = new NodeObject("info", "Expanded detail", "First expansion.", "detail", "expanded");
       const nestedNode = new NodeObject("info", "Nested expansion", "Second expansion.", "detail", "nested");
       const sharedNode = new NodeObject("info", "Shared reference", "Referenced from root and expansion.", "evidence", "shared");

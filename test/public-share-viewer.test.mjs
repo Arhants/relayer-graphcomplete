@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Window } from "happy-dom";
 import { spawnSync } from "node:child_process";
+import { createHash, webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { createPublicViewerAdapter } from "../desktop/renderer/src/public-share-viewer/adapter.js";
@@ -127,6 +128,45 @@ function fixtureJsonl({ status = "accepted", includeFailedTurn = false } = {}) {
   return `${records.map((record) => JSON.stringify(record)).join("\n")}\n`;
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function assetFixtureJsonl() {
+  const records = fixtureJsonl().trimEnd().split("\n").map((line) => JSON.parse(line));
+  const bytes = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><circle cx="1" cy="1" r="1"/></svg>');
+  const digestSha256 = createHash("sha256").update(bytes).digest("hex");
+  const asset = { id: "public-image", digestSha256, mediaType: "image/svg+xml", representation: "image" };
+  const detail = {
+    version: 1,
+    components: [{ id: "image", order: 0, html: '<img alt="Published illustration" data-asset-mount="image">', css: "" }],
+    mounts: [{ id: "image", componentId: "image", kind: "asset", host: "img", assetId: asset.id }],
+    assets: [asset],
+  };
+  detail.integritySha256 = createHash("sha256").update(canonicalJson(detail)).digest("hex");
+  records[0].exportVersion = 2;
+  records[1].acceptedView.layers[0].nodes[0].authoredDetail = detail;
+  records[1].acceptedView.layers[0].nodes[0].authoredDetailAssets = [{
+    assetId: asset.id,
+    digestSha256,
+    mediaType: asset.mediaType,
+    byteLength: bytes.length,
+    provenance: { source: "user", fileName: "illustration.svg" },
+  }];
+  records.splice(1, 0, {
+    recordType: "visualAssetContent",
+    digestSha256,
+    mediaType: asset.mediaType,
+    byteLength: bytes.length,
+    contentBase64: bytes.toString("base64"),
+  });
+  return { jsonl: `${records.map((record) => JSON.stringify(record)).join("\n")}\n`, asset };
+}
+
 describe("public share V1 reader", () => {
   it("rejects bytes above the frozen 16 MiB share contract before parsing", () => {
     try {
@@ -150,6 +190,37 @@ describe("public share V1 reader", () => {
     expect(snapshot.state.environment.snapshot.worktreeLabel).toBe("fixture-project");
     expect(snapshot.layerFor("turn:1", "layer:related").nodes[0].id).toBe("node:related");
     expect(snapshot.turnContainingLayer("layer:nested").id).toBe("turn:1");
+  });
+
+  it("reads asset-bearing V2 bytes and resolves only the node's pinned visual content", async () => {
+    const { jsonl, asset } = assetFixtureJsonl();
+    const snapshot = parsePublicSnapshot(jsonl);
+    const createObjectURL = vi.fn(() => "blob:https://share.example.test/public-image");
+    const revokeObjectURL = vi.fn();
+    const resolved = await snapshot.resolveNodeDetailAsset(asset, {
+      crypto: webcrypto,
+      URL: { createObjectURL, revokeObjectURL },
+      Blob,
+    });
+    expect(snapshot.header.exportVersion).toBe(2);
+    expect(resolved).toMatchObject({
+      url: "blob:https://share.example.test/public-image",
+      digestSha256: asset.digestSha256,
+      mediaType: asset.mediaType,
+    });
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    resolved.release();
+    expect(revokeObjectURL).toHaveBeenCalledWith(resolved.url);
+    await expect(snapshot.resolveNodeDetailAsset({ ...asset, id: "not-pinned" })).rejects.toThrow();
+
+    const records = jsonl.trimEnd().split("\n").map((line) => JSON.parse(line));
+    records[1].contentBase64 = Buffer.alloc(records[1].byteLength, 65).toString("base64");
+    const tampered = parsePublicSnapshot(`${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+    await expect(tampered.resolveNodeDetailAsset(asset, {
+      crypto: webcrypto,
+      URL: { createObjectURL, revokeObjectURL },
+      Blob,
+    })).rejects.toThrow("digest mismatch");
   });
 
   it("preserves nested navigation and reference cycles without granting execution authority", async () => {

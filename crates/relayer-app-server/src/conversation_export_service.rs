@@ -220,7 +220,7 @@ pub(crate) async fn build_conversation_export(
         })
         .collect::<Result<Vec<_>, ConversationExportBuildError>>()?;
     let (authored_detail_assets, visual_asset_contents) =
-        collect_visual_assets(runtime, &closures, &redactor).await?;
+        collect_visual_assets(runtime, closures.iter().flatten(), &redactor).await?;
     let header = ConversationExportRecord::Header(Box::new(ConversationExportHeader {
         export_version: if visual_asset_contents.is_empty() {
             EXPORT_VERSION_V1
@@ -441,8 +441,14 @@ pub(crate) async fn build_share_conversation_export(
             })
         })
         .collect::<Result<Vec<_>, ConversationExportBuildError>>()?;
+    let (authored_detail_assets, visual_asset_contents) =
+        collect_visual_assets(runtime, closures.iter(), &redactor).await?;
     let header = ConversationExportRecord::Header(Box::new(ConversationExportHeader {
-        export_version: EXPORT_VERSION_V1,
+        export_version: if visual_asset_contents.is_empty() {
+            EXPORT_VERSION_V1
+        } else {
+            EXPORT_VERSION_V2
+        },
         exported_at,
         producer,
         conversation: ExportConversation {
@@ -458,8 +464,12 @@ pub(crate) async fn build_share_conversation_export(
         turns,
         visual_asset_contents: Vec::new(),
     }));
-    let authored_detail_assets = HashMap::new();
     let mut records = vec![header];
+    records.extend(
+        visual_asset_contents
+            .into_iter()
+            .map(|content| ConversationExportRecord::VisualAssetContent(Box::new(content))),
+    );
     for (((interaction, closure), context_input), submitted_evidence) in selected
         .iter()
         .zip(closures.iter())
@@ -483,6 +493,7 @@ pub(crate) async fn build_share_conversation_export(
                 },
                 turn_sequences: &turn_sequences,
                 redactor: &redactor,
+                settled_attempt_outcome: None,
                 authored_detail_assets: &authored_detail_assets,
             },
             &mut ids,
@@ -506,9 +517,9 @@ pub(crate) async fn build_share_conversation_export(
     Ok(body)
 }
 
-async fn collect_visual_assets(
+async fn collect_visual_assets<'a>(
     runtime: &RuntimeClient,
-    closures: &[Option<AcceptedGraphClosure>],
+    closures: impl IntoIterator<Item = &'a AcceptedGraphClosure>,
     redactor: &ProjectPathRedactor,
 ) -> Result<
     (
@@ -522,8 +533,7 @@ async fn collect_visual_assets(
     let mut contents = BTreeMap::<String, ExportVisualAssetContent>::new();
     let mut referenced_contents = HashSet::new();
     for node in closures
-        .iter()
-        .flatten()
+        .into_iter()
         .flat_map(|closure| &closure.layers)
         .flat_map(|layer| &layer.nodes)
     {
@@ -1939,7 +1949,11 @@ impl ProjectPathRedactor {
         }
         let mut strings = String::new();
         collect_json_strings(value, &mut strings);
-        has_share_secret(&strings)
+        if has_share_secret(&strings) {
+            return true;
+        }
+        let rendered_text = authored_detail_rendered_text(value);
+        has_share_secret(&rendered_text)
     }
 
     fn contains_private_path_json(&self, value: &serde_json::Value) -> bool {
@@ -1952,7 +1966,44 @@ impl ProjectPathRedactor {
         let mut strings = String::new();
         collect_json_strings(value, &mut strings);
         self.contains_private_path(&strings)
+            || self.contains_private_path(&authored_detail_rendered_text(value))
     }
+}
+
+/// Return the same contiguous text an authored-detail HTML component can expose
+/// to a visitor. Checking serialized source strings alone is insufficient:
+/// adjacent text nodes can reassemble a path or credential around inert tags.
+fn authored_detail_rendered_text(value: &serde_json::Value) -> String {
+    let mut rendered = String::new();
+    let Some(components) = value
+        .get("components")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return rendered;
+    };
+    for component in components {
+        let Some(html) = component.get("html").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let mut inside_tag = false;
+        for character in html.chars() {
+            match character {
+                '<' => inside_tag = true,
+                '>' if inside_tag => inside_tag = false,
+                _ if !inside_tag => rendered.push(character),
+                _ => {}
+            }
+        }
+    }
+    let mut candidate = rendered;
+    for _ in 0..NORMALIZATION_ROUNDS {
+        let (decoded, changed) = decode_html_character_references_once(&candidate);
+        candidate = decoded;
+        if !changed {
+            break;
+        }
+    }
+    candidate
 }
 
 fn collect_json_strings(value: &serde_json::Value, output: &mut String) {
@@ -2446,7 +2497,7 @@ mod tests {
     };
 
     #[test]
-    fn share_v1_omits_visual_asset_associations_from_asset_bearing_nodes() {
+    fn export_view_omits_visual_asset_associations_when_content_is_unavailable() {
         let closure: relayer_graph_core::AcceptedGraphClosure = serde_json::from_value(
             serde_json::json!({
                 "nodeId": 1,
@@ -2545,10 +2596,13 @@ mod tests {
         other.layers[0].nodes[0].id = relayer_graph_core::NodeId::new(3).unwrap();
         other.layers[0].layer.nodes = vec![relayer_graph_core::NodeId::new(3).unwrap()];
         let closures = [Some(closure.clone()), Some(closure), Some(other)];
-        let (associations, content) =
-            super::collect_visual_assets(&runtime, &closures, &ProjectPathRedactor::new(None))
-                .await
-                .unwrap();
+        let (associations, content) = super::collect_visual_assets(
+            &runtime,
+            closures.iter().flatten(),
+            &ProjectPathRedactor::new(None),
+        )
+        .await
+        .unwrap();
         assert_eq!(associations.len(), 2);
         assert_eq!(content.len(), 1);
         assert_eq!(associations[&2][0].provenance.file_name, "a.png");
@@ -2561,9 +2615,13 @@ mod tests {
         assert_eq!(metadata_requests.load(Ordering::SeqCst), 2);
         denied.store(true, Ordering::SeqCst);
         assert!(
-            super::collect_visual_assets(&runtime, &closures, &ProjectPathRedactor::new(None))
-                .await
-                .is_err(),
+            super::collect_visual_assets(
+                &runtime,
+                closures.iter().flatten(),
+                &ProjectPathRedactor::new(None),
+            )
+            .await
+            .is_err(),
             "a cached digest cannot bypass another node's rejected metadata read"
         );
         server.abort();
@@ -2847,7 +2905,7 @@ mod tests {
             "components": [{
                 "id": "summary",
                 "order": 0,
-                "html": ["sk-proj-1234567890", "1234567890"],
+                "html": "<p><span>sk-proj-1234</span><span>5678901234567890</span></p>",
                 "css": ""
             }],
             "mounts": [],
@@ -2865,6 +2923,35 @@ mod tests {
         assert_eq!(
             exported.authored_detail_omitted,
             Some(ExportAuthoredDetailOmission::SensitiveData)
+        );
+        assert_eq!(exported.detail, "Portable fallback");
+    }
+
+    #[test]
+    fn share_authored_detail_omits_project_path_reassembled_by_rendered_text() {
+        let package = serde_json::json!({
+            "version": 1,
+            "components": [{
+                "id": "summary",
+                "order": 0,
+                "html": "<p>/opt/relayer-<strong>private</strong>/secrets</p>",
+                "css": ""
+            }],
+            "mounts": [],
+            "assets": [],
+            "integritySha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        });
+        let exported = export_node(
+            &authored_node(package),
+            &mut PortableIds::default(),
+            &ProjectPathRedactor::for_share(Some("/opt/relayer-private")),
+        )
+        .unwrap();
+
+        assert!(exported.authored_detail.is_none());
+        assert_eq!(
+            exported.authored_detail_omitted,
+            Some(ExportAuthoredDetailOmission::PrivatePath)
         );
         assert_eq!(exported.detail, "Portable fallback");
     }
@@ -2897,6 +2984,8 @@ mod tests {
             })),
             completion_output: None,
             completion_error: None,
+            stop_requested: false,
+            stop_error: None,
             latest_attempt: None,
         };
         let turn_sequences = [(interaction_id, 1)].into_iter().collect();
@@ -2915,6 +3004,7 @@ mod tests {
                 },
                 turn_sequences: &turn_sequences,
                 redactor: &ProjectPathRedactor::for_share(Some("/Users/x")),
+                settled_attempt_outcome: None,
                 authored_detail_assets: &Default::default(),
             },
             &mut ids,

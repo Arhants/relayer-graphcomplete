@@ -134,7 +134,7 @@ export function bootPublicViewer({
         return changed;
       },
       onInvokeAction: adapter.onInvokeAction,
-      resolveNodeDetailAsset: async () => undefined,
+      resolveNodeDetailAsset: (asset) => snapshot.resolveNodeDetailAsset(asset),
       onDecideApproval: async () => false,
       annotationApi: null,
       contextDraftApi: null,

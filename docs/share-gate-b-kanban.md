@@ -82,15 +82,18 @@ Sentry submission, or promotion of prototype code.
   model plans while retaining completion status, model selection, and harness
   configuration name. Proof: exact decoded JSONL assertions.
 - [x] `SHR-462-4` Redact known secrets, PEM/JWT shapes, home paths, and fragmented
-  rich-detail paths while preserving the chosen title and project display name.
-  Proof: Rust redaction fixtures at the share-export boundary.
-- [x] `SHR-462-5` Keep conversation-export v1 bytes, replace only the published
-  title, preserve ordinary export behavior, and reject over 16 MiB without
-  truncation using a closed error. Proof: boundary/adjacent size tests plus the
-  unchanged ordinary-export suite.
-- [x] `SHR-463-1` Parse v1 into the production ProductWorkspace adapter with
-  nested navigation and Node Details. Proof: adapter test using realistic v1
-  fixture data.
+  rich-detail paths, including values reassembled by rendered HTML text nodes,
+  while preserving the chosen title and project display name. Proof: Rust
+  redaction fixtures at the share-export boundary.
+- [x] `SHR-462-5` Emit conversation-export V1 for asset-free accepted history and
+  V2 for accepted authored Node Details with digest-pinned visual content,
+  replace only the published title, preserve ordinary export behavior, and
+  reject over 16 MiB without truncation using a closed error. Proof:
+  production exporter/viewer journey, boundary size tests, and the unchanged
+  ordinary-export suite.
+- [x] `SHR-463-1` Parse V1 and V2 into the production ProductWorkspace adapter
+  with nested navigation, Node Details, and strict inline visual-asset
+  validation. Proof: realistic reader fixtures and the real production journey.
 - [x] `SHR-463-2` Start/reload at the first accepted turn and keep the location
   URL unchanged during turn/layer navigation. Proof: browser-host test observing
   history/location calls.
@@ -107,7 +110,7 @@ Sentry submission, or promotion of prototype code.
 - [x] `SHR-464-1` Verify Auth0 ID tokens via JWKS and derive a domain-separated
   owner identity server-side. Proof: handler tests with valid, invalid, expired,
   wrong-audience, wrong-issuer, and foreign-owner fake JWKS cases.
-- [x] `SHR-464-2` Reserve/upload/finalize exact v1 bytes using 128-bit IDs,
+- [x] `SHR-464-2` Reserve/upload/finalize exact V1/V2 bytes using 128-bit IDs,
   versioned object keys, an atomic active-reservation bound, bounded
   size/line/JSON validation, and exact staged object identity. Proof: handlers
   with fake S3/DynamoDB adapters, including concurrent reservation admission.
@@ -177,4 +180,12 @@ Sentry submission, or promotion of prototype code.
   `npm run check` completed every chapter with 194 Vitest files passing and one
   skipped, 2,465 tests passing and three skipped, secret-boundary 2/2, Python
   29/29, and green Rust, Ladybug, and PRD checks. `npm run build` passed. The
-  exact-source Slice 3 adversarial review remains due before handoff.
+  exact-source Slice 3 adversarial review passed on its recorded commit.
+- Merge-ready reviewer repairs preserve V1 for asset-free shares, add V2 for
+  asset-bearing shares, reject secrets and paths reassembled by rendered rich
+  detail, and suppress handled-failure reporting when durable deduplication
+  cannot be saved. Public `npm run check` passed with 195 Vitest files passing
+  and one skipped, 2,489 tests passing and three skipped, secret-boundary 2/2,
+  Python 29/29, and green Rust, Ladybug, and PRD checks. `npm run build` and the
+  exact public/private joined production journey passed. Exact-source
+  adversarial review of this repair commit remains required before merge.

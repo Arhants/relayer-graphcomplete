@@ -10,7 +10,9 @@ Issue #457 defines account-owned, immutable, read-only thread snapshots. On
 limits were identified. A direct API Gateway/Lambda upload and buffered HTML
 response cannot carry that payload. Electron main instead uploads through a
 short-lived S3 POST policy; a separate page Lambda streams the inline snapshot
-through CloudFront. The payload remains conversation-export v1 JSONL.
+through CloudFront. Asset-free payloads remain conversation-export V1 JSONL. An accepted
+authored Node Detail with visual content uses conversation-export V2 so the immutable page
+contains the digest-pinned image bytes; both versions retain the 16 MiB share boundary.
 
 The [PRD section 8.4](../prd/index.html) owns product meaning. This decision
 supersedes only ADR 0008's exclusion of a Relayer service consuming the desktop

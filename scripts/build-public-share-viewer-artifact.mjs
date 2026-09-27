@@ -105,7 +105,7 @@ async function main() {
     sourceDirty: dirty,
     artifactSha256: sha256(canonicalFiles),
     builder,
-    snapshotVersions: [contract.snapshot.exportVersion],
+    snapshotVersions: [...contract.snapshot.exportVersions],
     csp: contract.viewerArtifact.csp,
     assets,
     resources,

@@ -1,4 +1,4 @@
-const EXPORT_VERSION = 1;
+const EXPORT_VERSIONS = new Set([1, 2]);
 const MAX_EXPORT_BYTES = 16 * 1024 * 1024;
 const MAX_JSONL_LINE_BYTES = 16 * 1024 * 1024;
 const MAX_TURNS = 10_000;
@@ -7,6 +7,8 @@ const MAX_NODES_PER_LAYER = 8;
 const MAX_EDGES_PER_LAYER = 28;
 const MAX_ACTIONS_PER_LAYER = 64;
 const MAX_STRING_BYTES = 4 * 1024 * 1024;
+const MAX_ASSET_BYTES = 8 * 1024 * 1024;
+const SAFE_ASSET_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/svg+xml"]);
 
 const COMPLETION_STATUSES = new Set([
   "not_started",
@@ -161,8 +163,8 @@ function validateHeader(header) {
   if (header.recordType !== "header") {
     fail("header_required", "record[0].recordType", "The first JSONL record must be a header.");
   }
-  if (header.exportVersion !== EXPORT_VERSION) {
-    fail("unsupported_export_version", "header.exportVersion", "Only conversation export V1 is supported.");
+  if (!EXPORT_VERSIONS.has(header.exportVersion)) {
+    fail("unsupported_export_version", "header.exportVersion", "Only conversation export V1 and V2 are supported.");
   }
   requireString(own(header, "exportedAt", "header.exportedAt"), "header.exportedAt");
   validateProducer(own(header, "producer", "header.producer"));
@@ -194,6 +196,68 @@ function validateHeader(header) {
     if (sequence !== index + 1) fail("turn_sequence_invalid", `${path}.sequence`, "Turn sequences must be contiguous from one.");
   });
   return { conversation, manifest };
+}
+
+function decodeAssetContent(record, path) {
+  const value = requireRecord(record, path);
+  if (value.recordType !== "visualAssetContent") fail("record_type_invalid", `${path}.recordType`, "Expected visual asset content.");
+  const digestSha256 = requireString(own(value, "digestSha256", `${path}.digestSha256`), `${path}.digestSha256`);
+  if (!/^[a-f0-9]{64}$/u.test(digestSha256)) fail("asset_digest_invalid", `${path}.digestSha256`, "Visual asset digest is invalid.");
+  const mediaType = requireString(own(value, "mediaType", `${path}.mediaType`), `${path}.mediaType`);
+  if (!SAFE_ASSET_MEDIA_TYPES.has(mediaType)) fail("asset_media_invalid", `${path}.mediaType`, "Visual asset media type is unsupported.");
+  const byteLength = requireInteger(own(value, "byteLength", `${path}.byteLength`), `${path}.byteLength`, { minimum: 1 });
+  if (byteLength > MAX_ASSET_BYTES) fail("asset_too_large", `${path}.byteLength`, "Visual asset exceeds the public viewer limit.");
+  const contentBase64 = requireString(own(value, "contentBase64", `${path}.contentBase64`), `${path}.contentBase64`);
+  if (contentBase64.length !== 4 * Math.ceil(byteLength / 3) || !/^[A-Za-z0-9+/]*={0,2}$/u.test(contentBase64)) {
+    fail("asset_content_invalid", `${path}.contentBase64`, "Visual asset content is not canonical base64.");
+  }
+  const decoded = atob(contentBase64);
+  if (decoded.length !== byteLength || btoa(decoded) !== contentBase64) {
+    fail("asset_length_mismatch", path, "Visual asset content length does not match its record.");
+  }
+  return Object.freeze({ digestSha256, mediaType, byteLength, contentBase64 });
+}
+
+function validateAssetAssociations(turns, contentByDigest) {
+  const associations = new Map();
+  const referencedDigests = new Set();
+  for (const turn of turns) {
+    for (const layer of turn.acceptedView?.layers ?? []) {
+      for (const node of layer.nodes ?? []) {
+        const pins = node.authoredDetail?.assets ?? [];
+        const nodeAssociations = node.authoredDetailAssets ?? [];
+        if (!Array.isArray(pins) || !Array.isArray(nodeAssociations) || pins.length !== nodeAssociations.length) {
+          fail("asset_inventory_mismatch", `turn[${turn.sequence - 1}].acceptedView`, "Node Detail visual asset inventory is inconsistent.");
+        }
+        for (const pin of pins) {
+          const association = nodeAssociations.find((candidate) => candidate?.assetId === pin?.id);
+          if (association) {
+            requireString(association.assetId, "authoredDetailAssets.assetId");
+            if (!/^[a-f0-9]{64}$/u.test(association.digestSha256 ?? "")) fail("asset_digest_invalid", "authoredDetailAssets.digestSha256", "Visual asset digest is invalid.");
+            if (!SAFE_ASSET_MEDIA_TYPES.has(association.mediaType)) fail("asset_media_invalid", "authoredDetailAssets.mediaType", "Visual asset media type is unsupported.");
+            requireInteger(association.byteLength, "authoredDetailAssets.byteLength", { minimum: 1 });
+            const provenance = requireRecord(association.provenance, "authoredDetailAssets.provenance");
+            requireString(provenance.source, "authoredDetailAssets.provenance.source");
+            requireString(provenance.fileName, "authoredDetailAssets.provenance.fileName");
+          }
+          const content = association && contentByDigest.get(association.digestSha256);
+          if (!association || !content
+            || pin.digestSha256 !== association.digestSha256
+            || pin.mediaType !== association.mediaType
+            || association.mediaType !== content.mediaType
+            || association.byteLength !== content.byteLength) {
+            fail("asset_inventory_mismatch", `turn[${turn.sequence - 1}].acceptedView`, "Node Detail visual asset does not match published content.");
+          }
+          referencedDigests.add(association.digestSha256);
+          associations.set(`${pin.id}\0${pin.digestSha256}\0${pin.mediaType}`, content);
+        }
+      }
+    }
+  }
+  for (const digest of contentByDigest.keys()) {
+    if (!referencedDigests.has(digest)) fail("asset_content_unreferenced", "assets", "Visual asset content is not referenced by an accepted node.");
+  }
+  return associations;
 }
 
 function validateOrigin(origin, path) {
@@ -562,21 +626,35 @@ function publicState(snapshot) {
 }
 
 /**
- * Parse the Rust conversation-export V1 JSONL contract and return the safe
+ * Parse the Rust conversation-export V1/V2 JSONL contract and return the safe
  * read model consumed by the public viewer. Non-accepted turns remain in
  * `turns` for diagnostics but are never placed in `interactions`.
  */
-export function parseConversationExportV1(input) {
+export function parseConversationExportSnapshot(input) {
   const records = parseJsonl(input);
   const header = records[0];
   const { conversation, manifest } = validateHeader(header);
   if (records.slice(1).some((record) => record?.recordType === "header")) {
     fail("header_repeated", "records", "A V1 snapshot may contain only one header.");
   }
-  if (records.length - 1 !== manifest.length) {
+  const contentRecords = [];
+  let turnOffset = 1;
+  if (header.exportVersion === 2) {
+    while (records[turnOffset]?.recordType === "visualAssetContent") {
+      contentRecords.push(decodeAssetContent(records[turnOffset], `asset[${contentRecords.length}]`));
+      turnOffset += 1;
+    }
+  }
+  if (records.length - turnOffset !== manifest.length) {
     fail("turn_count_mismatch", "records", "Turn records must match the header manifest exactly.");
   }
-  const turns = records.slice(1).map((turn, index) => validateTurn(turn, `turn[${index}]`, manifest[index]));
+  const turns = records.slice(turnOffset).map((turn, index) => validateTurn(turn, `turn[${index}]`, manifest[index]));
+  const contentByDigest = new Map();
+  for (const content of contentRecords) {
+    if (contentByDigest.has(content.digestSha256)) fail("asset_digest_duplicate", "assets", "Visual asset digest appears more than once.");
+    contentByDigest.set(content.digestSha256, content);
+  }
+  const assetAssociations = validateAssetAssociations(turns, contentByDigest);
   const threadId = `export:${conversation.id}`;
   const acceptedTurns = turns.filter((turn) => turn.completion.status === "accepted");
   if (!acceptedTurns.length) fail("accepted_turn_required", "turns", "A public snapshot must contain at least one accepted turn.");
@@ -613,6 +691,7 @@ export function parseConversationExportV1(input) {
     layersByTurn,
     thread,
     projectName,
+    assetContents: contentRecords.map(cloneJson),
     state: null,
     layerFor(turnId, layerId) {
       return layersByTurn.get(String(turnId))?.get(String(layerId)) ?? null;
@@ -620,12 +699,38 @@ export function parseConversationExportV1(input) {
     turnContainingLayer(layerId) {
       return interactions.find((interaction) => layersByTurn.get(String(interaction.id))?.has(String(layerId))) ?? null;
     },
+    async resolveNodeDetailAsset(asset, dependencies = {}) {
+      const content = assetAssociations.get(`${asset?.id}\0${asset?.digestSha256}\0${asset?.mediaType}`);
+      if (!content) throw new Error("Visual asset is not pinned by this public snapshot.");
+      const decoded = atob(content.contentBase64);
+      const bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0));
+      const crypto = dependencies.crypto ?? globalThis.crypto;
+      const digest = await crypto?.subtle?.digest("SHA-256", bytes);
+      if (!digest) throw new Error("Visual asset digest verification is unavailable.");
+      const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      if (hex !== content.digestSha256) throw new Error("Visual asset digest mismatch.");
+      const URLApi = dependencies.URL ?? globalThis.URL;
+      const BlobType = dependencies.Blob ?? globalThis.Blob;
+      const url = URLApi.createObjectURL(new BlobType([bytes], { type: content.mediaType }));
+      let released = false;
+      return Object.freeze({
+        url,
+        digestSha256: hex,
+        mediaType: content.mediaType,
+        release() {
+          if (!released) URLApi.revokeObjectURL(url);
+          released = true;
+        },
+      });
+    },
   };
   snapshot.state = publicState(snapshot);
   return Object.freeze(snapshot);
 }
 
-export const parsePublicSnapshot = parseConversationExportV1;
+// Kept as an import-compatible name for existing ordinary-export callers.
+export const parseConversationExportV1 = parseConversationExportSnapshot;
+export const parsePublicSnapshot = parseConversationExportSnapshot;
 
 export const publicSnapshotLimits = Object.freeze({
   maxExportBytes: MAX_EXPORT_BYTES,

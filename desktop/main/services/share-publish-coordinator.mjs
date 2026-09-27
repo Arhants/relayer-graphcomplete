@@ -273,7 +273,12 @@ export function createSharePublishCoordinator({
     if (attempt?.reportedFailures.has(key)) return;
     if (attempt) {
       attempt.reportedFailures.add(key);
-      await save(attempt).catch(() => undefined);
+      try {
+        await save(attempt);
+      } catch {
+        attempt.reportedFailures.delete(key);
+        return;
+      }
     }
     await Promise.resolve(reporter.report(record)).catch(() => undefined);
   }

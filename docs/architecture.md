@@ -342,7 +342,8 @@ oversize byte count. It reuses verified-account admission, the main-owned
 pseudonym, bounded encrypted queue, final transport validation, and recursion
 suppression. Main deduplicates account + reference + stage + code in process;
 the durable publish-attempt owner must preserve the same identity for restart
-deduplication. Renderer and public viewer receive no reporting or network
+deduplication. A handled failure is admitted only after that durable key saves;
+save failure suppresses reporting. Renderer and public viewer receive no reporting or network
 authority.
 
 The Electron-main publish coordinator writes a versioned, atomically replaced
@@ -442,7 +443,8 @@ Stable promotion is a separate protected workflow on `main`. It requires committ
 
 ## Planned shared thread snapshots
 
-The optional share service hosts immutable conversation-export v1 snapshots,
+The optional share service hosts immutable conversation-export V1 snapshots when accepted
+history is asset-free and V2 snapshots when accepted authored Node Details carry visual content,
 up to 16 MiB each. Rust owns export scrubbing; Electron main owns Auth0 and
 one frozen byte sequence plus an owner-bound attempt/reference identity. Renderer
 code receives neither bearer tokens nor direct network authority. Electron main
