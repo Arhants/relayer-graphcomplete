@@ -193,6 +193,8 @@ pub(crate) struct InteractionResponse {
     created_at: String,
     graph_node_id: Option<i64>,
     completion_status: String,
+    stop_requested: bool,
+    stop_error: Option<String>,
     harness_configuration_name: Option<String>,
     harness_configuration_digest: Option<String>,
     permission_profile_id: String,
@@ -217,6 +219,8 @@ impl From<Interaction> for InteractionResponse {
             created_at: interaction.created_at,
             graph_node_id: interaction.graph_node_id,
             completion_status: interaction.completion_status,
+            stop_requested: interaction.stop_requested,
+            stop_error: interaction.stop_error,
             harness_configuration_name: interaction.harness_configuration_name,
             harness_configuration_digest: interaction.harness_configuration_digest,
             permission_profile_id: interaction.permission_profile_id,
@@ -457,9 +461,15 @@ pub(crate) struct CapabilitiesResponse {
     harness: bool,
     credentials: bool,
     annotations: bool,
+    stop_runs: bool,
 }
 
 impl CapabilitiesResponse {
+    pub(crate) fn with_stop_runs(mut self, enabled: bool) -> Self {
+        self.stop_runs = enabled;
+        self
+    }
+
     pub(crate) fn with_annotations(mut self, annotations: bool) -> Self {
         self.annotations = annotations;
         self
@@ -476,6 +486,7 @@ impl From<ProductCapabilities> for CapabilitiesResponse {
             harness: capabilities.harness,
             credentials: capabilities.credentials,
             annotations: false,
+            stop_runs: false,
         }
     }
 }
@@ -511,6 +522,11 @@ pub(crate) struct ProductStateResponse {
 }
 
 impl ProductStateResponse {
+    pub(crate) fn with_stop_runs(mut self, enabled: bool) -> Self {
+        self.capabilities.stop_runs = enabled;
+        self
+    }
+
     pub(crate) fn with_interactions(mut self, interactions: Vec<InteractionResponse>) -> Self {
         self.interactions = interactions;
         self
@@ -612,6 +628,8 @@ mod tests {
     #[test]
     fn recoverable_attempt_serializes_with_the_real_not_started_contract() {
         let interaction = Interaction {
+            stop_requested: false,
+            stop_error: None,
             id: InteractionId::from_database(9),
             thread_id: ThreadId::from_database(4),
             sequence: 2,

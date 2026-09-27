@@ -1,8 +1,10 @@
+import { PrimeVisualAuthoring } from "./prime-visual-authoring.js";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { lstat, mkdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { GraphCapability } from "@relayer/graph-client";
+import { RELAYER_ICON_NAMES, type GraphCapability } from "@relayer/graph-client";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
 import { MAX_HARNESS_APPROVAL_TEXT_LENGTH } from "../approval.js";
 import { INTERACTION_INPUT_GUIDANCE, renderInteractionInput } from "../interaction-input.js";
@@ -72,6 +74,8 @@ async function resolvedManagedSessionFile(
 }
 
 interface PrimeAgentSession {
+  readonly agent: { readonly state: { thinkingLevel: string } };
+  readonly sessionManager: { appendThinkingLevelChange(level: string): void };
   readonly sessionFile?: string;
   promptAndWait(text: string, options: {
     readonly runContext: PrimeAgentRunContext;
@@ -422,6 +426,25 @@ export class PrimeAgentHarness implements Harness {
       if (run === undefined) throw new Error("relayer.graph.current requires an active GraphComplete run");
       return capabilityResponse(run.graph.acquireCapability());
     });
+    const visualRuns = new WeakMap<PrimeAgentRunContext, PrimeVisualAuthoring>();
+    const visualAuthoring = primeAgent.createHostRequestHandler<PrimeAgentRunContext>(async (payload, invocation) => {
+      const active = () => {
+        if (!invocation.isCurrent() || invocation.signal.aborted) throw new Error("The graph run is no longer active");
+        if (invocation.runContext === undefined) throw new Error("Visual authoring requires an active GraphComplete run");
+        invocation.runContext.graph.acquireCapability();
+      };
+      active();
+      const run = invocation.runContext!;
+      let authoring = visualRuns.get(run);
+      if (authoring === undefined) {
+        authoring = new PrimeVisualAuthoring();
+        visualRuns.set(run, authoring);
+      }
+      // Prime adds transport metadata to every IPython host request. Keep the
+      // authoring schema strict after removing only these native envelope fields.
+      const { type: _requestType, cellSourceCode: _cellSourceCode, ...program } = payload;
+      return authoring.execute(program, run.graph.acquireCapability(), active, invocation.signal);
+    });
     const completeCurrent = primeAgent.createHostRequestHandler<PrimeAgentRunContext>(async (_payload, invocation) => {
       if (!invocation.isCurrent() || invocation.signal.aborted) throw new Error("The completion run is no longer active");
       const broker = invocation.runContext?.completionBroker;
@@ -450,6 +473,18 @@ export class PrimeAgentHarness implements Harness {
         managedKernel: { version: 1, pythonExecutable: managedRuntime.executable },
       } : {}),
       resourceLoaderOptions: {
+        // Native discovery walks to filesystem root. A selected workspace must
+        // not inherit instructions from the app's storage/development ancestors.
+        agentsFilesOverride: (input: { agentsFiles: { path: string; content: string }[] }) => ({
+          agentsFiles: input.agentsFiles.filter((file) => {
+            try {
+              const canonicalFile = realpathSync(file.path);
+              return confinedDescendant(realpathSync(workspaceRoot), canonicalFile)
+                || (managedAgentDir !== undefined
+                  && confinedDescendant(realpathSync(managedAgentDir), canonicalFile));
+            } catch { return false; }
+          }),
+        }),
         appendSystemPromptOverride: (base: string[]) => presentationInstructions.current === ""
           ? [...base]
           : [...base, presentationInstructions.current],
@@ -465,6 +500,7 @@ export class PrimeAgentHarness implements Harness {
         tools: ["ipython"],
         hostRequestHandlers: {
           "relayer.graph.current": graphCurrent,
+          "relayer.graph.visual-authoring": visualAuthoring,
           "relayer.complete.current": completeCurrent,
         },
         telemetryDisabled: true,
@@ -472,6 +508,19 @@ export class PrimeAgentHarness implements Harness {
         ...(configuration.rlmMaxDepth === undefined ? {} : { rlmMaxDepth: configuration.rlmMaxDepth }),
         ...(prewarmIpythonKernel === undefined ? {} : { prewarmIpythonKernel }),
       });
+      // The SDK clamps this setting against its absent ambient model during
+      // construction. Restore the harness preference only; each run still owns
+      // its selected model, whose capability gates the outgoing provider payload.
+      if (configuration.thinkingLevel !== undefined) {
+        if (session.agent?.state === undefined || typeof session.sessionManager?.appendThinkingLevelChange !== "function") {
+          session.dispose();
+          throw new Error("Installed Prime Agent package does not expose thinking configuration");
+        }
+        if (session.agent.state.thinkingLevel !== configuration.thinkingLevel) {
+          session.agent.state.thinkingLevel = configuration.thinkingLevel;
+          session.sessionManager.appendThinkingLevelChange(configuration.thinkingLevel);
+        }
+      }
       if (typeof session.waitForRlmQuiescence !== "function") {
         session.dispose();
         throw new Error("Installed Prime Agent package does not expose recursive quiescence");
@@ -822,6 +871,8 @@ export class PrimeAgentHarness implements Harness {
     return `Complete the current Relayer interaction by using Python in IPython to author a useful graph response.
 
 ${GRAPH_PRESENTATION_GUIDANCE}
+${PRIME_VISUAL_GUIDANCE}
+${primeVisualExample(interaction.id)}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interaction.id}
@@ -830,19 +881,27 @@ ${renderInteractionInput(context.interactionInput)}
 
 ${INTERACTION_INPUT_GUIDANCE} In Python, call await graph.get_interaction_input() to re-read it.
 
-Use this entry point:
+Use this entry point. Top-level cell code starts at column 0; never indent it.
 
+\`\`\`python
 from relayer_graph import GraphSession
 graph = await GraphSession.current()
+\`\`\`
+
+${PYTHON_GRAPH_API_REFERENCE}
 
 ${currentWorkspaceMechanicsPython()}
-${graphSearchGuidancePython(this.context.configuration.graphCapabilityProfile?.search === "query-v1")}
+${semanticChildGuidancePython(context)}${graphSearchGuidancePython(this.context.configuration.graphCapabilityProfile?.search === "query-v1")}
 
 The graph scope is supplied by the host for this complete() execution and is inherited by your RLM children. Do not read graph credentials from environment variables or files. Give every persisted NodeObject, EdgeObject, LayerObject, navigate action, and invoke action an explicit descriptive client_key that is unique within this interaction and stable across edits and reruns. Never rely on generated client keys in authored code.
 
-Author nodes, edges, layers, and useful expand, reference, or invoke actions. For supporting evidence or reusable context, use await graph.add_navigate_action(node, "View evidence", evidence_layer, relation="reference", source_layer=response_layer, client_key="node-evidence") after submitting the referenced layer. The visible response layer must contain 1 to 8 connected nodes. Finish the root execution only by calling:
+Author nodes, edges, layers, and useful expand, reference, or invoke actions. For supporting evidence or reusable context, use await graph.add_navigate_action(node, "View evidence", evidence_layer, relation="reference", source_layer=response_layer, client_key="node-evidence") after submitting the referenced layer. The visible response layer must contain 1 to 8 connected nodes. The interaction node needs exactly one new root navigate action, relation="expand" with no source_layer; on a rerun, reuse its client_key rather than adding another.
+
+${PYTHON_GRAPH_AUTHORING_RULES}
 
 Import NodePlacementObject and LayerLayoutObject from relayer_graph. Every new layer requires a version-1 LayerLayoutObject with exactly one NodePlacementObject(node, x, y) per member node. Coordinates are normalized numbers from 0 through 1 and express semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, anchor hierarchy with a parent or summary, group related nodes, align comparisons, and avoid accidental overlap or edge crossings. Do not derive coordinates from pixels, window size, or inspector state.
+
+Finish the root execution only by calling:
 
 await graph.submit(${interaction.id})
 
@@ -854,6 +913,8 @@ If a graph call fails, edit and rerun the same authoring code with the same clie
     return `Complete the current Relayer interaction by using Python in IPython to author a useful graph response. A flat answer is valid. Add navigation only when opening it would materially improve understanding or support; apply that same test again inside every layer you author.
 
 ${GRAPH_PRESENTATION_GUIDANCE}
+${PRIME_VISUAL_GUIDANCE}
+${primeVisualExample(interaction.id)}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interaction.id}
@@ -862,13 +923,17 @@ ${renderInteractionInput(context.interactionInput)}
 
 ${INTERACTION_INPUT_GUIDANCE} In Python, call await graph.get_interaction_input() to re-read it.
 
-Use this entry point:
+Use this entry point. Top-level cell code starts at column 0; never indent it.
 
+\`\`\`python
 from relayer_graph import GraphSession
 graph = await GraphSession.current()
+\`\`\`
+
+${PYTHON_GRAPH_API_REFERENCE}
 
 ${currentWorkspaceMechanicsPython()}
-${graphSearchGuidancePython(this.context.configuration.graphCapabilityProfile?.search === "query-v1")}
+${semanticChildGuidancePython(context)}${graphSearchGuidancePython(this.context.configuration.graphCapabilityProfile?.search === "query-v1")}
 
 The graph scope is supplied by the host for this complete() execution and is inherited by your RLM children. Do not read graph credentials from environment variables or files. Give every persisted NodeObject, EdgeObject, LayerObject, navigate action, and invoke action an explicit descriptive client_key that is unique within this interaction and stable across edits and reruns. For example, use NodeObject("info", "Summary", "...", client_key="summary-node"), EdgeObject((summary_node, detail_node), client_key="summary-detail-edge"), and LayerObject(nodes, edges, layout, client_key="response-layer"). Never rely on generated client keys in authored code. Author in whatever order fits the task, while submitting each referenced object before using it. The final graph call must be await graph.submit(${interaction.id}); call it only after the full response has been authored.
 
@@ -890,7 +955,11 @@ Layers normally contain 1 to 5 nodes. A layer may contain 6 to 8 nodes only when
 
 Import NodePlacementObject and LayerLayoutObject from relayer_graph. Every new root, expansion, and reference layer requires a version-1 LayerLayoutObject with exactly one NodePlacementObject(node, x, y) per member node. Coordinates are normalized numbers from 0 through 1 and express semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, use a parent or summary node to anchor hierarchy, group related nodes spatially, align comparisons deliberately, and avoid accidental overlap or edge crossings where a clearer arrangement is available. Do not use pixels, window size, or inspector state. Example: layout = LayerLayoutObject((NodePlacementObject(first, 0.25, 0.5), NodePlacementObject(second, 0.75, 0.5))); layer = LayerObject((first, second), (edge,), layout, client_key="response-layer").
 
-Layer edges are exactly what the user sees and are undirected. Use supported Relayer icons and useful markdown detail. At any layer, add expand, reference, or invoke actions only when they materially improve the response.
+Layer edges are exactly what the user sees and are undirected. Give every node useful markdown detail.
+
+${PYTHON_GRAPH_AUTHORING_RULES}
+
+At any layer, add expand, reference, or invoke actions only when they materially improve the response.
 
 The graph service enforces exact provenance, target visibility, layer size, expansion cycles, and accepted closure. If a call fails, read every natural-language issue, edit the same authoring code, and rerun it with the same client_key values; stable keys make the whole-program rerun update the same drafts instead of creating duplicates. Do not add fake navigate or reference actions merely to make abandoned draft layers reachable. Only when graph.submit identifies a genuinely abandoned orphan draft, recover with await graph.discard_layer(layer); this preserves that layer as stopped history without discarding its nodes, edges, actions, or child layers. A model turn ending is not completion. The task is complete only when the final graph.submit call succeeds.`;
   }
@@ -918,7 +987,26 @@ function primeSessionAttachment(session: PrimeAgentSession): JsonObject {
 }
 
 function currentWorkspaceMechanicsPython(): string {
-  return `Read current with current = await graph.get_current(). After submitting a layer, you may update the pointer with await graph.advance_current(layer, expected_revision=current["headRevision"], operation_key="a-stable-operation-key").`;
+  return `Read current with current = await graph.get_current(). After submitting the complete closure and registering all its actions, you may publish it and update the pointer with await graph.advance_current(layer, expected_revision=current["headRevision"], operation_key="a-stable-operation-key"). Once a layer is current, the next current layer must keep a navigation path back to it, so the user can always return to what they saw. This applies to every later advance_current and to the root layer of your final graph.submit. After submitting the new layer and before advancing to it or submitting, add await graph.add_navigate_action(node, "Earlier view", current["currentLayerId"], relation="reference", source_layer=new_layer, client_key="back-to-earlier-view") from one of its draft nodes created for this interaction. Reused accepted nodes cannot take new actions, so every layer you make current needs at least one new draft node to carry that reference.`;
+}
+
+/** The graph client calls a Prime cell uses, as the Python client declares them. Every method is async. */
+export const PYTHON_GRAPH_API_REFERENCE = `Graph client reference (every graph method is async; always await it):
+- NodeObject(icon, title, detail, kind="concept", client_key=...), EdgeObject((left_node, right_node), client_key=...), LayerObject(nodes, edges, layout, client_key=...), LayerLayoutObject(placements), NodePlacementObject(node, x, y); import them from relayer_graph.
+- await graph.submit_node(node) -> node; await graph.create_edge(left, right, client_key=...) -> edge; await graph.submit_layer(layer, size_justification=None) -> layer.
+- await graph.add_navigate_action(source_node, label, target_layer, relation="expand" | "reference", client_key=..., source_layer=None, variant="pill", icon=None, description=None).
+- await graph.add_invoke_action(source_node, label, interaction_text, source_layer=..., client_key=..., variant="pill", icon=None, description=None).
+- await graph.get_current(); await graph.advance_current(layer, expected_revision=..., operation_key=...); await graph.get_interaction_input(); await graph.discard_layer(layer); await graph.submit(interaction_node).
+- Graph objects do not expose client_key after submission; keep your own references to the objects you submitted.`;
+
+/** Rules the graph service enforces on authored objects, stated so the first attempt passes. */
+const PYTHON_GRAPH_AUTHORING_RULES = `Every node and every optional action icon must be one of: ${RELAYER_ICON_NAMES.join(", ")}. Action variants are "chip", "pill", "wide", or "card". Only a card accepts description, and a card requires one. Apart from the interaction node's one root expand action, add actions only on draft nodes created for this interaction; an accepted node you reuse keeps its existing actions.`;
+
+// Present only when the product granted this completion a broker, as in codex.basic.
+function semanticChildGuidancePython(context: HarnessRunContext): string {
+  if (context.completionBroker === undefined) return "";
+  return `For explicit semantic child work, give each child its own invoke action. First author and submit those invoke actions in their layer and advance that layer as current. Only after that succeeds, prepare each child separately with input_graph = await graph.prepare_complete(invoke_action); one input graph starts exactly one child. Import with from relayer_graph import complete, CompletionWatch. Start with children = [] and launch each child from its own input graph with children.append(complete(input_graph)). Each handle returns immediately with completion_id, current, and result; launch every independent child before watching them. Every change to a child's current is an event you may act on. Create watch = CompletionWatch(children) once. Then run changes = await watch.changes() in its own cell; it returns as soon as any child's current moves or ends, even when that takes minutes. After each event, decide whether the user now needs a better view, for example when a workstream reaches a finding or finishes. Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting. Repeat until watch.settled is true. Your turn ending does not wait for children, so never leave them in a background task. Then integrate every child and return this completion. await child.result gives a succeeded child's final layer. A stopped or failed child raises CompletionTerminalError there instead, also importable from relayer_graph; catch it and integrate the work its error.current still retains. Prime RLM children and subagents remain inside this completion and do not create semantic children by themselves.
+`;
 }
 
 function graphSearchGuidancePython(enabled: boolean): string {
@@ -1139,8 +1227,8 @@ function sanitizePrimeTraceValue(
     );
     if (presentationTraceValues === undefined) return accessRedacted;
     const presentationValues = includePresentationFragments
-      ? [presentationTraceValues.exactBlock, ...presentationTraceValues.fragments]
-      : [presentationTraceValues.exactBlock];
+      ? [presentationTraceValues.exactBlock, ...presentationTraceValues.legacyBlocks, ...presentationTraceValues.fragments]
+      : [presentationTraceValues.exactBlock, ...presentationTraceValues.legacyBlocks];
     return presentationValues.reduce(
       (sanitized, traceValue) => sanitized.split(traceValue).join("[redacted-personal-presentation]"),
       accessRedacted,
@@ -1223,9 +1311,10 @@ function parsePrimeAgentConfiguration(context: HarnessFactoryContext): PrimeAgen
   if (selected.implementation !== PRIME_AGENT_KEY) throw new Error(`prime.agent cannot run implementation ${selected.implementation}`);
   if (selected.implementationVersion !== 1) throw new Error(`Unsupported prime.agent implementation version: ${selected.implementationVersion}`);
   const settings = selected.settings;
-  const allowed = new Set(["thinkingLevel", "rlmMaxDepth", "prewarmIpythonKernel", "promptProfile"]);
+  const allowed = new Set(["thinkingLevel", "rlmMaxDepth", "prewarmIpythonKernel", "promptProfile", "personalPresentationVersion"]);
   const unknown = Object.keys(settings).filter((key) => !allowed.has(key));
   if (unknown.length > 0) throw new Error(`Unknown prime.agent configuration field: ${unknown.join(", ")}`);
+  optionalEnum(settings.personalPresentationVersion, ["personal-presentation-v0", "personal-presentation-v1", "personal-presentation-v2", "personal-presentation-v3", "personal-presentation-v4"] as const, "personalPresentationVersion");
   const thinkingLevel = optionalEnum(settings.thinkingLevel, ["minimal", "low", "medium", "high", "xhigh", "max"] as const, "thinkingLevel");
   const rlmMaxDepth = optionalPositiveInteger(settings.rlmMaxDepth, "rlmMaxDepth");
   const prewarmIpythonKernel = optionalBoolean(settings.prewarmIpythonKernel, "prewarmIpythonKernel");
@@ -1567,8 +1656,8 @@ function primeAgentModel(route: HarnessAdmittedModelRoute, access: Extract<Harne
     // Use exact provider-discovered limits when the execution lease carries
     // them. Keep the legacy conservative values when discovery has no limits;
     // model IDs are never used to infer capabilities.
-    reasoning: false,
-    input: Object.freeze(["text"] as const),
+    reasoning: capabilities?.reasoning === true,
+    input: Object.freeze(capabilities?.imageInput === true ? ["text", "image"] as const : ["text"] as const),
     // Prime requires numeric prices; zero is an unknown-cost sentinel here.
     // Relayer billing never treats this transport metadata as authoritative.
     cost: Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }),
@@ -1576,7 +1665,10 @@ function primeAgentModel(route: HarnessAdmittedModelRoute, access: Extract<Harne
     maxTokens: hasDiscoveredTokenCapabilities
       ? Math.min(capabilities.maxOutputTokens, capabilities.contextWindow)
       : 4_096,
-    ...(mapping.compat === undefined ? {} : { compat: mapping.compat }),
+    ...(mapping.compat === undefined ? {} : { compat: {
+      ...mapping.compat,
+      ...(capabilities?.reasoningEffort === undefined ? {} : { supportsReasoningEffort: capabilities.reasoningEffort }),
+    } }),
   });
 }
 
@@ -1661,4 +1753,35 @@ function optionalEnum<const T extends readonly string[]>(value: unknown, allowed
   if (value === undefined) return undefined;
   if (typeof value !== "string" || !allowed.includes(value)) throw new Error(`prime.agent ${field} must be one of: ${allowed.join(", ")}`);
   return value as T[number];
+}
+
+const PRIME_VISUAL_GUIDANCE = `For visual Node Details, import html, asset_ref, external_link, action_capability, ActionObject, and VisualAssetFile from relayer_graph. node.detail_authoring.set_component("main", html("<h2>Answer</h2>"), "h2 { color: blue; }") authors a component; node.detail remains the Markdown fallback. Use html(["<button gc=", ">Continue</button>"], action_capability("continue", action)) for a declared ActionObject. Its source_layer must be the exact LayerObject containing that node. Reuse the same action in await graph.add_action(node, action) after submitting nodes and layers. Navigate actions use kind="navigate", relation="expand" or "reference", and target=layer; invoke actions use interaction_text; input actions use control, prompt, and options. Checkpoint with await graph.checkpoint_node_detail(node). submit_node freezes the local object's detail; while the record remains a draft, use a fresh NodeObject with the same client_key for repairs. Published records are immutable. Untouched detail retains its prior package; detail_authoring.clear() explicitly removes it.
+Discover assets with graph.visual_assets.scope(), list_assets(scope=scope), list_tags(scope=scope), and inspect(asset_id, scope). Add caller-read bytes with VisualAssetFile(name, media_type, bytes) and await graph.visual_assets.add(file=file, scope=scope, name=name). Bind logical asset IDs with html(['<img asset=', ' alt="Description">'], asset_ref(asset_id)); the host resolves and pins content. Never supply compiled packages, mounts, hashes, raw image URLs, or executable JavaScript.`;
+
+function primeVisualExample(interactionNodeId: number): string {
+  return `This runnable example demonstrates the Python client lifecycle and required call ordering only. Its placeholder content and layout are not a recommended response design. Choose the representation for the task and attached presentation preferences. Use the public client API; inspect a specific signature or error only when needed instead of reading compiler or server internals. Discover assets when the chosen explanation benefits from them.
+
+\`\`\`python
+from relayer_graph import GraphSession, NodeObject, LayerObject, LayerLayoutObject, NodePlacementObject, ActionObject, html, action_capability
+graph = await GraphSession.current()
+node = NodeObject("info", "Answer", "Replace with the answer.", client_key="answer")
+child = NodeObject("info", "Details", "Replace with useful depth.", client_key="details")
+layer = LayerObject([node], [], LayerLayoutObject([NodePlacementObject(node, 0.5, 0.5)]), client_key="answer-layer")
+child_layer = LayerObject([child], [], LayerLayoutObject([NodePlacementObject(child, 0.5, 0.5)]), client_key="details-layer")
+expand = ActionObject("navigate", "Details", layer, "details-action", relation="expand", target=child_layer)
+node.detail_authoring.set_component("main", html(["<section><h2>Answer</h2><p>Replace with the answer.</p><button gc=", ">Details</button></section>"], action_capability("details-control", expand)), "section { display: grid; gap: 0.75rem; }")
+child.detail_authoring.set_component("main", html("<p>Replace with useful depth.</p>"))
+for item in [node, child]:
+    await graph.checkpoint_node_detail(item)
+    await graph.submit_node(item)
+await graph.submit_layer(child_layer)
+await graph.submit_layer(layer)
+await graph.add_action(node, expand)
+await graph.add_navigate_action(${interactionNodeId}, "Answer", layer, relation="expand", client_key="response")
+# Optional progress publication: all actions must already exist.
+current = await graph.get_current()
+await graph.advance_current(layer, expected_revision=current["headRevision"], operation_key="answer-ready")
+await graph.submit(${interactionNodeId})
+\`\`\`
+The final submit accepts the graph; do not run this placeholder unchanged. Additional nodes and controls should serve the user's task.`;
 }

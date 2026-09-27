@@ -10,7 +10,7 @@ import types
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from relayer_graph import (APIError, CompletionCurrentSnapshot, CompletionInputGraph, ConfigurationError, EdgeObject, GraphNode, GraphSession,
+from relayer_graph import (APIError, CompletionCurrentSnapshot, CompletionInputGraph, CompletionWatch, ConfigurationError, EdgeObject, GraphNode, GraphSession,
                            LayerLayoutObject, LayerObject, NodeObject,
                            NodePlacementObject,
                            RELAYER_ICON_NAMES, RelayerGraphClient, TransportError, ValidationError,
@@ -79,7 +79,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         Handler.requests.append((self.path, dict(self.headers), None))
-        if self.path == "/api/completions/91/current":
+        child_92 = lambda revision, lifecycle="active": {
+            "completionId": 92, "lifecycle": lifecycle, "headRevision": revision,
+            "currentLayerId": 5, "finalLayerId": None,
+        }
+        if self.path == "/api/completions/92/result":
+            self._reply({"current": child_92(3)}, 202)
+        elif self.path == "/api/completions/92/result?afterRevision=3":
+            # The first wait outlasts the broker's hold and comes back unchanged.
+            waits = [path for path, _, _ in Handler.requests if path == self.path]
+            self._reply({"current": child_92(3 if len(waits) == 1 else 4)}, 202)
+        elif self.path == "/api/completions/92/result?afterRevision=4":
+            self._reply({"current": child_92(6, "failed"), "reason": "execution"}, 409)
+        elif self.path == "/api/completions/91/current":
             self._reply({
                 "completionId": 91, "lifecycle": "active", "headRevision": 2,
                 "currentLayerId": 8, "finalLayerId": None,
@@ -415,6 +427,110 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
         finally:
             os.environ.clear()
             os.environ.update(previous)
+
+    async def test_next_waits_for_the_childs_current_to_move_past_what_the_parent_saw(self):
+        previous = os.environ.copy()
+        try:
+            os.environ["RELAYER_COMPLETE_URL"] = self.url + "/api/completions"
+            os.environ["RELAYER_COMPLETE_TOKEN"] = "broker-token"
+            handle = complete(CompletionInputGraph(92))
+            first = await handle.current.next()
+            moved = await handle.current.next(first.revision)
+            ended = await handle.current.next(moved.revision)
+            self.assertEqual(
+                [(first.revision, first.lifecycle), (moved.revision, moved.lifecycle), (ended.revision, ended.lifecycle)],
+                [(3, "active"), (4, "active"), (6, "failed")],
+            )
+            self.assertEqual(
+                [path for path, _, _ in Handler.requests if "/92/result" in path],
+                [
+                    "/api/completions/92/result",
+                    "/api/completions/92/result?afterRevision=3",
+                    "/api/completions/92/result?afterRevision=3",
+                    "/api/completions/92/result?afterRevision=4",
+                ],
+            )
+        finally:
+            os.environ.clear()
+            os.environ.update(previous)
+
+    @staticmethod
+    def _held_children():
+        """Children whose next() calls stay open until the test releases them by id:after_revision."""
+        releases: dict[str, asyncio.Future] = {}
+        asked: list[str] = []
+
+        class Current:
+            def __init__(self, completion_id):
+                self.completion_id = completion_id
+
+            async def next(self, after_revision=None):
+                key = f"{self.completion_id}:{'-' if after_revision is None else after_revision}"
+                asked.append(key)
+                releases[key] = asyncio.get_running_loop().create_future()
+                return await releases[key]
+
+        class Child:
+            def __init__(self, completion_id):
+                self.completion_id = completion_id
+                self.current = Current(completion_id)
+
+        return releases, asked, Child
+
+    async def test_a_watch_reports_each_childs_change_as_its_own_event(self):
+        def snapshot(completion_id, revision, lifecycle="active"):
+            return CompletionCurrentSnapshot(completion_id, lifecycle, revision, revision, None)
+
+        async def turns():
+            for _ in range(5):
+                await asyncio.sleep(0)
+
+        releases, asked, Child = self._held_children()
+        watch = CompletionWatch([Child(1), Child(2)])
+        first = asyncio.ensure_future(watch.changes())
+        await turns()
+        releases["1:-"].set_result(snapshot(1, 0))
+        self.assertEqual([(child.completion_id, current.revision) for child, current in await first], [(1, 0)])
+
+        # Child 2's first request is still open, so it is not asked again.
+        second = asyncio.ensure_future(watch.changes())
+        await turns()
+        releases["2:-"].set_result(snapshot(2, 0))
+        releases["1:0"].set_result(snapshot(1, 1))
+        await turns()
+        self.assertEqual(
+            sorted((child.completion_id, current.revision) for child, current in await second),
+            [(1, 1), (2, 0)],
+        )
+
+        third = asyncio.ensure_future(watch.changes())
+        await turns()
+        releases["1:1"].set_result(snapshot(1, 2, "succeeded"))
+        releases["2:0"].set_result(snapshot(2, 1, "failed"))
+        await turns()
+        self.assertEqual(sorted(current.lifecycle for _, current in await third), ["failed", "succeeded"])
+        self.assertTrue(watch.settled)
+        self.assertEqual(await watch.changes(), [])
+        self.assertEqual(asked, ["1:-", "2:-", "1:0", "1:1", "2:0"])
+
+    async def test_overlapping_watch_calls_each_return_their_own_event(self):
+        async def turns():
+            for _ in range(5):
+                await asyncio.sleep(0)
+
+        releases, asked, Child = self._held_children()
+        watch = CompletionWatch([Child(1), Child(2)])
+        first = asyncio.ensure_future(watch.changes())
+        second = asyncio.ensure_future(watch.changes())
+        await turns()
+        releases["1:-"].set_result(CompletionCurrentSnapshot(1, "active", 0, 0, None))
+        self.assertEqual([(child.completion_id, current.revision) for child, current in await first], [(1, 0)])
+
+        # The second call starts after the first returns, so it waits for the next event.
+        await turns()
+        releases["2:-"].set_result(CompletionCurrentSnapshot(2, "active", 0, 0, None))
+        self.assertEqual([(child.completion_id, current.revision) for child, current in await second], [(2, 0)])
+        self.assertEqual(asked, ["1:-", "2:-", "1:0"])
 
     async def test_completion_current_rejects_coerced_identity_fields(self):
         with self.assertRaisesRegex(TransportError, "invalid revision"):

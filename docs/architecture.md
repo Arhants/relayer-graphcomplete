@@ -445,9 +445,31 @@ These are planned service boundaries, not implemented product capabilities. See
 
 Relayer Eval starts from the checkout under Node and serves its dashboard on
 loopback. It supervises the same Rust product/graph servers and harness host.
-It has no Electron package. Each human review has a separate loopback origin;
+It has no Electron package or launch-time build. Developers explicitly rebuild shared
+Rust and TypeScript artifacts when their inputs change. Each human review has a separate loopback origin;
 a capability header authenticates requests and a gateway supplies only read-only
 Rust authority plus a scoped human annotation credential. Browser-supplied
 cookies never become upstream credentials. Judges use fresh Chromium contexts
 and the shared production renderer. The terminal owns shutdown; browser tabs do
 not own execution. See ADR 0003 and PRD section 9 for the product contract.
+
+## Prime instruction discovery boundary
+
+Prime filters native context-file admission to canonical descendants of the selected
+workspace and its managed private agent directory. This preserves workspace-owned
+instructions while preventing a standalone app workspace nested under a development
+checkout from inheriting that checkout’s AGENTS.md. The same filter runs on resource
+reload and excludes symlinks that resolve outside the admitted roots. This boundary
+controls model instructions; it does not redefine filesystem read permissions.
+
+### Explanatory presentation delivery
+
+Production Codex and Prime configurations select the immutable V4 presentation
+for new threads. It adds task-adaptive explanatory presentation without changing
+V0–V3 or existing pins. Shared semantics belong in the presentation graph. Each
+harness supplies a compact capability overview and language-appropriate public
+API recipes; examples demonstrate mechanics, not response design. Native
+parents are instructed to pass the pinned preference and applicable recipes to
+graph-authoring children. That instruction is not automatic child injection.
+Acceptance establishes graph integrity; rendered-result review establishes
+whether the chosen representation communicates the task effectively.

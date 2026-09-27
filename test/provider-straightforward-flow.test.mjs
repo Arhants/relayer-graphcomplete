@@ -56,6 +56,7 @@ const flows = [
       "qwen/qwen3.8-max",
       "z-ai/glm-5.3",
     ],
+    expectedModelIds: ["qwen/qwen3.8-max", "deepseek/deepseek-v4-pro-0813", "z-ai/glm-5.3"],
   },
   {
     adapterId: "vercel-ai-router",
@@ -67,6 +68,7 @@ const flows = [
       "alibaba/qwen3.8-max",
       "zai/glm-5.3",
     ],
+    expectedModelIds: ["alibaba/qwen3.8-max", "deepseek/deepseek-v4-pro-0813", "zai/glm-5.3"],
   },
 ];
 
@@ -79,6 +81,7 @@ describe("straightforward discovered-model provider flows", () => {
   it.each(flows)(
     "$adapterId creates its default family for $harnessId without typed models or a custom family",
     async (flow) => {
+      const expectedModelIds = flow.expectedModelIds ?? flow.modelIds;
       const { product, session } = await productFixture();
       const onboardingProviderId = `onboarding-${flow.adapterId}`;
       await addDiscoveredProvider(product, flow, onboardingProviderId);
@@ -94,19 +97,19 @@ describe("straightforward discovered-model provider flows", () => {
       });
       expect(completion.resolution.resolvableMembers).toEqual(familyMembers(
         onboardingProviderId,
-        flow.modelIds,
+        expectedModelIds,
       ));
 
       const afterOnboarding = await productRequest(session, "/api/model-settings");
       const onboardingFamily = familyForProvider(afterOnboarding, onboardingProviderId);
       expect(onboardingFamily).toMatchObject({ kind: "system", enabled: true });
-      expect(onboardingFamily.members).toEqual(familyMembers(onboardingProviderId, flow.modelIds));
+      expect(onboardingFamily.members).toEqual(familyMembers(onboardingProviderId, expectedModelIds));
       expect(readyComposerRequest(afterOnboarding, flow.harnessId, onboardingFamily.id)).toMatchObject({
         harnessId: flow.harnessId,
         modelSelection: {
           familyId: onboardingFamily.id,
           providerId: onboardingProviderId,
-          modelId: flow.modelIds[0],
+          modelId: expectedModelIds[0],
         },
       });
 
@@ -122,7 +125,7 @@ describe("straightforward discovered-model provider flows", () => {
         modelSelection: {
           familyId: settingsFamily.id,
           providerId: settingsProviderId,
-          modelId: flow.modelIds[0],
+          modelId: expectedModelIds[0],
         },
       });
       expect(afterSettings.families.filter(({ kind }) => kind === "custom")).toEqual([]);

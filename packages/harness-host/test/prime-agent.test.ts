@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { MAX_HARNESS_APPROVAL_TEXT_LENGTH, parseHarnessApprovalRequestInput } from "../src/approval.js";
-import { PrimeAgentHarness } from "../src/implementations/prime-agent.js";
+import { RELAYER_ICON_NAMES } from "@relayer/graph-client";
+import { PrimeAgentHarness, PYTHON_GRAPH_API_REFERENCE } from "../src/implementations/prime-agent.js";
 import { createNoopHarnessTraceSink, HarnessTraceStore } from "../src/trace.js";
 import type { HarnessConfiguration, HarnessRunContext, HarnessTraceEventInput, HarnessTraceSink } from "../src/types.js";
 import { expectGraphPresentationGuidance } from "./graph-presentation-guidance-assertions.js";
@@ -212,6 +213,8 @@ describe("PrimeAgentHarness", () => {
   it("aborts once and uses native synchronous Prime Agent disposal for forced shutdown", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -235,6 +238,8 @@ describe("PrimeAgentHarness", () => {
     const abortFinished = new Promise<void>((resolve) => { markAbortFinished = resolve; });
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => {
@@ -257,6 +262,8 @@ describe("PrimeAgentHarness", () => {
   it("contains a native abort rejection and still force-disposes the Prime Agent session", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => { throw new Error("abort failed"); }),
@@ -274,6 +281,8 @@ describe("PrimeAgentHarness", () => {
   it("contains a synchronous native abort failure and still force-disposes the Prime Agent session", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(() => { throw new Error("abort failed synchronously"); }),
@@ -294,6 +303,8 @@ describe("PrimeAgentHarness", () => {
       if (nativeAttempts === 1) throw new Error("forced native disposal failed");
     });
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -315,6 +326,8 @@ describe("PrimeAgentHarness", () => {
   it("uses native asynchronous Prime Agent disposal for graceful shutdown", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -334,6 +347,8 @@ describe("PrimeAgentHarness", () => {
   it("does not force-dispose again after successful graceful fallback disposal", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -351,6 +366,8 @@ describe("PrimeAgentHarness", () => {
   it("preserves native graceful disposal failures when force did not take ownership", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -369,6 +386,8 @@ describe("PrimeAgentHarness", () => {
   it("publishes one graceful disposal promise and lets force win before it starts", async () => {
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -395,6 +414,8 @@ describe("PrimeAgentHarness", () => {
     const gracefulGate = new Promise<void>((resolve) => { releaseGraceful = resolve; });
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -426,6 +447,8 @@ describe("PrimeAgentHarness", () => {
     const gracefulGate = new Promise<void>((resolve) => { releaseGraceful = resolve; });
     const nativeSyncDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -453,6 +476,8 @@ describe("PrimeAgentHarness", () => {
     const prompts: { text: string; runContext: unknown; modelScope: unknown }[] = [];
     const session = {
       sessionFile: "/tmp/prime-session.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (text: string, options: { runContext: unknown; modelScope: unknown }) => { prompts.push({ text, ...options }); }),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -503,16 +528,41 @@ describe("PrimeAgentHarness", () => {
     expect(prompts[0]!.text).toContain("await graph.submit(11)");
     expect(prompts[0]!.text).toContain("graph with other live agents");
     expect(prompts[0]!.text).toContain("live, user-facing workspace");
+    // The graph is the user's interface, so mechanics never appear in its content.
+    expect(prompts[0]!.text).toContain("Never expose execution mechanics in graph content");
+    expect(prompts[0]!.text).toContain("rather than on every change");
     expect(prompts[0]!.text).toContain("await graph.get_current()");
     expect(prompts[0]!.text).toContain("await graph.advance_current(");
     expect(prompts[0]!.text).toContain("Advancing current does not complete the interaction");
-    expect(prompts[0]!.text).not.toContain("prepare_complete");
-    expect(prompts[0]!.text).not.toContain("from relayer_graph import complete");
+    // Only the run the product granted a broker is taught explicit semantic child work.
+    expect(prompts[0]!.text).toContain("For explicit semantic child work");
+    expect(prompts[0]!.text).toContain("input_graph = await graph.prepare_complete(invoke_action)");
+    expect(prompts[0]!.text).toContain("from relayer_graph import complete");
+    expect(prompts[0]!.text).toContain("do not create semantic children by themselves");
+    // A root that ends its turn with children in flight fails, so it must await them first.
+    expect(prompts[0]!.text).toContain("Your turn ending does not wait for children");
+    // Each child event is one the root may act on; it moves its own current only when that helps the user.
+    expect(prompts[0]!.text).toContain("from relayer_graph import complete, CompletionWatch");
+    expect(prompts[0]!.text).toContain("changes = await watch.changes()");
+    // The watch takes the list the recipe fills, so the recipe must declare it.
+    expect(prompts[0]!.text).toContain("Start with children = [] and launch each child from its own input graph with children.append(complete(input_graph))");
+    // One prepared input graph identifies one completion, so each child needs its own invoke action.
+    expect(prompts[0]!.text).toContain("give each child its own invoke action");
+    expect(prompts[0]!.text).toContain("one input graph starts exactly one child");
+    expect(prompts[0]!.text).toContain("Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting.");
+    expect(prompts[0]!.text).toContain("never leave them in a background task");
+    // A stopped or failed child raises from child.result, so the root must catch it to integrate the rest.
+    expect(prompts[0]!.text).toContain("A stopped or failed child raises CompletionTerminalError there instead");
+    expect(prompts[0]!.text).toContain("catch it and integrate the work its error.current still retains");
     expect(prompts[1]!.text).not.toContain("prepare_complete");
     expect(prompts[1]!.text).not.toContain("from relayer_graph import complete");
     expect(prompts[0]!.text).toContain("exactly one NodePlacementObject(node, x, y) per member node");
     expect(prompts[0]!.text).toContain("Place a one-node layer at (0.5, 0.5)");
     expectGraphPresentationGuidance(prompts[0]!.text);
+    expectGraphAuthoringRules(prompts[0]!.text);
+    // The submit call directly follows the sentence that introduces it.
+    expect(prompts[0]!.text).toContain("Finish the root execution only by calling:\n\nawait graph.submit(11)");
+    expect(prompts[0]!.text).toContain("exactly one new root navigate action");
     expect(prompts[0]!.text).toContain("add_navigate_action(node, \"View evidence\"");
     expect(prompts[0]!.text).toContain("explicit descriptive client_key");
     expect(prompts[0]!.text).toContain("rerun the same authoring code with the same client_key values");
@@ -523,7 +573,17 @@ describe("PrimeAgentHarness", () => {
       token: "first-token",
       nodeId: 11,
     });
-    await expect(hostHandlers[1]?.({}, invocation(first))).resolves.toEqual(first.completionBroker);
+    await expect(hostHandlers[2]?.({}, invocation(first))).resolves.toEqual(first.completionBroker);
+    const visual = {
+      version: 1, objectId: "python-object", operation: "checkpoint", token: "first-token", nodeId: 11,
+      node: { clientKey: "answer", icon: "box", title: "Answer", detail: "Fallback", kind: "concept" },
+      detail: { clear: false, components: [{ id: "main", markup: { strings: ["<p>Answer</p>"], values: [] }, styles: "" }] },
+    };
+    await expect(hostHandlers[1]?.(visual, invocation(first))).resolves.toMatchObject({ ok: true, value: { version: 1 } });
+    await expect(hostHandlers[1]?.(visual, invocation(second))).rejects.toThrow("another run");
+    await expect(hostHandlers[1]?.(visual, { ...invocation(first), isCurrent: () => false })).rejects.toThrow("no longer active");
+    await expect(hostHandlers[1]?.(visual, { ...invocation(first), signal: AbortSignal.abort() })).rejects.toThrow("no longer active");
+
     expect(harness.state()).toEqual({
       primeAgentSessionFile: "/tmp/prime-session.jsonl",
       primeAgentSessionPersonalPresentationVersionId: null,
@@ -610,6 +670,8 @@ describe("PrimeAgentHarness", () => {
     const quiescenceGate = new Promise<void>((resolve) => { releaseQuiescence = resolve; });
     const root = primeSession("/tmp/root.jsonl");
     const cancelledChild = primeSession("/tmp/cancelled.jsonl", {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => promptGate),
       waitForRlmQuiescence: vi.fn(async () => quiescenceGate),
       abort: vi.fn(async () => { releasePrompt(); }),
@@ -666,6 +728,8 @@ describe("PrimeAgentHarness", () => {
     const creationGate = new Promise<void>((resolve) => { releaseCreation = resolve; });
     const root = primeSession("/tmp/root.jsonl");
     const activeChild = primeSession("/tmp/active-child.jsonl", {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => {
         markActiveStarted();
         await activeGate;
@@ -721,6 +785,8 @@ describe("PrimeAgentHarness", () => {
     let listener: ((event: unknown) => void) | undefined;
     const session = {
       sessionFile: "/tmp/family-session.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (_text: string, options: { modelScope: ControlledRunScope }) => {
         const scope = options.modelScope;
         try {
@@ -850,6 +916,8 @@ describe("PrimeAgentHarness", () => {
 
   it("rejects unsupported and mismatched adapter access before starting Prime", async () => {
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -885,6 +953,8 @@ describe("PrimeAgentHarness", () => {
   it("uses discovered per-model token capabilities with a conservative fallback", async () => {
     const scopes: ControlledRunScope[] = [];
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (_text: string, options: { modelScope: ControlledRunScope }) => { options.modelScope.revoke(); }),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -908,7 +978,7 @@ describe("PrimeAgentHarness", () => {
         40 + index,
         adapterId,
         adapterId === "openrouter"
-          ? { contextWindow: 196_608, maxOutputTokens: 131_072 }
+          ? { contextWindow: 196_608, maxOutputTokens: 131_072, reasoning: true, imageInput: true }
           : adapterId === "vercel-ai-router"
             ? { contextWindow: 1_000_000, maxOutputTokens: 384_000 }
             : undefined,
@@ -926,6 +996,7 @@ describe("PrimeAgentHarness", () => {
       "https://provider-45.test/proxy/anthropic/v1/",
     ));
 
+    expect(session.agent.state.thinkingLevel).toBe("medium");
     expect(scopes.map(({ input }) => ({
       api: input.root.api,
       baseUrl: input.root.baseUrl,
@@ -938,15 +1009,67 @@ describe("PrimeAgentHarness", () => {
     }))).toEqual([
       { api: "openai-responses", baseUrl: "https://provider-40.test/v1", compat: undefined, reasoning: false, input: ["text"], contextWindow: 32_768, maxTokens: 4_096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       { api: "anthropic-messages", baseUrl: "https://provider-41.test", compat: undefined, reasoning: false, input: ["text"], contextWindow: 32_768, maxTokens: 4_096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
-      { api: "openai-completions", baseUrl: "https://provider-42.test/v1", compat: { thinkingFormat: "openrouter", openRouterRouting: {} }, reasoning: false, input: ["text"], contextWindow: 196_608, maxTokens: 131_072, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+      { api: "openai-completions", baseUrl: "https://provider-42.test/v1", compat: { thinkingFormat: "openrouter", openRouterRouting: {} }, reasoning: true, input: ["text", "image"], contextWindow: 196_608, maxTokens: 131_072, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       { api: "openai-completions", baseUrl: "https://provider-43.test/v1", compat: { vercelGatewayRouting: {} }, reasoning: false, input: ["text"], contextWindow: 1_000_000, maxTokens: 384_000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       { api: "openai-completions", baseUrl: "https://provider-44.test/v1", compat: { thinkingFormat: "openrouter", openRouterRouting: {} }, reasoning: false, input: ["text"], contextWindow: 32_768, maxTokens: 2_048, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       { api: "anthropic-messages", baseUrl: "https://provider-45.test/proxy/anthropic", compat: undefined, reasoning: false, input: ["text"], contextWindow: 32_768, maxTokens: 4_096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
     ]);
   });
 
+  it.each([
+    { imageInput: true, reasoning: true, reasoningEffort: true, expected: { effort: "medium" } },
+    { imageInput: false, reasoning: true, reasoningEffort: false, expected: { enabled: true } },
+    { imageInput: undefined, reasoning: false, reasoningEffort: false, expected: undefined },
+  ])("preserves configured thinking through the actual native request ($reasoning/$reasoningEffort)", async ({ imageInput, reasoning, reasoningEffort, expected }) => {
+    const native = await import("@earendil-works/pi-coding-agent");
+    const workspace = await mkdtemp(join(tmpdir(), "prime-reasoning-"));
+    const payloads: Record<string, unknown>[] = [];
+    let session: Awaited<ReturnType<typeof native.createAgentSessionFromServices>>["session"] | undefined;
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7, workingDirectory: workspace, ...fullPermission,
+      configuration: { ...configuration, settings: { thinkingLevel: "medium", prewarmIpythonKernel: false } },
+    }, { loadModule: async () => ({
+      ...native,
+      createAgentSessionServices: async (options: Parameters<typeof native.createAgentSessionServices>[0]) => native.createAgentSessionServices({
+        ...options, agentDir: join(workspace, "agent"), authStorage: native.AuthStorage.inMemory(),
+        settingsManager: native.SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }),
+        resourceLoaderOptions: { ...options.resourceLoaderOptions, noExtensions: true, noSkills: true, noPromptTemplates: true },
+      }),
+      createAgentSessionFromServices: async (options: Parameters<typeof native.createAgentSessionFromServices>[0]) => {
+        const result = await native.createAgentSessionFromServices({ ...options, tools: [], prewarmIpythonKernel: false });
+        session = result.session;
+        expect(session.model?.provider).toBe("unknown");
+        expect(session.thinkingLevel).toBe("off");
+        session.agent.onPayload = (payload) => {
+          payloads.push(payload as Record<string, unknown>);
+          throw new Error("deterministic payload capture: no network request");
+        };
+        return result;
+      },
+    }) as never });
+    try {
+      expect(session!.thinkingLevel).toBe("medium");
+      expect(session!.sessionManager.buildSessionContext().thinkingLevel).toBe("medium");
+      for (const nodeId of [51, 52]) {
+        session!.agent.state.messages = [...session!.agent.state.messages, { role: "user", content: [{ type: "image", data: "aW1hZ2UtcHJvYmU=", mimeType: "image/png" }], timestamp: Date.now() }];
+        await harness.complete(singleAdapterRunContext(nodeId, "openrouter", {
+          contextWindow: 196_608, maxOutputTokens: 131_072, reasoning, reasoningEffort, ...(imageInput === undefined ? {} : { imageInput }),
+        })).catch(() => undefined);
+      }
+      expect(payloads).toHaveLength(2);
+      expect(payloads.map((payload) => JSON.stringify(payload).includes("data:image/png;base64,aW1hZ2UtcHJvYmU="))).toEqual([imageInput === true, imageInput === true]);
+      expect(payloads.map((payload) => payload.reasoning)).toEqual([expected, expected]);
+      expect(session!.model?.provider).toBe("unknown");
+    } finally {
+      await harness.dispose();
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a discovered context that cannot satisfy Prime's compaction reserve", async () => {
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (_text: string, _options: { modelScope: ControlledRunScopeInput }) => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -967,6 +1090,8 @@ describe("PrimeAgentHarness", () => {
     const waiting = new Promise<void>((resolve) => { release = resolve; });
     const session = {
       sessionFile: "/tmp/saved.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => waiting),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => { release(); }),
@@ -1007,6 +1132,8 @@ describe("PrimeAgentHarness", () => {
     let listener: ((event: unknown) => void) | undefined;
     let resourceLoaderOptions: { appendSystemPromptOverride(base: string[]): string[] } | undefined;
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (text: string) => {
         prompt = text;
         listener?.({
@@ -1061,6 +1188,10 @@ describe("PrimeAgentHarness", () => {
     const trace = recordingTrace();
     await harness.complete({
       ...context,
+      completionBroker: {
+        url: "http://127.0.0.1:43125/api/completions",
+        token: "12345678901234567890123456789012",
+      },
       trace: trace.sink,
       personalPresentation: {
         attachment: { interactionNodeId: 11, versionInteractionNodeId: 90, rootLayerId: 91 },
@@ -1081,6 +1212,7 @@ describe("PrimeAgentHarness", () => {
     expect(prompt).toContain('relation="expand"');
     expect(prompt).toContain('relation="reference"');
     expectGraphPresentationGuidance(prompt);
+    expectGraphAuthoringRules(prompt);
     expect(prompt).toContain("A flat answer is valid");
     expect(prompt).toContain("Author in whatever order fits the task");
     expect(prompt).toContain("final graph call must be await graph.submit(11)");
@@ -1088,6 +1220,7 @@ describe("PrimeAgentHarness", () => {
     expect(prompt).toContain("await graph.get_neighbors(11)");
     expect(prompt).toContain("ordinary graph.submit(11) automatically fulfills any lease");
     expect(prompt).toContain("There is no separate resolve_action call");
+    expect(prompt).toContain("input_graph = await graph.prepare_complete(invoke_action)");
     expect(prompt).toContain("Never mention or expose the size justification");
     expect(prompt).toContain("Every new root, expansion, and reference layer requires a version-1 LayerLayoutObject");
     expect(prompt).toContain("align comparisons deliberately");
@@ -1120,6 +1253,7 @@ describe("PrimeAgentHarness", () => {
     const nativeInstructions = resourceLoaderOptions?.appendSystemPromptOverride(["base prompt"]);
     expect(nativeInstructions).toHaveLength(2);
     expect(nativeInstructions?.[1]).toContain("If you are the root agent");
+    expect(nativeInstructions?.[1]).toContain("relevant language-specific public API recipes");
     expect(nativeInstructions?.[1]).toContain("only when assigning a native child to author graph content");
     expect(nativeInstructions?.[1]).toContain("Never include that block in an unrelated delegate's task");
     expect(nativeInstructions?.[1]).toContain("only when that exact rendered block is present in your assigned task");
@@ -1128,9 +1262,50 @@ describe("PrimeAgentHarness", () => {
     expect(nativeInstructions?.[1]).not.toContain("Decision-useful center");
   });
 
+  it.each([undefined, "layered-navigation-v1"])("composes Python-only V3 guidance and redacts historical V3 echoes (%s)", async (promptProfile) => {
+    const source = await readFile(new URL("../../../crates/relayer-app-server/src/runtime.rs", import.meta.url), "utf8");
+    const rawDetail = JSON.parse(source.match(/title: "Authored visual Node Details",\s*detail: ("(?:[^"\\]|\\.)*")/)![1]!);
+    const title = "Authored visual Node Details";
+    const legacyBlock = `Personal graph presentation preferences:\n\n${title}: ${rawDetail}`;
+    let prompt = "";
+    let listener: ((event: unknown) => void) | undefined;
+    const session = primeSession("/tmp/prime-v3-prompt.jsonl", {
+      subscribe: vi.fn((next) => { listener = next; return vi.fn(); }),
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
+      promptAndWait: vi.fn(async (text: string) => {
+        prompt = text;
+        listener?.({ type: "tool_execution_start", toolCallId: "old-child", toolName: "ipython", args: { task: legacyBlock } });
+        listener?.({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: rawDetail }] } });
+      }),
+    });
+    Object.assign(session, { reload: vi.fn(async () => undefined) });
+    const harness = await createHarness(session, { ...configuration, settings: { ...configuration.settings, ...(promptProfile ? { promptProfile } : {}) } });
+    const context = presentationRunContext(11, "token", 90);
+    const node = context.personalPresentation!.graph.layers[0]!.nodes[0]!;
+    Object.assign(node, { title, detail: rawDetail });
+    const trace = recordingTrace();
+    try {
+      await harness.complete({ ...context, trace: trace.sink });
+      expect(prompt).toContain("every node you create");
+      expect(prompt).toContain("not a recommended response design");
+      expect(prompt).not.toContain("Start from this runnable");
+      expect(prompt).toContain("await graph.checkpoint_node_detail(node)");
+      expect(prompt).toContain("await graph.submit(11)");
+      expect(prompt).not.toMatch(/detailAuthoring|checkpointNodeDetail|detailCapability|html`/);
+      const tool = trace.events.find((event) => event.type === "tool.call.started");
+      expect(tool).toBeDefined();
+      expect(JSON.stringify(tool)).toContain("[redacted-personal-presentation]");
+      expect(JSON.stringify(trace.events)).not.toContain(rawDetail);
+      expect(node.detail).toBe(rawDetail);
+    } finally { await harness.dispose(); }
+  });
+
   it("includes Python graph-search guidance only for a query-v1 capability profile", async () => {
     let disabledPrompt = "";
     const disabled = await createHarness(primeSession("/tmp/search-disabled.jsonl", {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (text: string) => { disabledPrompt = text; }),
     }), {
       ...configuration,
@@ -1140,12 +1315,16 @@ describe("PrimeAgentHarness", () => {
 
     let omittedPrompt = "";
     const omitted = await createHarness(primeSession("/tmp/search-omitted.jsonl", {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (text: string) => { omittedPrompt = text; }),
     }), configuration);
     await omitted.complete(runContext(13, "omitted-token"));
 
     let enabledPrompt = "";
     const enabled = await createHarness(primeSession("/tmp/search-enabled.jsonl", {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (text: string) => { enabledPrompt = text; }),
     }), {
       ...configuration,
@@ -1226,6 +1405,8 @@ describe("PrimeAgentHarness", () => {
     let resourceLoaderOptions: { appendSystemPromptOverride(base: string[]): string[] } | undefined;
     const reload = vi.fn().mockRejectedValueOnce(new Error("reload failed")).mockResolvedValueOnce(undefined);
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: vi.fn(), reload,
     };
@@ -1271,11 +1452,15 @@ describe("PrimeAgentHarness", () => {
     const firstDispose = vi.fn();
     const firstSession = {
       sessionFile: "/tmp/prime-v1.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: firstDispose, reload: vi.fn(async () => undefined),
     };
     const secondSession = {
       sessionFile: "/tmp/prime-neutral.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: vi.fn(), reload: vi.fn(async () => undefined),
     };
@@ -1310,6 +1495,8 @@ describe("PrimeAgentHarness", () => {
     let resourceLoaderOptions: { appendSystemPromptOverride(base: string[]): string[] } | undefined;
     const session = {
       sessionFile: "/tmp/saved-v1.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: vi.fn(), reload: vi.fn(async () => undefined),
     };
@@ -1341,6 +1528,7 @@ describe("PrimeAgentHarness", () => {
     expect(session.promptAndWait).toHaveBeenCalledTimes(2);
     const nativeInstructions = resourceLoaderOptions?.appendSystemPromptOverride(["base"]);
     expect(nativeInstructions?.[1]).toContain("If you are the root agent");
+    expect(nativeInstructions?.[1]).toContain("relevant language-specific public API recipes");
     expect(nativeInstructions?.[1]).not.toContain("Decision-useful center");
     expect(harness.state()).toEqual({
       primeAgentSessionFile: "/tmp/saved-v1.jsonl",
@@ -1355,6 +1543,8 @@ describe("PrimeAgentHarness", () => {
     const reloadGate = new Promise<void>((resolve) => { releaseReload = resolve; });
     const nativeDispose = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: nativeDispose,
       reload: vi.fn(async () => {
@@ -1391,11 +1581,15 @@ describe("PrimeAgentHarness", () => {
     const replacementStarted = new Promise<void>((resolve) => { markReplacementStarted = resolve; });
     const replacementGate = new Promise<void>((resolve) => { releaseReplacement = resolve; });
     const firstSession = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: vi.fn(), reload: vi.fn(async () => undefined),
     };
     const replacementDispose = vi.fn();
     const replacementSession = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: replacementDispose,
     };
@@ -1429,6 +1623,8 @@ describe("PrimeAgentHarness", () => {
   it("does not resume legacy Prime state whose presentation pin is unknown", async () => {
     const session = {
       sessionFile: "/tmp/fresh.jsonl",
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined), waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined), dispose: vi.fn(), reload: vi.fn(async () => undefined),
     };
@@ -1454,6 +1650,8 @@ describe("PrimeAgentHarness", () => {
   it("delivers the same ordered normalized context to Prime and its native children", async () => {
     let prompt = "";
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async (text: string) => { prompt = text; }),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -1475,6 +1673,8 @@ describe("PrimeAgentHarness", () => {
 
   it("does not start a prompt when the run was already cancelled", async () => {
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -1502,6 +1702,8 @@ describe("PrimeAgentHarness", () => {
 
   it("aborts without prompting when cancellation races listener registration", async () => {
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -1530,6 +1732,8 @@ describe("PrimeAgentHarness", () => {
     let releaseQuiescence!: () => void;
     const waitingForQuiescence = new Promise<void>((resolve) => { releaseQuiescence = resolve; });
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => waitingForPrompt),
       waitForRlmQuiescence: vi.fn(async () => waitingForQuiescence),
       abort: vi.fn(async () => {
@@ -1560,6 +1764,8 @@ describe("PrimeAgentHarness", () => {
     let releaseQuiescence!: () => void;
     const waitingForQuiescence = new Promise<void>((resolve) => { releaseQuiescence = resolve; });
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => waitingForQuiescence),
       abort: vi.fn(async () => undefined),
@@ -1581,6 +1787,8 @@ describe("PrimeAgentHarness", () => {
 
   it("aggregates root and recursive-quiescence failures", async () => {
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => { throw new Error("root failed"); }),
       waitForRlmQuiescence: vi.fn(async () => { throw new Error("barrier failed"); }),
       abort: vi.fn(async () => undefined),
@@ -1599,6 +1807,8 @@ describe("PrimeAgentHarness", () => {
     let releasePrompt!: () => void;
     const waitingForPrompt = new Promise<void>((resolve) => { releasePrompt = resolve; });
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => waitingForPrompt),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => {
@@ -1642,6 +1852,8 @@ describe("PrimeAgentHarness", () => {
   it("disables base kernel prewarming for bounded sessions", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "relayer-prime-no-prewarm-"));
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -1717,6 +1929,8 @@ describe("PrimeAgentHarness", () => {
       });
       const observedAuthorizations: unknown[] = [];
       const session = {
+        agent: { state: { thinkingLevel: "off" } },
+        sessionManager: { appendThinkingLevelChange: vi.fn() },
         promptAndWait: vi.fn(async (_text: string, options: any) => {
           const boundary = options.kernelBoundaryScope.input;
           const execution = { executionId: "root-execution", sessionId: "prime-session", recursionDepth: 0, cwd: workspace, signal: new AbortController().signal };
@@ -1787,6 +2001,8 @@ describe("PrimeAgentHarness", () => {
     try {
       const decisions: unknown[] = [];
       const boundedSession = {
+        agent: { state: { thinkingLevel: "off" } },
+        sessionManager: { appendThinkingLevelChange: vi.fn() },
         promptAndWait: vi.fn(async (_text: string, options: any) => {
           const boundary = options.kernelBoundaryScope.input;
           const signal = new AbortController().signal;
@@ -1812,7 +2028,9 @@ describe("PrimeAgentHarness", () => {
         { decision: "deny", reason: "Relayer does not recognize this Prime tool request" },
       ]);
 
-      const fullSession = { promptAndWait: vi.fn(async (_text: string, options: any) => {
+      const fullSession = { agent: { state: { thinkingLevel: "off" } },
+        sessionManager: { appendThinkingLevelChange: vi.fn() },
+        promptAndWait: vi.fn(async (_text: string, options: any) => {
         expect(options).not.toHaveProperty("toolAuthorityScope");
         expect(options).not.toHaveProperty("kernelBoundaryScope");
       }), waitForRlmQuiescence: vi.fn(async () => undefined), abort: vi.fn(async () => undefined), dispose: vi.fn() };
@@ -1828,6 +2046,8 @@ describe("PrimeAgentHarness", () => {
     try {
       let executed = false;
       const session = {
+        agent: { state: { thinkingLevel: "off" } },
+        sessionManager: { appendThinkingLevelChange: vi.fn() },
         promptAndWait: vi.fn(async (_text: string, options: any) => {
           const boundary = options.kernelBoundaryScope.input;
           const run = { executionId: "denied-root", sessionId: "session", recursionDepth: 0, cwd: workspace };
@@ -1859,9 +2079,11 @@ describe("PrimeAgentHarness", () => {
     let listener: ((event: unknown) => void) | undefined;
     const unsubscribe = vi.fn();
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => {
         listener?.({ type: "turn_start" });
-        listener?.({ type: "message_end", message: { role: "assistant", content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "Visible" }], usage: { input: 2, output: 3 } } });
+        listener?.({ type: "message_end", message: { role: "assistant", content: [{ type: "thinking", thinking: "private-reasoning-sentinel" }, { type: "text", text: "Visible" }], usage: { input: 2, output: 3 } } });
         listener?.({ type: "rlm_child_update", child: { id: "child-1", label: "Research", status: "completed", answerPreview: "Evidence", toolUseCount: 1 } });
         listener?.({ type: "turn_end" });
       }),
@@ -1877,7 +2099,7 @@ describe("PrimeAgentHarness", () => {
 
     expect(session.subscribe).toHaveBeenCalledOnce();
     expect(unsubscribe).toHaveBeenCalledOnce();
-    expect(JSON.stringify(trace.events)).not.toContain("hidden");
+    expect(JSON.stringify(trace.events)).not.toContain("private-reasoning-sentinel");
     expect(trace.events.map((event) => event.type)).toEqual(expect.arrayContaining(["provider.event", "message", "usage", "model.call.started", "model.call.completed"]));
     expect(harness.traceSupport()).toMatchObject({ childStreams: "summary", reasoningSummaries: "none" });
   });
@@ -1886,6 +2108,8 @@ describe("PrimeAgentHarness", () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-prime-usage-trace-"));
     let listener: ((event: unknown) => void) | undefined;
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => {
         listener?.({
           type: "message_end",
@@ -1955,6 +2179,8 @@ describe("PrimeAgentHarness", () => {
       secret: "must-not-trace",
     });
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -1985,6 +2211,8 @@ describe("PrimeAgentHarness", () => {
       })),
     });
     const session = {
+      agent: { state: { thinkingLevel: "off" } },
+      sessionManager: { appendThinkingLevelChange: vi.fn() },
       promptAndWait: vi.fn(async () => undefined),
       waitForRlmQuiescence: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
@@ -2069,6 +2297,8 @@ function primeSession(
 ): PrimeAgentSessionFixture & { readonly sessionFile: string } {
   return {
     sessionFile,
+    agent: { state: { thinkingLevel: "off" } },
+    sessionManager: { appendThinkingLevelChange: vi.fn() },
     promptAndWait: vi.fn(async () => undefined),
     waitForRlmQuiescence: vi.fn(async () => undefined),
     abort: vi.fn(async () => undefined),
@@ -2171,6 +2401,8 @@ async function createBoundedHarness(
 }
 
 interface PrimeAgentSessionFixture {
+  readonly agent: { readonly state: { thinkingLevel: string } };
+  readonly sessionManager: { appendThinkingLevelChange(level: string): void };
   readonly promptAndWait: ReturnType<typeof vi.fn>;
   readonly waitForRlmQuiescence: ReturnType<typeof vi.fn>;
   readonly abort: ReturnType<typeof vi.fn>;
@@ -2311,7 +2543,7 @@ function familyRunContext(
 function singleAdapterRunContext(
   nodeId: number,
   adapterId: string,
-  modelCapabilities?: { readonly contextWindow: number; readonly maxOutputTokens: number },
+  modelCapabilities?: { readonly contextWindow: number; readonly maxOutputTokens: number; readonly reasoning?: boolean; readonly reasoningEffort?: boolean; readonly imageInput?: boolean },
   endpoint = `https://provider-${nodeId}.test/v1`,
 ): HarnessRunContext {
   const base = runContext(nodeId, `token-${nodeId}`);
@@ -2349,3 +2581,58 @@ function singleAdapterRunContext(
     accessBundle: { byProviderId: { [route.providerId]: access } },
   };
 }
+
+/**
+ * The graph rules Prime tripped on in live recursive runs: indented first cells, guessed
+ * API names, unsupported icons, descriptions off cards, and pointer moves the graph refused
+ * for losing the path back to the previous current layer.
+ */
+function expectGraphAuthoringRules(prompt: string): void {
+  expect(prompt).toContain("Top-level cell code starts at column 0; never indent it.");
+  expect(prompt).toContain("```python\nfrom relayer_graph import GraphSession\ngraph = await GraphSession.current()\n```");
+  expect(prompt).toContain(PYTHON_GRAPH_API_REFERENCE);
+  expect(prompt).toContain(`must be one of: ${RELAYER_ICON_NAMES.join(", ")}.`);
+  expect(prompt).toContain("Only a card accepts description, and a card requires one.");
+  // Graph core exempts the interaction root before enforcing draft ownership, so the rule states that exception.
+  expect(prompt).toContain("Apart from the interaction node's one root expand action, add actions only on draft nodes created for this interaction");
+  expect(prompt).toContain("the next current layer must keep a navigation path back to it");
+  expect(prompt).toContain('current["currentLayerId"], relation="reference", source_layer=new_layer');
+  // Graph core checks the same path on the final submit's Return, and only a draft node takes the action.
+  expect(prompt).toContain("to the root layer of your final graph.submit");
+  expect(prompt).toContain("every layer you make current needs at least one new draft node to carry that reference");
+}
+
+const pythonExecutable = process.platform === "win32" ? "python" : "python3";
+
+describe("Prime graph client reference", () => {
+  it("names only graph methods and keywords the Python client declares", () => {
+    const declared = JSON.parse(execFileSync(pythonExecutable, ["-c", `
+import inspect, json
+from relayer_graph import GraphSession
+print(json.dumps({
+    name: {
+        "async": inspect.iscoroutinefunction(member),
+        "parameters": [p for p in inspect.signature(member).parameters if p != "self"],
+    }
+    for name, member in inspect.getmembers(GraphSession, inspect.isfunction)
+    if not name.startswith("_")
+}))
+`], {
+      encoding: "utf8",
+      env: { ...process.env, PYTHONPATH: join(process.cwd(), "python", "relayer-graph", "src") },
+    })) as Record<string, { async: boolean; parameters: string[] }>;
+    const calls = [...PYTHON_GRAPH_API_REFERENCE.matchAll(/await graph\.(\w+)\(([^)]*)\)/g)];
+    expect(calls.length).toBeGreaterThan(8);
+    for (const [, method, argumentList] of calls) {
+      const signature = declared[method!];
+      expect(signature, `graph.${method}`).toBeDefined();
+      expect(signature!.async, `graph.${method} is async`).toBe(true);
+      const keywords = argumentList!.split(", ")
+        .map((argument) => /^(\w+)=/.exec(argument)?.[1])
+        .filter((keyword): keyword is string => keyword !== undefined);
+      for (const keyword of keywords) {
+        expect(signature!.parameters, `graph.${method}(${keyword}=...)`).toContain(keyword);
+      }
+    }
+  });
+});

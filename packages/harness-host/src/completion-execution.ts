@@ -193,3 +193,6 @@ function completionBindingDigest(binding: CompletionBinding): string {
     origin: binding.origin,
   })).digest("hex");
 }
+
+/** Native cancellation that has settled without an execution or cleanup failure. */
+export class NativeExecutionCancelled extends Error {}

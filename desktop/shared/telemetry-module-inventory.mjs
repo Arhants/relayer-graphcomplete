@@ -136,6 +136,7 @@ export const APPROVED_TELEMETRY_MODULES = Object.freeze({
     "packages/harness-host/dist/implementations/personal-presentation-guidance.js",
     "packages/harness-host/dist/implementations/prime-agent-workspace-boundary.js",
     "packages/harness-host/dist/implementations/prime-agent.js",
+    "packages/harness-host/dist/implementations/prime-visual-authoring.js",
     "packages/harness-host/dist/index.js",
     "packages/harness-host/dist/interaction-input.js",
     "packages/harness-host/dist/registry.js",
@@ -195,6 +196,7 @@ export const APPROVED_TELEMETRY_MODULES = Object.freeze({
     "crates/relayer-app-server/src/storage/sqlite/product_state.rs",
     "crates/relayer-app-server/src/storage/sqlite/projects.rs",
     "crates/relayer-app-server/src/storage/sqlite/schema.rs",
+    "crates/relayer-app-server/src/storage/sqlite/stops.rs",
     "crates/relayer-app-server/src/storage/sqlite/threads.rs",
   ]),
   "rust-graph-server": Object.freeze([

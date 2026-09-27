@@ -24,6 +24,10 @@
         "packages": ["relayer-app-server", "relayer-graph-server"]
       },
       {
+        "exact": "test/stop-run-integration.test.mjs",
+        "packages": ["relayer-app-server", "relayer-graph-server"]
+      },
+      {
         "exact": "test/first-message-composer-integration.test.mjs",
         "packages": ["relayer-app-server", "relayer-graph-server"]
       },
@@ -45,6 +49,7 @@
       }
     ]
   },
+  "proseEvidenceDocuments": ["docs/evidence/issue-477-recursive-fixture-abort/README.md"],
   "fullPortfolio": {
     "exact": [
       ".node-version",
@@ -71,7 +76,7 @@
     {
       "prefix": "crates/relayer-app-server/",
       "package": "relayer-app-server",
-      "vitestFiles": ["test/first-message-composer-integration.test.mjs", "test/recursive-complete-e2e.test.mjs"]
+      "vitestFiles": ["test/first-message-composer-integration.test.mjs", "test/recursive-complete-e2e.test.mjs", "test/stop-run-integration.test.mjs"]
     },
     {
       "prefix": "crates/relayer-graph-core/",
@@ -104,6 +109,7 @@
       "prefix": "desktop/",
       "package": "relayer-desktop",
       "packaging": true,
+      "packagingExcludedPrefixes": ["desktop/eval-main/", "desktop/eval-renderer/"],
       "vitestFiles": [
         "test/composer-context-state.test.mjs",
         "test/composer-provider-lifecycle.test.mjs",
@@ -189,6 +195,7 @@
     { "exact": "scripts/capture-provider-ux-video.mjs", "chapters": ["vitest"], "vitestFiles": ["test/provider-electron-evidence.test.mjs"] },
     { "exact": "scripts/capture-conversation-eval-evidence.mjs", "chapters": [] },
     { "exact": "scripts/test-eval-web.mjs", "chapters": [] },
+    { "exact": "scripts/eval-compiled.vitest.config.mjs", "chapters": [] },
     { "prefix": "scripts/lib/", "chapters": ["vitest"], "vitestFiles": ["test/desktop-capture-evidence.test.mjs", "test/tutorial-lifecycle.test.mjs"] },
     { "exact": "scripts/capture-environment-rail-evidence.mjs", "chapters": [] },
     { "exact": "scripts/capture-graph-authoring-repair-evidence.mjs", "chapters": [] },
@@ -211,6 +218,8 @@
     { "exact": "scripts/run-project-new-thread-test.mjs", "chapters": [] },
     { "exact": "scripts/run-recursive-live-run.mjs", "chapters": ["vitest"], "vitestFiles": ["test/recursive-live-run-model.test.mjs"] },
     { "exact": "scripts/test-desktop-approval.mjs", "chapters": [] },
+    { "exact": "scripts/test-desktop-stop.mjs", "chapters": [] },
+    { "exact": "test/support/stop-run-fixture.mjs", "chapters": ["vitest"], "vitestFiles": ["test/stop-run-integration.test.mjs"] },
     { "exact": "scripts/test-desktop-first-message.mjs", "chapters": [] },
     { "exact": "scripts/test-desktop-node-input-actions.mjs", "chapters": [] },
     { "exact": "scripts/test-desktop-project-new-thread.mjs", "chapters": [] },

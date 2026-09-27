@@ -86,6 +86,12 @@ impl SqliteProductStore {
                 .execute(&mut *transaction)
                 .await?
         } else {
+            // Order admission failure against Stop; an unsent draft must not carry
+            // cancellation intent into its next explicit Send.
+            sqlx::query("DELETE FROM interaction_stop_requests WHERE interaction_id=?1")
+                .bind(failure.interaction_id.value())
+                .execute(&mut *transaction)
+                .await?;
             sqlx::query("UPDATE interactions SET graph_node_id=NULL,completion_status='not_started',harness_configuration_name=?1,harness_configuration_digest=NULL,effective_execution_digest=NULL,effective_permission_receipt_json=NULL,completion_output_json=NULL,completion_error=NULL WHERE id=?2 AND completion_status IN ('submitted','running')")
                 .bind(failure.harness_name)
                 .bind(failure.interaction_id.value())
@@ -276,6 +282,12 @@ impl SqliteProductStore {
             .execute(&mut *transaction)
             .await?
             .last_insert_rowid();
+        // The failed admission and a concurrent Stop share this transaction's
+        // ordering. A later explicit Send must not inherit the old Stop request.
+        sqlx::query("DELETE FROM interaction_stop_requests WHERE interaction_id=?1")
+            .bind(receipt.interaction_id.value())
+            .execute(&mut *transaction)
+            .await?;
         let restored = sqlx::query("UPDATE interactions SET graph_node_id=NULL,completion_status='not_started',harness_configuration_name=?1,harness_configuration_digest=NULL,effective_execution_digest=NULL,effective_permission_receipt_json=NULL,completion_output_json=NULL,completion_error=NULL WHERE id=?2 AND completion_status='running'")
             .bind(receipt.harness_name)
             .bind(receipt.interaction_id.value())
@@ -655,6 +667,10 @@ mod tests {
             model_id: route.model_id.clone(),
         };
 
+        store
+            .request_interaction_stop(ThreadId::from_database(thread_id), interaction_id)
+            .await
+            .unwrap();
         let attempt = store
             .record_pre_execution_model_failure(
                 PreExecutionModelFailure {
@@ -694,6 +710,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(interaction.completion_status, "not_started");
+        assert!(!interaction.stop_requested);
         assert_eq!(interaction.completion_error, None);
         assert_eq!(interaction.text, "hello");
         assert_eq!(interaction.latest_attempt.unwrap().id, attempt);
@@ -899,6 +916,16 @@ mod tests {
         let mut failed = receipt(interaction_id, &route);
         failed.expected_harness_policy = Some(&policy);
 
+        let interaction = store
+            .get_interaction(interaction_id)
+            .await
+            .unwrap()
+            .unwrap();
+        store
+            .request_interaction_stop(interaction.thread_id, interaction_id)
+            .await
+            .unwrap();
+
         let attempt = store
             .record_model_attempt_admission_failure(failed, "model_unavailable", false, "11")
             .await
@@ -915,16 +942,16 @@ mod tests {
         assert_eq!(recorded.1, "model_unavailable");
         assert_eq!(recorded.2, "lease-test");
         assert_eq!(recorded.3, None);
+        let restored = store
+            .get_interaction(interaction_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(restored.completion_status, "not_started");
+        assert!(!restored.stop_requested);
         assert_eq!(
-            store
-                .get_interaction(interaction_id)
-                .await
-                .unwrap()
-                .unwrap()
-                .latest_attempt
-                .unwrap()
-                .admitted_plan,
-            Some(expected_plan),
+            restored.latest_attempt.unwrap().admitted_plan,
+            Some(expected_plan)
         );
         assert_eq!(
             store

@@ -413,7 +413,7 @@ describe("desktop skeleton", () => {
     expect(webHost).toContain("productSession.readOnlyCookie");
     expect(evalMain).toContain("createEvalDashboard");
     expect(evalMain).toContain("createReview(executionId)");
-    expect(evalMain).toContain("evalRuntimeTarget({ isPackaged: false, environment: process.env })");
+    expect(evalMain).toContain("evalRuntimeTarget({ environment: process.env })");
     expect(evalMain).toContain("targetKey: evalTarget.key");
     expect(evalMain).toContain("process.env.PYTHONPATH");
     expect(evalDashboard).toContain("Test cases");
@@ -2931,7 +2931,6 @@ describe("desktop skeleton", () => {
         "node_modules/@img/sharp-win32-x64/lib/sharp-win32-x64-0.35.4.node",
         "node_modules/@img/sharp-win32-arm64/lib/sharp-win32-arm64-0.35.4.node",
         "node_modules/@relayer/harness-host/dist/implementations/claude-basic-browser.js",
-        "node_modules/@relayer/eval-runner/dist/index.js",
       ];
       const verifyPrimeAgent = async () => ({ sourceCommit: "fixture", packages: 4 });
       const verifyGraphServer = async () => ({
@@ -2975,6 +2974,11 @@ describe("desktop skeleton", () => {
         verifyPrimeAgent,
         verifyNotices,
       })).rejects.toThrow("missing node_modules/@relayer/graph-client/dist/index.js");
+      await expect(verifyBundledAppServer(appPath, {
+        readSharpPackage,
+        listPackageEntries: () => [...packagedRuntimeEntries(), "node_modules/@relayer/eval-runner/dist/index.js"],
+        verifyGraphServer, verifyPrimeAgent, verifyNotices,
+      })).rejects.toThrow("developer-only @relayer/eval-runner");
       for (const missing of [
         "node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.35.4.node",
         "node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.6.dylib",

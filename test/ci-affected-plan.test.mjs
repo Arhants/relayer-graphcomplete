@@ -84,6 +84,27 @@ function fullPlanWithoutDiff() {
 // Each case spawns the planner as a subprocess, and the full-plan cases also
 // run cargo metadata; the default 5s per-test budget races CI runner load.
 describe("affected-module plan v1", { timeout: 30_000 }, () => {
+  test("narrows only the reviewed prose evidence document, preserving mixed and deleted paths", () => {
+    withPlannerFixture((repository) => {
+      const path = "docs/evidence/issue-477-recursive-fixture-abort/README.md";
+      mkdirSync(dirname(join(repository, path)), { recursive: true });
+      writeFileSync(join(repository, path), "Evidence narrative");
+      expect(planIn(repository, path).chapters.packaging).toBe(false);
+      writeFileSync(join(repository, path), "Updated evidence narrative");
+      expect(planIn(repository, path).mode).toBe("affected");
+      expect(planIn(repository, path, "desktop/renderer/styles.css").chapters.packaging).toBe(true);
+      expect(planIn(repository, path, "test/support/recursive-complete-fixture.mjs").chapters.vitest).toBe(true);
+      for (const other of ["docs/evidence/unknown/README.md", "docs/evidence/issue-477-recursive-fixture-abort/probe.mjs", "docs/evidence/issue-257-browser-harnesses/manifest.json"]) expect(planIn(repository, other).mode).toBe("full");
+      rmSync(join(repository, path));
+      symlinkSync(join(repository, "Cargo.toml"), join(repository, path));
+      expect(planIn(repository, path).mode).toBe("full");
+      rmSync(join(repository, path));
+      expect(planIn(repository, path).mode).toBe("full");
+      mkdirSync(join(repository, path));
+      expect(planIn(repository, path).mode).toBe("full");
+    });
+  });
+
   test("is a checked-in versioned contract", () => {
     const config = JSON.parse(readFileSync(configPath, "utf8"));
     expect(config.version).toBe(1);
@@ -242,6 +263,36 @@ describe("affected-module plan v1", { timeout: 30_000 }, () => {
       "relayer-app-server",
       "relayer-graph-server",
     ]);
+  });
+
+  test.each([
+    "desktop/eval-main/eval-service.mjs",
+    "desktop/eval-renderer/main.js",
+    "packages/eval-runner/src/cases/graph-memory.ts",
+  ])("skips packaging but retains runtime tests for Eval-only %s", (path) => {
+    const result = plan(path);
+    expect(result.mode).toBe("affected");
+    expect(result.chapters.packaging).toBe(false);
+    expect(result.vitestFiles).toEqual(expect.arrayContaining(["test", "packages"]));
+    expect(result.runtimeRustPackages).toEqual(["relayer-app-server", "relayer-graph-server"]);
+  });
+
+  test.each([
+    "desktop/main/index.mjs",
+    "desktop/renderer/src/product-workspace/workspace.js",
+    "desktop/shared/target.mjs",
+    "desktop/preload/index.cjs",
+    "desktop/packaging/electron-builder.mjs",
+    "desktop/release/contract.mjs",
+    "desktop/package.json",
+    "package-lock.json",
+    "desktop/eval-main-other/new.mjs",
+    "unmapped/new-input.mjs",
+  ])("retains packaging for mixed Eval and product input %s", (path) => {
+    for (const paths of [
+      ["desktop/eval-main/eval-service.mjs", "desktop/eval-renderer/main.js", path],
+      [path, "desktop/eval-renderer/main.js", "desktop/eval-main/eval-service.mjs"],
+    ]) expect(plan(...paths).chapters.packaging).toBe(true);
   });
 
   test("builds server binaries required by mapped Vitest integration tests", () => {

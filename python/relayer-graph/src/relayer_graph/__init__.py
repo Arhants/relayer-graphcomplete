@@ -14,7 +14,7 @@ from .icons import (RELAYER_ICON_ALIASES, RELAYER_ICON_NAMES,
                     resolve_relayer_icon_name)
 from .session import GraphSession
 from .completion import (CompletionCurrent, CompletionCurrentSnapshot, CompletionHandle,
-                         CompletionTerminalError, complete)
+                         CompletionTerminalError, CompletionWatch, complete)
 from .query import (GraphQueryBooleanValue, GraphQueryBudget,
                     GraphQueryFloatValue, GraphQueryIntegerValue,
                     GraphQueryLayerValue, GraphQueryListValue,
@@ -35,7 +35,7 @@ __all__ = [
     "NodePlacement", "LayerLayout",
     "ActionVariant", "NavigateRelation", "InputControl", "InputOption",
     "CompletionInputGraph",
-    "complete", "CompletionHandle", "CompletionCurrent", "CompletionCurrentSnapshot",
+    "complete", "CompletionHandle", "CompletionCurrent", "CompletionCurrentSnapshot", "CompletionWatch",
     "CompletionTerminalError",
     "RelayerGraphError", "ConfigurationError", "TransportError", "APIError",
     "AuthenticationError", "NotFound", "ValidationError", "ValidationIssue",
@@ -48,3 +48,9 @@ __all__ = [
     "RELAYER_ICON_NAMES", "RELAYER_ICON_ALIASES", "normalize_relayer_icon_name",
     "resolve_relayer_icon_name", "is_supported_relayer_icon",
 ]
+
+from .actions import ActionObject
+from .detail import NodeDetailAuthoring, DetailTemplate, html, asset_ref, external_link, action_capability
+from .visual_assets import GraphVisualAssets, VisualAssetFile
+
+__all__ += ["ActionObject", "NodeDetailAuthoring", "DetailTemplate", "html", "asset_ref", "external_link", "action_capability", "GraphVisualAssets", "VisualAssetFile"]
