@@ -437,7 +437,10 @@ export class PrimeAgentHarness implements Harness {
         authoring = new PrimeVisualAuthoring();
         visualRuns.set(run, authoring);
       }
-      return authoring.execute(payload, run.graph.acquireCapability(), active, invocation.signal);
+      // Prime adds transport metadata to every IPython host request. Keep the
+      // authoring schema strict after removing only these native envelope fields.
+      const { type: _requestType, cellSourceCode: _cellSourceCode, ...program } = payload;
+      return authoring.execute(program, run.graph.acquireCapability(), active, invocation.signal);
     });
     const completeCurrent = primeAgent.createHostRequestHandler<PrimeAgentRunContext>(async (_payload, invocation) => {
       if (!invocation.isCurrent() || invocation.signal.aborted) throw new Error("The completion run is no longer active");

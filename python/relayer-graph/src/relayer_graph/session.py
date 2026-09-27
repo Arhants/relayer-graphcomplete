@@ -63,7 +63,13 @@ class GraphSession(RelayerGraphClient):
         if result.get("frozen") is True:
             node.detail_authoring._frozen = True
         if result.get("ok") is not True:
-            raise ValidationError(result.get("message", "Visual authoring failed"), details=result)
+            # Include compiler locations in the displayed exception as well as retaining
+            # the exact structured response for programmatic repair.
+            import json
+            message = result.get("message", "Visual authoring failed")
+            if result.get("issues"):
+                message += "\n" + json.dumps(result["issues"], ensure_ascii=False)
+            raise ValidationError(message, status=422, details=result)
         return result["value"]
 
     async def checkpoint_node_detail(self, node: NodeObject) -> Any:

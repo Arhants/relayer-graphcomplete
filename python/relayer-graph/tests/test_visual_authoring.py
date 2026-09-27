@@ -9,6 +9,7 @@ from relayer_graph import (ActionObject, GraphSession, NodeObject, LayerObject,
     LayerLayoutObject, NodePlacementObject, html, action_capability, external_link,
     VisualAssetFile, GraphVisualAssets)
 from relayer_graph.visual_assets import _decode_file
+from relayer_graph.exceptions import ValidationError
 
 
 class VisualAuthoringTests(unittest.IsolatedAsyncioTestCase):
@@ -53,6 +54,31 @@ class VisualAuthoringTests(unittest.IsolatedAsyncioTestCase):
             left, right = await asyncio.gather(first, second)
             self.assertIs(left, right)
             self.assertEqual(len(calls), 1)
+
+    async def test_checkpoint_and_submit_errors_preserve_guidance_and_allow_repair(self):
+        for operation in ('checkpoint_node_detail', 'submit_node'):
+            with self.subTest(operation=operation):
+                node = NodeObject('box', 'Answer', 'Fallback', client_key='answer')
+                node.detail_authoring.set_component('main', html('<script>bad</script>'))
+                failure = {'ok': False, 'frozen': False, 'message': 'Invalid authored detail',
+                    'issues': [{'code': 'forbidden_element', 'componentId': 'main',
+                                'message': 'Remove script', 'location': {'line': 1, 'column': 1}}]}
+                replies = [failure, {'ok': True, 'frozen': True, 'value': {
+                    'id': 2, 'kind': 'concept', 'icon': 'box', 'title': 'Answer',
+                    'detail': 'Fallback', 'state': 'draft'}}]
+                async def host_request(method, payload):
+                    return replies.pop(0)
+                with patch.dict(sys.modules, {'rlm': types.SimpleNamespace(host_request=host_request)}):
+                    graph = GraphSession('http://unused', 'run', 1)
+                    with self.assertRaises(ValidationError) as caught:
+                        await getattr(graph, operation)(node)
+                    self.assertEqual(caught.exception.status, 422)
+                    self.assertEqual(caught.exception.details, failure)
+                    self.assertIn('Remove script', str(caught.exception))
+                    self.assertIn('main', str(caught.exception))
+                    node.detail_authoring.set_component('main', html('<p>Repaired</p>'))
+                    await graph.submit_node(node)
+                    self.assertEqual(node.ref.id, 2)
 
     async def test_owner_identity_and_clear_are_explicit(self):
         owner = NodeObject('box', 'Answer', 'Fallback', client_key='answer')

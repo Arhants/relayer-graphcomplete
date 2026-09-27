@@ -6,16 +6,38 @@ import { PrimeAgentHarness } from "../../packages/harness-host/dist/implementati
 // Replaces inference only. The real factory, run context, Python client, compiler,
 // authenticated graph/asset routes and Rust acceptance remain in the path.
 export function primeVisualFixtureFactory(context) {
-  return PrimeAgentHarness.create(context, { loadModule: async () => ({
+  return PrimeAgentHarness.create(context, { loadModule: async () => {
+    const nativeKernel = process.env.RELAYER_TEST_PRIME_PYTHON
+      ? await import(new URL("./core/kernel/index.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href)
+      : undefined;
+    return ({
     AGENT_RUN_MODEL_SCOPE_VERSION: 1,
     createAgentRunModelScope: (input) => input,
     SessionManager: { create: () => ({}), open: () => ({}) },
-    createHostRequestHandler: (handler) => handler,
+    createHostRequestHandler: nativeKernel?.createHostRequestHandler ?? ((handler) => handler),
     createAgentSessionServices: async () => ({}),
     createAgentSessionFromServices: async ({ hostRequestHandlers }) => {
       let process;
       return { session: {
         async promptAndWait(_prompt, { runContext }) {
+          if (nativeKernel) {
+            const kernel = new nativeKernel.KernelManager({
+              python: globalThis.process.env.RELAYER_TEST_PRIME_PYTHON,
+              cwd: context.workspaceRoot ?? globalThis.process.cwd(),
+              hostHandlers: hostRequestHandlers,
+              requireHostRequestContext: true,
+              processLauncher: ({ command, args, cwd, env }) => spawn(command, args, { cwd, env }),
+            });
+            try {
+              await kernel.start();
+              const code = `import sys, asyncio\nsys.path.insert(0, ${JSON.stringify(resolve("python/relayer-graph/src"))})\n` + PYTHON.slice(PYTHON.indexOf("from relayer_graph import"));
+              const result = await kernel.execute(code.replace("asyncio.run(main())", "await main()"), {
+                hostRequestContext: { executionId: "visual-native-proof", runContext, signal: new AbortController().signal },
+              });
+              if (result.status !== "ok") throw new Error(JSON.stringify(result.error));
+            } finally { await kernel.shutdown(); }
+            return;
+          }
           const controller = new AbortController();
           let current = true;
           const server = createServer(async (request, response) => {
@@ -23,7 +45,7 @@ export function primeVisualFixtureFactory(context) {
             try {
               const chunks = []; for await (const chunk of request) chunks.push(chunk);
               const { method, payload } = JSON.parse(Buffer.concat(chunks));
-              const value = await hostRequestHandlers[method](payload ?? {}, { runContext, signal: requestController.signal, isCurrent: () => current && !controller.signal.aborted });
+              const value = await hostRequestHandlers[method]({ ...payload, type: method, cellSourceCode: "# Prime kernel execution metadata" }, { runContext, signal: requestController.signal, isCurrent: () => current && !controller.signal.aborted });
               response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(value));
             } catch (error) {
               response.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: error.message }));
@@ -55,7 +77,7 @@ export function primeVisualFixtureFactory(context) {
         async disposeAsync() { process?.kill(); },
       } };
     },
-  }) }).catch((error) => { console.error("Prime factory:", error); throw error; });
+  }); } }).catch((error) => { console.error("Prime factory:", error); throw error; });
 }
 
 const PYTHON = String.raw`
@@ -77,6 +99,17 @@ async def main():
     assert (await graph.visual_assets.download(image['id'], scope)).read()
     assert (await graph.visual_assets.list_assets(scope=scope))['items']
     draft = NodeObject('box', 'Prime visual answer', 'Prime compatibility fallback', client_key='answer')
+    from relayer_graph.exceptions import ValidationError
+    draft.detail_authoring.set_component('draft', html('<script>invalid</script>'))
+    try:
+        await graph.checkpoint_node_detail(draft)
+    except ValidationError as error:
+        assert error.status == 422
+        assert error.details['issues']
+        assert error.details['issues'][0]['componentId'] == 'draft'
+        assert 'draft' in str(error)
+    else:
+        raise AssertionError('invalid authored markup was accepted')
     draft.detail_authoring.set_component('draft', html('<p>Draft checkpoint</p>'))
     await graph.submit_node(draft)
     retained = NodeObject('box', 'Prime visual answer', 'Prime compatibility fallback', client_key='answer')
