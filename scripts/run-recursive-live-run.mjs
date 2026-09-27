@@ -13,7 +13,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { createManagedRuntimeInstaller } from "../desktop/main/managed-runtimes/installer.mjs";
 import { createManagedRuntimeResolver } from "../desktop/main/managed-runtimes/resolver.mjs";
@@ -58,10 +58,10 @@ import {
   waitForSettledCompletionExecutionEvidence,
 } from "./recursive-live-run-transport.mjs";
 import {
-  CHECK1_STATUS,
   assertExecutionIdentity,
   executionIdentity,
   liveRunProvenance,
+  liveRunStatus,
   liveRunTimeoutMs,
   publicProfileDigest,
   writeJsonAtomic,
@@ -461,6 +461,8 @@ async function runOnce({
       requestedTemporalFeatures,
       actualTemporalFeatures,
       expectedAttachmentProvider: profile.implementation === "codex.basic" ? "codex" : undefined,
+      verificationLevel: task.verificationLevel,
+      expectedChildren: task.expectedChildren,
       completionMetadata: metadata,
       completionExecutions: await waitForSettledCompletionExecutionEvidence(
         join(dataDirectory, "product-data", "product.sqlite3"),
@@ -524,6 +526,11 @@ async function main() {
     runId,
   };
   mkdirSync(outputDirectory, { recursive: true });
+  // Prime runs from the managed runtime's cached installation, so its installed bytes and
+  // receipt are part of what the run executes and are bound like any other executable.
+  const primeRuntime = profile.implementation === "prime.agent"
+    ? await managedRuntimeResolver().prepare(managedRuntimeRequirementForHarness("prime.agent").recipeId)
+    : undefined;
   const graphServerBinary = join(repositoryRoot, "target", "debug", "relayer-graph-server");
   const appServerBinary = join(repositoryRoot, "target", "debug", "relayer-app-server");
   const identityInputs = {
@@ -535,8 +542,15 @@ async function main() {
       ...(profile.codexExecutable === undefined ? {} : {
         providerRuntime: { path: profile.codexExecutable, version: codexVersion(profile.codexExecutable) },
       }),
+      ...(primeRuntime === undefined ? {} : {
+        primeRuntimeReceipt: {
+          path: join(dirname(dirname(primeRuntime.installationRoot)), "active.json"),
+          version: primeRuntime.version,
+        },
+      }),
     },
     bundles: {
+      ...(primeRuntime === undefined ? {} : { primeRuntime: primeRuntime.installationRoot }),
       rootDist: join(repositoryRoot, "dist"),
       graphClientDist: join(repositoryRoot, "packages", "graph-client", "dist"),
       harnessHostDist: join(repositoryRoot, "packages", "harness-host", "dist"),
@@ -584,7 +598,7 @@ async function main() {
   };
   writeJsonAtomic(artifactPath, {
     ...baseArtifact,
-    status: CHECK1_STATUS.running,
+    status: liveRunStatus(task.verificationLevel).running,
     identityCheckpoints,
     runs: {},
   });
@@ -595,7 +609,7 @@ async function main() {
     const passed = Object.values(runs).every((run) => run.passed);
     const artifact = {
       ...baseArtifact,
-      status: passed ? CHECK1_STATUS.passed : CHECK1_STATUS.failed,
+      status: passed ? liveRunStatus(task.verificationLevel).passed : liveRunStatus(task.verificationLevel).failed,
       finishedAt: new Date().toISOString(),
       identityCheckpoints,
       runs,
@@ -613,7 +627,7 @@ async function main() {
   } catch (error) {
     const artifact = {
       ...baseArtifact,
-      status: CHECK1_STATUS.failed,
+      status: liveRunStatus(task.verificationLevel).failed,
       finishedAt: new Date().toISOString(),
       identityCheckpoints,
       runs,

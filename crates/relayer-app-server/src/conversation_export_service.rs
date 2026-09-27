@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use relayer_graph_core::{
     AcceptedGraphClosure, ActionKind, ActionVariant, GraphAction, GraphEdge, GraphNode,
@@ -8,15 +8,17 @@ use relayer_graph_core::{
 use crate::{
     conversation_export::{
         ConversationExportHeader, ConversationExportRecord, ConversationExportTurn,
-        EXPORT_VERSION_V1, ExportAcceptedView, ExportAction, ExportActionKind, ExportActionVariant,
-        ExportAdmittedExecutionModelPlan, ExportAdmittedExecutionModelRoute, ExportAttemptOutcome,
-        ExportAuthoredDetailOmission, ExportCompletionReceipt, ExportCompletionStatus,
-        ExportContextSource, ExportContextTargetSnapshot, ExportConversation, ExportEdge,
-        ExportInputActionSnapshot, ExportInputControl, ExportInputOption, ExportInputSource,
-        ExportInteractionContext, ExportLayer, ExportLayerLayout, ExportModelSelection,
-        ExportNavigateRelation, ExportNode, ExportNodePlacement, ExportPermissionReceipt,
-        ExportProducer, ExportRecordState, ExportResolvedLayer, ExportSubmittedInput,
-        ExportSubmittedInputValue, ExportTurnManifestEntry, ExportTurnOrigin, MAX_EXPORT_BYTES,
+        EXPORT_VERSION_V1, EXPORT_VERSION_V2, ExportAcceptedView, ExportAction, ExportActionKind,
+        ExportActionVariant, ExportAdmittedExecutionModelPlan, ExportAdmittedExecutionModelRoute,
+        ExportAttemptOutcome, ExportAuthoredDetailOmission, ExportCompletionReceipt,
+        ExportCompletionStatus, ExportContextSource, ExportContextTargetSnapshot,
+        ExportConversation, ExportEdge, ExportInputActionSnapshot, ExportInputControl,
+        ExportInputOption, ExportInputSource, ExportInteractionContext, ExportLayer,
+        ExportLayerLayout, ExportModelSelection, ExportNavigateRelation, ExportNode,
+        ExportNodePlacement, ExportPermissionReceipt, ExportProducer, ExportRecordState,
+        ExportResolvedLayer, ExportSubmittedInput, ExportSubmittedInputValue,
+        ExportTurnManifestEntry, ExportTurnOrigin, ExportVisualAssetAssociation,
+        ExportVisualAssetContent, ExportVisualAssetProvenance, MAX_EXPORT_BYTES,
         MAX_JSONL_LINE_BYTES, validate_export_records,
     },
     product::{
@@ -204,8 +206,14 @@ pub(crate) async fn build_conversation_export(
             })
         })
         .collect::<Result<Vec<_>, ConversationExportBuildError>>()?;
+    let (authored_detail_assets, visual_asset_contents) =
+        collect_visual_assets(runtime, &closures, &redactor).await?;
     let header = ConversationExportRecord::Header(Box::new(ConversationExportHeader {
-        export_version: EXPORT_VERSION_V1,
+        export_version: if visual_asset_contents.is_empty() {
+            EXPORT_VERSION_V1
+        } else {
+            EXPORT_VERSION_V2
+        },
         exported_at,
         producer,
         conversation: ExportConversation {
@@ -217,8 +225,14 @@ pub(crate) async fn build_conversation_export(
             permission_profile_id: detail.thread.permission_profile_id,
         },
         turns,
+        visual_asset_contents: Vec::new(),
     }));
     let mut records = vec![header];
+    records.extend(
+        visual_asset_contents
+            .into_iter()
+            .map(|content| ConversationExportRecord::VisualAssetContent(Box::new(content))),
+    );
     for ((((interaction, closure), context_input), submitted_evidence), settled_attempt_outcome) in
         detail
             .interactions
@@ -242,6 +256,7 @@ pub(crate) async fn build_conversation_export(
                 turn_sequences: &turn_sequences,
                 redactor: &redactor,
                 settled_attempt_outcome,
+                authored_detail_assets: &authored_detail_assets,
             },
             &mut ids,
         )?)));
@@ -264,6 +279,188 @@ pub(crate) async fn build_conversation_export(
         body.push(b'\n');
     }
     Ok(body)
+}
+
+async fn collect_visual_assets(
+    runtime: &RuntimeClient,
+    closures: &[Option<AcceptedGraphClosure>],
+    redactor: &ProjectPathRedactor,
+) -> Result<
+    (
+        HashMap<i64, Vec<ExportVisualAssetAssociation>>,
+        Vec<ExportVisualAssetContent>,
+    ),
+    ConversationExportBuildError,
+> {
+    let mut associations = HashMap::new();
+    let mut visited_nodes = HashSet::new();
+    let mut contents = BTreeMap::<String, ExportVisualAssetContent>::new();
+    let mut referenced_contents = HashSet::new();
+    for node in closures
+        .iter()
+        .flatten()
+        .flat_map(|closure| &closure.layers)
+        .flat_map(|layer| &layer.nodes)
+    {
+        if !visited_nodes.insert(node.id) {
+            continue;
+        }
+        let Some(detail) = node.authored_detail.as_ref() else {
+            continue;
+        };
+        if portable_authored_detail(detail, redactor).is_none() {
+            continue;
+        }
+        let pins = detail
+            .get("assets")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| {
+                ConversationExportBuildError::Invalid(
+                    "authored detail asset pins are invalid".into(),
+                )
+            })?;
+        let mut node_assets = Vec::with_capacity(pins.len());
+        let mut node_content_digests = Vec::with_capacity(pins.len());
+        let mut legacy_metadata_only = false;
+        for pin in pins {
+            let asset_id = pin
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| {
+                    ConversationExportBuildError::Invalid(
+                        "authored detail asset id is invalid".into(),
+                    )
+                })?;
+            let value = match runtime
+                .get_detail_asset_metadata(node.id.value(), asset_id)
+                .await
+            {
+                Ok(value) => value,
+                Err(RuntimeError::Remote { status: 404, .. }) => {
+                    legacy_metadata_only = true;
+                    break;
+                }
+                Err(error) => return Err(error.into()),
+            };
+            let digest = value
+                .get("digestSha256")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| {
+                    ConversationExportBuildError::Invalid(
+                        "accepted visual asset digest is invalid".into(),
+                    )
+                })?;
+            let media = value
+                .get("mediaType")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| {
+                    ConversationExportBuildError::Invalid(
+                        "accepted visual asset media type is invalid".into(),
+                    )
+                })?;
+            let length = value
+                .get("byteLength")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|v| usize::try_from(v).ok())
+                .ok_or_else(|| {
+                    ConversationExportBuildError::Invalid(
+                        "accepted visual asset length is invalid".into(),
+                    )
+                })?;
+            if pin.get("digestSha256").and_then(serde_json::Value::as_str) != Some(digest)
+                || pin.get("mediaType").and_then(serde_json::Value::as_str) != Some(media)
+            {
+                return Err(ConversationExportBuildError::Invalid(
+                    "accepted visual asset does not match its package pin".into(),
+                ));
+            }
+            let provenance = value
+                .get("provenance")
+                .and_then(serde_json::Value::as_object)
+                .ok_or_else(|| {
+                    ConversationExportBuildError::Invalid(
+                        "accepted visual asset provenance is invalid".into(),
+                    )
+                })?;
+            let association = ExportVisualAssetAssociation {
+                asset_id: asset_id.into(),
+                digest_sha256: digest.into(),
+                media_type: media.into(),
+                byte_length: length,
+                provenance: ExportVisualAssetProvenance {
+                    source: provenance
+                        .get("source")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("user")
+                        .into(),
+                    file_name: portable_asset_filename(
+                        provenance
+                            .get("fileName")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("asset"),
+                        redactor,
+                    ),
+                },
+            };
+            if let std::collections::btree_map::Entry::Vacant(entry) = contents.entry(digest.into())
+            {
+                let payload = runtime.get_detail_asset(node.id.value(), asset_id).await?;
+                if payload
+                    .get("digestSha256")
+                    .and_then(serde_json::Value::as_str)
+                    != Some(digest)
+                    || payload.get("mediaType").and_then(serde_json::Value::as_str) != Some(media)
+                    || payload
+                        .get("byteLength")
+                        .and_then(serde_json::Value::as_u64)
+                        != Some(length as u64)
+                {
+                    return Err(ConversationExportBuildError::Invalid(
+                        "accepted visual asset content does not match its metadata".into(),
+                    ));
+                }
+                entry.insert(ExportVisualAssetContent {
+                    digest_sha256: digest.into(),
+                    media_type: media.into(),
+                    byte_length: length,
+                    content_base64: payload
+                        .get("contentBase64")
+                        .and_then(serde_json::Value::as_str)
+                        .ok_or_else(|| {
+                            ConversationExportBuildError::Invalid(
+                                "accepted visual asset content is invalid".into(),
+                            )
+                        })?
+                        .into(),
+                });
+            }
+            let cached = &contents[digest];
+            if cached.media_type != media || cached.byte_length != length {
+                return Err(ConversationExportBuildError::Invalid(
+                    "accepted visual asset digest has conflicting metadata".into(),
+                ));
+            }
+            node_content_digests.push(digest.to_owned());
+            node_assets.push(association);
+        }
+        if legacy_metadata_only {
+            continue;
+        }
+        referenced_contents.extend(node_content_digests);
+        node_assets.sort_by(|a, b| a.asset_id.cmp(&b.asset_id));
+        associations.insert(node.id.value(), node_assets);
+    }
+    contents.retain(|digest, _| referenced_contents.contains(digest));
+    Ok((associations, contents.into_values().collect()))
+}
+
+fn portable_asset_filename(value: &str, redactor: &ProjectPathRedactor) -> String {
+    let redacted = redactor.text(value);
+    if redacted.trim().is_empty() || redacted.len() > crate::conversation_export::MAX_STRING_BYTES {
+        "asset".into()
+    } else {
+        redacted
+    }
 }
 
 struct ImportedExportContext<'a> {
@@ -314,6 +511,7 @@ struct TurnExportContext<'a> {
     redactor: &'a ProjectPathRedactor,
     /// The outcome a still-running attempt already took when its execution settled.
     settled_attempt_outcome: Option<&'static str>,
+    authored_detail_assets: &'a HashMap<i64, Vec<ExportVisualAssetAssociation>>,
 }
 
 fn export_turn(
@@ -330,6 +528,7 @@ fn export_turn(
         turn_sequences,
         redactor,
         settled_attempt_outcome,
+        authored_detail_assets,
     } = context;
     if let (Some(node_id), Some(imported_turn)) = (
         interaction.graph_node_id,
@@ -351,7 +550,7 @@ fn export_turn(
         seed_imported_action_ids(interaction.id, closure, imported_view, ids)?;
     }
     let accepted_view = closure
-        .map(|closure| export_view(closure, ids, redactor))
+        .map(|closure| export_view_with_assets(closure, ids, redactor, authored_detail_assets))
         .transpose()?;
     let contexts = export_contexts(
         interaction,
@@ -1001,6 +1200,24 @@ fn export_view(
     })
 }
 
+fn export_view_with_assets(
+    closure: &AcceptedGraphClosure,
+    ids: &mut PortableIds,
+    redactor: &ProjectPathRedactor,
+    assets: &HashMap<i64, Vec<ExportVisualAssetAssociation>>,
+) -> Result<ExportAcceptedView, ConversationExportBuildError> {
+    let mut view = export_view(closure, ids, redactor)?;
+    for (resolved, exported) in closure.layers.iter().zip(&mut view.layers) {
+        for (node, portable) in resolved.nodes.iter().zip(&mut exported.nodes) {
+            if portable.authored_detail.is_some() {
+                portable.authored_detail_assets =
+                    assets.get(&node.id.value()).cloned().unwrap_or_default();
+            }
+        }
+    }
+    Ok(view)
+}
+
 fn export_layer(
     resolved: &ResolvedLayer,
     ids: &mut PortableIds,
@@ -1083,6 +1300,7 @@ fn export_node(
         detail: redactor.text(&node.detail),
         authored_detail,
         authored_detail_omitted,
+        authored_detail_assets: Vec::new(),
         state: ExportRecordState::Accepted,
     })
 }
@@ -1815,6 +2033,98 @@ mod tests {
         InteractionInput, InteractionInputNode, LayerId, NodeId, PresentingInputOccurrence,
         RecordState, SubmittedInputValue,
     };
+
+    #[tokio::test]
+    async fn export_fetches_shared_digest_once_and_checks_each_node_metadata() {
+        use serde_json::json;
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+        };
+        let requests = Arc::new(AtomicUsize::new(0));
+        let counted = requests.clone();
+        let denied = Arc::new(AtomicBool::new(false));
+        let deny = denied.clone();
+        let metadata_requests = Arc::new(AtomicUsize::new(0));
+        let metadata_counted = metadata_requests.clone();
+        let app = axum::Router::new().route("/api/control/temporal-features", axum::routing::get(|| async { axum::Json(json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true})) })).fallback(move |request: axum::extract::Request| {
+            let counted = counted.clone();
+            let deny = deny.clone();
+            let metadata_counted = metadata_counted.clone();
+            async move {
+                if deny.load(Ordering::SeqCst) && request.uri().path().contains("/3/") {
+                    return (axum::http::StatusCode::FORBIDDEN, axum::Json(json!({"error":"denied"})));
+                }
+                let metadata_only = request.uri().query() == Some("metadataOnly=true");
+                if !metadata_only { counted.fetch_add(1, Ordering::SeqCst); } else { metadata_counted.fetch_add(1, Ordering::SeqCst); }
+                let name = if request.uri().path().contains("/3/") { "   " } else { "a.png" };
+                let mut value = json!({"digestSha256":"ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb","mediaType":"image/png","byteLength":1,"provenance":{"source":"user","fileName":name}});
+                if !metadata_only { value["contentBase64"] = json!("YQ=="); }
+                (axum::http::StatusCode::OK, axum::Json(value))
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let directory = tempfile::tempdir().unwrap();
+        let catalog = directory.path().join("catalog.json");
+        std::fs::write(&catalog, json!({"schemaVersion":1,"configurations":[{"configuration":{"schemaVersion":1,"name":"test","implementation":"test","implementationVersion":1,"permissionBindings":{"auto":{}},"settings":{}},"digest":"sha256:test"}]}).to_string()).unwrap();
+        let runtime = crate::runtime::RuntimeClient::open(
+            &format!("http://{address}/"),
+            "http://127.0.0.1:9/",
+            "control".into(),
+            "harness".into(),
+            &catalog,
+        )
+        .await
+        .unwrap();
+        let node = json!({"id":2,"kind":"concept","icon":"box","title":"Image","detail":"Fallback","state":"accepted","authoredDetail":{"version":1,"components":[],"mounts":[],"assets":[{"id":"image","digestSha256":"ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb","mediaType":"image/png","representation":"image"}],"integritySha256":"b".repeat(64)}});
+        let closure: relayer_graph_core::AcceptedGraphClosure = serde_json::from_value(json!({"nodeId":1,"interaction":{"id":1,"kind":"user-interaction","icon":"user","title":"Show","detail":"Show","state":"accepted"},"rootAction":{"id":1,"sourceNodeId":1,"kind":"navigate","relation":"expand","label":"Response","variant":"pill","targetLayerId":1,"state":"accepted"},"rootLayerId":1,"layers":[{"layer":{"id":1,"nodes":[2],"edges":[],"state":"accepted"},"nodes":[node],"edges":[],"actions":[]}]})).unwrap();
+        let mut other = closure.clone();
+        other.layers[0].nodes[0].id = relayer_graph_core::NodeId::new(3).unwrap();
+        other.layers[0].layer.nodes = vec![relayer_graph_core::NodeId::new(3).unwrap()];
+        let closures = [Some(closure.clone()), Some(closure), Some(other)];
+        let (associations, content) =
+            super::collect_visual_assets(&runtime, &closures, &ProjectPathRedactor::new(None))
+                .await
+                .unwrap();
+        assert_eq!(associations.len(), 2);
+        assert_eq!(content.len(), 1);
+        assert_eq!(associations[&2][0].provenance.file_name, "a.png");
+        assert_eq!(associations[&3][0].provenance.file_name, "asset");
+        assert_eq!(
+            requests.load(Ordering::SeqCst),
+            1,
+            "shared digests must be fetched once across distinct accepted nodes"
+        );
+        assert_eq!(metadata_requests.load(Ordering::SeqCst), 2);
+        denied.store(true, Ordering::SeqCst);
+        assert!(
+            super::collect_visual_assets(&runtime, &closures, &ProjectPathRedactor::new(None))
+                .await
+                .is_err(),
+            "a cached digest cannot bypass another node's rejected metadata read"
+        );
+        server.abort();
+    }
+
+    #[test]
+    fn export_asset_filename_fallback_matches_archive_string_bounds() {
+        let redactor = ProjectPathRedactor::new(None);
+        for name in [
+            String::new(),
+            " \t\n".into(),
+            "x".repeat(crate::conversation_export::MAX_STRING_BYTES + 1),
+        ] {
+            assert_eq!(super::portable_asset_filename(&name, &redactor), "asset");
+        }
+        assert_eq!(
+            super::portable_asset_filename("kept.svg", &redactor),
+            "kept.svg"
+        );
+    }
 
     #[test]
     fn exports_approval_lifecycle_completion_statuses() {
@@ -2754,6 +3064,7 @@ mod tests {
                 turn_sequences: &turn_sequences,
                 redactor: &ProjectPathRedactor::new(None),
                 settled_attempt_outcome: None,
+                authored_detail_assets: &Default::default(),
             },
             &mut ids,
         )

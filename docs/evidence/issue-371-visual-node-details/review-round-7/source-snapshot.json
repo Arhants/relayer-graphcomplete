@@ -1,0 +1,30 @@
+{
+  "baseHead": "d1a45f2e763916c0b6450d5836eae0b01891689e",
+  "files": {
+    "crates/relayer-app-server/src/conversation_export.rs": "74f2bc312f5fc42912a44f397e4c4facf6a1e2f318d02ee7b7ee576a1586b30a",
+    "crates/relayer-app-server/src/conversation_export_service.rs": "7a559834fa7b207a57d831e9726158a731937722dd53b36fa001d9e182ebd860",
+    "crates/relayer-app-server/tests/conversation_export_contract.rs": "0cdd93bafe8d941a6d094b88ea019410988cd783d25c680ecb362ed2127197f6",
+    "crates/relayer-app-server/tests/product_persistence_flow.rs": "213941455f57b29802cc67c09e2ffe125c8912f9fbf6d5d42b361325ebdb87ec",
+    "crates/relayer-graph-core/src/graph/writer.rs": "9f59ba88ae9f5bd87de9118824ab2a29d1ffbf220af5e417bf3aad6ecc2eea08",
+    "crates/relayer-graph-server/tests/import_visual_asset_transport.rs": "fa0f0fab150ef6e7c6eba1a0600e845d7d578c7188dcf8a511a22c03b9a1f7bc",
+    "desktop/packaging/verify-bundled-app-server.mjs": "6b7091f3ce5685f4878f48564799a34c51420ce35ce91e403d7bd8929b8b21a5",
+    "desktop/renderer/src/product-workspace/workspace.js": "23df9870a1364729a7ad40ced1b2fd15dda7dfe6307367b52177108455c57bfb",
+    "desktop/renderer/src/review-tools.js": "c5e106e2b3ef1b8c4b10b1aa148e17461f7ac801d263171ca35a1e35c10f3ab3",
+    "docs/conversation-export-v1.md": "0c3b7cdda8ebc8dd3098201124dc28487d223b80e6506b087d08f3ef202f5cb0",
+    "packages/harness-host/src/host.ts": "44c5291066cc4f34bde50d4e777338e6f78a309244b28aee5b1d835740db4651",
+    "packages/harness-host/test/visual-assets-bridge.test.ts": "97dfb456d375279bd85f8835cabfe017ef7d01ba08c938c8df49d2ecaafa243c",
+    "packages/visual-assets/src/index.ts": "84f0dae03b694b840652bd66923ccf3275a8abf42aa3683a908e496250df0e64",
+    "packages/visual-assets/test/visual-assets.test.ts": "2aa31eeb3a3c522698ba1c12937ddb7329d89230ed25e7dae9db7f6dcb3f0d2d",
+    "test/conversation-export-eval-e2e.test.mjs": "3e66cb659249e9910a571c08fe40f5133e2d8a2400ea9c30f2ec139a4a7c1caf",
+    "test/desktop-shell.test.mjs": "677bf9d2abdfa9b21e7f48d9e60ccc21c952b28df7261e109224bf3bda7368e9",
+    "test/node-detail-runtime.test.mjs": "4888574091c22ca3f41e0ab72290bc7151b1a8aa4afe873decb6c66ca5922c5a",
+    "docs/conversation-export-v2.md": "952c33a3f98c95679ded31e074effd71c02d1b5518a8fcd7d78a9bec1a238b13"
+  },
+  "verification": {
+    "check": "passed: 2353 Vitest, 3 skipped; secret boundary 2; all native/repository checks passed",
+    "build": "passed inside desktop entry point",
+    "desktop": "passed",
+    "manifestSha256": "a20615d82ba08e273e9d1e551cd3e99dc6bb95f2c94c6786f99f9e8abf4fab74",
+    "paidInferenceCalls": 0
+  }
+}

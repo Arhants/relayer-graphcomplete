@@ -199,6 +199,31 @@ describe("recursive live run analysis", () => {
     );
   });
 
+  it("fails a delegation run that did not fan out every requested workstream before any settled", () => {
+    const child = (completionId, createdAt, updatedAt) => ({
+      ...coherentRun.completionExecutions[0], completionId, createdAt: String(createdAt), updatedAt: String(updatedAt),
+    });
+    const delegation = (executions) => summarizeRun({
+      ...coherentRun,
+      verificationLevel: "delegation-mechanics",
+      expectedChildren: 3,
+      completionMetadata: executions.map(({ completionId }) => (
+        { nodeId: completionId, invocation: { sourceInteractionNodeId: 101, sourceActionId: 41 } }
+      )),
+      completionExecutions: executions,
+    });
+
+    expect(delegation([child(202, 10, 50)]).findings)
+      .toContain("the task asked for 3 semantic children, and 1 were created");
+    expect(delegation([child(202, 10, 20), child(203, 11, 60), child(204, 30, 70)]).findings)
+      .toContain("a semantic child settled before every child had launched");
+    const fannedOut = delegation([child(202, 10, 50), child(203, 11, 60), child(204, 12, 70)]);
+    expect(fannedOut.findings.filter((finding) => /children|launched/.test(finding))).toEqual([]);
+    expect(fannedOut.judge.reason).not.toContain("Check 1");
+    // Nothing here observes integration, so the verdict must not claim it.
+    expect(fannedOut.judge.reason).toContain("does not judge how the root integrated the results");
+  });
+
   it("fails a run whose root did not settle accepted", () => {
     const summary = summarizeRun({ ...coherentRun, completionStatus: "failed" });
 
@@ -374,24 +399,29 @@ describe("live run credentials", () => {
     expect(resolved).not.toHaveProperty("codexExecutable");
   });
 
-  it("resolves an OpenAI key for Codex with its isolated executable and home", () => {
-    expect(resolveRunProfile(document, "codex-openai", codex)).toMatchObject({
-      adapterId: "openai-api",
-      contract: "secret@1",
-      endpoint: "https://api.openai.com/v1",
-      codexExecutable: "/managed/codex",
-      codexHome: "/isolated/codex-home",
-      modelId: "gpt-5-codex",
-    });
+  it("refuses an API key for Codex, which routes only through the subscription-only codex provider", () => {
+    // Setup would otherwise pass against a synthetic definition while the real turn's lease
+    // came back for the wrong provider.
+    expect(() => resolveRunProfile(document, "codex-openai", codex))
+      .toThrow(/routes Codex only through a codex-subscription login/);
+  });
+
+  it("refuses a harness whose runtime the runner does not provision", () => {
+    // A Claude profile would pass setup and then fail its first real turn without a runtime.
+    expect(() => resolveRunProfile(document, "prime-openrouter", { implementation: "claude.basic" }))
+      .toThrow(/claude.basic, whose runtime this runner does not provision/);
   });
 
   it("requires the Codex executable and home only for a Codex harness", () => {
     const withoutCodex = {
-      runs: { plain: { ...document.runs["codex-openai"], codexExecutable: null, codexHome: null } },
+      runs: {
+        subscription: { harness: "codex-basic", modelId: "gpt-5-codex", auth: { kind: "codex-subscription" } },
+        keyed: { ...document.runs["codex-openai"], codexExecutable: null, codexHome: null },
+      },
     };
 
-    expect(() => resolveRunProfile(withoutCodex, "plain", codex)).toThrow(/needs codexExecutable/);
-    expect(resolveRunProfile(withoutCodex, "plain", prime).modelId).toBe("gpt-5-codex");
+    expect(() => resolveRunProfile(withoutCodex, "subscription", codex)).toThrow(/needs codexExecutable/);
+    expect(resolveRunProfile(withoutCodex, "keyed", prime).modelId).toBe("gpt-5-codex");
   });
 
   it("refuses a subscription login for a harness that takes a key", () => {
@@ -426,7 +456,8 @@ describe("live run credentials", () => {
   });
 
   it("names the missing field without ever quoting the key", () => {
-    const withRun = (run) => ({ runs: { only: { ...document.runs["codex-openai"], ...run } } });
+    const subscription = { ...document.runs["codex-openai"], auth: { kind: "codex-subscription", apiKey: null } };
+    const withRun = (run) => ({ runs: { only: { ...subscription, ...run } } });
     const cases = [
       [withRun({ auth: { kind: "nope", apiKey: "test-key" } }), /auth.kind set to one of/],
       [withRun({ auth: { kind: "openrouter" } }), /needs auth.apiKey for openrouter/],
@@ -446,9 +477,13 @@ describe("live run credentials", () => {
 
   it("covers every auth kind the file offers", () => {
     for (const kind of Object.keys(LIVE_RUN_AUTH)) {
-      const apiKey = LIVE_RUN_AUTH[kind].contract === "secret@1" ? "test-key" : null;
-      const candidate = { runs: { only: { ...document.runs["codex-openai"], auth: { kind, apiKey } } } };
-      expect(resolveRunProfile(candidate, "only", codex).adapterId).toBe(LIVE_RUN_AUTH[kind].adapterId);
+      // A key runs through Prime; a login runs through Codex, the only harness that takes one.
+      const keyed = LIVE_RUN_AUTH[kind].contract === "secret@1";
+      const candidate = {
+        runs: { only: { ...document.runs["codex-openai"], auth: { kind, apiKey: keyed ? "test-key" : null } } },
+      };
+      expect(resolveRunProfile(candidate, "only", keyed ? prime : codex).adapterId)
+        .toBe(LIVE_RUN_AUTH[kind].adapterId);
     }
   });
 

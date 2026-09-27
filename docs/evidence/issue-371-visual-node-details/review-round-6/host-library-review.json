@@ -1,0 +1,20 @@
+{
+  "reviewer": "/root",
+  "scope": "Content durability and retry; owned shared bootstrap bytes; exact-scope control import validation; preserved completion authority and shared raster guard",
+  "verdict": "clean",
+  "findings": [],
+  "files": {
+    "packages/visual-assets/src/index.ts": "0671b100796507be3e3d3cf95d516d10898289ce5942e939ab212cc8604f4e8c",
+    "packages/visual-assets/test/visual-assets.test.ts": "ea7854a7f9a64bf346dd2e7c9a1768841092320da318eec800e84f2e14dcd351",
+    "packages/harness-host/src/host.ts": "9b30e50e911b65e6007b289dad0b421c5b6ca01206740d59d30327113ec5790c",
+    "packages/harness-host/test/visual-assets-bridge.test.ts": "68d627a4b0b44691d93e9490713bcdb91ec9e0082341a50cb71fe2651d8193a2"
+  },
+  "assertions": [
+    "Content directory synchronization must succeed before catalog publication, including reuse of an orphaned existing digest on retry. Repeated failure cannot publish logical assets.",
+    "Bootstrap copies are owned synchronously and shared by digest; per-record metadata/digest/media checks remain. Initialization releases retained temporary copies.",
+    "Import facade exposes only self-contained validation, denies catalog asset/content access, binds exact canonical scope and shares the existing ready/validation guard. Host does not durably authorize control validation.",
+    "Real host regression covers successful archive/content, malformed content/archive, byte-identical catalog, preserved unauthorized scopes after reopen, and concurrent guard sharing."
+  ],
+  "priorFinding": "Initial repair skipped re-syncing an existing content file on retry; repaired and regression extended before this verdict.",
+  "verificationLimits": "Independent source and checkpoint review; owner-reported 58 focused tests plus type/build checks. Full check and desktop proof remain pending."
+}
