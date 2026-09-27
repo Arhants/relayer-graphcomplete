@@ -627,14 +627,11 @@ impl crate::GraphDatabase {
             };
             for resolved in view.layers {
                 for action in resolved.actions {
-                    if action.kind == "input"
-                        && action.input.is_none()
-                        && let Some(layer_id) = action.source_layer_id
-                    {
+                    if action.kind == "input" && action.input.is_none() {
                         legacy_input_action_ids.insert(action.id.clone());
                         legacy_input_occurrences.insert((
                             view.interaction_node_id.clone(),
-                            layer_id,
+                            resolved.layer.id.clone(),
                             action.id,
                             action.source_node_id,
                         ));

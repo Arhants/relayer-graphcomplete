@@ -1528,6 +1528,152 @@ async fn invalid_legacy_child_snapshot_does_not_poison_a_later_valid_answer() {
 }
 
 #[tokio::test]
+async fn reused_legacy_input_uses_presenting_layer_for_snapshot_preference() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    let mut input = imported_conversation("interaction-1");
+    let legacy_input = InputAction {
+        control: InputControl::Text,
+        prompt: "Legacy question".into(),
+        options: vec![],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    input.turns[0].accepted_view.as_mut().unwrap().layers[0]
+        .actions
+        .push(ImportedAction {
+            id: "legacy-input-action".into(),
+            client_key: None,
+            source_node_id: "node-1".into(),
+            source_layer_id: Some("layer-1".into()),
+            kind: "input".into(),
+            relation: None,
+            label: "Legacy input".into(),
+            variant: "pill".into(),
+            icon: None,
+            description: None,
+            target_layer_id: None,
+            interaction_text: None,
+            input: None,
+        });
+
+    // I2 presents the same node-owned action in B, retaining A as its authored
+    // source layer. B does not navigate to A; it is the actual presentation.
+    let mut reuse = input.turns[0].clone();
+    reuse.source_turn_id = "turn-2".into();
+    reuse.interaction_node_id = None;
+    let view = reuse.accepted_view.as_mut().unwrap();
+    view.interaction_node_id = "interaction-2".into();
+    view.root_layer_id = "layer-B".into();
+    view.root_action.id = "root-action-interaction-2".into();
+    view.root_action.source_node_id = "interaction-2".into();
+    view.root_action.target_layer_id = Some("layer-B".into());
+    let resolved = &mut view.layers[0];
+    resolved.layer.id = "layer-B".into();
+    resolved.layer.nodes = vec!["node-1".into()];
+    if let Some(layout) = &mut resolved.layer.layout {
+        for placement in &mut layout.placements {
+            placement.node_id = "node-1".into();
+        }
+    }
+    resolved.actions[0].source_layer_id = Some("layer-1".into());
+
+    let valid_value = SubmittedInputValue::Text {
+        text: "Keep the genuine answer".into(),
+    };
+    let forged_action = InputAction {
+        control: InputControl::SingleSelect,
+        prompt: "Self-valid forged snapshot".into(),
+        options: vec![InputOption {
+            key: "known".into(),
+            label: "Known".into(),
+            unsupported_fields: Default::default(),
+        }],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    let submitted = |id: &str, layer_id: &str, action: InputAction, value: SubmittedInputValue| {
+        ImportedSubmittedInput {
+            id: id.into(),
+            root_turn_id: "turn-3".into(),
+            source: ImportedInputSource {
+                interaction_node_id: "interaction-2".into(),
+                layer_id: layer_id.into(),
+                action_id: "legacy-input-action".into(),
+                node_id: "node-1".into(),
+            },
+            action,
+            value,
+        }
+    };
+    let consumer = ImportedTurn {
+        source_turn_id: "turn-3".into(),
+        text: "Consume reused input".into(),
+        interaction_node_id: Some("interaction-3".into()),
+        invoke_origin: None,
+        contexts: vec![],
+        submitted_inputs: vec![
+            submitted(
+                "input-genuine-B",
+                "layer-B",
+                legacy_input.clone(),
+                valid_value.clone(),
+            ),
+            submitted(
+                "input-forged-A",
+                "layer-1",
+                forged_action,
+                SubmittedInputValue::Selected {
+                    selected: vec![InputOption {
+                        key: "known".into(),
+                        label: "Known".into(),
+                        unsupported_fields: Default::default(),
+                    }],
+                },
+            ),
+        ],
+        accepted_view: None,
+    };
+    input.turns.push(reuse);
+    input.turns.push(consumer);
+
+    let receipt = database.import_accepted_conversation(&input).await.unwrap();
+    assert_eq!(receipt.skipped_submitted_inputs.len(), 1);
+    assert_eq!(
+        receipt.skipped_submitted_inputs[0].submitted_input_id,
+        "input-forged-A"
+    );
+    assert_eq!(
+        receipt.skipped_submitted_inputs[0].code,
+        "input_action_not_in_occurrence"
+    );
+    assert_eq!(
+        receipt.skipped_submitted_inputs[0].path,
+        "submittedInputs[1].source.actionId"
+    );
+    let root = NodeId::new(receipt.turns[2].graph_node_id.unwrap()).unwrap();
+    let writer = database.writer_for_subgraph(root).await.unwrap();
+    assert_eq!(
+        writer.interaction_input().await.unwrap().submitted_inputs,
+        vec![SubmittedInput {
+            action: legacy_input.clone(),
+            value: valid_value,
+        }]
+    );
+    let reused = receipt.turns[1].output.as_ref().unwrap();
+    let accepted = reused
+        .root_layer
+        .actions
+        .iter()
+        .find(|action| action.label == "Legacy input")
+        .unwrap();
+    assert_eq!(accepted.input.as_ref(), Some(&legacy_input));
+    assert_eq!(
+        accepted.source_layer_id,
+        Some(LayerId::new(receipt.turns[0].root_layer_id.unwrap()).unwrap())
+    );
+}
+
+#[tokio::test]
 async fn wrong_occurrence_legacy_snapshot_cannot_poison_exact_sibling() {
     let database = GraphDatabase::in_memory().await.unwrap();
     let mut input = imported_conversation("interaction-1");
