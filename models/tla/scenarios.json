@@ -940,224 +940,6 @@
       ]
     },
     {
-      "id": "inspector-annotate-and-switch",
-      "module": "NodeInspector",
-      "preset": "inspector-replay",
-      "promises": [
-        "InspectorShowsSelection",
-        "LastRequestWins",
-        "DraftedSelectionHasEditor"
-      ],
-      "summary": "A node is annotated, the user switches to another node and back, and the draft's editor returns.",
-      "steps": [
-        [
-          "Click",
-          "n1"
-        ],
-        [
-          "MountReturns",
-          1
-        ],
-        [
-          "Annotate"
-        ],
-        [
-          "EditDraft"
-        ],
-        [
-          "Click",
-          "n2"
-        ],
-        [
-          "SaveReturns",
-          1,
-          "ok"
-        ],
-        [
-          "MountReturns",
-          1
-        ],
-        [
-          "Click",
-          "n1"
-        ],
-        [
-          "MountReturns",
-          1
-        ],
-        [
-          "Close"
-        ]
-      ]
-    },
-    {
-      "id": "inspector-click-during-discard",
-      "module": "NodeInspector",
-      "preset": "inspector-replay",
-      "promises": [
-        "InspectorShowsSelection",
-        "DraftedSelectionHasEditor"
-      ],
-      "summary": "A click on another node while a draft discard is in flight is ignored.",
-      "steps": [
-        [
-          "Click",
-          "n1"
-        ],
-        [
-          "MountReturns",
-          1
-        ],
-        [
-          "Annotate"
-        ],
-        [
-          "Autosave",
-          "n1"
-        ],
-        [
-          "Discard"
-        ],
-        [
-          "Click",
-          "n2"
-        ],
-        [
-          "DiscardReturns",
-          "ok"
-        ]
-      ],
-      "violatedAtEnd": [
-        "LastRequestWins"
-      ]
-    },
-    {
-      "id": "inspector-close-during-flush",
-      "module": "NodeInspector",
-      "preset": "inspector-replay",
-      "promises": [
-        "InspectorShowsSelection",
-        "DraftedSelectionHasEditor"
-      ],
-      "summary": "Close pressed while a switch flushes the draft is ignored and cancels the switch too.",
-      "steps": [
-        [
-          "Click",
-          "n1"
-        ],
-        [
-          "MountReturns",
-          1
-        ],
-        [
-          "Annotate"
-        ],
-        [
-          "EditDraft"
-        ],
-        [
-          "Click",
-          "n2"
-        ],
-        [
-          "Close"
-        ],
-        [
-          "SaveReturns",
-          1,
-          "ok"
-        ]
-      ],
-      "violatedAtEnd": [
-        "LastRequestWins"
-      ]
-    },
-    {
-      "id": "inspector-refused-switch-dead-detail",
-      "module": "NodeInspector",
-      "preset": "inspector-replay",
-      "promises": [
-        "LastRequestWins",
-        "DraftedSelectionHasEditor"
-      ],
-      "summary": "A failed draft save refuses a switch but leaves the kept node's superseded Node Detail disposed.",
-      "steps": [
-        [
-          "Click",
-          "n1"
-        ],
-        [
-          "StatePush",
-          "same"
-        ],
-        [
-          "MountReturns",
-          1
-        ],
-        [
-          "Annotate"
-        ],
-        [
-          "EditDraft"
-        ],
-        [
-          "Click",
-          "n2"
-        ],
-        [
-          "SaveReturns",
-          1,
-          "fail"
-        ],
-        [
-          "MountReturns",
-          2
-        ]
-      ],
-      "violatedAtEnd": [
-        "InspectorShowsSelection"
-      ]
-    },
-    {
-      "id": "inspector-double-close",
-      "module": "NodeInspector",
-      "preset": "inspector-replay",
-      "promises": [
-        "InspectorShowsSelection",
-        "DraftedSelectionHasEditor"
-      ],
-      "summary": "A second Close while the first flushes the draft supersedes the first, and neither closes the inspector.",
-      "steps": [
-        [
-          "Click",
-          "n1"
-        ],
-        [
-          "MountReturns",
-          1
-        ],
-        [
-          "Annotate"
-        ],
-        [
-          "EditDraft"
-        ],
-        [
-          "Close"
-        ],
-        [
-          "Close"
-        ],
-        [
-          "PrepareReturns",
-          "ok"
-        ]
-      ],
-      "violatedAtEnd": [
-        "LastRequestWins"
-      ]
-    },
-    {
       "id": "input-commit-then-send",
       "module": "AuthoredInputSend",
       "preset": "input",
@@ -1274,6 +1056,224 @@
         [
           "PostFails",
           "A"
+        ]
+      ]
+    },
+    {
+      "id": "inspector-annotate-and-switch",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor"
+      ],
+      "summary": "A node is annotated, the user switches to another node and back, and the draft's editor returns.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "EditDraft"
+        ],
+        [
+          "Click",
+          "n2"
+        ],
+        [
+          "SaveReturns",
+          1,
+          "ok"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Close"
+        ]
+      ]
+    },
+    {
+      "id": "inspector-click-during-discard",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor"
+      ],
+      "summary": "A click on another node while a draft discard is in flight waits for it and then opens that node.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "Autosave",
+          "n1"
+        ],
+        [
+          "Discard"
+        ],
+        [
+          "Click",
+          "n2"
+        ],
+        [
+          "DiscardReturns",
+          "ok"
+        ],
+        [
+          "MountReturns",
+          1
+        ]
+      ]
+    },
+    {
+      "id": "inspector-close-during-flush",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor"
+      ],
+      "summary": "Close pressed while a switch flushes the draft supersedes the switch and closes the inspector once the draft is saved.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "EditDraft"
+        ],
+        [
+          "Click",
+          "n2"
+        ],
+        [
+          "Close"
+        ],
+        [
+          "SaveReturns",
+          1,
+          "ok"
+        ]
+      ]
+    },
+    {
+      "id": "inspector-double-close",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor"
+      ],
+      "summary": "A second Close while the first flushes the draft closes the inspector once the draft is saved.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "EditDraft"
+        ],
+        [
+          "Close"
+        ],
+        [
+          "Close"
+        ],
+        [
+          "PrepareReturns",
+          "ok"
+        ]
+      ]
+    },
+    {
+      "id": "inspector-refused-switch-rerenders",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor"
+      ],
+      "summary": "A failed draft save refuses a switch and re-renders the kept node's Node Detail.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "StatePush",
+          "same"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "EditDraft"
+        ],
+        [
+          "Click",
+          "n2"
+        ],
+        [
+          "SaveReturns",
+          1,
+          "fail"
+        ],
+        [
+          "MountReturns",
+          2
+        ],
+        [
+          "MountReturns",
+          1
         ]
       ]
     }

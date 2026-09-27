@@ -26,16 +26,16 @@ CONSTANTS
   MaxRev,           \* bound on product state revisions
   MaxEditors,       \* bound on editor identities
   Slots,            \* in-flight selectNode activations
-  QueueWhileResolving, \* FALSE today: a click, close, or turn change
-                    \* arriving while the editor resolves returns at once
-                    \* (WS:4761, WS:1628); TRUE remembers the latest user
-                    \* request and replays it when the editor resolves
-  RefreshAfterResolve \* FALSE today: after a save or discard resolves, the
-                    \* inspector is not re-rendered from the latest state.
-                    \* selectNode continues from the state its caller
-                    \* captured (WS:4754, 4866-4879), a render's refresh
-                    \* during the save was dropped, and a refused request
-                    \* leaves the kept node's superseded mount disposed
+  QueueWhileResolving, \* TRUE since #514: a click, close, or turn change
+                    \* arriving while the editor resolves waits for it, and
+                    \* the latest one then proceeds (WS awaitUserRequestTurn).
+                    \* Before, it returned at once, and a dropped prepare
+                    \* also cancelled a pending request
+  RefreshAfterResolve \* TRUE since #515: a switch continues from the latest
+                    \* state, and a resolved draft re-renders the selection
+                    \* unless a waiting request or the switch will. Before,
+                    \* a render during the save was dropped and a refused
+                    \* request left the kept node's superseded mount disposed
 
 None == "none"
 NoEditor == [node |-> None, eid |-> 0, resolving |-> FALSE]
@@ -165,10 +165,10 @@ Reconcile(w) ==
 \* may clear the selection on entering a new view (WS:4210-4380), and the
 \* selection is refreshed with selectNode or the inspector hidden
 \* (WS:3930-3937).
-\* A request remembered in the old view is void in the new one.
+\* A remembered click is retried against the view it finds; it does nothing
+\* if its node is gone.
 Render(w, r, g, entering) ==
-  LET w1 == Reconcile([w EXCEPT !.srev = r, !.graph = g, !.attach = w.sel # None,
-                                !.queued = IF entering THEN NoRequest ELSE w.queued])
+  LET w1 == Reconcile([w EXCEPT !.srev = r, !.graph = g, !.attach = w.sel # None])
       w2 == IF entering THEN [Bump(w1) EXCEPT !.open = FALSE] ELSE w1
       clears == entering /\ w2.sel # None /\ w2.sel \notin g
       w3 == IF clears THEN [Bump(w2) EXCEPT !.sel = None, !.open = FALSE] ELSE w2

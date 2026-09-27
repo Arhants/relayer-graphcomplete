@@ -1691,27 +1691,72 @@ export function createProductWorkspace({
       && !loadedInputDraftThreads.has(String(threadId)),
   }) : null;
 
+  // While an annotation draft resolves (its flush before a switch or a
+  // navigation, ✓, or ×), a user's click or navigation waits for it and then
+  // proceeds if it is still the latest one, instead of being dropped. When
+  // the draft resolves, the selection is re-rendered from the latest state
+  // unless a waiting request or the continuing switch will render it.
+  let editorResolution = null;
+  let userRequestTicket = 0;
+  let waitingUserRequests = 0;
+  const refreshSelection = () => {
+    if (disposed || selection.selectedNodeId == null) return;
+    void selectNode(getState(), selection.selectedNodeId, { notify: false });
+  };
+  const beginEditorResolution = (editor) => {
+    editor.resolving = true;
+    let settle;
+    const resolution = new Promise((resolve) => { settle = resolve; });
+    editorResolution = resolution;
+    return ({ refresh = true } = {}) => {
+      editor.resolving = false;
+      if (editorResolution === resolution) editorResolution = null;
+      settle();
+      if (refresh && !waitingUserRequests) refreshSelection();
+    };
+  };
+  const awaitUserRequestTurn = async () => {
+    const ticket = ++userRequestTicket;
+    waitingUserRequests += 1;
+    try {
+      while (editorResolution) await editorResolution;
+    } finally {
+      waitingUserRequests -= 1;
+    }
+    return !disposed && ticket === userRequestTicket;
+  };
+
   const prepareNodeContextSelectionChange = async () => {
     const requestSequence = ++nodeSelectionSequence;
+    if (contextEditor?.resolving) {
+      if (!await awaitUserRequestTurn()) return false;
+      return prepareNodeContextSelectionChange();
+    }
     const editor = contextEditor;
     if (!editor?.durable) return true;
-    if (editor.resolving) return false;
-    editor.resolving = true;
+    const endResolution = beginEditorResolution(editor);
     renderNodeContextDock();
     const saved = await saveContextDraftBeforeSelection({
       controller: contextDraftController,
       editor,
       textarea: $("#nodeContextDock #contextAnnotationEditor"),
     });
-    editor.resolving = false;
-    if (requestSequence !== nodeSelectionSequence || contextEditor !== editor) {
+    if (requestSequence !== nodeSelectionSequence) {
       if (contextEditor === editor) renderComposerContexts();
+      endResolution();
       return false;
     }
-    if (!saved) {
-      renderComposerContexts();
+    if (contextEditor !== editor && saved) {
+      // The editor was replaced meanwhile; prepare again for the one open now.
+      endResolution({ refresh: false });
+      return prepareNodeContextSelectionChange();
+    }
+    if (contextEditor !== editor || !saved) {
+      if (contextEditor === editor) renderComposerContexts();
+      endResolution();
       return false;
     }
+    endResolution({ refresh: false });
     return true;
   };
 
@@ -2787,7 +2832,7 @@ export function createProductWorkspace({
     discard.onclick = async () => {
       if (contextStagingDisabled()) return;
       const discardingEditor = contextEditor;
-      discardingEditor.resolving = true;
+      const endResolution = beginEditorResolution(discardingEditor);
       clearContextEditorError(discardingEditor);
       renderNodeContextDock();
       try {
@@ -2795,10 +2840,10 @@ export function createProductWorkspace({
         clearContextEditorError(discardingEditor);
         closeDurableEditor(threadId, discardingEditor.draftId);
       } catch (discardError) {
-        discardingEditor.resolving = false;
         rememberContextEditorError(discardingEditor, discardError.message);
       }
       renderComposerContexts();
+      endResolution();
     };
 
     const confirm = graphDocument.createElement("button");
@@ -2810,13 +2855,12 @@ export function createProductWorkspace({
     confirm.onclick = async () => {
       if (contextStagingDisabled()) return;
       const confirmingEditor = contextEditor;
-      confirmingEditor.resolving = true;
+      const endResolution = beginEditorResolution(confirmingEditor);
       clearContextEditorError(confirmingEditor);
       renderNodeContextDock();
       try {
         const confirmation = await contextDraftController.confirm(threadId, selectedNode.id);
         if (!confirmation) {
-          confirmingEditor.resolving = false;
           rememberContextEditorError(
             confirmingEditor,
             "This annotation could not be confirmed. Retry after it is saved.",
@@ -2829,10 +2873,10 @@ export function createProductWorkspace({
           }
         }
       } catch (confirmError) {
-        confirmingEditor.resolving = false;
         rememberContextEditorError(confirmingEditor, confirmError.message);
       }
       renderComposerContexts();
+      endResolution();
     };
 
     textarea.oninput = () => {
@@ -4908,7 +4952,18 @@ export function createProductWorkspace({
     contextTarget,
     origin = null,
   } = {}) {
-    if (contextEditor?.resolving) return false;
+    const options = { notify, userInitiated, focusInspector, contextTarget, origin };
+    if (contextEditor?.resolving) {
+      // A refresh is dropped: the resolution re-renders the selection when it
+      // ends. A user's click waits its turn and uses the state it finds then.
+      if (!userInitiated || !await awaitUserRequestTurn()) return false;
+      const latest = getState();
+      if (!resolveInteractionContextNode(id, latest.nodes, composerContextState.value, contextNodeOverrides)) {
+        refreshSelection();
+        return false;
+      }
+      return selectNode(latest, id, options);
+    }
     const requestSequence = ++nodeSelectionSequence;
     const sourceThread = getThread();
     const sourceThreadId = String(sourceThread?.id);
@@ -4935,25 +4990,31 @@ export function createProductWorkspace({
     if (switchingDurableDraft) {
       const previousEditor = contextEditor;
       const mountedTextarea = $("#nodeContextDock #contextAnnotationEditor");
-      previousEditor.resolving = true;
+      const endResolution = beginEditorResolution(previousEditor);
       renderNodeContextDock();
       const saved = await saveContextDraftBeforeSelection({
         controller: contextDraftController,
         editor: previousEditor,
         textarea: mountedTextarea,
       });
-      previousEditor.resolving = false;
       if (requestSequence !== nodeSelectionSequence
         || String(getThread()?.id) !== sourceThreadId) {
         if (contextEditor === previousEditor) renderComposerContexts();
+        endResolution();
         return false;
       }
       if (!saved) {
+        // The switch is refused and the kept node, whose own detail this
+        // request superseded, is re-rendered.
         contextEditor = previousEditor;
         renderComposerContexts();
+        endResolution();
         return false;
       }
       contextEditor = null;
+      endResolution({ refresh: false });
+      // Continue from the latest state, not the one read before the save.
+      return selectNode(getState(), id, options);
     }
     if (requestSequence !== nodeSelectionSequence
       || String(getThread()?.id) !== sourceThreadId) return false;

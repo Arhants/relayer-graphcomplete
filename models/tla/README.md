@@ -294,21 +294,22 @@ confirm resolves like discard.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `inspector-dropped-request` | Confirmed behavior; replayed; needs a product decision | While a draft save, confirm, or discard is in flight, `selectNode` returns at once and `prepareNodeContextSelectionChange` returns false. A node click, Close, or turn change made then does nothing. A dropped Close or turn change also increments `nodeSelectionSequence`, which cancels a pending click or the first Close, so a double-clicked Close closes nothing. The PRD does not say whether input may be ignored while a draft resolves. Scenarios: `inspector-click-during-discard`, `inspector-close-during-flush`, `inspector-double-close`. |
-| `inspector-detail-left-dead` | Plausible: needs a slow Node Detail mount | A switch refused by a failed flush returns without re-rendering the kept node. If the switch superseded that node's own Node Detail mount, the mount disposes its runtime when it lands, and the inspector shows the node's header over an empty page. The mount must stay pending across a render, `+`, typing, and a click, so it needs a slow asset. A render that enters a new view during the flush hides the inspector the same way; that variant is not replayed. Scenario: `inspector-refused-switch-dead-detail`. |
-| `inspector-stale-state` | Plausible: weak; model only | A render during a draft save or discard is dropped, and a switch renders the header from the node object it read before its flush. Within one accepted layer the header does not change, so the stale state would show only in action or capability state, which is not modeled. It heals on the next render. |
+| `inspector-dropped-request` | Fixed; now passes | Before the fix (#514): while a draft save, confirm, or discard was in flight, `selectNode` returned at once and `prepareNodeContextSelectionChange` returned false, so a node click, Close, or turn change did nothing; a dropped Close or turn change also incremented `nodeSelectionSequence`, cancelling a pending click or the first Close, so a double-clicked Close closed nothing. Such a request now waits for the draft to resolve, and the latest one proceeds; a prepare whose editor was replaced meanwhile prepares again. Scenarios: `inspector-click-during-discard`, `inspector-close-during-flush`, `inspector-double-close`. |
+| `inspector-detail-left-dead` | Fixed; now passes | Before the fix (#515): a switch refused by a failed flush returned without re-rendering the kept node; if the switch had superseded that node's own Node Detail mount, the inspector showed its header over a disposed, empty page, and a view change during the flush left the inspector hidden. A resolved draft now re-renders the selection from the latest state unless a waiting request or the continuing switch will. Scenario: `inspector-refused-switch-rerenders`. |
+| `inspector-stale-state` | Fixed; now passes | Before the fix (#515): a render during a draft save or discard was dropped, and a switch continued from the state read before its flush. A switch now continues from the latest state. Model only: within one accepted layer this has no user-visible observable to replay. |
 | `inspector-draft-editor-restored` | passes | Selecting a node with an unconfirmed draft reopens its editor (PRD L2203). |
-| `inspector-fixed` | passes | With both candidate fixes, every inspector promise holds. |
+| `inspector-without-queue` | Records the bug | With `QueueWhileResolving` off, input made while a draft resolves is dropped. |
+| `inspector-without-refresh` | Records the bug | With `RefreshAfterResolve` off, a refused switch can leave the kept node's detail disposed. |
 
 The candidate fixes are:
 
-1. `QueueWhileResolving`: remembering the latest click, Close, or turn change
-   that arrives while a draft resolves, and replaying it afterwards; a click
-   from a view the user has since left is void. A prepare whose editor was
-   replaced prepares again.
+1. `QueueWhileResolving`: a click, Close, or turn change that arrives while
+   a draft resolves waits for it, and the latest one then proceeds against
+   the state it finds; a click whose node is gone does nothing. A prepare
+   whose editor was replaced prepares again. Landed (#514).
 2. `RefreshAfterResolve`: continuing a switch from the latest state, and
-   re-rendering the selection once a draft resolves unless a current request
-   will.
+   re-rendering the selection once a draft resolves unless a waiting request
+   or the switch will. Landed (#515).
 
 The replay also showed the dock keeps the previous node's locked editor
 until the new node's Node Detail mount finishes. The replay compares the

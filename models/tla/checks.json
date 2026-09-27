@@ -63,14 +63,6 @@
       "MaxRev": "3",
       "MaxEditors": "3",
       "Slots": "{1, 2, 3}",
-      "QueueWhileResolving": "FALSE",
-      "RefreshAfterResolve": "FALSE"
-    },
-    "inspector-fixed": {
-      "Nodes": "{\"n1\", \"n2\"}",
-      "MaxRev": "3",
-      "MaxEditors": "3",
-      "Slots": "{1, 2, 3}",
       "QueueWhileResolving": "TRUE",
       "RefreshAfterResolve": "TRUE"
     },
@@ -79,8 +71,8 @@
       "MaxRev": "6",
       "MaxEditors": "6",
       "Slots": "{1, 2, 3, 4}",
-      "QueueWhileResolving": "FALSE",
-      "RefreshAfterResolve": "FALSE"
+      "QueueWhileResolving": "TRUE",
+      "RefreshAfterResolve": "TRUE"
     },
     "input": {
       "MaxVal": "2",
@@ -420,49 +412,34 @@
       "id": "inspector-dropped-request",
       "module": "NodeInspector",
       "preset": "inspector-today",
-      "constants": {
-        "RefreshAfterResolve": "TRUE"
-      },
       "invariants": [
         "TypeOK",
         "LastRequestWins"
       ],
-      "expect": {
-        "violated": "LastRequestWins"
-      },
-      "finding": "A node click, Close, or turn change made while an annotation draft saves, confirms, or discards is ignored; a dropped Close or turn change also cancels a pending click."
+      "expect": "pass",
+      "finding": "A click, Close, or turn change made while an annotation draft resolves waits and the latest one proceeds (fixed; #514: it was ignored, and a dropped Close also cancelled a pending click)."
     },
     {
       "id": "inspector-detail-left-dead",
       "module": "NodeInspector",
       "preset": "inspector-today",
-      "constants": {
-        "QueueWhileResolving": "TRUE"
-      },
       "invariants": [
         "TypeOK",
         "InspectorShowsSelection"
       ],
-      "expect": {
-        "violated": "InspectorShowsSelection"
-      },
-      "finding": "After a draft save or discard resolves, the selected node is not re-rendered: a refused switch leaves its superseded Node Detail disposed and empty, and a view change during the save leaves the inspector hidden."
+      "expect": "pass",
+      "finding": "The inspector shows the selected node's live detail once a draft resolves (fixed; #515: a refused switch left the kept node's detail disposed, and a view change during the save left the inspector hidden)."
     },
     {
       "id": "inspector-stale-state",
       "module": "NodeInspector",
       "preset": "inspector-today",
-      "constants": {
-        "QueueWhileResolving": "TRUE"
-      },
       "invariants": [
         "TypeOK",
         "InspectorIsCurrent"
       ],
-      "expect": {
-        "violated": "InspectorIsCurrent"
-      },
-      "finding": "A render during a draft save or discard is dropped, and a switch continues from the state captured at the click, so the inspector shows an older state."
+      "expect": "pass",
+      "finding": "The inspector is rendered from the latest state once a draft resolves (fixed; #515)."
     },
     {
       "id": "inspector-draft-editor-restored",
@@ -474,20 +451,6 @@
       ],
       "expect": "pass",
       "finding": "Selecting a node with an unconfirmed draft reopens its editor (PRD L2203)."
-    },
-    {
-      "id": "inspector-fixed",
-      "module": "NodeInspector",
-      "preset": "inspector-fixed",
-      "invariants": [
-        "TypeOK",
-        "InspectorShowsSelection",
-        "InspectorIsCurrent",
-        "LastRequestWins",
-        "DraftedSelectionHasEditor"
-      ],
-      "expect": "pass",
-      "finding": "Replaying the latest request made while a draft resolves, and re-rendering the selection from the latest state afterwards, restore every inspector promise."
     },
     {
       "id": "input-send-carries-answer",
@@ -532,6 +495,38 @@
         "violated": "UnsentDraftSurvives"
       },
       "finding": "Without moving unsent text into the newest turn's scope, text typed during a send is stranded (#512)."
+    },
+    {
+      "id": "inspector-without-queue",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "constants": {
+        "QueueWhileResolving": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "LastRequestWins"
+      ],
+      "expect": {
+        "violated": "LastRequestWins"
+      },
+      "finding": "Without waiting, input made while a draft resolves is dropped (#514)."
+    },
+    {
+      "id": "inspector-without-refresh",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "constants": {
+        "RefreshAfterResolve": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "InspectorShowsSelection"
+      ],
+      "expect": {
+        "violated": "InspectorShowsSelection"
+      },
+      "finding": "Without the refresh, a refused switch can leave the kept node's detail disposed (#515)."
     }
   ]
 }

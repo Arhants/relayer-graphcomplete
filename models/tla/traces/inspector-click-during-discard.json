@@ -1,13 +1,11 @@
 {
   "scenario": "inspector-click-during-discard",
   "module": "NodeInspector",
-  "summary": "A click on another node while a draft discard is in flight is ignored.",
+  "summary": "A click on another node while a draft discard is in flight waits for it and then opens that node.",
   "promises": [
     "InspectorShowsSelection",
+    "LastRequestWins",
     "DraftedSelectionHasEditor"
-  ],
-  "violatedAtEnd": [
-    "LastRequestWins"
   ],
   "generatedBy": "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
   "steps": [
@@ -550,8 +548,8 @@
           "st": "free"
         },
         "queued": {
-          "kind": "none",
-          "node": "none"
+          "kind": "select",
+          "node": "n2"
         },
         "sel": "n1",
         "slots": {
@@ -606,8 +604,8 @@
         "attach": true,
         "detail": {
           "live": true,
-          "node": "n1",
-          "owned": true,
+          "node": "n2",
+          "owned": false,
           "slot": 1
         },
         "drafts": {},
@@ -636,7 +634,90 @@
           "kind": "none",
           "node": "none"
         },
-        "sel": "n1",
+        "sel": "n2",
+        "slots": {
+          "1": {
+            "cur": true,
+            "eid": 0,
+            "fresh": true,
+            "node": "n2",
+            "rev": 1,
+            "st": "mounting"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 1,
+        "title": {
+          "node": "n2",
+          "rev": 1
+        },
+        "unsaved": {},
+        "want": "n2"
+      }
+    },
+    {
+      "action": [
+        "MountReturns",
+        1
+      ],
+      "state": {
+        "attach": true,
+        "detail": {
+          "live": true,
+          "node": "n2",
+          "owned": true,
+          "slot": 1
+        },
+        "drafts": {},
+        "editor": {
+          "eid": 0,
+          "node": "none",
+          "resolving": false
+        },
+        "eids": 1,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "n2",
+        "op": 0,
+        "open": true,
+        "prep": {
+          "cur": false,
+          "eid": 0,
+          "fresh": false,
+          "node": "none",
+          "rev": 0,
+          "st": "free"
+        },
+        "queued": {
+          "kind": "none",
+          "node": "none"
+        },
+        "sel": "n2",
         "slots": {
           "1": {
             "cur": false,
@@ -673,7 +754,7 @@
         },
         "srev": 1,
         "title": {
-          "node": "n1",
+          "node": "n2",
           "rev": 1
         },
         "unsaved": {},
