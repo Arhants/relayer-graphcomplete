@@ -157,13 +157,13 @@ impl GraphWriter {
             let package_assets = package["assets"]
                 .as_array()
                 .expect("validated package assets");
-            if let Some(prepared) = prepared_assets
-                && (package_assets.len() != prepared.len()
-                    || package_assets.iter().zip(prepared).any(|(pin, asset)| {
-                        pin["id"].as_str() != Some(asset.asset_id.as_str())
-                            || pin["digestSha256"].as_str() != Some(asset.digest_sha256.as_str())
-                            || pin["mediaType"].as_str() != Some(asset.media_type.as_str())
-                    }))
+            let prepared = prepared_assets.unwrap_or_default();
+            if package_assets.len() != prepared.len()
+                || package_assets.iter().zip(prepared).any(|(pin, asset)| {
+                    pin["id"].as_str() != Some(asset.asset_id.as_str())
+                        || pin["digestSha256"].as_str() != Some(asset.digest_sha256.as_str())
+                        || pin["mediaType"].as_str() != Some(asset.media_type.as_str())
+                })
             {
                 return Err(GraphError::validation(
                     "authored_detail_asset_snapshot_mismatch",
