@@ -274,6 +274,7 @@ export function createSharePublishController({
     }
     const currentAccount = await account.read().catch(() => null);
     if (disposed || operation !== operationVersion) return;
+    if (String(getThread()?.id) !== dialogThreadKey) return close();
     if (normalizedAccount(currentAccount) === "signed-in") {
       accountSubject = typeof currentAccount?.subject === "string" ? currentAccount.subject : null;
       return runPreflight();
@@ -382,7 +383,7 @@ export function createSharePublishController({
   return Object.freeze({
     render() {
       const threadKey = getThread()?.id == null ? null : String(getThread().id);
-      if (phase !== "closed" && dialogThreadKey !== null && dialogThreadKey !== threadKey) close();
+      if (dialogThreadKey !== null && dialogThreadKey !== threadKey) close();
       const eligibility = shareEligibility({ thread: getThread(), interactions: getInteractions() });
       headerButton.disabled = !getThread();
       menuButton.disabled = !getThread();

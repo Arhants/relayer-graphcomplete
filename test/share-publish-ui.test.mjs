@@ -311,6 +311,23 @@ describe("share publish renderer boundary", () => {
     expect(test.share.create).not.toHaveBeenCalled();
   });
 
+  it("invalidates a fresh dialog when navigation changes its source during account lookup", async () => {
+    let resolveAccount;
+    const test = fixture();
+    test.account.read.mockImplementation(() => new Promise((resolve) => { resolveAccount = resolve; }));
+
+    const opening = test.window.document.querySelector("#shareConversation").onclick();
+    await vi.waitFor(() => expect(resolveAccount).toBeTypeOf("function"));
+    test.thread.id = 8;
+    test.controller.render();
+    resolveAccount({ status: "signed-in", channel: "stable", subject: "owner-a" });
+    await opening;
+
+    expect(test.share.preflight).not.toHaveBeenCalled();
+    expect(test.window.document.querySelector("#shareDialog").classList.contains("hidden")).toBe(true);
+    expect(test.window.document.querySelector("#shareDialog").textContent).toBe("");
+  });
+
   it("re-runs preflight instead of retrying a nonexistent attempt after a preflight failure", async () => {
     const test = fixture({ preflightResult: {
       status: "failed",
