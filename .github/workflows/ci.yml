@@ -178,11 +178,12 @@ jobs:
     needs: [plan, lbug-prebuilt]
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.rust == 'true' }}
     runs-on: ubuntu-latest
-    env:
-      RELAYER_CI_PROFILE_DIR: ${{ runner.temp }}/ci-resource-profiles
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+      - name: Enable optional command profiling
+        continue-on-error: true
+        run: echo "RELAYER_CI_PROFILE_DIR=$RUNNER_TEMP/ci-resource-profiles" >> "$GITHUB_ENV"
       - name: Set up pinned Node
         uses: actions/setup-node@v7
         with:
@@ -247,11 +248,12 @@ jobs:
     needs: [plan, lbug-prebuilt]
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.rust == 'true' }}
     runs-on: ubuntu-latest
-    env:
-      RELAYER_CI_PROFILE_DIR: ${{ runner.temp }}/ci-resource-profiles
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+      - name: Enable optional command profiling
+        continue-on-error: true
+        run: echo "RELAYER_CI_PROFILE_DIR=$RUNNER_TEMP/ci-resource-profiles" >> "$GITHUB_ENV"
       - name: Set up pinned Node and dependencies
         uses: ./.github/actions/setup-node-dependencies
       - name: Set up isolated Rust compilation
@@ -304,11 +306,12 @@ jobs:
     needs: [plan, lbug-prebuilt]
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.rust_crash == 'true' }}
     runs-on: ubuntu-latest
-    env:
-      RELAYER_CI_PROFILE_DIR: ${{ runner.temp }}/ci-resource-profiles
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+      - name: Enable optional command profiling
+        continue-on-error: true
+        run: echo "RELAYER_CI_PROFILE_DIR=$RUNNER_TEMP/ci-resource-profiles" >> "$GITHUB_ENV"
       - name: Set up pinned Node
         uses: actions/setup-node@v7
         with:
@@ -362,11 +365,12 @@ jobs:
     needs: [plan, lbug-prebuilt]
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.rust_runtime == 'true' && needs.plan.outputs.runtime_cache_hit != 'true' }}
     runs-on: ubuntu-latest
-    env:
-      RELAYER_CI_PROFILE_DIR: ${{ runner.temp }}/ci-resource-profiles
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+      - name: Enable optional command profiling
+        continue-on-error: true
+        run: echo "RELAYER_CI_PROFILE_DIR=$RUNNER_TEMP/ci-resource-profiles" >> "$GITHUB_ENV"
       - name: Set up pinned Node
         uses: actions/setup-node@v7
         with:
@@ -507,13 +511,14 @@ jobs:
     needs: [plan, rust-runtime]
     if: ${{ !cancelled() && needs.plan.outputs.vitest == 'true' && (needs.plan.outputs.rust_runtime != 'true' || needs.plan.outputs.runtime_cache_hit == 'true' || needs['rust-runtime'].result == 'success') }}
     runs-on: ubuntu-latest
-    env:
-      RELAYER_CI_PROFILE_DIR: ${{ runner.temp }}/ci-resource-profiles
     steps:
       - name: Check out source and base history
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Enable optional command profiling
+        continue-on-error: true
+        run: echo "RELAYER_CI_PROFILE_DIR=$RUNNER_TEMP/ci-resource-profiles" >> "$GITHUB_ENV"
       - name: Set up Node dependencies with evidence
         uses: ./.github/actions/setup-node-dependencies
       - name: Identify Rust artifact inputs
@@ -617,11 +622,12 @@ jobs:
           - target: macos-arm64
             runner: macos-15
     runs-on: ${{ matrix.runner }}
-    env:
-      RELAYER_CI_PROFILE_DIR: ${{ runner.temp }}/ci-resource-profiles
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+      - name: Enable optional command profiling
+        continue-on-error: true
+        run: echo "RELAYER_CI_PROFILE_DIR=$RUNNER_TEMP/ci-resource-profiles" >> "$GITHUB_ENV"
       - name: Set up Node dependencies with evidence
         uses: ./.github/actions/setup-node-dependencies
       - name: Verify Node toolchain

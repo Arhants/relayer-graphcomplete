@@ -38,7 +38,15 @@ test("every profiled lane uploads optional evidence even after failures", () => 
   const workflow = parse(readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8"));
   for (const name of ["rust-clippy", "rust-tests", "rust-crash", "rust-runtime", "vitest", "packaging"]) {
     const job = workflow.jobs[name];
-    expect(job.env.RELAYER_CI_PROFILE_DIR).toBe("${{ runner.temp }}/ci-resource-profiles");
+    // runner context is unavailable in job-level env; initialize it at runtime.
+    expect(job.env?.RELAYER_CI_PROFILE_DIR).toBeUndefined();
+    const initialize = job.steps.find((step) => step.name === "Enable optional command profiling");
+    expect(initialize.run).toContain('RELAYER_CI_PROFILE_DIR=$RUNNER_TEMP/ci-resource-profiles');
+    expect(initialize.run).toContain('"$GITHUB_ENV"');
+    expect(initialize["continue-on-error"]).toBe(true);
+    const setupIndex = job.steps.findIndex((step) => step.uses?.includes("setup-node"));
+    expect(setupIndex).toBeGreaterThanOrEqual(0);
+    expect(job.steps.indexOf(initialize)).toBeLessThan(setupIndex);
     const upload = job.steps.find((step) => step.name === "Upload command resource profiles");
     expect(upload.if).toBe("${{ always() }}");
     expect(upload["continue-on-error"]).toBe(true);
