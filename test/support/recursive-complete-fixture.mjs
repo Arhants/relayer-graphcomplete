@@ -31,11 +31,37 @@ function authorVisualNodeDetail(node, componentId, markup) {
   );
 }
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function waitForAbort(signal) {
+  return new Promise((_, reject) => {
+    const onAbort = () => reject(new Error("child aborted"));
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /** Production-seam fixture shared by recursive runtime and Eval Desktop integration tests. */
 export function recursiveCompleteFixtureFactory(
   observed,
   brokerUrl = (context) => context.completionBroker.url,
+  completeChild = complete,
 ) {
+  const childReadiness = deferred();
+  observed.childReadiness = childReadiness.promise;
+  void childReadiness.promise.catch(() => undefined);
+
   return () => ({
     supportsInvokedComplete: true,
     traceSupport: () => ({
@@ -44,7 +70,9 @@ export function recursiveCompleteFixtureFactory(
     }),
     state: () => ({}),
     complete(context, signal) {
-      const execution = runRecursiveFixture(context, signal, observed, brokerUrl).catch((error) => {
+      const isChild = context.inputGraph.detail === RECURSIVE_FIXTURE_CHILD_TASK;
+      const execution = runRecursiveFixture(context, signal, observed, brokerUrl, completeChild, childReadiness).catch((error) => {
+        if (isChild) childReadiness.reject(error);
         (observed.errors ??= []).push(`${context.inputGraph.detail}: [${error?.code}] ${error?.message}`);
         throw error;
       });
@@ -57,7 +85,7 @@ export function recursiveCompleteFixtureFactory(
   });
 }
 
-async function runRecursiveFixture(context, signal, observed, brokerUrl) {
+async function runRecursiveFixture(context, signal, observed, brokerUrl, completeChild, childReadiness) {
   const graph = new RelayerGraphClient(context.graph.acquireCapability());
   if (context.inputGraph.detail === RECURSIVE_FIXTURE_CHILD_TASK) {
     const current = await graph.getCurrent();
@@ -77,8 +105,9 @@ async function runRecursiveFixture(context, signal, observed, brokerUrl) {
     });
     await graph.advanceCurrent(layer, current.headRevision, "child-advance");
     if (observed.childBlocks) {
-      await new Promise((abort) => signal.addEventListener("abort", abort, { once: true }));
-      throw new Error("child aborted");
+      const aborted = waitForAbort(signal);
+      childReadiness.resolve();
+      await aborted;
     }
     await new Promise((wait) => setTimeout(wait, observed.childDelayMs ?? 0));
     await graph.returnCurrent(layer, current.headRevision + 1, "child-return");
@@ -115,7 +144,7 @@ async function runRecursiveFixture(context, signal, observed, brokerUrl) {
   observed.preparedChild = inputGraph.interactionNode;
   process.env.RELAYER_COMPLETE_URL = brokerUrl(context);
   process.env.RELAYER_COMPLETE_TOKEN = context.completionBroker.token;
-  const child = complete(inputGraph);
+  const child = completeChild(inputGraph);
   observed.childCompletionId = child.completionId;
 
   if (observed.fireAndForget) {
@@ -126,7 +155,13 @@ async function runRecursiveFixture(context, signal, observed, brokerUrl) {
   }
 
   if (observed.childBlocks) {
-    await new Promise((wait) => setTimeout(wait, 400));
+    await Promise.race([
+      childReadiness.promise,
+      child.result.then(
+        () => { throw new Error("child completed before publishing its current"); },
+        (error) => { throw error; },
+      ),
+    ]);
     await child.stop("the parent no longer needs this branch");
     observed.stoppedChild = await child.current.snapshot();
   } else {
