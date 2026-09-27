@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Window } from "happy-dom";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import { createPublicViewerAdapter } from "../desktop/renderer/src/public-share-viewer/adapter.js";
@@ -204,6 +205,28 @@ describe("public share HTML boundary", () => {
     expect(html).not.toContain(">Open Relayer</a>");
     expect(html).not.toContain("public-share-footer");
     expect(html).not.toContain("Also for Windows");
+  });
+
+  it("renders a worst-case 16 MiB snapshot within the page ceiling and a 384 MiB JS heap", () => {
+    const templateUrl = new URL("../desktop/renderer/src/public-share-viewer/template.js", import.meta.url).href;
+    const script = `
+      import { renderPublicViewerTemplate } from ${JSON.stringify(templateUrl)};
+      const total = 16 * 1024 * 1024;
+      const header = '{"recordType":"header","exportVersion":1}\\n';
+      const prefix = '{"recordType":"turn","content":"';
+      const suffix = '"}\\n';
+      const snapshot = Buffer.from(header + prefix + '<'.repeat(total - Buffer.byteLength(header + prefix + suffix)) + suffix);
+      const html = renderPublicViewerTemplate({ snapshot, title: 'Worst-case generated-byte proof' });
+      const bytes = Buffer.byteLength(html, 'utf8');
+      if (snapshot.byteLength !== total || bytes <= 96 * 1024 * 1024 || bytes > 128 * 1024 * 1024) process.exit(1);
+      process.stdout.write(String(bytes));
+    `;
+    const result = spawnSync(process.execPath, ["--max-old-space-size=384", "--input-type=module", "-e", script], {
+      encoding: "utf8",
+      timeout: 5_000,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(Number(result.stdout)).toBeGreaterThan(96 * 1024 * 1024);
   });
 
   it("keeps the static shell aligned with the generated no-top-bar contract", () => {

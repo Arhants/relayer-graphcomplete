@@ -1,6 +1,13 @@
 const DEFAULT_ASSET_BASE = "/";
 const DEFAULT_INSTALL_URL = "https://app.relayerlabs.ai/desktop/login";
 const DEFAULT_DESCRIPTION = "A read-only Relayer conversation snapshot.";
+const JSON_SCRIPT_ESCAPES = Object.freeze({
+  "<": "\\u003c",
+  ">": "\\u003e",
+  "&": "\\u0026",
+  "\u2028": "\\u2028",
+  "\u2029": "\\u2029",
+});
 
 function escapeHtml(value) {
   return String(value)
@@ -48,12 +55,10 @@ function snapshotText(value) {
 }
 
 function safeJsonScriptText(value) {
-  return JSON.stringify(snapshotText(value))
-    .replaceAll("<", "\\u003c")
-    .replaceAll(">", "\\u003e")
-    .replaceAll("&", "\\u0026")
-    .replaceAll("\u2028", "\\u2028")
-    .replaceAll("\u2029", "\\u2029");
+  return JSON.stringify(snapshotText(value)).replace(
+    /[<>&\u2028\u2029]/gu,
+    (character) => JSON_SCRIPT_ESCAPES[character],
+  );
 }
 
 export function publicViewerCsp() {
