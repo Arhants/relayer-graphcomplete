@@ -271,7 +271,8 @@ The candidate fixes are:
 it is sound only together with `StableScopeRevision`.
 
 Both fixes have landed, so `composer-today` and `composer-fixed` now agree.
-Keying follow-up drafts by thread instead of by turn remains an alternative.
+Keeping per-turn draft scopes and carrying unsent text forward is the recorded
+product decision (PRD SCP-018 to SCP-020).
 
 ### `NodeInspector.tla`
 

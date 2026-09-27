@@ -406,9 +406,9 @@ TypeOK ==
 \* render() would restore on entering t now.
 Shown(t) == IF view = t THEN text ELSE EnterScope(Scope(t)).text
 
-\* SCP-016 (docs/prd/index.html L1132): "Saved-thread ... drafts survive
-\* navigation and restart. Send or explicit clearing removes only the
-\* applicable draft." The user's latest unsent text in a thread is what
+\* SCP-016: "Saved-thread ... drafts survive navigation and restart. Send or
+\* explicit clearing removes only the applicable draft." SCP-018: text
+\* written while a send is in flight survives the new turn loading. The user's latest unsent text in a thread is what
 \* that thread's composer shows, except while a send owns that text: a
 \* successful send removes it, and a failed one must hand it back.
 Sending(t) == pc[t] # "idle" /\ intent[t].text = unsent[t]

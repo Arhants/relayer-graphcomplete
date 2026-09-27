@@ -453,14 +453,13 @@ InspectorShowsSelection ==
            /\ open => /\ title.node = sel
                       /\ detail.node = sel /\ detail.live
 
-\* The inspector is rendered from the latest state. This extends "The
-\* canvas and inspector show the exact accepted layer" (PRD L297), which is
-\* about which layer is shown; freshness within a layer is not promised.
+\* "once the draft resolves, Node Details shows the selected node from the
+\* latest state" (PRD 7.1, #515).
 InspectorIsCurrent == Quiet /\ open => title.rev = srev
 
-\* The inspector ends on what the user last asked for. The PRD says only
-\* "Clicking a node opens its authored details" (L2293); whether input may
-\* be ignored while a draft resolves is a product decision.
+\* The inspector ends on what the user last asked for: input made while a
+\* draft resolves "waits for it instead of being ignored", and "only the
+\* latest waiting request proceeds" (PRD 7.1, #514).
 LastRequestWins == Quiet => sel = want
 
 \* "selecting a drafted node restores the same text and open editor"

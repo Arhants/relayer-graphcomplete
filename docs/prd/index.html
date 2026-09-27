@@ -1139,6 +1139,9 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 <li><strong>SCP-015:</strong> An unsent saved-thread follow-up remains attached to that thread when the project compose button opens New Thread.</li>
 <li><strong>SCP-016:</strong> Saved-thread and pending New Thread drafts survive navigation and restart. Send or explicit clearing removes only the applicable draft.</li>
 <li><strong>SCP-017:</strong> The sidebar does not indicate draft presence with a badge, dot, label, or equivalent marker.</li>
+<li><strong>SCP-018:</strong> Follow-up text written while a send is in flight stays in that thread's composer when the new turn loads (<a href="https://github.com/vishaltandale00/relayer-graphcomplete/issues/512">#512</a>). A send clears only the text it carried; an edit made after Send is kept (<a href="https://github.com/vishaltandale00/relayer-graphcomplete/issues/513">#513</a>).</li>
+<li><strong>SCP-019:</strong> When the server rejects a follow-up after its thread's newer turn arrived, the rejected text returns to the empty composer. After a network or server error, the text is not restored, because the send may have succeeded.</li>
+<li><strong>SCP-020:</strong> A draft the user wrote for a turn wins over that turn's restored retry text. The composer shows the user's draft and does not switch between the two.</li>
 <li><strong>PERM-001:</strong> New Thread exposes exactly Ask for approval, Approve for me, and Full access using the stable product IDs <code>ask</code>, <code>auto</code>, and <code>full</code>.</li>
 <li><strong>PERM-002:</strong> The picker selects the Rust catalog default on load and permits selection only when desktop policy and the selected harness both support the profile.</li>
 <li><strong>PERM-003:</strong> First send records <code>permissionProfileId</code> on the ordinary product thread before inference. Every later interaction inherits that pinned profile.</li>
@@ -2232,6 +2235,9 @@ settings:
 <li>switching nodes saves the current value and hides the dock for a node without a draft;</li>
 <li>selecting a drafted node restores the same text and open editor;</li>
 <li>autosave or confirmation failure keeps the draft editable and reports the failure inline in Node Details;</li>
+<li>while a draft saves, confirms, or discards, a node click, Close, or turn, history, or layer navigation waits for it instead of being ignored (<a href="https://github.com/vishaltandale00/relayer-graphcomplete/issues/514">#514</a>);</li>
+<li>when the draft resolves, only the latest waiting request proceeds; a node click made in a view the user has since left does nothing;</li>
+<li>once the draft resolves, Node Details shows the selected node from the latest state (<a href="https://github.com/vishaltandale00/relayer-graphcomplete/issues/515">#515</a>);</li>
 <li>the active editor preserves its DOM identity, value, focus, caret, selection, and scroll across unrelated workspace reconciliation;</li>
 <li>after confirmation, the composer shows only a compact collapsed annotation pill with a count;</li>
 <li>an annotation preview appears above the composer only after the user explicitly activates that pill;</li>
@@ -2289,6 +2295,9 @@ settings:
 <li>An accepted input action is immutable, node-owned, and occurrence-scoped by presenting interaction, layer, and action IDs. Reuse of the same action in another accepted occurrence is a distinct attachment choice.</li>
 <li>The user may commit multiple input actions from one or more nodes before Send. Committed values are durable thread-draft attachments, remain visible while navigating, and can be detached explicitly.</li>
 <li>Send is the only execution boundary. It atomically creates a new root interaction and snapshots every committed attachment into one immutable submitted-input attempt.</li>
+<li>Send waits for an input commit still in flight, including one started when pressing Send moves focus out of the input (<a href="https://github.com/vishaltandale00/relayer-graphcomplete/issues/521">#521</a>). That answer then goes with that Send.</li>
+<li>If that commit fails, the Send stops. The input reports the failure, and the message stays in the composer. A commit still in flight counts toward Send being ready.</li>
+<li>Input controls are locked while a Send is in flight. A commit made while an interaction runs goes into the draft for the next Send.</li>
 <li>No input action is required. An empty message is valid when at least one attachment is submitted.</li>
 <li>Text values preserve authored text. Select values persist stable option keys plus their accepted labels, with multi-select keys canonically ordered. The harness receives unordered prompt/control/value snapshots without product-assigned priority.</li>
 <li>Failure or stop restores the attempt's attachments to the draft unless a newer commit already owns the same occurrence. The immutable attempt cannot be retried in place; the next Send creates a new root.</li>

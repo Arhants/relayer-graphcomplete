@@ -253,9 +253,9 @@ TypeOK ==
   /\ srvRev \in 1..MaxRev /\ crev \in 1..MaxRev
   /\ srvVal \in 0..MaxVal /\ cval \in 0..MaxVal /\ field \in 0..MaxVal
 
-\* "Send is the only execution boundary" (PRD L2261), and Send snapshots the
-\* committed slots (ADR 0008:237-239): an answer the user entered before
-\* clicking Send goes with that Send when the Send is accepted.
+\* "Send waits for an input commit still in flight ... That answer then goes
+\* with that Send" (PRD 7.2, #521): an answer the user entered before clicking
+\* Send goes with that Send when the Send is accepted.
 SendCarriesEnteredAnswer ==
   outcome = "sent" /\ intended # NoVal => sentWith = intended
 
