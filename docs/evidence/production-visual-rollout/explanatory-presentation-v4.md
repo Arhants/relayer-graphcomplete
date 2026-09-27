@@ -81,3 +81,47 @@ The remaining stages passed separately: secret-boundary 2/2, Python 34/34,
 Ladybug receipt lint and PRD readability. Final build passed. Runtime preflight
 confirmed the sealed Prime configuration is available. Live V4 proof follows in
 the PR after this reviewed source snapshot is pushed.
+
+
+## Live run on 8ae1c02e
+
+Fresh product interaction7, graph42, Prime Basic, Qwen3.8 Max Prime, Auto,
+No folder. The stored pin was V4 (version node36); native user instructions
+contained Explanatory presentation, the capability overview and mechanics-only
+example framing. Native history retained medium reasoning.
+
+The ten-minute watchdog checked every20 seconds and cancelled at617 seconds;
+the attempt finalized execution_failed at617.553 seconds with no final accepted
+output. Cancellation acknowledged true. The run made58 tool calls and authored
+19 nodes across5 layers. It generated HTML/CSS comparisons, radiation diagrams,
+and wavelength/transmission charts; it did not call native image inspection.
+These observations come from public tool code/results, not a rendered-quality
+judgment. The final Product UI showed Failed: execution and no partial graph.
+
+The agent spent many calls inspecting APIs/compiler source before authoring.
+It eventually submitted layers and advanced current to layer15, then attempted
+to add actions to now-accepted nodes. The boundary rejected immutable_action_source.
+Graph final submission did not succeed. V4 delivery and visual authoring were
+observed; completion, rendered communication quality and native image inspection
+were not established. This is a failed smoke, not promotion evidence.
+
+Local ignored receipt: .relayer/live/pr500/live-smoke-v4-2026-09-27.json.
+
+## CI blockers on 8ae1c02e
+
+CI run36351386058 failed. GitHub's merge snapshot includes main's newly merged
+0032_interaction_stop_requests.sql, colliding with this branch's0032 V4 migration.
+This causes duplicate _sqlx_migrations.version failures in Rust and Vitest. The
+branch-local migration proof does not establish compatibility with current main.
+
+macOS packaged Prime verification also rejected a transitive closure mismatch:
+expected7d25b7c2c5aa3ede2cf731770f11f37e0de0eaba454dc3c62cbe561e4b2f4160,
+observed1253fd136c0d63e751fffdae68327a1b5cbb3176f2b9780de372744f8b83ef41.
+Read-only review by /root/presentation_availability confirmed prior retry resealing
+updated its pins and CI passed root-package identity checks before this failure.
+The differing transitive files remain unidentified. Current main changes dependency
+layout, which is a hypothesis, not proven cause. Do not accept the observed digest
+without comparing actual packaged inventory and dependency provenance.
+
+PR remains draft. No merge or release readiness claim. These failures are preserved
+rather than weakening integrity checks or retroactively changing the live snapshot.
