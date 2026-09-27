@@ -265,6 +265,36 @@ describe("affected-module plan v1", { timeout: 30_000 }, () => {
     ]);
   });
 
+  test.each([
+    "desktop/eval-main/eval-service.mjs",
+    "desktop/eval-renderer/main.js",
+    "packages/eval-runner/src/cases/graph-memory.ts",
+  ])("skips packaging but retains runtime tests for Eval-only %s", (path) => {
+    const result = plan(path);
+    expect(result.mode).toBe("affected");
+    expect(result.chapters.packaging).toBe(false);
+    expect(result.vitestFiles).toEqual(expect.arrayContaining(["test", "packages"]));
+    expect(result.runtimeRustPackages).toEqual(["relayer-app-server", "relayer-graph-server"]);
+  });
+
+  test.each([
+    "desktop/main/index.mjs",
+    "desktop/renderer/src/product-workspace/workspace.js",
+    "desktop/shared/target.mjs",
+    "desktop/preload/index.cjs",
+    "desktop/packaging/electron-builder.mjs",
+    "desktop/release/contract.mjs",
+    "desktop/package.json",
+    "package-lock.json",
+    "desktop/eval-main-other/new.mjs",
+    "unmapped/new-input.mjs",
+  ])("retains packaging for mixed Eval and product input %s", (path) => {
+    for (const paths of [
+      ["desktop/eval-main/eval-service.mjs", "desktop/eval-renderer/main.js", path],
+      [path, "desktop/eval-renderer/main.js", "desktop/eval-main/eval-service.mjs"],
+    ]) expect(plan(...paths).chapters.packaging).toBe(true);
+  });
+
   test("builds server binaries required by mapped Vitest integration tests", () => {
     const result = plan("desktop/renderer/src/product-workspace/workspace.js");
 
