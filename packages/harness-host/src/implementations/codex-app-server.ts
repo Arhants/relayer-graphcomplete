@@ -1,3 +1,4 @@
+import { NativeExecutionCancelled } from "../completion-execution.js";
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import { statSync } from "node:fs";
@@ -169,7 +170,7 @@ class CodexAppServerConnection {
     const abort = () => {
       queueMicrotask(() => {
         if (this.activeTurn === undefined) {
-          this.forceClose(new Error("Codex app-server was cancelled before turn attachment."));
+          this.forceClose(new NativeExecutionCancelled("Codex app-server was cancelled before turn attachment."));
         } else {
           void this.interrupt();
         }

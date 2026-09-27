@@ -58,34 +58,52 @@ export function recursiveCompleteFixtureFactory(
   brokerUrl = (context) => context.completionBroker.url,
   completeChild = complete,
 ) {
-  const childReadiness = deferred();
-  observed.childReadiness = childReadiness.promise;
-  void childReadiness.promise.catch(() => undefined);
-
-  return () => ({
-    supportsInvokedComplete: true,
-    traceSupport: () => ({
-      prompt: "none", messages: "none", reasoningSummaries: "none", modelCalls: "none",
-      toolCalls: "none", usage: "none", childStreams: "none", nativeArtifacts: "none",
-    }),
-    state: () => ({}),
-    complete(context, signal) {
-      const isChild = context.inputGraph.detail === RECURSIVE_FIXTURE_CHILD_TASK;
-      const execution = runRecursiveFixture(context, signal, observed, brokerUrl, completeChild, childReadiness).catch((error) => {
-        if (isChild) childReadiness.reject(error);
-        (observed.errors ??= []).push(`${context.inputGraph.detail}: [${error?.code}] ${error?.message}`);
-        throw error;
-      });
-      return nativeExecutionHandle(execution, undefined, Promise.resolve({
-        schemaVersion: 1,
-        provider: "fixture",
-        executionId: `fixture-${context.inputGraph.id}`,
-      }));
-    },
-  });
+  return () => {
+    const childReadinessByInteraction = new Map();
+    return {
+      supportsInvokedComplete: true,
+      traceSupport: () => ({
+        prompt: "none", messages: "none", reasoningSummaries: "none", modelCalls: "none",
+        toolCalls: "none", usage: "none", childStreams: "none", nativeArtifacts: "none",
+      }),
+      state: () => ({}),
+      complete(context, signal) {
+        const isChild = context.inputGraph.detail === RECURSIVE_FIXTURE_CHILD_TASK;
+        const childReadiness = isChild
+          ? childReadinessByInteraction.get(context.inputGraph.id)
+          : undefined;
+        const execution = runRecursiveFixture(
+          context,
+          signal,
+          observed,
+          brokerUrl,
+          completeChild,
+          childReadinessByInteraction,
+          childReadiness,
+        ).catch((error) => {
+          if (isChild) childReadiness?.reject(error);
+          (observed.errors ??= []).push(`${context.inputGraph.detail}: [${error?.code}] ${error?.message}`);
+          throw error;
+        });
+        return nativeExecutionHandle(execution, undefined, Promise.resolve({
+          schemaVersion: 1,
+          provider: "fixture",
+          executionId: `fixture-${context.inputGraph.id}`,
+        }));
+      },
+    };
+  };
 }
 
-async function runRecursiveFixture(context, signal, observed, brokerUrl, completeChild, childReadiness) {
+async function runRecursiveFixture(
+  context,
+  signal,
+  observed,
+  brokerUrl,
+  completeChild,
+  childReadinessByInteraction,
+  capturedChildReadiness,
+) {
   const graph = new RelayerGraphClient(context.graph.acquireCapability());
   if (context.inputGraph.detail === RECURSIVE_FIXTURE_CHILD_TASK) {
     const current = await graph.getCurrent();
@@ -104,9 +122,10 @@ async function runRecursiveFixture(context, signal, observed, brokerUrl, complet
       kind: "navigate", relation: "expand", label: "Response", target: layer, clientKey: "child-root",
     });
     await graph.advanceCurrent(layer, current.headRevision, "child-advance");
+    await observed.afterChildPublication?.(context);
     if (observed.childBlocks) {
       const aborted = waitForAbort(signal);
-      childReadiness.resolve();
+      capturedChildReadiness?.resolve();
       await aborted;
     }
     await new Promise((wait) => setTimeout(wait, observed.childDelayMs ?? 0));
@@ -144,30 +163,43 @@ async function runRecursiveFixture(context, signal, observed, brokerUrl, complet
   observed.preparedChild = inputGraph.interactionNode;
   process.env.RELAYER_COMPLETE_URL = brokerUrl(context);
   process.env.RELAYER_COMPLETE_TOKEN = context.completionBroker.token;
-  const child = completeChild(inputGraph);
-  observed.childCompletionId = child.completionId;
+  const blocksForChild = observed.childBlocks && !observed.fireAndForget;
+  const childReadiness = blocksForChild ? deferred() : undefined;
+  if (childReadiness) {
+    void childReadiness.promise.catch(() => undefined);
+    childReadinessByInteraction.set(inputGraph.interactionNode, childReadiness);
+  }
 
-  if (observed.fireAndForget) {
-    observed.fireAndForgetStarted = true;
-    await new Promise((ready) => setImmediate(ready));
+  try {
+    const child = completeChild(inputGraph);
+    observed.childCompletionId = child.completionId;
+
+    if (observed.fireAndForget) {
+      observed.fireAndForgetStarted = true;
+      await new Promise((ready) => setImmediate(ready));
+      await graph.returnCurrent(planLayer, advanced.revision, "return-plan");
+      return;
+    }
+
+    if (blocksForChild) {
+      await Promise.race([
+        childReadiness.promise,
+        child.result.then(
+          () => { throw new Error("child completed before publishing its current"); },
+          (error) => { throw error; },
+        ),
+      ]);
+      await child.stop("the parent no longer needs this branch");
+      observed.stoppedChild = await child.current.snapshot();
+    } else {
+      const startedAt = Date.now();
+      observed.childRootLayer = await child.result;
+      observed.awaitedMs = Date.now() - startedAt;
+    }
     await graph.returnCurrent(planLayer, advanced.revision, "return-plan");
-    return;
+  } finally {
+    if (childReadiness && childReadinessByInteraction.get(inputGraph.interactionNode) === childReadiness) {
+      childReadinessByInteraction.delete(inputGraph.interactionNode);
+    }
   }
-
-  if (observed.childBlocks) {
-    await Promise.race([
-      childReadiness.promise,
-      child.result.then(
-        () => { throw new Error("child completed before publishing its current"); },
-        (error) => { throw error; },
-      ),
-    ]);
-    await child.stop("the parent no longer needs this branch");
-    observed.stoppedChild = await child.current.snapshot();
-  } else {
-    const startedAt = Date.now();
-    observed.childRootLayer = await child.result;
-    observed.awaitedMs = Date.now() - startedAt;
-  }
-  await graph.returnCurrent(planLayer, advanced.revision, "return-plan");
 }

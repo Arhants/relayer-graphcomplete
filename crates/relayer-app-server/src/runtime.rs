@@ -130,6 +130,15 @@ pub(crate) struct RuntimeClient {
     configurations: HashMap<String, CatalogEntry>,
     unavailable_configurations: HashMap<String, UnavailableCatalogEntry>,
     temporal_features: relayer_graph_core::TemporalFeatureConfig,
+    /// How long one invoked-completion observation waits before the caller asks again.
+    observation_poll: std::time::Duration,
+}
+
+/// A recursive child's family admission, forwarded to its start exactly as a root run's.
+pub(crate) struct InvokedCompletionAdmission<'a> {
+    pub(crate) model_plan: &'a ExecutionModelPlan,
+    pub(crate) execution_lease_id: &'a str,
+    pub(crate) attempt_admission_id: &'a str,
 }
 
 pub(crate) struct CompleteInteraction<'a> {
@@ -201,6 +210,13 @@ pub(crate) struct PreparedInteraction {
     /// The policy this execution was admitted under. A recursive child launch must carry it
     /// too: once a session has taken a dynamic policy update, every later execution needs one.
     harness_policy: Option<ExecutionHarnessPolicy>,
+}
+
+impl PreparedInteraction {
+    /// The policy this execution was prepared under, which its admission must match.
+    pub(crate) fn harness_policy(&self) -> Option<&ExecutionHarnessPolicy> {
+        self.harness_policy.as_ref()
+    }
 }
 
 #[derive(Debug)]
@@ -465,7 +481,13 @@ impl RuntimeClient {
             configurations,
             unavailable_configurations,
             temporal_features,
+            observation_poll: CONTROL_REQUEST_TIMEOUT,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_observation_poll(&mut self, poll: std::time::Duration) {
+        self.observation_poll = poll;
     }
 
     pub(crate) fn has_configuration(&self, name: &str) -> bool {
@@ -937,6 +959,7 @@ impl RuntimeClient {
         prepared: &PreparedInteraction,
         invocation: PreparedInvocation,
         completion_broker: Option<RuntimeCompletionBroker<'_>>,
+        admission: Option<InvokedCompletionAdmission<'_>>,
     ) -> Result<RuntimeInvokedCompletionStart, RuntimeError> {
         if thread_id < 1
             || product_interaction_id < 1
@@ -982,6 +1005,11 @@ impl RuntimeClient {
                 "token": completion_broker.token,
             });
         }
+        if let Some(admission) = admission {
+            body["modelPlan"] = serde_json::to_value(admission.model_plan)?;
+            body["executionLeaseId"] = Value::String(admission.execution_lease_id.to_owned());
+            body["attemptAdmissionId"] = Value::String(admission.attempt_admission_id.to_owned());
+        }
         let started: RuntimeInvokedCompletionStart = self
             .post(
                 self.harness_url
@@ -1009,15 +1037,38 @@ impl RuntimeClient {
                 "invoked completion observation identifiers must be positive".into(),
             ));
         }
-        self.control_harness_get(&format!(
-            "sessions/{thread_id}/invoked-completions/{completion_id}"
-        ))
+        // A bounded long poll. The host answers when the run ends, or with `running` once
+        // the wait passes, which it sets shorter than this request's timeout so that no
+        // request is abandoned while the host still holds it. A timeout means the same.
+        let wait_ms = (self.observation_poll.as_millis() * 4 / 5).max(1);
+        self.control_harness_get(
+            &format!("sessions/{thread_id}/invoked-completions/{completion_id}?waitMs={wait_ms}"),
+            self.observation_poll,
+        )
         .await
     }
 
     pub(crate) async fn admit_provider_execution(
         &self,
         command: &CompleteInteraction<'_>,
+    ) -> Result<RuntimeExecutionAdmission, RuntimeError> {
+        self.admit_execution(command, true).await
+    }
+
+    /// Admits a recursive child inside its thread's live harness session. The session
+    /// already exists, and its root turn holds it while it awaits the child, so the
+    /// child must not ask the host to create or update it.
+    pub(crate) async fn admit_invoked_execution(
+        &self,
+        command: &CompleteInteraction<'_>,
+    ) -> Result<RuntimeExecutionAdmission, RuntimeError> {
+        self.admit_execution(command, false).await
+    }
+
+    async fn admit_execution(
+        &self,
+        command: &CompleteInteraction<'_>,
+        ensure_session: bool,
     ) -> Result<RuntimeExecutionAdmission, RuntimeError> {
         let selected = self
             .configurations
@@ -1046,19 +1097,21 @@ impl RuntimeClient {
                 "provider execution admission requires an attempt admission id".into(),
             )
         })?;
-        let _: Value = self
-            .post(
-                self.harness_url.join("sessions")?,
-                &serde_json::json!({
-                    "threadId": command.thread_id,
-                    "configuration": selected.configuration,
-                    "permissionProfileId": command.permission_profile.id,
-                    "workingDirectory": command.working_directory,
-                }),
-                &self.harness_control_token,
-                StatusCode::CREATED,
-            )
-            .await?;
+        if ensure_session {
+            let _: Value = self
+                .post(
+                    self.harness_url.join("sessions")?,
+                    &serde_json::json!({
+                        "threadId": command.thread_id,
+                        "configuration": selected.configuration,
+                        "permissionProfileId": command.permission_profile.id,
+                        "workingDirectory": command.working_directory,
+                    }),
+                    &self.harness_control_token,
+                    StatusCode::CREATED,
+                )
+                .await?;
+        }
         let admitted: ExecutionAdmissionResponse = self
             .post(
                 self.harness_url
@@ -1825,12 +1878,16 @@ impl RuntimeClient {
         response_json(response, StatusCode::OK).await
     }
 
-    async fn control_harness_get(&self, path: &str) -> Result<Value, RuntimeError> {
+    async fn control_harness_get(
+        &self,
+        path: &str,
+        timeout: std::time::Duration,
+    ) -> Result<Value, RuntimeError> {
         let response = self
             .client
             .get(self.harness_url.join(path)?)
             .bearer_auth(&self.harness_control_token)
-            .timeout(CONTROL_REQUEST_TIMEOUT)
+            .timeout(timeout)
             .send()
             .await?;
         response_json(response, StatusCode::OK).await
@@ -2373,6 +2430,18 @@ fn validate_admitted_plan(
             "provider broker admitted a different harness policy".into(),
         ));
     }
+    if admitted.digest != admitted_model_plan_digest(admitted)? {
+        return Err(RuntimeError::Protocol(
+            "provider broker returned an invalid admitted model-plan digest".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// The digest the harness host signs an admitted plan with, over everything but the digest.
+pub(crate) fn admitted_model_plan_digest(
+    admitted: &AdmittedExecutionModelPlan,
+) -> Result<String, RuntimeError> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct UnsignedPlan<'a> {
@@ -2392,20 +2461,60 @@ fn validate_admitted_plan(
     let mut plan_hasher = Sha256::new();
     plan_hasher.update(b"relayer.harness-model-plan.v1\0");
     plan_hasher.update(serde_json::to_vec(&unsigned)?);
-    let expected_plan_digest = format!("sha256:{:x}", plan_hasher.finalize());
-    if admitted.digest != expected_plan_digest {
-        return Err(RuntimeError::Protocol(
-            "provider broker returned an invalid admitted model-plan digest".into(),
-        ));
-    }
-    Ok(())
+    Ok(format!("sha256:{:x}", plan_hasher.finalize()))
 }
 
 fn harness_policy_digest(harness_policy: &ExecutionHarnessPolicy) -> Result<String, RuntimeError> {
+    harness_policy_value_digest(&serde_json::to_value(harness_policy)?)
+}
+
+/// The policy digest over the policy's JSON value, as the harness host signs it.
+pub(crate) fn harness_policy_value_digest(policy: &Value) -> Result<String, RuntimeError> {
     let mut hasher = Sha256::new();
     hasher.update(b"relayer.harness-policy.v1\0");
-    hasher.update(serde_json::to_vec(&serde_json::to_value(harness_policy)?)?);
+    hasher.update(serde_json::to_vec(policy)?);
     Ok(format!("sha256:{:x}", hasher.finalize()))
+}
+
+impl RuntimeError {
+    /// Whether the request ran out of time rather than receiving an answer.
+    pub(crate) fn is_timeout(&self) -> bool {
+        match self {
+            Self::Timeout(_) => true,
+            Self::Http(error) => error.is_timeout(),
+            _ => false,
+        }
+    }
+
+    /// Whether the harness itself answered with an error, as opposed to the request never
+    /// reaching it or its answer arriving unreadable.
+    pub(crate) fn is_host_answer(&self) -> bool {
+        matches!(self, Self::Remote { .. })
+    }
+
+    /// The graph failure reason for an error that ends a completion before its provider
+    /// runs: the category the harness reported, or `execution` when it reported none.
+    pub(crate) fn completion_failure_reason(&self) -> &'static str {
+        const REASONS: &[&str] = &[
+            "authentication",
+            "model_not_found",
+            "rate_limit",
+            "provider_5xx",
+            "provider_timeout",
+            "transport",
+            "provider_disconnected",
+            "model_unavailable",
+            "configuration",
+            "permission_receipt_mismatch",
+            "application_restart",
+        ];
+        let (category, _, _) = self.attempt_failure();
+        REASONS
+            .iter()
+            .copied()
+            .find(|reason| *reason == category)
+            .unwrap_or("execution")
+    }
 }
 
 #[derive(Debug, Error)]
@@ -2450,6 +2559,17 @@ pub(crate) enum RuntimeError {
 }
 
 impl RuntimeError {
+    pub(crate) fn cancellation_settled(&self) -> bool {
+        match self {
+            Self::Completion { operation, .. } => operation.cancellation_settled(),
+            Self::Remote { body, .. } => {
+                body.get("cancellationSettled").and_then(Value::as_bool) == Some(true)
+                    || body.get("executionNotStarted").and_then(Value::as_bool) == Some(true)
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) fn attempt_failure(&self) -> (&str, &str, bool) {
         if let Self::Completion { operation, .. } = self {
             return operation.attempt_failure();
@@ -2862,6 +2982,7 @@ mod tests {
                     source_action_id: 23,
                 },
                 None,
+                None,
             )
             .await
             .unwrap_err();
@@ -2880,6 +3001,7 @@ mod tests {
                     source_interaction_node_id: 17,
                     source_action_id: 23,
                 },
+                None,
                 None,
             )
             .await
