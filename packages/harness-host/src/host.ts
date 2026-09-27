@@ -1,3 +1,4 @@
+import { NativeExecutionCancelled } from "./completion-execution.js";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -764,6 +765,7 @@ export class HarnessHost {
     controller.signal.addEventListener("abort", abortApprovals, { once: true });
     let result: HarnessCompleteResult | HarnessInvokedCompletionObservation | undefined;
     let operationError: unknown;
+    let nativeStarted = false;
     try {
       if (this.closed) throw new Error("Harness host is closed");
       controller.signal.throwIfAborted();
@@ -783,10 +785,12 @@ export class HarnessHost {
         input.origin,
         input.completionBroker,
         input.onNativeExecution,
+        () => { nativeStarted = true; },
         input.admissionInteractionId,
       );
     } catch (error) {
       operationError = error;
+      if (!nativeStarted && error !== null && typeof error === "object") executionNotStartedErrors.add(error);
     }
     session.approvals.endCompletion(
       completeCallId,
@@ -982,6 +986,7 @@ export class HarnessHost {
     origin: CompletionOrigin = { kind: "root" },
     completionBroker?: HarnessCompletionBrokerScope,
     onNativeExecution?: (native: NativeExecutionHandle | undefined) => void,
+    onNativeStarted?: () => void,
     admissionInteractionId: number = productInteractionId,
   ): Promise<HarnessCompleteResult | HarnessInvokedCompletionObservation> {
     const graph = new RelayerGraphClient(capability);
@@ -1102,6 +1107,7 @@ export class HarnessHost {
         selectedAccess = accessLease.access;
       }
       harnessStarted = true;
+      onNativeStarted?.();
       const native = session.harness.complete({
         origin,
         inputGraph: interaction,
@@ -1119,7 +1125,11 @@ export class HarnessHost {
       onNativeExecution?.(isNativeExecutionHandle(native) ? native : undefined);
       await native;
     } catch (error) {
-      completionError = normalizeHarnessFailure(error, harnessStarted, observedTrace.effectBoundary());
+      // Adapters may reject with this exact AbortSignal reason before native work
+      // starts. Distinct abort, quiescence, or cleanup errors remain failures.
+      if (!signal.aborted || (error !== signal.reason && !(error instanceof NativeExecutionCancelled))) {
+        completionError = normalizeHarnessFailure(error, harnessStarted, observedTrace.effectBoundary());
+      }
     } finally {
       scope.close();
       if (releaseAccessAfterCompletion) {
@@ -1167,6 +1177,11 @@ export class HarnessHost {
       });
       await sealTrace(trace, signal.aborted ? "partial" : "failed", errorMessage(completionError));
       throw completionError;
+    }
+    if (signal.aborted) {
+      traceSink.emit({ type: "cancelled", data: { message: errorMessage(signal.reason) } });
+      await sealTrace(trace, "partial", "Stopped by user");
+      throw new HarnessCancellationSettled(errorMessage(signal.reason));
     }
     if (origin.kind === "invoke") {
       await sealTrace(trace, "complete");
@@ -1562,6 +1577,12 @@ export async function startHarnessHost(options: HarnessHostOptions): Promise<Run
   };
 }
 
+const executionNotStartedErrors = new WeakSet<object>();
+
+class HarnessCancellationSettled extends Error {
+  constructor(message: string) { super(message); }
+}
+
 async function route(host: HarnessHost, options: HarnessHostOptions, request: IncomingMessage, response: ServerResponse): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -1712,6 +1733,9 @@ async function route(host: HarnessHost, options: HarnessHostOptions, request: In
     if (request.method === "GET" && url.pathname === "/health") return reply(response, 200, { ok: true });
     return reply(response, 404, { error: "not_found" });
   } catch (error) {
+    if (error instanceof HarnessCancellationSettled) {
+      return reply(response, 409, { error: error.message, cancellationSettled: true });
+    }
     if (error instanceof HarnessApprovalCoordinatorError) {
       const status = error.code === "invalid_approval_request"
         ? 400
@@ -1720,9 +1744,12 @@ async function route(host: HarnessHost, options: HarnessHostOptions, request: In
           : 409;
       return reply(response, status, { error: error.code, message: error.message });
     }
-    return reply(response, 500, error instanceof HarnessExecutionFailure
-      ? { error: error.message, failureCategory: error.failureCategory, effectBoundary: error.effectBoundary }
-      : { error: error instanceof Error ? error.message : String(error), failureCategory: "application", effectBoundary: "unknown" });
+    return reply(response, 500, {
+      ...(error instanceof HarnessExecutionFailure
+        ? { error: error.message, failureCategory: error.failureCategory, effectBoundary: error.effectBoundary }
+        : { error: error instanceof Error ? error.message : String(error), failureCategory: "application", effectBoundary: "unknown" }),
+      ...(error !== null && typeof error === "object" && executionNotStartedErrors.has(error) ? { executionNotStarted: true } : {}),
+    });
   }
 }
 

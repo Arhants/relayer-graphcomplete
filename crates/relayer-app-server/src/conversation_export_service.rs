@@ -2488,6 +2488,8 @@ mod tests {
     #[test]
     fn exports_native_submitted_input_with_redacted_snapshot_and_portable_provenance() {
         let interaction = Interaction {
+            stop_requested: false,
+            stop_error: None,
             id: InteractionId::from_database(7),
             thread_id: ThreadId::from_database(1),
             sequence: 2,
@@ -2610,6 +2612,8 @@ mod tests {
     #[test]
     fn native_submitted_inputs_sort_by_materialized_portable_identity() {
         let interaction = Interaction {
+            stop_requested: false,
+            stop_error: None,
             id: InteractionId::from_database(7),
             thread_id: ThreadId::from_database(1),
             sequence: 2,
@@ -2675,6 +2679,8 @@ mod tests {
     #[test]
     fn exports_context_diagnostics_with_ordered_annotations_and_authority_free_ids() {
         let interaction = Interaction {
+            stop_requested: false,
+            stop_error: None,
             id: InteractionId::from_database(7),
             thread_id: ThreadId::from_database(1),
             sequence: 1,
@@ -2816,6 +2822,8 @@ mod tests {
     #[test]
     fn rejects_unbound_durable_contexts_until_graph_authority_is_bound() {
         let interaction = Interaction {
+            stop_requested: false,
+            stop_error: None,
             id: InteractionId::from_database(8),
             thread_id: ThreadId::from_database(1),
             sequence: 2,
@@ -3028,6 +3036,8 @@ mod tests {
         let source_id = InteractionId::from_database(1);
         let result_id = InteractionId::from_database(2);
         let interaction = Interaction {
+            stop_requested: false,
+            stop_error: None,
             id: result_id,
             thread_id: ThreadId::from_database(1),
             sequence: 2,

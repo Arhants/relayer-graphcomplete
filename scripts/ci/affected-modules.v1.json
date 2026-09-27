@@ -24,6 +24,10 @@
         "packages": ["relayer-app-server", "relayer-graph-server"]
       },
       {
+        "exact": "test/stop-run-integration.test.mjs",
+        "packages": ["relayer-app-server", "relayer-graph-server"]
+      },
+      {
         "exact": "test/first-message-composer-integration.test.mjs",
         "packages": ["relayer-app-server", "relayer-graph-server"]
       },
@@ -71,7 +75,7 @@
     {
       "prefix": "crates/relayer-app-server/",
       "package": "relayer-app-server",
-      "vitestFiles": ["test/first-message-composer-integration.test.mjs", "test/recursive-complete-e2e.test.mjs"]
+      "vitestFiles": ["test/first-message-composer-integration.test.mjs", "test/recursive-complete-e2e.test.mjs", "test/stop-run-integration.test.mjs"]
     },
     {
       "prefix": "crates/relayer-graph-core/",
@@ -211,6 +215,8 @@
     { "exact": "scripts/run-project-new-thread-test.mjs", "chapters": [] },
     { "exact": "scripts/run-recursive-live-run.mjs", "chapters": ["vitest"], "vitestFiles": ["test/recursive-live-run-model.test.mjs"] },
     { "exact": "scripts/test-desktop-approval.mjs", "chapters": [] },
+    { "exact": "scripts/test-desktop-stop.mjs", "chapters": [] },
+    { "exact": "test/support/stop-run-fixture.mjs", "chapters": ["vitest"], "vitestFiles": ["test/stop-run-integration.test.mjs"] },
     { "exact": "scripts/test-desktop-first-message.mjs", "chapters": [] },
     { "exact": "scripts/test-desktop-node-input-actions.mjs", "chapters": [] },
     { "exact": "scripts/test-desktop-project-new-thread.mjs", "chapters": [] },

@@ -409,6 +409,15 @@ pub(super) async fn validate(pool: &SqlitePool) -> Result<(), StorageError> {
         LEGACY_UNPINNED_PERSONAL_PRESENTATION_INTERACTION_COLUMNS,
     )
     .await?;
+    validate_columns(
+        pool,
+        "interaction_stop_requests",
+        &[
+            ("interaction_id", "INTEGER", true, 1),
+            ("error", "TEXT", false, 0),
+        ],
+    )
+    .await?;
     validate_columns(pool, "interaction_attempts", INTERACTION_ATTEMPT_COLUMNS).await?;
     validate_columns(
         pool,
@@ -679,6 +688,15 @@ pub(super) async fn validate(pool: &SqlitePool) -> Result<(), StorageError> {
         "personal_presentation_versions",
         "version_key",
         "RESTRICT",
+    )
+    .await?;
+    validate_foreign_key(
+        pool,
+        "interaction_stop_requests",
+        "interaction_id",
+        "interactions",
+        "id",
+        "CASCADE",
     )
     .await?;
     validate_foreign_key(

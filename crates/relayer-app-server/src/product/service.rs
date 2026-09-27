@@ -1947,6 +1947,39 @@ impl ProductService {
             .map_err(Into::into)
     }
 
+    pub(crate) async fn request_interaction_stop(
+        &self,
+        thread: ThreadId,
+        interaction: super::InteractionId,
+    ) -> Result<(), ProductError> {
+        self.ensure_interaction_mutable(interaction).await?;
+        self.storage
+            .request_interaction_stop(thread, interaction)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn record_stop_error(
+        &self,
+        interaction: super::InteractionId,
+        error: &str,
+    ) -> Result<(), ProductError> {
+        self.storage
+            .record_stop_error(interaction, error)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn finish_interaction_stopped(
+        &self,
+        interaction: super::InteractionId,
+    ) -> Result<(), ProductError> {
+        self.storage
+            .finish_interaction_stopped(interaction, &now())
+            .await
+            .map_err(Into::into)
+    }
+
     pub(crate) async fn get_interaction(
         &self,
         interaction_id: super::InteractionId,
