@@ -471,7 +471,9 @@ async function runOnce({
   } finally {
     await productServer.close().catch(() => {});
     await runtime.close().catch(() => {});
-    rmSync(dataDirectory, { recursive: true, force: true });
+    // --keep-data preserves the product and graph databases for diagnosis.
+    if (process.argv.includes("--keep-data")) console.error(`Kept live-run data in ${dataDirectory}`);
+    else rmSync(dataDirectory, { recursive: true, force: true });
   }
 }
 
