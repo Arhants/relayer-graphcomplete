@@ -195,7 +195,17 @@ async fn rebuild_restores_active_stopped_and_failed_accepted_currents() {
 
 #[cfg(feature = "crash-test-support")]
 async fn add_second_accepted_target(database: &GraphDatabase) {
-    let thread = ThreadId::new(42).unwrap();
+    let interaction = draft_target(database, ThreadId::new(42).unwrap()).await;
+    database
+        .writer_for_subgraph(interaction)
+        .await
+        .unwrap()
+        .complete(interaction)
+        .await
+        .unwrap();
+}
+
+async fn draft_target(database: &GraphDatabase, thread: ThreadId) -> NodeId {
     let interaction = database
         .create_interaction(None, thread, "Explain the worker")
         .await
@@ -242,7 +252,7 @@ async fn add_second_accepted_target(database: &GraphDatabase) {
         })
         .await
         .unwrap();
-    writer.complete(interaction.id).await.unwrap();
+    interaction.id
 }
 
 #[tokio::test]
@@ -1136,5 +1146,270 @@ async fn quarantined_rollback_is_an_independent_durable_copy() {
     assert_eq!(
         std::fs::read(rollback).unwrap(),
         b"damaged independent bytes"
+    );
+}
+
+#[cfg(feature = "crash-test-support")]
+#[tokio::test]
+async fn completion_waits_for_target_rebuild_without_blocking_other_targets() {
+    let _guard = lifecycle_test_guard().await;
+    use relayer_graph_server::search_index::SearchIndexLifecycleFault;
+    use std::{sync::Arc, time::Duration};
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("graph.db");
+    let database = accepted_sqlite_graph(&path).await;
+    let first = LadybugSearchIndex::open_reconciled(&path, &database)
+        .await
+        .unwrap();
+    first
+        .inject_lifecycle_corruption("MATCH (n:Content) DETACH DELETE n")
+        .await
+        .unwrap();
+    drop(first);
+    let index = LadybugSearchIndex::open_reconciled_with_fault(
+        &path,
+        &database,
+        SearchIndexLifecycleFault::HoldLogicalRebuild,
+    )
+    .await
+    .unwrap();
+    let database = database.with_search_index(Arc::new(index.clone()));
+    let interaction = draft_target(&database, ThreadId::new(41).unwrap()).await;
+    let writer = database.writer_for_subgraph(interaction).await.unwrap();
+    let mut pending = Box::pin(writer.complete(interaction));
+    // Poll the actual submit while the rebuild gate is closed. The timer is an
+    // observation bound, not a delay/retry used to make acceptance succeed.
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), &mut pending)
+            .await
+            .is_err()
+    );
+    assert!(
+        writer
+            .current_completion()
+            .await
+            .unwrap()
+            .current_layer_id
+            .is_none()
+    );
+    assert!(writer.completion_output().await.unwrap().is_none());
+    tokio::time::timeout(
+        Duration::from_secs(2),
+        add_second_accepted_target(&database),
+    )
+    .await
+    .unwrap();
+    index.resume_logical_rebuild();
+    tokio::time::timeout(Duration::from_secs(5), pending)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(index.normalized_rows_for(
+        SearchTarget::Thread(ThreadId::new(41).unwrap()),
+        "MATCH (n:Content) WHERE n.title = 'Worker' AND list_contains(n.published_targets, 'thread:41') RETURN count(n)",
+    ).await.unwrap(), vec![vec![json!({"type":"integer","value":"1"})]]);
+}
+
+#[cfg(feature = "crash-test-support")]
+#[tokio::test]
+async fn readiness_wait_deadline_drop_and_authority_changes_do_not_accept() {
+    let _guard = lifecycle_test_guard().await;
+    use relayer_graph_server::search_index::SearchIndexLifecycleFault;
+    use std::{sync::Arc, time::Duration};
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("graph.db");
+    let database = accepted_sqlite_graph(&path).await;
+    let first = LadybugSearchIndex::open_reconciled(&path, &database)
+        .await
+        .unwrap();
+    first
+        .inject_lifecycle_corruption("MATCH (n:Content) DETACH DELETE n")
+        .await
+        .unwrap();
+    drop(first);
+    let index = LadybugSearchIndex::open_reconciled_with_fault(
+        &path,
+        &database,
+        SearchIndexLifecycleFault::HoldLogicalRebuild,
+    )
+    .await
+    .unwrap();
+    let database = database.with_search_index(Arc::new(index.clone()));
+    let timed = draft_target(&database, ThreadId::new(41).unwrap()).await;
+    let short = database
+        .clone()
+        .with_search_index_budget(Duration::from_millis(10));
+    let error = short
+        .writer_for_subgraph(timed)
+        .await
+        .unwrap()
+        .complete(timed)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("within its budget"));
+
+    let cancelled = draft_target(&database, ThreadId::new(41).unwrap()).await;
+    let cancel_writer = database.writer_for_subgraph(cancelled).await.unwrap();
+    let mut cancelled_work = Box::pin(cancel_writer.complete(cancelled));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(10), &mut cancelled_work)
+            .await
+            .is_err()
+    );
+    drop(cancelled_work);
+
+    let revoked = draft_target(&database, ThreadId::new(41).unwrap()).await;
+    let epoch = database
+        .activate_completion_authority(revoked)
+        .await
+        .unwrap();
+    let revoked_writer = database
+        .writer_for_completion_authority(revoked, epoch)
+        .await
+        .unwrap();
+    let mut revoked_work = Box::pin(revoked_writer.complete(revoked));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(10), &mut revoked_work)
+            .await
+            .is_err()
+    );
+    database
+        .cutover_completion_authority(revoked)
+        .await
+        .unwrap();
+
+    let stopped = draft_target(&database, ThreadId::new(41).unwrap()).await;
+    let stopped_writer = database.writer_for_subgraph(stopped).await.unwrap();
+    let mut stopped_work = Box::pin(stopped_writer.complete(stopped));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(10), &mut stopped_work)
+            .await
+            .is_err()
+    );
+    stopped_writer
+        .transition_current(
+            0,
+            "stop-wait",
+            CurrentTransition::Stop {
+                reason: "cancelled_by_user".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+    index.resume_logical_rebuild();
+    index.wait_until_reconciled().await.unwrap();
+    assert!(revoked_work.await.is_err());
+    assert!(
+        stopped_work
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("terminal")
+    );
+    for interaction in [timed, cancelled, revoked, stopped] {
+        let writer = database.writer_for_subgraph(interaction).await.unwrap();
+        assert!(
+            writer
+                .current_completion()
+                .await
+                .unwrap()
+                .current_layer_id
+                .is_none()
+        );
+        assert!(writer.completion_output().await.unwrap().is_none());
+    }
+}
+
+#[cfg(feature = "crash-test-support")]
+#[tokio::test]
+async fn ordinary_return_reopens_without_logical_repair() {
+    let _guard = lifecycle_test_guard().await;
+    use relayer_graph_server::search_index::SearchTargetReadiness;
+    use std::sync::Arc;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("graph.db");
+    let database = GraphDatabase::open(&path).await.unwrap();
+    let index = LadybugSearchIndex::open_reconciled(&path, &database)
+        .await
+        .unwrap();
+    let database = database.with_search_index(Arc::new(index.clone()));
+    add_second_accepted_target(&database).await;
+    let target = SearchTarget::Thread(ThreadId::new(42).unwrap());
+    assert_eq!(
+        index.revision(target).await.unwrap(),
+        database.search_index_revision(target).await.unwrap()
+    );
+    assert_eq!(
+        index
+            .normalized_rows("MATCH ()-[r:EXPANDS]->() RETURN r.state")
+            .await
+            .unwrap(),
+        vec![vec![json!({"type":"string","value":"accepted"})]]
+    );
+    drop(database);
+    drop(index);
+    let database = GraphDatabase::open(&path).await.unwrap();
+    let index = LadybugSearchIndex::open_reconciled(&path, &database)
+        .await
+        .unwrap();
+    assert_eq!(index.target_readiness(target), SearchTargetReadiness::Ready);
+}
+
+#[cfg(feature = "crash-test-support")]
+#[tokio::test]
+async fn failed_rebuild_wakes_pending_submission_without_acceptance() {
+    let _guard = lifecycle_test_guard().await;
+    use relayer_graph_server::search_index::SearchIndexLifecycleFault;
+    use std::{sync::Arc, time::Duration};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("graph.db");
+    let database = accepted_sqlite_graph(&path).await;
+    let first = LadybugSearchIndex::open_reconciled(&path, &database)
+        .await
+        .unwrap();
+    first
+        .inject_lifecycle_corruption("MATCH (n:Content) DETACH DELETE n")
+        .await
+        .unwrap();
+    drop(first);
+    let index = LadybugSearchIndex::open_reconciled_with_fault(
+        &path,
+        &database,
+        SearchIndexLifecycleFault::HoldLogicalRebuild,
+    )
+    .await
+    .unwrap();
+    let database = database.with_search_index(Arc::new(index.clone()));
+    let interaction = draft_target(&database, ThreadId::new(41).unwrap()).await;
+    let writer = database.writer_for_subgraph(interaction).await.unwrap();
+    let mut pending = Box::pin(writer.complete(interaction));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(10), &mut pending)
+            .await
+            .is_err()
+    );
+    // Fail the real rebuild's final generation-pointer comparison.
+    let layout = index.layout().clone();
+    let replacement = layout.create_generation().unwrap();
+    layout.publish(&replacement).unwrap();
+    index.resume_logical_rebuild();
+    assert!(
+        pending
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("rebuild failed")
+    );
+    assert!(writer.completion_output().await.unwrap().is_none());
+    assert!(
+        writer
+            .current_completion()
+            .await
+            .unwrap()
+            .current_layer_id
+            .is_none()
     );
 }

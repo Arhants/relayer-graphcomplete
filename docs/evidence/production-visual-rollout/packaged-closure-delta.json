@@ -1,0 +1,42 @@
+[
+  {
+    "path": "node_modules/@earendil-works/pi-coding-agent/package.json",
+    "before": "365c6c063a6b792eb4e5c3759989d9ff82f60b24c424a588bc929d1fdb22e882",
+    "after": "b4b2096267f5399e51317b1f1f6d9314486db7e47f1660d1a146f0d6a2c88b59"
+  },
+  {
+    "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/marked/package.json",
+    "before": "5a43adf708c24038a44ecd5f642bc55e3226f9e8e7997fca20272f32037970e3",
+    "after": "cce2f9a5add0fd9cc74a5ba5a2efbddaeff4d229fe778d68d14d817021f28260"
+  },
+  {
+    "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/strip-ansi/index.js",
+    "before": null,
+    "after": "9ff7e1abf2727fbf9854a9dfcc1e69d1f9a0b23ccc0649269fc1c4fa8e44bd79"
+  },
+  {
+    "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/strip-ansi/license",
+    "before": null,
+    "after": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3"
+  },
+  {
+    "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/strip-ansi/package.json",
+    "before": null,
+    "after": "1b2e35a6d0a7cbce42905581d7dbb058715da7a0a31037bfc09dc36d35fdf3cb"
+  },
+  {
+    "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/ansi-regex/index.js",
+    "before": null,
+    "after": "2a559673ea6761000b019f83b538a6912cc11d62c72c192c8edea0ced9c77973"
+  },
+  {
+    "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/ansi-regex/license",
+    "before": null,
+    "after": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3"
+  },
+  {
+    "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/ansi-regex/package.json",
+    "before": null,
+    "after": "d72ae880601484c56197debc062ea1f86a84372f611fe8714b98317c98533ad1"
+  }
+]

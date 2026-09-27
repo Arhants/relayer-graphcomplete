@@ -19,7 +19,14 @@ function tokenCapabilities(model) {
   const maxOutputTokens = model?.top_provider?.max_completion_tokens;
   if (!Number.isSafeInteger(contextWindow) || contextWindow < 1
     || !Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1) return null;
-  return { contextWindow, maxOutputTokens };
+  const parameters = model?.supported_parameters;
+  const reasoning = Array.isArray(parameters) && parameters.every((value) => typeof value === "string")
+    ? parameters.includes("reasoning") || parameters.includes("reasoning_effort")
+    : undefined;
+  const inputs = model?.architecture?.input_modalities;
+  const imageInput = Array.isArray(inputs) && inputs.every((value) => typeof value === "string")
+    ? inputs.includes("image") : undefined;
+  return { contextWindow, maxOutputTokens, ...(imageInput === undefined ? {} : { imageInput }), ...(reasoning === undefined ? {} : { reasoning, reasoningEffort: parameters.includes("reasoning_effort") }) };
 }
 
 function usesCanonicalEndpoint(endpoint) {
