@@ -86,6 +86,7 @@ export class AuthoredInputSendWorld {
     this.put = null;
     this.post = null;
     this.sentWith = 0;
+    this.clicked = false;
     this.refused = false;
     const node = { id: 7, clientKey: "question", kind: "question", icon: "box", title: "Question", authoredDetail: AUTHORED_DETAIL };
     const actions = [{ id: 13, clientKey: "input-action", sourceNodeId: 7, sourceLayerId: 10, sourceLayerClientKey: "layer", kind: "input", ...ACTION }];
@@ -176,7 +177,7 @@ export class AuthoredInputSendWorld {
         const send = this.window.document.querySelector("#sendInteraction");
         if (send.disabled) throw new Error("ClickSend: Send is disabled");
         send.click();
-        await until(() => this.post, "the follow-up request");
+        this.clicked = true;
         break;
       }
       case "ServeCommit": {
@@ -218,6 +219,7 @@ export class AuthoredInputSendWorld {
       case "SendReturns": {
         const { post } = this;
         this.post = null;
+        this.clicked = false;
         if (post.result === "ok") {
           this.sentWith = post.reserved;
           post.response.resolve({ id: 6 });
@@ -240,9 +242,10 @@ export class AuthoredInputSendWorld {
     const put = this.put
       ? { st: this.put.result ? "answered" : "inflight", expected: this.put.expected, val: this.put.val }
       : { st: "none", expected: 0, val: 0 };
+    // A clicked Send that has not posted yet is waiting on the commit.
     const send = this.post
       ? { st: this.post.result ? "answered" : "inflight", expected: this.post.expected }
-      : { st: "idle", expected: 0 };
+      : { st: this.clicked ? "waiting" : "idle", expected: 0 };
     return {
       srvRev: this.server.rev,
       srvVal: this.server.val,

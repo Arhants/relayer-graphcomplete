@@ -1570,6 +1570,27 @@ export function createProductWorkspace({
   const inputErrors = new Map();
   const inputTouched = new Set();
   const inputPending = createInputMutationTracker();
+  // An authored Node Detail input commits on change, and pressing Send blurs
+  // it first. Send waits for these commits instead of being disabled by
+  // them, so that click is not lost and it carries the committed answer.
+  const authoredInputCommits = new Map();
+  const trackAuthoredInputCommit = (threadId, commit) => {
+    const key = String(threadId);
+    const commits = authoredInputCommits.get(key) ?? new Set();
+    authoredInputCommits.set(key, commits);
+    commits.add(commit);
+    void commit.catch(() => {}).finally(() => {
+      commits.delete(commit);
+      if (!commits.size && authoredInputCommits.get(key) === commits) authoredInputCommits.delete(key);
+    });
+    return commit;
+  };
+  const settleAuthoredInputCommits = async (threadId) => {
+    let commits;
+    while ((commits = authoredInputCommits.get(String(threadId)))?.size) {
+      await Promise.allSettled([...commits]);
+    }
+  };
   const inputRailScroll = new Map();
   let inputFocusRequest = null;
   const renderedInputDraftStatusKeys = new Map();
@@ -3416,6 +3437,9 @@ export function createProductWorkspace({
     for (const control of $("#nodeInputActions").querySelectorAll("button, textarea")) {
       control.disabled = true;
     }
+    if (selection.selectedNodeId != null) {
+      void selectNode(getState(), selection.selectedNodeId, { notify: false });
+    }
     try {
       if (!draftOverride && contextDraftController) {
         await ensureContextDraftsLoaded(threadId);
@@ -3434,9 +3458,10 @@ export function createProductWorkspace({
           modelSelection: sendRequest.modelSelection,
         });
         intent = await selectInteractionSendIntentAfterInputReconciliation({
-          awaitInputDraft: () => inputDraftController
-            ? ensureInputDraftLoaded(threadId)
-            : Promise.resolve(),
+          awaitInputDraft: async () => {
+            await settleAuthoredInputCommits(threadId);
+            if (inputDraftController) await ensureInputDraftLoaded(threadId);
+          },
           selectionIsCurrent: () => sendIntentIsCurrentThread(getThread()?.id, threadId)
             && sendAttempt === attempt,
           replayIntent: () => confirmationSendReplayIntent({
@@ -4945,10 +4970,13 @@ export function createProductWorkspace({
           : null;
         authoredCapabilityState[mount.id] = {
           value: initialInputStageValue(action, attachment),
+          // Locked like the legacy controls while a Send is in flight or the
+          // turn is pending, so no commit races the Send's reservation.
           disabled: mode === "review"
             || !inputDraftController
             || !loadedInputDraftThreads.has(String(getThread()?.id))
-            || occurrence === null,
+            || occurrence === null
+            || contextStagingDisabled(),
         };
       }
     }
@@ -5025,7 +5053,10 @@ export function createProductWorkspace({
         const occurrence = createInputOccurrence(interactionNodeId, layerId, action.id);
         authoredDetailRuntime?.updateCapability(context.mountId, { busy: true, error: null });
         try {
-          const draft = await inputDraftController.commit(thread.id, occurrence, action, value);
+          const draft = await trackAuthoredInputCommit(
+            thread.id,
+            inputDraftController.commit(thread.id, occurrence, action, value),
+          );
           const attachment = committedInputAttachment(draft, occurrence);
           markInputCompositionChanged(thread.id);
           authoredDetailRuntime?.updateCapability(context.mountId, {

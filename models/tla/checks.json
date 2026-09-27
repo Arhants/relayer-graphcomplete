@@ -82,15 +82,10 @@
       "QueueWhileResolving": "FALSE",
       "RefreshAfterResolve": "FALSE"
     },
-    "input-today": {
+    "input": {
       "MaxVal": "2",
       "MaxRev": "5",
-      "AuthoredGatesSend": "FALSE"
-    },
-    "input-fixed": {
-      "MaxVal": "2",
-      "MaxRev": "5",
-      "AuthoredGatesSend": "TRUE"
+      "SendAwaitsAuthoredCommits": "TRUE"
     }
   },
   "checks": [
@@ -507,9 +502,24 @@
       "finding": "Replaying the latest request made while a draft resolves, and re-rendering the selection from the latest state afterwards, restore every inspector promise."
     },
     {
-      "id": "input-answer-skipped",
+      "id": "input-send-carries-answer",
       "module": "AuthoredInputSend",
-      "preset": "input-today",
+      "preset": "input",
+      "invariants": [
+        "TypeOK",
+        "SendCarriesEnteredAnswer",
+        "SendNotRefusedByOwnAnswer"
+      ],
+      "expect": "pass",
+      "finding": "Send waits for an authored input commit started by the click, so it carries the answer and is not refused (fixed; #521: the Send could go without the answer, or be refused by it)."
+    },
+    {
+      "id": "input-send-without-waiting",
+      "module": "AuthoredInputSend",
+      "preset": "input",
+      "constants": {
+        "SendAwaitsAuthoredCommits": "FALSE"
+      },
       "invariants": [
         "TypeOK",
         "SendCarriesEnteredAnswer"
@@ -517,32 +527,7 @@
       "expect": {
         "violated": "SendCarriesEnteredAnswer"
       },
-      "finding": "An authored input committed by clicking Send is not awaited: the Send can be accepted without the answer, which then lands in the next turn's draft."
-    },
-    {
-      "id": "input-send-refused",
-      "module": "AuthoredInputSend",
-      "preset": "input-today",
-      "invariants": [
-        "TypeOK",
-        "SendNotRefusedByOwnAnswer"
-      ],
-      "expect": {
-        "violated": "SendNotRefusedByOwnAnswer"
-      },
-      "finding": "If that commit lands first, the Send carries a stale draft revision and is refused with input_draft_revision_conflict."
-    },
-    {
-      "id": "input-fixed",
-      "module": "AuthoredInputSend",
-      "preset": "input-fixed",
-      "invariants": [
-        "TypeOK",
-        "SendCarriesEnteredAnswer",
-        "SendNotRefusedByOwnAnswer"
-      ],
-      "expect": "pass",
-      "finding": "Gating Send on authored commits, as legacy input controls already do, restores both promises."
+      "finding": "Without the wait, a Send served before the commit goes without the answer (#521)."
     }
   ]
 }

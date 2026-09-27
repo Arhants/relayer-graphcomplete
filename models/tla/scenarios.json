@@ -1168,7 +1168,7 @@
     {
       "id": "input-commit-then-send",
       "module": "AuthoredInputSend",
-      "preset": "input-today",
+      "preset": "input",
       "init": "srvOther = FALSE",
       "promises": [
         "SendCarriesEnteredAnswer",
@@ -1201,45 +1201,15 @@
       ]
     },
     {
-      "id": "input-answer-skipped",
+      "id": "input-send-waits-for-commit",
       "module": "AuthoredInputSend",
-      "preset": "input-today",
+      "preset": "input",
       "init": "srvOther = FALSE",
       "promises": [
+        "SendCarriesEnteredAnswer",
         "SendNotRefusedByOwnAnswer"
       ],
-      "summary": "Clicking Send commits the authored answer on blur; the Send is served first and is accepted without it.",
-      "steps": [
-        [
-          "Type",
-          1
-        ],
-        [
-          "Commit"
-        ],
-        [
-          "ClickSend"
-        ],
-        [
-          "ServeSend"
-        ],
-        [
-          "SendReturns"
-        ]
-      ],
-      "violatedAtEnd": [
-        "SendCarriesEnteredAnswer"
-      ]
-    },
-    {
-      "id": "input-send-refused",
-      "module": "AuthoredInputSend",
-      "preset": "input-today",
-      "init": "srvOther = FALSE",
-      "promises": [
-        "SendCarriesEnteredAnswer"
-      ],
-      "summary": "Clicking Send commits the authored answer on blur; the commit is served first and the Send is refused.",
+      "summary": "Clicking Send commits the authored answer on blur; the Send waits for the commit and reserves the answer.",
       "steps": [
         [
           "Type",
@@ -1255,17 +1225,14 @@
           "ServeCommit"
         ],
         [
-          "ServeSend"
+          "CommitReturns"
         ],
         [
-          "CommitReturns"
+          "ServeSend"
         ],
         [
           "SendReturns"
         ]
-      ],
-      "violatedAtEnd": [
-        "SendNotRefusedByOwnAnswer"
       ]
     }
   ]

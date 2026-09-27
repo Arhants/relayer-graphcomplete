@@ -22,10 +22,11 @@ EXTENDS Naturals
 CONSTANTS
   MaxVal,           \* bound on distinct typed values
   MaxRev,           \* bound on the draft revision
-  AuthoredGatesSend \* FALSE today: an authored commit does not register
-                    \* with inputPending (WS:4959-4993), so Send stays
-                    \* enabled while it is in flight; legacy controls do
-                    \* (WS:4668-4673, 3113-3116)
+  SendAwaitsAuthoredCommits \* TRUE since #521: Send waits for the thread's
+                    \* authored input commits before it captures the draft
+                    \* revision (WS settleAuthoredInputCommits). Before, Send
+                    \* stayed enabled and captured the revision at the click
+                    \* while an authored commit was in flight.
 
 NoVal == 0
 Idle == [st |-> "none", expected |-> 0, val |-> NoVal, tracked |-> FALSE,
@@ -67,11 +68,10 @@ Init ==
 (* The user.                                                              *)
 
 \* Typing changes only the DOM (RT:397-406). The host is disabled while its
-\* own commit is busy (RT:284). Authored mounts stay enabled during a send
-\* and a running turn (WS:4896-4902), unlike legacy controls; ADR 0008
-\* allows a newer commit during a run, so that is not modeled as a defect.
+\* own commit is busy (RT:284), and, like the legacy controls, while a Send
+\* is in flight or the turn is pending (contextStagingDisabled).
 Type(v) ==
-  /\ v # field /\ put.st = "none"
+  /\ v # field /\ put.st = "none" /\ send.st = "idle" /\ ~running
   /\ field' = v
   /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, crev, cval, put, send,
                  running, intended, raced, sentWith, outcome>>
@@ -80,20 +80,21 @@ Type(v) ==
 \* (RT:380-388, 409; WS:4959-4993) at the controller's revision
 \* (NIC:486-497). Pressing the mouse on Send blurs the field first.
 Commit ==
-  /\ put.st = "none" /\ field # NoVal /\ field # cval
+  /\ put.st = "none" /\ field # NoVal /\ field # cval /\ send.st = "idle" /\ ~running
   /\ put' = [st |-> "inflight", expected |-> crev, val |-> field,
-             tracked |-> AuthoredGatesSend, result |-> "none", rev |-> 0]
+             tracked |-> FALSE, result |-> "none", rev |-> 0]
   /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, crev, cval, field, send,
                  running, intended, raced, sentWith, outcome>>
 
-\* Send is enabled when no send is in flight, the turn is not running, and
-\* no tracked input mutation is pending (WS:3113-3123). It captures the
-\* controller's revision (WS:3363-3373); the draft-load awaits before the
-\* POST resolve without yielding (WS:3386-3423).
+\* Send is enabled when no send is in flight and the turn is not running
+\* (WS:3113-3123). Its intent is rebuilt with the controller's revision
+\* after the input reconciliation await (WS:710-731); that await resolves
+\* without yielding unless an authored commit is pending and awaited.
 ClickSend ==
   /\ send.st = "idle" /\ ~running
-  /\ ~(put.st # "none" /\ put.tracked)
-  /\ send' = [st |-> "inflight", expected |-> crev, result |-> "none", reserved |-> NoVal]
+  /\ LET waits == SendAwaitsAuthoredCommits /\ put.st # "none" IN
+     send' = [st |-> IF waits THEN "waiting" ELSE "inflight",
+              expected |-> IF waits THEN 0 ELSE crev, result |-> "none", reserved |-> NoVal]
   /\ intended' = IF put.st # "none" THEN put.val ELSE cval
   /\ raced' = (put.st # "none")
   /\ outcome' = "none"
@@ -144,14 +145,17 @@ ServeSend ==
 (* Replies reaching the renderer.                                         *)
 
 \* The commit returns; a conflict adopts the server draft (NIC:465-474) and
-\* shows the error on the mount (WS:4987-4991).
+\* shows the error on the mount. A Send waiting on it then captures the
+\* controller's revision.
 CommitReturns ==
   /\ put.st = "answered"
-  /\ IF put.result = "ok"
-     THEN /\ crev' = put.rev /\ cval' = put.val
-     ELSE /\ crev' = srvRev /\ cval' = srvVal
+  /\ LET rev == IF put.result = "ok" THEN put.rev ELSE srvRev IN
+     /\ crev' = rev
+     /\ cval' = IF put.result = "ok" THEN put.val ELSE srvVal
+     /\ send' = IF send.st = "waiting" THEN [send EXCEPT !.st = "inflight", !.expected = rev]
+               ELSE send
   /\ put' = Idle
-  /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, field, send, running,
+  /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, field, running,
                  intended, raced, sentWith, outcome>>
 
 \* The POST returns. Success reloads the draft after the thread refresh

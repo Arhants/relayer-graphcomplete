@@ -327,19 +327,16 @@ follow-up Send:
 - Send's gates and the draft revision it captures;
 - the server's commit rule and its reservation of committed attachments;
 - the turn ending, with the failure restore;
+- the lock on authored inputs while a Send is in flight or the turn is pending;
 - the renderer's reloads after each response.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `input-answer-skipped` | Confirmed; replayed | Legacy input controls register each commit with `inputPending`, which keeps Send disabled; an authored input's commit does not. Mousedown on Send blurs the input, whose `change` commits it, so the commit and the Send are in flight together at the same revision. If the Send is served first, it is accepted without the answer, which then lands in the next turn's draft. With other committed inputs, the commit is refused instead. Scenario: `input-answer-skipped`. |
-| `input-send-refused` | Confirmed; replayed | If the commit is served first, the Send's revision is stale and it is refused with `input_draft_revision_conflict`. Scenario: `input-send-refused`. |
-| `input-fixed` | passes | Gating Send on authored commits (`AuthoredGatesSend`) restores both promises. |
+| `input-send-carries-answer` | Fixed; now passes | Before the fix (#521): legacy input controls registered each commit with `inputPending`, which kept Send disabled; an authored input's commit did not. Mousedown on Send blurs the input, whose `change` commits it, so the commit and the Send went out together at the same revision. A Send served first went without the answer, which then landed in the next turn's draft; a commit served first got the Send refused with `input_draft_revision_conflict`. Send now waits for the thread's authored commits before it captures the draft revision, and authored inputs are locked while a Send is in flight or the turn is pending, as legacy controls are. Scenario: `input-send-waits-for-commit`. |
+| `input-send-without-waiting` | Records the bug | With `SendAwaitsAuthoredCommits` off, a Send served before the commit goes without the answer. |
 
-Disabling Send during the commit would swallow the click that caused the
-blur; letting Send await pending commits is the alternative. Authored input
-mounts also stay enabled during a Send and a running turn, unlike legacy
-controls; ADR 0008 allows a newer commit during a run, so that is not
-modeled as a defect.
+Send waits rather than being disabled during the commit, because disabling it
+would swallow the click that caused the blur.
 
 ## Limits
 
