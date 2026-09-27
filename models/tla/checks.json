@@ -126,7 +126,7 @@
         "NoExitFailureWhileRunning"
       ],
       "expect": "pass",
-      "finding": "A child whose provider is still running is never failed for it: an observation that times out is polled again (fixed; was: the 5 s control timeout failed running children)."
+      "finding": "With observations that no longer time out, a child whose provider is still running is never failed for it (fixed; was: the 5 s control timeout failed running children). The re-poll itself is proved by provider_end_waits_through_observation_timeouts, not by this check."
     },
     {
       "id": "completion-activation-failure",

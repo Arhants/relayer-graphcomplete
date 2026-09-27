@@ -1580,15 +1580,17 @@ async fn launch_prepared_child(
         attempt_id,
     );
     if let Err(error) = attachment_result {
-        let _ = runtime
-            .cancel_invoked_completion(child_thread_id, child_completion_id)
-            .await;
+        // Fail before cancelling, so the exit observer finds the current already terminal
+        // and does not record the cancelled run as an exit without Return.
         let _ = runtime
             .fail_graph_completion(
                 child_completion_id,
                 &format!("recursive-attachment-persist:{child_completion_id}"),
                 "provider_attachment_persist_failed",
             )
+            .await;
+        let _ = runtime
+            .cancel_invoked_completion(child_thread_id, child_completion_id)
             .await;
         return Err(error.into());
     }
@@ -2163,17 +2165,19 @@ fn spawn_recursive_completion_observers(
                     eprintln!(
                         "recursive completion {completion_id} could not be observed: {error}"
                     );
-                    let _ = runtime
-                        .cancel_invoked_completion(semantic_thread.id.value(), completion_id)
-                        .await;
-                    if let Err(transition_error) = runtime
+                    // Fail before cancelling, as a stop does, so the exit observer does not
+                    // record the cancelled run as an exit without Return.
+                    let failed = runtime
                         .fail_graph_completion(
                             completion_id,
                             &format!("recursive-observation-failed:{}", semantic_interaction.id),
                             reason,
                         )
-                        .await
-                    {
+                        .await;
+                    let _ = runtime
+                        .cancel_invoked_completion(semantic_thread.id.value(), completion_id)
+                        .await;
+                    if let Err(transition_error) = failed {
                         eprintln!(
                             "recursive completion {completion_id} observation failure could not terminalize graph state: {transition_error}"
                         );
@@ -2199,20 +2203,31 @@ fn spawn_recursive_completion_observers(
             PROVIDER_END_RETRY_STEP,
         )
         .await;
-        if runtime
-            .completion_current(completion_id)
-            .await
-            .is_ok_and(|current| {
-                current.lifecycle == relayer_graph_core::CompletionLifecycle::Active
-            })
-        {
-            let _ = runtime
-                .fail_graph_completion(
-                    completion_id,
-                    &format!("recursive-provider-exit:{}", interaction.id),
-                    "provider_exited_without_return",
-                )
-                .await;
+        // Nothing else will end a current whose provider is gone, so this retries until
+        // the current is terminal.
+        loop {
+            let failure = match runtime.completion_current(completion_id).await {
+                Ok(current)
+                    if current.lifecycle != relayer_graph_core::CompletionLifecycle::Active =>
+                {
+                    break;
+                }
+                Ok(_) => runtime
+                    .fail_graph_completion(
+                        completion_id,
+                        &format!("recursive-provider-exit:{}", interaction.id),
+                        "provider_exited_without_return",
+                    )
+                    .await
+                    .err(),
+                Err(error) => Some(error),
+            };
+            if let Some(error) = failure {
+                eprintln!(
+                    "recursive completion {completion_id} provider-exit failure retry: {error}"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
         }
         if let Some(attempt_id) = attempt_id {
             end_child_attempt(&state, runtime, interaction.id, attempt_id).await;
@@ -2231,8 +2246,9 @@ const PROVIDER_END_UNREACHABLE_LIMIT: u32 = 20;
 /// Waits until the harness reports that a child's provider run has ended. The host answers
 /// only when the run ends, so only its answer ends the wait. A timeout means the run is still
 /// going. A request that never reached the host proves nothing, so it is retried. Once the
-/// host has been unreachable for long enough, the child is cancelled; if the cancel is
-/// accepted, the next answer reports the end, and if it fails too the wait gives up.
+/// host has been unreachable for long enough, the child is cancelled. If the host reports
+/// no such run, it has ended; if the cancel is accepted, the next answer reports the end;
+/// and if the cancel fails too, the wait gives up.
 async fn await_provider_end(
     runtime: &crate::runtime::RuntimeClient,
     thread_id: i64,
@@ -2252,12 +2268,14 @@ async fn await_provider_end(
                     eprintln!(
                         "recursive completion {completion_id} provider could not be observed; cancelling it: {error}"
                     );
-                    if runtime
+                    match runtime
                         .cancel_invoked_completion(thread_id, completion_id)
                         .await
-                        .is_err()
                     {
-                        return Err(error);
+                        Err(_) => return Err(error),
+                        // The host answered that it runs no such child: the run has ended.
+                        Ok(false) => return Ok(serde_json::json!({"cancelled": false})),
+                        Ok(true) => {}
                     }
                     unreachable = 0;
                     continue;
@@ -3010,6 +3028,8 @@ mod tests {
         cancellations: Arc<AtomicUsize>,
         start_held: Arc<std::sync::atomic::AtomicBool>,
         start_release: Arc<tokio::sync::Notify>,
+        provider_exited: Arc<std::sync::atomic::AtomicBool>,
+        transition_refusals: Arc<AtomicUsize>,
         _lease: CompletionBrokerLease,
         graph_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
         harness_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
@@ -3119,6 +3139,8 @@ mod tests {
         let projected_current = current.clone();
         let transitioned_current = current.clone();
         let recorded_transitions = transitions.clone();
+        let transition_refusals = Arc::new(AtomicUsize::new(0));
+        let refused_transitions = transition_refusals.clone();
         let graph = Router::new()
             .route(
                 "/api/control/temporal-features",
@@ -3217,7 +3239,21 @@ mod tests {
                 routing::post(move |axum::Json(body): axum::Json<Value>| {
                     let current = transitioned_current.clone();
                     let recorded = recorded_transitions.clone();
+                    let refusals = refused_transitions.clone();
                     async move {
+                        if refusals
+                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                                left.checked_sub(1)
+                            })
+                            .is_ok()
+                        {
+                            return (
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                axum::Json(serde_json::json!({
+                                    "error":{"code":"unavailable","message":"graph busy"}
+                                })),
+                            );
+                        }
                         let revision = body["expectedRevision"].as_u64().unwrap_or(0) + 1;
                         let lifecycle =
                             if body["transition"]["kind"] == "stop" { "stopped" } else { "failed" };
@@ -3229,13 +3265,16 @@ mod tests {
                             state["headRevision"] = revision.into();
                             state["safeReason"] = reason;
                         }
-                        axum::Json(serde_json::json!({
-                            "completionId":202,"revision":revision,"lifecycle":lifecycle,
-                            "currentLayerId":1,"finalLayerId":null,
-                            "operationKey":body["operationKey"],
-                            "requestDigest":"sha256:test","snapshotDigest":"sha256:test",
-                            "projectionSequence":revision
-                        }))
+                        (
+                            StatusCode::OK,
+                            axum::Json(serde_json::json!({
+                                "completionId":202,"revision":revision,"lifecycle":lifecycle,
+                                "currentLayerId":1,"finalLayerId":null,
+                                "operationKey":body["operationKey"],
+                                "requestDigest":"sha256:test","snapshotDigest":"sha256:test",
+                                "projectionSequence":revision
+                            })),
+                        )
                     }
                 }),
             )
@@ -3258,6 +3297,8 @@ mod tests {
         let observed_cancellations = cancellations.clone();
         let run_cancellations = cancellations.clone();
         let run_current = current.clone();
+        let provider_exited = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let run_exited = provider_exited.clone();
         let harness = Router::new()
             .route(
                 "/sessions/{id}/invoked-completions",
@@ -3290,15 +3331,17 @@ mod tests {
                     }
                 }),
             )
-            // The host answers only when the child's run ends: once it is cancelled, or
-            // once its current is no longer active.
+            // The host answers only when the child's run ends: once it is cancelled, once
+            // its current is no longer active, or once the test ends it.
             .route(
                 "/sessions/{id}/invoked-completions/202",
                 routing::get(move || {
                     let cancellations = run_cancellations.clone();
                     let current = run_current.clone();
+                    let exited = run_exited.clone();
                     async move {
                         while cancellations.load(Ordering::SeqCst) == 0
+                            && !exited.load(Ordering::SeqCst)
                             && current.lock().unwrap()["lifecycle"] == "active"
                         {
                             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -3456,10 +3499,45 @@ mod tests {
             cancellations,
             start_held,
             start_release,
+            provider_exited,
+            transition_refusals,
             _lease: lease,
             graph_task,
             harness_task,
         }
+    }
+
+    #[tokio::test]
+    async fn a_run_that_ends_without_return_is_failed_through_graph_refusals() {
+        let fixture = broker_fixture("exit-without-return", "active").await;
+        let _started = complete_prepared_child(
+            State(fixture.state.clone()),
+            fixture.headers.clone(),
+            Json(CompletePreparedChildRequest {
+                interaction_node: 202,
+            }),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("broker call failed: {}", error.message()));
+        // The graph refuses the first transitions; the provider then ends without Return.
+        fixture.transition_refusals.store(3, Ordering::SeqCst);
+        fixture.provider_exited.store(true, Ordering::SeqCst);
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let current = fixture.current.lock().unwrap().clone();
+            if current["lifecycle"] == "failed" {
+                assert_eq!(current["safeReason"], "provider_exited_without_return");
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a run that ended without Return left its current {current}"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(fixture.transition_refusals.load(Ordering::SeqCst), 0);
+        fixture.finish();
     }
 
     #[tokio::test]

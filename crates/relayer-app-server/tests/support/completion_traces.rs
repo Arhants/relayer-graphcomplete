@@ -114,6 +114,8 @@ struct World {
     selected: bool,
     admission: Option<RecursiveChildAdmission>,
     attachment: Option<Value>,
+    /// Whether the semantic and exit observers are running.
+    observed: bool,
     pool: sqlx::SqlitePool,
     root: PathBuf,
     tasks: Vec<tokio::task::JoinHandle<Result<(), std::io::Error>>>,
@@ -522,6 +524,7 @@ impl World {
             harness: harness_control,
             selected,
             admission: None,
+            observed: false,
             attachment: None,
             pool,
             root,
@@ -694,6 +697,7 @@ impl World {
                         .as_ref()
                         .map(|admission| admission.attempt_id),
                 );
+                self.observed = true;
             }
             // The semantic observer projects the terminal current on its own.
             "SemFinalize" => self.await_settled().await,
@@ -1002,13 +1006,14 @@ async fn replay(trace: &Value) {
         }
         // Background work is compared once it has run: start-failure cleanup, the semantic
         // observer settling the child, the exit observer, and the attempt end. A child's
-        // Return and its provider's exit set off observers that nothing holds, so each is
-        // compared with the background work that follows it.
+        // Return and its provider's exit set off observers that nothing holds, once they
+        // run, so each is then compared with the background work that follows it.
         let sets_off_background = is_cleanup(Some(step))
-            || matches!(
-                step["action"][0].as_str(),
-                Some("ChildReturn" | "ProviderExit")
-            );
+            || (world.observed
+                && matches!(
+                    step["action"][0].as_str(),
+                    Some("ChildReturn" | "ProviderExit")
+                ));
         if sets_off_background && next_is_cleanup {
             continue;
         }
@@ -1152,9 +1157,11 @@ async fn provider_end_waits_through_observation_timeouts() {
 }
 
 /// A harness that closes each connection unanswered while `drops` lasts, then answers every
-/// request with the ended run. It records each request line it read.
+/// request with the ended run. With `cancel_answer`, it answers every cancel at once with
+/// that `cancelled` value. It records each request line it read.
 async fn unreachable_harness(
     drops: usize,
+    cancel_answer: Option<bool>,
 ) -> (String, Arc<Mutex<Vec<String>>>, tokio::task::JoinHandle<()>) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1177,13 +1184,18 @@ async fn unreachable_harness(
                 .next()
                 .unwrap_or_default()
                 .to_owned();
+            let cancel = line.starts_with("POST") && cancel_answer.is_some();
             let answered = {
                 let mut seen = seen.lock().unwrap();
                 seen.push(line);
-                seen.len() > drops
+                cancel || seen.len() > drops
             };
             if answered {
-                let body = r#"{"completionId":9,"cancelled":true}"#;
+                let body = if cancel {
+                    format!(r#"{{"cancelled":{}}}"#, cancel_answer.unwrap())
+                } else {
+                    r#"{"completionId":9,"cancelled":true}"#.to_owned()
+                };
                 let _ = socket
                     .write_all(
                         format!(
@@ -1231,7 +1243,7 @@ async fn provider_end_waits_through_an_unreachable_harness() {
     .unwrap();
     let step = Duration::from_millis(1);
 
-    let (harness_url, requests, harness_task) = unreachable_harness(3).await;
+    let (harness_url, requests, harness_task) = unreachable_harness(3, None).await;
     let runtime = RuntimeClient::open(
         &graph_url,
         &harness_url,
@@ -1254,7 +1266,7 @@ async fn provider_end_waits_through_an_unreachable_harness() {
     );
     harness_task.abort();
 
-    let (harness_url, requests, harness_task) = unreachable_harness(usize::MAX).await;
+    let (harness_url, requests, harness_task) = unreachable_harness(usize::MAX, None).await;
     let runtime = RuntimeClient::open(
         &graph_url,
         &harness_url,
@@ -1273,6 +1285,36 @@ async fn provider_end_waits_through_an_unreachable_harness() {
     assert!(
         cancel >= PROVIDER_END_UNREACHABLE_LIMIT as usize,
         "the child is cancelled only after repeated unreachable observations: {requests:?}"
+    );
+    harness_task.abort();
+
+    // A host that cannot be observed but answers the cancel with no such run has ended it.
+    let (harness_url, requests, harness_task) = unreachable_harness(usize::MAX, Some(false)).await;
+    let runtime = RuntimeClient::open(
+        &graph_url,
+        &harness_url,
+        "graph-control".into(),
+        "harness-control".into(),
+        &catalog,
+    )
+    .await
+    .unwrap();
+    let ended = tokio::time::timeout(
+        Duration::from_secs(5),
+        await_provider_end(&runtime, 1, 9, step),
+    )
+    .await
+    .expect("a host that reports no such run ends the wait");
+    assert!(ended.is_ok());
+    assert_eq!(
+        requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|line| line.starts_with("POST"))
+            .count(),
+        1,
+        "the wait ends at the first cancel the host answers"
     );
     harness_task.abort();
 
