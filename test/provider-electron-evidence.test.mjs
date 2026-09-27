@@ -124,6 +124,7 @@ describe("provider browser evidence", () => {
         "sidebar-new-thread-483-expanded-permission-menu.png",
         "sidebar-new-thread-483-expanded-scope-menu.png",
         "sidebar-new-thread-expanded.png",
+        "sidebar-new-thread-light.png",
         "sidebar-new-thread.png",
         "sidebar-thread-375-expanded.png",
         "sidebar-thread-375.png",

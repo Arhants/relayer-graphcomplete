@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   CHECK1_STATUS,
+  liveRunStatus,
   CHECK1_VERIFICATION_LEVEL,
   MAX_LIVE_RUN_TIMEOUT_MS,
   assertExecutionIdentity,
@@ -193,6 +194,15 @@ describe("recursive live-run provenance", () => {
     });
     expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(readdirSync(directory)).toEqual(["run.json"]);
+  });
+
+  it("names a delegation run's statuses for its own level, never Check 1", () => {
+    expect(liveRunStatus("delegation-mechanics")).toEqual({
+      running: "delegation-mechanics-running",
+      passed: "delegation-mechanics-passed",
+      failed: "delegation-mechanics-failed",
+    });
+    expect(() => liveRunStatus("")).toThrow(/verification level/);
   });
 
   it("names every top-level verdict as Check 1 rather than a merge-gate pass", () => {

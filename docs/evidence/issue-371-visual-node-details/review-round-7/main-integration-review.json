@@ -1,0 +1,35 @@
+{
+  "reviewer": "/root/merge_494_review",
+  "verdict": "clean",
+  "findings": [],
+  "mergeHead": "d9fed10e6ac51a593e005642aa89f7df1acd3d48",
+  "scope": "Staged PR482 main integration compatibility with PR494 CI ownership and unchanged application snapshot; repair missing visual-assets fixture workspace discovered by full check",
+  "files": {
+    "scripts/ci/plan-affected.mjs": "000544c86969dd3bb40277ddfd397d9ac1b0348c71e51abbe37a3b60fc1c71a4",
+    "test/ci-affected-plan.test.mjs": "1f2397a2acd96ac22182fe681fa33fe53b4d009adf012cd155d9eddc9ffb8729",
+    "scripts/ci/affected-modules.v1.json": "b6952395135de8eb88226ba48457d7ae73c6d6420015980f1e6e4c45f0f553ff"
+  },
+  "assertions": [
+    "Staged merge changes only planner, planner tests, and upstream evidence documents/logs.",
+    "Deleted or directory-replaced exempt paths trigger full portfolio; ENOENT and ENOTDIR map to absence, unexpected filesystem errors propagate.",
+    "Existing visual-assets ownership, proof helper ownership, and Ladybug verification packaging/lifecycle mapping remain preserved.",
+    "withPlannerFixture now creates visual-assets/package.json matching all fixed localNpmGraph manifest names before fullPlan fallback executes. No planner behavior or application source changed by this repair."
+  ],
+  "sourceSnapshotMismatches": [],
+  "verification": {
+    "tests": "Inspected /tmp/494-last-main-focused.log: 62/62 planner tests passed after fixture repair, including fullPlan fallback cases. Full check/build rerun owned by root; no pass claimed until completion.",
+    "diffCheck": "Only upstream captured Vitest logs report blank line at EOF; executable delta has no whitespace finding.",
+    "limits": "Updated clean verdict applies to corrected fixture source and reviewed focused result. Earlier inference was wrong and is explicitly invalidated."
+  },
+  "supersededReview": {
+    "verdict": "invalidated",
+    "finding": "Earlier clean review incorrectly concluded absent visual-assets fixture workspace was harmless. Full-plan fallback invokes localNpmGraph, whose fixed workspace manifest list includes visual-assets; six integration tests failed ENOENT.",
+    "evidence": "/tmp/494-last-main-check-failure.log"
+  },
+  "executedVerification": {
+    "check": "passed: 2360 Vitest, 3 skipped; 2 secret-boundary tests; native/repository checks passed",
+    "build": "passed",
+    "failurePreserved": "logs/main-integration-check-failure.log: six CI fixture tests missing visual-assets before repair",
+    "desktop": "Application source matches round7 desktop snapshot; no repeat for CI-only change"
+  }
+}

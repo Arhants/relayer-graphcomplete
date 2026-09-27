@@ -1,0 +1,346 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "provider-connect-completes",
+      "module": "ProviderSettings",
+      "preset": "providers",
+      "init": "defaultFamily = \"custom\"",
+      "promises": [
+        "PendingAttemptIsOwned",
+        "PendingReconnectIsForActiveProvider",
+        "LeasedRuntimeStaysOpen"
+      ],
+      "summary": "A new managed connection signs in, waits one poll, and connects.",
+      "steps": [
+        [
+          "ConnStart"
+        ],
+        [
+          "ConnS1"
+        ],
+        [
+          "ConnS2"
+        ],
+        [
+          "ConnLogin"
+        ],
+        [
+          "Handoff",
+          "N",
+          "ok"
+        ],
+        [
+          "IpcReturn",
+          "N"
+        ],
+        [
+          "CompleteStart",
+          "N"
+        ],
+        [
+          "CompleteFinish",
+          "N",
+          "disconnected"
+        ],
+        [
+          "CompleteStart",
+          "N"
+        ],
+        [
+          "CompleteFinish",
+          "N",
+          "connected"
+        ]
+      ]
+    },
+    {
+      "id": "provider-reconnect-completes",
+      "module": "ProviderSettings",
+      "preset": "providers",
+      "init": "defaultFamily = \"custom\"",
+      "promises": [
+        "PendingAttemptIsOwned",
+        "PendingReconnectIsForActiveProvider",
+        "LeasedRuntimeStaysOpen"
+      ],
+      "summary": "A signed-out provider reconnects, and a turn then leases its runtime.",
+      "steps": [
+        [
+          "Logout",
+          "refreshed"
+        ],
+        [
+          "ReconStart"
+        ],
+        [
+          "ReconS2"
+        ],
+        [
+          "ReconLogin",
+          "ok"
+        ],
+        [
+          "Handoff",
+          "P",
+          "ok"
+        ],
+        [
+          "IpcReturn",
+          "P"
+        ],
+        [
+          "CompleteStart",
+          "P"
+        ],
+        [
+          "CompleteFinish",
+          "P",
+          "connected"
+        ],
+        [
+          "ExecAdmit",
+          "e1"
+        ],
+        [
+          "ExecAcquire",
+          "e1"
+        ],
+        [
+          "ExecRelease",
+          "e1"
+        ]
+      ]
+    },
+    {
+      "id": "provider-remove-during-reconnect",
+      "module": "ProviderSettings",
+      "preset": "providers",
+      "init": "defaultFamily = \"custom\"",
+      "promises": [
+        "PendingReconnectIsForActiveProvider"
+      ],
+      "summary": "Removing a signed-out provider while its reconnect is pending, before the browser handoff returns.",
+      "steps": [
+        [
+          "Logout",
+          "refreshed"
+        ],
+        [
+          "ReconStart"
+        ],
+        [
+          "ReconS2"
+        ],
+        [
+          "ReconLogin",
+          "ok"
+        ],
+        [
+          "Remove"
+        ],
+        [
+          "Handoff",
+          "P",
+          "ok"
+        ],
+        [
+          "IpcReturn",
+          "P"
+        ]
+      ]
+    },
+    {
+      "id": "provider-destroyed-before-bind",
+      "module": "ProviderSettings",
+      "preset": "providers",
+      "init": "defaultFamily = \"custom\"",
+      "promises": [
+        "PendingAttemptIsOwned"
+      ],
+      "summary": "The renderer is destroyed while sign-in is still starting, before the attempt is bound to it.",
+      "steps": [
+        [
+          "ConnStart"
+        ],
+        [
+          "ConnS1"
+        ],
+        [
+          "ConnS2"
+        ],
+        [
+          "ConnLogin"
+        ],
+        [
+          "RendererDestroyed"
+        ],
+        [
+          "Handoff",
+          "N",
+          "ok"
+        ],
+        [
+          "IpcReturn",
+          "N"
+        ]
+      ]
+    },
+    {
+      "id": "completion-start-failure",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "promises": [
+        "SettledExecutionAgreesWithGraph"
+      ],
+      "finalPromises": [
+        "ChildSettles"
+      ],
+      "summary": "The provider start fails and start-failure cleanup settles the child.",
+      "steps": [
+        [
+          "LaunchCheck",
+          1
+        ],
+        [
+          "LaunchReserve",
+          1
+        ],
+        [
+          "LaunchClaim",
+          1
+        ],
+        [
+          "LaunchActivate",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchStart",
+          1,
+          "fail"
+        ],
+        [
+          "CleanCancel"
+        ],
+        [
+          "CleanFail"
+        ],
+        [
+          "CleanFinalize"
+        ],
+        [
+          "CleanDiscard"
+        ]
+      ]
+    },
+    {
+      "id": "completion-stop-before-failed-start",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "promises": [
+        "SettledExecutionAgreesWithGraph"
+      ],
+      "finalPromises": [
+        "ChildSettles"
+      ],
+      "summary": "The parent stops the child before its provider start fails; cleanup must still settle it.",
+      "steps": [
+        [
+          "LaunchCheck",
+          1
+        ],
+        [
+          "LaunchReserve",
+          1
+        ],
+        [
+          "LaunchClaim",
+          1
+        ],
+        [
+          "LaunchActivate",
+          1,
+          "ok"
+        ],
+        [
+          "StopRead"
+        ],
+        [
+          "StopPost"
+        ],
+        [
+          "StopCancel"
+        ],
+        [
+          "LaunchStart",
+          1,
+          "fail"
+        ],
+        [
+          "CleanCancel"
+        ],
+        [
+          "CleanFail"
+        ],
+        [
+          "CleanFinalize"
+        ],
+        [
+          "CleanDiscard"
+        ]
+      ]
+    },
+    {
+      "id": "completion-return-after-lost-start",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "promises": [
+        "SettledExecutionAgreesWithGraph"
+      ],
+      "finalPromises": [
+        "ChildSettles"
+      ],
+      "summary": "The start ran but its acknowledgement was lost, and the child returns before cleanup; cleanup must accept it.",
+      "steps": [
+        [
+          "LaunchCheck",
+          1
+        ],
+        [
+          "LaunchReserve",
+          1
+        ],
+        [
+          "LaunchClaim",
+          1
+        ],
+        [
+          "LaunchActivate",
+          1,
+          "ok"
+        ],
+        [
+          "LaunchStart",
+          1,
+          "lost"
+        ],
+        [
+          "ChildReturn"
+        ],
+        [
+          "CleanCancel"
+        ],
+        [
+          "CleanFail"
+        ],
+        [
+          "CleanFinalize"
+        ],
+        [
+          "CleanDiscard"
+        ]
+      ]
+    }
+  ]
+}

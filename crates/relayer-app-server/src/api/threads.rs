@@ -932,6 +932,53 @@ pub(super) async fn get_layer(
     Ok(Json(runtime.get_layer(graph_node_id, layer_id).await?))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct DetailAssetQuery {
+    layer_id: i64,
+}
+
+pub(super) async fn get_detail_asset(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Path((thread_id, interaction_id, node_id, asset_id)): Path<(i64, i64, i64, String)>,
+    Query(query): Query<DetailAssetQuery>,
+) -> Result<Json<Value>, ApiError> {
+    authorize_read(&state, &headers)?;
+    let thread_id = ThreadId::try_from(thread_id)?;
+    let interaction_id = InteractionId::try_from(interaction_id)?;
+    let interaction = state.product.get_interaction(interaction_id).await?;
+    if interaction.thread_id != thread_id {
+        return Err(ApiError::invalid(
+            "interaction does not belong to this thread",
+        ));
+    }
+    let graph_node_id = interaction
+        .graph_node_id
+        .ok_or_else(|| ApiError::invalid("interaction has no accepted graph"))?;
+    let runtime = state
+        .runtime
+        .as_ref()
+        .ok_or_else(|| ApiError::invalid("GraphComplete runtime is unavailable"))?;
+    let layer: relayer_graph_core::ResolvedLayer =
+        serde_json::from_value(runtime.get_layer(graph_node_id, query.layer_id).await?)
+            .map_err(|_| ApiError::internal("GraphComplete returned an invalid layer"))?;
+    let node_id = relayer_graph_core::NodeId::new(node_id)
+        .ok_or_else(|| ApiError::invalid("invalid graph node id"))?;
+    if layer.layer.id.value() != query.layer_id
+        || !layer.nodes.iter().any(|node| {
+            node.id == node_id && node.state == relayer_graph_core::RecordState::Accepted
+        })
+    {
+        return Err(ApiError::forbidden(
+            "accepted node does not belong to this layer",
+        ));
+    }
+    Ok(Json(
+        runtime.get_detail_asset(node_id.value(), &asset_id).await?,
+    ))
+}
+
 pub(super) async fn get_input_children(
     State(state): State<ApiState>,
     headers: HeaderMap,
@@ -1551,6 +1598,76 @@ pub(super) async fn complete_prepared_child(
     ))
 }
 
+/// Projects one terminal graph current into the recursive child's product rows,
+/// and reports whether the product accepted it. A caller retries a refusal.
+async fn settle_terminal_recursive_child(
+    state: &ApiState,
+    runtime: &crate::runtime::RuntimeClient,
+    interaction: &Interaction,
+    thread: &Thread,
+    prepared: &PreparedInteraction,
+    permission_origin_digest: &str,
+    current: &relayer_graph_core::CompletionState,
+) -> bool {
+    let completion_id = prepared.graph_node_id;
+    let settled = if current.lifecycle == relayer_graph_core::CompletionLifecycle::Succeeded {
+        let output = loop {
+            match runtime.completion_output(completion_id).await {
+                Ok(Some(output)) => break output,
+                Ok(None) => eprintln!(
+                    "recursive completion {completion_id} succeeded before its output receipt was readable"
+                ),
+                Err(error) => eprintln!(
+                    "recursive completion {completion_id} output receipt read failed: {error}"
+                ),
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        };
+        state
+            .product
+            .finalize_completion_execution_accepted(
+                AcceptedInteractionCompletion {
+                    interaction_id: interaction.id,
+                    graph_node_id: completion_id,
+                    harness_configuration_name: &prepared.harness_configuration_name,
+                    harness_configuration_digest: &prepared.harness_configuration_digest,
+                    effective_execution_digest: &prepared.effective_execution_digest,
+                    effective_permission_receipt: &prepared.effective_permission_receipt,
+                    output: &output,
+                },
+                permission_origin_digest,
+                &completion_timestamp(),
+            )
+            .await
+            .map(|_| ())
+    } else {
+        state
+            .product
+            .finalize_completion_execution_failed(
+                interaction.id,
+                permission_origin_digest,
+                &thread.harness_configuration_name,
+                current
+                    .safe_reason
+                    .as_deref()
+                    .unwrap_or("completion_failed"),
+                &completion_timestamp(),
+            )
+            .await
+            .map(|_| ())
+    };
+    match settled {
+        Ok(()) => true,
+        Err(error) => {
+            eprintln!(
+                "recursive completion {completion_id} {} settlement could not be projected: {error}",
+                serde_json::to_value(current.lifecycle).unwrap_or_default()
+            );
+            false
+        }
+    }
+}
+
 fn spawn_failed_recursive_start_cleanup(
     state: ApiState,
     thread: Thread,
@@ -1575,8 +1692,11 @@ fn spawn_failed_recursive_start_cleanup(
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
-        loop {
-            match runtime
+        // Another actor may terminate the current first: the parent's stop, or the
+        // child's own Return when the start ran but its acknowledgement was lost.
+        // Whatever terminal current the graph holds is what the product records.
+        let current = loop {
+            if let Err(error) = runtime
                 .fail_graph_completion(
                     completion_id,
                     &format!("recursive-provider-start:{}", interaction.id),
@@ -1584,30 +1704,34 @@ fn spawn_failed_recursive_start_cleanup(
                 )
                 .await
             {
-                Ok(_) => break,
-                Err(error) => eprintln!(
+                eprintln!(
                     "recursive completion {completion_id} start-failure graph retry: {error}"
+                );
+            }
+            match runtime.completion_current(completion_id).await {
+                Ok(current)
+                    if current.lifecycle != relayer_graph_core::CompletionLifecycle::Active =>
+                {
+                    break current;
+                }
+                Ok(_) => {}
+                Err(error) => eprintln!(
+                    "recursive completion {completion_id} start-failure current read retry: {error}"
                 ),
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        }
-        loop {
-            match state
-                .product
-                .finalize_completion_execution_failed(
-                    interaction.id,
-                    &permission_origin_digest,
-                    &thread.harness_configuration_name,
-                    "provider_start_failed",
-                    &completion_timestamp(),
-                )
-                .await
-            {
-                Ok(_) => break,
-                Err(error) => eprintln!(
-                    "recursive completion {completion_id} start-failure settlement retry: {error}"
-                ),
-            }
+        };
+        while !settle_terminal_recursive_child(
+            &state,
+            runtime,
+            &interaction,
+            &thread,
+            &prepared,
+            &permission_origin_digest,
+            &current,
+        )
+        .await
+        {
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
         loop {
@@ -1838,10 +1962,7 @@ fn spawn_recursive_completion_observers(
     let semantic_state = state.clone();
     let semantic_thread = thread.clone();
     let semantic_interaction = interaction.clone();
-    let harness_name = prepared.harness_configuration_name.clone();
-    let harness_digest = prepared.harness_configuration_digest.clone();
-    let execution_digest = prepared.effective_execution_digest.clone();
-    let permission_receipt = prepared.effective_permission_receipt.clone();
+    let semantic_prepared = prepared.clone();
     let completion_id = prepared.graph_node_id;
     let semantic_origin_digest = permission_origin_digest.clone();
     let supervision = semantic_state
@@ -1884,72 +2005,21 @@ fn spawn_recursive_completion_observers(
                     observation_failures = 0;
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 }
-                Ok(current)
-                    if current.lifecycle == relayer_graph_core::CompletionLifecycle::Succeeded =>
-                {
-                    let output = loop {
-                        match runtime.completion_output(completion_id).await {
-                            Ok(Some(output)) => break output,
-                            Ok(None) => eprintln!(
-                                "recursive completion {completion_id} succeeded before its output receipt was readable"
-                            ),
-                            Err(error) => eprintln!(
-                                "recursive completion {completion_id} output receipt read failed: {error}"
-                            ),
-                        }
-                        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                    };
-                    let accepted = AcceptedInteractionCompletion {
-                        interaction_id: semantic_interaction.id,
-                        graph_node_id: completion_id,
-                        harness_configuration_name: &harness_name,
-                        harness_configuration_digest: &harness_digest,
-                        effective_execution_digest: &execution_digest,
-                        effective_permission_receipt: &permission_receipt,
-                        output: &output,
-                    };
-                    match semantic_state
-                        .product
-                        .finalize_completion_execution_accepted(
-                            accepted,
-                            &semantic_origin_digest,
-                            &completion_timestamp(),
-                        )
-                        .await
-                    {
-                        Ok(_) => return,
-                        Err(error) => {
-                            eprintln!(
-                                "recursive completion {completion_id} accepted settlement failed: {error}"
-                            );
-                            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                        }
-                    }
-                }
                 Ok(current) => {
-                    let reason = current
-                        .safe_reason
-                        .as_deref()
-                        .unwrap_or("completion_failed");
-                    match semantic_state
-                        .product
-                        .finalize_completion_execution_failed(
-                            semantic_interaction.id,
-                            &semantic_origin_digest,
-                            &semantic_thread.harness_configuration_name,
-                            reason,
-                            &completion_timestamp(),
-                        )
-                        .await
+                    if settle_terminal_recursive_child(
+                        &semantic_state,
+                        runtime,
+                        &semantic_interaction,
+                        &semantic_thread,
+                        &semantic_prepared,
+                        &semantic_origin_digest,
+                        &current,
+                    )
+                    .await
                     {
-                        Ok(_) => return,
-                        Err(error) => {
-                            eprintln!(
-                                "recursive completion {completion_id} failed settlement could not be projected: {error}"
-                            );
-                            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                        }
+                        return;
                     }
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
                 }
                 Err(error) => {
                     observation_failures += 1;
@@ -2671,6 +2741,12 @@ impl TryFrom<ModelSelectionRequest> for InteractionModelSelection {
         })
     }
 }
+
+// The trace-replay adapter lives outside src: it is test code, not a packaged
+// module, but it drives crate-private launch and cleanup functions.
+#[cfg(test)]
+#[path = "../../tests/support/completion_traces.rs"]
+mod completion_traces;
 
 #[cfg(test)]
 mod tests {

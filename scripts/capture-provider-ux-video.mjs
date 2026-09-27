@@ -37,6 +37,7 @@ const variants = [
   { scene: "sidebar-thread-journey", caption: "Collapse, expand and collapse the 620px sidebar", width: 761, required: ["Provider fallback review", "Settings", "Account"] },
   { scene: "sidebar-thread-light-expanded", caption: "Expanded saved graph in light appearance", width: 620, required: ["Provider fallback review", 'data-theme="light"'] },
   { scene: "sidebar-new-thread", caption: "New-thread composer beside the 620px sidebar", width: 620, required: ["What are we working on?", "Settings", "Account"] },
+  { scene: "sidebar-new-thread-light", caption: "Centered New Thread icon in the light collapsed sidebar", width: 620, required: ["What are we working on?", "Account", 'data-theme="light"'] },
   { scene: "sidebar-new-thread-expanded", caption: "New-thread composer beside the expanded 620px sidebar", width: 620, required: ["What are we working on?", "Settings", "Account"] },
   { scene: "sidebar-thread-421-expanded", caption: "Expanded saved graph with a 421px viewport", width: 421, required: ["Provider fallback review", "Settings", "Account"] },
   { scene: "sidebar-new-thread-421-expanded", caption: "Expanded new-thread composer with a 421px viewport", width: 421, required: ["What are we working on?", "Settings", "Account"] },
@@ -269,12 +270,35 @@ async function captureBrowserScene(url, frame, profile, width = 1280, { forcedCo
           const within = (rect, bounds) => Boolean(rect && bounds)
             && rect.left >= bounds.left - 0.5 && rect.top >= bounds.top - 0.5
             && rect.right <= bounds.right + 0.5 && rect.bottom <= bounds.bottom + 0.5;
+          const newThreadButton = document.querySelector("#newThread");
+          const newThreadIcon = newThreadButton?.querySelector("span");
+          const iconOffset = () => {
+            const button = newThreadButton.getBoundingClientRect();
+            const icon = newThreadIcon.getBoundingClientRect();
+            return { x: icon.left + icon.width / 2 - button.left - button.width / 2,
+              y: icon.top + icon.height / 2 - button.top - button.height / 2 };
+          };
+          let newThreadIconCentering = null;
+          if (!sidebarExpanded && newThreadButton && newThreadIcon) {
+            const previousFocus = document.activeElement;
+            const resting = iconOffset();
+            newThreadButton.focus({ preventScroll: true });
+            const focused = iconOffset();
+            previousFocus?.focus?.({ preventScroll: true });
+            const logo = document.querySelector(".sidebar-title .logo").getBoundingClientRect();
+            const button = newThreadButton.getBoundingClientRect();
+            const logoOffsetX = logo.left + logo.width / 2 - button.left - button.width / 2;
+            newThreadIconCentering = { resting, focused, logoOffsetX,
+              centered: Math.abs(logoOffsetX) <= 0.5
+                && [resting, focused].every(({ x, y }) => Math.abs(x) <= 0.5 && Math.abs(y) <= 0.5) };
+          }
           return {
             sidebarLayout: (() => {
               const scene = new URLSearchParams(location.search).get("scene");
               if (!scene.startsWith("sidebar-")) return null;
               return {
                 viewportWidth: innerWidth,
+                newThreadIconCentering,
                 sidebar: box(sidebar),
                 mainArea: box(document.querySelector(".main-area")),
                 sidebarExpanded,
@@ -1098,6 +1122,9 @@ try {
     if (scene.startsWith("sidebar-thread-") && !audit.sidebarLayout?.allGraphNodesWithinCanvas
       && !(width <= 450 && scene.endsWith("expanded"))) {
       throw new Error(`Saved graph nodes are clipped by the canvas at ${scene}: ${JSON.stringify(audit.sidebarLayout)}`);
+    }
+    if (audit.sidebarLayout?.newThreadIconCentering?.centered === false) {
+      throw new Error(`Collapsed New Thread icon is off center at ${scene}: ${JSON.stringify(audit.sidebarLayout.newThreadIconCentering)}`);
     }
     if (scene.startsWith("sidebar-") && (!audit.sidebarLayout?.activeComposerWithinViewport
       || !audit.sidebarLayout?.composerControlsWithinComposer

@@ -199,7 +199,7 @@ async function prepareScene() {
         && !document.body.classList.contains("desktop-account-pending");
     }, "production signed-in account state in sidebar capture");
     if (scene.startsWith("sidebar-thread-")) await waitFor("#threadView:not(.hidden)");
-    if (scene.endsWith("light-expanded")) document.documentElement.dataset.theme = "light";
+    if (scene.includes("-light")) document.documentElement.dataset.theme = "light";
     if (scene.includes("-expanded")) {
       document.querySelector("#collapseSidebar").click();
       if (scene.startsWith("sidebar-thread-")) {

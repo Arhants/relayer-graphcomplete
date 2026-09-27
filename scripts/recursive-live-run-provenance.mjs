@@ -18,11 +18,19 @@ import { basename, dirname, join } from "node:path";
 const sha256 = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 export const MAX_LIVE_RUN_TIMEOUT_MS = 60 * 60 * 1_000;
 export const CHECK1_VERIFICATION_LEVEL = "check1";
-export const CHECK1_STATUS = Object.freeze({
-  running: "check1-running",
-  passed: "check1-passed",
-  failed: "check1-failed",
-});
+/** Top-level statuses named for the verification level a run claims, never another's. */
+export function liveRunStatus(verificationLevel) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(String(verificationLevel))) {
+    throw new Error("A live-run status needs a verification level");
+  }
+  return Object.freeze({
+    running: `${verificationLevel}-running`,
+    passed: `${verificationLevel}-passed`,
+    failed: `${verificationLevel}-failed`,
+  });
+}
+
+export const CHECK1_STATUS = liveRunStatus(CHECK1_VERIFICATION_LEVEL);
 
 /** Binds provider selection without retaining authentication or machine-local paths. */
 export function publicProfileDigest(profile) {
