@@ -247,6 +247,39 @@ describe("share publication coordinator", () => {
     expect(publish).toHaveBeenCalledOnce();
   });
 
+  it("never exposes or dismisses an attempt while publication is still running", async () => {
+    let releasePublish;
+    const attemptStore = {
+      load: async () => [],
+      save: vi.fn(async () => {}),
+      delete: vi.fn(async () => true),
+    };
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot: async () => snapshot,
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer current", generation: 1 }),
+      sourceThreadIdentity: async (threadId) => `installation:test:thread:${threadId}`,
+      publish: async () => new Promise((resolve) => { releasePublish = resolve; }),
+      attemptStore,
+      createReferenceId: () => "SHR-RUNNING1",
+    });
+
+    const creating = coordinator.create({ threadId: 42, title: "Public title" });
+    await vi.waitFor(() => expect(releasePublish).toBeTypeOf("function"));
+    await expect(coordinator.pending({ threadId: 42 })).resolves.toBeNull();
+    await expect(coordinator.dismiss("SHR-RUNNING1")).resolves.toMatchObject({
+      status: "failed",
+      code: "share_attempt_unavailable",
+    });
+    expect(attemptStore.delete).not.toHaveBeenCalled();
+
+    releasePublish({ url: "https://share.example.test/t/running-settled" });
+    await expect(creating).resolves.toMatchObject({ status: "created" });
+    await expect(coordinator.pending({ threadId: 42 })).resolves.toMatchObject({
+      status: "created",
+      url: "https://share.example.test/t/running-settled",
+    });
+  });
+
   it("preflights export eligibility/size and quota without retaining an attempt", async () => {
     const exportSnapshot = vi.fn(async () => snapshot);
     const preflightPublication = vi.fn(async ({ authorization, assertAuthority }) => {

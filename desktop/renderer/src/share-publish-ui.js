@@ -297,27 +297,28 @@ export function createSharePublishController({
   }
 
   async function recoverPending(accountValue = null) {
-    if (disposed || phase !== "closed" || typeof share.pending !== "function") return false;
+    if (disposed || phase !== "closed" || typeof share.pending !== "function") return "stale";
     const threadId = getThread()?.id;
-    if (!Number.isSafeInteger(threadId) || threadId <= 0) return false;
+    if (!Number.isSafeInteger(threadId) || threadId <= 0) return "stale";
     const threadKey = String(threadId);
-    if (recoveryThreadKey === threadKey) return false;
+    if (recoveryThreadKey === threadKey) return "stale";
     const operation = ++operationVersion;
     const currentAccount = accountValue ?? await account.read().catch(() => null);
     if (disposed || phase !== "closed" || operation !== operationVersion
-      || normalizedAccount(currentAccount) !== "signed-in") return false;
+      || normalizedAccount(currentAccount) !== "signed-in") return "stale";
     accountSubject = typeof currentAccount?.subject === "string" ? currentAccount.subject : null;
     recoveryThreadKey = threadKey;
     const pending = await share.pending(threadId).catch(() => null);
     if (disposed || phase !== "closed" || operation !== operationVersion
-      || String(getThread()?.id) !== threadKey || !pending) return false;
+      || String(getThread()?.id) !== threadKey) return "stale";
+    if (!pending) return "absent";
     result = pending;
     attemptResult = true;
     failureOrigin = "attempt";
     dialogThreadKey = threadKey;
     phase = pending.status === "created" ? "ready" : "error";
     renderDialog();
-    return true;
+    return "recovered";
   }
 
   headerButton.onclick = open;
@@ -347,8 +348,8 @@ export function createSharePublishController({
       phase = "closed";
       recoveryThreadKey = null;
       renderDialog();
-      void recoverPending(value).then((recovered) => {
-        if (!recovered && !disposed && phase === "closed") void runPreflight();
+      void recoverPending(value).then((outcome) => {
+        if (outcome === "absent" && !disposed && phase === "closed") void runPreflight();
       });
       return;
     }

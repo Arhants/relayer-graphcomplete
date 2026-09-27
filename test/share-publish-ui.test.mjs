@@ -255,6 +255,43 @@ describe("share publish renderer boundary", () => {
     controller.dispose();
   });
 
+  it("does not preflight after a recovery lookup is invalidated by navigation", async () => {
+    const test = fixture();
+    test.controller.dispose();
+    test.account.read.mockResolvedValue({ status: "signed-in", channel: "stable", subject: "owner-a" });
+    let resolveReplacementPending;
+    test.share.pending
+      .mockResolvedValueOnce({
+        status: "created",
+        attemptReferenceId: "SHR-OWNER-A",
+        url: "https://share.example.test/t/owner-a",
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveReplacementPending = resolve; }));
+    const controller = createSharePublishController({
+      root: test.window.document,
+      getThread: () => test.thread.id === null ? null : test.thread,
+      getInteractions: () => test.interactions,
+      account: test.account,
+      share: test.share,
+      clipboard: test.clipboard,
+    });
+
+    controller.render();
+    await vi.waitFor(() => expect(test.window.document.querySelector('[aria-label="Share link"]')?.value)
+      .toBe("https://share.example.test/t/owner-a"));
+    test.share.preflight.mockClear();
+    test.changed({ status: "signed-in", channel: "stable", subject: "owner-b" });
+    await vi.waitFor(() => expect(resolveReplacementPending).toBeTypeOf("function"));
+    test.thread.id = null;
+    controller.render();
+    resolveReplacementPending(null);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(test.share.preflight).not.toHaveBeenCalled();
+    expect(test.window.document.querySelector("#shareDialog").classList.contains("hidden")).toBe(true);
+    controller.dispose();
+  });
+
   it("re-runs preflight instead of retrying a nonexistent attempt after a preflight failure", async () => {
     const test = fixture({ preflightResult: {
       status: "failed",

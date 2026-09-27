@@ -443,7 +443,8 @@ export function createSharePublishCoordinator({
         const account = exactAccount(await accountSession());
         const candidates = [...attempts.values()]
           .filter((record) => record.ownerKey === account.ownerKey
-            && record.threadId === threadId)
+            && record.threadId === threadId
+            && !record.running)
           .sort((left, right) => right.createdAt - left.createdAt);
         const record = candidates[0];
         if (!record) return null;
@@ -479,7 +480,7 @@ export function createSharePublishCoordinator({
         await ensureLoaded();
         const account = exactAccount(await accountSession());
         const record = attempts.get(reference);
-        if (!record || record.ownerKey !== account.ownerKey) {
+        if (!record || record.running || record.ownerKey !== account.ownerKey) {
           return Object.freeze({ status: "failed", attemptReferenceId: reference, code: "share_attempt_unavailable", retryable: false });
         }
         await attemptStore.delete(reference);
