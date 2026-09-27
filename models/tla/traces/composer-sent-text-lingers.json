@@ -1,12 +1,10 @@
 {
   "scenario": "composer-sent-text-lingers",
   "module": "TurnComposer",
-  "summary": "Re-entering a thread during its send changes the draft's revision; the settled send leaves its text in an enabled composer.",
+  "summary": "Re-entering a thread during its send keeps its revision, so settlement clears the sent text.",
   "promises": [
     "UnsentDraftSurvives",
-    "SettlementClearsOnlySentText"
-  ],
-  "violatedAtEnd": [
+    "SettlementClearsOnlySentText",
     "SentTextIsNotShownAgain"
   ],
   "generatedBy": "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
@@ -348,7 +346,7 @@
         "disabled": false,
         "drafts": {
           "<<\"A\", 1>>": {
-            "rev": 4,
+            "rev": 2,
             "text": 1
           },
           "<<\"A\", 2>>": {
@@ -402,7 +400,7 @@
           "<<\"B\", 1>>": 3,
           "<<\"B\", 2>>": 3
         },
-        "rev": 4,
+        "rev": 2,
         "running": {
           "A": false,
           "B": false
@@ -430,7 +428,7 @@
         "disabled": false,
         "drafts": {
           "<<\"A\", 1>>": {
-            "rev": 4,
+            "rev": 2,
             "text": 1
           },
           "<<\"A\", 2>>": {
@@ -484,7 +482,7 @@
           "<<\"B\", 1>>": 3,
           "<<\"B\", 2>>": 3
         },
-        "rev": 4,
+        "rev": 2,
         "running": {
           "A": false,
           "B": false
@@ -514,7 +512,7 @@
         "disabled": false,
         "drafts": {
           "<<\"A\", 1>>": {
-            "rev": 4,
+            "rev": 2,
             "text": 1
           },
           "<<\"A\", 2>>": {
@@ -568,7 +566,7 @@
           "<<\"B\", 1>>": 3,
           "<<\"B\", 2>>": 3
         },
-        "rev": 4,
+        "rev": 2,
         "running": {
           "A": false,
           "B": false
@@ -598,7 +596,7 @@
         "disabled": false,
         "drafts": {
           "<<\"A\", 1>>": {
-            "rev": 4,
+            "rev": 2,
             "text": 1
           },
           "<<\"A\", 2>>": {
@@ -652,7 +650,7 @@
           "<<\"B\", 1>>": 3,
           "<<\"B\", 2>>": 3
         },
-        "rev": 4,
+        "rev": 2,
         "running": {
           "A": false,
           "B": false
@@ -678,12 +676,12 @@
           "1": "A",
           "2": 1
         },
-        "cleared": 0,
+        "cleared": 1,
         "disabled": false,
         "drafts": {
           "<<\"A\", 1>>": {
-            "rev": 4,
-            "text": 1
+            "rev": 0,
+            "text": 3
           },
           "<<\"A\", 2>>": {
             "rev": 0,
@@ -731,12 +729,12 @@
           "B": false
         },
         "persisted": {
-          "<<\"A\", 1>>": 1,
+          "<<\"A\", 1>>": 3,
           "<<\"A\", 2>>": 3,
           "<<\"B\", 1>>": 3,
           "<<\"B\", 2>>": 3
         },
-        "rev": 4,
+        "rev": 3,
         "running": {
           "A": false,
           "B": false
@@ -744,7 +742,7 @@
         "sent": {
           "1": 1
         },
-        "text": 1,
+        "text": 0,
         "unsent": {
           "A": 0,
           "B": 0

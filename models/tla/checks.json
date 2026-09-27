@@ -38,7 +38,7 @@
       "MaxRev": "5",
       "BackgroundRenders": "TRUE",
       "CarryUnsentDraft": "FALSE",
-      "StableScopeRevision": "FALSE"
+      "StableScopeRevision": "TRUE"
     },
     "composer-fixed": {
       "Threads": "{\"A\", \"B\"}",
@@ -56,7 +56,7 @@
       "MaxRev": "12",
       "BackgroundRenders": "TRUE",
       "CarryUnsentDraft": "FALSE",
-      "StableScopeRevision": "FALSE"
+      "StableScopeRevision": "TRUE"
     },
     "inspector-today": {
       "Nodes": "{\"n1\", \"n2\"}",
@@ -341,9 +341,6 @@
       "id": "composer-typing-during-send",
       "module": "TurnComposer",
       "preset": "composer-today",
-      "constants": {
-        "StableScopeRevision": "TRUE"
-      },
       "invariants": [
         "TypeOK",
         "UnsentDraftSurvives"
@@ -358,7 +355,6 @@
       "module": "TurnComposer",
       "preset": "composer-today",
       "constants": {
-        "StableScopeRevision": "TRUE",
         "BackgroundRenders": "FALSE"
       },
       "invariants": [
@@ -378,10 +374,8 @@
         "TypeOK",
         "SettlementClearsOnlySentText"
       ],
-      "expect": {
-        "violated": "SettlementClearsOnlySentText"
-      },
-      "finding": "Re-entering a scope can restore a revision it already had, so a successful send can clear and delete text typed after Send (revision ABA)."
+      "expect": "pass",
+      "finding": "Settlement clears only text the send carried (fixed; #513: re-entering a scope could repeat a revision, so a successful send cleared and deleted text typed after Send)."
     },
     {
       "id": "composer-sent-text-lingers",
@@ -391,10 +385,8 @@
         "TypeOK",
         "SentTextIsNotShownAgain"
       ],
-      "expect": {
-        "violated": "SentTextIsNotShownAgain"
-      },
-      "finding": "Re-entering a scope during a send bumps its revision without a text change, so a settled send whose refresh was skipped leaves the sent text in an enabled composer."
+      "expect": "pass",
+      "finding": "A settled send does not leave its text in the composer (fixed; #513: re-entering a scope during a send bumped its revision without a text change, so settlement kept the sent text)."
     },
     {
       "id": "composer-one-send-per-thread",

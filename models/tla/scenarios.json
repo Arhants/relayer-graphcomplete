@@ -854,9 +854,11 @@
       "preset": "composer-replay",
       "init": "view = \"A\"",
       "promises": [
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
         "SentTextIsNotShownAgain"
       ],
-      "summary": "Re-entering a thread during its send restores an old revision; an edit reaching the sent revision is cleared by settlement.",
+      "summary": "Re-entering a thread during its send and then editing keeps the edit through settlement.",
       "steps": [
         [
           "SwitchThread",
@@ -895,10 +897,6 @@
           "Settle",
           "B"
         ]
-      ],
-      "violatedAtEnd": [
-        "UnsentDraftSurvives",
-        "SettlementClearsOnlySentText"
       ]
     },
     {
@@ -908,9 +906,10 @@
       "init": "view = \"A\"",
       "promises": [
         "UnsentDraftSurvives",
-        "SettlementClearsOnlySentText"
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain"
       ],
-      "summary": "Re-entering a thread during its send changes the draft's revision; the settled send leaves its text in an enabled composer.",
+      "summary": "Re-entering a thread during its send keeps its revision, so settlement clears the sent text.",
       "steps": [
         [
           "Type"
@@ -942,9 +941,6 @@
           "Settle",
           "A"
         ]
-      ],
-      "violatedAtEnd": [
-        "SentTextIsNotShownAgain"
       ]
     },
     {

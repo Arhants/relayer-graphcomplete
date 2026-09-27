@@ -251,8 +251,8 @@ picker, and the unconfirmed-draft warning are not modeled.
 | --- | --- | --- |
 | `composer-typing-during-send` | Confirmed; replayed | `submitInteraction` disables the prompt, but any `renderThread()` during the POST re-enables it through `renderInteractionState`, because the loaded latest turn still reads as settled. The environment refresh renders every 5 s on project threads and on window focus. Text typed then stays in the old turn's draft scope. When the new turn loads, the composer moves to the new turn's scope, which is empty, and the text is never shown again. SCP-016 promises drafts "survive navigation". Scenario: `composer-typing-during-send`. |
 | `composer-typing-during-send-without-renders` | Plausible: narrow window | Leaving the thread and returning during the POST re-enables the prompt the same way, but only if both switches load state before the server records the turn; afterwards the switch loads the pending turn and the prompt stays disabled. Scenario: `composer-return-during-send`. |
-| `composer-settlement-erases-edit` | Plausible: needs a skipped refresh | Re-entering a scope with persisted text assigns `currentPromptRevision + 1`, which can repeat a revision the scope already had. An edit after Send can then reach the submitted revision, and settlement clears the prompt and deletes the persisted draft. It needs the re-entry before the server records the turn, and a skipped refresh: a send from a nested layer followed by leaving and returning (which resets the layer path), or a failed refresh. Scenario: `composer-settlement-erases-edit`. |
-| `composer-sent-text-lingers` | Plausible: same assumptions | Re-entering a scope during a send bumps its revision though the text is unchanged. With a skipped refresh, settlement no longer recognizes the sent text and leaves it in an enabled composer until the new turn loads. Scenario: `composer-sent-text-lingers`. |
+| `composer-settlement-erases-edit` | Fixed; now passes | Before the fix (#513): re-entering a scope with persisted text assigned `currentPromptRevision + 1`, which could repeat a revision the scope already had. An edit after Send could then reach the submitted revision, and settlement cleared the prompt and deleted the persisted draft. A scope's revision now only moves forward. Scenario: `composer-settlement-erases-edit`. |
+| `composer-sent-text-lingers` | Fixed; now passes | Before the fix (#513): re-entering a scope during a send bumped its revision though the text was unchanged, so settlement no longer recognized the sent text and left it in an enabled composer. Unchanged text now keeps its revision. Scenario: `composer-sent-text-lingers`. |
 | `composer-one-send-per-thread` | passes | One follow-up per thread is in flight at a time, and every send releases its thread's Send button. |
 | `composer-fixed` | passes | With both candidate fixes, every composer promise holds. |
 
@@ -263,6 +263,7 @@ The candidate fixes are:
    new turn arrived. Text still owned by an in-flight send is not moved.
 2. `StableScopeRevision`: re-entering a scope keeps its revision when its
    text is unchanged, and otherwise takes a revision above any it had.
+   Landed (#513).
 
 `CarryUnsentDraft` recognizes the in-flight submission by its revision, so
 it is sound only together with `StableScopeRevision`.

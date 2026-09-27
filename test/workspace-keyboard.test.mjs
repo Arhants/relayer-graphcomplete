@@ -1404,6 +1404,36 @@ describe("product workspace keyboard behavior", () => {
       .toMatchObject({ promptValue: "draft B", restoredDraftInteractionId: null });
   });
 
+  it("keeps a re-entered scope's revision moving forward so settlement tells edits from sent text", () => {
+    const enter = (state, threadId, currentPromptValue, currentPromptRevision, persistedDraftText) => (
+      transitionComposerDraftScope(state, {
+        threadId,
+        interactionId: `${threadId}-turn`,
+        currentPromptValue,
+        currentPromptRevision,
+        persistedDraftText,
+      })
+    );
+    let a = enter(createComposerDraftScopeState(), "thread-a", "", 0, null);
+    let b = enter(a.state, "thread-b", "", a.promptRevision, null);
+    const sentRevision = b.promptRevision + 1;
+    const sentScope = b.state.activeScopeKey;
+
+    a = enter(b.state, "thread-a", "sent text", sentRevision, null);
+    b = enter(a.state, "thread-b", "", a.promptRevision, "sent text");
+    expect(b.promptValue).toBe("sent text");
+    expect(b.promptRevision).toBe(sentRevision);
+    expect(clearSubmittedComposerDraft(b.state, sentScope, sentRevision, b.promptRevision).drafts.has(sentScope))
+      .toBe(false);
+
+    a = enter(b.state, "thread-a", "sent text", sentRevision, null);
+    b = enter(a.state, "thread-b", "", a.promptRevision, "edited after send");
+    expect(b.promptValue).toBe("edited after send");
+    expect(b.promptRevision).toBeGreaterThan(sentRevision);
+    expect(clearSubmittedComposerDraft(b.state, sentScope, sentRevision, b.promptRevision)
+      .drafts.get(sentScope).promptValue).toBe("edited after send");
+  });
+
   it("retains a newer prompt revision across unrelated renders in the same scope", () => {
     const initial = transitionComposerDraftScope(createComposerDraftScopeState(), {
       threadId: 10,

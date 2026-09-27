@@ -1192,10 +1192,14 @@ export function transitionComposerDraftScope(state, {
         ?.restoredDraftInteractionId ?? null,
     });
   }
-  if (persistedDraftText !== null) {
+  const stored = drafts.get(nextScopeKey);
+  if (persistedDraftText !== null && stored?.promptValue !== persistedDraftText) {
+    // A scope's revision only moves forward, so settlement's revision check
+    // can tell an edit from the text it sent. Unchanged text keeps its
+    // revision (below); changed text takes one above any it had.
     drafts.set(nextScopeKey, {
       promptValue: persistedDraftText,
-      promptRevision: currentPromptRevision + 1,
+      promptRevision: Math.max(stored?.promptRevision ?? 0, currentPromptRevision) + 1,
       restoredDraftInteractionId: restoredDraft ? interactionId : null,
     });
   } else if (!drafts.has(nextScopeKey)) {

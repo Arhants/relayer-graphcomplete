@@ -31,10 +31,11 @@ CONSTANTS
   CarryUnsentDraft, \* FALSE today: entering a new turn's scope starts empty
                     \* even when the previous turn's scope holds text that is
                     \* not the in-flight submission
-  StableScopeRevision \* FALSE today: re-entering a scope that has persisted
-                    \* text assigns currentPromptRevision + 1 (WS:1188-1193),
-                    \* even when the text is unchanged, and the new revision
-                    \* can equal one the scope already had
+  StableScopeRevision \* TRUE since #513: re-entering a scope keeps its
+                    \* revision when its text is unchanged and otherwise
+                    \* takes one above any it had. Before, it took
+                    \* currentPromptRevision + 1, which could repeat or
+                    \* change without the text changing
 
 None == "none"
 Null == MaxText + 1   \* composer-drafts has no value for the key
