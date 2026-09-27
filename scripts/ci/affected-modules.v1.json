@@ -45,6 +45,7 @@
       }
     ]
   },
+  "proseEvidenceDocuments": ["docs/evidence/issue-477-recursive-fixture-abort/README.md"],
   "fullPortfolio": {
     "exact": [
       ".node-version",

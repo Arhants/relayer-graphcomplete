@@ -575,7 +575,8 @@ jobs:
         run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
       - name: Restore packaging Rust compilation acceleration
         id: rust-cache
-        uses: actions/cache/restore@v5
+        continue-on-error: true
+        uses: ./.github/actions/restore-packaging-cache
         with:
           path: |
             ~/.cargo/registry/index
@@ -596,6 +597,27 @@ jobs:
           echo "- Restore: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
       - name: Seed the locked Cargo dependency closure
         run: node scripts/ci/run-timed.mjs "Packaging Cargo fetch" cargo fetch --locked --target aarch64-apple-darwin
+      - name: Identify sealed packaging cache inputs
+        id: packaging-cache
+        run: node scripts/ci/packaging-cache-identity.mjs
+        env:
+          RELAYER_DESKTOP_TARGET: ${{ matrix.target }}
+      - name: Restore pinned native preparation
+        if: ${{ steps.packaging-cache.outputs.native != '' }}
+        id: native-cache
+        continue-on-error: true
+        uses: ./.github/actions/restore-packaging-cache
+        with:
+          path: ${{ steps.packaging-cache.outputs.root }}/native/${{ steps.packaging-cache.outputs.native }}
+          key: packaging-native-v1-${{ steps.packaging-cache.outputs.native }}
+      - name: Restore sealed release runtime
+        if: ${{ steps.packaging-cache.outputs.runtime != '' }}
+        id: release-cache
+        continue-on-error: true
+        uses: ./.github/actions/restore-packaging-cache
+        with:
+          path: ${{ steps.packaging-cache.outputs.root }}/runtime/${{ steps.packaging-cache.outputs.runtime }}
+          key: packaging-release-v1-${{ steps.packaging-cache.outputs.runtime }}
       - name: Build and inspect the actual target ASAR
         run: node scripts/ci/run-timed.mjs "Apple Silicon packaging" npm run desktop:pack
         env:
@@ -610,6 +632,20 @@ jobs:
             ~/.cargo/git/db
             target
           key: ${{ steps.rust-cache.outputs.cache-primary-key }}
+      - name: Save trusted native preparation
+        if: ${{ github.event_name == 'push' && success() && steps.packaging-cache.outputs.native != '' && steps.native-cache.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.packaging-cache.outputs.root }}/native/${{ steps.packaging-cache.outputs.native }}
+          key: packaging-native-v1-${{ steps.packaging-cache.outputs.native }}
+      - name: Save trusted release runtime
+        if: ${{ github.event_name == 'push' && success() && steps.packaging-cache.outputs.runtime != '' && steps.release-cache.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.packaging-cache.outputs.root }}/runtime/${{ steps.packaging-cache.outputs.runtime }}
+          key: packaging-release-v1-${{ steps.packaging-cache.outputs.runtime }}
 
   check:
     name: check

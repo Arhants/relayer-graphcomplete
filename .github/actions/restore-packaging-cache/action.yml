@@ -1,0 +1,22 @@
+name: Restore packaging cache with bounded transient retry
+description: Observe SDK service diagnostics, retry a transient failure once, and fall back to a fresh build.
+inputs:
+  path:
+    required: true
+    description: Newline-separated cache paths
+  key:
+    required: true
+    description: Primary cache key
+  restore-keys:
+    required: false
+    description: Newline-separated fallback prefixes
+outputs:
+  cache-hit:
+    description: Whether the exact primary key was restored
+  cache-primary-key:
+    description: Requested primary key
+  cache-matched-key:
+    description: Restored key, or empty on miss
+runs:
+  using: node24
+  main: index.mjs
