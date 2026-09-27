@@ -111,3 +111,59 @@ it("does not create a review surface when shutdown starts during annotation regi
   finish();
   await expect(pending).rejects.toThrow("Eval is stopping.");
 });
+
+it("scopes review reads and state metadata to the opening roster, including Rust's missing-thread fallback", async () => {
+  const seen = [];
+  let missing = false;
+  const surface = await createReviewSurface({
+    context, productSession: { origin: "http://product.invalid", readOnlyCookie: { name: "read", value: "only" } },
+    fetchImpl: async (url) => {
+      seen.push(url.pathname + url.search);
+      if (url.pathname === "/api/state") return Response.json({
+        projects: [{ id: 1 }, { id: 2 }],
+        threads: [...(missing ? [] : [{ id: 7, projectId: 1, active: true }]), { id: 8, projectId: 2, active: missing }],
+        interactions: [{ id: 10, threadId: missing ? 8 : 7 }],
+        currentProjection: { nodes: [missing ? "private" : "reviewed"] },
+      });
+      if (url.pathname.endsWith("/destination")) return Response.json({ threadId: 8 });
+      return Response.json({ ok: true });
+    },
+  });
+  opened.push(surface);
+  const read = (path) => fetch(surface.origin + path, { headers: authorized(surface) });
+  for (const path of ["/api/state", "/api/state?threadId=8", "/api/state?threadId=7&threadId=8", "/api/threads/8", "/api/threads/8/annotations", "/api/threads", "/api/projects", "/api/completions/7", "/api/internal/annotation-sessions", "/api/threads/7/unknown", "/api/projects/2/environment"]) {
+    expect((await read(path)).status, path).toBe(403);
+  }
+  expect(seen).toEqual([]);
+  const state = await (await read("/api/state?threadId=7")).json();
+  expect(state).toEqual({ projects: [{ id: 1 }], threads: [{ id: 7, projectId: 1, active: true }], interactions: [{ id: 10, threadId: 7 }], currentProjection: { nodes: ["reviewed"] } });
+  expect((await read("/api/projects/1/environment")).status).toBe(200);
+  expect((await read("/api/projects/2/environment")).status).toBe(403);
+  expect((await read("/api/threads/7/interactions/10/actions/11/destination")).status).toBe(403);
+  missing = true;
+  const fallback = await read("/api/state?threadId=7");
+  expect(fallback.status).toBe(404);
+  expect(await fallback.text()).not.toContain("private");
+});
+
+it("preserves encoded opaque asset IDs without allowing encoded structural paths or foreign threads", async () => {
+  const seen = [];
+  const surface = await createReviewSurface({ context,
+    productSession: { origin: "http://product.invalid", readOnlyCookie: { name: "read", value: "only" } },
+    fetchImpl: async (url) => { seen.push(url.pathname + url.search); return new Response("asset bytes"); },
+  });
+  opened.push(surface);
+  for (const id of ["image one.png", "圖:1", "folder/asset%25"]) {
+    const path = `/api/threads/7/interactions/10/nodes/11/detail-assets/${encodeURIComponent(id)}?layerId=12`;
+    expect((await fetch(surface.origin + path)).status).toBe(401);
+    const response = await fetch(surface.origin + path, { headers: authorized(surface) });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("asset bytes");
+    expect(seen.at(-1)).toBe(path);
+  }
+  for (const path of ["/%61pi/threads/7", "/api/threads/%37", "/api/threads/7/interactions/10/nodes/11/detail-assets/%ZZ"]) {
+    expect((await fetch(surface.origin + path, { headers: authorized(surface) })).status).toBe(400);
+  }
+  expect((await fetch(surface.origin + "/api/threads/8/interactions/10/nodes/11/detail-assets/secret%20asset", { headers: authorized(surface) })).status).toBe(403);
+  expect(seen).toHaveLength(3);
+});
