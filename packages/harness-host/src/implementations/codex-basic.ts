@@ -733,7 +733,7 @@ The graph service enforces exact provenance, target visibility, layer size, expa
 }
 
 function currentWorkspaceMechanicsJs(): string {
-  return `Read current with const current = await graph.getCurrent(). After submitting a layer, you may update the pointer with await graph.advanceCurrent(layer, current.headRevision, "a-stable-operation-key").`;
+  return `Read current with const current = await graph.getCurrent(). After submitting a layer, you may update the pointer with await graph.advanceCurrent(layer, current.headRevision, "a-stable-operation-key"). Once a layer is current, the next current layer must keep a navigation path back to it, so the user can always return to what they saw. This applies to every later advanceCurrent and to the root layer of your final graph.submit. After submitting the new layer and before advancing to it or submitting, add a reference navigate action from one of its draft nodes created for this interaction to current.currentLayerId. Reused accepted nodes cannot take new actions, so every layer you make current needs at least one new draft node to carry that reference.`;
 }
 
 function semanticCompletionGuidanceJs(
