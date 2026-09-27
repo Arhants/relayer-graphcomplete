@@ -238,10 +238,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7
-      - name: Set up pinned Node
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
+      - name: Set up pinned Node and dependencies
+        uses: ./.github/actions/setup-node-dependencies
       - name: Set up isolated Rust compilation
         id: rust-setup
         uses: ./.github/actions/setup-rust-compilation

@@ -221,6 +221,40 @@ describe("CI workflow contract", () => {
     ),
   );
 
+  test("installs Node dependencies before executing the Rust test lane", () => {
+    const rustTestSteps = workflow.jobs["rust-tests"].steps;
+    const nodeDependenciesIndex = rustTestSteps.findIndex(
+      (step) => step.uses === "./.github/actions/setup-node-dependencies",
+    );
+    const rustTestsIndex = rustTestSteps.findIndex(
+      (step) => step.name === "Run fresh Rust tests",
+    );
+    const nodeDependencies = rustTestSteps[nodeDependenciesIndex];
+    const setupNodeDependencies = parse(
+      readFileSync(
+        join(
+          repositoryRoot,
+          ".github",
+          "actions",
+          "setup-node-dependencies",
+          "action.yml",
+        ),
+        "utf8",
+      ),
+    );
+    const npmInstall = setupNodeDependencies.runs.steps.find(
+      (step) => step.name === "Install Node dependencies",
+    );
+
+    expect(nodeDependenciesIndex).toBeGreaterThanOrEqual(0);
+    expect(nodeDependenciesIndex).toBeLessThan(rustTestsIndex);
+    expect(nodeDependencies.if).toBeUndefined();
+    expect(nodeDependencies["continue-on-error"]).toBeUndefined();
+    expect(npmInstall.run).toContain("npm ci");
+    expect(npmInstall.if).toBeUndefined();
+    expect(npmInstall["continue-on-error"]).toBeUndefined();
+  });
+
   test("cancels superseded PR runs and warms integration branches", () => {
     expect(workflow.concurrency["cancel-in-progress"]).toBe(true);
     expect(workflow.on.push.branches).toContain("integration/**");

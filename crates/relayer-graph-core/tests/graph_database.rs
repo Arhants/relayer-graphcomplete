@@ -208,6 +208,42 @@ fn imported_conversation(interaction_node_id: &str) -> ImportedConversation {
     }
 }
 
+fn rename_simple_imported_turn(
+    mut turn: ImportedTurn,
+    turn_id: &str,
+    interaction_id: &str,
+    layer_id: &str,
+    node_id: &str,
+) -> ImportedTurn {
+    turn.source_turn_id = turn_id.into();
+    let view = turn.accepted_view.as_mut().unwrap();
+    view.interaction_node_id = interaction_id.into();
+    view.root_layer_id = layer_id.into();
+    view.root_action.id = format!("root-action-{interaction_id}");
+    view.root_action.source_node_id = interaction_id.into();
+    view.root_action.target_layer_id = Some(layer_id.into());
+    for layer in &mut view.layers {
+        layer.layer.id = layer_id.into();
+        layer.layer.nodes = vec![node_id.into()];
+        if let Some(layout) = &mut layer.layer.layout {
+            for placement in &mut layout.placements {
+                placement.node_id = node_id.into();
+            }
+        }
+        for node in &mut layer.nodes {
+            node.id = node_id.into();
+        }
+        for action in &mut layer.actions {
+            action.source_node_id = node_id.into();
+            action.source_layer_id = Some(layer_id.into());
+        }
+    }
+    if let Some(interaction_node_id) = &mut turn.interaction_node_id {
+        *interaction_node_id = format!("input-root-{interaction_id}");
+    }
+    turn
+}
+
 fn imported_invoke_conversation() -> ImportedConversation {
     let source = ImportedTurn {
         source_turn_id: "turn-1".into(),
@@ -908,6 +944,17 @@ async fn imported_submitted_input_value_must_satisfy_the_accepted_action() {
     // this layer. Only the answer is fabricated -- an option key and label the accepted
     // action never offered. The live send path rejects exactly this as
     // `input_option_unknown`, so import must not accept it either.
+    let fallback_action = InputAction {
+        control: InputControl::SingleSelect,
+        prompt: "Rejected-only legacy question".into(),
+        options: vec![InputOption {
+            key: "fallback".into(),
+            label: "Fallback".into(),
+            unsupported_fields: Default::default(),
+        }],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
     let forged = ImportedSubmittedInput {
         id: "input-child-forged".into(),
         source: ImportedInputSource {
@@ -921,7 +968,66 @@ async fn imported_submitted_input_value_must_satisfy_the_accepted_action() {
                 unsupported_fields: Default::default(),
             }],
         },
+        action: fallback_action.clone(),
         ..honest.clone()
+    };
+    let authored_text = InputAction {
+        control: InputControl::Text,
+        prompt: "Authored question".into(),
+        options: vec![],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    resolved.actions.push(ImportedAction {
+        id: "input-action-authored-text".into(),
+        client_key: None,
+        source_node_id: "node-1".into(),
+        source_layer_id: Some("layer-1".into()),
+        kind: "input".into(),
+        relation: None,
+        label: "Authored text".into(),
+        variant: "pill".into(),
+        icon: None,
+        description: None,
+        target_layer_id: None,
+        interaction_text: None,
+        input: Some(authored_text.clone()),
+    });
+    let conflicting_snapshot = InputAction {
+        control: InputControl::SingleSelect,
+        prompt: "Conflicting child snapshot".into(),
+        options: vec![InputOption {
+            key: "choice".into(),
+            label: "Choice".into(),
+            unsupported_fields: Default::default(),
+        }],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    let authored_text_source = ImportedInputSource {
+        interaction_node_id: "interaction-1".into(),
+        layer_id: "layer-1".into(),
+        action_id: "input-action-authored-text".into(),
+        node_id: "node-1".into(),
+    };
+    let conflicting_child = ImportedSubmittedInput {
+        id: "input-child-conflicting-authored-snapshot".into(),
+        root_turn_id: "turn-2".into(),
+        source: authored_text_source.clone(),
+        action: conflicting_snapshot.clone(),
+        value: SubmittedInputValue::Selected {
+            selected: conflicting_snapshot.options.clone(),
+        },
+    };
+    let authored_text_value = SubmittedInputValue::Text {
+        text: "Keep the authored control".into(),
+    };
+    let legitimate_child = ImportedSubmittedInput {
+        id: "input-child-authored-text".into(),
+        root_turn_id: "turn-2".into(),
+        source: authored_text_source,
+        action: authored_text.clone(),
+        value: authored_text_value.clone(),
     };
     input.turns.push(ImportedTurn {
         source_turn_id: "turn-2".into(),
@@ -929,19 +1035,26 @@ async fn imported_submitted_input_value_must_satisfy_the_accepted_action() {
         interaction_node_id: Some("input-root-2".into()),
         invoke_origin: None,
         contexts: vec![],
-        submitted_inputs: vec![honest, forged],
+        submitted_inputs: vec![honest, forged, conflicting_child, legitimate_child],
         accepted_view: None,
     });
 
     let receipt = database.import_accepted_conversation(&input).await.unwrap();
 
     // The fabricated answer is dropped, and dropping it is visible rather than silent.
-    assert_eq!(receipt.skipped_submitted_inputs.len(), 1);
+    assert_eq!(receipt.skipped_submitted_inputs.len(), 2);
     let skipped = &receipt.skipped_submitted_inputs[0];
     assert_eq!(skipped.submitted_input_id, "input-child-forged");
     assert_eq!(skipped.source_turn_id, "turn-2");
     assert_eq!(skipped.code, "input_option_unknown");
     assert_eq!(skipped.path, "submittedInputs[1].value");
+    let conflicting = &receipt.skipped_submitted_inputs[1];
+    assert_eq!(
+        conflicting.submitted_input_id,
+        "input-child-conflicting-authored-snapshot"
+    );
+    assert_eq!(conflicting.code, "input_action_snapshot_mismatch");
+    assert_eq!(conflicting.path, "submittedInputs[2].action");
 
     // The honest answer on the same turn still imports, and nothing the file claimed
     // about the fabricated option reached the projection.
@@ -950,8 +1063,893 @@ async fn imported_submitted_input_value_must_satisfy_the_accepted_action() {
     let projected = writer.interaction_input().await.unwrap();
     assert_eq!(
         projected.submitted_inputs,
-        vec![SubmittedInput { action, value }]
+        vec![
+            SubmittedInput { action, value },
+            SubmittedInput {
+                action: authored_text.clone(),
+                value: authored_text_value,
+            },
+        ]
     );
+    let accepted_actions = &receipt.turns[0].output.as_ref().unwrap().root_layer.actions;
+    let fallback_payloads = accepted_actions
+        .iter()
+        .filter(|candidate| candidate.client_key.as_deref() == Some("input-action-2"))
+        .collect::<Vec<_>>();
+    assert_eq!(fallback_payloads.len(), 1);
+    let fallback_payload = fallback_payloads[0];
+    assert_eq!(fallback_payload.input.as_ref(), Some(&fallback_action));
+    let authored_action = accepted_actions
+        .iter()
+        .find(|candidate| candidate.input.as_ref() == Some(&authored_text))
+        .unwrap();
+    assert_eq!(authored_action.input.as_ref(), Some(&authored_text));
+}
+
+#[tokio::test]
+async fn imported_submitted_input_requires_an_earlier_presenting_turn() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    let mut input = imported_conversation("interaction-1");
+    let input_action = InputAction {
+        control: InputControl::Text,
+        prompt: "What should happen?".into(),
+        options: vec![],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    input.turns[0].accepted_view.as_mut().unwrap().layers[0]
+        .actions
+        .push(ImportedAction {
+            id: "input-action-1".into(),
+            client_key: None,
+            source_node_id: "node-1".into(),
+            source_layer_id: Some("layer-1".into()),
+            kind: "input".into(),
+            relation: None,
+            label: "".into(),
+            variant: "pill".into(),
+            icon: None,
+            description: None,
+            target_layer_id: None,
+            interaction_text: None,
+            input: Some(input_action.clone()),
+        });
+
+    let mut same_turn = rename_simple_imported_turn(
+        imported_conversation("interaction-2").turns.remove(0),
+        "turn-2",
+        "interaction-2",
+        "layer-2",
+        "node-2",
+    );
+    same_turn.accepted_view.as_mut().unwrap().layers[0]
+        .actions
+        .push(ImportedAction {
+            id: "input-action-2".into(),
+            client_key: None,
+            source_node_id: "node-2".into(),
+            source_layer_id: Some("layer-2".into()),
+            kind: "input".into(),
+            relation: None,
+            label: "".into(),
+            variant: "pill".into(),
+            icon: None,
+            description: None,
+            target_layer_id: None,
+            interaction_text: None,
+            input: Some(input_action.clone()),
+        });
+    let later = rename_simple_imported_turn(
+        imported_conversation("interaction-3").turns.remove(0),
+        "turn-3",
+        "interaction-3",
+        "layer-3",
+        "node-3",
+    );
+    let mut later = later;
+    later.accepted_view.as_mut().unwrap().layers[0]
+        .actions
+        .push(ImportedAction {
+            id: "input-action-3".into(),
+            client_key: None,
+            source_node_id: "node-3".into(),
+            source_layer_id: Some("layer-3".into()),
+            kind: "input".into(),
+            relation: None,
+            label: "".into(),
+            variant: "pill".into(),
+            icon: None,
+            description: None,
+            target_layer_id: None,
+            interaction_text: None,
+            input: Some(input_action.clone()),
+        });
+
+    let value = SubmittedInputValue::Text {
+        text: "Use the earlier answer".into(),
+    };
+    let submitted = |id: &str, interaction: &str, layer: &str, action: &str, node: &str| {
+        ImportedSubmittedInput {
+            id: id.into(),
+            root_turn_id: "turn-2".into(),
+            source: ImportedInputSource {
+                interaction_node_id: interaction.into(),
+                layer_id: layer.into(),
+                action_id: action.into(),
+                node_id: node.into(),
+            },
+            action: input_action.clone(),
+            value: value.clone(),
+        }
+    };
+    input.turns.push(ImportedTurn {
+        source_turn_id: "turn-2".into(),
+        text: "Consume inputs".into(),
+        interaction_node_id: Some("interaction-2".into()),
+        invoke_origin: None,
+        contexts: vec![],
+        submitted_inputs: vec![
+            submitted(
+                "input-earlier",
+                "interaction-1",
+                "layer-1",
+                "input-action-1",
+                "node-1",
+            ),
+            submitted(
+                "input-same-turn",
+                "interaction-2",
+                "layer-2",
+                "input-action-2",
+                "node-2",
+            ),
+            submitted(
+                "input-later-turn",
+                "interaction-3",
+                "layer-3",
+                "input-action-3",
+                "node-3",
+            ),
+        ],
+        accepted_view: same_turn.accepted_view,
+    });
+    input.turns.push(later);
+
+    let receipt = database.import_accepted_conversation(&input).await.unwrap();
+    assert_eq!(receipt.skipped_submitted_inputs.len(), 2);
+    assert_eq!(
+        receipt
+            .skipped_submitted_inputs
+            .iter()
+            .map(|skipped| (skipped.submitted_input_id.as_str(), skipped.code.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("input-same-turn", "input_occurrence_not_visible"),
+            ("input-later-turn", "input_occurrence_not_visible"),
+        ]
+    );
+    let root = NodeId::new(receipt.turns[1].graph_node_id.unwrap()).unwrap();
+    let writer = database.writer_for_subgraph(root).await.unwrap();
+    assert_eq!(
+        writer.interaction_input().await.unwrap().submitted_inputs,
+        vec![SubmittedInput {
+            action: input_action,
+            value,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn imported_duplicate_input_occurrence_drops_only_extra_answer_per_turn() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    let mut input = imported_conversation("interaction-1");
+    let action = InputAction {
+        control: InputControl::SingleSelect,
+        prompt: "Choose".into(),
+        options: vec![InputOption {
+            key: "one".into(),
+            label: "One".into(),
+            unsupported_fields: Default::default(),
+        }],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    let action_two = InputAction {
+        control: InputControl::Text,
+        prompt: "Add a note".into(),
+        options: vec![],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    let source_layer = &mut input.turns[0].accepted_view.as_mut().unwrap().layers[0];
+    for (id, snapshot) in [
+        ("input-action-1", action.clone()),
+        ("input-action-2", action_two.clone()),
+    ] {
+        source_layer.actions.push(ImportedAction {
+            id: id.into(),
+            client_key: None,
+            source_node_id: "node-1".into(),
+            source_layer_id: Some("layer-1".into()),
+            kind: "input".into(),
+            relation: None,
+            label: "".into(),
+            variant: "pill".into(),
+            icon: None,
+            description: None,
+            target_layer_id: None,
+            interaction_text: None,
+            input: Some(snapshot),
+        });
+    }
+    let valid_value = SubmittedInputValue::Selected {
+        selected: vec![InputOption {
+            key: "one".into(),
+            label: "One".into(),
+            unsupported_fields: Default::default(),
+        }],
+    };
+    let invalid_value = SubmittedInputValue::Selected {
+        selected: vec![InputOption {
+            key: "unknown".into(),
+            label: "Unknown".into(),
+            unsupported_fields: Default::default(),
+        }],
+    };
+    let note_value = SubmittedInputValue::Text {
+        text: "Keep this distinct occurrence".into(),
+    };
+    let submitted =
+        |id: &str, action_id: &str, snapshot: InputAction, value: SubmittedInputValue| {
+            ImportedSubmittedInput {
+                id: id.into(),
+                root_turn_id: "turn-2".into(),
+                source: ImportedInputSource {
+                    interaction_node_id: "interaction-1".into(),
+                    layer_id: "layer-1".into(),
+                    action_id: action_id.into(),
+                    node_id: "node-1".into(),
+                },
+                action: snapshot,
+                value,
+            }
+        };
+    let mut second_consumer = rename_simple_imported_turn(
+        imported_conversation("interaction-3").turns.remove(0),
+        "turn-3",
+        "interaction-3",
+        "layer-3",
+        "node-3",
+    );
+    second_consumer.interaction_node_id = Some("interaction-3".into());
+    second_consumer.submitted_inputs = vec![ImportedSubmittedInput {
+        id: "input-other-turn".into(),
+        root_turn_id: "turn-3".into(),
+        source: ImportedInputSource {
+            interaction_node_id: "interaction-1".into(),
+            layer_id: "layer-1".into(),
+            action_id: "input-action-1".into(),
+            node_id: "node-1".into(),
+        },
+        action: action.clone(),
+        value: valid_value.clone(),
+    }];
+    input.turns.push(ImportedTurn {
+        source_turn_id: "turn-2".into(),
+        text: "Two answers".into(),
+        interaction_node_id: Some("input-root-2".into()),
+        invoke_origin: None,
+        contexts: vec![],
+        submitted_inputs: vec![
+            submitted(
+                "input-invalid-first",
+                "input-action-1",
+                action.clone(),
+                invalid_value,
+            ),
+            submitted(
+                "input-valid",
+                "input-action-1",
+                action.clone(),
+                valid_value.clone(),
+            ),
+            submitted(
+                "input-duplicate",
+                "input-action-1",
+                action.clone(),
+                valid_value.clone(),
+            ),
+            submitted(
+                "input-distinct",
+                "input-action-2",
+                action_two.clone(),
+                note_value.clone(),
+            ),
+        ],
+        accepted_view: None,
+    });
+    input.turns.push(second_consumer);
+
+    let receipt = database.import_accepted_conversation(&input).await.unwrap();
+    assert_eq!(receipt.skipped_submitted_inputs.len(), 2);
+    assert_eq!(
+        receipt
+            .skipped_submitted_inputs
+            .iter()
+            .map(|skipped| (skipped.submitted_input_id.as_str(), skipped.code.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("input-invalid-first", "input_option_unknown"),
+            ("input-duplicate", "input_attachment_duplicate"),
+        ]
+    );
+    assert_eq!(receipt.skipped_submitted_inputs[1].source_turn_id, "turn-2");
+    assert_eq!(
+        receipt.skipped_submitted_inputs[1].path,
+        "submittedInputs[2].source"
+    );
+
+    let first_root = NodeId::new(receipt.turns[1].graph_node_id.unwrap()).unwrap();
+    let first = database
+        .writer_for_subgraph(first_root)
+        .await
+        .unwrap()
+        .interaction_input()
+        .await
+        .unwrap();
+    assert_eq!(
+        first.submitted_inputs,
+        vec![
+            SubmittedInput {
+                action: action.clone(),
+                value: valid_value.clone(),
+            },
+            SubmittedInput {
+                action: action_two,
+                value: note_value,
+            },
+        ]
+    );
+    let second_root = NodeId::new(receipt.turns[2].graph_node_id.unwrap()).unwrap();
+    let second = database
+        .writer_for_subgraph(second_root)
+        .await
+        .unwrap()
+        .interaction_input()
+        .await
+        .unwrap();
+    assert_eq!(
+        second.submitted_inputs,
+        vec![SubmittedInput {
+            action,
+            value: valid_value,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn invalid_legacy_child_snapshot_does_not_poison_a_later_valid_answer() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    let mut input = imported_conversation("interaction-1");
+    let legacy_input = InputAction {
+        control: InputControl::Text,
+        prompt: "Legacy question".into(),
+        options: vec![],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    input.turns[0].accepted_view.as_mut().unwrap().layers[0]
+        .actions
+        .push(ImportedAction {
+            id: "legacy-input-action".into(),
+            client_key: None,
+            source_node_id: "node-1".into(),
+            source_layer_id: Some("layer-1".into()),
+            kind: "input".into(),
+            relation: None,
+            label: "Legacy input".into(),
+            variant: "pill".into(),
+            icon: None,
+            description: None,
+            target_layer_id: None,
+            interaction_text: None,
+            input: None,
+        });
+
+    let invalid_snapshot = InputAction {
+        control: InputControl::SingleSelect,
+        prompt: "Untrusted snapshot".into(),
+        options: vec![InputOption {
+            key: "known".into(),
+            label: "Known".into(),
+            unsupported_fields: Default::default(),
+        }],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    let valid_value = SubmittedInputValue::Text {
+        text: "Keep this answer".into(),
+    };
+    let submitted =
+        |id: &str, action: InputAction, value: SubmittedInputValue| ImportedSubmittedInput {
+            id: id.into(),
+            root_turn_id: "turn-2".into(),
+            source: ImportedInputSource {
+                interaction_node_id: "interaction-1".into(),
+                layer_id: "layer-1".into(),
+                action_id: "legacy-input-action".into(),
+                node_id: "node-1".into(),
+            },
+            action,
+            value,
+        };
+    input.turns.push(ImportedTurn {
+        source_turn_id: "turn-2".into(),
+        text: "Keep this consuming turn".into(),
+        interaction_node_id: Some("input-root-2".into()),
+        invoke_origin: None,
+        contexts: vec![],
+        submitted_inputs: vec![
+            submitted(
+                "input-invalid-first-snapshot",
+                invalid_snapshot,
+                SubmittedInputValue::Selected {
+                    selected: vec![InputOption {
+                        key: "unknown".into(),
+                        label: "Unknown".into(),
+                        unsupported_fields: Default::default(),
+                    }],
+                },
+            ),
+            submitted(
+                "input-valid-later-snapshot",
+                legacy_input.clone(),
+                valid_value.clone(),
+            ),
+        ],
+        accepted_view: None,
+    });
+
+    let receipt = database.import_accepted_conversation(&input).await.unwrap();
+    assert_eq!(receipt.skipped_submitted_inputs.len(), 1);
+    assert_eq!(
+        receipt.skipped_submitted_inputs[0].submitted_input_id,
+        "input-invalid-first-snapshot"
+    );
+    let root = NodeId::new(receipt.turns[1].graph_node_id.unwrap()).unwrap();
+    let writer = database.writer_for_subgraph(root).await.unwrap();
+    assert_eq!(
+        writer.interaction_input().await.unwrap().submitted_inputs,
+        vec![SubmittedInput {
+            action: legacy_input,
+            value: valid_value,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn reused_legacy_input_uses_presenting_layer_for_snapshot_preference() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    let mut input = imported_conversation("interaction-1");
+    let legacy_input = InputAction {
+        control: InputControl::Text,
+        prompt: "Legacy question".into(),
+        options: vec![],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    input.turns[0].accepted_view.as_mut().unwrap().layers[0]
+        .actions
+        .push(ImportedAction {
+            id: "legacy-input-action".into(),
+            client_key: None,
+            source_node_id: "node-1".into(),
+            source_layer_id: Some("layer-1".into()),
+            kind: "input".into(),
+            relation: None,
+            label: "Legacy input".into(),
+            variant: "pill".into(),
+            icon: None,
+            description: None,
+            target_layer_id: None,
+            interaction_text: None,
+            input: None,
+        });
+
+    // I2 presents the same node-owned action in B, retaining A as its authored
+    // source layer. B does not navigate to A; it is the actual presentation.
+    let mut reuse = input.turns[0].clone();
+    reuse.source_turn_id = "turn-2".into();
+    reuse.interaction_node_id = None;
+    let view = reuse.accepted_view.as_mut().unwrap();
+    view.interaction_node_id = "interaction-2".into();
+    view.root_layer_id = "layer-B".into();
+    view.root_action.id = "root-action-interaction-2".into();
+    view.root_action.source_node_id = "interaction-2".into();
+    view.root_action.target_layer_id = Some("layer-B".into());
+    let resolved = &mut view.layers[0];
+    resolved.layer.id = "layer-B".into();
+    resolved.layer.nodes = vec!["node-1".into()];
+    if let Some(layout) = &mut resolved.layer.layout {
+        for placement in &mut layout.placements {
+            placement.node_id = "node-1".into();
+        }
+    }
+    resolved.actions[0].source_layer_id = Some("layer-1".into());
+
+    let valid_value = SubmittedInputValue::Text {
+        text: "Keep the genuine answer".into(),
+    };
+    let forged_action = InputAction {
+        control: InputControl::SingleSelect,
+        prompt: "Self-valid forged snapshot".into(),
+        options: vec![InputOption {
+            key: "known".into(),
+            label: "Known".into(),
+            unsupported_fields: Default::default(),
+        }],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    let submitted = |id: &str, layer_id: &str, action: InputAction, value: SubmittedInputValue| {
+        ImportedSubmittedInput {
+            id: id.into(),
+            root_turn_id: "turn-3".into(),
+            source: ImportedInputSource {
+                interaction_node_id: "interaction-2".into(),
+                layer_id: layer_id.into(),
+                action_id: "legacy-input-action".into(),
+                node_id: "node-1".into(),
+            },
+            action,
+            value,
+        }
+    };
+    let consumer = ImportedTurn {
+        source_turn_id: "turn-3".into(),
+        text: "Consume reused input".into(),
+        interaction_node_id: Some("interaction-3".into()),
+        invoke_origin: None,
+        contexts: vec![],
+        submitted_inputs: vec![
+            submitted(
+                "input-genuine-B",
+                "layer-B",
+                legacy_input.clone(),
+                valid_value.clone(),
+            ),
+            submitted(
+                "input-forged-A",
+                "layer-1",
+                forged_action,
+                SubmittedInputValue::Selected {
+                    selected: vec![InputOption {
+                        key: "known".into(),
+                        label: "Known".into(),
+                        unsupported_fields: Default::default(),
+                    }],
+                },
+            ),
+        ],
+        accepted_view: None,
+    };
+    input.turns.push(reuse);
+    input.turns.push(consumer);
+
+    let receipt = database.import_accepted_conversation(&input).await.unwrap();
+    assert_eq!(receipt.skipped_submitted_inputs.len(), 1);
+    assert_eq!(
+        receipt.skipped_submitted_inputs[0].submitted_input_id,
+        "input-forged-A"
+    );
+    assert_eq!(
+        receipt.skipped_submitted_inputs[0].code,
+        "input_action_not_in_occurrence"
+    );
+    assert_eq!(
+        receipt.skipped_submitted_inputs[0].path,
+        "submittedInputs[1].source.actionId"
+    );
+    let root = NodeId::new(receipt.turns[2].graph_node_id.unwrap()).unwrap();
+    let writer = database.writer_for_subgraph(root).await.unwrap();
+    assert_eq!(
+        writer.interaction_input().await.unwrap().submitted_inputs,
+        vec![SubmittedInput {
+            action: legacy_input.clone(),
+            value: valid_value,
+        }]
+    );
+    let reused = receipt.turns[1].output.as_ref().unwrap();
+    let accepted = reused
+        .root_layer
+        .actions
+        .iter()
+        .find(|action| action.label == "Legacy input")
+        .unwrap();
+    assert_eq!(accepted.input.as_ref(), Some(&legacy_input));
+    assert_eq!(
+        accepted.source_layer_id,
+        Some(LayerId::new(receipt.turns[0].root_layer_id.unwrap()).unwrap())
+    );
+}
+
+#[tokio::test]
+async fn wrong_occurrence_legacy_snapshot_cannot_poison_exact_sibling() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    let mut input = imported_conversation("interaction-1");
+    let legacy_input = InputAction {
+        control: InputControl::Text,
+        prompt: "Legacy question".into(),
+        options: vec![],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    input.turns[0].accepted_view.as_mut().unwrap().layers[0]
+        .actions
+        .push(ImportedAction {
+            id: "legacy-input-action".into(),
+            client_key: None,
+            source_node_id: "node-1".into(),
+            source_layer_id: Some("layer-1".into()),
+            kind: "input".into(),
+            relation: None,
+            label: "Legacy input".into(),
+            variant: "pill".into(),
+            icon: None,
+            description: None,
+            target_layer_id: None,
+            interaction_text: None,
+            input: None,
+        });
+
+    let wrong_occurrence_snapshot = InputAction {
+        control: InputControl::SingleSelect,
+        prompt: "Wrong occurrence snapshot".into(),
+        options: vec![InputOption {
+            key: "known".into(),
+            label: "Known".into(),
+            unsupported_fields: Default::default(),
+        }],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    let exact_value = SubmittedInputValue::Text {
+        text: "Keep this exact answer".into(),
+    };
+    let submitted = |id: &str,
+                     interaction_node_id: &str,
+                     layer_id: &str,
+                     node_id: &str,
+                     action: InputAction,
+                     value: SubmittedInputValue| ImportedSubmittedInput {
+        id: id.into(),
+        root_turn_id: "turn-2".into(),
+        source: ImportedInputSource {
+            interaction_node_id: interaction_node_id.into(),
+            layer_id: layer_id.into(),
+            action_id: "legacy-input-action".into(),
+            node_id: node_id.into(),
+        },
+        action,
+        value,
+    };
+    input.turns.push(ImportedTurn {
+        source_turn_id: "turn-2".into(),
+        text: "Keep this consuming turn".into(),
+        interaction_node_id: Some("input-root-2".into()),
+        invoke_origin: None,
+        contexts: vec![],
+        submitted_inputs: vec![
+            submitted(
+                "input-a-wrong-occurrence",
+                // The root and layer are earlier and materialized, but the claimed
+                // source node is an existing root rather than the action's node.
+                "interaction-1",
+                "layer-1",
+                "interaction-1",
+                wrong_occurrence_snapshot,
+                SubmittedInputValue::Selected {
+                    selected: vec![InputOption {
+                        key: "known".into(),
+                        label: "Known".into(),
+                        unsupported_fields: Default::default(),
+                    }],
+                },
+            ),
+            submitted(
+                "input-b-exact-occurrence",
+                "interaction-1",
+                "layer-1",
+                "node-1",
+                legacy_input.clone(),
+                exact_value.clone(),
+            ),
+        ],
+        accepted_view: None,
+    });
+
+    let receipt = database.import_accepted_conversation(&input).await.unwrap();
+    assert_eq!(receipt.skipped_submitted_inputs.len(), 1);
+    assert_eq!(
+        receipt.skipped_submitted_inputs[0].submitted_input_id,
+        "input-a-wrong-occurrence"
+    );
+    let root = NodeId::new(receipt.turns[1].graph_node_id.unwrap()).unwrap();
+    let writer = database.writer_for_subgraph(root).await.unwrap();
+    assert_eq!(
+        writer.interaction_input().await.unwrap().submitted_inputs,
+        vec![SubmittedInput {
+            action: legacy_input,
+            value: exact_value,
+        }]
+    );
+}
+
+async fn assert_chronologically_invalid_legacy_snapshot_is_ignored(scenario: &str) {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    let mut input = imported_conversation("interaction-1");
+    let mut presenting_turn = input.turns.remove(0);
+    presenting_turn.interaction_node_id = Some("interaction-1".into());
+    if scenario == "later-turn" {
+        presenting_turn.source_turn_id = "turn-3".into();
+    }
+
+    let legacy_input = InputAction {
+        control: InputControl::Text,
+        prompt: "Legacy question".into(),
+        options: vec![],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    presenting_turn.accepted_view.as_mut().unwrap().layers[0]
+        .actions
+        .push(ImportedAction {
+            id: "legacy-input-action".into(),
+            client_key: None,
+            source_node_id: "node-1".into(),
+            source_layer_id: Some("layer-1".into()),
+            kind: "input".into(),
+            relation: None,
+            label: "Legacy input".into(),
+            variant: "pill".into(),
+            icon: None,
+            description: None,
+            target_layer_id: None,
+            interaction_text: None,
+            input: None,
+        });
+
+    let conflicting_snapshot = InputAction {
+        control: InputControl::SingleSelect,
+        prompt: "Chronologically invalid snapshot".into(),
+        options: vec![InputOption {
+            key: "known".into(),
+            label: "Known".into(),
+            unsupported_fields: Default::default(),
+        }],
+        minimum_selections: None,
+        unsupported_fields: Default::default(),
+    };
+    let poison_value = SubmittedInputValue::Selected {
+        selected: vec![InputOption {
+            key: "known".into(),
+            label: "Known".into(),
+            unsupported_fields: Default::default(),
+        }],
+    };
+    let valid_value = SubmittedInputValue::Text {
+        text: "Keep this later answer".into(),
+    };
+    let submitted = |id: &str,
+                     root_turn_id: &str,
+                     action: InputAction,
+                     value: SubmittedInputValue| ImportedSubmittedInput {
+        id: id.into(),
+        root_turn_id: root_turn_id.into(),
+        source: ImportedInputSource {
+            interaction_node_id: "interaction-1".into(),
+            layer_id: "layer-1".into(),
+            action_id: "legacy-input-action".into(),
+            node_id: "node-1".into(),
+        },
+        action,
+        value,
+    };
+    let poison = submitted(
+        "input-chronology-poison",
+        if scenario == "same-turn" {
+            "turn-1"
+        } else {
+            "turn-2"
+        },
+        conflicting_snapshot,
+        poison_value,
+    );
+    let answer_turn_id = if scenario == "same-turn" {
+        "turn-2"
+    } else {
+        "turn-4"
+    };
+    let answer = submitted(
+        "input-exact-later-answer",
+        answer_turn_id,
+        legacy_input.clone(),
+        valid_value.clone(),
+    );
+    let make_consumer = |source_turn_id: &str,
+                         interaction_node_id: &str,
+                         text: &str,
+                         submitted_inputs: Vec<ImportedSubmittedInput>| {
+        ImportedTurn {
+            source_turn_id: source_turn_id.into(),
+            text: text.into(),
+            interaction_node_id: Some(interaction_node_id.into()),
+            invoke_origin: None,
+            contexts: vec![],
+            submitted_inputs,
+            accepted_view: None,
+        }
+    };
+
+    let answer_position = if scenario == "same-turn" {
+        presenting_turn.submitted_inputs = vec![poison];
+        input.turns.push(presenting_turn);
+        input.turns.push(make_consumer(
+            "turn-2",
+            "input-root-2",
+            "Keep this consuming turn",
+            vec![answer],
+        ));
+        1
+    } else {
+        input.turns.push(make_consumer(
+            "turn-1",
+            "input-root-1",
+            "Earlier placeholder turn",
+            vec![],
+        ));
+        input.turns.push(make_consumer(
+            "turn-2",
+            "input-root-2",
+            "Later than the consumer's turn",
+            vec![poison],
+        ));
+        input.turns.push(presenting_turn);
+        input.turns.push(make_consumer(
+            "turn-4",
+            "input-root-4",
+            "Keep this consuming turn",
+            vec![answer],
+        ));
+        3
+    };
+
+    let receipt = database.import_accepted_conversation(&input).await.unwrap();
+    assert_eq!(receipt.skipped_submitted_inputs.len(), 1, "{scenario}");
+    assert_eq!(
+        receipt.skipped_submitted_inputs[0].submitted_input_id, "input-chronology-poison",
+        "{scenario}"
+    );
+    let root = NodeId::new(receipt.turns[answer_position].graph_node_id.unwrap()).unwrap();
+    let writer = database.writer_for_subgraph(root).await.unwrap();
+    assert_eq!(
+        writer.interaction_input().await.unwrap().submitted_inputs,
+        vec![SubmittedInput {
+            action: legacy_input,
+            value: valid_value,
+        }],
+        "{scenario}"
+    );
+}
+
+#[tokio::test]
+async fn same_turn_legacy_snapshot_cannot_poison_later_answer() {
+    assert_chronologically_invalid_legacy_snapshot_is_ignored("same-turn").await;
+}
+
+#[tokio::test]
+async fn later_turn_legacy_snapshot_cannot_poison_later_answer() {
+    assert_chronologically_invalid_legacy_snapshot_is_ignored("later-turn").await;
 }
 
 #[tokio::test]

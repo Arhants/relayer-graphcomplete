@@ -619,10 +619,30 @@ pub struct ConversationExportValidator {
     submitted_input_ids: HashSet<String>,
     visual_asset_contents: HashMap<String, VisualAssetContentMetadata>,
     referenced_visual_asset_digests: HashSet<String>,
+    policy: ConversationExportValidationPolicy,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ConversationExportValidationPolicy {
+    StrictExport,
+    ImportStaging,
 }
 
 impl ConversationExportValidator {
     pub fn new(header: &ConversationExportHeader) -> Result<Self, ExportValidationError> {
+        Self::with_policy(header, ConversationExportValidationPolicy::StrictExport)
+    }
+
+    pub(crate) fn new_for_import(
+        header: &ConversationExportHeader,
+    ) -> Result<Self, ExportValidationError> {
+        Self::with_policy(header, ConversationExportValidationPolicy::ImportStaging)
+    }
+
+    fn with_policy(
+        header: &ConversationExportHeader,
+        policy: ConversationExportValidationPolicy,
+    ) -> Result<Self, ExportValidationError> {
         validate_header(header)?;
         Ok(Self {
             export_version: header.export_version,
@@ -640,6 +660,7 @@ impl ConversationExportValidator {
             submitted_input_ids: HashSet::new(),
             visual_asset_contents: HashMap::new(),
             referenced_visual_asset_digests: HashSet::new(),
+            policy,
         })
     }
 
@@ -708,7 +729,7 @@ impl ConversationExportValidator {
                 ),
             ));
         }
-        validate_turn(turn, &path, &self.prior_invokes)?;
+        validate_turn(turn, &path, &self.prior_invokes, self.policy)?;
         for (index, submitted) in turn.submitted_inputs.iter().enumerate() {
             let submitted_path = format!("{path}.submittedInputs[{index}]");
             if !self.submitted_input_ids.insert(submitted.id.clone()) {
@@ -725,12 +746,13 @@ impl ConversationExportValidator {
                     "A submitted input child must name its consuming portable turn.",
                 ));
             }
-            if !self
-                .interaction_ids
-                .contains(&submitted.source.interaction_node_id)
-                || !self.layers_by_id.contains_key(&submitted.source.layer_id)
-                || !self.nodes_by_id.contains_key(&submitted.source.node_id)
-                || !self.input_action_ids.contains(&submitted.source.action_id)
+            if self.policy == ConversationExportValidationPolicy::StrictExport
+                && (!self
+                    .interaction_ids
+                    .contains(&submitted.source.interaction_node_id)
+                    || !self.layers_by_id.contains_key(&submitted.source.layer_id)
+                    || !self.nodes_by_id.contains_key(&submitted.source.node_id)
+                    || !self.input_action_ids.contains(&submitted.source.action_id))
             {
                 return Err(ExportValidationError::new(
                     "submitted_input_source_unresolved",
@@ -1290,6 +1312,7 @@ fn validate_turn(
     turn: &ConversationExportTurn,
     path: &str,
     prior_invokes: &HashMap<String, HashSet<String>>,
+    policy: ConversationExportValidationPolicy,
 ) -> Result<(), ExportValidationError> {
     require_string(&turn.created_at, format!("{path}.createdAt"))?;
     if turn.text.len() > MAX_STRING_BYTES {
@@ -1300,7 +1323,7 @@ fn validate_turn(
         ));
     }
     validate_contexts(turn, path)?;
-    validate_submitted_inputs(turn, path)?;
+    validate_submitted_inputs(turn, path, policy)?;
     if let Some(interaction_node_id) = &turn.interaction_node_id {
         require_id(
             interaction_node_id,
@@ -1643,6 +1666,7 @@ fn validate_contexts(
 fn validate_submitted_inputs(
     turn: &ConversationExportTurn,
     path: &str,
+    policy: ConversationExportValidationPolicy,
 ) -> Result<(), ExportValidationError> {
     if turn.submitted_inputs.len() > MAX_SUBMITTED_INPUTS_PER_TURN {
         return Err(ExportValidationError::new(
@@ -1694,7 +1718,9 @@ fn validate_submitted_inputs(
             &submitted.source.layer_id,
             &submitted.source.action_id,
         );
-        if !occurrences.insert(occurrence) {
+        if !occurrences.insert(occurrence)
+            && policy == ConversationExportValidationPolicy::StrictExport
+        {
             return Err(ExportValidationError::new(
                 "duplicate_submitted_input_occurrence",
                 format!("{submitted_path}.source"),
