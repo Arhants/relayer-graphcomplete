@@ -67,6 +67,7 @@ export const APPROVED_TELEMETRY_MODULES = Object.freeze({
     "desktop/main/managed-runtimes/installer.mjs",
     "desktop/main/managed-runtimes/prime-wheels.mjs",
     "desktop/main/managed-runtimes/probes.mjs",
+    "desktop/main/managed-runtimes/product-installer.mjs",
     "desktop/main/managed-runtimes/quit-guard.mjs",
     "desktop/main/managed-runtimes/recipes.mjs",
     "desktop/main/managed-runtimes/resolver.mjs",

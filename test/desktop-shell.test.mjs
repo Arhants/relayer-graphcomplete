@@ -291,7 +291,7 @@ describe("desktop skeleton", () => {
     expect(desktopMain).toContain('"graph-client", "index.js"');
     expect(desktopMain).toContain("codexBasicClientModuleUrl: graphClientModuleUrl");
     expect(desktopMain).not.toContain("bundledCodexBinary");
-    expect(desktopMain).toContain("createManagedRuntimeInstaller");
+    expect(desktopMain).toContain("createProductManagedRuntimeInstaller");
     expect(packaging).toContain('to: "renderer"');
     expect(packaging).toContain('ladybugNoticesExtraResource(repositoryRoot)');
     expect(threads).not.toContain("/messages");
