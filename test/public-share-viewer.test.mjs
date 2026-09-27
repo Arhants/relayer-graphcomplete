@@ -136,9 +136,8 @@ function canonicalJson(value) {
   return JSON.stringify(value);
 }
 
-function assetFixtureJsonl() {
+function assetFixtureJsonl(bytes = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><circle cx="1" cy="1" r="1"/></svg>')) {
   const records = fixtureJsonl().trimEnd().split("\n").map((line) => JSON.parse(line));
-  const bytes = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><circle cx="1" cy="1" r="1"/></svg>');
   const digestSha256 = createHash("sha256").update(bytes).digest("hex");
   const asset = { id: "public-image", digestSha256, mediaType: "image/svg+xml", representation: "image" };
   const detail = {
@@ -221,6 +220,13 @@ describe("public share V1 reader", () => {
       URL: { createObjectURL, revokeObjectURL },
       Blob,
     })).rejects.toThrow("digest mismatch");
+  });
+
+  it("accepts encoded visual content above the generic string ceiling when decoded bytes remain within the 8 MiB asset limit", () => {
+    const bytes = Buffer.alloc(4_540_000, 65);
+    const { jsonl } = assetFixtureJsonl(bytes);
+    expect(Buffer.byteLength(jsonl)).toBeLessThan(16 * 1024 * 1024);
+    expect(() => parsePublicSnapshot(jsonl)).not.toThrow();
   });
 
   it("preserves nested navigation and reference cycles without granting execution authority", async () => {

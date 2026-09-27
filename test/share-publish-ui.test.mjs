@@ -292,6 +292,25 @@ describe("share publish renderer boundary", () => {
     controller.dispose();
   });
 
+  it("invalidates a fresh dialog preflight when navigation changes its source thread", async () => {
+    let resolvePreflight;
+    const test = fixture();
+    test.share.preflight.mockImplementation(() => new Promise((resolve) => { resolvePreflight = resolve; }));
+
+    const opening = test.window.document.querySelector("#shareConversation").onclick();
+    await vi.waitFor(() => expect(resolvePreflight).toBeTypeOf("function"));
+    expect(test.share.preflight).toHaveBeenCalledWith(7);
+    test.thread.id = 8;
+    test.interactions.push({ id: 3, threadId: 8, completionStatus: "accepted" });
+    test.controller.render();
+    resolvePreflight({ status: "ready" });
+    await opening;
+
+    expect(test.window.document.querySelector("#shareDialog").classList.contains("hidden")).toBe(true);
+    expect(test.window.document.querySelector("#shareTitle")).toBeNull();
+    expect(test.share.create).not.toHaveBeenCalled();
+  });
+
   it("re-runs preflight instead of retrying a nonexistent attempt after a preflight failure", async () => {
     const test = fixture({ preflightResult: {
       status: "failed",

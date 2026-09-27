@@ -543,7 +543,7 @@ async fn collect_visual_assets<'a>(
         let Some(detail) = node.authored_detail.as_ref() else {
             continue;
         };
-        if portable_authored_detail(detail, redactor).is_none() {
+        if authored_detail_omission(detail, redactor).is_some() {
             continue;
         }
         let pins = detail
@@ -1520,7 +1520,11 @@ fn export_layer(
     Ok(ExportResolvedLayer {
         layer: ExportLayer {
             id: ids.layer(resolved.layer.id.value()),
-            client_key: resolved.layer.client_key.clone(),
+            client_key: if redactor.is_share() {
+                None
+            } else {
+                redactor.optional(resolved.layer.client_key.as_deref())
+            },
             nodes: resolved
                 .layer
                 .nodes
@@ -1563,32 +1567,21 @@ fn export_node(
     redactor: &ProjectPathRedactor,
 ) -> Result<ExportNode, ConversationExportBuildError> {
     ensure_accepted(node.state, "node", node.id.value())?;
-    let private_path_in_authored_detail = node.authored_detail.as_ref().is_some_and(|detail| {
-        if redactor.is_share() {
-            redactor.contains_private_path_json(detail)
-        } else {
-            json_contains_private_project_path(detail, redactor)
-        }
-    });
-    let sensitive_data_in_authored_detail = node
+    let authored_detail_omitted = node
         .authored_detail
         .as_ref()
-        .is_some_and(|detail| redactor.is_share() && redactor.contains_sensitive_json(detail));
+        .and_then(|detail| authored_detail_omission(detail, redactor));
     let authored_detail = node
         .authored_detail
         .as_ref()
-        .filter(|_| !private_path_in_authored_detail && !sensitive_data_in_authored_detail)
         .and_then(|detail| portable_authored_detail(detail, redactor));
-    let authored_detail_omitted = if private_path_in_authored_detail {
-        Some(ExportAuthoredDetailOmission::PrivatePath)
-    } else if sensitive_data_in_authored_detail {
-        Some(ExportAuthoredDetailOmission::SensitiveData)
-    } else {
-        None
-    };
     Ok(ExportNode {
         id: ids.node(node.id.value()),
-        client_key: node.client_key.clone(),
+        client_key: if redactor.is_share() {
+            None
+        } else {
+            redactor.optional(node.client_key.as_deref())
+        },
         kind: redactor.text(&node.kind),
         icon: redactor.text(&node.icon),
         title: redactor.text(&node.title),
@@ -1604,8 +1597,27 @@ fn portable_authored_detail(
     authored_detail: &serde_json::Value,
     redactor: &ProjectPathRedactor,
 ) -> Option<serde_json::Value> {
-    (!json_contains_private_project_path(authored_detail, redactor))
+    authored_detail_omission(authored_detail, redactor)
+        .is_none()
         .then(|| authored_detail.clone())
+}
+
+fn authored_detail_omission(
+    authored_detail: &serde_json::Value,
+    redactor: &ProjectPathRedactor,
+) -> Option<ExportAuthoredDetailOmission> {
+    let contains_private_path = if redactor.is_share() {
+        redactor.contains_private_path_json(authored_detail)
+    } else {
+        json_contains_private_project_path(authored_detail, redactor)
+    };
+    if contains_private_path {
+        Some(ExportAuthoredDetailOmission::PrivatePath)
+    } else if redactor.is_share() && redactor.contains_sensitive_json(authored_detail) {
+        Some(ExportAuthoredDetailOmission::SensitiveData)
+    } else {
+        None
+    }
 }
 
 fn json_contains_private_project_path(
@@ -1673,7 +1685,11 @@ fn export_action(
     };
     Ok(ExportAction {
         id: ids.action(action.id.value()),
-        client_key: action.client_key.clone(),
+        client_key: if redactor.is_share() {
+            None
+        } else {
+            redactor.optional(action.client_key.as_deref())
+        },
         source_node_id: ids.node(action.source_node_id.value()),
         source_layer_id: action.source_layer_id.map(|id| ids.layer(id.value())),
         kind,
@@ -2624,6 +2640,41 @@ mod tests {
             .is_err(),
             "a cached digest cannot bypass another node's rejected metadata read"
         );
+        denied.store(false, Ordering::SeqCst);
+        let mut sensitive = closures[0].as_ref().unwrap().clone();
+        sensitive.layers[0].nodes[0]
+            .authored_detail
+            .as_mut()
+            .unwrap()["components"] = json!([{"id":"secret","order":0,"html":"<span>sk-proj-1234</span><span>5678901234567890</span>","css":""}]);
+        let (sensitive_associations, sensitive_content) = super::collect_visual_assets(
+            &runtime,
+            [&sensitive],
+            &ProjectPathRedactor::for_share(None),
+        )
+        .await
+        .unwrap();
+        assert!(
+            sensitive_associations.is_empty(),
+            "assets for a share-authored detail omitted as sensitive must not be associated"
+        );
+        assert!(
+            sensitive_content.is_empty(),
+            "assets for an omitted detail must not become unreachable content records"
+        );
+        let sensitive_view = export_view_with_assets(
+            &sensitive,
+            &mut PortableIds::default(),
+            &ProjectPathRedactor::for_share(None),
+            &sensitive_associations,
+        )
+        .unwrap();
+        let sensitive_node = &sensitive_view.layers[0].nodes[0];
+        assert!(sensitive_node.authored_detail.is_none());
+        assert_eq!(
+            sensitive_node.authored_detail_omitted,
+            Some(ExportAuthoredDetailOmission::SensitiveData)
+        );
+        assert!(sensitive_node.authored_detail_assets.is_empty());
         server.abort();
     }
 

@@ -374,6 +374,7 @@ export function createSharePublishCoordinator({
     async create({ threadId, title, signal } = {}) {
       const reference = createReferenceId();
       let failureReporter = null;
+      let attempt = null;
       try {
         await ensureLoaded();
         if (!Number.isSafeInteger(threadId) || threadId <= 0 || typeof title !== "string") {
@@ -410,11 +411,12 @@ export function createSharePublishCoordinator({
           running: false,
           dismissing: false,
         };
+        attempt = record;
         await save(record);
         remember(record);
         return run(record, { generation: account.generation, failureReporter });
       } catch (error) {
-        await report(error, reference, failureReporter);
+        if (attempt === null) await report(error, reference, failureReporter);
         return closedFailure(error, reference);
       }
     },

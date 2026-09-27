@@ -455,6 +455,14 @@ state; finalization validates the exact object before publication. Concurrent
 retries of one owner-scoped attempt recover the same immutable result and charge
 the UTC-day quota once.
 
+Public graph records omit harness-authored layer, node, and action client keys;
+portable record IDs retain reference identity without exposing arbitrary key text.
+Asset collection uses the same rich-detail privacy predicate as node export, so
+omitted detail cannot leave orphan content. The V2 reader permits the canonical
+base64 expansion of an 8 MiB decoded asset while the whole snapshot remains
+bounded to 16 MiB. A renderer dialog binds to its source thread before preflight
+and closes when navigation changes that source.
+
 A separate Lambda streams safe inline snapshot HTML through a CloudFront-protected
 function URL. The stripped browser shell reuses the production graph workspace.
 Its versioned reader starts at the first accepted turn, keeps navigation out of

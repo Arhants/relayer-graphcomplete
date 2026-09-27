@@ -8,6 +8,7 @@ const MAX_EDGES_PER_LAYER = 28;
 const MAX_ACTIONS_PER_LAYER = 64;
 const MAX_STRING_BYTES = 4 * 1024 * 1024;
 const MAX_ASSET_BYTES = 8 * 1024 * 1024;
+const MAX_ASSET_BASE64_LENGTH = 4 * Math.ceil(MAX_ASSET_BYTES / 3);
 const SAFE_ASSET_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/svg+xml"]);
 
 const COMPLETION_STATUSES = new Set([
@@ -72,6 +73,16 @@ function requireString(value, path, { allowEmpty = false } = {}) {
 function optionalString(value, path) {
   if (value == null) return null;
   return requireString(value, path);
+}
+
+function requireAssetContentString(value, path) {
+  if (typeof value !== "string" || value.length === 0) {
+    fail("string_invalid", path, "Expected non-empty visual asset content.");
+  }
+  if (value.length > MAX_ASSET_BASE64_LENGTH) {
+    fail("asset_too_large", path, "Encoded visual asset exceeds the public viewer limit.");
+  }
+  return value;
 }
 
 function requirePortableId(value, kind, path) {
@@ -207,7 +218,10 @@ function decodeAssetContent(record, path) {
   if (!SAFE_ASSET_MEDIA_TYPES.has(mediaType)) fail("asset_media_invalid", `${path}.mediaType`, "Visual asset media type is unsupported.");
   const byteLength = requireInteger(own(value, "byteLength", `${path}.byteLength`), `${path}.byteLength`, { minimum: 1 });
   if (byteLength > MAX_ASSET_BYTES) fail("asset_too_large", `${path}.byteLength`, "Visual asset exceeds the public viewer limit.");
-  const contentBase64 = requireString(own(value, "contentBase64", `${path}.contentBase64`), `${path}.contentBase64`);
+  const contentBase64 = requireAssetContentString(
+    own(value, "contentBase64", `${path}.contentBase64`),
+    `${path}.contentBase64`,
+  );
   if (contentBase64.length !== 4 * Math.ceil(byteLength / 3) || !/^[A-Za-z0-9+/]*={0,2}$/u.test(contentBase64)) {
     fail("asset_content_invalid", `${path}.contentBase64`, "Visual asset content is not canonical base64.");
   }

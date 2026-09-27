@@ -30,6 +30,13 @@ replaces the exported local title, while the chosen title and project display
 name are published unchanged except for ordinary safe HTML and inert-data
 handling. The local thread is not renamed.
 
+Public graph records omit layer, node, and action client keys because those are
+harness-authored strings. Export-local IDs preserve all graph references. Asset
+collection applies the same detail-omission predicate as node export, so an
+omitted private detail cannot emit unreachable visual content. V2 accepts the
+canonical base64 expansion of an asset up to the 8 MiB decoded limit while the
+snapshot retains its 16 MiB total bound.
+
 The exporter returns one immutable byte sequence or a closed failure. It never
 truncates. Bytes above 16 MiB fail before publication. Electron main owns those
 bytes and the owner-bound attempt/reference identity. Renderer code receives a
@@ -48,6 +55,8 @@ fetch authority.
 Electron main durably persists the frozen attempt before publication. Recovery
 is scoped to the original owner and the currently open source thread, reuses the
 same bytes and attempt identity, and records handled-failure deduplication keys.
+The renderer binds a new dialog to its source thread before account and preflight
+awaits, then invalidates every continuation if navigation changes that source.
 Success replaces the bytes with a lightweight URL receipt until the Link ready
 dialog closes; failure remains until its owner explicitly dismisses it. A local
 process-restart path may exercise this contract with deterministic storage,

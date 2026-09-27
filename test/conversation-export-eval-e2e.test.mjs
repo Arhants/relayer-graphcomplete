@@ -290,6 +290,15 @@ describe("conversation export to Eval end to end", () => {
     expect(publishedRecords[0].exportVersion).toBe(2);
     expect(publishedRecords.filter(({ recordType }) => recordType === "visualAssetContent")).toHaveLength(1);
     expect(publishedRecords.filter(({ recordType }) => recordType === "turn")).toHaveLength(2);
+    const publishedViews = publishedRecords
+      .filter(({ recordType }) => recordType === "turn")
+      .map(({ acceptedView }) => acceptedView);
+    expect(publishedViews.flatMap(({ layers }) => layers).every(({ layer }) => layer.clientKey == null)).toBe(true);
+    expect(publishedViews.flatMap(({ layers }) => layers).flatMap(({ nodes }) => nodes)
+      .every((node) => node.clientKey == null)).toBe(true);
+    expect(publishedViews.flatMap(({ layers }) => layers).flatMap(({ actions }) => actions)
+      .every((action) => action.clientKey == null)).toBe(true);
+    expect(new TextDecoder().decode(publishedSnapshotBytes)).not.toContain("sk-proj-share-client-key-secret");
 
     const publicPage = {
       shareId,
@@ -634,7 +643,7 @@ function complexConversationFactory(projectPath) {
         "portable-visual",
         html`<figure><img alt="Portable status illustration" asset=${assetRef(asset.id)}></figure>`,
       );
-      const expandedNode = new NodeObject("info", "Expanded detail", "First expansion.", "detail", "expanded");
+      const expandedNode = new NodeObject("info", "Expanded detail", "First expansion.", "detail", `${projectPath}/node-client-key`);
       const nestedNode = new NodeObject("info", "Nested expansion", "Second expansion.", "detail", "nested");
       const sharedNode = new NodeObject("info", "Shared reference", "Referenced from root and expansion.", "evidence", "shared");
       const cycleNode = new NodeObject("info", "Reference cycle", "References the shared layer again.", "evidence", "cycle");
@@ -650,12 +659,12 @@ function complexConversationFactory(projectPath) {
         ]),
         "root-layer",
       );
-      const expanded = new LayerObject([expandedNode], [], centeredLayout(expandedNode), "expanded-layer");
+      const expanded = new LayerObject([expandedNode], [], centeredLayout(expandedNode), "sk-proj-share-client-key-secret");
       const nested = new LayerObject([nestedNode], [], centeredLayout(nestedNode), "nested-layer");
       const shared = new LayerObject([sharedNode], [], centeredLayout(sharedNode), "shared-layer");
       const cycle = new LayerObject([cycleNode], [], centeredLayout(cycleNode), "cycle-layer");
       for (const layer of [root, expanded, nested, shared, cycle]) await graph.submitLayer(layer);
-      await graph.addAction(rootNode, { kind: "navigate", relation: "expand", sourceLayer: root, label: "Expand", target: expanded, clientKey: "root-expand" });
+      await graph.addAction(rootNode, { kind: "navigate", relation: "expand", sourceLayer: root, label: "Expand", target: expanded, clientKey: `${projectPath}/action-client-key` });
       await graph.addAction(expandedNode, { kind: "navigate", relation: "expand", sourceLayer: expanded, label: "Expand again", target: nested, clientKey: "nested-expand" });
       await graph.addAction(rootNode, { kind: "navigate", relation: "reference", sourceLayer: root, label: "Shared", target: shared, clientKey: "root-shared" });
       await graph.addAction(expandedNode, { kind: "navigate", relation: "reference", sourceLayer: expanded, label: "Shared again", target: shared, clientKey: "expanded-shared" });

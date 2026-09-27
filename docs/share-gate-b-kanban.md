@@ -83,8 +83,9 @@ Sentry submission, or promotion of prototype code.
   configuration name. Proof: exact decoded JSONL assertions.
 - [x] `SHR-462-4` Redact known secrets, PEM/JWT shapes, home paths, and fragmented
   rich-detail paths, including values reassembled by rendered HTML text nodes,
-  while preserving the chosen title and project display name. Proof: Rust
-  redaction fixtures at the share-export boundary.
+  while preserving the chosen title and project display name. Omit public
+  layer/node/action client keys and retain reference identity through portable
+  IDs. Proof: Rust redaction fixtures and the production HTTP export journey.
 - [x] `SHR-462-5` Emit conversation-export V1 for asset-free accepted history and
   V2 for accepted authored Node Details with digest-pinned visual content,
   replace only the published title, preserve ordinary export behavior, and
@@ -93,7 +94,9 @@ Sentry submission, or promotion of prototype code.
   ordinary-export suite.
 - [x] `SHR-463-1` Parse V1 and V2 into the production ProductWorkspace adapter
   with nested navigation, Node Details, and strict inline visual-asset
-  validation. Proof: realistic reader fixtures and the real production journey.
+  validation. Canonical base64 may expand an allowed 8 MiB decoded asset beyond
+  the generic string limit while the total snapshot remains bounded. Proof:
+  realistic reader fixtures and the real production journey.
 - [x] `SHR-463-2` Start/reload at the first accepted turn and keep the location
   URL unchanged during turn/layer navigation. Proof: browser-host test observing
   history/location calls.

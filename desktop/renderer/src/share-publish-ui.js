@@ -66,6 +66,7 @@ export function createSharePublishController({
   let disposed = false;
   let recoveryThreadKey = null;
   let dialogThreadKey = null;
+  let dialogThreadId = null;
 
   const setBackgroundInert = (value) => {
     for (const child of host.parentElement?.children ?? []) {
@@ -83,6 +84,7 @@ export function createSharePublishController({
     attemptResult = false;
     title = "";
     dialogThreadKey = null;
+    dialogThreadId = null;
     renderDialog();
   }
 
@@ -179,7 +181,7 @@ export function createSharePublishController({
       createButton.onclick = async () => {
         if (!title.trim()) return;
         const operation = ++operationVersion;
-        const threadId = getThread()?.id;
+        const threadId = dialogThreadId;
         phase = "creating";
         renderDialog();
         const next = await share.create(threadId, title).catch(() => ({
@@ -258,10 +260,13 @@ export function createSharePublishController({
 
   async function open(event) {
     const operation = ++operationVersion;
-    const eligibility = shareEligibility({ thread: getThread(), interactions: getInteractions() });
+    const sourceThread = getThread();
+    const eligibility = shareEligibility({ thread: sourceThread, interactions: getInteractions() });
     returnFocus = event?.currentTarget ?? root.activeElement;
     title = "";
     result = eligibility.eligible ? null : { code: eligibility.code };
+    dialogThreadId = sourceThread?.id ?? null;
+    dialogThreadKey = dialogThreadId == null ? null : String(dialogThreadId);
     if (!eligibility.eligible) {
       phase = "blocked";
       renderDialog();
@@ -278,16 +283,25 @@ export function createSharePublishController({
   }
 
   async function runPreflight() {
+    if (dialogThreadKey === null) {
+      const sourceThread = getThread();
+      if (!Number.isSafeInteger(sourceThread?.id) || sourceThread.id <= 0) return close();
+      dialogThreadId = sourceThread.id;
+      dialogThreadKey = String(sourceThread.id);
+    }
     const operation = ++operationVersion;
+    const sourceThreadKey = dialogThreadKey;
+    const sourceThreadId = dialogThreadId;
     phase = "preflighting";
     renderDialog();
-    const next = await share.preflight(getThread()?.id).catch(() => ({
+    const next = await share.preflight(sourceThreadId).catch(() => ({
       status: "failed",
       code: "share_service_failed",
       retryable: true,
       attemptReferenceId: "SHR-UNAVAILABLE",
     }));
-    if (disposed || phase === "closed" || operation !== operationVersion) return;
+    if (disposed || phase === "closed" || operation !== operationVersion
+      || String(getThread()?.id) !== sourceThreadKey) return;
     result = next?.status === "ready" ? null : next;
     failureOrigin = next?.status === "ready" ? null : "preflight";
     phase = next?.status === "ready" ? "title"

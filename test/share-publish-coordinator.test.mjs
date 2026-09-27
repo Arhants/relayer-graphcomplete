@@ -625,6 +625,36 @@ describe("share publication coordinator", () => {
     expect(report).not.toHaveBeenCalled();
   });
 
+  it("does not report an initial attempt-store save failure without durable deduplication state", async () => {
+    const report = vi.fn();
+    const publish = vi.fn();
+    let saveCalls = 0;
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot: async () => snapshot,
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer secret", generation: 1 }),
+      sourceThreadIdentity: async (threadId) => `installation:test:thread:${threadId}`,
+      publish,
+      issueHandledShareFailureReporter: () => ({ report }),
+      attemptStore: {
+        load: async () => [],
+        save: async () => {
+          saveCalls += 1;
+          if (saveCalls === 1) throw new Error("attempt persistence unavailable");
+        },
+        delete: async () => true,
+      },
+      createReferenceId: () => "SHR-ABCDEF12",
+    });
+
+    await expect(coordinator.create({ threadId: 42, title: "Public title" })).resolves.toMatchObject({
+      status: "failed",
+      attemptReferenceId: "SHR-ABCDEF12",
+    });
+    expect(publish).not.toHaveBeenCalled();
+    expect(saveCalls).toBe(1);
+    expect(report).not.toHaveBeenCalled();
+  });
+
   it("preserves the service quota reset time in the closed renderer result", async () => {
     const coordinator = createSharePublishCoordinator({
       exportSnapshot: async () => snapshot,
