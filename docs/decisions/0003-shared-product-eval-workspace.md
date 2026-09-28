@@ -27,17 +27,17 @@ closing a tab leaves execution running, and Ctrl-C stops owned services. The
 checkout pins dependencies. Eval has no installer, updater, or Electron package.
 
 The dashboard and each human review use separate origins and opaque browser
-capabilities. Rust credentials remain server-side. Human review forwards only
+capabilities. Authenticated URLs retain their opaque fragment for transfer between
+local browsers. Reload restores a stripped fragment from that tab’s session storage;
+a bare URL never receives authority from the server. Rust credentials remain server-side. Human review forwards only
 read-only authority and its thread-scoped annotation credential. Automated judges
 use fresh pinned Chromium contexts with read-only credentials; their input
 operator authority stays in the backend. Review capture and production-workspace
 behavior remain required. Browser Eval does not certify Electron-specific behavior.
 
-Prime development credentials are loaded from the explicitly selected profile
-on each launch and retained only in memory by the Eval host. No OS encryption
-replacement or new on-disk secret store is introduced. Existing Electron profiles
-are not automatically adopted; users may explicitly select a compatible data
-profile, with its native credential file left untouched.
+Prime development credentials may be loaded from an explicitly selected profile.
+The full provider-setup decision below imports them into the secure Eval store.
+Existing Electron profiles and shared native logins are not automatically adopted.
 
 This replaces the original separate internal Electron distribution decision.
 Keeping Electron would preserve an installation workflow that developers do not
@@ -56,3 +56,49 @@ changes, including the root Complete output, and restart Eval. Eval does not add
 a preparation command, artifact-ownership policy, or freshness detector. Private
 Cargo outputs are verification setup, not an Eval startup guarantee. This keeps
 the manual development loop without the proposed preparation machinery in #501.
+
+
+## Human task execution (issue #544)
+
+Eval Settings reuses the production provider composition, adapter registry, runtime
+readiness, and Providers/Model families/Harnesses renderer components. It opens on
+an independent settings capability that forwards only allowlisted model operations
+and provider lifecycle methods. Human task and review capabilities cannot acquire
+this authority. Provider and model changes reject active sessions and runs.
+
+Native authentication, discovery, execution, and judges use profile-scoped homes
+and an allowlisted environment, never shared machine login state. API keys on macOS
+use the production encrypted credential store with an AES-GCM key in macOS Keychain;
+unsupported platforms fail explicitly rather than persist plaintext. Credentials
+never enter response payloads or evidence exports. Startup, settings, and Send do
+not install runtimes; explicit connect/reconnect/refresh may prepare them. The
+optional Prime development profile is imported into this same composition.
+
+Human Grader additionally admits a live human task mode, separate from saved
+review. It uses the production renderer and ordinary product APIs, with a
+backend-held credential and a per-session gateway allowlist for its owned case
+threads. Rust credentials never enter the browser. The gateway serializes
+completion admission, enforces the configured budget, and stops admitting writes
+when the session ends or a dispatch outcome is unknown. It exposes no general
+thread creation, internal API, or settings authority.
+
+People act between settled responses. Case project preparation and each thread's
+permission profile remain shared with ordinary Eval. Recorded experience,
+satisfaction, and termination do not replace product acceptance or deterministic
+outcome checks. Finish freezes the conversations; review uses the existing
+read-only surface and scoped graph annotations. Ordered moment annotations and
+exports belong to Eval evidence. Existing in-turn simulated-user work remains a
+separate mode, and this decision does not relax its Send restrictions.
+
+## Settings return navigation
+
+Settings offers Back to Eval instead of relying on window.close. The originating
+dashboard adds its authenticated return URL to the settings fragment. The bridge
+preserves this explicit navigation context across reloads and copied links, and
+accepts only loopback root destinations with a valid capability fragment. The
+settings gateway does not mint or disclose dashboard credentials. Older links
+without return context display recovery instructions instead of silently failing.
+
+Dashboard-opened Settings links intentionally carry both browser capabilities
+for same-user navigation. They must be treated as authenticated dashboard links,
+not as Settings-only delegation links. Rust credentials remain server-side.

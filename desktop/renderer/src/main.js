@@ -1,3 +1,5 @@
+import { initializeHumanTaskGrading } from "./human-task-grading.js";
+import { observeHumanTaskPresentation } from "./human-task-observer.js";
 import { initializeLayerSelections } from "./product-workspace/layer-selection.js";
 import {
   refreshAccount,
@@ -379,6 +381,7 @@ async function boot() {
     mediaQuery: window.matchMedia("(max-width: 760px)"),
   });
   if (evalReview) viewState.evalContext = await evalReview.context();
+  else if (window.relayerHumanTask) viewState.evalContext = await window.relayerHumanTask.context();
   applyPlatformCopy();
   await initializeLayerSelections();
   bindEvents();
@@ -484,6 +487,16 @@ async function boot() {
       setInputOperatorCommitted: (committed) => workspace().setInputOperatorCommitted(committed),
     }));
   }
+  if (window.relayerHumanTask || window.relayerHumanGrading) initializeHumanTaskGrading(window.relayerHumanTask || window.relayerHumanGrading);
+  if (window.relayerHumanTask) observeHumanTaskPresentation({
+    bridge: window.relayerHumanTask,
+    getState: () => ({
+      threadId: viewState.currentThreadId, turnId: viewState.currentInteractionId,
+      layerId: appState.visibleLayer?.layer?.id ?? null, selectedNodeId: viewState.selectedNodeId,
+      completionStatus: appState.interactions.find((item) => String(item.id) === String(viewState.currentInteractionId))?.completionStatus ?? null,
+      navigationPath: viewState.layerPath.map((entry) => ({ layerId: entry.layerId, viaActionId: entry.actionId ?? entry.viaActionId ?? null })),
+    }),
+  });
   connectEvents();
 }
 

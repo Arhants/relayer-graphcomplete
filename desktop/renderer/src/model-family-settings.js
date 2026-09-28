@@ -135,12 +135,6 @@ function setStatus(message = "", kind = "") {
 
 export async function refreshModelSettings({ preserveIndex = true, preserveEdit = false } = {}) {
   const refreshToken = settingsRefreshGate.begin();
-  const previousIndex = selectedFamilyIndex;
-  const previousFamilyId = settings?.families?.[previousIndex]?.id;
-  const activeFamilies = preserveEdit
-    ? settings?.families?.filter((family) => family.draft || family.editing).map((family) => structuredClone(family))
-    : [];
-  const previousEditSnapshot = editSnapshot;
   let response;
   try {
     response = await loadModelSettings();
@@ -149,6 +143,14 @@ export async function refreshModelSettings({ preserveIndex = true, preserveEdit 
     throw error;
   }
   if (!settingsRefreshGate.isCurrent(refreshToken)) return false;
+  // Edits may start, change, or be cancelled while discovery is in flight.
+  // Preserve the current editor, not the state from when the request began.
+  const previousIndex = selectedFamilyIndex;
+  const previousFamilyId = settings?.families?.[previousIndex]?.id;
+  const activeFamilies = preserveEdit
+    ? settings?.families?.filter((family) => family.draft || family.editing).map((family) => structuredClone(family))
+    : [];
+  const previousEditSnapshot = editSnapshot;
   normalizeSettings(response);
   const preserved = preserveFamilyEditAfterRefresh(settings.families, activeFamilies);
   settings.families = preserved.families;
