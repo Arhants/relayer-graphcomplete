@@ -1,0 +1,41 @@
+name: Compile input native dependency preparation
+on:
+  push:
+    branches: [codex/compile-input-digest]
+    paths: [.github/workflows/compile-input-native-prep.yml]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+      - name: Identify pinned toolchain
+        id: rust
+        run: |
+          echo "release=$(rustc -vV | sed -n 's/^release: //p')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/lbug-prebuilt
+          key: lbug-prebuilt-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.release }}-v1-${{ hashFiles('Cargo.lock') }}
+          fail-on-cache-miss: true
+      - name: Qualify dependency and seal short-lived export
+        env:
+          RELEASE: ${{ steps.rust.outputs.release }}
+        run: |
+          node scripts/ci/lbug-artifact.mjs verify --repository "$GITHUB_WORKSPACE" --artifact-dir "$RUNNER_TEMP/lbug-prebuilt" --platform Linux-X64 --rustc-release "$RELEASE"
+          mkdir -p "$RUNNER_TEMP/native-export"
+          tar -C "$RUNNER_TEMP/lbug-prebuilt" -czf "$RUNNER_TEMP/native-export/native.tar.gz" .
+          python3 -B scripts/ci/compile-inputs/native_receipt.py "$RUNNER_TEMP/lbug-prebuilt" "$RUNNER_TEMP/native-export/native.tar.gz" "$RUNNER_TEMP/native-export/receipt.json"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: read-policy-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-export
+          retention-days: 1

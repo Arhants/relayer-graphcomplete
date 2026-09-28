@@ -41,15 +41,11 @@ const INPUT_OPERATOR_COOKIE: &str = "relayer_input_operator";
 
 #[tokio::test]
 async fn interaction_post_rejects_input_draft_revision_without_input_id() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-input-revision-without-id-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-input-revision-without-id-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let app = open_app(&database, &root).await;
     let thread = response_json(
@@ -96,20 +92,15 @@ async fn interaction_post_rejects_input_draft_revision_without_input_id() {
             .unwrap();
     assert_eq!(interaction_count, 1);
     pool.close().await;
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn eval_input_operator_session_is_server_scoped_to_one_thread_and_occurrence() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-input-operator-scope-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-input-operator-scope-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let seed_app = open_app(&database, &root).await;
     let first = response_json(
@@ -411,20 +402,15 @@ async fn eval_input_operator_session_is_server_scoped_to_one_thread_and_occurren
     assert_eq!(after_revoke.status(), StatusCode::UNAUTHORIZED);
     graph_task.abort();
     harness_task.abort();
-    let _ = fs::remove_dir_all(root);
 }
 
 #[tokio::test]
 async fn node_context_drafts_are_thread_scoped_and_survive_reopen() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-context-drafts-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-context-drafts-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let app = open_app(&database, &root).await;
     let thread = response_json(
@@ -496,15 +482,11 @@ async fn node_context_drafts_are_thread_scoped_and_survive_reopen() {
 
 #[tokio::test]
 async fn node_context_draft_autosave_is_revisioned_and_idempotent() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-context-draft-revisions-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-context-draft-revisions-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let app = open_app(&root.join("product.sqlite3"), &root).await;
     let thread = response_json(
         app.clone()
@@ -593,15 +575,11 @@ async fn node_context_draft_autosave_is_revisioned_and_idempotent() {
 
 #[tokio::test]
 async fn discarding_a_node_context_draft_is_durable_and_replay_safe() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-context-draft-discard-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-context-draft-discard-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let app = open_app(&database, &root).await;
     let thread = response_json(
@@ -685,15 +663,11 @@ async fn discarding_a_node_context_draft_is_durable_and_replay_safe() {
 
 #[tokio::test]
 async fn confirming_a_node_context_draft_revalidates_and_replays_one_annotation() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-context-draft-confirm-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-context-draft-confirm-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let offline = open_app(&database, &root).await;
     let thread = response_json(
@@ -1113,15 +1087,11 @@ async fn confirming_a_node_context_draft_revalidates_and_replays_one_annotation(
 
 #[tokio::test]
 async fn submitted_input_projection_ignores_order_but_rejects_missing_values() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-input-projection-multiset-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-input-projection-multiset-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let seed_app = open_app(&database, &root).await;
     let thread = response_json(
@@ -1266,20 +1236,15 @@ async fn submitted_input_projection_ignores_order_but_rejects_missing_values() {
     assert_eq!(input_reads.load(Ordering::SeqCst), 2);
     graph_task.abort();
     harness_task.abort();
-    let _ = fs::remove_dir_all(root);
 }
 
 #[tokio::test]
 async fn input_draft_commit_sends_the_destination_product_graph_scope() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-input-draft-thread-scope-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-input-draft-thread-scope-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let seed_app = open_app(&database, &root).await;
     let thread = response_json(
@@ -2019,20 +1984,15 @@ async fn input_draft_commit_sends_the_destination_product_graph_scope() {
 
     graph_task.abort();
     harness_task.abort();
-    let _ = fs::remove_dir_all(root);
 }
 
 #[tokio::test]
 async fn eval_annotations_are_scoped_append_only_and_durable() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-annotations-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-annotations-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let app = open_app(&database, &root).await;
     let thread = response_json(
@@ -2388,7 +2348,6 @@ async fn eval_annotations_are_scoped_append_only_and_durable() {
         before_retraction["annotationsSha256"],
         after_retraction["annotationsSha256"]
     );
-    fs::remove_dir_all(root).unwrap();
 }
 
 fn authored_layout(node_id: NodeId) -> Option<LayerLayout> {
@@ -2401,15 +2360,11 @@ fn authored_layout(node_id: NodeId) -> Option<LayerLayout> {
 
 #[tokio::test]
 async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-resolved-invoke-navigation-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-resolved-invoke-navigation-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     drop(open_app(&database, &root).await);
 
@@ -2575,20 +2530,15 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
 
     graph_task.abort();
     harness_task.abort();
-    let _ = fs::remove_dir_all(root);
 }
 
 #[tokio::test]
 async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_authority() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-conversation-export-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-conversation-export-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
 
     let graph_database = GraphDatabase::open(root.join("graph.sqlite3"))
         .await
@@ -3085,20 +3035,15 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
     graph_task.abort();
     harness_task.abort();
     graph_database.close().await;
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn approval_wait_is_durable_and_the_product_decision_resumes_the_same_completion() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-approval-api-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-approval-api-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let catalog = root.join("catalog.json");
     fs::write(
@@ -3491,20 +3436,15 @@ async fn approval_wait_is_durable_and_the_product_decision_resumes_the_same_comp
         restored["approvals"][0]["resolution"]["outcome"],
         "approved"
     );
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn malformed_approval_reconciliation_cancels_and_fails_the_completion() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-approval-reconciliation-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-approval-reconciliation-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let catalog = root.join("catalog.json");
     fs::write(
@@ -3690,20 +3630,15 @@ async fn malformed_approval_reconciliation_cancels_and_fails_the_completion() {
     assert!(revoked.load(Ordering::SeqCst));
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn action_invocation_api_is_idempotent_and_survives_restart() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-action-api-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-action-api-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
 
     let app = open_app(&database, &root).await;
@@ -4392,20 +4327,15 @@ async fn action_invocation_api_is_idempotent_and_survives_restart() {
 
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn product_model_selection_is_validated_inherited_transported_and_auditable() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-model-interactions-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-model-interactions-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
 
     let graph_node_ids = Arc::new(AtomicUsize::new(700));
@@ -5089,20 +5019,15 @@ async fn product_model_selection_is_validated_inherited_transported_and_auditabl
 
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn interrupted_action_invocation_remains_submitted_for_source_pair_recovery() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-interrupted-action-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-interrupted-action-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
 
     let app = open_app(&database, &root).await;
@@ -5179,21 +5104,15 @@ async fn interrupted_action_invocation_remains_submitted_for_source_pair_recover
         .unwrap();
     assert_eq!(recovered["completionStatus"], "submitted");
     assert_eq!(recovered["graphNodeId"], serde_json::Value::Null);
-
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn startup_malformed_create_response_preserves_unbound_lease_for_later_restart() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-startup-prepare-retry-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-startup-prepare-retry-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let app = open_app(&database, &root).await;
     let thread = response_json(
@@ -5330,20 +5249,15 @@ async fn startup_malformed_create_response_preserves_unbound_lease_for_later_res
 
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn startup_binding_failure_preserves_unbound_invocation_for_next_recovery() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-startup-binding-retry-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-startup-binding-retry-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let app = open_app(&database, &root).await;
     let thread = response_json(
@@ -5482,20 +5396,15 @@ async fn startup_binding_failure_preserves_unbound_invocation_for_next_recovery(
 
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn interrupted_bound_invocation_recovers_canonical_graph_acceptance() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-recover-accepted-invoke-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-recover-accepted-invoke-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let app = open_app(&database, &root).await;
     let thread = response_json(
@@ -6030,20 +5939,15 @@ async fn interrupted_bound_invocation_recovers_canonical_graph_acceptance() {
     assert!(invalidations.load(Ordering::SeqCst) >= 7);
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn interrupted_ordinary_interaction_becomes_failed_and_releases_the_thread_on_restart() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-interrupted-interaction-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-interrupted-interaction-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
 
     let app = open_app(&database, &root).await;
@@ -6126,21 +6030,15 @@ async fn interrupted_ordinary_interaction_becomes_failed_and_releases_the_thread
         .await
         .unwrap();
     assert_eq!(follow_up.status(), StatusCode::CREATED);
-
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn exits_when_desktop_control_pipe_closes() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-app-server-parent-exit-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-app-server-parent-exit-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let permissions = permission_catalog();
 
     let executable = option_env!("CARGO_BIN_EXE_relayer-app-server")
@@ -6214,19 +6112,15 @@ fn exits_when_desktop_control_pipe_closes() {
         thread::sleep(Duration::from_millis(10));
     };
     assert!(exit_status.success());
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn persists_project_thread_and_interaction_across_restart() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-app-server-{}-{unique}",
-        std::process::id()
-    ));
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-app-server-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let project_folder = root.join("project");
     let racing_project_folder = root.join("racing-project");
     fs::create_dir_all(&project_folder).unwrap();
@@ -6707,20 +6601,15 @@ async fn persists_project_thread_and_interaction_across_restart() {
             .contains("missing its required unique index"),
         "{partial_index_error}"
     );
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn invalid_context_client_errors_are_preserved_without_product_mutation() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-invalid-context-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-invalid-context-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let offline = open_app(&database, &root).await;
     let thread = response_json(
@@ -6919,20 +6808,15 @@ async fn invalid_context_client_errors_are_preserved_without_product_mutation() 
     pool.close().await;
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn orphan_context_confirmation_ids_are_rejected_without_creating_an_interaction() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-orphan-context-confirmations-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-orphan-context-confirmations-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let app = open_app(&database, &root).await;
     let thread = response_json(
@@ -6983,20 +6867,15 @@ async fn orphan_context_confirmation_ids_are_rejected_without_creating_an_intera
             .unwrap();
     assert_eq!(interaction_count, 1);
     pool.close().await;
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn pre_binding_failure_restores_consumed_context_confirmation() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-context-prepare-failure-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-context-prepare-failure-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let offline = open_app(&database, &root).await;
     let thread = response_json(
@@ -7096,20 +6975,15 @@ async fn pre_binding_failure_restores_consumed_context_confirmation() {
     pool.close().await;
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn product_harness_retirement_precedes_retryable_startup_reconciliation() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-identified-startup-recovery-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-identified-startup-recovery-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let offline = open_app(&database, &root).await;
     let thread = response_json(
@@ -7261,20 +7135,15 @@ async fn product_harness_retirement_precedes_retryable_startup_reconciliation() 
     drop(resumed);
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn interrupted_submitted_input_without_graph_acceptance_restores_without_provider_replay() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-submitted-input-restart-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-submitted-input-restart-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let offline = open_app(&database, &root).await;
     let thread = response_json(
@@ -7943,20 +7812,15 @@ async fn interrupted_submitted_input_without_graph_acceptance_restores_without_p
     drop(resumed);
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn identified_context_replays_after_response_loss_and_resumes_bound_input_after_restart() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-context-recovery-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-context-recovery-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let offline = open_app(&database, &root).await;
     let thread = response_json(
@@ -8272,7 +8136,6 @@ async fn identified_context_replays_after_response_loss_and_resumes_bound_input_
     drop(resumed);
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 async fn canonical_accepted_context_node(axum::Json(body): axum::Json<Value>) -> axum::Json<Value> {
@@ -8900,13 +8763,14 @@ fn test_execution_admission(body: &Value, lease_id: &str, version: &str) -> Valu
 
 struct QuarantinedTurn {
     app: Router,
-    root: std::path::PathBuf,
     database: std::path::PathBuf,
     thread_id: i64,
     graph_healthy: Arc<AtomicBool>,
     lease_deletes: Arc<AtomicUsize>,
     graph_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
     harness_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
+    /// Declared last so every field holding the database drops before its directory.
+    _root: tempfile::TempDir,
 }
 
 async fn attempt_lease_rows(database: &Path) -> Vec<(i64, String, Option<String>, Option<String>)> {
@@ -9024,20 +8888,12 @@ async fn run_turn_whose_canonical_verification_fails() -> QuarantinedTurn {
     run_turn_whose_outcome_is_not_persisted(UnpersistedTurnEnding::CanonicalVerificationFails).await
 }
 
-/// Distinguishes fixtures that tests running in parallel create within one clock tick.
-static UNPERSISTED_TURN_FIXTURE: AtomicUsize = AtomicUsize::new(0);
-
 async fn run_turn_whose_outcome_is_not_persisted(ending: UnpersistedTurnEnding) -> QuarantinedTurn {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let fixture = UNPERSISTED_TURN_FIXTURE.fetch_add(1, Ordering::SeqCst);
-    let root = std::env::temp_dir().join(format!(
-        "relayer-quarantined-lease-{}-{unique}-{fixture}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-quarantined-lease-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
 
     let graph_healthy = Arc::new(AtomicBool::new(true));
@@ -9433,7 +9289,7 @@ async fn run_turn_whose_outcome_is_not_persisted(ending: UnpersistedTurnEnding) 
     );
     QuarantinedTurn {
         app,
-        root,
+        _root: temporary,
         database,
         thread_id,
         graph_healthy,
@@ -9485,7 +9341,6 @@ async fn assert_ended_turn_released_its_provider(
     );
     turn.graph_task.abort();
     turn.harness_task.abort();
-    fs::remove_dir_all(turn.root).unwrap();
 }
 
 /// PROV-003 in session: a quarantined turn (reconciliation pending) releases its provider, and
@@ -9539,7 +9394,6 @@ async fn a_refused_native_wait_end_is_retried_until_storage_recovers() {
     assert_eq!(turn.lease_deletes.load(Ordering::SeqCst), 1);
     turn.graph_task.abort();
     turn.harness_task.abort();
-    fs::remove_dir_all(turn.root).unwrap();
 }
 
 /// The thread view settling a quarantined attempt wakes the one lease reconciler (#538). Here
@@ -9588,7 +9442,6 @@ async fn opening_a_quarantined_thread_wakes_the_reconciler_for_its_settled_attem
     );
     turn.graph_task.abort();
     turn.harness_task.abort();
-    fs::remove_dir_all(turn.root).unwrap();
 }
 
 /// Opening the thread later settles the quarantined attempt from canonical graph output. Its
@@ -9643,7 +9496,6 @@ async fn opening_a_quarantined_thread_accepts_its_attempt_without_releasing_agai
     assert!(unreconciled_lease_debts(&turn.database).await.is_empty());
     turn.graph_task.abort();
     turn.harness_task.abort();
-    fs::remove_dir_all(turn.root).unwrap();
 }
 
 /// PROV-003 and Q26 after a restart: a turn with submitted inputs ran on a provider the user
@@ -9652,15 +9504,11 @@ async fn opening_a_quarantined_thread_accepts_its_attempt_without_releasing_agai
 /// still recovered when the thread is opened.
 #[tokio::test]
 async fn restart_finishes_a_removal_whose_quarantined_attempt_died_with_the_app() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-removal-after-restart-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-removal-after-restart-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let offline = open_app(&database, &root).await;
     let thread = response_json(
@@ -9874,7 +9722,6 @@ async fn restart_finishes_a_removal_whose_quarantined_attempt_died_with_the_app(
     drop(resumed);
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 /// Startup observes unwinding children concurrently under one bound, so a harness that
@@ -9882,15 +9729,11 @@ async fn restart_finishes_a_removal_whose_quarantined_attempt_died_with_the_app(
 /// keep waiting in the background.
 #[tokio::test]
 async fn startup_does_not_wait_on_a_harness_that_cannot_report_unwinding_children() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-unwinding-children-bound-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-unwinding-children-bound-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let offline = open_app(&database, &root).await;
     let thread = response_json(
@@ -10023,7 +9866,6 @@ async fn startup_does_not_wait_on_a_harness_that_cannot_report_unwinding_childre
     drop(resumed);
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 /// PROV-003 across a restart with a recursive child: a child that settled while its provider
@@ -10032,15 +9874,11 @@ async fn startup_does_not_wait_on_a_harness_that_cannot_report_unwinding_childre
 /// child's attempt ends first, and the provider removal Desktop finishes at startup succeeds.
 #[tokio::test]
 async fn restart_ends_an_unwinding_child_before_startup_finishes_its_providers_removal() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-unwinding-child-removal-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-unwinding-child-removal-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let offline = open_app(&database, &root).await;
     let thread = response_json(
@@ -10178,5 +10016,4 @@ async fn restart_ends_an_unwinding_child_before_startup_finishes_its_providers_r
     drop(resumed);
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }

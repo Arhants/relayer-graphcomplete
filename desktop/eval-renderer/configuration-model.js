@@ -28,13 +28,16 @@ export function applyAblationToControls(root, catalog, ablationId) {
       input.checked = selected[group].has(input.value);
     });
   }
+  root.querySelectorAll('input[name="suites"]').forEach((input) => { input.checked = false; });
   return selection;
 }
 
 export function selectionFromControls(root) {
   const values = (name) => [...root.querySelectorAll(`input[name="${name}"]:checked`)].map((input) => input.value);
+  const suiteId = values("suites")[0] ?? null;
   return {
-    testCaseIds: values("cases"),
+    suiteId,
+    testCaseIds: suiteId === null ? values("cases") : [],
     harnessConfigurationNames: values("harnesses"),
     judgeConfigurationName: values("judge")[0],
   };

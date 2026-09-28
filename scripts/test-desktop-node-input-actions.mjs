@@ -276,6 +276,10 @@ async function run() {
     openExternal: async () => undefined,
   });
   window = await createWindow(productSession);
+  const nativeMinimumSize = window.getMinimumSize();
+  if (nativeMinimumSize[0] !== 375 || nativeMinimumSize[1] !== 640) {
+    throw new Error(`Node input layout proof must use the production 375×640 native minimum: ${JSON.stringify(nativeMinimumSize)}`);
+  }
   window.setSize(1280, 820);
   let initialDraftLoadRequests = 0;
   const initialDraftLoadFilter = {
@@ -429,15 +433,75 @@ async function run() {
   if (process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR) {
     await writeFile(join(process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR, "node-detail-sidebar-collapsed.png"), (await window.webContents.capturePage()).toPNG());
   }
-  // Exercise the shared narrow layout below the native window's 960px minimum.
-  window.setMinimumSize(640, 640);
+  // Exercise the production narrow layout at 720px without overriding the native minimum.
   window.setSize(720, 820);
-  await waitFor("Environment remains reachable without the sidebar toggle", () => evaluate(`(() => {
-    const environment = document.querySelector('.environment-panel').getBoundingClientRect();
-    return window.innerWidth <= 760 && environment.width > 0 && environment.height > 0;
-  })()`));
+  const readNarrowEnvironmentAndSidebar = () => evaluate(`(() => {
+    const box = (element) => element.getBoundingClientRect();
+    const sidebar = box(document.querySelector('.sidebar'));
+    const toggleElement = document.querySelector('#collapseSidebar');
+    const toggle = box(toggleElement);
+    const environmentElement = document.querySelector('.environment-panel');
+    const environment = box(environmentElement);
+    const titleElement = document.querySelector('#environmentTitle');
+    const title = box(titleElement);
+    const facts = document.querySelector('#environmentFacts');
+    const message = document.querySelector('#environmentMessage');
+    const visible = (element) => Boolean(element?.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }));
+    const settledEnvironment = (visible(facts) && [...facts.querySelectorAll('dd')]
+      .some((value) => value.textContent.trim().length > 0))
+      || (visible(message) && message.textContent.trim().length > 0);
+    return {
+      width: innerWidth,
+      collapsed: document.body.classList.contains('sidebar-collapsed'),
+      sidebar: { left: sidebar.left, right: sidebar.right, width: sidebar.width },
+      toggle: { left: toggle.left, right: toggle.right, top: toggle.top, bottom: toggle.bottom, width: toggle.width, height: toggle.height },
+      toggleVisible: visible(toggleElement),
+      ariaExpanded: toggleElement.getAttribute('aria-expanded'),
+      environment: { left: environment.left, right: environment.right, top: environment.top, bottom: environment.bottom, width: environment.width, height: environment.height },
+      environmentVisible: visible(environmentElement),
+      title: { left: title.left, right: title.right, top: title.top, bottom: title.bottom, width: title.width, height: title.height },
+      titleVisible: visible(titleElement),
+      environmentReady: document.querySelector('#environmentBody').getAttribute('aria-busy') === 'false' && settledEnvironment,
+      pageFits: document.documentElement.scrollWidth <= innerWidth,
+    };
+  })()`);
+  const narrowCollapsed = await waitFor("persistent collapsed rail and settled Environment at 720px", async () => {
+    const value = await readNarrowEnvironmentAndSidebar();
+    return value.width === 720 && value.collapsed && value.sidebar.width === 58
+      && value.ariaExpanded === 'false' && value.environmentReady ? value : false;
+  });
+  const isContainedInViewport = (rect, width, height) => rect.left >= -0.5 && rect.top >= -0.5
+    && rect.right <= width + 0.5 && rect.bottom <= height + 0.5 && rect.width > 0 && rect.height > 0;
+  if (!narrowCollapsed.toggleVisible || !isContainedInViewport(narrowCollapsed.toggle, 720, 820)
+    || narrowCollapsed.toggle.left < narrowCollapsed.sidebar.left
+    || narrowCollapsed.toggle.right > narrowCollapsed.sidebar.right + 0.5
+    || !narrowCollapsed.environmentVisible || !narrowCollapsed.titleVisible
+    || !isContainedInViewport(narrowCollapsed.environment, 720, 820)
+    || !isContainedInViewport(narrowCollapsed.title, 720, 820)
+    || !narrowCollapsed.pageFits) {
+    throw new Error(`The persistent 720px sidebar rail or Environment is not fully reachable: ${JSON.stringify(narrowCollapsed)}`);
+  }
+  await click('#collapseSidebar');
+  const narrowExpanded = await waitFor("sidebar expands in normal flow at 720px", async () => {
+    const value = await readNarrowEnvironmentAndSidebar();
+    return !value.collapsed && value.sidebar.width >= 209 && value.ariaExpanded === 'true'
+      && value.environmentReady ? value : false;
+  });
+  if (!narrowExpanded.toggleVisible || narrowExpanded.sidebar.left !== 0
+    || !isContainedInViewport(narrowExpanded.toggle, 720, 820)
+    || narrowExpanded.toggle.right > narrowExpanded.sidebar.right + 0.5
+    || !narrowExpanded.environmentVisible || !narrowExpanded.titleVisible
+    || !isContainedInViewport(narrowExpanded.environment, 720, 820)
+    || !isContainedInViewport(narrowExpanded.title, 720, 820)
+    || !narrowExpanded.pageFits) {
+    throw new Error(`The expanded 720px sidebar displaced or clipped Environment: ${JSON.stringify(narrowExpanded)}`);
+  }
+  await click('#collapseSidebar');
+  await waitFor("persistent rail collapses again at 720px", async () => {
+    const value = await readNarrowEnvironmentAndSidebar();
+    return value.collapsed && value.sidebar.width === 58 && value.ariaExpanded === 'false';
+  });
   window.setSize(1280, 820);
-  window.setMinimumSize(960, 640);
   await waitFor("collapsed desktop layout returns after resizing", async () => (await readSidebarGeometry()).collapsedStructure);
   await click('#collapseSidebar');
   await waitForPaint();

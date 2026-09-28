@@ -537,14 +537,11 @@ mod tests {
 
     #[tokio::test]
     async fn transactional_confirm_replay_rejects_a_confirmation_dismissed_during_validation() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-context-confirm-race-{}-{}.sqlite3",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-context-confirm-race-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let thread_id = sqlx::query(
             "INSERT INTO threads(title,created_at,updated_at) VALUES ('Context','1','1')",
@@ -577,6 +574,5 @@ mod tests {
                 .is_empty()
         );
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 }

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { CHECK_NAME, WINDOW_MS, decodeReceipt, evaluateEvidence, recordEvidence, sweep } from "../scripts/ci/merge-freshness.mjs";
+import { CHECK_NAME, STATUS_CONTEXT, WINDOW_MS, decodeReceipt, evaluateEvidence, recordEvidence, sweep } from "../scripts/ci/merge-freshness.mjs";
 import { evaluateDesktopReleaseAuthority } from "../scripts/audit-desktop-release-authority.mjs";
 
 const head = "a".repeat(40), base = "b".repeat(40), merged = "c".repeat(40);
@@ -22,9 +22,12 @@ function fixture() {
 }
 
 function fakeGitHub(f) {
-  const api = { rest: { pulls: {}, actions: {}, checks: {}, git: {} } };
+  const api = { rest: { pulls: {}, actions: {}, checks: {}, repos: {}, git: {} } };
   const outputs = [];
+  const statuses = [];
   api.rest.pulls.list = async () => {};
+  api.rest.repos.listCommitStatusesForRef = async () => {};
+  api.rest.repos.createCommitStatus = async (args) => { statuses.unshift(args); return { data: args }; };
   api.rest.pulls.get = async () => ({ data: structuredClone(f.pr) });
   api.rest.actions.listWorkflowRuns = async () => {};
   api.rest.actions.listJobsForWorkflowRunAttempt = async () => {};
@@ -36,6 +39,10 @@ function fakeGitHub(f) {
   api.paginate = async (method, args) => {
     expect(args.per_page).toBe(100);
     if (method === api.rest.pulls.list) return [f.pr];
+    if (method === api.rest.repos.listCommitStatusesForRef) {
+      expect(args.ref).toBe(f.pr.head.sha);
+      return statuses;
+    }
     if (method === api.rest.actions.listWorkflowRuns) {
       expect(args).toMatchObject({ workflow_id: "ci.yml", head_sha: head, event: "pull_request" });
       return [{ ...f.run, pull_requests: [{ number: 42, head: { sha: head } }] }];
@@ -48,7 +55,7 @@ function fakeGitHub(f) {
       return [{ id: 20, name: `merge-freshness-v1-${f.receipt.attempt}`, expired: false, size_in_bytes: 512 }];
     throw new Error("Unexpected endpoint");
   };
-  return { api, outputs, options: { github: api, owner: "owner", repo: "repo", clock: () => f.now, decode: async (data) => data } };
+  return { api, outputs, statuses, options: { github: api, owner: "owner", repo: "repo", clock: () => f.now, decode: async (data) => data } };
 }
 
 describe("scheduled merge freshness", () => {
@@ -137,6 +144,52 @@ describe("scheduled merge freshness", () => {
     expect((await sweep(fake.options))[0].conclusion).toBe("success");
   });
 
+  it("revokes a closed PR before listing open PRs, so a later PR cannot inherit success", async () => {
+    const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
+    expect((await sweep(fake.options))[0].conclusion).toBe("success");
+    f.pr.state = "closed";
+    fake.api.paginate = async (method, args) => {
+      if (method === fake.api.rest.pulls.list) {
+        expect(fake.statuses[0].state).toBe("failure");
+        return [];
+      }
+      return paginate(method, args);
+    };
+    expect((await sweep({ ...fake.options, pullNumber: 42 }))[0]).toMatchObject({ conclusion: "failure", published: true });
+    expect(fake.outputs.at(-1).conclusion).toBe("failure");
+    // The same SHA is reused by a later PR without its own receipt.
+    f.pr.number = 99; f.pr.state = "open";
+    fake.api.paginate = paginate;
+    expect(fake.statuses[0].state).toBe("failure");
+    expect((await sweep(fake.options))[0].conclusion).toBe("failure");
+  });
+
+  it("revokes a closed event head even if the open-PR listing subsequently fails", async () => {
+    const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
+    await sweep(fake.options);
+    f.pr.state = "closed";
+    fake.api.paginate = async (method, args) => {
+      if (method === fake.api.rest.pulls.list) throw new Error("list unavailable");
+      return paginate(method, args);
+    };
+    await expect(sweep({ ...fake.options, pullNumber: 42 })).rejects.toThrow("list unavailable");
+    expect(fake.statuses[0].state).toBe("failure");
+    expect(fake.outputs.at(-1).conclusion).toBe("failure");
+  });
+
+  it("revokes a PR retargeted away from main even when open-main listing fails", async () => {
+    const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
+    await sweep(fake.options);
+    f.pr.base.ref = "integration/train";
+    fake.api.paginate = async (method, args) => {
+      if (method === fake.api.rest.pulls.list) throw new Error("list unavailable");
+      return paginate(method, args);
+    };
+    await expect(sweep({ ...fake.options, pullNumber: 42 })).rejects.toThrow("list unavailable");
+    expect(fake.statuses[0]).toMatchObject({ state: "failure", sha: head });
+    expect(fake.outputs.at(-1).conclusion).toBe("failure");
+  });
+
   it("selects the current PR's latest run even when other PRs share its head SHA", async () => {
     const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
     const ownRun = { ...f.run, pull_requests: [{ number: 42, head: { sha: head } }] };
@@ -161,6 +214,34 @@ describe("scheduled merge freshness", () => {
     expect((await sweep(fake.options))[0].conclusion).toBe("failure");
   });
 
+  it.each([false, true])("rejects shared heads regardless of PR ordering (reverse=%s)", async (reverse) => {
+    const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
+    const other = { ...structuredClone(f.pr), number: 99 };
+    const prs = reverse ? [other, f.pr] : [f.pr, other];
+    fake.api.paginate = async (method, args) => method === fake.api.rest.pulls.list
+      ? prs : paginate(method, args);
+    fake.api.rest.pulls.get = async ({ pull_number }) => ({ data: structuredClone(prs.find((pr) => pr.number === pull_number)) });
+    const results = await sweep(fake.options);
+    expect(results.every((result) => result.conclusion === "failure")).toBe(true);
+    expect(fake.statuses.some((status) => status.state === "success")).toBe(false);
+    expect(fake.outputs.some((check) => check.conclusion === "success")).toBe(false);
+  });
+
+  it("rechecks shared heads after evidence IO and fails closed when the check is unavailable", async () => {
+    for (const unavailable of [false, true]) {
+      const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
+      let calls = 0;
+      fake.api.paginate = async (method, args) => {
+        if (method !== fake.api.rest.pulls.list || ++calls === 1) return paginate(method, args);
+        expect(fake.statuses[0].state).toBe("pending");
+        if (unavailable) throw new Error("API unavailable");
+        return [f.pr, { ...f.pr, number: 99 }];
+      };
+      expect((await sweep(fake.options))[0].conclusion).toBe("failure");
+      expect(fake.statuses[0].state).toBe("failure");
+    }
+  });
+
   it("revokes success before evidence failure and rejects a head change during IO", async () => {
     const f = fixture(), fake = fakeGitHub(f);
     fake.api.rest.actions.downloadArtifact = async () => { throw new Error("untrusted secret error"); };
@@ -172,6 +253,7 @@ describe("scheduled merge freshness", () => {
     };
     expect((await sweep(fake.options))[0].description).toBe("PR head changed during evaluation");
     expect(fake.outputs.at(-1).conclusion).toBe("failure");
+    expect(fake.statuses[0]).toMatchObject({ state: "failure", sha: head });
   });
 
   it.each(["get", "create", "update"])("continues after one PR's %s failure and reports unpublished results", async (failureAt) => {
@@ -203,6 +285,87 @@ describe("scheduled merge freshness", () => {
       { pr: 42, conclusion: "failure", published: true, description: "CI evidence expired (12h); update branch and run fresh PR CI" },
     ]);
     expect(fake.outputs.at(-1)).toMatchObject({ status: "completed", conclusion: "failure" });
+  });
+
+  it("publishes the required commit status independently of successive workflow suites", async () => {
+    const f = fixture(), fake = fakeGitHub(f);
+    // GitHub can attach every API-created check to the first suite even after
+    // another PR edit creates the newer suite selected by the merge box.
+    const create = fake.api.rest.checks.create;
+    fake.api.rest.checks.create = async (args) => ({
+      data: { ...(await create(args)).data, check_suite: { id: 1 } },
+    });
+    for (let refresh = 0; refresh < 2; refresh++) {
+      expect((await sweep(fake.options))[0].conclusion).toBe("success");
+      expect(fake.statuses.slice(0, 2)).toMatchObject([
+        { context: STATUS_CONTEXT, sha: head, state: "success" },
+        { context: STATUS_CONTEXT, sha: head, state: "pending" },
+      ]);
+    }
+    expect(STATUS_CONTEXT).not.toBe(CHECK_NAME);
+    f.now = started + WINDOW_MS;
+    expect((await sweep(fake.options))[0].conclusion).toBe("failure");
+    expect(fake.statuses[0]).toMatchObject({ state: "failure", context: STATUS_CONTEXT, sha: head });
+  });
+
+  it("revokes both publications even when one revocation fails", async () => {
+    for (const failedPublisher of ["check", "status"]) {
+      const f = fixture(), fake = fakeGitHub(f);
+      await sweep(fake.options);
+      if (failedPublisher === "check") fake.api.rest.checks.create = async () => { throw new Error("unavailable"); };
+      else fake.api.rest.repos.createCommitStatus = async () => { throw new Error("unavailable"); };
+      expect((await sweep(fake.options))[0].published).toBe(false);
+      if (failedPublisher === "check") expect(fake.statuses[0].state).toBe("pending");
+      else expect(fake.outputs.at(-1).status).toBe("in_progress");
+    }
+  });
+
+  it("attempts both final publications and retains pending when a final write fails", async () => {
+    for (const failedPublisher of ["check", "status"]) {
+      const f = fixture(), fake = fakeGitHub(f);
+      await sweep(fake.options);
+      f.now = started + WINDOW_MS;
+      if (failedPublisher === "check") fake.api.rest.checks.update = async () => { throw new Error("unavailable"); };
+      else {
+        const publish = fake.api.rest.repos.createCommitStatus;
+        fake.api.rest.repos.createCommitStatus = async (args) => {
+          if (args.state !== "pending") throw new Error("unavailable");
+          return publish(args);
+        };
+      }
+      expect((await sweep(fake.options))[0].published).toBe(false);
+      expect(fake.statuses[0].state).toBe(failedPublisher === "status" ? "pending" : "failure");
+      expect(fake.outputs.at(-1)).toMatchObject(failedPublisher === "check"
+        ? { status: "in_progress" } : { status: "completed", conclusion: "failure" });
+    }
+  });
+
+  it("reserves status capacity for failure and revokes before a status-history read error", async () => {
+    const f = fixture(), fake = fakeGitHub(f);
+    // GitHub contexts are case-insensitive, including their capacity limit.
+    fake.statuses.push(...Array.from({ length: 989 }, () => ({ context: STATUS_CONTEXT.toUpperCase(), state: "success" })));
+    expect((await sweep(fake.options))[0]).toMatchObject({
+      conclusion: "failure", description: "Freshness status capacity exhausted; update branch to a new head",
+    });
+    expect(fake.statuses[0].state).toBe("failure");
+    expect(fake.outputs.at(-1).conclusion).toBe("failure");
+    const publish = fake.api.rest.repos.createCommitStatus;
+    fake.api.rest.repos.createCommitStatus = async (args) => {
+      if (fake.statuses.length >= 1000) throw new Error("status limit reached");
+      return publish(args);
+    };
+    for (let refresh = 0; refresh < 6; refresh++) await sweep(fake.options);
+    expect(fake.statuses).toHaveLength(1000);
+    expect(fake.statuses[0].state).toBe("pending");
+    expect(fake.statuses.slice(0, 11).every((item) => item.state !== "success")).toBe(true);
+    const other = fakeGitHub(f);
+    other.api.paginate = async (method) => {
+      if (method === other.api.rest.pulls.list) return [f.pr];
+      expect(other.statuses[0].state).toBe("pending");
+      throw new Error("sensitive status history error");
+    };
+    expect((await sweep(other.options))[0].conclusion).toBe("failure");
+    expect(other.statuses[0].state).toBe("failure");
   });
 
   it("reads only bounded literal JSON from a real ZIP and rejects malformed archives", async () => {
@@ -248,13 +411,16 @@ describe("scheduled merge freshness", () => {
     const workflow = parse(await read(".github/workflows/merge-freshness.yml"));
     expect(workflow.on.schedule).toEqual([{ cron: "7,22,37,52 * * * *" }]);
     expect(workflow.on.workflow_run).toEqual({ workflows: ["CI"], types: ["completed"] });
+    expect(workflow.on.pull_request_target.types).toContain("closed");
+    expect(workflow.on.pull_request_target.branches).toBeUndefined();
     expect(workflow.concurrency).toEqual({ group: "merge-freshness-writer", "cancel-in-progress": false });
-    expect(workflow.permissions).toEqual({ contents: "read", actions: "read", "pull-requests": "read", checks: "write" });
+    expect(workflow.permissions).toEqual({ contents: "read", actions: "read", "pull-requests": "read", checks: "write", statuses: "write" });
     expect(workflow.jobs.refresh.if).toBe("github.ref == 'refs/heads/main'");
     expect(workflow.jobs.refresh.steps[0].with).toEqual({ ref: "refs/heads/main", "persist-credentials": false });
     expect(workflow.jobs.refresh.steps).toHaveLength(2);
     for (const step of workflow.jobs.refresh.steps) expect(step.uses).toMatch(/@[a-f0-9]{40}$/);
     expect(workflow.jobs.refresh.steps[1].with.script).toContain("result.published === false");
+    expect(workflow.jobs.refresh.steps[1].with.script).toContain("pullNumber: context.payload.pull_request?.number");
     expect(workflow.jobs.refresh.steps[1].with.script).toContain("core.setFailed(");
     const ci = parse(await read(".github/workflows/ci.yml"));
     for (const job of Object.values(ci.jobs)) {
@@ -271,11 +437,23 @@ describe("scheduled merge freshness", () => {
     const checks = main.rules.find((rule) => rule.type === "required_status_checks").parameters;
     expect(checks.strict_required_status_checks_policy).toBe(false);
     expect(checks.required_status_checks).toEqual([
-      { context: "check", integration_id: 15368 }, { context: CHECK_NAME, integration_id: 15368 },
+      { context: "check", integration_id: 15368 }, { context: STATUS_CONTEXT, integration_id: 15368 },
     ]);
     const label = "main requires GitHub Actions CI and scheduled merge freshness";
-    const audit = () => evaluateDesktopReleaseAuthority({ rulesets: [main] }).find((item) => item.label === label).passed;
+    const rulesets = [main];
+    const audit = () => evaluateDesktopReleaseAuthority({ rulesets }).find((item) => item.label === label).passed;
     expect(audit()).toBe(true);
+    checks.required_status_checks.push({ context: CHECK_NAME, integration_id: 15368 });
+    expect(audit()).toBe(false);
+    checks.required_status_checks.pop();
+    rulesets.push({ ...main, rules: [{ type: "required_status_checks", parameters: {
+      required_status_checks: [{ context: CHECK_NAME.toUpperCase(), integration_id: 15368 }],
+    } }] });
+    expect(audit()).toBe(false);
+    rulesets.pop();
+    checks.required_status_checks.push({ context: "unrelated-protection", integration_id: 15368 });
+    expect(audit()).toBe(true);
+    checks.required_status_checks.pop();
     checks.required_status_checks.pop();
     expect(audit()).toBe(false);
   });

@@ -8,8 +8,7 @@ on:
     workflows: [CI]
     types: [completed]
   pull_request_target:
-    branches: [main]
-    types: [opened, reopened, synchronize, edited, ready_for_review]
+    types: [opened, reopened, synchronize, edited, ready_for_review, closed]
   push:
     branches: [main]
 
@@ -22,7 +21,8 @@ permissions:
   contents: read
   actions: read
   pull-requests: read
-  checks: write
+  checks: write # legacy check during migration
+  statuses: write
 
 jobs:
   refresh:
@@ -40,7 +40,7 @@ jobs:
         with:
           script: |
             const { sweep } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/ci/merge-freshness.mjs`);
-            const results = await sweep({ github, ...context.repo });
+            const results = await sweep({ github, ...context.repo, pullNumber: context.payload.pull_request?.number });
             core.info(JSON.stringify(results));
             if (results.some((result) => result.published === false)) {
               core.setFailed('Some PR freshness checks could not be refreshed; see per-PR results.');

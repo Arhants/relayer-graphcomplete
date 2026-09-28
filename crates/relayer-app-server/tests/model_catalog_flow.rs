@@ -6,24 +6,16 @@ use axum::{
 use relayer_app_server::{CONTROL_COOKIE, RelayerAppServer, RelayerAppServerConfig};
 use serde_json::{Value, json};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use std::{
-    fs,
-    path::Path,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::path::Path;
 use tower::ServiceExt;
 
 #[tokio::test]
 async fn default_selection_uses_family_and_member_order_not_harness_preference() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-model-order-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-model-order-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let app = open_app(&database, &root).await;
     configure_codex_policy(&database).await;
@@ -126,21 +118,15 @@ async fn default_selection_uses_family_and_member_order_not_harness_preference()
     assert_eq!(default["familyId"], first_family_id);
     assert_eq!(default["providerId"], "codex");
     assert_eq!(default["modelId"], "gpt-5.6-sol");
-
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]
 async fn model_catalog_families_defaults_and_selection_are_typed_and_durable() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-model-catalog-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-model-catalog-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let app = open_app(&database, &root).await;
     configure_codex_policy(&database).await;
@@ -446,8 +432,6 @@ async fn model_catalog_families_defaults_and_selection_are_typed_and_durable() {
         saved_model["unavailableReason"]["code"],
         "account_restricted"
     );
-
-    fs::remove_dir_all(root).unwrap();
 }
 
 // PROV-008: the default provider and family are one pair, so a catalog refresh has nothing to
@@ -455,15 +439,11 @@ async fn model_catalog_families_defaults_and_selection_are_typed_and_durable() {
 // next refresh of the default family's provider moved the default provider back to it.
 #[tokio::test]
 async fn catalog_refresh_keeps_the_chosen_default_provider_and_its_managed_family() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-default-provider-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-default-provider-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let app = open_app(&database, &root).await;
     configure_codex_policy(&database).await;
@@ -589,8 +569,6 @@ async fn catalog_refresh_keeps_the_chosen_default_provider_and_its_managed_famil
     let family_chosen = settings().await;
     assert_eq!(family_chosen["defaults"]["providerId"], "codex");
     assert_eq!(family_chosen["defaults"]["familyId"], codex_family);
-
-    fs::remove_dir_all(root).unwrap();
 }
 
 // PROV-002: a catalog result is tied to the connection generation it started with. Sign-out and
@@ -598,15 +576,11 @@ async fn catalog_refresh_keeps_the_chosen_default_provider_and_its_managed_famil
 // rejects a result from an older generation inside the write transaction, so it changes nothing.
 #[tokio::test]
 async fn a_catalog_result_from_a_superseded_connection_generation_has_no_effect() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-connection-generation-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-connection-generation-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let database = root.join("product.sqlite3");
     let app = open_app(&database, &root).await;
     configure_codex_policy(&database).await;
@@ -754,8 +728,6 @@ async fn a_catalog_result_from_a_superseded_connection_generation_has_no_effect(
         StatusCode::UNPROCESSABLE_ENTITY
     );
     assert_eq!(state().await, (true, 4, "active".to_owned()));
-
-    fs::remove_dir_all(root).unwrap();
 }
 
 fn provider_snapshot(unavailable: Option<&str>) -> Value {
