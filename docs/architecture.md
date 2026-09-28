@@ -494,7 +494,10 @@ route through those harnesses, so ChatGPT and OpenRouter share one result for
 (PROV-005), and the app server's row stays the only record (PROV-006). Startup does
 not wait for it. Like Repair, it probes the runtime and may install the exact recipe
 again, but it skips a harness whose runtime was never installed on this machine; that
-route waits for Connect or Repair, so an upgrade never installs Prime by itself. The next committed result for the harness clears the mark, so it runs once per
+route waits for Connect or Repair, so an upgrade never installs Prime by itself. A
+managed provider whose activation failed on a broken runtime publishes no models and so
+has no route; the step first repairs it through its explicit refresh, as Repair does,
+when its recipe is installed and due, and that refresh evaluates its routes. The next committed result for the harness clears the mark, so it runs once per
 changed digest; a start before the commit tries again. Migration 0039 also marks
 every loaded route startup left in `harness_readiness_pending`. The recipe trigger is
 Desktop memory only, so a quit before its result commits drops it. The evaluation runs

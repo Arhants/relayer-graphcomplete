@@ -454,6 +454,9 @@ change. Migration 0039 also marks every loaded route startup left pending.
 The model starts after that migration, so it does not cover the backfill.
 The automatic evaluation skips a harness whose runtime was never
 installed; the model has one harness whose runtime starts installed.
+The model's providers always have a route. In the code, a managed provider
+whose activation failed on a broken runtime has none, so the step first
+repairs it as Repair does; composition tests cover that.
 In the code it runs once per process with the models published so far,
 and a recipe change the update did not stage marks nothing. The installer test "stages and activates the
 exact incoming recipe" covers which activations count. A mark stays set

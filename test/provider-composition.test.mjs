@@ -437,6 +437,106 @@ describe("injectable production provider composition", () => {
     await composition.close();
   });
 
+  // PR #576 review: an upgrade can leave the managed runtime present but broken. Then a
+  // managed provider's activation fails, its recovery adapter publishes no models, and it has
+  // no route, so the evaluation alone would never run. The post-upgrade step repairs that
+  // provider as Repair does, but only when its runtime was installed before.
+  it.each([
+    ["repairs a managed provider whose activation failed on its broken runtime", true],
+    ["never installs a missing runtime to recover a managed provider", false],
+  ])("%s", async (_, installedBefore) => {
+    let runtimeHealthy = false;
+    const prepareRuntime = vi.fn(async () => { runtimeHealthy = true; });
+    const create = vi.fn(({ definition }) => {
+      if (!runtimeHealthy) throw new Error("managed runtime installation is invalid");
+      return {
+        providerId: definition.id,
+        discover: async () => ({
+          provider: { id: definition.id, label: definition.label, status: "available" },
+          models: [{
+            id: "work-chatgpt", executionModel: "work-chatgpt", label: "Work", description: "",
+            visible: true, availability: "available", unavailableReason: null, availabilityNotice: null,
+            isDefault: true, replacementModelId: null, upgradeInfo: null, supportedEfforts: [],
+            defaultEffort: null, inputModalities: ["text"], supportsPersonality: false,
+            serviceTiers: [], defaultServiceTier: null,
+          }],
+          systemFamily: { id: definition.id, label: definition.label, modelIds: ["work-chatgpt"] },
+        }),
+        close: vi.fn(async () => {}),
+      };
+    });
+    const configurations = new Map([["codex-basic", {
+      schemaVersion: 1, name: "codex-basic", implementation: "codex.basic", implementationVersion: 1,
+      permissionBindings: { auto: {} },
+      modelRules: { allow: [{ adapterId: "codex-subscription", modelIdRegex: "^work-" }], deny: [] },
+      executionAccessContracts: ["managed-runtime@1"], settings: {},
+    }]]);
+    const due = new Set(["codex-basic"]);
+    const publishAvailability = vi.fn(async (updates) => {
+      for (const { harnessId } of updates) due.delete(harnessId);
+    });
+    const readiness = createHarnessReadinessCoordinator({
+      configurations,
+      digestConfiguration: ({ name }) => `sha256:${name}-upgraded`,
+      runtimeRequirements: { "codex.basic": { runtimeId: "codex", recipeId: "codex@0.147.0" } },
+      prepareRecipe: async (recipeId) => ({ recipeId }),
+      checkers: { "codex.basic": async () => ({ available: runtimeHealthy }) },
+      publishAvailability,
+      recipeInstalled: async () => installedBefore,
+    });
+    const published = [];
+    const composition = createProviderComposition({
+      registry: createProviderAdapterRegistry([{
+        adapterId: "codex-subscription", implementationVersion: "1", label: "ChatGPT",
+        accessContract: "managed-runtime@1", defaultEndpoint: null,
+        connection: { mode: "managed-login", fields: [] }, create,
+      }]),
+      definitionStore: { async load() { return [{
+        id: "chatgpt", adapterId: "codex-subscription", label: "ChatGPT", endpoint: null,
+        accessContract: "managed-runtime@1", credentialReference: null, lifecycleState: "active",
+      }]; } },
+      credentialStore: { async listReferences() { return []; } },
+      prepareRuntime,
+      evaluateReadiness: (request) => readiness.evaluate(request),
+      publishCatalog: async (snapshot) => { published.push(snapshot); },
+      modelCatalogOptions: { backgroundIntervalMs: 60_000 },
+    });
+
+    await composition.start();
+    expect(published.at(-1)).toMatchObject({ providerId: "chatgpt", connected: false, models: [] });
+    expect(await composition.readinessRoutes()).toEqual([]);
+
+    const onError = vi.fn();
+    await startPostUpgradeReadiness({
+      readiness,
+      updatesDue: async () => [...due],
+      recipeUpdates: [],
+      routes: () => composition.readinessRoutes(),
+      repairProviders: (recipeIds) => composition.repairFailedActivations(recipeIds, {
+        recipeForAdapter: () => "codex@0.147.0",
+      }),
+      onError,
+    }).evaluation;
+    expect(onError).not.toHaveBeenCalled();
+
+    if (installedBefore) {
+      expect(prepareRuntime).toHaveBeenCalledOnce();
+      expect(publishAvailability).toHaveBeenCalledOnce();
+      expect(publishAvailability).toHaveBeenCalledWith([expect.objectContaining({
+        harnessId: "codex-basic", available: true,
+      })]);
+      expect(due.size).toBe(0);
+      expect(published.at(-1)).toMatchObject({ providerId: "chatgpt", connected: true, models: [{ id: "work-chatgpt" }] });
+      const lease = await composition.providerDefinitions.acquireExecution("chatgpt");
+      await lease.release();
+    } else {
+      expect(prepareRuntime).not.toHaveBeenCalled();
+      expect(publishAvailability).not.toHaveBeenCalled();
+      expect(due).toEqual(new Set(["codex-basic"]));
+    }
+    await composition.close();
+  });
+
   it("starts the post-upgrade evaluation from desktop startup without awaiting it", async () => {
     const source = await readFile(new URL("../desktop/main/index.mjs", import.meta.url), "utf8");
     const start = source.indexOf("await providerComposition.start();");
@@ -449,6 +549,8 @@ describe("injectable production provider composition", () => {
     expect(step).toContain("updatesDue: () => productServer.harnessReadinessUpdatesDue()");
     expect(step).toContain("recipeUpdates: activation.recipeUpdates");
     expect(step).toContain("routes: () => providerComposition.readinessRoutes()");
+    expect(step).toContain("repairProviders: (recipeIds) => providerComposition.repairFailedActivations(recipeIds, {");
+    expect(step).toContain("recipeForAdapter: (adapterId) => managedRuntimeRequirementForAdapter(adapterId).recipeId");
     expect(source).toContain("recipeInstalled: (recipeId) => managedRecipeInstalled(managedRuntimeResolver, recipeId)");
     expect(source).not.toMatch(/await\s+startPostUpgradeReadiness/);
   });

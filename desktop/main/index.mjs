@@ -73,6 +73,7 @@ import {
   activeProviderRuntimeRequirements,
   HARNESS_MANAGED_RUNTIME_REQUIREMENTS,
   compatibleHarnessImplementationForAdapter,
+  managedRuntimeRequirementForAdapter,
   managedRuntimeRequirementForHarness,
   parseUpdateRuntimeRequirements,
 } from "../shared/managed-runtime-requirements.mjs";
@@ -565,6 +566,9 @@ if (primaryInstance) {
       updatesDue: () => productServer.harnessReadinessUpdatesDue(),
       recipeUpdates: activation.recipeUpdates,
       routes: () => providerComposition.readinessRoutes(),
+      repairProviders: (recipeIds) => providerComposition.repairFailedActivations(recipeIds, {
+        recipeForAdapter: (adapterId) => managedRuntimeRequirementForAdapter(adapterId).recipeId,
+      }),
       onError: (error) => console.error("Post-upgrade harness readiness evaluation failed:", error),
     });
     const conversationExporter = createConversationExportService({

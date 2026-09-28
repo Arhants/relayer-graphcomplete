@@ -20,15 +20,28 @@ function modelAvailable(model) {
 
 // #556: after startup, one background evaluation of the routes an upgrade left pending.
 // It returns at once; startup never waits for the evaluation, and a failure only reports.
+//
+// A managed provider whose activation failed on a broken runtime publishes no models, so it
+// has no route to evaluate. repairProviders first repairs such providers as Repair does,
+// for the installed recipes this step would evaluate; a repair evaluates its own routes.
 export function startPostUpgradeReadiness({
   readiness,
   updatesDue,
   recipeUpdates = [],
   routes,
+  repairProviders = null,
   onError = () => {},
 }) {
   const evaluation = Promise.resolve().then(async () => {
-    const [due, providers] = await Promise.all([updatesDue(), routes()]);
+    let due = await updatesDue();
+    if (repairProviders) {
+      const { recipeIds } = await readiness.recipeUpdateTargets({ updatesDue: due, recipeUpdates });
+      if (recipeIds.length > 0) {
+        await repairProviders(recipeIds);
+        due = await updatesDue();
+      }
+    }
+    const providers = await routes();
     return readiness.evaluateRecipeUpdate({ updatesDue: due, recipeUpdates, providers });
   }).catch((error) => {
     onError(error);
@@ -166,22 +179,30 @@ export function createHarnessReadinessCoordinator({
   // was newly activated. The app server clears its mark when the result commits.
   // It never makes a first installation: a harness whose runtime was never installed
   // waits for Connect or Repair, as on a first launch.
-  async function evaluateRecipeUpdate({ updatesDue = [], recipeUpdates = [], providers = [] }) {
+  // The harnesses the post-upgrade step evaluates, and the installed recipes they run.
+  async function recipeUpdateTargets({ updatesDue = [], recipeUpdates = [] }) {
     if (typeof recipeInstalled !== "function") {
       throw new Error("The post-upgrade readiness evaluation requires an installed-recipe check.");
     }
     const due = new Set(updatesDue);
     const activated = new Set(recipeUpdates);
     const harnessIds = [];
+    const recipeIds = new Set();
     for (const { name, implementation } of configurations.values()) {
       const recipeId = runtimeRequirements[implementation]?.recipeId;
       if (!due.has(name) && !activated.has(recipeId)) continue;
       if (recipeId && !await recipeInstalled(recipeId)) continue;
       harnessIds.push(name);
+      if (recipeId) recipeIds.add(recipeId);
     }
+    return Object.freeze({ harnessIds: Object.freeze(harnessIds), recipeIds: Object.freeze([...recipeIds]) });
+  }
+
+  async function evaluateRecipeUpdate({ updatesDue = [], recipeUpdates = [], providers = [] }) {
+    const { harnessIds } = await recipeUpdateTargets({ updatesDue, recipeUpdates });
     if (harnessIds.length === 0) return Object.freeze({ readyHarnessIds: [], routeResults: [] });
     return evaluate({ trigger: "recipe-update", providers, harnessIds });
   }
 
-  return Object.freeze({ evaluate, evaluateRecipeUpdate });
+  return Object.freeze({ evaluate, evaluateRecipeUpdate, recipeUpdateTargets });
 }

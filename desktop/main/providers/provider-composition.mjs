@@ -93,6 +93,19 @@ export function createProviderComposition({
       await providerDefinitions.activate();
       await modelCatalog.startup();
     },
+    // After an upgrade: repairs, as Repair does, each managed provider whose activation
+    // failed and whose runtime recipe is one of recipeIds (installed, and due for an
+    // evaluation). Its explicit refresh reinstalls the runtime, activates the provider,
+    // publishes its catalog and evaluates its routes. One provider's failure spares the rest.
+    async repairFailedActivations(recipeIds, { recipeForAdapter }) {
+      const recipes = new Set(recipeIds);
+      const failed = (await providerDefinitions.activeDefinitions()).filter((definition) => {
+        if (definition.accessContract !== "managed-runtime@1") return false;
+        if (!providerDefinitions.activationFailed(definition.id)) return false;
+        try { return recipes.has(recipeForAdapter(definition.adapterId)); } catch { return false; }
+      });
+      return Promise.allSettled(failed.map(({ id }) => modelCatalog.explicitRefresh(id)));
+    },
     // Every active provider with its last published models, for an evaluation that is not
     // tied to one provider (the recipe-update trigger).
     async readinessRoutes() {

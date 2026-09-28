@@ -142,6 +142,11 @@ export class ProviderDefinitionService {
     });
   }
 
+  /** Whether this provider's runtime could not be activated in this process. */
+  activationFailed(id) {
+    return this.statusOverrides.get(id)?.unavailableReason?.code === "provider_activation_failed";
+  }
+
   async activeDefinitions() {
     return (await this.#initialize())
       .filter(({ lifecycleState }) => lifecycleState === "active")
