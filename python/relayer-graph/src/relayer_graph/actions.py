@@ -5,12 +5,12 @@ from typing import Any
 from .authoring import LayerObject, LayerReference, NodeObject
 
 
-def _layer_declaration(layer: LayerReference, owner: NodeObject | None = None) -> Any:
+def _layer_declaration(layer: LayerReference, owner: NodeObject | None = None, *, _repair_source: NodeObject | None = None) -> Any:
     if not isinstance(layer, LayerObject):
         if owner is not None:
             raise ValueError("A visual action needs its exact authored source LayerObject")
         return layer if isinstance(layer, int) else layer.id
-    if owner is not None and not any(node is owner for node in layer.nodes):
+    if owner is not None and not any(node is (_repair_source if _repair_source is not None else owner) for node in layer.nodes):
         raise ValueError("The source layer must contain the exact owning NodeObject")
     return {"clientKey": layer.client_key, "nodes": [
         node.client_key for node in layer.nodes if isinstance(node, NodeObject)
@@ -34,10 +34,10 @@ class ActionObject:
     icon: str | None = None
     description: str | None = None
 
-    def to_detail_wire(self, owner: NodeObject) -> dict[str, Any]:
+    def to_detail_wire(self, owner: NodeObject, *, _repair_source: NodeObject | None = None) -> dict[str, Any]:
         value: dict[str, Any] = {
             "kind": self.kind, "label": self.label, "clientKey": self.client_key,
-            "sourceLayer": _layer_declaration(self.source_layer, owner), "variant": self.variant,
+            "sourceLayer": _layer_declaration(self.source_layer, owner, _repair_source=_repair_source), "variant": self.variant,
         }
         if self.icon is not None:
             value["icon"] = self.icon

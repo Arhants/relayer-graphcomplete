@@ -151,6 +151,7 @@ function renderScenario(java, jar, workspace, scenario) {
     summary: scenario.summary,
     promises: scenario.promises,
     ...(scenario.finalPromises ? { finalPromises: scenario.finalPromises } : {}),
+    ...(scenario.violatedAtEnd ? { violatedAtEnd: scenario.violatedAtEnd } : {}),
     generatedBy: "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
     steps: states.map((state, index) => ({ action: index === 0 ? null : scenario.steps[index - 1], state })),
   };

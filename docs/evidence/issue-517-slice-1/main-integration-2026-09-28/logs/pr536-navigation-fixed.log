@@ -1,0 +1,33 @@
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/permissions-merge-ready/relayer-graphcomplete
+
+ ❯ |isolated| test/workspace-navigation-integration.test.mjs (42 tests | 1 failed) 369ms
+     × shows the distinct invoke result without overriding explicit source navigation (created, back=true) 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |isolated| test/workspace-navigation-integration.test.mjs > workspace navigation integration > shows the distinct invoke result without overriding explicit source navigation (created, back=true)
+AssertionError: expected 2 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ test/workspace-navigation-integration.test.mjs:977:55
+    975|     await controller.refreshState(10);
+    976|     expect(controller.appState.status).toBe("accepted");
+    977|     expect(controller.viewState.currentInteractionId).toBe(backToSourc…
+       |                                                       ^
+    978|     expect(controller.appState.visibleLayer.layer.id).toBe(backToSourc…
+    979|     expect(controller.viewState.layerPath.map(({ layerId }) => layerId…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 55 passed (56)
+   Start at  15:18:03
+   Duration  508ms (transform 252ms, setup 0ms, import 123ms, tests 510ms, environment 0ms)
+

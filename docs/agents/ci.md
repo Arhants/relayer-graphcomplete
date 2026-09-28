@@ -11,9 +11,10 @@ current head has successful CI evidence less than 12 hours old. Age starts at
 GitHub's original CI run creation time, not PR creation, author timestamps, job
 completion, or a rerun. The plan job records the actual checkout's two parents
 and observes `refs/heads/main`; the base parent must equal that observation.
-PR base metadata may lag the generated merge and is not its base authority.
+The event's base SHA can lag GitHub's synthetic merge and is not the checkout
+authority. The actual merge SHA must match `GITHUB_SHA`, and its second parent
+must match the event's exact PR head. A different observed main fails closed.
 All ordinary CI checkouts explicitly pin the same immutable event merge SHA.
-The merge must contain the event PR head as its second parent.
 A newer main commit does not
 immediately invalidate otherwise recent evidence. A rerun cannot extend the
 original window. Update the branch to create fresh PR CI when it expires.
@@ -114,7 +115,7 @@ Checkpoint mapping (no product runtime behavior changes):
 
 | Boundary | Deterministic checkpoint |
 | --- | --- |
-| Exact head, main merge, run and attempt identity | `test/ci-merge-freshness.test.mjs`: receipt and policy scenarios |
+| Exact head, actual main merge, run and attempt identity | `test/ci-merge-freshness.test.mjs`: real Git stale-event-base and remote-main mismatch scenarios, plus receipt policy |
 | Stale PR base metadata, wrong event merge/head, all-job immutable source | real Git receipt scenario and CI checkout contract |
 | Receipt failure does not stop test planning; missing proof still blocks merge | non-blocking receipt-step contract and missing-receipt rejection |
 | 12-hour edge, future/invalid time, reruns | policy clock scenarios |

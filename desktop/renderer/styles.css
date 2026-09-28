@@ -279,10 +279,41 @@ html[data-theme="light"] .annotation-panel{background:#fafaf9;box-shadow:0 18px 
 .inspector:has(>.node-context-dock:not(.hidden)) .inspector-content::after{content:"";display:block;height:calc(40% + 24px);flex:none}
 
 /* Collapsed desktop: full-width heading above equal graph and detail columns. */
-@media(min-width:761px){body.sidebar-collapsed .environment-panel{display:none}}
-@media(min-width:1101px){body.sidebar-collapsed .workspace-layout{grid-template-columns:repeat(2,minmax(0,1fr))}body.sidebar-collapsed .thread-header{grid-column:1 / -1}body.sidebar-collapsed .thread-workspace{display:contents}body.sidebar-collapsed .interaction-banner{margin-left:0}body.sidebar-collapsed .graph-column{grid-column:1;grid-row:3}body.sidebar-collapsed .inspector{grid-column:2;grid-row:2 / 4;width:100%;margin-top:8px}}
+
+
 
 /* Hidden collapsed labels must not retain flex gaps or shortcut spacing. */
 body.sidebar-collapsed .sidebar-title{justify-content:center;gap:0}
 body.sidebar-collapsed .sidebar-title strong,body.sidebar-collapsed .new-thread-button kbd{display:none}
 body.sidebar-collapsed .new-thread-button{gap:0;padding-inline:0}
+
+/* Reading layout: Environment overlays; the saved ratio is independent of sidebar state. */
+.workspace-layout{position:relative}
+.workspace-layout .environment-panel{position:fixed;grid-area:auto;z-index:60;right:12px;top:64px;width:min(360px,calc(100vw - 24px));margin:0;box-shadow:0 16px 48px rgba(0,0,0,.35)}
+.pending-turn-notice button{border:1px solid var(--line-strong);border-radius:7px;background:var(--raised);color:var(--text);padding:5px 9px;font:inherit;font-size:11px}
+.environment-header{gap:12px}.environment-header h2{margin-right:auto}
+.workspace-divider{display:none;touch-action:none;cursor:col-resize;border-radius:4px;outline-offset:-2px}
+.workspace-divider:hover,.workspace-divider:focus-visible{background:var(--line-strong)}
+.pending-turn-notice{position:absolute;z-index:5;left:16px;bottom:86px;display:flex;align-items:center;gap:12px;padding:8px 12px;border:1px solid var(--line-strong);border-radius:10px;background:var(--raised);color:var(--text);font-size:11px;box-shadow:0 5px 18px rgba(0,0,0,.15)}
+@media(min-width:1101px){
+ .workspace-layout,body.sidebar-collapsed .workspace-layout{grid-template-columns:minmax(280px,clamp(280px,calc(var(--graph-share,50%) - 6px),calc(100% - 292px))) 12px minmax(280px,1fr);column-gap:0}
+ .workspace-layout .thread-header{grid-column:1 / -1}
+ .workspace-layout .thread-workspace{display:contents}
+ .workspace-layout .interaction-banner{grid-column:1;grid-row:2;margin-left:0}
+ .workspace-layout .graph-column{grid-column:1;grid-row:3}
+ .workspace-layout .inspector{grid-column:3;grid-row:2 / 4;width:100%;margin-top:8px}
+ .workspace-layout .workspace-divider{display:block;grid-column:2;grid-row:2 / 4;margin-top:8px}
+ .workspace-layout:has(.inspector.hidden){grid-template-columns:minmax(0,1fr)}
+ .workspace-layout:has(.inspector.hidden) .workspace-divider{display:none}
+}
+.public-share-shell #environmentToggle{display:none!important}
+@media(max-width:760px){
+ .workspace-layout .thread-header{height:auto;min-height:36px;flex-wrap:wrap;padding-block:6px}
+ .workspace-layout .thread-title-group{flex-wrap:wrap;gap:4px}
+ .workspace-layout .thread-title-copy{flex:1 1 100%}
+ .workspace-layout{grid-template-rows:auto auto auto minmax(520px,1fr)}
+}
+
+.environment-toggle{display:grid;place-items:center;flex:none;width:30px;height:30px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.environment-toggle:hover,.environment-toggle[aria-expanded="true"]{background:var(--hover);color:var(--text)}
+.environment-toggle:focus-visible{outline:2px solid var(--blue);outline-offset:2px}

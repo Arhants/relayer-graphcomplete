@@ -295,6 +295,7 @@ export class DetailCompilationError extends Error {
   constructor(readonly issues: readonly DetailCompilationIssue[]) {
     super(`Node Detail checkpoint failed with ${issues.length} validation issue${issues.length === 1 ? "" : "s"}`);
     this.name = "DetailCompilationError";
+    if (issues.length === 1 && issues[0]?.code.startsWith("detail_")) this.message = `${issues[0].code}: ${issues[0].message}`;
   }
 }
 
@@ -329,7 +330,16 @@ export function css(strings: TemplateStringsArray, ...values: readonly unknown[]
   return template("css", strings, values);
 }
 
+interface DetailOwner {
+  readonly object: NodeObject;
+  readonly clientKey: string;
+  scope?: string;
+}
+const TEMPLATE_STATE = new WeakMap<DetailTemplate, { readonly kind: TemplateKind; owner?: DetailOwner }>();
+const AUTHORING_CONSTRUCTOR = Symbol("node-owned-authoring");
+
 interface AuthoringComponent {
+  readonly identity: symbol;
   readonly markup: DetailTemplate;
   readonly styles: DetailTemplate;
   readonly order: number;
@@ -337,7 +347,8 @@ interface AuthoringComponent {
 
 interface AuthoringState {
   readonly components: Map<string, AuthoringComponent>;
-  readonly owner: NodeObject | undefined;
+  readonly owner: NodeObject;
+  readonly identity: DetailOwner;
   frozen: boolean;
   finalization: symbol | undefined;
   finalizedDetail: CompiledNodeDetail | undefined;
@@ -353,22 +364,33 @@ interface DomIdentityRecord {
 const AUTHORING_STATE = new WeakMap<NodeDetailAuthoring, AuthoringState>();
 
 export class NodeDetailAuthoring {
-  constructor() {
+  /** @internal Use NodeObject.detailAuthoring. */
+  constructor(owner: NodeObject, authority: symbol) {
+    if (authority !== AUTHORING_CONSTRUCTOR) throw new TypeError("Use node.detailAuthoring; components require an owning node");
     AUTHORING_STATE.set(this, {
-      components: new Map(),
-      owner: undefined,
-      frozen: false,
-      finalization: undefined,
-      finalizedDetail: undefined,
-      cleared: false,
+      components: new Map(), owner, identity: { object: owner, clientKey: owner.clientKey },
+      frozen: false, finalization: undefined, finalizedDetail: undefined, cleared: false,
     });
   }
 
   setComponent(id: string, markup: DetailTemplate, styles: DetailTemplate = emptyCssTemplate()): this {
     const state = authoringState(this);
     assertNodeDetailAuthoringMutable(state);
+    assertOwnerKey(state);
+    const templateState = TEMPLATE_STATE.get(markup);
+    if (templateState?.kind !== "html") {
+      return invalidNodeDetailProgram("detail_template_unrecognized", id, "markup", "Use html(...) to create fresh node-specific markup; copied or hand-built template objects are unsupported");
+    }
+    const original = templateState.owner;
+    if (original !== undefined && original !== state.identity
+      && !(original.scope !== undefined && original.scope === state.identity.scope && original.clientKey === state.identity.clientKey)) {
+      return invalidNodeDetailProgram("detail_template_owner_mismatch", id, "markup",
+        `HTML belongs to node ${JSON.stringify(original.clientKey)} (${original.scope ?? "unbound"}), not ${JSON.stringify(state.identity.clientKey)} (${state.identity.scope ?? "unbound"}). Create fresh html(...) for this node; share CSS, assets, or helpers. For same-node repair, graph.bindNode both objects first.`);
+    }
     const existing = state.components.get(id);
-    state.components.set(id, { markup, styles, order: existing?.order ?? state.components.size });
+    // Claim only after validation, and never release on replacement or clear.
+    templateState.owner ??= state.identity;
+    state.components.set(id, { identity: existing?.identity ?? Symbol("component"), markup, styles, order: existing?.order ?? state.components.size });
     state.cleared = false;
     return this;
   }
@@ -396,16 +418,25 @@ export class NodeDetailAuthoring {
 
 /** @internal */
 export function createOwnedNodeDetailAuthoring(owner: NodeObject): NodeDetailAuthoring {
-  const authoring = new NodeDetailAuthoring();
-  AUTHORING_STATE.set(authoring, {
-    components: new Map(),
-    owner,
-    frozen: false,
-    finalization: undefined,
-    finalizedDetail: undefined,
-    cleared: false,
-  });
-  return authoring;
+  return new NodeDetailAuthoring(owner, AUTHORING_CONSTRUCTOR);
+}
+
+function assertOwnerKey(state: AuthoringState, capturedKey?: string): void {
+  if ((capturedKey ?? safeMaterializeOwner(state.owner)?.clientKey) !== state.identity.clientKey) {
+    invalidNodeDetailProgram("detail_owner_identity_changed", "", "node.clientKey", "Node ownership is immutable; create a fresh NodeObject for a different client key");
+  }
+}
+
+/** @internal Establish scope before cache lookup or sharing a template with a repair object. */
+export function bindNodeDetailOwner(authoring: NodeDetailAuthoring, owner: NodeObject, url: string, interactionId: number, capturedKey?: string): void {
+  const state = authoringState(authoring);
+  if (state.owner !== owner) invalidNodeDetailProgram("node_envelope_invalid", "", "node", "Node Detail authoring must be owned by the submitted node");
+  assertOwnerKey(state, capturedKey);
+  const scope = JSON.stringify([url.replace(/\/$/, ""), interactionId]);
+  if (state.identity.scope !== undefined && state.identity.scope !== scope) {
+    invalidNodeDetailProgram("detail_owner_scope_mismatch", "", "node", `Node ${JSON.stringify(state.identity.clientKey)} belongs to ${state.identity.scope}, not ${scope}; create a fresh node and fresh html(...) for a different interaction`);
+  }
+  state.identity.scope = scope;
 }
 
 /** @internal */
@@ -427,6 +458,7 @@ export function snapshotAuthoredNodeDetailProgram(
   if (owner !== undefined && state.owner !== owner.object) {
     return invalidNodeDetailProgram("node_envelope_invalid", "", "node", "Node Detail authoring must be owned by the submitted node");
   }
+  assertOwnerKey(state);
   const ids = new Set<string>();
   const referencesByObject = new Map<object, MaterializedAssetRef>();
   const invalidReferences = new Set<object>();
@@ -434,7 +466,18 @@ export function snapshotAuthoredNodeDetailProgram(
   let references = 0;
   const components = Object.freeze([...state.components.entries()].map(([componentId, component]) => {
     const id = typeof componentId === "string" ? componentId : "";
-    const markup = materializeDetailTemplate(id, component.markup, "html", owner, referencesByObject, invalidReferences, ids, issues);
+    const original = TEMPLATE_STATE.get(component.markup)?.owner;
+    let repairSource: NodeObject | undefined;
+    if (original !== undefined && original !== state.identity
+      && original.scope !== undefined && original.scope === state.identity.scope
+      && original.clientKey === state.identity.clientKey) {
+      if (safeMaterializeOwner(original.object)?.clientKey !== original.clientKey) {
+        return invalidNodeDetailProgram("detail_owner_identity_changed", id, "markup", "The original template owner changed identity; create fresh node-specific HTML");
+      }
+      // Only this reused template carries its first owner's exact action provenance.
+      repairSource = original.object;
+    }
+    const markup = materializeDetailTemplate(id, component.markup, "html", owner, referencesByObject, invalidReferences, ids, issues, repairSource);
     references += markup.bindings.filter((_binding, index) => bindingKind(markup, index) === "asset").length;
     const styles = materializeDetailTemplate(id, component.styles, "css", owner, referencesByObject, invalidReferences, ids, issues);
     return Object.freeze({ id, markup, styles, order: component.order });
@@ -488,6 +531,7 @@ function materializeDetailTemplate(
   invalidReferences: Set<object>,
   assetIds: Set<string>,
   issues: DetailCompilationIssue[],
+  repairSource?: NodeObject,
 ): MaterializedDetailTemplate {
   try {
     if (typeof value !== "object" || value === null || isProxy(value) || Object.getPrototypeOf(value) !== Object.prototype) {
@@ -518,7 +562,7 @@ function materializeDetailTemplate(
         return Object.freeze({ capability: Object.freeze({ matched: false }) });
       }
       if (kindAtBinding === "gc") {
-        return Object.freeze({ capability: safeMaterializeDetailCapability(bindingValue, owner?.object) });
+        return Object.freeze({ capability: safeMaterializeDetailCapability(bindingValue, owner?.object, repairSource) });
       }
       const asset = materializeAssetReference(bindingValue, referencesByObject, invalidReferences);
       const location = bindingLocation(shell, index);
@@ -794,11 +838,16 @@ function compiledPackageByteLimitError(): DetailCompilationError {
 }
 
 function template(kind: TemplateKind, strings: TemplateStringsArray, values: readonly unknown[]): DetailTemplate {
-  return Object.freeze({
+  if (kind === "html" && values.some((value) => typeof value === "object" && value !== null && TEMPLATE_STATE.get(value as DetailTemplate)?.kind === "html")) {
+    throw new TypeError("detail_template_nested: HTML templates cannot wrap other HTML templates; use a helper that constructs fresh node-specific markup");
+  }
+  const result = Object.freeze({
     [DETAIL_TEMPLATE]: kind,
     strings: Object.freeze([...(kind === "css" ? strings.raw : strings)]),
     values: Object.freeze([...values]),
   });
+  TEMPLATE_STATE.set(result, { kind });
+  return result;
 }
 
 function emptyCssTemplate(): DetailTemplate {
@@ -1473,6 +1522,7 @@ function safeCapabilityValidationCodes(
 function safeMaterializeDetailCapability(
   value: unknown,
   owner: NodeObject | undefined,
+  repairSource?: NodeObject,
 ): DetailCapabilityMaterialization {
   if (typeof value !== "object" || value === null) return Object.freeze({ matched: false });
   try {
@@ -1507,7 +1557,7 @@ function safeMaterializeDetailCapability(
     if (actionValue === INVALID_DESCRIPTOR_VALUE || !hasExactDescriptorFields(descriptors, allowed)) {
       return Object.freeze({ matched: true });
     }
-    const action = materializeAction(actionValue, owner);
+    const action = materializeAction(actionValue, owner, repairSource);
     return Object.freeze({
       matched: true,
       ...(action === undefined ? {} : { capability: Object.freeze({ key, kind, action }) }),
@@ -1539,7 +1589,7 @@ function hasExactDescriptorFields(
   });
 }
 
-function materializeAction(value: unknown, owner: NodeObject | undefined): MaterializedAction | undefined {
+function materializeAction(value: unknown, owner: NodeObject | undefined, repairSource?: NodeObject): MaterializedAction | undefined {
   if (!isOrdinaryRecord(value)) return undefined;
   const descriptors = Object.getOwnPropertyDescriptors(value) as unknown as Record<PropertyKey, PropertyDescriptor>;
   const snapshot: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
@@ -1550,7 +1600,7 @@ function materializeAction(value: unknown, owner: NodeObject | undefined): Mater
     snapshot[field] = field === "options" && descriptor.value !== undefined
       ? materializeOptions(descriptor.value)
       : field === "sourceLayer"
-        ? materializeSourceLayer(descriptor.value, owner)
+        ? materializeSourceLayer(descriptor.value, owner, repairSource)
         : field === "target"
           ? materializeLayerTarget(descriptor.value)
         : descriptor.value;
@@ -1622,7 +1672,7 @@ function safeMaterializeOwner(owner: NodeObject | undefined): AuthenticatedNodeD
   }
 }
 
-function materializeSourceLayer(value: unknown, owner: NodeObject | undefined): MaterializedSourceLayer | undefined {
+function materializeSourceLayer(value: unknown, owner: NodeObject | undefined, repairSource?: NodeObject): MaterializedSourceLayer | undefined {
   if (typeof value !== "object"
     || value === null
     || isProxy(value)
@@ -1641,7 +1691,7 @@ function materializeSourceLayer(value: unknown, owner: NodeObject | undefined): 
     || typeof clientKeyDescriptor.value !== "string"
     || nodesDescriptor === undefined
     || !("value" in nodesDescriptor)) return undefined;
-  const containsOwner = materializeLayerOwnerMembership(nodesDescriptor.value, owner);
+  const containsOwner = materializeLayerOwnerMembership(nodesDescriptor.value, owner, repairSource);
   if (containsOwner === undefined) return undefined;
   return Object.freeze({ clientKey: clientKeyDescriptor.value, containsOwner });
 }
@@ -1673,7 +1723,7 @@ function materializeLayerTarget(value: unknown): MaterializedLayerTarget | undef
   return Object.freeze({ kind: "accepted", id });
 }
 
-function materializeLayerOwnerMembership(value: unknown, owner: NodeObject | undefined): boolean | undefined {
+function materializeLayerOwnerMembership(value: unknown, owner: NodeObject | undefined, repairSource?: NodeObject): boolean | undefined {
   if (!Array.isArray(value) || isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype) return undefined;
   const descriptors = Object.getOwnPropertyDescriptors(value) as unknown as Record<PropertyKey, PropertyDescriptor>;
   const lengthDescriptor = descriptors.length;
@@ -1691,7 +1741,7 @@ function materializeLayerOwnerMembership(value: unknown, owner: NodeObject | und
     expected.add(field);
     const descriptor = descriptors[field];
     if (descriptor === undefined || !("value" in descriptor) || descriptor.enumerable !== true) return undefined;
-    if (descriptor.value === owner) containsOwner = true;
+    if (descriptor.value === (repairSource ?? owner)) containsOwner = true;
   }
   if (Reflect.ownKeys(descriptors).some((field) => !expected.has(field))) return undefined;
   return containsOwner;

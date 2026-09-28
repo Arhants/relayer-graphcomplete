@@ -9,6 +9,8 @@ import { compiledNodeDetailCoversActions } from "../desktop/renderer/src/product
 import {
   bootPublicViewer,
   fitPublicTurnPopover,
+  observeEmbedInspectorLayout,
+  configureEmbedReading,
 } from "../desktop/renderer/src/public-share-viewer/main.js";
 import {
   parsePublicSnapshot,
@@ -464,6 +466,82 @@ describe("public share HTML boundary", () => {
     expect(styles).toMatch(/\.public-share-shell \.turn-popover\s*{[^}]*right: 0;[^}]*left: 0;[^}]*width: auto;[^}]*52px \* 5/s);
   });
 
+  it("fits embed layout transitions while newer gestures, narrow viewports and disposal cancel pending work", async () => {
+    const browser = new Window();
+    browser.document.body.innerHTML = '<div id="host"><aside id="inspector" class="hidden"></aside><button id="fitGraph">Fit</button></div>';
+    const host = browser.document.querySelector("#host");
+    const inspector = host.querySelector("#inspector");
+    const fit = vi.fn();
+    host.querySelector("#fitGraph").onclick = fit;
+    let notify;
+    let nextId = 0;
+    const frames = new Map();
+    const disconnect = vi.fn();
+    const windowRef = {
+      innerWidth: 1320,
+      MutationObserver: class {
+        constructor(callback) { notify = callback; }
+        observe() {}
+        disconnect = disconnect;
+      },
+      requestAnimationFrame(callback) { frames.set(++nextId, callback); return nextId; },
+      cancelAnimationFrame(id) { frames.delete(id); },
+    };
+    const flush = () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback()); };
+    const transition = () => { inspector.classList.toggle("hidden"); notify(); };
+    const stop = observeEmbedInspectorLayout(host, windowRef);
+    try {
+      transition(); flush(); // Opening and closing both use the real Fit control.
+      transition(); flush();
+      expect(fit).toHaveBeenCalledTimes(2);
+      for (const type of ["pointerdown", "wheel", "keydown"]) {
+        transition();
+        expect(frames.size).toBe(1);
+        host.dispatchEvent(new browser.Event(type, { bubbles: true }));
+        expect(frames.size).toBe(0);
+        flush();
+      }
+      stop.scheduleFit();
+      windowRef.innerWidth = 700;
+      flush();
+      expect(fit).toHaveBeenCalledTimes(2);
+      transition(); flush(); // Narrow Back to graph fits the newly visible canvas.
+      expect(fit).toHaveBeenCalledTimes(3);
+      windowRef.innerWidth = 1320;
+      transition();
+      stop();
+      expect(frames.size).toBe(0);
+      expect(disconnect).toHaveBeenCalledOnce();
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("keeps ordinary wheel native while preserving explicit zoom and keyboard reading", async () => {
+    const browser = new Window();
+    browser.document.body.innerHTML = '<div id="host"><div id="graphStage"><span class="graph-hint"></span></div><button id="closeInspector"></button><div class="inspector-content"></div></div>';
+    const host=browser.document.querySelector('#host');
+    const stage=host.querySelector('#graphStage');
+    const zoom=vi.fn(event=>event.preventDefault());
+    stage.onwheel=zoom;
+    const stop=configureEmbedReading(host);
+    try {
+      const ordinary=new browser.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:100});
+      stage.dispatchEvent(ordinary);
+      expect(ordinary.defaultPrevented).toBe(false);
+      expect(zoom).not.toHaveBeenCalled();
+      const pinch = new browser.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:100});
+      Object.defineProperty(pinch, 'ctrlKey', {value:true}); // happy-dom omits WheelEvent modifier fields.
+      stage.dispatchEvent(pinch);
+      expect(zoom).toHaveBeenCalledOnce();
+      expect(stage.tabIndex).toBe(0);
+      expect(host.querySelector('.inspector-content').getAttribute('aria-label')).toBe('Node details content');
+      stop();
+      stage.dispatchEvent(new browser.WheelEvent('wheel',{bubbles:true,deltaY:100}));
+      expect(zoom).toHaveBeenCalledTimes(2);
+    } finally { stop(); await browser.close(); }
+  });
+
   it("quantizes a short viewport to complete turn rows", async () => {
     const windowRef = new Window({ url: "https://share.example.test" });
     windowRef.document.body.innerHTML = '<div id="host"><div class="interaction-banner"></div><div class="turn-popover"></div></div>';
@@ -486,6 +564,19 @@ describe("public share HTML boundary", () => {
       snapshot: fixtureJsonl(),
       installUrl: `/t/${"a".repeat(32)}/install`,
     })).toContain(`/t/${"a".repeat(32)}/install`);
+  });
+
+  it("admits only an explicit embed presentation with a canonical standalone route", () => {
+    for (const sharePath of [null, "", "//evil.test/t/id", "https://evil.test", "javascript:alert(1)",
+      `/t/${"a".repeat(32)}?node=other`, `/t/${"a".repeat(32)}#later`, `/t/${"a".repeat(32)}/embed`]) {
+      expect(() => renderPublicViewerTemplate({ snapshot: fixtureJsonl(), presentation: "embed", sharePath })).toThrow();
+    }
+    expect(() => renderPublicViewerTemplate({ snapshot: fixtureJsonl(), presentation: "unknown" })).toThrow();
+    expect(() => renderPublicViewerTemplate({ snapshot: fixtureJsonl(), theme: "unsafe" })).toThrow();
+    const html = renderPublicViewerTemplate({ snapshot: fixtureJsonl(), presentation: "embed", sharePath: `/t/${"a".repeat(32)}` });
+    expect(html).toContain("connect-src &#39;none&#39;");
+    expect(publicViewerCsp()).toContain("frame-ancestors 'none'");
+    expect(html).not.toContain("public-share-download-card");
   });
 
   it("preserves the complete accepted Unicode title contract", () => {
@@ -524,7 +615,7 @@ describe("public share HTML boundary", () => {
     }
   });
 
-  it("boots the real ProductWorkspace at the first turn without changing the page URL", async () => {
+  it.each(["standalone", "embed"])("boots %s ProductWorkspace and navigates accepted history without execution", async (presentation) => {
     const windowRef = new Window({ url: `https://share.example.test/t/${"a".repeat(32)}` });
     const records = invokeFixtureRecords();
     const root = records[1].acceptedView.layers[0];
@@ -532,7 +623,10 @@ describe("public share HTML boundary", () => {
     root.layer.nodes.push("node:other");
     root.nodes.push({ id: "node:other", kind: "concept", icon: "box", title: "Other share choice", detail: "", state: "accepted" });
     root.layer.layout.placements.push({ nodeId: "node:other", x: .8, y: .8 });
-    const page = renderPublicViewerTemplate({ snapshot: recordsJsonl(records) });
+    root.actions.push({ id: "action:unresolved", sourceNodeId: "node:root", sourceLayerId: "layer:root",
+      kind: "invoke", interactionText: "Do new work", label: "Unexecuted action", variant: "pill", state: "accepted" });
+    const sharePath = `/t/${"a".repeat(32)}`;
+    const page = renderPublicViewerTemplate({ snapshot: recordsJsonl(records), presentation, sharePath, theme: presentation === "embed" ? "light" : "system" });
     windowRef.document.write(page);
     const previous = {
       DOMParser: globalThis.DOMParser,
@@ -559,12 +653,22 @@ describe("public share HTML boundary", () => {
       const viewer = bootPublicViewer({ documentRef: windowRef.document, windowRef, onRenderError });
       expect(onRenderError).not.toHaveBeenCalled();
       expect(viewer).not.toBeNull();
+      if (presentation === "embed") expect(windowRef.document.documentElement.dataset.theme).toBe("light");
       expect(viewer.adapter.selection.currentInteractionId).toBe("turn:1");
       expect(windowRef.document.querySelector("#publicViewerHost")?.classList.contains("hidden")).toBe(false);
       const downloadCard = windowRef.document.querySelector(".public-share-download-card");
-      expect(downloadCard?.parentElement?.classList.contains("workspace-layout")).toBe(true);
-      expect(downloadCard?.textContent).toContain("Relayer for Mac");
-      expect(downloadCard?.textContent).toContain("Download");
+      if (presentation === "standalone") {
+        expect(downloadCard?.parentElement?.classList.contains("workspace-layout")).toBe(true);
+        expect(downloadCard?.textContent).toContain("Relayer for Mac");
+        expect(downloadCard?.textContent).toContain("Download");
+        expect(windowRef.document.querySelector(".public-share-embed-branding")).toBeNull();
+      } else {
+        expect(downloadCard).toBeNull();
+        const link = windowRef.document.querySelector(".public-share-embed-branding a");
+        expect(link.getAttribute("href")).toBe(sharePath);
+        expect(link.target).toBe("_blank");
+        expect(link.rel).toBe("noopener noreferrer");
+      }
       expect(windowRef.document.querySelector("#environmentPanel")).toBeNull();
       windowRef.document.querySelector(".graph-node")?.click();
       await vi.waitFor(() => expect(windowRef.document.querySelector('a[href="HTTPS://example.test/docs"]')).toMatchObject({
@@ -574,17 +678,26 @@ describe("public share HTML boundary", () => {
       expect(windowRef.document.querySelector("#nodeInputActions").textContent).toContain("Path A");
       expect(windowRef.document.querySelector("#nodeInputActions").textContent).toContain("Path B");
       expect([...windowRef.document.querySelectorAll("#nodeInputActions button")].every((button) => button.disabled)).toBe(true);
+      const unresolved = windowRef.document.querySelector('[data-action-id="action:unresolved"]');
+      expect(unresolved.disabled).toBe(true);
+      unresolved.click();
+      expect(viewer.adapter.selection.currentInteractionId).toBe("turn:1");
+      await expect(viewer.adapter.onInvokeAction()).resolves.toBe(false);
+      await expect(viewer.adapter.onSubmitInteraction()).resolves.toBe(false);
       const invokeButton = windowRef.document.querySelector('[data-action-id="action:invoke"]');
       expect(invokeButton.disabled).toBe(false);
       invokeButton.click();
       await vi.waitFor(() => expect(viewer.adapter.selection.currentInteractionId).toBe("turn:2"));
       expect(viewer.adapter.state.visibleLayer.layer.id).toBe("layer:child");
       viewer.adapter.selectTurnById("turn:1");
-      await viewer.adapter.navigateLayer("layer:nested", {
-        action: viewer.adapter.state.actions[0],
-        sourceNode: viewer.adapter.state.nodes[0],
-      });
       viewer.render();
+      await windowRef.happyDOM.waitUntilComplete();
+      windowRef.document.querySelector('[data-action-id="action:expand"]').click();
+      await vi.waitFor(() => expect(viewer.adapter.state.visibleLayer.layer.id).toBe("layer:nested"));
+      windowRef.document.querySelector('.graph-node').click();
+      await windowRef.happyDOM.waitUntilComplete();
+      windowRef.document.querySelector('[data-action-id="action:reference"]').click();
+      await vi.waitFor(() => expect(viewer.adapter.state.visibleLayer.layer.id).toBe("layer:related"));
       expect(windowRef.location.href).toBe(originalUrl);
       viewer.adapter.selectTurnById("turn:2");
       viewer.adapter.selectTurnById("turn:1");

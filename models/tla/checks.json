@@ -31,25 +31,78 @@
       "TerminalReadSettlesCleanup": "TRUE",
       "ChildAdmission": "TRUE"
     },
-    "leases-today": {
-      "Turns": "{1}",
-      "MaxRestarts": "0",
-      "AdmissionTimeout": "FALSE",
-      "RustCanAbandon": "FALSE",
-      "PersistCanFail": "FALSE",
-      "StartupQuarantine": "FALSE",
-      "HarnessCanHang": "FALSE",
-      "UserCanStop": "FALSE",
-      "HostReleasesOnSettle": "TRUE",
-      "ClaimRejectsReleasing": "TRUE",
-      "AckRetriesFinalize": "TRUE",
-      "QuarantineSettleWakesReconciler": "TRUE",
-      "UnknownReleaseRetriesFinalize": "TRUE",
-      "StartupCleanupCanFail": "FALSE",
-      "PersistFailureEndsWait": "TRUE",
-      "RestartEndsWaits": "TRUE",
-      "StartupIsolatesProviders": "TRUE",
-      "ForceStopsCancelledTurn": "TRUE"
+    "composer-today": {
+      "Threads": "{\"A\", \"B\"}",
+      "MaxTurns": "2",
+      "MaxText": "2",
+      "MaxRev": "5",
+      "BackgroundRenders": "TRUE",
+      "CarryUnsentDraft": "TRUE",
+      "StableScopeRevision": "TRUE",
+      "OtherTurns": "FALSE",
+      "HoldFromClick": "TRUE",
+      "HoldUncertain": "TRUE",
+      "RetireSuperseded": "TRUE",
+      "HandBackUncertain": "TRUE"
+    },
+    "composer-fixed": {
+      "Threads": "{\"A\", \"B\"}",
+      "MaxTurns": "2",
+      "MaxText": "2",
+      "MaxRev": "5",
+      "BackgroundRenders": "TRUE",
+      "CarryUnsentDraft": "TRUE",
+      "StableScopeRevision": "TRUE",
+      "OtherTurns": "TRUE",
+      "HoldFromClick": "TRUE",
+      "HoldUncertain": "TRUE",
+      "RetireSuperseded": "TRUE",
+      "HandBackUncertain": "TRUE"
+    },
+    "composer-replay": {
+      "Threads": "{\"A\", \"B\"}",
+      "MaxTurns": "2",
+      "MaxText": "2",
+      "MaxRev": "12",
+      "BackgroundRenders": "TRUE",
+      "CarryUnsentDraft": "TRUE",
+      "StableScopeRevision": "TRUE",
+      "OtherTurns": "TRUE",
+      "HoldFromClick": "TRUE",
+      "HoldUncertain": "TRUE",
+      "RetireSuperseded": "TRUE",
+      "HandBackUncertain": "TRUE"
+    },
+    "inspector-today": {
+      "Nodes": "{\"n1\", \"n2\"}",
+      "MaxRev": "3",
+      "MaxEditors": "3",
+      "Slots": "{1, 2, 3}",
+      "QueueWhileResolving": "TRUE",
+      "RefreshAfterResolve": "TRUE",
+      "LatestRequestSupersedes": "TRUE"
+    },
+    "inspector-replay": {
+      "Nodes": "{\"n1\", \"n2\"}",
+      "MaxRev": "6",
+      "MaxEditors": "6",
+      "Slots": "{1, 2, 3, 4}",
+      "QueueWhileResolving": "TRUE",
+      "RefreshAfterResolve": "TRUE",
+      "LatestRequestSupersedes": "TRUE"
+    },
+    "input": {
+      "MaxVal": "2",
+      "MaxRev": "5",
+      "SendAwaitsAuthoredCommits": "TRUE",
+      "KeepFailedCommit": "TRUE"
+    },
+    "canvas": {
+      "L": "3",
+      "MaxGen": "6",
+      "KeepDragAcrossRender": "TRUE",
+      "FitLayoutAfterDrop": "TRUE",
+      "FitBeforeLeaving": "TRUE"
     },
     "catalog-today": {
       "MaxQ": "2",
@@ -79,6 +132,26 @@
       "RequestCanOutliveClient": "TRUE",
       "RustIsReadinessRecord": "TRUE",
       "RustRejectsOlderGeneration": "TRUE"
+    },
+    "leases-today": {
+      "Turns": "{1}",
+      "MaxRestarts": "0",
+      "AdmissionTimeout": "FALSE",
+      "RustCanAbandon": "FALSE",
+      "PersistCanFail": "FALSE",
+      "StartupQuarantine": "FALSE",
+      "HarnessCanHang": "FALSE",
+      "UserCanStop": "FALSE",
+      "HostReleasesOnSettle": "TRUE",
+      "ClaimRejectsReleasing": "TRUE",
+      "AckRetriesFinalize": "TRUE",
+      "QuarantineSettleWakesReconciler": "TRUE",
+      "UnknownReleaseRetriesFinalize": "TRUE",
+      "StartupCleanupCanFail": "FALSE",
+      "PersistFailureEndsWait": "TRUE",
+      "RestartEndsWaits": "TRUE",
+      "StartupIsolatesProviders": "TRUE",
+      "ForceStopsCancelledTurn": "TRUE"
     },
     "lifecycle-today": {
       "MaxRt": "3",
@@ -851,236 +924,6 @@
       "finding": "Without the per-turn force-stop, a cancelled native turn that ignores the cancellation keeps its provider access forever."
     },
     {
-      "id": "catalog-refresh-keeps-chosen-default",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "MaxEvents": "1",
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "MaxFlips": "1",
-        "InitAdapters": "{\"real\"}",
-        "InitDefFams": "{\"mP\", \"C\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "DefaultIsPaired",
-        "RefreshKeepsUserDefault",
-        "RefreshKeepsOtherDefault"
-      ],
-      "expect": "pass",
-      "finding": "Choosing a default provider also selects its managed family, so no later refresh changes the chosen provider or family (fixed, PROV-008; was: the next refresh of the family's provider moved the default provider back to it)."
-    },
-    {
-      "id": "catalog-refresh-keeps-default-chosen-from-unset",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "MaxEvents": "1",
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "MaxFlips": "1",
-        "InitAdapters": "{\"real\"}",
-        "InitDefFams": "{\"none\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "DefaultIsPaired",
-        "RefreshKeepsUserDefault"
-      ],
-      "expect": "pass",
-      "finding": "From an unset default family, a refresh may fill the family with its provider, but once the user chooses a provider and family no refresh changes them (PROV-008)."
-    },
-    {
-      "id": "catalog-chosen-default-reverted",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "MaxEvents": "1",
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "MaxFlips": "1",
-        "InitAdapters": "{\"real\"}",
-        "InitDefFams": "{\"mP\", \"C\"}",
-        "DefaultProviderPairsFamily": "FALSE"
-      },
-      "invariants": [
-        "RefreshKeepsUserDefault"
-      ],
-      "expect": {
-        "violated": "RefreshKeepsUserDefault"
-      },
-      "finding": "Without the pairing, the Settings provider choice stores only the provider, and the next refresh of the default family's provider moves the default provider back to it."
-    },
-    {
-      "id": "catalog-stale-refresh-after-reconnect",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxFlips": "0",
-        "InitAdapters": "{\"real\"}",
-        "Ops": "{\"logout\", \"reconnect\"}",
-        "InitDefFams": "{\"mP\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "NoStaleEffect",
-        "NoPersistingStaleEffect"
-      ],
-      "expect": "pass",
-      "finding": "A refresh that discovered before a reconnect carries the older connection generation, so its stale result has no effect (fixed, PROV-002; was: it published over the reconnect and nothing queued behind it corrected that)."
-    },
-    {
-      "id": "catalog-old-account-repopulates",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "MaxFlips": "1",
-        "InitAdapters": "{\"real\"}",
-        "Ops": "{\"reconnect\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "NoUnsafePopulate"
-      ],
-      "expect": "pass",
-      "finding": "An eligible result discovered before a zero-eligible reconnect carries the older generation and cannot reactivate the tombstoned family (fixed, PROV-002)."
-    },
-    {
-      "id": "catalog-stale-adapter-capture",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "MaxFlips": "0",
-        "InitAdapters": "{\"stub\"}",
-        "Ops": "{\"reconnect\"}",
-        "InitDefFams": "{\"mP\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "NoContradictingReplacedAdapterEffect"
-      ],
-      "expect": "pass",
-      "finding": "A refresh resolves its adapter when it runs, so a refresh queued before a reconnect runs through the reconnect's runtime (fixed, PROV-002; was: it ran through the captured unavailable stub and contradicted the reconnect)."
-    },
-    {
-      "id": "catalog-stub-recovery-logout-deadlock",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "MaxFlips": "0",
-        "InitAdapters": "{\"stub\"}",
-        "Ops": "{\"logout\"}",
-        "InitDefFams": "{\"mP\"}"
-      },
-      "fair": true,
-      "properties": [
-        "LogoutReturns"
-      ],
-      "expect": "pass",
-      "finding": "Logout commits its signed-out state with the next generation and no longer waits inside the provider queue for its refresh, so it returns (fixed, CR-V7)."
-    },
-    {
-      "id": "catalog-no-restore-after-cancelled-reconnect",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "MaxFlips": "2",
-        "InitAdapters": "{\"stub\"}",
-        "Ops": "{\"reconnect\"}",
-        "InitDefFams": "{\"mP\"}"
-      },
-      "fair": true,
-      "invariants": [
-        "TypeOK",
-        "ActiveProviderHasAdapter"
-      ],
-      "properties": [
-        "DefaultRestores"
-      ],
-      "expect": "pass",
-      "finding": "A cancelled reconnect leaves the active provider a catalog adapter: a fresh runtime, or the recovery adapter when none can start. With the real adapter, a tombstoned default family restores once the provider is healthy (fixed, F4/V8)."
-    },
-    {
-      "id": "catalog-own-family",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxFlips": "1"
-      },
-      "properties": [
-        "OnlyOwnFamily"
-      ],
-      "expect": "pass",
-      "finding": "A catalog publish changes only its own provider's managed family and never a custom family."
-    },
-    {
-      "id": "catalog-tombstoned-default-blocks-send",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxFlips": "1"
-      },
-      "invariants": [
-        "TypeOK",
-        "TombDefaultBlocksSend"
-      ],
-      "expect": "pass",
-      "finding": "A default family tombstoned by a zero-eligible refresh stays the default and blocks Send."
-    },
-    {
-      "id": "catalog-default-restores",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "InitAdapters": "{\"real\"}",
-        "Ops": "{\"logout\", \"reconnect\"}"
-      },
-      "fair": true,
-      "properties": [
-        "DefaultRestores"
-      ],
-      "expect": "pass",
-      "finding": "A tombstoned default family restores once its provider is healthy and its real adapter is registered."
-    },
-    {
       "id": "readiness-restart-restore",
       "module": "HarnessReadiness",
       "preset": "readiness-today",
@@ -1182,6 +1025,90 @@
       "finding": "The latest evaluation always reaches the app server."
     },
     {
+      "id": "catalog-refresh-keeps-chosen-default",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "InitDefFams": "{\"mP\", \"C\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "DefaultIsPaired",
+        "RefreshKeepsUserDefault",
+        "RefreshKeepsOtherDefault"
+      ],
+      "expect": "pass",
+      "finding": "Choosing a default provider also selects its managed family, so no later refresh changes the chosen provider or family (fixed, PROV-008; was: the next refresh of the family's provider moved the default provider back to it)."
+    },
+    {
+      "id": "catalog-refresh-keeps-default-chosen-from-unset",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "InitDefFams": "{\"none\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "DefaultIsPaired",
+        "RefreshKeepsUserDefault"
+      ],
+      "expect": "pass",
+      "finding": "From an unset default family, a refresh may fill the family with its provider, but once the user chooses a provider and family no refresh changes them (PROV-008)."
+    },
+    {
+      "id": "catalog-chosen-default-reverted",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "InitDefFams": "{\"mP\", \"C\"}",
+        "DefaultProviderPairsFamily": "FALSE"
+      },
+      "invariants": [
+        "RefreshKeepsUserDefault"
+      ],
+      "expect": {
+        "violated": "RefreshKeepsUserDefault"
+      },
+      "finding": "Without the pairing, the Settings provider choice stores only the provider, and the next refresh of the default family's provider moves the default provider back to it."
+    },
+    {
+      "id": "catalog-stale-refresh-after-reconnect",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"logout\", \"reconnect\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoStaleEffect",
+        "NoPersistingStaleEffect"
+      ],
+      "expect": "pass",
+      "finding": "A refresh that discovered before a reconnect carries the older connection generation, so its stale result has no effect (fixed, PROV-002; was: it published over the reconnect and nothing queued behind it corrected that)."
+    },
+    {
       "id": "catalog-stale-refresh-after-reconnect-reverted",
       "module": "CatalogRefresh",
       "preset": "catalog-today",
@@ -1205,6 +1132,27 @@
       "finding": "Without the connection generation, a refresh that discovered before a reconnect publishes its stale disconnected result after the reconnect, and nothing queued behind it corrects that."
     },
     {
+      "id": "catalog-old-account-repopulates",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"reconnect\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoUnsafePopulate"
+      ],
+      "expect": "pass",
+      "finding": "An eligible result discovered before a zero-eligible reconnect carries the older generation and cannot reactivate the tombstoned family (fixed, PROV-002)."
+    },
+    {
       "id": "catalog-old-account-repopulates-reverted",
       "module": "CatalogRefresh",
       "preset": "catalog-today",
@@ -1226,6 +1174,28 @@
         "violated": "NoUnsafePopulate"
       },
       "finding": "Without the connection generation, an eligible result discovered before a reconnect that found zero eligible models reactivates the tombstoned managed family."
+    },
+    {
+      "id": "catalog-stale-adapter-capture",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"reconnect\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoContradictingReplacedAdapterEffect"
+      ],
+      "expect": "pass",
+      "finding": "A refresh resolves its adapter when it runs, so a refresh queued before a reconnect runs through the reconnect's runtime (fixed, PROV-002; was: it ran through the captured unavailable stub and contradicted the reconnect)."
     },
     {
       "id": "catalog-stale-adapter-capture-reverted",
@@ -1252,6 +1222,28 @@
       "finding": "Without run-time resolution, a refresh captures its adapter when requested; the unavailable stub it captured publishes after a reconnect replaced it and contradicts the reconnect."
     },
     {
+      "id": "catalog-stub-recovery-logout-deadlock",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"logout\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "fair": true,
+      "properties": [
+        "LogoutReturns"
+      ],
+      "expect": "pass",
+      "finding": "Logout commits its signed-out state with the next generation and no longer waits inside the provider queue for its refresh, so it returns (fixed, CR-V7)."
+    },
+    {
       "id": "catalog-stub-recovery-logout-deadlock-reverted",
       "module": "CatalogRefresh",
       "preset": "catalog-today",
@@ -1275,6 +1267,32 @@
         "violated": "LogoutReturns"
       },
       "finding": "Logout waits inside the provider queue for its own refresh, which is queued behind an explicit stub recovery that waits for the provider queue: neither returns."
+    },
+    {
+      "id": "catalog-no-restore-after-cancelled-reconnect",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "2",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"reconnect\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "fair": true,
+      "invariants": [
+        "TypeOK",
+        "ActiveProviderHasAdapter"
+      ],
+      "properties": [
+        "DefaultRestores"
+      ],
+      "expect": "pass",
+      "finding": "A cancelled reconnect leaves the active provider a catalog adapter: a fresh runtime, or the recovery adapter when none can start. With the real adapter, a tombstoned default family restores once the provider is healthy (fixed, F4/V8)."
     },
     {
       "id": "catalog-no-restore-after-cancelled-reconnect-reverted",
@@ -1343,6 +1361,417 @@
         "violated": "AdapterOnlyForDefinition"
       },
       "finding": "Registering the catalog adapter before the commit gives a provider an adapter before its definition exists."
+    },
+    {
+      "id": "catalog-own-family",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "1"
+      },
+      "properties": [
+        "OnlyOwnFamily"
+      ],
+      "expect": "pass",
+      "finding": "A catalog publish changes only its own provider's managed family and never a custom family."
+    },
+    {
+      "id": "catalog-tombstoned-default-blocks-send",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "1"
+      },
+      "invariants": [
+        "TypeOK",
+        "TombDefaultBlocksSend"
+      ],
+      "expect": "pass",
+      "finding": "A default family tombstoned by a zero-eligible refresh stays the default and blocks Send."
+    },
+    {
+      "id": "catalog-default-restores",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"logout\", \"reconnect\"}"
+      },
+      "fair": true,
+      "properties": [
+        "DefaultRestores"
+      ],
+      "expect": "pass",
+      "finding": "A tombstoned default family restores once its provider is healthy and its real adapter is registered."
+    },
+    {
+      "id": "composer-typing-during-send",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives"
+      ],
+      "expect": "pass",
+      "finding": "Text typed while a follow-up is in flight survives the new turn loading (fixed; #512: it stayed in the old turn's draft scope, which was never shown again)."
+    },
+    {
+      "id": "composer-typing-during-send-without-renders",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "BackgroundRenders": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives"
+      ],
+      "expect": "pass",
+      "finding": "The same holds when the prompt was re-enabled by leaving the thread and returning during the POST (fixed; #512)."
+    },
+    {
+      "id": "composer-settlement-erases-edit",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "invariants": [
+        "TypeOK",
+        "SettlementClearsOnlySentText"
+      ],
+      "expect": "pass",
+      "finding": "Settlement clears only text the send carried (fixed; #513: re-entering a scope could repeat a revision, so a successful send cleared and deleted text typed after Send)."
+    },
+    {
+      "id": "composer-sent-text-lingers",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "invariants": [
+        "TypeOK",
+        "SentTextIsNotShownAgain"
+      ],
+      "expect": "pass",
+      "finding": "A settled send does not leave its text in the composer (fixed; #513: re-entering a scope during a send bumped its revision without a text change, so settlement kept the sent text)."
+    },
+    {
+      "id": "composer-one-send-per-thread",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "invariants": [
+        "TypeOK",
+        "OneSendPerThread"
+      ],
+      "properties": [
+        "SendReleases"
+      ],
+      "fair": true,
+      "expect": "pass",
+      "finding": "At most one follow-up per thread is in flight, and every send releases its thread's Send button.",
+      "constants": {
+        "MaxRev": "4"
+      }
+    },
+    {
+      "id": "composer-fixed",
+      "module": "TurnComposer",
+      "preset": "composer-fixed",
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain",
+        "OneSendPerThread",
+        "SupersededStaysGone"
+      ],
+      "expect": "pass",
+      "finding": "Moving unsent text to the newest turn's scope and keeping a scope's revision unless its text changes restore every composer promise."
+    },
+    {
+      "id": "inspector-promises",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "invariants": [
+        "TypeOK",
+        "LastRequestWins",
+        "InspectorShowsSelection",
+        "InspectorIsCurrent",
+        "DraftedSelectionHasEditor",
+        "OnlyLatestRequestSelects"
+      ],
+      "expect": "pass",
+      "finding": "Input made while an annotation draft resolves waits and the latest proceeds (fixed; #514), the selection is re-rendered from the latest state once the draft resolves (fixed; #515), and a drafted node reopens its editor (PRD L2203)."
+    },
+    {
+      "id": "inspector-without-supersede",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "constants": {
+        "LatestRequestSupersedes": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "OnlyLatestRequestSelects"
+      ],
+      "expect": {
+        "violated": "OnlyLatestRequestSelects"
+      },
+      "finding": "Without superseding it, a switch waiting on a draft save commits its node, reporting it and recording it in history, before a click queued meanwhile replaces it (review of #514)."
+    },
+    {
+      "id": "input-send-carries-answer",
+      "module": "AuthoredInputSend",
+      "preset": "input",
+      "invariants": [
+        "TypeOK",
+        "SendCarriesEnteredAnswer",
+        "SendNotRefusedByOwnAnswer"
+      ],
+      "expect": "pass",
+      "finding": "Send waits for an authored input commit started by the click, so it carries the answer and is not refused (fixed; #521: the Send could go without the answer, or be refused by it)."
+    },
+    {
+      "id": "input-send-without-waiting",
+      "module": "AuthoredInputSend",
+      "preset": "input",
+      "constants": {
+        "SendAwaitsAuthoredCommits": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SendCarriesEnteredAnswer"
+      ],
+      "expect": {
+        "violated": "SendCarriesEnteredAnswer"
+      },
+      "finding": "Without the wait, a Send served before the commit goes without the answer (#521)."
+    },
+    {
+      "id": "input-send-forgets-early-failure",
+      "module": "AuthoredInputSend",
+      "preset": "input",
+      "constants": {
+        "KeepFailedCommit": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SendCarriesEnteredAnswer"
+      ],
+      "expect": {
+        "violated": "SendCarriesEnteredAnswer"
+      },
+      "finding": "Without keeping a failed commit, one that fails before the click is forgotten, and the Send goes without the answer (review of #521)."
+    },
+    {
+      "id": "composer-without-carry",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "CarryUnsentDraft": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives"
+      ],
+      "expect": {
+        "violated": "UnsentDraftSurvives"
+      },
+      "finding": "Without moving unsent text into the newest turn's scope, text typed during a send is stranded (#512)."
+    },
+    {
+      "id": "composer-invoked-turns",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "Threads": "{\"A\"}",
+        "MaxTurns": "3",
+        "OtherTurns": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain",
+        "OneSendPerThread",
+        "SupersededStaysGone"
+      ],
+      "expect": "pass",
+      "finding": "With turns created elsewhere in the thread (an authored invoke) arriving while Send waits for an input commit, the composer keeps its promises (fixed in review of #512: the text was carried into the newer turn and stayed after it was sent)."
+    },
+    {
+      "id": "composer-without-click-hold",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "Threads": "{\"A\"}",
+        "MaxTurns": "3",
+        "HoldFromClick": "FALSE",
+        "OtherTurns": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SentTextIsNotShownAgain"
+      ],
+      "expect": {
+        "violated": "SentTextIsNotShownAgain"
+      },
+      "finding": "Without holding the submission from the click, a newer turn that arrives while Send waits for an input commit carries the text it then sends, and the text stays after the send (review of #512)."
+    },
+    {
+      "id": "composer-without-uncertain-hold",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "HoldUncertain": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SentTextIsNotShownAgain"
+      ],
+      "expect": {
+        "violated": "SentTextIsNotShownAgain"
+      },
+      "finding": "Without holding a send that may have been sent, its text is carried into the turn it created and can be sent again (review of #512; SCP-019)."
+    },
+    {
+      "id": "composer-without-retire",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "RetireSuperseded": "FALSE",
+        "OtherTurns": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SupersededStaysGone"
+      ],
+      "expect": {
+        "violated": "SupersededStaysGone"
+      },
+      "finding": "Without retiring it, stranded text the user replaced by typing stays in its scope and is carried forward once the prompt empties (review of #512, SCP-021)."
+    },
+    {
+      "id": "composer-without-uncertain-hand-back",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "HandBackUncertain": "FALSE",
+        "OtherTurns": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives"
+      ],
+      "expect": {
+        "violated": "UnsentDraftSurvives"
+      },
+      "finding": "Without handing it back, the text of a send lost to a network or server error stays stranded in its scope when an unrelated turn arrived while it was pending (review of #512, SCP-019)."
+    },
+    {
+      "id": "inspector-without-queue",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "constants": {
+        "QueueWhileResolving": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "LastRequestWins"
+      ],
+      "expect": {
+        "violated": "LastRequestWins"
+      },
+      "finding": "Without waiting, input made while a draft resolves is dropped (#514)."
+    },
+    {
+      "id": "inspector-without-refresh",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "constants": {
+        "RefreshAfterResolve": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "InspectorShowsSelection"
+      ],
+      "expect": {
+        "violated": "InspectorShowsSelection"
+      },
+      "finding": "Without the refresh, a refused switch can leave the kept node's detail disposed (#515)."
+    },
+    {
+      "id": "canvas-promises",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "invariants": [
+        "TypeOK",
+        "DragFollowsPointer",
+        "DropStays",
+        "DropFitsNewLayout"
+      ],
+      "expect": "pass",
+      "finding": "A dragged node follows the pointer and stays where it is left across renders and view round trips, and only a pan or a new layout moves the camera (fixed; #531: a render during a drag froze the node).",
+      "properties": [
+        "CameraMovesOnlyByPanOrFit"
+      ]
+    },
+    {
+      "id": "canvas-without-rebind",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "constants": {
+        "KeepDragAcrossRender": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "DragFollowsPointer"
+      ],
+      "expect": {
+        "violated": "DragFollowsPointer"
+      },
+      "finding": "Without re-binding, a render during a drag leaves the drag on the replaced node, which stops following the pointer (#531)."
+    },
+    {
+      "id": "canvas-without-fit-after-drop",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "constants": {
+        "FitLayoutAfterDrop": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "DropFitsNewLayout"
+      ],
+      "expect": {
+        "violated": "DropFitsNewLayout"
+      },
+      "finding": "Without the fit after the drop, a layout that changed mid-drag is never fitted, and new nodes can stay off-screen (review of #531)."
+    },
+    {
+      "id": "canvas-without-fit-before-leaving",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "constants": {
+        "FitBeforeLeaving": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "DropFitsNewLayout"
+      ],
+      "expect": {
+        "violated": "DropFitsNewLayout"
+      },
+      "finding": "Without fitting before the view is cached, leaving mid-drag after a layout change caches the unfitted camera, and returning restores it (review of #531)."
     },
     {
       "id": "lifecycle-lease-during-reconnect",

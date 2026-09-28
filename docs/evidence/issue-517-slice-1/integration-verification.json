@@ -1,0 +1,248 @@
+{
+  "baseCommit": "17b50d956f07cde1fb129abf847f7e5e03c19aac",
+  "sourceDigest": "1eae477c40effc19cdeac99fd99f1beb6ca0bd236b1ffdae8b2a259a7f734b38",
+  "humanApproval": {
+    "commit": "dd7e5a18989e4bcabcca6a5941183d4c9cfea869",
+    "statement": "okay i've verified myself that it works good job",
+    "provenance": "User approval reported by coordinating chat 01a0d9c7-e4af-7112-a0f6-92226b2a4201 before request to get merge ready",
+    "scope": "Pre-integration live gate; not fresh live proof of integrated head",
+    "priorAgentLimitationsRetained": true
+  },
+  "liveData": "Untouched. Historical pre-merge migrations require dd7e5a18 source/runtime; no checksum override.",
+  "changedIntegrationSeams": [
+    {
+      "checkpoint": "IP-001/IP-004, NDT-001",
+      "seam": "Migration numbering conflict with shipped main0021",
+      "proof": "schema_21_default_selection_survives_permission_migration_without_backfill"
+    },
+    {
+      "checkpoint": "IP-003, NDT-003",
+      "seam": "Correct invoked result ownership plus default/remembered/closed selection",
+      "proof": "Four real controller invocation cases with explicit default27 and deliberate Back22; existing history/closed selection portfolio"
+    },
+    {
+      "checkpoint": "IP-004, NDT-001",
+      "seam": "Export/import default-node transport alongside early converted-action refusal",
+      "proof": "Real graph export ordinary/share paths and default-node import remapping fixtures"
+    },
+    {
+      "checkpoint": "NDT-003/NDT-004, IP-003",
+      "seam": "Assembled main detail-layout, history/context and invoke interaction",
+      "proof": "Both invoke modes plus main node-input, interaction-context and project-new-thread runners"
+    }
+  ],
+  "required": [
+    "npm run check",
+    "npm run build",
+    "gated/default-off test-desktop-first-message",
+    "run-node-input-actions-test",
+    "run-interaction-context-lifecycle-test",
+    "run-project-new-thread-test",
+    "independent standards/spec review",
+    "fresh remote CI and merge-freshness"
+  ],
+  "actual": {
+    "focusedRenderer": {
+      "status": "passed",
+      "files": 3,
+      "tests": 96,
+      "durationSeconds": 0.966,
+      "priorRed": "4 null-selection assertions failed under intentionally changed main detail defaults"
+    },
+    "typedCore": {
+      "status": "passed",
+      "tests": 9
+    },
+    "mainUpgrade": {
+      "status": "passed",
+      "test": "schema_21_default_selection_survives_permission_migration_without_backfill"
+    },
+    "fullCheck": {
+      "status": "failed",
+      "log": "/tmp/pr536-integration-check-validated.log",
+      "testsPassed": 2670,
+      "testsFailed": 3,
+      "testsSkipped": 3,
+      "filesPassed": 202,
+      "filesFailed": 3,
+      "failures": [
+        "Eval graph-server startup timeout",
+        "Stop integration graph-server startup timeout",
+        "Provider screenshot onboarding frame7078bytes below20000 minimum"
+      ],
+      "logSha256": "c1904a85f81698874c1157c6f250bcc2c5cdd50a205c94156b3342047ea4c76a"
+    },
+    "initialFullCheck": {
+      "status": "failed",
+      "reason": "Main LayerDraft gained default_node_id; branch-only search fixture omitted field",
+      "log": "/tmp/pr536-integration-check.log",
+      "logSha256": "8ef3647a02e098bfc5d457af9af2dc4231bdb3ac0e9a11e093b842f8d095da1c"
+    },
+    "compileFailures": [
+      {
+        "log": "/tmp/pr536-integration-check.log",
+        "status": "failed",
+        "reason": "Missing new field in search fixture",
+        "logSha256": "8ef3647a02e098bfc5d457af9af2dc4231bdb3ac0e9a11e093b842f8d095da1c"
+      },
+      {
+        "log": "/tmp/pr536-integration-check-fixed.log",
+        "status": "failed",
+        "reason": "Missing new field in app-server fixture",
+        "logSha256": "d5ce35c3938aa1dbb7f00af3be857c79027fe02c731df2ca5e3b8088db0ea925"
+      },
+      {
+        "log": "/tmp/pr536-integration-check-final.log",
+        "status": "failed",
+        "reason": "Incorrect first patch duplicated main default and left intended fixture unmodified; corrected immediately",
+        "logSha256": "b824b2326403a7b6d5d3fbd107f8df125e316fa7fe82432a01d68cd12b5c72ce"
+      }
+    ],
+    "clippy": {
+      "status": "passed",
+      "log": "/tmp/pr536-integration-clippy.log",
+      "logSha256": "9efb27f81e13abafbfe60af2622cd4aaafb51bd8de27dc5c52cc89fa14b933f9"
+    },
+    "failedFilesFocusedRetry": {
+      "status": "passed",
+      "tests": 34,
+      "files": 3,
+      "durationSeconds": 79.17,
+      "log": "/tmp/pr536-integration-failed-focused.log",
+      "unchangedSource": true,
+      "timeoutsOrAssertionsRelaxed": false,
+      "diagnosticLimit": "Failures not reproduced; concurrent unrelated Vitest load observed but root cause not established",
+      "logSha256": "5eb96f305033cbbbd00a06b362a32f2fce7a62307010a02c771a4dafaa054360"
+    },
+    "remainingCheckTail": {
+      "status": "passed",
+      "secretBoundaryTests": 2,
+      "pythonTests": 43,
+      "receiptLint": "passed",
+      "prdReadability": "passed",
+      "log": "/tmp/pr536-integration-check-tail.log",
+      "logSha256": "498791f493caeef7ea54b3a1756934e9d64f87f046e5b1ee04c97aecff955179"
+    },
+    "build": {
+      "status": "passed",
+      "log": "/tmp/pr536-integration-build.log",
+      "logSha256": "0f04c9a2977c33c40eaaefe7a9499543447c189590bc880038d7d3bf45c3d88b"
+    },
+    "desktopJourneys": [
+      {
+        "name": "gated",
+        "exitCode": 0,
+        "log": "/tmp/pr536-integration-desktop-gated.log",
+        "seconds": 14.64,
+        "logSha256": "0e34bfcf4756c0c3b2dd71ef9c21a13466b89965cbc450bc36b71937b6fc47c3",
+        "sourceDigest": "1eae477c40effc19cdeac99fd99f1beb6ca0bd236b1ffdae8b2a259a7f734b38",
+        "inferenceCalls": 0,
+        "innerResult": "integration-gated-result.json",
+        "status": "passed"
+      },
+      {
+        "name": "default-off",
+        "exitCode": 0,
+        "log": "/tmp/pr536-integration-desktop-default-off.log",
+        "seconds": 6.29,
+        "logSha256": "1900287f73f9ef0c30379788d9f200165a768b55b91fcea22116eb0f0693da21",
+        "sourceDigest": "1eae477c40effc19cdeac99fd99f1beb6ca0bd236b1ffdae8b2a259a7f734b38",
+        "inferenceCalls": 0,
+        "innerResult": "integration-default-off-result.json",
+        "status": "passed"
+      },
+      {
+        "name": "node-input",
+        "exitCode": 0,
+        "log": "/tmp/pr536-integration-desktop-node-input.log",
+        "seconds": 24.08,
+        "logSha256": "d55179058dbf9567a9704a6e4069ca9feed1cd1457cee98803095eb50fe50e05",
+        "sourceDigest": "1eae477c40effc19cdeac99fd99f1beb6ca0bd236b1ffdae8b2a259a7f734b38",
+        "inferenceCalls": 0,
+        "innerResult": "Wrapper validated scenario result.passed=true; scenario printed zero-paid-inference pass marker",
+        "status": "passed"
+      },
+      {
+        "name": "interaction-context",
+        "exitCode": 0,
+        "log": "/tmp/pr536-integration-desktop-interaction-context.log",
+        "seconds": 24.98,
+        "logSha256": "cf4108fca165a47c7c82737f4aad5600a994db6c04bb2d523d7538742b22a551",
+        "sourceDigest": "1eae477c40effc19cdeac99fd99f1beb6ca0bd236b1ffdae8b2a259a7f734b38",
+        "inferenceCalls": 0,
+        "innerResult": "Wrapper validated scenario result.passed=true; scenario printed zero-paid-inference pass marker",
+        "status": "passed"
+      },
+      {
+        "name": "project-new-thread",
+        "exitCode": 0,
+        "log": "/tmp/pr536-integration-desktop-project-new-thread.log",
+        "seconds": 7.11,
+        "logSha256": "6d284d53e862f772b8583a23c05ba051c075c9e3672f65b681d319a5b5860700",
+        "sourceDigest": "1eae477c40effc19cdeac99fd99f1beb6ca0bd236b1ffdae8b2a259a7f734b38",
+        "inferenceCalls": 0,
+        "innerResult": {
+          "passed": true,
+          "projectId": 1,
+          "threads": 2,
+          "restartPersistence": true,
+          "layerSelectionRestartPersistence": true,
+          "evidence": {
+            "resting": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/integration-project/01-resting.png",
+            "hover": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/integration-project/02-hover.png",
+            "activated": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/integration-project/03-activated.png"
+          }
+        },
+        "status": "passed"
+      }
+    ]
+  },
+  "noPaidInference": true,
+  "testsDeleted": false,
+  "staticReviews": [
+    {
+      "reviewer": "pr536_spec",
+      "sourceDigest": "1eae477c40effc19cdeac99fd99f1beb6ca0bd236b1ffdae8b2a259a7f734b38",
+      "pathManifest": "integration-source-snapshot.json",
+      "pathCount": 53,
+      "scope": "Full Slice1 diff against17b50d95 plus integration delta versus dd7: frozen authority, conversion, caches, main default selection, migrations and export refusal",
+      "verdict": "PASS; no unresolved findings",
+      "execution": "Independent101/101frontend tests before neutral Rust fixture field additions; no later test execution claimed",
+      "unresolved": []
+    },
+    {
+      "reviewer": "pr536_standards",
+      "sourceDigest": "1eae477c40effc19cdeac99fd99f1beb6ca0bd236b1ffdae8b2a259a7f734b38",
+      "pathManifest": "integration-source-snapshot.json",
+      "pathCount": 53,
+      "scope": "Documented repository standards, architecture boundaries, maintainability, main migration identity and historical evidence/reopen documentation",
+      "verdict": "PASS; no unresolved findings",
+      "execution": "Static review; no independent tests claimed",
+      "unresolved": []
+    }
+  ],
+  "remoteCI": "pending branch push",
+  "subsequentMainCompatibility": {
+    "reviewer": "pr536_spec",
+    "from": "17b50d956f07cde1fb129abf847f7e5e03c19aac",
+    "to": "507b6b22557748eb66fcbb1e268f546e65dfee30",
+    "verdict": "Compatible static delta assessment: broker refusal/status/redirect/pins; no permission/conversion/occurrence/migration/export changes",
+    "scopeLimit": "Separate compatibility assessment, not part of53-file local digest; fresh remote synthetic-merge CI required"
+  },
+  "visualObservations": {
+    "integration-gated/07-reopened-second-occurrence.png": "Inspected: nested layer, selected Results store, inspector and compiled button visible",
+    "integration-node-detail/node-detail-sidebar-collapsed.png": "Non-certifying for collapsed visual state: image shows expanded sidebar despite inner DOM geometry assertions passing"
+  },
+  "fixtureLimits": [
+    "Invoke runners omit native keyboard proof and disable background throttling",
+    "Older invoke fixture logs missing layer-selection persistence IPC handlers; main project-new-thread runner separately verifies changed-origin persistence",
+    "Some old fixtures log missing optional Share pending IPC; no share publication exercised"
+  ],
+  "resultSummary": "All required deterministic checkpoints passed across full-run and unchanged focused recovery. Outer npm run check failed3tests; no aggregate full-pass claim. Build and all5desktop inner scenarios passed. Remote CI remains required.",
+  "visualReview": {
+    "reviewer": "Coordinating parent chat01a0d9c7-e4af-7112-a0f6-92226b2a4201",
+    "image": "integration-gated/07-reopened-second-occurrence.png",
+    "verdict": "Confirms nested layer, selected Results store and visible compiled control",
+    "scopeLimit": "Execution count is established by functional scenario receipt, not screenshot"
+  }
+}

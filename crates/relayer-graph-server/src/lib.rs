@@ -113,6 +113,15 @@ impl ServerState {
         }
     }
 
+    pub async fn set_interaction_permissions_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<(), relayer_graph_core::GraphError> {
+        self.graph
+            .set_interaction_permissions_enabled(enabled)
+            .await
+    }
+
     pub fn with_temporal_features(mut self, temporal_features: TemporalFeatureConfig) -> Self {
         self.temporal_features = temporal_features;
         self
@@ -185,6 +194,10 @@ pub fn router(state: ServerState) -> Router {
         .route(
             "/api/control/input-action-occurrences/canonical",
             post(canonical_input_action_occurrence),
+        )
+        .route(
+            "/api/control/resolved-invoke-roots",
+            post(control_resolved_invoke_roots),
         )
         .route("/api/control/interactions/{id}/output", get(control_output))
         .route(
@@ -1134,9 +1147,7 @@ async fn create_interaction(
     Json(input): Json<CreateInteractionRequest>,
 ) -> Result<Json<CreateInteractionResponse>, ApiError> {
     require_bearer(&headers, &state.control_token)?;
-    if input.invocation.is_some()
-        && (!input.contexts.is_empty() || !input.submitted_inputs.is_empty())
-    {
+    if input.invocation.is_some() && !input.submitted_inputs.is_empty() {
         return Err(ApiError::invalid(
             "invocation and submitted interaction input cannot be prepared together",
         ));
@@ -1216,20 +1227,19 @@ async fn create_interaction(
         return Err(ApiError::invalid(
             "submittedInputs require inputIdentity and inputDigest",
         ));
-    } else if input.contexts.is_empty() {
-        (
-            state
-                .graph
-                .create_interaction_with_invocation(
-                    input.project_id,
-                    input.thread_id,
-                    &input.text,
-                    input.invocation,
-                )
-                .await?,
-            Vec::new(),
-            Vec::new(),
-        )
+    } else if input.contexts.is_empty() || input.invocation.is_some() {
+        let node = state
+            .graph
+            .create_interaction_with_invocation_and_context(
+                input.project_id,
+                input.thread_id,
+                &input.text,
+                input.invocation,
+                &input.contexts,
+            )
+            .await?;
+        let actions = state.graph.interaction_context_actions(node.id).await?;
+        (node, actions, Vec::new())
     } else {
         let (node, actions) = state
             .graph
@@ -1592,6 +1602,26 @@ struct ProjectionQuery {
 
 fn default_projection_limit() -> u32 {
     100
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ResolvedInvokeRootsRequest {
+    completion_ids: Vec<NodeId>,
+}
+
+async fn control_resolved_invoke_roots(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Json(input): Json<ResolvedInvokeRootsRequest>,
+) -> Result<Json<Vec<NodeId>>, ApiError> {
+    require_bearer(&headers, &state.control_token)?;
+    Ok(Json(
+        state
+            .graph
+            .resolved_invoke_roots(&input.completion_ids)
+            .await?,
+    ))
 }
 
 async fn control_current_projections(
@@ -2616,6 +2646,71 @@ mod tests {
         http::Request,
     };
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn resolved_invoke_roots_require_control_and_bounded_valid_ids() {
+        let graph = GraphDatabase::in_memory().await.unwrap();
+        let node = graph
+            .create_interaction(None, ThreadId::new(1).unwrap(), "Source")
+            .await
+            .unwrap();
+        let state = ServerState::new(graph, "control");
+        let model_token = mint_capability(&state, node.id, None)
+            .await
+            .unwrap_or_else(|_| panic!("could not mint model capability"));
+        let app = router(state);
+        for token in ["", "wrong", model_token.as_str()] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/control/resolved-invoke-roots")
+                        .header("content-type", "application/json")
+                        .header("authorization", format!("Bearer {token}"))
+                        .body(Body::from(json!({"completionIds":[node.id]}).to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+        for ids in [json!([0]), json!([-1]), json!(vec![node.id; 501])] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/control/resolved-invoke-roots")
+                        .header("content-type", "application/json")
+                        .header("authorization", "Bearer control")
+                        .body(Body::from(json!({"completionIds":ids}).to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert!(response.status().is_client_error());
+        }
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/control/resolved-invoke-roots")
+                    .header("content-type", "application/json")
+                    .header("authorization", "Bearer control")
+                    .body(Body::from(
+                        json!({"completionIds":[node.id.value(),99999]}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            &to_bytes(response.into_body(), 1024).await.unwrap()[..],
+            b"[]"
+        );
+    }
 
     #[tokio::test]
     async fn reminted_capability_reactivates_assets_without_reviving_old_generation() {

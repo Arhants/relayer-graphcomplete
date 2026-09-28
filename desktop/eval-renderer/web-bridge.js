@@ -66,6 +66,10 @@
   };
   window.relayerEvalTrace = { load: (id, turn) => call("loadCandidateTrace", id, turn) };
   window.relayerEvalReview = {
+    workspaceLayout: {
+      read: () => fetch("/eval-api/workspace-layout").then(result),
+      set: (ratio) => fetch("/eval-api/workspace-layout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ratio) }).then(result),
+    },
     context: () => fetch("/eval-api/context").then(result),
     registerPresentationAdapter: (adapter) => { window.__evalPresentation = adapter; },
   };

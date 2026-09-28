@@ -2,7 +2,11 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { readFile, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join, resolve, extname, sep } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
+import { createSettingsStore } from "../main/services/settings-store.mjs";
+import { validWorkspaceRatio } from "../renderer/src/product-workspace/workspace-layout.js";
+
+const reviewPresentationSettings = createSettingsStore(resolve(process.env.RELAYER_EVAL_USER_DATA_DIR || join(homedir(), ".relayer", "eval-web")));
 
 const bridge = new URL("../eval-renderer/web-bridge.js", import.meta.url);
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
@@ -81,12 +85,25 @@ export async function serveEvalSurface(handle) {
   };
 }
 
-export async function createReviewSurface({ productSession, context, annotationToken, fetchImpl = fetch }) {
+export async function createReviewSurface({ productSession, context, annotationToken, fetchImpl = fetch, presentationSettings = reviewPresentationSettings }) {
   if (!productSession.readOnlyCookie) throw new Error("Review requires read-only authority.");
   const cookie = productSession.readOnlyCookie;
   const allowedThreads = new Set(context.cases.flatMap((item) => item.threadIds).map(String));
   let allowedProjects = new Set();
   return serveEvalSurface(async ({ request, response, url }) => {
+    if (url.pathname === "/eval-api/workspace-layout") {
+      if (request.method === "GET") {
+        const ratio = (await presentationSettings.read()).workspaceSplitRatio;
+        return json(response, validWorkspaceRatio(ratio) ? ratio : 0.5);
+      }
+      if (request.method === "POST") {
+        const ratio = JSON.parse((await body(request, 64)).toString());
+        if (!validWorkspaceRatio(ratio)) throw fail(400, "Invalid workspace split ratio.");
+        await presentationSettings.update((current) => ({ ...current, workspaceSplitRatio: ratio }));
+        return json(response, ratio);
+      }
+      throw fail(405, "Method not allowed.");
+    }
     if (url.pathname === "/eval-api/context" && request.method === "GET") return json(response, context);
     if (url.pathname.startsWith("/eval-api/")) throw fail(404, "Not found.");
     const isApi = url.pathname.startsWith("/api/");

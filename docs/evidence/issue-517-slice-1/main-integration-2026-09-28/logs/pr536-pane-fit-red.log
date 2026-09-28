@@ -1,0 +1,27 @@
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/permissions-merge-ready/relayer-graphcomplete
+
+ ❯ |isolated| test/node-detail-runtime.test.mjs (49 tests | 1 failed | 48 skipped) 35ms
+     × automatically mounts the chosen detail and restores a different selection when returning to a layer 34ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |isolated| test/node-detail-runtime.test.mjs > compiled Node Detail product runtime > automatically mounts the chosen detail and restores a different selection when returning to a layer
+AssertionError: expected 643.079245 to be less than 400
+ ❯ expectNodesInPane test/node-detail-runtime.test.mjs:852:55
+    850|       for (const element of window.document.querySelectorAll(".graph-n…
+    851|         expect(Number.parseFloat(element.style.left)).toBeGreaterThan(…
+    852|         expect(Number.parseFloat(element.style.left)).toBeLessThan(sta…
+       |                                                       ^
+    853|       }
+    854|     };
+ ❯ test/node-detail-runtime.test.mjs:860:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 48 skipped (49)
+   Start at  15:31:50
+   Duration  568ms (transform 178ms, setup 0ms, import 454ms, tests 35ms, environment 0ms)
+

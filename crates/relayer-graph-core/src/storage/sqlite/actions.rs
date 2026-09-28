@@ -22,6 +22,7 @@ pub(crate) struct RootActionIdentity {
 #[derive(FromRow)]
 struct ActionRow {
     id: i64,
+    resolved_invoke_interaction_id: Option<i64>,
     client_key: String,
     source_node_id: i64,
     source_layer_id: Option<i64>,
@@ -43,11 +44,48 @@ struct ActionRow {
 
 macro_rules! action_projection {
     () => {
-        "SELECT id,client_key,source_node_id,source_layer_id,(SELECT client_key FROM layers WHERE layers.id=action_records.source_layer_id) AS source_layer_client_key,kind,relation,label,variant,icon,description,target_layer_id,interaction_text,input_control,input_prompt,input_options_json,input_minimum_selections,state FROM action_records"
+        "SELECT id,(SELECT t.interaction_node_id FROM invoke_resolution_transitions t WHERE t.action_id=action_records.id AND t.target_layer_id=action_records.target_layer_id AND action_records.kind='navigate' AND action_records.relation='expand' AND action_records.state='accepted') AS resolved_invoke_interaction_id,client_key,source_node_id,source_layer_id,(SELECT client_key FROM layers WHERE layers.id=action_records.source_layer_id) AS source_layer_client_key,kind,relation,label,variant,icon,description,target_layer_id,interaction_text,input_control,input_prompt,input_options_json,input_minimum_selections,state FROM action_records"
     };
 }
 
 impl<'connection> ActionTable<'connection> {
+    pub(crate) async fn accepted_owned_invokes_in_layer(
+        &mut self,
+        layer: LayerId,
+        owner: NodeId,
+    ) -> Result<Vec<ActionId>, GraphError> {
+        let ids: Vec<i64> = sqlx::query_scalar(
+            "SELECT a.id FROM actions a JOIN layer_nodes n ON n.node_id=a.source_node_id WHERE n.layer_id=?1 AND a.owner_interaction_id=?2 AND a.kind='invoke' AND a.state='accepted' ORDER BY a.id",
+        )
+        .bind(layer.value())
+        .bind(owner.value())
+        .fetch_all(&mut *self.connection)
+        .await?;
+        ids.into_iter()
+            .map(|id| {
+                ActionId::new(id)
+                    .ok_or_else(|| GraphError::Internal("Invalid accepted invoke identity".into()))
+            })
+            .collect()
+    }
+
+    pub(crate) async fn converted_action_for_interaction(
+        &mut self,
+        interaction: NodeId,
+    ) -> Result<Option<ActionId>, GraphError> {
+        let id: Option<i64> = sqlx::query_scalar(
+            "SELECT action_id FROM invoke_resolution_transitions WHERE interaction_node_id=?1",
+        )
+        .bind(interaction.value())
+        .fetch_optional(&mut *self.connection)
+        .await?;
+        id.map(|id| {
+            ActionId::new(id)
+                .ok_or_else(|| GraphError::Internal("Invalid converted action identity".into()))
+        })
+        .transpose()
+    }
+
     pub(crate) fn new(connection: &'connection mut SqliteConnection) -> Self {
         Self { connection }
     }
@@ -291,12 +329,33 @@ impl<'connection> ActionTable<'connection> {
         .collect()
     }
 
+    /// Presentation does not transfer ownership out of an imported history.
+    pub(crate) async fn require_native_provenance(
+        &mut self,
+        action_id: ActionId,
+    ) -> Result<(), GraphError> {
+        let native: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM actions a JOIN nodes source ON source.id=a.source_node_id JOIN nodes owner ON owner.id=a.owner_interaction_id JOIN nodes source_owner ON source_owner.id=source.owner_interaction_id WHERE a.id=?1 AND NOT EXISTS(SELECT 1 FROM graph_imports imported WHERE imported.thread_id IN (a.thread_id,source.thread_id,owner.thread_id,source_owner.thread_id)))",
+        )
+        .bind(action_id.value())
+        .fetch_one(&mut *self.connection)
+        .await?;
+        if !native {
+            return Err(GraphError::Forbidden(
+                "Imported actions and source nodes cannot acquire invoke mutation authority."
+                    .into(),
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) async fn validate_unresolved_lease(
         &mut self,
         scope: &InteractionScope,
         source_interaction: NodeId,
         action_id: ActionId,
     ) -> Result<(), GraphError> {
+        self.require_native_provenance(action_id).await?;
         let in_source_completion = sqlx::query_scalar::<_, i64>(
             r#"
             WITH RECURSIVE reachable_layers(id) AS (
@@ -400,20 +459,73 @@ impl<'connection> ActionTable<'connection> {
         &mut self,
         action_id: ActionId,
         target_layer_id: LayerId,
+        typed_interaction: Option<NodeId>,
     ) -> Result<(), GraphError> {
-        let result = sqlx::query(
-            "UPDATE actions SET target_layer_id=?1 WHERE id=?2 AND state='accepted' AND kind='invoke' AND target_layer_id IS NULL",
-        )
-        .bind(target_layer_id.value())
-        .bind(action_id.value())
-        .execute(&mut *self.connection)
-        .await?;
+        if typed_interaction.is_some() {
+            // Publication has accepted the exact plan before this check. Unpublished
+            // sibling actions are excluded, even when their owner is this completion.
+            // Traverse node-owned expansion, independent of source-layer provenance.
+            // UNION bounds traversal even if historical data already contains a cycle.
+            let cyclic: bool = sqlx::query_scalar(
+                r#"
+                WITH RECURSIVE reachable(id) AS (
+                    SELECT ?1 UNION
+                    SELECT a.target_layer_id FROM reachable r
+                    JOIN layer_nodes n ON n.layer_id=r.id
+                    JOIN actions a ON a.source_node_id=n.node_id
+                    WHERE a.kind='navigate' AND a.relation='expand'
+                      AND a.state='accepted'
+                      AND a.target_layer_id IS NOT NULL
+                )
+                SELECT EXISTS(SELECT 1 FROM reachable r JOIN layer_nodes n ON n.layer_id=r.id
+                    JOIN actions source ON source.id=?2 AND source.source_node_id=n.node_id)
+            "#,
+            )
+            .bind(target_layer_id.value())
+            .bind(action_id.value())
+            .fetch_one(&mut *self.connection)
+            .await?;
+            if cyclic {
+                return Err(GraphError::validation(
+                    "expand_cycle",
+                    "invoke.resolve",
+                    "Resolving this invoke would create a node-owned expansion cycle.",
+                ));
+            }
+        }
+        let statement = if typed_interaction.is_some() {
+            "UPDATE actions SET kind='navigate',relation='expand',interaction_text=NULL,target_layer_id=?1 WHERE id=?2 AND state='accepted' AND kind='invoke' AND target_layer_id IS NULL"
+        } else {
+            "UPDATE actions SET target_layer_id=?1 WHERE id=?2 AND state='accepted' AND kind='invoke' AND target_layer_id IS NULL"
+        };
+        let result = sqlx::query(statement)
+            .bind(target_layer_id.value())
+            .bind(action_id.value())
+            .execute(&mut *self.connection)
+            .await?;
         if result.rows_affected() != 1 {
             return Err(GraphError::validation(
                 "invoke_lease_already_consumed",
                 "interactionNode.leasedActionId",
                 "The leased invoke action was already resolved or is no longer eligible for resolution.",
             ));
+        }
+        if let Some(interaction) = typed_interaction {
+            // Legacy snapshots may omit this node-owned action in another
+            // occurrence. Add only this authorized identity, in the same
+            // transaction as conversion, without changing existing ordering.
+            sqlx::query(
+                "INSERT INTO layer_actions(layer_id,action_id,position) SELECT l.id,a.id,COALESCE((SELECT MAX(position)+1 FROM layer_actions existing WHERE existing.layer_id=l.id),0) FROM actions a JOIN layer_nodes occurrence ON occurrence.node_id=a.source_node_id JOIN layers l ON l.id=occurrence.layer_id WHERE a.id=?1 AND l.state='accepted' AND ((a.project_id IS NOT NULL AND l.project_id=a.project_id) OR (a.project_id IS NULL AND l.project_id IS NULL AND l.thread_id=a.thread_id)) AND NOT EXISTS(SELECT 1 FROM graph_imports imported WHERE imported.thread_id=l.thread_id) AND NOT EXISTS(SELECT 1 FROM layer_actions existing WHERE existing.layer_id=l.id AND existing.action_id=a.id)",
+            )
+            .bind(action_id.value())
+            .execute(&mut *self.connection)
+            .await?;
+            sqlx::query("INSERT INTO invoke_resolution_transitions VALUES(?1,?2,?3)")
+                .bind(action_id.value())
+                .bind(interaction.value())
+                .bind(target_layer_id.value())
+                .execute(&mut *self.connection)
+                .await?;
         }
         Ok(())
     }
@@ -548,6 +660,10 @@ impl TryFrom<ActionRow> for ActionRecord {
         Ok(Self {
             action: GraphAction {
                 id: valid_action_id(row.id)?,
+                resolved_invoke_interaction_id: row
+                    .resolved_invoke_interaction_id
+                    .map(valid_node_id)
+                    .transpose()?,
                 client_key: Some(row.client_key),
                 source_node_id: valid_node_id(row.source_node_id)?,
                 source_layer_id: row.source_layer_id.map(valid_layer_id).transpose()?,
@@ -574,6 +690,7 @@ impl TryFrom<ActionRow> for ActionRecord {
 fn draft_action(id: ActionId, draft: &ActionDraft) -> GraphAction {
     GraphAction {
         id,
+        resolved_invoke_interaction_id: None,
         client_key: Some(draft.client_key.clone()),
         source_node_id: draft.source_node_id,
         source_layer_id: draft.source_layer_id,

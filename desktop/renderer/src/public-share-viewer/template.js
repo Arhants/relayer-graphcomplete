@@ -1,3 +1,6 @@
+// Versioned capability read only from the hash-verified server template.
+export const PUBLIC_VIEWER_EMBED_VERSION = 1;
+
 const DEFAULT_ASSET_BASE = "/";
 const DEFAULT_INSTALL_URL = "https://app.relayerlabs.ai/desktop/login";
 const DEFAULT_DESCRIPTION = "A read-only Relayer conversation snapshot.";
@@ -88,7 +91,18 @@ export function renderPublicViewerTemplate({
   assetBase = DEFAULT_ASSET_BASE,
   assetManifest = null,
   installUrl = DEFAULT_INSTALL_URL,
+  presentation = "standalone",
+  sharePath = null,
+  theme = "system",
 } = {}) {
+  if (presentation !== "standalone" && presentation !== "embed") {
+    throw new TypeError("Public viewer presentation must be standalone or embed.");
+  }
+  // Host-owned canonical share route, never a snapshot field or arbitrary URL.
+  if (presentation === "embed" && (typeof sharePath !== "string" || !/^\/t\/[a-f0-9]{32}$/u.test(sharePath))) {
+    throw new TypeError("An embedded viewer requires its canonical sharePath.");
+  }
+  if (!["system", "light", "dark"].includes(theme)) throw new TypeError("Invalid public viewer theme.");
   const base = safeAssetBase(assetBase);
   const install = safeInstallUrl(installUrl);
   const safeTitle = Array.from(String(title || "Shared conversation")).slice(0, 120).join("");
@@ -103,7 +117,7 @@ export function renderPublicViewerTemplate({
   const lucideScript = escapeHtml(viewerAsset(assetManifest, "lucideScript", "vendor/lucide.min.js", base));
   const markedScript = escapeHtml(viewerAsset(assetManifest, "markedScript", "vendor/marked.umd.js", base));
   return `<!doctype html>
-<html lang="en">
+<html lang="en" data-viewer-theme="${theme}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -119,9 +133,12 @@ export function renderPublicViewerTemplate({
   <link rel="stylesheet" href="${workspaceStyles}">
   <link rel="stylesheet" href="${viewerStyles}">
 </head>
-<body class="public-share-shell">
+<body class="public-share-shell${presentation === "embed" ? " public-share-embed" : ""}">
   <main class="public-share-main">
-    <aside class="public-share-download-card" aria-labelledby="publicShareDownloadTitle">
+    ${presentation === "embed" ? `<nav class="public-share-embed-branding" aria-label="Shared graph links">
+      <span class="public-share-attribution"><img src="${logo}" alt="" width="18" height="18">Relayer</span>
+      <a href="${escapeHtml(sharePath)}" target="_blank" rel="noopener noreferrer" aria-label="Open full graph (opens in a new tab)">Open full graph <span aria-hidden="true">↗</span></a>
+    </nav>` : `<aside class="public-share-download-card" aria-labelledby="publicShareDownloadTitle">
       <div class="public-share-download-copy">
         <img src="${logo}" alt="" width="28" height="28">
         <div>
@@ -132,12 +149,12 @@ export function renderPublicViewerTemplate({
       <div class="public-share-download-actions">
         <a class="public-share-primary-action" href="${install}" target="_blank" rel="noopener noreferrer">Download</a>
       </div>
-    </aside>
+    </aside>`}
     <section id="publicViewerHost" class="public-share-workspace-host" aria-label="Shared conversation workspace">
       <section class="thread-view" id="threadView"></section>
     </section>
     <section class="public-share-error hidden" id="publicShareError" role="alert" aria-live="assertive">
-      <h2>This shared thread couldn’t be loaded</h2>
+      <h2>${presentation === "embed" ? "This shared graph is unavailable" : "This shared thread couldn’t be loaded"}</h2>
       <p>The snapshot is unavailable or invalid. Try loading it again.</p>
       <button class="public-share-reload" id="publicShareReload" type="button">Reload</button>
     </section>

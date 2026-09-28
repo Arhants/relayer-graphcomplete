@@ -319,9 +319,20 @@ function applyCapabilityState(host, state = {}) {
   }
 }
 
+export function isResolvedInvokeAction(action) {
+  return action?.kind === "navigate"
+    && action.relation === "expand"
+    && action.state === "accepted"
+    && Number.isSafeInteger(action.resolvedInvokeInteractionId)
+    && action.resolvedInvokeInteractionId > 0
+    && action.targetLayerId != null
+    && action.interactionText == null;
+}
+
 function assertResolvedAction(capability, action) {
   if (!action || typeof action !== "object") throw new Error(`Node Detail ${capability.kind} action is unavailable.`);
-  if (capability.kind === "invoke" && action.kind !== "invoke") {
+
+  if (capability.kind === "invoke" && action.kind !== "invoke" && !isResolvedInvokeAction(action)) {
     throw new Error("Node Detail invoke authority did not resolve an invoke action.");
   }
   if ((capability.kind === "expand" || capability.kind === "reference")
@@ -370,7 +381,7 @@ function assertPotentialInputHost(host) {
   }
 }
 
-function configureInput(host, action, resolveCurrentAction, onInput, context, inputDrafts, capabilityStates) {
+function configureInput(host, action, resolveCurrentAction, onInput, onInputEdit, context, inputDrafts, capabilityStates) {
   if (action.control === "text" && host.localName !== "input" && host.localName !== "textarea") {
     throw new Error("Node Detail text input has an incompatible host.");
   }
@@ -394,6 +405,7 @@ function configureInput(host, action, resolveCurrentAction, onInput, context, in
       const currentAction = await resolveCurrentAction();
       assertResolvedAction(context.capability, currentAction);
       await onInput(currentAction, value, context);
+      return true;
     } catch (error) {
       const failedState = {
         ...(capabilityStates.get(context.mountId) ?? {}),
@@ -401,10 +413,21 @@ function configureInput(host, action, resolveCurrentAction, onInput, context, in
       };
       capabilityStates.set(context.mountId, failedState);
       applyCapabilityState(host, failedState);
+      // Resolves false: the answer was refused before it could commit.
+      return false;
     }
+  };
+  // Text commits on change, which leaving the field fires. Until then its
+  // edit is reported (null once it is committed or reverted), so the host
+  // can count an answer that pressing Send is about to commit.
+  let edited = false;
+  const reportEdit = (value, submitted) => {
+    edited = value !== null;
+    onInputEdit(context, value, submitted);
   };
   if (host.localName === "input" || host.localName === "textarea") {
     host.addEventListener("input", () => {
+      reportEdit(host.value);
       inputDrafts.add(context.mountId);
       const nextState = {
         ...(capabilityStates.get(context.mountId) ?? {}),
@@ -415,7 +438,13 @@ function configureInput(host, action, resolveCurrentAction, onInput, context, in
       applyCapabilityState(host, nextState);
     });
   }
-  host.addEventListener("change", () => { void submit(); });
+  host.addEventListener("change", () => {
+    const submitted = submit();
+    reportEdit(null, submitted);
+  });
+  // Change fires before blur, so an edit still reported here went back to
+  // the value it had on focus, and nothing commits.
+  host.addEventListener("blur", () => { if (edited) reportEdit(null); });
 }
 
 function assetFallback(host) {
@@ -475,6 +504,7 @@ export async function mountCompiledNodeDetail({
   onNavigate = async () => undefined,
   onInvoke = async () => undefined,
   onInput = async () => undefined,
+  onInputEdit = () => undefined,
   capabilityState = {},
 }) {
   const assetReleases = [];
@@ -552,7 +582,7 @@ img{max-inline-size:100%}
     const inputDrafts = new Set();
     const capabilityRecords = new Map();
     const configuredCapabilities = new Set();
-    const adapters = { resolveAction, onNavigate, onInvoke, onInput };
+    const adapters = { resolveAction, onNavigate, onInvoke, onInput, onInputEdit };
     const configureCapability = (id, element, capability, action, resolveCurrentAction) => {
       if (configuredCapabilities.has(id)) return;
       const context = Object.freeze({ mountId: id, capability, actionReference: capability.action });
@@ -562,6 +592,7 @@ img{max-inline-size:100%}
           action,
           resolveCurrentAction,
           (...args) => adapters.onInput(...args),
+          (...args) => adapters.onInputEdit?.(...args),
           context,
           inputDrafts,
           capabilityStates,
@@ -573,8 +604,8 @@ img{max-inline-size:100%}
           try {
             const currentAction = await resolveCurrentAction();
             assertResolvedAction(capability, currentAction);
-            if (capability.kind === "invoke") await adapters.onInvoke(currentAction, context);
-            else await adapters.onNavigate(currentAction, Object.freeze({ ...context, relation: capability.kind }));
+            if (capability.kind === "invoke" && currentAction.kind === "invoke") await adapters.onInvoke(currentAction, context);
+            else await adapters.onNavigate(currentAction, Object.freeze({ ...context, relation: currentAction.relation }));
             const succeededState = {
               ...(capabilityStates.get(id) ?? prior),
               busy: false,

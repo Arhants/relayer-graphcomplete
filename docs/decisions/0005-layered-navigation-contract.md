@@ -36,3 +36,9 @@ When submission identifies an intentionally abandoned orphan draft layer, the ow
 - Invoke results use existing graph authoring and submission. Generic Back, breadcrumbs, viewport restoration, and click-occurrence navigation history remain orthogonal and are not defined by this lease.
 - Pre-lease invocations remain unchanged and unleased; no migration infers or creates leases for them.
 - Legacy harness configurations remain available as baselines, but they use the same stricter graph tools.
+
+## Gated successor
+
+[ADR 0010](0010-typed-interaction-permissions.md) supersedes the retained-invoke
+representation for newly prepared interactions with typed permissions enabled.
+The default legacy path above remains unchanged during Slice 1.
