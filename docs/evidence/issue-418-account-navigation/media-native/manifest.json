@@ -1,0 +1,132 @@
+{
+  "sourceCommit": "b88dfa57ac25989201b6892d99527e0582cb367d",
+  "sourceTree": "d98bdddd7c4d808fd214b94a0a8da5c71dad50ac",
+  "integratedMain": "ac7657e1223ff744064c1d71b7281aa9cf7881fa",
+  "files": [
+    {
+      "file": "collapsed-dark-620.png",
+      "sha256": "0a826d66f912485bce7fe294982bfa6a146d356c50dc0bd093bb515d856e0e78",
+      "bytes": 98038
+    },
+    {
+      "file": "collapsed-light-620.png",
+      "sha256": "168caa6d97bd610a49d61263032a46f6ae45c557c0c58f83021365799a89c393",
+      "bytes": 31784
+    },
+    {
+      "file": "expanded-620.png",
+      "sha256": "582f7ae756feb44b23cd94a1f51d6691d1e86ee7db080e83f4959a45c5d10b96",
+      "bytes": 90282
+    },
+    {
+      "file": "collapsed-graph-375.png",
+      "sha256": "7237138fd0ee76c1974ff6ee6d1fce38ba776aec76be8371da4d61efed5605c4",
+      "bytes": 69703
+    },
+    {
+      "file": "sidebar-interaction.mp4",
+      "sha256": "37db574c34c72adf5fa569cc40bde20029b7ee7fac1e1b52792f84dd081d3f3a",
+      "bytes": 90505
+    },
+    {
+      "file": "native-375-appearance.png",
+      "sha256": "fd7778141c96588630136d2d227a4d416a00b4fb0e9bd6adcf4b30553c634730",
+      "bytes": 76050
+    },
+    {
+      "file": "native-375-updates.png",
+      "sha256": "d0899537006993e073f5dabff48baaab6132ca2ca7372951734af5ffb634cce2",
+      "bytes": 95789
+    },
+    {
+      "file": "native-375-providers.png",
+      "sha256": "3390ed077aada96af97fdfe6b9a2a74df0a993a4436e8c8f57a6a2f2355ef9a8",
+      "bytes": 115497
+    },
+    {
+      "file": "native-375-graph.png",
+      "sha256": "faa574b360190c030d16055dd2e2cc6badc48c25c7f69978f4d3c297d1997f30",
+      "bytes": 66170
+    },
+    {
+      "file": "native-375-composer.png",
+      "sha256": "2fed25012f593617d1793ff945c416575a8e4e857af2c6fe6dc6e83993e48898",
+      "bytes": 111221
+    },
+    {
+      "file": "native-titlebar-collapsed.png",
+      "sha256": "faa574b360190c030d16055dd2e2cc6badc48c25c7f69978f4d3c297d1997f30",
+      "bytes": 66170
+    },
+    {
+      "file": "native-titlebar-expanded.png",
+      "sha256": "8d02430fe58bd0e0be8165b5a8cb4b61eb4bce15b429bc0a56f0f84487ab0e58",
+      "bytes": 110927
+    },
+    {
+      "file": "native-result.json",
+      "sha256": "813d12bc240b13924ed7e6531afb4e200a03fdd02dc57a9c6cd3e485de16e5d2",
+      "bytes": 189857
+    },
+    {
+      "file": "native-share-menu-375.png",
+      "sha256": "b4f11cc9796e3d2f8a38dcd871852760a223a9e3ff22f82d3d17059d580d0414",
+      "bytes": 112843
+    },
+    {
+      "file": "native-share-title-375.png",
+      "sha256": "ad44b7dc7bf3980479c8ab4e16c99030773d925f754c3aa53077b8e9832b1878",
+      "bytes": 126316
+    },
+    {
+      "file": "mutations.json",
+      "sha256": "7aeaf1fcdc9228963b1b069c35c4f09fee1ac6b28e9dccecfca685ef43223b08",
+      "bytes": 1296
+    },
+    {
+      "file": "gates.json",
+      "sha256": "82bcf73d9988abe40849e430128d980fb92b329be0c54e711df812b26a500962",
+      "bytes": 1306
+    },
+    {
+      "file": "canonical-check.log",
+      "sha256": "720d06ed1f14c2bd209eeb88fe6a5d48021509dd1da4fc452af632d17a16bb78",
+      "bytes": 103123
+    },
+    {
+      "file": "native-stall.txt",
+      "sha256": "e334b72932d11be493cde854127a6723408d293c762bae4879f19588c5d907f6",
+      "bytes": 369
+    },
+    {
+      "file": "prior-d98-check.log",
+      "sha256": "63f9db04a447e86e1ecbbca60bd90645a665e024b1ead46417e99a2437df3cc6",
+      "bytes": 102839
+    },
+    {
+      "file": "gesture-resize.json",
+      "sha256": "b74597c5f39985e59bd5b164d24e01d12f1792d77e1cccc7d83199f9b381d638",
+      "bytes": 1157
+    },
+    {
+      "file": "pre-gates.json",
+      "sha256": "ca268ac05f451b08b8779f9d0ac864df2eee42ab9725d34a4f87ff337ba2d271",
+      "bytes": 165
+    },
+    {
+      "file": "post-gates.json",
+      "sha256": "ca268ac05f451b08b8779f9d0ac864df2eee42ab9725d34a4f87ff337ba2d271",
+      "bytes": 165
+    },
+    {
+      "file": "standards-review.md",
+      "sha256": "446e8a048978fbd29c9804b583536c211b362aacae915703e981a91ed1145be7",
+      "bytes": 8436
+    },
+    {
+      "file": "spec-review.md",
+      "sha256": "1cc19d6cba14a054d495c6aaf20900b63a02847906c38024c9bec3b961731ee5",
+      "bytes": 15516
+    }
+  ]
+}

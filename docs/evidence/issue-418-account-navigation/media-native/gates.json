@@ -1,0 +1,72 @@
+[
+  {
+    "stage": "check",
+    "exitCode": 0,
+    "seconds": 287.80161476135254
+  },
+  {
+    "stage": "build",
+    "exitCode": 0,
+    "seconds": 4.568637847900391
+  },
+  {
+    "stage": "compiled-eval",
+    "exitCode": 0,
+    "seconds": 10.950459957122803
+  },
+  {
+    "stage": "eval-web",
+    "exitCode": 0,
+    "seconds": 12.871225833892822
+  },
+  {
+    "stage": "desktop-stop",
+    "exitCode": 0,
+    "seconds": 10.497391939163208
+  },
+  {
+    "stage": "theme-csp",
+    "exitCode": 0,
+    "seconds": 5.29033899307251
+  },
+  {
+    "stage": "theme-visual",
+    "exitCode": 0,
+    "seconds": 10.53392505645752
+  },
+  {
+    "stage": "native-sidebar",
+    "exitCode": 0,
+    "seconds": 23.146597862243652
+  },
+  {
+    "stage": "mutation-proof",
+    "exitCode": 0,
+    "seconds": 0.7057011127471924
+  },
+  {
+    "stage": "sidebar-new-thread",
+    "exitCode": 0,
+    "seconds": 0.6202280521392822
+  },
+  {
+    "stage": "sidebar-new-thread-light",
+    "exitCode": 0,
+    "seconds": 0.5877482891082764
+  },
+  {
+    "stage": "sidebar-thread-375",
+    "exitCode": 0,
+    "seconds": 0.5826239585876465
+  },
+  {
+    "stage": "sidebar-new-thread-expanded",
+    "exitCode": 0,
+    "seconds": 0.6209700107574463
+  },
+  {
+    "stage": "sidebar-thread-journey",
+    "exitCode": 0,
+    "seconds": 10.121105909347534
+  }
+]
