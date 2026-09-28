@@ -24,6 +24,19 @@ _Avoid_: Thread, completion
 A provider-owned subagent or recursive helper operating inside one completion's execution attachment. It does not become a semantic child unless agent-authored code calls Complete.
 _Avoid_: Completion child
 
+**Interaction permission**:
+A frozen description of the exact graph operations a completion may perform,
+derived from that interaction's product origin and attachments.
+_Avoid_: Runtime token, permission profile
+
+**Invoke resolution**:
+The one-time acceptance of an invoked interaction's response, turning its exact
+source action into navigation while preserving that action's identity.
+
+**Context attachment**:
+A user-selected node and its causal occurrence, supplied as input to an interaction.
+It may confer narrowly bounded navigation authority on the node, never general edit authority.
+
 **Shared thread snapshot**:
 An immutable, public, read-only conversation-export v1 projection of one local
 thread's accepted history, frozen for one owner-bound publication attempt. It is

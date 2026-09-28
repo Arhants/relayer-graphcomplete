@@ -1,0 +1,554 @@
+{
+  "schemaVersion": 1,
+  "evidence": "issue-558-embed-slice-one",
+  "scope": "Local cross-origin wide/mobile iframes; not hosted service proof",
+  "source": {
+    "commit": "895f89223e2caa69d7d46467fe2d289632797a8e",
+    "sourceFiles": {
+      "desktop/renderer/assets/relayer-logo.svg": "79c1593b83dfc014f5e5bb91c6ff37d892a19ca8092236ae2a17707f5a13d020",
+      "desktop/renderer/src/action-invocation-state.js": "890d8f69c6a8310a0221e1a6ce35c9a6fb0735b8826be009bd68ceb56c06d4ea",
+      "desktop/renderer/src/api.js": "4024542092755f7167e11f0c7803a25f49c7d9b27172ce5c9dde74f16905a58e",
+      "desktop/renderer/src/approval-model.js": "f1b0d76178c7de024d14a191930f2e419e1a7e9c9396626d56ad45b58a9a4ecf",
+      "desktop/renderer/src/composer-drafts.js": "36c4dee570f6591d7781c6943c1c1a269d81de34afaf4214dbbe0889e43d275d",
+      "desktop/renderer/src/control-activation.js": "682962e5cfc93c2720845d409c4bd65fe51a5b4f0e9718e1fbfc452943104186",
+      "desktop/renderer/src/interaction-failure-model.js": "770928962446ad3326d94460235775e581a542056a4477860b2e37f4ba457442",
+      "desktop/renderer/src/model-picker-model.js": "e888dae7b2a229d41fca536f9670e716249b33317e98580a05e25ed7c729a2ba",
+      "desktop/renderer/src/model-picker.js": "a01b3272036e18d9bddb2d32d144e1583ed68d166b08674169059a2025945050",
+      "desktop/renderer/src/node-context-drafts.js": "0f0db2a7a00c2bae2239b584d612e5ad21b161094b3e783879d3e7b4854f2c87",
+      "desktop/renderer/src/node-input-controls.js": "5d7bc5fee66a9ace45a01ef9dcebb20b39f1f0b94d7f35f1d61f1ef1f8672584",
+      "desktop/renderer/src/product-workspace/annotations.js": "a6d06bc7f20dcb7116533198cb12702b790b9d724d3a08d8ebbc959bcb971510",
+      "desktop/renderer/src/product-workspace/composer-submission.js": "e480c7e854b010905c7ac8e9e3b31e9a6193035de7ed8cbadbf64645cc3a2b92",
+      "desktop/renderer/src/product-workspace/graph-layout.js": "d768d33964d24a753c769b37a8651097f15819dcb3b799ee9a25c0a4f03dc2e2",
+      "desktop/renderer/src/product-workspace/icons.js": "cef43d3f68645acd8f014d4c79ee1de04784e023997e7a6ace320cef6b5e62d6",
+      "desktop/renderer/src/product-workspace/index.js": "1e6d1769552b93692d54602e68b0c02cc89789bd226e1e6ebb336dea29d117c3",
+      "desktop/renderer/src/product-workspace/layer-selection.js": "4c691164821433a43dac9abd7539d549f5ca858447cd20202b904f7786047185",
+      "desktop/renderer/src/product-workspace/markdown.js": "338cdd8855f3b40c4138d0245262c209554b26b94c1a4655598ce976fca5b90c",
+      "desktop/renderer/src/product-workspace/model.js": "fbcfb3cfbe6ff4650af39839551ccfa13eb9d2dbcc12abb597b8bf9fba55ef64",
+      "desktop/renderer/src/product-workspace/node-detail-runtime.js": "8638236175dcb4225866f6728c21e48ac8f50469842c127a03a18614e4a2943e",
+      "desktop/renderer/src/product-workspace/view.js": "cbf2689f15b85244a7b07345a45fdbfcbd872f76adc5235cddbe164e711dc9ad",
+      "desktop/renderer/src/product-workspace/workspace-layout.js": "cc247d05f6eafdce261dd72dad4e420c3cbd5f1bd5ac25fce074dea75937d835",
+      "desktop/renderer/src/product-workspace/workspace.js": "a2d996e384ceddf836a2328759a1311240b77648327330cc4df71665dcb00081",
+      "desktop/renderer/src/public-share-viewer/adapter.js": "4289fa31c5293732affe016e1b497f01c5155a42eab9a7c0c354e608905fc471",
+      "desktop/renderer/src/public-share-viewer/main.js": "2f357c0bf7b9507fcb77c27bd130bdaf9a8ebce59a99eef94ace3b078a8511d4",
+      "desktop/renderer/src/public-share-viewer/snapshot.js": "acc3193c372e0887f322dddf42ffba9eb2f4df069f85cc4204209a8a86524d09",
+      "desktop/renderer/src/public-share-viewer/template.js": "bf78fb16eee2254d8aaaeae8e105449cb627b42d410924f546175c0d686133a9",
+      "desktop/renderer/src/public-share-viewer/viewer.css": "d1eee7c8c878546a14617b7e073d13fc6fbe20110f067b31ba3916258c2083f9",
+      "desktop/renderer/src/share-publish-ui.js": "3a07cbecaab629f54720575e5fea998694919f2fce15638d89bc025100a57904",
+      "desktop/renderer/src/ui.js": "d7cd6e4a2c45d2d85e6068bc2e5d1a66c35b75b546ba432600c5008180b3cab1",
+      "desktop/renderer/styles.css": "1a56e218ff65544737f21677353dd240834107c153c7478394ef9a7d94ad88e4",
+      "desktop/renderer/vendor/lucide.min.js": "534813d1da2f4d4550383d5db0879aedb2f74c2d0b8951ade277e8bcaea6df52",
+      "desktop/renderer/vendor/marked.umd.js": "2e20e86f0a13107ae9bf00675894bbb573716a8e5b4fde612eacaff1e404c128",
+      "docs/evidence/issue-471-public-share-viewer/synthetic-snapshot.jsonl": "b05db96cb2d008e213b3bc6e3398b958f4670ed919547329a607be8f0dc7d865",
+      "scripts/capture-public-share-embed-evidence.mjs": "c084f20adb067ea7d028e19e6fc7d23232b5f7e8505daf41ea37b49269d46cdf",
+      "scripts/fixtures/public-share-embed.mjs": "8a4bc920a51088a2cd6683352e852dfb1b8086a002caa7a6898e1ff737c7e4f8"
+    },
+    "digest": "c79c8b70ace5bfde1d6d9c9ec48fb22b8e4a5cf6c18c833dbdb51fc3012e7ca3"
+  },
+  "fixture": {
+    "sha256": "8b5eaba7e82def04491f6fa06c9e8f28b9fe3fd7ce68642a61cd35fb84d13b88",
+    "kind": "synthetic"
+  },
+  "browser": {
+    "electron": "43.0.0",
+    "viewport": {
+      "width": 1440,
+      "height": 1100
+    },
+    "geometry": {
+      "details": {
+        "bottom": 636,
+        "height": 537,
+        "right": 1306,
+        "width": 641,
+        "x": 665,
+        "y": 99
+      },
+      "graph": {
+        "bottom": 636,
+        "height": 485,
+        "right": 653,
+        "width": 641,
+        "x": 12,
+        "y": 151
+      },
+      "viewport": {
+        "height": 648,
+        "width": 1318
+      }
+    },
+    "assertions": {
+      "firstAcceptedTurn": true,
+      "embedChromeOnly": true,
+      "graphRemainsVisibleAfterSplit": true,
+      "equalVisibleColumns": true,
+      "inputControlsDisabled": true,
+      "unexecutedInvokeDisabled": true,
+      "closingDetailsRestoresGraphWidth": true,
+      "unexecutedInvokeDidNotNavigate": true,
+      "expansionReachedNestedLayer": true,
+      "nestedDestinationFitsSplit": true,
+      "priorTurnReferenceWithinAcceptedClosure": true,
+      "completedInvokeOpenedAcceptedResult": true,
+      "mutationControlsUnavailable": true,
+      "frameUrlUnchanged": true,
+      "parentUrlUnchanged": true,
+      "fullGraphLinkSafe": true,
+      "fullGraphRequestedNewWindow": true,
+      "reloadResetFirstTurn": true,
+      "ordinaryWheelScrollsArticle": true,
+      "explicitZoomWorks": true,
+      "explicitCtrlWheelZoomWorks": true,
+      "distantFrameDeferred": true,
+      "nearViewportLoadsFixedTheme": true,
+      "systemThemeChangesPreserveFixedTheme": true,
+      "independentEmbedNavigation": true,
+      "narrowDetailsReplaceGraph": true,
+      "backRestoresKeyboardGraph": true,
+      "longDetailsRemainBounded": true,
+      "finalDetailReachable": true,
+      "keyboardEscapeRestoresGraph": true,
+      "narrowBackFitsVisibleCanvas": true,
+      "keyboardExitsToArticle": true,
+      "touchScrollContinuesArticle": true,
+      "noOutboundOrApiRequests": true
+    },
+    "requests": [
+      {
+        "url": "http://127.0.0.1:61079/",
+        "type": "mainFrame"
+      },
+      {
+        "url": "http://localhost:61079/t/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/embed",
+        "type": "subFrame"
+      },
+      {
+        "url": "http://localhost:61079/styles.css",
+        "type": "stylesheet"
+      },
+      {
+        "url": "http://localhost:61079/src/public-share-viewer/viewer.css",
+        "type": "stylesheet"
+      },
+      {
+        "url": "http://localhost:61079/assets/relayer-logo.svg",
+        "type": "image"
+      },
+      {
+        "url": "http://localhost:61079/vendor/lucide.min.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/vendor/marked.umd.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/public-share-viewer/main.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/index.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/public-share-viewer/adapter.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/public-share-viewer/snapshot.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/model.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/workspace.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/view.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/model-picker.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/workspace-layout.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/layer-selection.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/ui.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/action-invocation-state.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/control-activation.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/model-picker-model.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/icons.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/graph-layout.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/markdown.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/node-detail-runtime.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/share-publish-ui.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/interaction-failure-model.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/node-context-drafts.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/node-input-controls.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/composer-submission.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/annotations.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/approval-model.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/composer-drafts.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/api.js",
+        "type": "script"
+      },
+      {
+        "url": "http://127.0.0.1:61079/",
+        "type": "mainFrame"
+      },
+      {
+        "url": "http://localhost:61079/t/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/embed",
+        "type": "subFrame"
+      },
+      {
+        "url": "http://localhost:61079/styles.css",
+        "type": "stylesheet"
+      },
+      {
+        "url": "http://localhost:61079/src/public-share-viewer/viewer.css",
+        "type": "stylesheet"
+      },
+      {
+        "url": "http://localhost:61079/assets/relayer-logo.svg",
+        "type": "image"
+      },
+      {
+        "url": "http://localhost:61079/vendor/lucide.min.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/vendor/marked.umd.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/public-share-viewer/main.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/index.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/public-share-viewer/adapter.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/public-share-viewer/snapshot.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/workspace.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/view.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/model.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/model-picker.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/model-picker-model.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/ui.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/workspace-layout.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/layer-selection.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/action-invocation-state.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/control-activation.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/icons.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/graph-layout.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/markdown.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/node-detail-runtime.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/share-publish-ui.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/interaction-failure-model.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/node-context-drafts.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/node-input-controls.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/composer-submission.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/annotations.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/approval-model.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/composer-drafts.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/api.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/t/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/embed?theme=light",
+        "type": "subFrame"
+      },
+      {
+        "url": "http://localhost:61079/styles.css",
+        "type": "stylesheet"
+      },
+      {
+        "url": "http://localhost:61079/src/public-share-viewer/viewer.css",
+        "type": "stylesheet"
+      },
+      {
+        "url": "http://localhost:61079/assets/relayer-logo.svg",
+        "type": "image"
+      },
+      {
+        "url": "http://localhost:61079/vendor/lucide.min.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/vendor/marked.umd.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/public-share-viewer/main.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/index.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/public-share-viewer/adapter.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/public-share-viewer/snapshot.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/workspace.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/view.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/model.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/model-picker.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/workspace-layout.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/layer-selection.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/ui.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/action-invocation-state.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/control-activation.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/model-picker-model.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/icons.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/graph-layout.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/markdown.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/node-detail-runtime.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/share-publish-ui.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/interaction-failure-model.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/node-context-drafts.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/node-input-controls.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/composer-submission.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/product-workspace/annotations.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/approval-model.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/composer-drafts.js",
+        "type": "script"
+      },
+      {
+        "url": "http://localhost:61079/src/api.js",
+        "type": "script"
+      }
+    ],
+    "errors": [],
+    "knownDiagnostics": [
+      "The Content Security Policy directive 'frame-ancestors' is ignored when delivered via a <meta> element.",
+      "The Content Security Policy directive 'frame-ancestors' is ignored when delivered via a <meta> element.",
+      "The Content Security Policy directive 'frame-ancestors' is ignored when delivered via a <meta> element."
+    ]
+  },
+  "captures": [
+    {
+      "file": "article-overview.png",
+      "sha256": "96a014f48232cf682f4107625cd66d2b301522e50aad6871166e9a7197616294"
+    },
+    {
+      "file": "node-details-split.png",
+      "sha256": "96a014f48232cf682f4107625cd66d2b301522e50aad6871166e9a7197616294"
+    },
+    {
+      "file": "nested-layer-split.png",
+      "sha256": "1b044b310df2788addf6f2c4d9941e88d5076b69187aaf7d4efd772b6abf5cca"
+    },
+    {
+      "file": "mobile-details.png",
+      "sha256": "f04d35566538414c84145e4800f31223acfb8b74dfcdb89eec964fb31b0cd0ff"
+    },
+    {
+      "file": "mobile-long-details.png",
+      "sha256": "9f4da455272532a5b1ff50dc55da4977e095422981024bef83780fbe150184ca"
+    },
+    {
+      "file": "mobile-graph.png",
+      "sha256": "2f06f25eba7fc27ce0ba0c6b2d81714208ef6aa8a2f4987f796110728dd61782"
+    }
+  ]
+}

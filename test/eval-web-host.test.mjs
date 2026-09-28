@@ -1,4 +1,7 @@
-import { readFile, access } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createSettingsStore } from "../desktop/main/services/settings-store.mjs";
+import { readFile, access, mkdtemp, rm } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { createServer, request as httpRequest } from "node:http";
 import { createEvalDashboard, createReviewSurface, openHumanReview } from "../desktop/eval-main/web-host.mjs";
@@ -166,4 +169,35 @@ it("preserves encoded opaque asset IDs without allowing encoded structural paths
   }
   expect((await fetch(surface.origin + "/api/threads/8/interactions/10/nodes/11/detail-assets/secret%20asset", { headers: authorized(surface) })).status).toBe(403);
   expect(seen).toHaveLength(3);
+});
+
+
+it("persists Eval layout across origins while keeping preference writes authenticated and product writes forbidden", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relayer-eval-layout-"));
+  const start = async () => {
+    const surface = await createReviewSurface({ context,
+      productSession: { origin: "http://product.invalid", readOnlyCookie: { name: "read", value: "only" } },
+      presentationSettings: createSettingsStore(directory),
+    });
+    opened.push(surface);
+    return surface;
+  };
+  const post = (surface, value, headers = authorized(surface)) => fetch(surface.origin + "/eval-api/workspace-layout", {
+    method: "POST", headers, body: JSON.stringify(value),
+  });
+  try {
+    const first = await start();
+    expect(await (await fetch(first.origin + "/eval-api/workspace-layout", { headers: authorized(first) })).json()).toBe(0.5);
+    expect((await post(first, 0.64, {})).status).toBe(401);
+    expect((await post(first, 0.64, authorized(first, { Origin: "https://foreign.example" }))).status).toBe(403);
+    expect((await post(first, 0.64)).status).toBe(200);
+    expect((await post(first, "0.6")).status).toBe(400);
+    expect((await post(first, 0.9)).status).toBe(400);
+    const reopened = await start();
+    expect(reopened.origin).not.toBe(first.origin);
+    expect(await (await fetch(reopened.origin + "/eval-api/workspace-layout", { headers: authorized(reopened) })).json()).toBe(0.64);
+    expect((await fetch(reopened.origin + "/api/threads/7/interactions", {
+      method: "POST", headers: authorized(reopened), body: "{}",
+    })).status).toBe(403);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });

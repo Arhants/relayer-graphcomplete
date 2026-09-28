@@ -202,6 +202,7 @@ if (primaryInstance) {
   };
   const graphRuntime = new GraphCompleteRuntimeService({
     userDataDirectory: userDataPath,
+    interactionPermissions: !app.isPackaged && process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1",
     graphServerBinary: relayerGraphServerBinary,
     configurationPaths: [...new Set([
       defaultHarnessConfiguration,

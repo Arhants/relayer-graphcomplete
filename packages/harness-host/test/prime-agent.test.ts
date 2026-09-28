@@ -250,7 +250,7 @@ describe("PrimeAgentHarness", () => {
     harness.forceShutdown();
 
     expect(session.abort).toHaveBeenCalledOnce();
-    expect(harness.state()).toEqual({});
+    expect(harness.state()).toEqual({ primeRootResetReason: "force_stopped" });
   });
 
   it("keeps the next root turn's session at force shutdown after an earlier root turn was force-stopped", async () => {
@@ -299,6 +299,47 @@ describe("PrimeAgentHarness", () => {
 
     expect(session.promptAndWait).not.toHaveBeenCalled();
     expect(harness.state()).toEqual({ primeAgentSessionFile: "/tmp/restored.jsonl", primeAgentSessionPersonalPresentationVersionId: 90 });
+  });
+
+  it("records a visible notice whenever a root turn cannot continue the previous native session", async () => {
+    const pinned = primeSession("/tmp/pinned.jsonl", { reload: vi.fn(async () => undefined) });
+    const neutral = primeSession("/tmp/neutral.jsonl", { promptAndWait: vi.fn(() => new Promise<void>(() => {})) });
+    const fresh = primeSession("/tmp/fresh.jsonl");
+    const sessions = [pinned, neutral, fresh];
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7, workingDirectory: "/tmp/project", ...fullPermission, configuration,
+      savedState: { primeAgentSessionFile: "/tmp/pinned.jsonl", primeAgentSessionPersonalPresentationVersionId: 90 },
+    }, { loadModule: async () => ({
+      ...runScopeApi(),
+      SessionManager: { create: vi.fn(() => "new-session"), open: vi.fn(() => "saved-session") },
+      createHostRequestHandler: (handler: unknown) => handler,
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
+      createAgentSessionFromServices: vi.fn(async () => ({ session: sessions.shift() })),
+    }) as never });
+    const resets = (trace: { events: HarnessTraceEventInput[] }) => trace.events
+      .filter((event) => event.type === "warning" && typeof event.data.nativeSessionReset === "string")
+      .map((event) => event.data.nativeSessionReset);
+
+    // The restored conversation continues under its own pin.
+    const resumed = recordingTrace();
+    await harness.complete({ ...presentationRunContext(11, "resumed", 90), trace: resumed.sink });
+    expect(resets(resumed)).toEqual([]);
+
+    // A new pin rotates away from a session that held a conversation.
+    const rotated = recordingTrace();
+    const force = new AbortController();
+    const stuck = harness.complete({ ...runContext(12, "rotated", rotated.sink), forceSignal: force.signal });
+    await vi.waitFor(() => expect(neutral.promptAndWait).toHaveBeenCalledOnce());
+    expect(resets(rotated)).toEqual(["presentation_changed"]);
+
+    // A force-stopped conversation is not resumed, and the reason survives a restart.
+    force.abort(new Error("force-stopped after two minutes"));
+    await expect(stuck).rejects.toThrow("force-stopped after two minutes");
+    expect(harness.state()).toEqual({ primeRootResetReason: "force_stopped" });
+    const next = recordingTrace();
+    await harness.complete({ ...runContext(13, "next", next.sink), forceSignal: new AbortController().signal });
+    expect(resets(next)).toEqual(["force_stopped"]);
+    expect(harness.state()).toEqual({ primeAgentSessionFile: "/tmp/fresh.jsonl", primeAgentSessionPersonalPresentationVersionId: null });
   });
 
   it("fails closed when the installed package cannot scope presentation instructions to a session", async () => {
@@ -1001,7 +1042,7 @@ describe("PrimeAgentHarness", () => {
     expect(child.abort).not.toHaveBeenCalled();
     expect(childNativeDispose).not.toHaveBeenCalled();
     // The stopped session may still write its file, so it is neither saved nor resumed.
-    expect(harness.state()).toEqual({});
+    expect(harness.state()).toEqual({ primeRootResetReason: "force_stopped" });
 
     await harness.complete({ ...runContext(63, "root"), forceSignal: new AbortController().signal });
     expect(open).toHaveBeenCalledOnce();
@@ -1191,7 +1232,7 @@ describe("PrimeAgentHarness", () => {
     cancel.abort(new Error("cancelled"));
     rootForce.abort(new Error("force-stopped after two minutes"));
     await expect(stuck).rejects.toThrow("force-stopped after two minutes");
-    expect(harness.state()).toEqual({});
+    expect(harness.state()).toEqual({ primeRootResetReason: "force_stopped" });
 
     // The next pinned root turn starts a fresh conversation instead of resuming that file.
     await harness.complete({ ...presentationRunContext(102, "next", 90), forceSignal: new AbortController().signal });
@@ -1839,6 +1880,9 @@ describe("PrimeAgentHarness", () => {
       expect(prompt).toContain("not a recommended response design");
       expect(prompt).not.toContain("Start from this runnable");
       expect(prompt).toContain("await graph.checkpoint_node_detail(node)");
+      expect(prompt).toContain("graph.bind_node");
+      expect(prompt).toContain("do not copy a whole explanation across siblings");
+      expect(prompt).toContain("shared_styles");
       expect(prompt).toContain("await graph.submit(11)");
       expect(prompt).not.toMatch(/detailAuthoring|checkpointNodeDetail|detailCapability|html`/);
       const tool = trace.events.find((event) => event.type === "tool.call.started");

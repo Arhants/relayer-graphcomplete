@@ -3,6 +3,11 @@ import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
 import { INTERACTION_INPUT_GUIDANCE, renderInteractionInput } from "../interaction-input.js";
+import {
+  parseNativeSessionResetReason,
+  reportNativeSessionReset,
+  type NativeSessionResetReason,
+} from "../native-session-reset.js";
 import { redactTraceData } from "../trace.js";
 import { CURRENT_WORKSPACE_GUIDANCE, GRAPH_PRESENTATION_GUIDANCE } from "./graph-presentation-guidance.js";
 import {
@@ -46,6 +51,18 @@ const CODEX_MANAGED_RUNTIME_ENVIRONMENT = new Set([
 ]);
 const CODEX_BASIC_SECRET_ADAPTERS = new Set(["openai-api", "openrouter", "vercel-ai-router"]);
 const CODEX_BASIC_ADAPTERS = new Set(["codex-subscription", ...CODEX_BASIC_SECRET_ADAPTERS]);
+/** The stable name recorded for Codex's default home, used when a turn sets no CODEX_HOME. */
+const CODEX_DEFAULT_HOME = "codex-default-home";
+
+/**
+ * The Codex home a turn's app-server reads and writes rollouts in. A thread resumes only in the
+ * home holding its rollout. The configured path is recorded as given, so it stays the same
+ * across restarts; a turn without CODEX_HOME uses Codex's default home.
+ */
+function codexHomeOf(environment: Readonly<Record<string, string>>): string {
+  const home = environment.CODEX_HOME;
+  return home === undefined || home === "" ? CODEX_DEFAULT_HOME : home;
+}
 
 const UNDERLYING_TASK_GUIDANCE = `Complete the underlying user task in the working directory. Use the harness's ordinary workspace tools and reasoning as needed; the graph is the presentation of the work, not a substitute for doing it. Author graph content from the work you actually performed and the evidence you actually observed. If you reach a genuine blocker that you cannot resolve, present that blocker and its evidence instead of presenting planned work as completed.`;
 
@@ -121,11 +138,16 @@ export class CodexBasicHarness implements Harness {
   private codexThreadId: string | undefined;
   private codexThreadPersonalPresentationVersionId: number | null | undefined;
   /**
-   * The provider definition the thread was created under; null for a turn run without a
-   * selected provider. Undefined only for a thread saved by an earlier release: it
-   * is still offered for resume, and a missing rollout starts a fresh thread instead.
+   * The Codex home holding the thread's rollout. Undefined only for a thread saved by an earlier
+   * release: it is still offered for resume, binds to the home it resumes in, and a missing
+   * rollout starts a fresh thread instead.
    */
-  private codexThreadProviderDefinitionId: string | null | undefined;
+  private codexThreadHome: string | undefined;
+  /**
+   * Why the root thread was dropped, until the next root turn that starts fresh reports it.
+   * It is saved with the state, so the notice survives a restart.
+   */
+  private pendingRootReset: NativeSessionResetReason | undefined;
   /** Each running turn's force controller, with the step that forgets its root thread. */
   private readonly activeForceShutdowns = new Map<AbortController, () => void>();
   /**
@@ -149,22 +171,21 @@ export class CodexBasicHarness implements Harness {
       : "legacy-shared";
     const codexThreadId = context.savedState?.codexThreadId;
     const savedPresentationVersionId = context.savedState?.codexThreadPersonalPresentationVersionId;
-    const savedProviderDefinitionId = context.savedState?.codexThreadProviderDefinitionId;
+    const savedHome = context.savedState?.codexThreadHome;
     const validSavedPresentationVersion = savedPresentationVersionId === undefined
       || savedPresentationVersionId === null
       || (typeof savedPresentationVersionId === "number"
         && Number.isSafeInteger(savedPresentationVersionId)
         && savedPresentationVersionId > 0);
-    const validSavedProviderDefinition = savedProviderDefinitionId === undefined
-      || savedProviderDefinitionId === null
-      || (typeof savedProviderDefinitionId === "string" && savedProviderDefinitionId !== "");
-    if (resolved.settings.rootSessionMode !== "fresh"
-      && typeof codexThreadId === "string"
-      && validSavedPresentationVersion
-      && validSavedProviderDefinition) {
+    const validSavedHome = savedHome === undefined || (typeof savedHome === "string" && savedHome !== "");
+    if (resolved.settings.rootSessionMode === "fresh") return;
+    this.pendingRootReset = parseNativeSessionResetReason(context.savedState?.codexRootResetReason);
+    if (typeof codexThreadId === "string" && validSavedPresentationVersion && validSavedHome) {
       this.codexThreadId = codexThreadId;
       this.codexThreadPersonalPresentationVersionId = savedPresentationVersionId;
-      this.codexThreadProviderDefinitionId = savedProviderDefinitionId;
+      this.codexThreadHome = savedHome;
+    } else if (typeof codexThreadId === "string") {
+      this.pendingRootReset = "session_unavailable";
     }
   }
 
@@ -200,17 +221,10 @@ export class CodexBasicHarness implements Harness {
     signal?: AbortSignal,
   ): Promise<void> {
     const personalPresentationVersionId = context.personalPresentation?.attachment.versionInteractionNodeId ?? null;
-    const providerDefinitionId = context.model?.providerId ?? null;
     const persistentRootSession = kind === "root" && this.resolved.settings.rootSessionMode !== "fresh";
-    // A thread resumes only in the CODEX_HOME holding its rollout. The Codex subscription has
-    // its own home; API-key providers share Codex's default home. Binding the thread to its
-    // provider definition is therefore required across that boundary and conservative
-    // between two API-key providers.
     if (persistentRootSession && this.codexThreadId !== undefined
-      && (this.codexThreadPersonalPresentationVersionId !== personalPresentationVersionId
-        || (this.codexThreadProviderDefinitionId !== undefined
-          && this.codexThreadProviderDefinitionId !== providerDefinitionId))) {
-      this.forgetRootThread();
+      && this.codexThreadPersonalPresentationVersionId !== personalPresentationVersionId) {
+      this.forgetRootThread("presentation_changed");
     }
     this.selectedModel(context);
     if (context.model !== undefined && context.access === undefined) {
@@ -219,10 +233,20 @@ export class CodexBasicHarness implements Harness {
     const capability = context.graph.acquireCapability();
     const resolvedRuntime = await this.codexRuntime(context.access);
     const environment = this.graphEnvironment(capability, context.completionBroker, context.access, resolvedRuntime.environment);
+    // The effective home is the provider's private one for a new API-key conversation and
+    // Codex's default home for a legacy one (codexProviderHome), so each keeps its own threads.
+    const codexHome = codexHomeOf(environment);
+    // A thread resumes only in the Codex home holding its rollout. Providers that share a home,
+    // such as API-key providers in a legacy conversation's default home, keep resuming it. This
+    // decides only resumption for the provider the product selected, never which it may select.
+    if (persistentRootSession && this.codexThreadId !== undefined
+      && this.codexThreadHome !== undefined && this.codexThreadHome !== codexHome) {
+      this.forgetRootThread("home_changed");
+    }
     await this.runCodexTurn(context, attach, signal, environment, resolvedRuntime.executable, {
       persistentRootSession,
       personalPresentationVersionId,
-      providerDefinitionId,
+      codexHome,
     });
   }
 
@@ -235,7 +259,7 @@ export class CodexBasicHarness implements Harness {
     rootThread: {
       readonly persistentRootSession: boolean;
       readonly personalPresentationVersionId: number | null;
-      readonly providerDefinitionId: string | null;
+      readonly codexHome: string;
     },
   ): Promise<void> {
     const { persistentRootSession } = rootThread;
@@ -261,7 +285,7 @@ export class CodexBasicHarness implements Harness {
     const forceShutdown = new AbortController();
     let conversationStarted = false;
     const forgetForcedRootThread = () => {
-      if (persistentRootSession && conversationStarted) this.forgetRootThread();
+      if (persistentRootSession && conversationStarted) this.forgetRootThread("force_stopped");
     };
     const forceTurn = () => {
       forgetForcedRootThread();
@@ -269,6 +293,10 @@ export class CodexBasicHarness implements Harness {
     };
     context.forceSignal?.addEventListener("abort", forceTurn, { once: true });
     this.activeForceShutdowns.set(forceShutdown, forgetForcedRootThread);
+    if (persistentRootSession && this.codexThreadId === undefined && this.pendingRootReset !== undefined) {
+      reportNativeSessionReset(context, "Codex", this.context.threadId, this.pendingRootReset);
+      this.pendingRootReset = undefined;
+    }
     try {
       await run({
         environment,
@@ -294,13 +322,22 @@ export class CodexBasicHarness implements Harness {
         onThreadId: () => undefined,
         onTurnStarting: () => { conversationStarted = true; },
         onSavedThreadUnavailable: (threadId) => {
-          if (persistentRootSession && this.codexThreadId === threadId) this.forgetRootThread();
+          if (!persistentRootSession || this.codexThreadId !== threadId) return;
+          this.forgetRootThread("no_rollout");
+          reportNativeSessionReset(context, "Codex", this.context.threadId, "no_rollout");
+          this.pendingRootReset = undefined;
+        },
+        // A Stop that lands while turn/start is pending kills the app-server, which may have
+        // left the thread mid-write, as a force-stop does.
+        onTurnStartAbandoned: () => {
+          if (persistentRootSession && !forceShutdown.signal.aborted) this.forgetRootThread("stopped_during_start");
         },
         onTurnId: (threadId, turnId) => {
           if (persistentRootSession && !forceShutdown.signal.aborted) {
             this.codexThreadId = threadId;
             this.codexThreadPersonalPresentationVersionId = rootThread.personalPresentationVersionId;
-            this.codexThreadProviderDefinitionId = rootThread.providerDefinitionId;
+            this.codexThreadHome = rootThread.codexHome;
+            this.pendingRootReset = undefined;
           }
           attach(Object.freeze({
             schemaVersion: 1,
@@ -336,16 +373,16 @@ export class CodexBasicHarness implements Harness {
 
   state(): HarnessSessionState {
     const home = { codexProviderHome: this.providerHome };
+    const reset = this.pendingRootReset === undefined ? {} : { codexRootResetReason: this.pendingRootReset };
     return this.codexThreadId === undefined
       || this.codexThreadPersonalPresentationVersionId === undefined
-      ? home
+      ? { ...home, ...reset }
       : {
           ...home,
           codexThreadId: this.codexThreadId,
           codexThreadPersonalPresentationVersionId: this.codexThreadPersonalPresentationVersionId,
-          ...(this.codexThreadProviderDefinitionId === undefined
-            ? {}
-            : { codexThreadProviderDefinitionId: this.codexThreadProviderDefinitionId }),
+          ...(this.codexThreadHome === undefined ? {} : { codexThreadHome: this.codexThreadHome }),
+          ...reset,
         };
   }
 
@@ -358,10 +395,11 @@ export class CodexBasicHarness implements Harness {
     }
   }
 
-  private forgetRootThread(): void {
+  private forgetRootThread(reason: NativeSessionResetReason): void {
     this.codexThreadId = undefined;
     this.codexThreadPersonalPresentationVersionId = undefined;
-    this.codexThreadProviderDefinitionId = undefined;
+    this.codexThreadHome = undefined;
+    this.pendingRootReset = reason;
   }
 
   private graphEnvironment(
@@ -1294,6 +1332,6 @@ export function createCodexBasicFactory(dependencies: CodexBasicDependencies = {
   return (context) => new CodexBasicHarness(context, dependencies);
 }
 
-const CODEX_VISUAL_GUIDANCE = "The following public API recipe demonstrates authoring mechanics only; its placeholder content and layout are not a recommended response design. For visual Node Details: Import the exported html, css, and detailCapability helpers. At minimum, call node.detailAuthoring.setComponent(\"main\", html`<section><h2>Summary</h2><p>Details</p></section>`, css`section { display: grid; gap: 0.75rem; }`), await graph.checkpointNodeDetail(node), and then await graph.submitNode(node). When a node has actions, create each stable action object with its sourceLayer before checkpointing, bind that same object in the page with the matching detailCapability helper, and pass it to graph.addAction after submitting the layer.";
+const CODEX_VISUAL_GUIDANCE = "The following public API recipe demonstrates authoring mechanics only; its placeholder content and layout are not a recommended response design. For visual Node Details: Import the exported html, css, and detailCapability helpers. At minimum, call node.detailAuthoring.setComponent(\"main\", html`<section><h2>Summary</h2><p>Details</p></section>`, css`section { display: grid; gap: 0.75rem; }`), await graph.checkpointNodeDetail(node), and then await graph.submitNode(node). Each node’s detail must explain that node’s title and purpose. Reuse styles and layout helpers, but do not copy a whole explanation across siblings. If several nodes would have the same explanation, consolidate them. HTML binds permanently on first attachment, including fragments. Create fresh html for each node; wrapping or copying an owned template cannot transfer it. Only node.detailAuthoring authors components. For same-node repair reusing an existing template, call graph.bindNode(original) and graph.bindNode(replacement) before attachment; both must have the same stable client key in this interaction. When a node has actions, create each stable action object with its sourceLayer before checkpointing, bind that same object in the page with the matching detailCapability helper, and pass it to graph.addAction after submitting the layer. Example with shared styles and distinct content: const common = css`section { padding: 1rem; }`; answer.detailAuthoring.setComponent(\"main\", html`<section><h2>Answer</h2><p>Explain the conclusion.</p></section>`, common); evidence.detailAuthoring.setComponent(\"main\", html`<section><h2>Supporting evidence</h2><p>Explain what supports the conclusion.</p></section>`, common).";
 
 const CODEX_ASSET_GUIDANCE = `For image assets, import assetRef from the supplied clientModuleUrl. Use const scope = await graph.visualAssets.scope(); await graph.visualAssets.listAssets({ scope }); await graph.visualAssets.listTags({ scope }); await graph.visualAssets.inspect(assetId, scope). Register caller-read bytes with await graph.visualAssets.add({ scope, name, file: { name, mediaType, async read() { return bytes; } } }); bind the returned asset.id with html\`<img asset=\${assetRef(asset.id)} alt="Description">\`. The host resolves and pins content. Never supply compiled packages, mounts, hashes, raw image URLs, or executable JavaScript.`;

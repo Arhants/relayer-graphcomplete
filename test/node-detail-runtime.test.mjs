@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Window } from "happy-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NodeDetailAuthoring, html, css } from "../packages/graph-client/src/index.ts";
+import { NodeObject, html, css } from "../packages/graph-client/src/index.ts";
 
 import { compiledNodeDetailReviewControls, mountCompiledNodeDetail } from "../desktop/renderer/src/product-workspace/node-detail-runtime.js";
 import { createReviewPresentationAdapter } from "../desktop/renderer/src/review-tools.js";
@@ -50,7 +50,7 @@ describe("compiled Node Detail product runtime", () => {
     ['@media(min-width:0px){[data-relayer-theme="dark"] p{color:cyan}}', true],
   ])("adds a theme scope only for parsed theme selectors: %s", async (source, themed) => {
     const window = new Window();
-    const authoring = new NodeDetailAuthoring();
+    const authoring = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     authoring.setComponent("page", html`<p>Original presentation</p>`, css(Object.assign([source], { raw: [source] })));
     const detail = authoring.checkpoint();
     const host = window.document.createElement("div");
@@ -70,7 +70,7 @@ describe("compiled Node Detail product runtime", () => {
   it("mirrors product appearance for public compiled CSS and releases observation on disposal and failed mounting", async () => {
     const window = new Window();
     window.document.documentElement.dataset.theme = "light";
-    const authoring = new NodeDetailAuthoring();
+    const authoring = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     authoring.setComponent("theme", html`<p>Meaning stays the same.</p>`, css`
       [data-relayer-theme="light"] p { color: #182c34; }
       [data-relayer-theme="dark"] p { color: #edf2f3; }
@@ -839,11 +839,43 @@ describe("compiled Node Detail product runtime", () => {
     const onSelectionChange = vi.fn();
     const selection = { currentThreadId: 801, currentInteractionId: 5, selectedNodeId: null, layerPath: [] };
     const workspace = createProductWorkspace({ root: window.document, getState: () => state, getThread: () => thread, selection, onSelectionChange, showThread() {}, showEmpty() {}, inputDraftApi: { get: async () => ({ threadId: 801, revision: 0, attachments: [], updatedAt: "2026-09-27T00:00:00Z" }) } });
+    const stage = window.document.querySelector("#graphStage");
+    // A layer switch hides and restores details within one render. ResizeObserver
+    // need not see an intermediate size, so fit must use the final pane bounds.
+    stage.getBoundingClientRect = () => ({
+      left: 0, top: 0, height: 500,
+      width: window.document.querySelector("#inspector").classList.contains("hidden") ? 800 : 400,
+    });
+    const expectNodesInPane = () => {
+      for (const element of window.document.querySelectorAll(".graph-node")) {
+        const center = Number.parseFloat(element.style.left);
+        const halfWidth = 82 * Number.parseFloat(element.style.getPropertyValue("--graph-zoom"));
+        expect(center - halfWidth).toBeGreaterThanOrEqual(0);
+        expect(center + halfWidth).toBeLessThanOrEqual(stage.getBoundingClientRect().width);
+      }
+    };
     try {
       workspace.render();
       await window.happyDOM.waitUntilComplete();
       expect(window.document.querySelector("#detailTitle").textContent).toBe("Detail 2");
       expect(window.document.querySelector("#inspector").classList.contains("hidden")).toBe(false);
+      expectNodesInPane();
+      // The pending turn's status stays visible while the accepted detail is retained.
+      state.interactions.push({ id: 6, threadId: 801, sequence: 2, text: "Follow-up", completionStatus: "running" });
+      for (const status of ["running", "failed", "stopped"]) {
+        state.pendingTurn = { threadId: 801, interactionId: 6, status, readyLayer: null };
+        workspace.render();
+        await window.happyDOM.waitUntilComplete();
+        expect(window.document.querySelector("#pendingTurnNotice").classList.contains("hidden")).toBe(false);
+        expect(window.document.querySelector("#pendingTurnText").textContent.toLowerCase()).toContain(status);
+        expect(window.document.querySelector("#detailTitle").textContent).toBe("Detail 2");
+      }
+      state.pendingTurn.readyLayer = child;
+      workspace.render();
+      expect(window.document.querySelector("#openReadyResult").classList.contains("hidden")).toBe(false);
+      state.pendingTurn = null;
+      state.interactions.pop();
+      workspace.render();
       window.document.querySelector('[data-node="1"]').click();
       await window.happyDOM.waitUntilComplete();
       const input = window.document.querySelector(".node-input-text");
@@ -859,9 +891,21 @@ describe("compiled Node Detail product runtime", () => {
       workspace.render();
       await window.happyDOM.waitUntilComplete();
       expect(window.document.querySelector("#detailTitle").textContent).toBe("Detail 1");
+      expectNodesInPane();
       expect(window.document.querySelector(".node-input-text").value).toBe("");
       // Restoring a navigation selection must not emit a new user intent and cancel history.
       expect(onSelectionChange).not.toHaveBeenCalled();
+      window.document.querySelector("#zoomInGraph").click();
+      const cameraSignature = () => [...window.document.querySelectorAll(".graph-node")]
+        .map((element) => [element.style.left, element.style.top, element.style.getPropertyValue("--graph-zoom")]);
+      const manuallyZoomed = cameraSignature();
+      state.visibleLayer = child; state.nodes = child.nodes; state.actions = []; selection.selectedNodeId = 2;
+      workspace.render();
+      await window.happyDOM.waitUntilComplete();
+      state.visibleLayer = layer; state.nodes = nodes; state.actions = layer.actions; selection.selectedNodeId = 1;
+      workspace.render();
+      await window.happyDOM.waitUntilComplete();
+      expect(cameraSignature()).toEqual(manuallyZoomed);
       state.visibleLayer = child; state.nodes = child.nodes; state.actions = [];
       selection.selectedNodeId = null; selection.nodeDetailsClosed = true;
       workspace.render();
@@ -1004,6 +1048,7 @@ describe("compiled Node Detail product runtime", () => {
       showThread: () => {},
       showEmpty,
       onNavigateLayer,
+      onNavigateResolvedInvoke: (action) => onNavigateLayer(action.targetLayerId, { action, sourceNode: node }),
       onInvokeAction,
       inputDraftApi,
     });
@@ -1039,6 +1084,28 @@ describe("compiled Node Detail product runtime", () => {
     await window.happyDOM.waitUntilComplete();
     expect(onNavigateLayer).toHaveBeenCalledWith(91, expect.objectContaining({ action: actions[0], sourceNode: node }));
     expect(onInvokeAction).toHaveBeenCalledWith(actions[1]);
+    const invokeButton = runtimeHost.shadowRoot.querySelector("[data-gc-mount='invoke']");
+    Object.assign(actions[1], { kind: "navigate", relation: "expand", targetLayerId: 92,
+      state: "accepted", interactionText: null, resolvedInvokeInteractionId: 51 });
+    workspace.render();
+    await window.happyDOM.waitUntilComplete();
+    expect(runtimeHost.shadowRoot.querySelector("[data-gc-mount='invoke']")).toBe(invokeButton);
+    expect(invokeButton.disabled).toBe(false);
+    invokeButton.click();
+    await window.happyDOM.waitUntilComplete();
+    expect(onNavigateLayer).toHaveBeenCalledWith(92, expect.objectContaining({ action: actions[1], sourceNode: node }));
+    expect(onInvokeAction).toHaveBeenCalledTimes(1);
+    // Fresh mount from another occurrence uses the stored receipt, without an in-memory prior kind.
+    const other = window.document.createElement("div");
+    window.document.body.append(other);
+    const mounted = await mountCompiledNodeDetail({ host: other, detail,
+      resolveAction: (reference) => actions.find((action) => action.clientKey === reference.clientKey),
+      onNavigate: onNavigateLayer, onInvoke: onInvokeAction });
+    expect(mounted.status).toBe("mounted");
+    other.shadowRoot.querySelector("[data-gc-mount='invoke']").click();
+    await window.happyDOM.waitUntilComplete();
+    expect(onInvokeAction).toHaveBeenCalledTimes(1);
+    mounted.dispose();
     const input = runtimeHost.shadowRoot.querySelector("[data-gc-mount='input']");
     expect(input.disabled).toBe(false);
     input.dispatchEvent(new window.Event("change", { bubbles: true }));

@@ -4,8 +4,12 @@ import {
   clearThreadFollowupDraft,
   pendingNewThreadDraft,
   persistPendingNewThreadDraft,
+  followupTextDigest,
+  persistSentThreadFollowup,
   persistThreadFollowupDraft,
+  sentThreadFollowup,
   threadFollowupDraft,
+  threadFollowupRestoration,
 } from "../desktop/renderer/src/composer-drafts.js";
 import { normalizeComposerDrafts } from "../desktop/main/ipc/register-ipc.mjs";
 
@@ -51,6 +55,70 @@ describe("composer draft persistence", () => {
     expect(threadFollowupDraft("unsent:43")).toBeNull();
     expect(threadFollowupDraft("unsent:44")).toBe("draft 44");
     expect(threadFollowupDraft("unsent:299")).toBe("draft 299");
+  });
+
+  it("keeps a draft's restoration only with that draft, and a sent follow-up until it is cleared", () => {
+    persistThreadFollowupDraft("t:1", "restored text", { restorationId: "1:7" });
+    expect(threadFollowupRestoration("t:1")).toBe("1:7");
+    // The user's own text in the scope replaces the provenance.
+    persistThreadFollowupDraft("t:1", "restored text");
+    expect(threadFollowupRestoration("t:1")).toBeNull();
+    persistThreadFollowupDraft("t:1", "", { preserveEmpty: true, restorationId: "1:7" });
+    expect(threadFollowupRestoration("t:1")).toBe("1:7");
+    clearThreadFollowupDraft("t:1");
+    expect(threadFollowupRestoration("t:1")).toBeNull();
+
+    const record = { scopeKey: "3:5", originScopeKey: "3:5", textDigest: followupTextDigest(" sent "), edited: true, sends: 2 };
+    persistSentThreadFollowup(3, record);
+    expect(sentThreadFollowup(3)).toEqual(record);
+    persistSentThreadFollowup(3, null);
+    expect(sentThreadFollowup(3)).toBeNull();
+  });
+
+  it("evicts send records that protect no draft before one that does", () => {
+    persistThreadFollowupDraft("t0:1", "retyped after Send");
+    persistSentThreadFollowup("t0", { scopeKey: "t0:1", originScopeKey: "t0:1", textDigest: "1:a", edited: true });
+    for (let index = 1; index <= 256; index += 1) {
+      persistSentThreadFollowup(`t${index}`, { scopeKey: `t${index}:1`, originScopeKey: `t${index}:1`, textDigest: "1:a", edited: false });
+    }
+    expect(sentThreadFollowup("t0")).toMatchObject({ edited: true });
+    expect(sentThreadFollowup("t1")).toBeNull();
+    expect(sentThreadFollowup("t256")).not.toBeNull();
+
+    const records = Object.fromEntries(Array.from({ length: 257 }, (_, index) => [`t${index}`, {
+      scopeKey: `t${index}:1`, originScopeKey: `t${index}:1`, textDigest: "1:a", edited: index === 0, sends: 1,
+    }]));
+    const normalized = normalizeComposerDrafts({ threadFollowups: { "t0:1": "retyped after Send" }, sentThreadFollowups: records });
+    expect(normalized.sentThreadFollowups.t0).toBeDefined();
+    expect(normalized.sentThreadFollowups.t1).toBeUndefined();
+    expect(Object.keys(normalized.sentThreadFollowups)).toHaveLength(256);
+  });
+
+  it("digests the trimmed text, so a large sent message costs a few bytes", () => {
+    expect(followupTextDigest(" sent ")).toBe(followupTextDigest("sent"));
+    expect(followupTextDigest("sent")).not.toBe(followupTextDigest("sent!"));
+    expect(followupTextDigest("x".repeat(600_000)).length).toBeLessThan(32);
+  });
+
+  it("keeps valid restorations and sent follow-ups through the desktop store, dropping the rest", () => {
+    const normalized = normalizeComposerDrafts({
+      pendingNewThread: null,
+      threadFollowups: { "t:1": "restored", "t:2": "" },
+      threadFollowupRestorations: { "t:1": "1:7", "t:2": "2:1", "t:9": "orphan", "t:3": 4 },
+      sentThreadFollowups: {
+        3: { scopeKey: "3:5", originScopeKey: "3:5", textDigest: "4:abc", edited: false, sends: 1, extra: true },
+        4: { scopeKey: "4:1", originScopeKey: "4:1", textDigest: "4:abc", sends: 1 },
+        5: { scopeKey: "5:1", originScopeKey: "5:1", text: "full text", edited: true, sends: 1 },
+        6: { scopeKey: "6:1", originScopeKey: "6:1", textDigest: "4:abc", edited: true, sends: 0 },
+      },
+    });
+    expect(normalized.threadFollowupRestorations).toEqual({ "t:1": "1:7", "t:2": "2:1" });
+    expect(normalized.sentThreadFollowups).toEqual({
+      3: { scopeKey: "3:5", originScopeKey: "3:5", textDigest: "4:abc", edited: false, sends: 1 },
+    });
+    expect(normalizeComposerDrafts(null)).toEqual({
+      pendingNewThread: null, threadFollowups: {}, threadFollowupRestorations: {}, sentThreadFollowups: {},
+    });
   });
 
   it("evicts oldest follow-ups by bytes and recovers after an oversized active draft", () => {

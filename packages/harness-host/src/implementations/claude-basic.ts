@@ -1,5 +1,10 @@
 import type { GraphCapability } from "@relayer/graph-client";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
+import {
+  parseNativeSessionResetReason,
+  reportNativeSessionReset,
+  type NativeSessionResetReason,
+} from "../native-session-reset.js";
 import type {
   Harness,
   HarnessExecutionAccess,
@@ -86,6 +91,8 @@ export class ClaudeBasicHarness implements Harness {
    * continuation (#584).
    */
   private readonly providerHome: "isolated" | "legacy-shared";
+  /** Why the root session was dropped, until the next root turn reports it. Saved with the state. */
+  private pendingRootReset: NativeSessionResetReason | undefined;
 
   constructor(
     private readonly context: HarnessFactoryContext,
@@ -108,12 +115,15 @@ export class ClaudeBasicHarness implements Harness {
     // State without a provider definition cannot prove which credentials created
     // the session. Provider-scoped legacy state is loaded only so the first turn
     // can detect its unknown presentation version and rotate the native session.
+    this.pendingRootReset = parseNativeSessionResetReason(context.savedState?.claudeRootResetReason);
     if (typeof savedSessionId === "string"
       && typeof savedProviderDefinitionId === "string"
       && validSavedPresentationVersion) {
       this.sessionId = savedSessionId;
       this.sessionProviderDefinitionId = savedProviderDefinitionId;
       this.sessionPersonalPresentationVersionId = savedPresentationVersionId;
+    } else if (typeof savedSessionId === "string") {
+      this.pendingRootReset = "session_unavailable";
     }
   }
 
@@ -146,18 +156,22 @@ export class ClaudeBasicHarness implements Harness {
     const providerDefinitionId = context.model.providerId;
     const isRoot = context.origin.kind === "root";
     const personalPresentationVersionId = context.personalPresentation?.attachment.versionInteractionNodeId ?? null;
-    if (isRoot && this.sessionProviderDefinitionId !== providerDefinitionId) {
-      this.sessionId = undefined;
-      this.sessionProviderDefinitionId = undefined;
-      this.sessionPersonalPresentationVersionId = undefined;
+    // In a new conversation each provider definition has its own Claude configuration directory,
+    // so another definition's session cannot be resumed. In a legacy one they share Claude's
+    // default home, and rotating is conservative. This decides only resumption for the provider
+    // the product selected, never which providers it may select.
+    if (isRoot && this.sessionId !== undefined && this.sessionProviderDefinitionId !== providerDefinitionId) {
+      this.forgetRootSession("provider_changed");
     }
     if (isRoot && this.sessionId !== undefined
       && this.sessionPersonalPresentationVersionId !== personalPresentationVersionId) {
-      this.sessionId = undefined;
-      this.sessionProviderDefinitionId = undefined;
-      this.sessionPersonalPresentationVersionId = undefined;
+      this.forgetRootSession("presentation_changed");
     }
     const resumeSessionId = isRoot ? this.sessionId : undefined;
+    if (isRoot && resumeSessionId === undefined && this.pendingRootReset !== undefined) {
+      reportNativeSessionReset(context, "Claude", this.context.threadId, this.pendingRootReset);
+      this.pendingRootReset = undefined;
+    }
     const graph = context.graph.acquireCapability();
     const prompt = this.prompt(context);
     await context.trace.emit({
@@ -195,12 +209,19 @@ export class ClaudeBasicHarness implements Harness {
     };
   }
 
+  private forgetRootSession(reason: NativeSessionResetReason): void {
+    this.sessionId = undefined;
+    this.sessionProviderDefinitionId = undefined;
+    this.sessionPersonalPresentationVersionId = undefined;
+    this.pendingRootReset = reason;
+  }
+
   state(): HarnessSessionState {
     const home = { claudeProviderHome: this.providerHome };
     return this.sessionId === undefined
       || this.sessionProviderDefinitionId === undefined
       || this.sessionPersonalPresentationVersionId === undefined
-      ? home
+      ? { ...home, ...(this.pendingRootReset === undefined ? {} : { claudeRootResetReason: this.pendingRootReset }) }
       : {
           ...home,
           claudeSessionId: this.sessionId,

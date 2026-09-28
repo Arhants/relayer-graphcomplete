@@ -54,7 +54,7 @@ describe("CodexBasicHarness", () => {
     const codexProviderPrompt = buildLayeredNavigationPrompt(personalPresentationRunContext(true), "@relayer/graph-client", undefined, false);
 
     expect(neutral).toBe(baseline);
-    for (const fragment of ["html`", "css`", "detailCapability", "setComponent", "checkpointNodeDetail", "submitNode", "graph.addAction"]) {
+    for (const fragment of ["html`", "css`", "detailCapability", "setComponent", "checkpointNodeDetail", "submitNode", "graph.addAction", "graph.bindNode", "do not copy a whole explanation across siblings", "const common = css", "evidence.detailAuthoring.setComponent"]) {
       expect(visualTreatment).toContain(fragment);
     }
     expect(treatment).toContain("Personal graph presentation preferences:");
@@ -190,7 +190,7 @@ describe("CodexBasicHarness", () => {
       codexProviderHome: "legacy-shared",
       codexThreadId: "replacement-thread",
       codexThreadPersonalPresentationVersionId: null,
-      codexThreadProviderDefinitionId: null,
+      codexThreadHome: expect.any(String),
     });
   });
 
@@ -329,7 +329,7 @@ describe("CodexBasicHarness", () => {
     force.abort(new Error("force-stopped after two minutes"));
     await expect(stuck).rejects.toThrow("force-stopped after two minutes");
     // The killed process may have left the thread mid-write, so it is neither saved nor resumed.
-    expect(harness.state()).toEqual({ codexProviderHome: "legacy-shared" });
+    expect(harness.state()).toEqual({ codexProviderHome: "legacy-shared", codexRootResetReason: "force_stopped" });
 
     await harness.complete({ ...runContext(2, "next-token"), forceSignal: new AbortController().signal });
     expect(submissions[1]?.savedThreadId).toBeUndefined();
@@ -337,7 +337,7 @@ describe("CodexBasicHarness", () => {
       codexProviderHome: "legacy-shared",
       codexThreadId: "fresh-thread-2",
       codexThreadPersonalPresentationVersionId: null,
-      codexThreadProviderDefinitionId: null,
+      codexThreadHome: expect.any(String),
     });
   });
 
@@ -381,7 +381,7 @@ describe("CodexBasicHarness", () => {
       codexProviderHome: "legacy-shared",
       codexThreadId: "fresh-thread-2",
       codexThreadPersonalPresentationVersionId: null,
-      codexThreadProviderDefinitionId: null,
+      codexThreadHome: expect.any(String),
     });
   });
 
@@ -444,7 +444,7 @@ describe("CodexBasicHarness", () => {
       codexProviderHome: "isolated",
       codexThreadId: "codex-thread-after-start",
       codexThreadPersonalPresentationVersionId: null,
-      codexThreadProviderDefinitionId: null,
+      codexThreadHome: expect.any(String),
     });
     expect(submitted?.prompt).toContain("Relayer graph affordances:");
     expect(submitted?.prompt).toContain("Each layer should explain its scope as a coherent whole");
@@ -863,7 +863,7 @@ describe("CodexBasicHarness", () => {
       codexProviderHome: "isolated",
       codexThreadId: "codex-thread-1",
       codexThreadPersonalPresentationVersionId: null,
-      codexThreadProviderDefinitionId: "codex",
+      codexThreadHome: "codex-default-home",
     });
   });
 
@@ -962,7 +962,7 @@ describe("CodexBasicHarness", () => {
       codexProviderHome: "legacy-shared",
       codexThreadId: "root-thread",
       codexThreadPersonalPresentationVersionId: null,
-      codexThreadProviderDefinitionId: null,
+      codexThreadHome: expect.any(String),
     });
   });
 

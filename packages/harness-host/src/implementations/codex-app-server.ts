@@ -42,6 +42,8 @@ export interface CodexAppServerTurnOptions {
   readonly onSavedThreadUnavailable?: (threadId: string) => void;
   /** turn/start is about to be sent: from here on, this turn may write the thread's rollout. */
   readonly onTurnStarting?: (threadId: string) => void;
+  /** A cancellation killed the app-server after turn/start was sent and before the turn attached. */
+  readonly onTurnStartAbandoned?: (threadId: string) => void;
   readonly onTurnId?: (threadId: string, turnId: string) => void | Promise<void>;
   readonly onNotification?: (method: string, params: unknown) => void;
   readonly onServerRequest?: (method: string, params: unknown) => void;
@@ -150,6 +152,8 @@ class CodexAppServerConnection {
   private nextId = 1;
   private activeTurn: ActiveTurn | undefined;
   private startingTurn = false;
+  /** The thread whose turn/start was sent and has not attached yet. */
+  private startingThreadId: string | undefined;
   private readonly deferredTurnMessages: DeferredTurnMessage[] = [];
   private lastTurnError: Error | undefined;
   private fatalError: Error | undefined;
@@ -191,6 +195,9 @@ class CodexAppServerConnection {
     const abort = () => {
       queueMicrotask(() => {
         if (this.activeTurn === undefined) {
+          if (this.startingThreadId !== undefined && this.fatalError === undefined && !this.closing) {
+            this.options.onTurnStartAbandoned?.(this.startingThreadId);
+          }
           this.forceClose(new NativeExecutionCancelled("Codex app-server was cancelled before turn attachment."));
         } else {
           void this.interrupt();
@@ -240,6 +247,7 @@ class CodexAppServerConnection {
     await abortableCallback(this.options.onThreadId(threadId), this.options.signal);
 
     this.startingTurn = true;
+    this.startingThreadId = threadId;
     this.options.onTurnStarting?.(threadId);
     let turnResult: unknown;
     try {
@@ -250,16 +258,19 @@ class CodexAppServerConnection {
       });
     } catch (error) {
       this.startingTurn = false;
+      this.startingThreadId = undefined;
       throw error;
     }
     if (this.fatalError !== undefined) {
       this.startingTurn = false;
+      this.startingThreadId = undefined;
       throw this.fatalError;
     }
     const turn = objectProperty(turnResult, "turn");
     const turnId = stringProperty(turn, "id");
     if (turnId === undefined) {
       this.startingTurn = false;
+      this.startingThreadId = undefined;
       throw new Error("Codex app-server returned an invalid turn identity");
     }
     if (this.options.onTurnId !== undefined) {
@@ -271,6 +282,7 @@ class CodexAppServerConnection {
       this.activeTurn = { threadId, turnId, resolve, reject };
     });
     this.startingTurn = false;
+    this.startingThreadId = undefined;
     this.flushDeferredTurnMessages();
     return completion;
   }
