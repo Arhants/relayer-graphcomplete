@@ -194,6 +194,7 @@ describe("typed Node Detail authoring compiler", () => {
       [],
       new LayerLayoutObject([new NodePlacementObject(source, 0.5, 0.5)]),
       "source-layer",
+      source,
     );
     const target = new LayerObject([], [], new LayerLayoutObject([]), "target-layer");
     const actions = {

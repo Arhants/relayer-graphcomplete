@@ -138,6 +138,7 @@ class GraphLayer:
     edges: tuple[int, ...]
     state: str
     layout: LayerLayout | None = None
+    default_node_id: int | None = None
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "GraphLayer":
@@ -146,6 +147,7 @@ class GraphLayer:
             int(value["id"]), tuple(map(int, value["nodes"])),
             tuple(map(int, value["edges"])), str(value["state"]),
             None if layout is None else LayerLayout.from_dict(layout),
+            None if value.get("defaultNodeId") is None else int(value["defaultNodeId"]),
         )
 
 
@@ -186,6 +188,7 @@ class LayerObject:
     edges: Sequence["EdgeReference"]
     layout: LayerLayoutObject
     client_key: str = field(default_factory=lambda: str(uuid.uuid4()))
+    default_node: "NodeReference | None" = None
     ref: GraphLayer | None = field(default=None, init=False)
 
 
@@ -269,6 +272,7 @@ class RelayerGraphClient:
         value = await self._request("POST", "/api/graph/layers", {
             "clientKey": layer.client_key,
             "nodes": [_node_id(item) for item in layer.nodes],
+            "defaultNodeId": None if layer.default_node is None else _node_id(layer.default_node),
             "edges": [_edge_id(item) for item in layer.edges],
             "layout": {
                 "version": layer.layout.version,

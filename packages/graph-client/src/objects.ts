@@ -60,6 +60,7 @@ export class LayerObject {
     public edges: readonly EdgeReference[],
     public layout: LayerLayoutObject,
     clientKey: string = randomUUID(),
+    public defaultNode?: NodeReference,
   ) {
     this.clientKey = clientKey;
   }

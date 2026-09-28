@@ -176,6 +176,7 @@ fn imported_conversation(interaction_node_id: &str) -> ImportedConversation {
                 root_layer_id: "layer-1".into(),
                 layers: vec![ImportedResolvedLayer {
                     layer: ImportedLayer {
+                        default_node_id: None,
                         id: "layer-1".into(),
                         client_key: None,
                         nodes: vec!["node-1".into()],
@@ -272,6 +273,7 @@ fn imported_invoke_conversation() -> ImportedConversation {
             root_layer_id: "layer-1".into(),
             layers: vec![ImportedResolvedLayer {
                 layer: ImportedLayer {
+                    default_node_id: None,
                     id: "layer-1".into(),
                     client_key: Some("authored-layer-1".into()),
                     nodes: vec!["node-1".into()],
@@ -338,6 +340,7 @@ fn imported_invoke_conversation() -> ImportedConversation {
             root_layer_id: "layer-2".into(),
             layers: vec![ImportedResolvedLayer {
                 layer: ImportedLayer {
+                    default_node_id: None,
                     id: "layer-2".into(),
                     client_key: None,
                     nodes: vec!["node-2".into()],
@@ -377,9 +380,27 @@ async fn imported_conversation_is_materialized_read_only_and_removable() {
         .remove_imported_conversation("missing-import")
         .await
         .unwrap();
-    let input = imported_conversation("interaction-1");
+    let mut input = imported_conversation("interaction-1");
+    input.turns[0].accepted_view.as_mut().unwrap().layers[0]
+        .layer
+        .default_node_id = Some("interaction-1".into());
+    assert!(matches!(
+        database
+            .import_accepted_conversation(&input)
+            .await
+            .unwrap_err(),
+        GraphError::Validation {
+            code: "default_node_outside_layer",
+            ..
+        }
+    ));
+    input.turns[0].accepted_view.as_mut().unwrap().layers[0]
+        .layer
+        .default_node_id = Some("node-1".into());
     let receipt = database.import_accepted_conversation(&input).await.unwrap();
     let turn = &receipt.turns[0];
+    let restored = &turn.output.as_ref().unwrap().root_layer;
+    assert_eq!(restored.layer.default_node_id, Some(restored.nodes[0].id));
     assert!(turn.output.is_some());
     let layout = turn
         .output
@@ -2039,6 +2060,7 @@ async fn node(writer: &GraphWriter, key: &str) -> GraphNode {
 async fn single_node_layer(writer: &GraphWriter, key: &str, node: &GraphNode) -> GraphLayer {
     writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: key.into(),
             nodes: vec![node.id],
             edges: vec![],
@@ -2136,6 +2158,7 @@ async fn accept_single_node(
 ) -> GraphLayer {
     let layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: vec![node.id],
             edges: vec![],
@@ -3476,6 +3499,7 @@ async fn accepts_connected_layer_and_returns_exact_view() {
         .unwrap();
     let layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: vec![a.id, b.id],
             edges: vec![edge.id],
@@ -3532,6 +3556,7 @@ async fn rejects_disconnected_layer_with_repair_message() {
     let b = node(&writer, "b").await;
     let error = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: vec![a.id, b.id],
             edges: vec![],
@@ -3559,6 +3584,7 @@ async fn rejects_missing_and_malformed_layouts_with_repairable_field_paths() {
 
     let missing = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "missing-layout".into(),
             nodes: vec![a.id, b.id],
             edges: vec![edge.id],
@@ -3576,6 +3602,7 @@ async fn rejects_missing_and_malformed_layouts_with_repairable_field_paths() {
     let unknown = NodeId::new(999_999).unwrap();
     let malformed = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "malformed-layout".into(),
             nodes: vec![a.id, b.id],
             edges: vec![edge.id],
@@ -3631,6 +3658,7 @@ async fn invalid_layout_retry_preserves_the_last_valid_draft() {
     let answer = node(&writer, "answer").await;
     let valid = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: vec![answer.id],
             edges: vec![],
@@ -3645,6 +3673,7 @@ async fn invalid_layout_retry_preserves_the_last_valid_draft() {
         .unwrap();
     let invalid = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: vec![answer.id],
             edges: vec![],
@@ -3752,6 +3781,7 @@ async fn accepts_recursive_navigate_subgraph() {
     let child = node(&writer, "child").await;
     let nested = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "nested".into(),
             nodes: vec![child.id],
             edges: vec![],
@@ -3762,6 +3792,7 @@ async fn accepts_recursive_navigate_subgraph() {
         .unwrap();
     let root = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: vec![parent.id],
             edges: vec![],
@@ -3834,6 +3865,7 @@ async fn large_layers_require_a_private_bounded_justification() {
 
     let missing = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "large".into(),
             nodes: nodes[..6].iter().map(|node| node.id).collect(),
             edges: edges[..5].iter().map(|edge| edge.id).collect(),
@@ -3850,6 +3882,7 @@ async fn large_layers_require_a_private_bounded_justification() {
 
     let unicode_too_short = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "unicode-too-short".into(),
             nodes: nodes[..6].iter().map(|node| node.id).collect(),
             edges: edges[..5].iter().map(|edge| edge.id).collect(),
@@ -3866,6 +3899,7 @@ async fn large_layers_require_a_private_bounded_justification() {
 
     let unicode_within_limit = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "unicode-within-limit".into(),
             nodes: nodes[..6].iter().map(|node| node.id).collect(),
             edges: edges[..5].iter().map(|edge| edge.id).collect(),
@@ -3878,6 +3912,7 @@ async fn large_layers_require_a_private_bounded_justification() {
 
     let unicode_too_long = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "unicode-too-long".into(),
             nodes: nodes[..6].iter().map(|node| node.id).collect(),
             edges: edges[..5].iter().map(|edge| edge.id).collect(),
@@ -3894,6 +3929,7 @@ async fn large_layers_require_a_private_bounded_justification() {
 
     let accepted = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "large".into(),
             nodes: nodes[..6].iter().map(|node| node.id).collect(),
             edges: edges[..5].iter().map(|edge| edge.id).collect(),
@@ -3908,6 +3944,7 @@ async fn large_layers_require_a_private_bounded_justification() {
 
     let too_large = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "too-large".into(),
             nodes: nodes.iter().map(|node| node.id).collect(),
             edges: edges.iter().map(|edge| edge.id).collect(),
@@ -4282,6 +4319,7 @@ async fn discarded_layer_identity_is_terminal() {
 
     let error = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "abandoned".into(),
             nodes: vec![abandoned_node.id],
             edges: vec![],
@@ -4409,6 +4447,7 @@ async fn action_keys_are_scoped_to_their_source_nodes() {
     let second = node(&writer, "second-source").await;
     let first_layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "first-layer".into(),
             nodes: vec![first.id],
             edges: vec![],
@@ -4419,6 +4458,7 @@ async fn action_keys_are_scoped_to_their_source_nodes() {
         .unwrap();
     let second_layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "second-layer".into(),
             nodes: vec![second.id],
             edges: vec![],
@@ -4535,6 +4575,7 @@ async fn action_presentation_grammar_round_trips_in_authored_order() {
     let source = node(&writer, "source").await;
     let source_layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: vec![source.id],
             edges: vec![],
@@ -5357,6 +5398,7 @@ async fn completion_rejects_an_edge_accepted_by_a_concurrent_interaction() {
             .unwrap();
         let layer = writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "root".into(),
                 nodes: vec![first_node.id, second_node.id],
                 edges: vec![edge.id],
@@ -5408,6 +5450,7 @@ async fn accepted_layers_keep_their_original_action_snapshot() {
         .unwrap();
     let viewer_layer = viewer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: vec![referenced_interaction.id],
             edges: vec![],
@@ -6336,4 +6379,75 @@ async fn leased_completion_storage_failure_rolls_back_closure_and_resolution() {
             .target_layer_id,
         None
     );
+}
+
+#[tokio::test]
+async fn default_node_is_member_validated_and_survives_publication_and_reopen() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let database = GraphDatabase::open(file.path()).await.unwrap();
+    let interaction = database
+        .create_interaction(None, thread(901), "Choose a starting detail")
+        .await
+        .unwrap();
+    let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+    let first = node(&writer, "first").await;
+    let second = node(&writer, "second").await;
+    let outside = node(&writer, "outside").await;
+    let edge = writer
+        .create_edge(&EdgeDraft {
+            client_key: "link".into(),
+            endpoints: [first.id, second.id],
+        })
+        .await
+        .unwrap();
+    let mut draft = LayerDraft {
+        client_key: "default-node-layer".into(),
+        nodes: vec![first.id, second.id],
+        edges: vec![edge.id],
+        layout: authored_layout([first.id, second.id]),
+        size_justification: None,
+        default_node_id: Some(first.id),
+    };
+    let original = writer.submit_layer(&draft).await.unwrap();
+    draft.default_node_id = Some(second.id);
+    let repaired = writer.submit_layer(&draft).await.unwrap();
+    assert_eq!(original.id, repaired.id);
+    draft.default_node_id = Some(outside.id);
+    let error = writer.submit_layer(&draft).await.unwrap_err();
+    assert!(
+        matches!(error, GraphError::ValidationIssues { ref issues, .. } if issues.iter().any(|issue| issue.code == "default_node_outside_layer"))
+    );
+    assert_eq!(
+        writer
+            .get_layer(repaired.id)
+            .await
+            .unwrap()
+            .layer
+            .default_node_id,
+        Some(second.id)
+    );
+    writer
+        .transition_current(
+            0,
+            "publish-default",
+            CurrentTransition::Advance {
+                layer_id: repaired.id,
+            },
+        )
+        .await
+        .unwrap();
+    draft.default_node_id = Some(first.id);
+    assert!(writer.submit_layer(&draft).await.is_err());
+    drop(writer);
+    database.close().await;
+    let reopened = GraphDatabase::open(file.path()).await.unwrap();
+    let restored = reopened
+        .writer_for_subgraph(interaction.id)
+        .await
+        .unwrap()
+        .get_layer(repaired.id)
+        .await
+        .unwrap();
+    assert_eq!(restored.layer.default_node_id, Some(second.id));
+    assert_eq!(restored.layer.state, RecordState::Accepted);
 }
