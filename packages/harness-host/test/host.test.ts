@@ -2243,6 +2243,69 @@ describe("HarnessHost", () => {
     }
   });
 
+  it.each(["release", "acknowledge"] as const)("rejects duplicate owner releases while %s remains pending after disconnect", async (phase) => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-release-disconnect-"));
+    let enter!: () => void;
+    let finish!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    const blocked = new Promise<void>((resolve) => { finish = resolve; });
+    const stall = async () => { enter(); await blocked; };
+    const release = vi.fn(phase === "release" ? stall : async () => {});
+    const acknowledge = vi.fn(phase === "acknowledge" ? stall : async () => {});
+    const running = await startHarnessHost({
+      stateFile: join(directory, "sessions.json"), controlToken: "control",
+      accessBroker: { async acquire() { return {
+        access: { kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+          adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" } },
+        release, acknowledge,
+      }; } },
+      implementations: { test: () => ({ async complete() {}, state: emptyState }) },
+    });
+    let firstRelease: Promise<boolean> | undefined;
+    const controller = new AbortController();
+    try {
+      await running.host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: { ...testConfiguration,
+          modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      const admission = await running.host.admitProviderExecution(1,
+        { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" }, new AbortController().signal);
+      const observed = vi.spyOn(running.host, "releaseProviderExecution");
+      const url = `${running.url}/sessions/1/execution-leases/${admission.executionLeaseId}`;
+      const options = { method: "DELETE", headers: { authorization: "Bearer control" } };
+      const first = fetch(url, { ...options, signal: controller.signal }).catch(() => undefined);
+      await entered;
+      firstRelease = observed.mock.results[0]!.value as Promise<boolean>;
+      controller.abort();
+      await first;
+      // A disconnected owner must not accumulate waiters or repeat acknowledgements.
+      for (let retry = 0; retry < 3; retry += 1) {
+        const response = await fetch(url, { ...options, signal: AbortSignal.timeout(1_000) });
+        expect(response.status).toBe(503);
+        expect(await response.json()).toMatchObject({ error: "execution_lease_release_in_progress" });
+      }
+      const independent = await fetch(`${running.url}/sessions/1/execution-leases/unknown`, options);
+      expect(independent.status).toBe(200);
+      expect(await independent.json()).toEqual({ released: false });
+      finish();
+      await firstRelease;
+      expect(release).toHaveBeenCalledOnce();
+      expect(acknowledge).toHaveBeenCalledOnce();
+      const retry = await fetch(url, options);
+      expect(retry.status).toBe(200);
+      expect(await retry.json()).toEqual({ released: false });
+    } finally {
+      controller.abort();
+      finish();
+      await firstRelease?.catch(() => {});
+      await running.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("acknowledges released access to its provider only when the owner releases the lease", async () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-release-acknowledge-"));
     const events: string[] = [];

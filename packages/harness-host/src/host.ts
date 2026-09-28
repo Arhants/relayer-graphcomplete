@@ -247,6 +247,7 @@ export class HarnessHost {
   private persistTail: Promise<void> = Promise.resolve();
   private initialized = false;
   private readonly pendingExecutionAccess = new Map<string, PendingExecutionAccess>();
+  private readonly ownerReleasesInProgress = new Set<string>();
   private readonly visualAssetAuthorities = new Map<number, { state: "active" | "paused" | "revoked"; generation: number; barrierId?: string; completionEpoch?: number }>();
   private closed = false;
   private closeAbandoned = false;
@@ -988,6 +989,18 @@ export class HarnessHost {
    * an unknown lease.
    */
   async releaseProviderExecution(executionLeaseId: string): Promise<boolean> {
+    // An HTTP client may disconnect while the provider still releases or acknowledges.
+    // Reject retries until that work settles instead of accumulating server-side waiters.
+    if (this.ownerReleasesInProgress.has(executionLeaseId)) throw new ExecutionLeaseReleaseInProgress();
+    this.ownerReleasesInProgress.add(executionLeaseId);
+    try {
+      return await this.releaseProviderExecutionOnce(executionLeaseId);
+    } finally {
+      this.ownerReleasesInProgress.delete(executionLeaseId);
+    }
+  }
+
+  private async releaseProviderExecutionOnce(executionLeaseId: string): Promise<boolean> {
     const pending = this.pendingExecutionAccess.get(executionLeaseId);
     if (pending === undefined) {
       // The acknowledgement this lease would have carried must not be lost: a failure here is
@@ -1817,6 +1830,10 @@ export async function startHarnessHost(options: HarnessHostOptions): Promise<Run
 
 const executionNotStartedErrors = new WeakSet<object>();
 
+class ExecutionLeaseReleaseInProgress extends Error {
+  constructor() { super("execution_lease_release_in_progress"); }
+}
+
 class HarnessCancellationSettled extends Error {
   constructor(message: string) { super(message); }
 }
@@ -1971,6 +1988,9 @@ async function route(host: HarnessHost, options: HarnessHostOptions, request: In
     if (request.method === "GET" && url.pathname === "/health") return reply(response, 200, { ok: true });
     return reply(response, 404, { error: "not_found" });
   } catch (error) {
+    if (error instanceof ExecutionLeaseReleaseInProgress) {
+      return reply(response, 503, { error: error.message });
+    }
     if (error instanceof HarnessCancellationSettled) {
       return reply(response, 409, { error: error.message, cancellationSettled: true });
     }

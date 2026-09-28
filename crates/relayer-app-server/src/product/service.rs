@@ -15,6 +15,7 @@ use crate::storage::{
     StorageError,
 };
 use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
@@ -137,6 +138,18 @@ pub(crate) enum ProductError {
 pub(crate) struct ProductService {
     storage: SqliteProductStore,
     runtime_available: bool,
+    reconciling_execution_leases: Arc<Mutex<HashSet<i64>>>,
+}
+
+pub(crate) struct ExecutionLeaseReconciliationGuard {
+    attempts: Arc<Mutex<HashSet<i64>>>,
+    attempt_id: i64,
+}
+
+impl Drop for ExecutionLeaseReconciliationGuard {
+    fn drop(&mut self) {
+        self.attempts.lock().unwrap().remove(&self.attempt_id);
+    }
 }
 
 impl ProductService {
@@ -242,6 +255,7 @@ impl ProductService {
         Self {
             storage,
             runtime_available,
+            reconciling_execution_leases: Arc::default(),
         }
     }
 
@@ -2272,6 +2286,26 @@ impl ProductService {
             .end_attempt_native_wait(attempt_id, &now())
             .await
             .map_err(Into::into)
+    }
+
+    /// Coalesce concurrent cleanup in this app server. Durable debt remains the
+    /// retry authority after errors or restart; this guard never acknowledges it.
+    pub(crate) fn try_begin_execution_lease_reconciliation(
+        &self,
+        attempt_id: i64,
+    ) -> Option<ExecutionLeaseReconciliationGuard> {
+        if !self
+            .reconciling_execution_leases
+            .lock()
+            .unwrap()
+            .insert(attempt_id)
+        {
+            return None;
+        }
+        Some(ExecutionLeaseReconciliationGuard {
+            attempts: self.reconciling_execution_leases.clone(),
+            attempt_id,
+        })
     }
 
     pub(crate) async fn execution_lease_debt(
