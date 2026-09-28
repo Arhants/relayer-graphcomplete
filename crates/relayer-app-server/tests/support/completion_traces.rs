@@ -2758,3 +2758,41 @@ async fn a_transient_error_while_ending_a_child_keeps_it_for_retry() {
     assert_eq!(state["status"], "failed", "{state}");
     world.finish().await;
 }
+
+/// A user invoked an action from an accepted child whose provider is still unwinding, and the
+/// product has claimed that result's preparation. The child's agent then asks the broker for
+/// the same action. The result is the user's: the broker refuses it, leaves it unmarked, and
+/// launches nothing, so the product's own run keeps it and the user can stop it.
+#[tokio::test]
+async fn the_broker_refuses_a_users_invoke_of_the_same_action() {
+    let world = World::unprepared("broker-refuses-user-invoke").await;
+    let (broker, _lease) = world.broker();
+    sqlx::query("UPDATE action_invocations SET agent_invoked=0")
+        .execute(&world.pool)
+        .await
+        .unwrap();
+    assert!(
+        world
+            .product
+            .claim_interaction_preparing(world.child.id)
+            .await
+            .unwrap()
+    );
+    *world.harness.start.lock().unwrap() = "ok";
+    let refused = world.launch(&broker).await;
+    assert!(refused.is_err(), "the broker refuses a user's result");
+    assert!(
+        !world
+            .product
+            .is_agent_invoked_child(world.child.id)
+            .await
+            .unwrap(),
+        "the user's result stays the user's"
+    );
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let state = world.observe().await;
+    assert_eq!(state["phase"], "none", "nothing was reserved: {state}");
+    assert_eq!(state["prov"], "none", "nothing was started: {state}");
+    assert_eq!(state["status"], "submitted", "{state}");
+    world.finish().await;
+}

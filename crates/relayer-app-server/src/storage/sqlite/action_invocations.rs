@@ -273,16 +273,19 @@ impl SqliteProductStore {
         if let Some((mut invocation, interaction)) =
             existing_for_action_scope(&mut transaction, source_interaction_id, action_id).await?
         {
-            // An older build recorded an agent's child without the marker. The agent's retry of
-            // the same recursive invocation establishes its origin, unless the product already
-            // runs the result as a user's own invoke.
+            // An older build recorded an agent's child without the marker. An agent's retry of
+            // the same recursive invocation marks it only on proof that no user created it: the
+            // broker launched it (it has a completion execution), or its source was never
+            // accepted, and a user invokes only from an accepted source, which stays accepted.
+            // A result's status is no proof: a user's own preparation also claims `submitted`.
             if recursive && !invocation.agent_invoked {
                 let marked = sqlx::query(
                     "UPDATE action_invocations SET agent_invoked=1
                      WHERE result_interaction_id=?1 AND authoritative=1 AND agent_invoked=0
                        AND (EXISTS(SELECT 1 FROM completion_executions WHERE interaction_id=?1)
-                            OR EXISTS(SELECT 1 FROM interactions WHERE id=?1
-                                      AND completion_status IN ('not_started','submitted')))",
+                            OR EXISTS(SELECT 1 FROM interactions source
+                                      WHERE source.id=action_invocations.source_interaction_id
+                                        AND source.completion_status!='accepted'))",
                 )
                 .bind(interaction.id.value())
                 .execute(&mut *transaction)
@@ -1582,8 +1585,9 @@ mod tests {
             })
             .await
             .unwrap();
+        // The root is still running: no user can have invoked from it yet.
         sqlx::query(
-            "UPDATE interactions SET completion_status='accepted',graph_node_id=701 WHERE id=?1",
+            "UPDATE interactions SET completion_status='running',graph_node_id=701 WHERE id=?1",
         )
         .bind(thread.root_interaction_id.value())
         .execute(&store.pool)
@@ -1612,7 +1616,16 @@ mod tests {
         ));
         assert!(store.is_agent_invoked_child(child.id).await.unwrap());
 
-        // A user's own invoke that the product already runs keeps its origin.
+        // Once the root is accepted, a user's own invoke of another action keeps its origin
+        // when the agent retries it, whether the product has only claimed its preparation or
+        // already runs it.
+        for id in [thread.root_interaction_id, child.id] {
+            sqlx::query("UPDATE interactions SET completion_status='accepted' WHERE id=?1")
+                .bind(id.value())
+                .execute(&store.pool)
+                .await
+                .unwrap();
+        }
         let user = match store
             .insert_action_invocation(thread.root_interaction_id, 42, "User action")
             .await
@@ -1621,16 +1634,26 @@ mod tests {
             ActionInvocationInsertOutcome::Created { interaction, .. } => interaction,
             _ => panic!("the user's result is new"),
         };
-        sqlx::query("UPDATE interactions SET completion_status='running' WHERE id=?1")
-            .bind(user.id.value())
-            .execute(&store.pool)
-            .await
-            .unwrap();
-        store
-            .insert_recursive_action_invocation(thread.root_interaction_id, 42, "User action")
-            .await
-            .unwrap();
-        assert!(!store.is_agent_invoked_child(user.id).await.unwrap());
+        for status in ["submitted", "running"] {
+            sqlx::query("UPDATE interactions SET completion_status=?1 WHERE id=?2")
+                .bind(status)
+                .bind(user.id.value())
+                .execute(&store.pool)
+                .await
+                .unwrap();
+            let retried = store
+                .insert_recursive_action_invocation(thread.root_interaction_id, 42, "User action")
+                .await
+                .unwrap();
+            let ActionInvocationInsertOutcome::Existing { invocation, .. } = retried else {
+                panic!("the user's result exists");
+            };
+            assert!(!invocation.agent_invoked, "{status}");
+            assert!(
+                !store.is_agent_invoked_child(user.id).await.unwrap(),
+                "{status}"
+            );
+        }
         store.pool.close().await;
     }
 

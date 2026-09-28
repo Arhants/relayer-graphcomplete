@@ -1444,6 +1444,15 @@ async fn launch_prepared_child(
             interaction_text,
         )
         .await?;
+    // The action's result belongs to a user's own invoke of it, made from an accepted source
+    // whose agent is still unwinding. The product runs and settles that result; the broker
+    // never launches it.
+    if !outcome.invocation.agent_invoked {
+        return Err(ApiError::conflict(
+            "invocation_owned_by_user",
+            "A user already invoked this action; its result is not a recursive completion.",
+        ));
+    }
     let thread = state.product.get_thread(grant.thread_id).await?.thread;
     if outcome.interaction.thread_id != thread.id {
         return Err(ApiError::invalid(
