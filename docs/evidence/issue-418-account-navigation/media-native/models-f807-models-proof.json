@@ -1,0 +1,48 @@
+{
+  "baseline": {
+    "providerId": "fixture-openai",
+    "noHint": {
+      "text": "",
+      "visible": false,
+      "rect": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0,
+        "width": 0,
+        "height": 0
+      },
+      "clip": {
+        "left": 210,
+        "top": 0,
+        "right": 375,
+        "bottom": 640
+      },
+      "contained": false
+    }
+  },
+  "hintVariants": [
+    "needsRefresh",
+    "noHarness"
+  ],
+  "move": {
+    "providerId": "fixture-harness-move",
+    "familyId": 4,
+    "harnessId": "fixture-stop-prime",
+    "notice": "Saved. The default harness is now Fixture Stop Prime, which can run Harness move fixture models."
+  },
+  "widths": [
+    [
+      375,
+      true
+    ],
+    [
+      375,
+      false
+    ],
+    [
+      620,
+      true
+    ]
+  ]
+}

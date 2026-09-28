@@ -1,0 +1,1 @@
+Native run stopped advancing after native-375-reentry-share-title.png for >3 minutes. Main/renderer processes idle. Window remained painted, title dialog closed. CUA Raise did not resume progress. No inner result.json produced; not a PASS. Stopping own Electron PID63740; earlier stages remain recorded. Diagnostic rerun required to distinguish settle/capture failure.

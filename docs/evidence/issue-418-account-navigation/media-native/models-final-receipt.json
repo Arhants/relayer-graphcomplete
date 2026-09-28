@@ -1,0 +1,85 @@
+{
+  "status": "pass: focused inner Models proof on attempt 5; supplementary attempt-4 visual notice evidence from same source tree and focused scenario",
+  "sourceSnapshot": {
+    "repoHead": "695b6fa9ffa70e20c1e3a9b4f24a074e864f627b",
+    "gitTreeBefore": "d41f8895ed3298f7e8cbf8ebba15d6ff80367c67",
+    "gitTreeAfter": "d41f8895ed3298f7e8cbf8ebba15d6ff80367c67",
+    "sourceSha256Before": "363829e79b79180be70e36649cd80e3b787bdf9c734b77288ccb2af1f19bf917",
+    "sourceSha256After": "363829e79b79180be70e36649cd80e3b787bdf9c734b77288ccb2af1f19bf917"
+  },
+  "driver": {
+    "attempt4ReconstructedSha256": "76cbb3a1416025e148d95c0ce06fa09afa2d11465c6ef125cdd2189687df0b4d",
+    "attempt5Sha256": "6f109012fe8b13a4fb85547fb41278edcc821e9cf9d95e6c559a352b77a42b9d",
+    "delta": "/Users/vishal/.codex/worker-pilot/factory-418-f807-model-sidebar/attempt4-to-5-delta.txt"
+  },
+  "attempt5": {
+    "command": "RELAYER_NARROW_EVIDENCE_DIR=/Users/vishal/.codex/worker-pilot/factory-418-f807-model-sidebar/evidence-attempt-5 ./node_modules/.bin/electron /Users/vishal/.codex/worker-pilot/factory-418-f807-model-sidebar/test-model-sidebar.mjs",
+    "shellTaskExit": 0,
+    "innerResult": "/Users/vishal/.codex/worker-pilot/factory-418-f807-model-sidebar/evidence-attempt-5/result.json",
+    "innerResultSha256": "930ee426ea8c6d20ea7a75b262ebdfc42619a32141b3240331a6777f2a426be0",
+    "result": {
+      "passed": true,
+      "platform": "darwin",
+      "inference": false,
+      "productionWindowFactory": true,
+      "focusedScenario": "f807 Models eligibility and default harness move at persistent sidebar widths",
+      "proof": {
+        "baseline": {
+          "providerId": "fixture-openai",
+          "noHint": {
+            "text": "",
+            "visible": false,
+            "rect": {
+              "left": 0,
+              "right": 0,
+              "top": 0,
+              "bottom": 0,
+              "width": 0,
+              "height": 0
+            },
+            "clip": {
+              "left": 210,
+              "top": 0,
+              "right": 375,
+              "bottom": 640
+            },
+            "contained": false
+          }
+        },
+        "hintVariants": [
+          "needsRefresh",
+          "noHarness"
+        ],
+        "move": {
+          "providerId": "fixture-harness-move",
+          "familyId": 4,
+          "harnessId": "fixture-stop-prime",
+          "notice": "Saved. The default harness is now Fixture Stop Prime, which can run Harness move fixture models."
+        },
+        "widths": [
+          [
+            375,
+            true
+          ],
+          [
+            375,
+            false
+          ],
+          [
+            620,
+            true
+          ]
+        ]
+      }
+    },
+    "log": "/Users/vishal/.codex/worker-pilot/factory-418-f807-model-sidebar/attempt-5.log",
+    "logSha256": "e29582ee1f2ff2e6028eebe31cddfeb092cc774dbc80ec4d486b9d59775e0729"
+  },
+  "attempt4VisualNotice": {
+    "focusedInnerProof": "/Users/vishal/.codex/worker-pilot/factory-418-f807-model-sidebar/evidence-attempt-4/f807-models-proof.json",
+    "focusedInnerProofSha256": "5a0eede414302b533e9dff15448499f0d8d51c99c18d862979a6b81a489ce27f",
+    "outerRunExit": 1,
+    "outerFailure": "Expected fixture family index; occurred only after focused inner proof and notice captures, in inherited downstream loop."
+  },
+  "manifest": "/Users/vishal/.codex/worker-pilot/factory-418-f807-model-sidebar/manifest.json"
+}

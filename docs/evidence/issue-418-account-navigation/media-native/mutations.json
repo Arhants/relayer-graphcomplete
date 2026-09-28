@@ -1,0 +1,80 @@
+{
+  "results": [
+    {
+      "name": "unmutated graph/control baseline",
+      "passed": true
+    },
+    {
+      "name": "zero graph nodes",
+      "passed": true
+    },
+    {
+      "name": "one graph node",
+      "passed": true
+    },
+    {
+      "name": "duplicate graph node",
+      "passed": true
+    },
+    {
+      "name": "vertical graph clipping",
+      "passed": true
+    },
+    {
+      "name": "graph clipping above canvas",
+      "passed": true
+    },
+    {
+      "name": "hidden toggle ancestor",
+      "passed": true
+    },
+    {
+      "name": "hidden footer ancestor",
+      "passed": true
+    },
+    {
+      "name": "hidden graph toolbar",
+      "passed": true
+    },
+    {
+      "name": "hidden composer controls",
+      "passed": true
+    },
+    {
+      "name": "hidden composer",
+      "passed": true
+    },
+    {
+      "name": "composer above viewport",
+      "passed": true
+    },
+    {
+      "name": "composer below viewport",
+      "passed": true
+    },
+    {
+      "name": "rendered expected menu baseline",
+      "passed": true
+    },
+    {
+      "name": "hidden expected menu display",
+      "passed": true
+    },
+    {
+      "name": "hidden expected menu visibility",
+      "passed": true
+    },
+    {
+      "name": "hidden expected menu opacity",
+      "passed": true
+    },
+    {
+      "name": "missing expected menu",
+      "passed": true
+    },
+    {
+      "name": "restored baseline",
+      "passed": true
+    }
+  ]
+}

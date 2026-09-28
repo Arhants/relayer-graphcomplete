@@ -1,0 +1,37 @@
+Starting isolated project-row New Thread test...
+Error occurred in handler for 'relayer:composer-drafts-write': TypeError: Composer drafts exceed the local persistence limit.
+    at normalizeComposerDrafts (file:///Volumes/2T-SSD/worktrees/factory-418/desktop/main/ipc/register-ipc.mjs:65:11)
+    at file:///Volumes/2T-SSD/worktrees/factory-418/desktop/main/ipc/register-ipc.mjs:76:28
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:114940)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+RELAYER_PROJECT_NEW_THREAD {"passed":true,"projectId":1,"threads":2,"restartPersistence":true,"layerSelectionRestartPersistence":true,"evidence":{"resting":"/Volumes/2T-SSD/worktrees/factory-418/.relayer/evidence/project-new-thread/01-resting.png","hover":"/Volumes/2T-SSD/worktrees/factory-418/.relayer/evidence/project-new-thread/02-hover.png","activated":"/Volumes/2T-SSD/worktrees/factory-418/.relayer/evidence/project-new-thread/03-activated.png"}}
+[94658:0928/003556.114672:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[94658:0928/003556.114878:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[94658:0928/003556.114881:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[94658:0928/003556.114883:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[94658:0928/003556.114885:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[94658:0928/003556.114887:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.

@@ -1,0 +1,21 @@
+Error occurred in handler for 'relayer:layer-selections-read': Error: No handler registered for 'relayer:layer-selections-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error: database operation failed: error returned from database: (code: 2067) UNIQUE constraint failed: model_providers.credential_reference
+    at Object.save (file:///Volumes/2T-SSD/worktrees/factory-418/desktop/main/services/relayer-app-server.mjs:401:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async addSettingsProvider (file:///Users/vishal/.codex/worker-pilot/factory-418-f807-model-sidebar/test-model-sidebar.mjs:280:3)
+    at async auditF807ModelsSidebar (file:///Users/vishal/.codex/worker-pilot/factory-418-f807-model-sidebar/test-model-sidebar.mjs:339:3)
+    at async main (file:///Users/vishal/.codex/worker-pilot/factory-418-f807-model-sidebar/test-model-sidebar.mjs:427:27)

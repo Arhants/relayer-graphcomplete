@@ -1,0 +1,47 @@
+[
+  {
+    "stage": "theme-visual",
+    "exitCode": 0,
+    "seconds": 17.587395668029785
+  },
+  {
+    "stage": "native-sidebar",
+    "exitCode": 0,
+    "seconds": 29.909743070602417
+  },
+  {
+    "stage": "native-approval",
+    "exitCode": 0,
+    "seconds": 17.73068904876709
+  },
+  {
+    "stage": "mutation-proof",
+    "exitCode": 0,
+    "seconds": 1.8808188438415527
+  },
+  {
+    "stage": "sidebar-new-thread",
+    "exitCode": 0,
+    "seconds": 0.8359329700469971
+  },
+  {
+    "stage": "sidebar-new-thread-light",
+    "exitCode": 0,
+    "seconds": 0.8665781021118164
+  },
+  {
+    "stage": "sidebar-thread-375",
+    "exitCode": 0,
+    "seconds": 1.0631568431854248
+  },
+  {
+    "stage": "sidebar-new-thread-expanded",
+    "exitCode": 0,
+    "seconds": 0.8791520595550537
+  },
+  {
+    "stage": "sidebar-thread-journey",
+    "exitCode": 0,
+    "seconds": 10.543355941772461
+  }
+]

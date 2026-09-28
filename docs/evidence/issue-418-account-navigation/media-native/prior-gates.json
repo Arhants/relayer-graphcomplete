@@ -1,0 +1,47 @@
+[
+  {
+    "stage": "build",
+    "exitCode": 0,
+    "seconds": 31.993644952774048
+  },
+  {
+    "stage": "node-input",
+    "exitCode": 0,
+    "seconds": 30.877904176712036
+  },
+  {
+    "stage": "interaction-context",
+    "exitCode": 0,
+    "seconds": 25.41745090484619
+  },
+  {
+    "stage": "project-new-thread",
+    "exitCode": 0,
+    "seconds": 10.80315113067627
+  },
+  {
+    "stage": "compiled-eval",
+    "exitCode": 0,
+    "seconds": 11.026277780532837
+  },
+  {
+    "stage": "eval-web",
+    "exitCode": 0,
+    "seconds": 9.691836833953857
+  },
+  {
+    "stage": "desktop-stop",
+    "exitCode": 0,
+    "seconds": 40.001895904541016
+  },
+  {
+    "stage": "theme-csp",
+    "exitCode": 0,
+    "seconds": 14.887956857681274
+  },
+  {
+    "stage": "theme-visual",
+    "exitCode": 1,
+    "seconds": 14.082844018936157
+  }
+]
