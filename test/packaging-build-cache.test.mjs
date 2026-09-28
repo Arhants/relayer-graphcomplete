@@ -1,8 +1,11 @@
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { cachedBuild, inventory, packagingIdentity, timedStage } from "../desktop/packaging/build-cache.mjs";
+import { packagingRuntimeReady } from "../scripts/ci/packaging-cache-ready.mjs";
 import { buildDevelopmentDesktop } from "../desktop/packaging/build-development.mjs";
 
 const directories = [];
@@ -88,7 +91,9 @@ test("a release hit still licenses, assembles and inspects the current app; corr
   });
   const options = { repositoryRoot, environment: { RELAYER_DESKTOP_TARGET: "macos-arm64" }, execute, prepareLadybug: prepare, requireLicense: license, identify: async () => ({ native: "a".repeat(64), runtime: "b".repeat(64) }) };
   await buildDevelopmentDesktop(options);
-  await buildDevelopmentDesktop(options);
+  const root = join(repositoryRoot, ".relayer/packaging-cache-v1");
+  expect(await packagingRuntimeReady(root, "b".repeat(64))).toBe(true);
+  await buildDevelopmentDesktop({ ...options, environment: { ...options.environment, RELAYER_PACKAGING_FETCH_ON_MISS: "1" } });
   expect(commands.filter((command) => command === "cargo")).toHaveLength(1);
   expect(commands.filter((command) => command === process.execPath)).toHaveLength(2);
   expect(license).toHaveBeenCalledTimes(2);
@@ -100,8 +105,16 @@ test("a release hit still licenses, assembles and inspects the current app; corr
     throw Error("afterPack rejected current package");
   } })).rejects.toThrow("afterPack rejected current package");
   await writeFile(join(repositoryRoot, ".relayer/packaging-cache-v1/runtime", "b".repeat(64), "payload/relayer-graph-server"), "broken");
-  await buildDevelopmentDesktop(options);
+  expect(await packagingRuntimeReady(root, "b".repeat(64))).toBe(false);
+  const fallbackCalls = [];
+  await buildDevelopmentDesktop({ ...options, environment: { ...options.environment, RELAYER_PACKAGING_FETCH_ON_MISS: "1" }, execute: async (command, args, settings) => {
+    fallbackCalls.push([command, args[0]]);
+    if (command === "cargo" && args[0] === "fetch") return;
+    return execute(command, args, settings);
+  } });
+  expect(fallbackCalls.slice(0, 2)).toEqual([["cargo", "fetch"], ["cargo", "build"]]);
   expect(commands.filter((command) => command === "cargo")).toHaveLength(2);
+
   // Publishing into an unwritable/broken cache must not rerun successful Cargo.
   const isolatedRoot = await temporary();
   let successfulCompiles = 0;
@@ -125,4 +138,18 @@ test("non-Apple-Silicon development packaging preserves its native tool environm
   const execute = vi.fn(async (_command, _args, options) => expect(options.env).toEqual(environment));
   await buildDevelopmentDesktop({ environment, execute });
   expect(execute).toHaveBeenCalledTimes(2);
+});
+
+
+test("production identity reads locked workspace metadata with an empty Cargo home", async () => {
+  const emptyHome = await temporary();
+  const repositoryRoot = resolve(import.meta.dirname, "..");
+  const identity = await packagingIdentity({
+    repositoryRoot, cacheRoot: join(emptyHome, "cache"), target: { rustTarget: "aarch64-apple-darwin" },
+    environment: { HOME: emptyHome, CARGO_HOME: emptyHome },
+    command: (name, args) => name === "cargo" && args[0] === "metadata"
+      ? execFileSync(name, args, { env: { ...process.env, CARGO_HOME: emptyHome }, encoding: "utf8" }).trim()
+      : name,
+  });
+  expect(identity.runtime).toMatch(/^[a-f0-9]{64}$/);
 });
