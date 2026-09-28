@@ -119,10 +119,13 @@ class CompletionWatch:
     Create one watch for the children you launched and call await watch.changes() when you
     are ready for the next event. It returns as soon as at least one child's current has
     moved or ended since the last call, with every change seen by then; the first call
-    reports each child's current. A child still unanswered keeps its request open; an
-    answered child is asked again after the revision it reported, so its next event carries
-    its latest current, with any moves made in between folded into it. Overlapping calls
-    take turns, so each event is returned by exactly one of them.
+    reports each child's current. Each change is a (child, current) pair. A child still
+    unanswered keeps its request open; an answered child is asked again after the revision
+    it reported, so its next event carries its latest current, with any moves made in
+    between folded into it. A child whose request fails, for example because its start was
+    refused, is reported once as (child, error) with the exception in place of the current,
+    and is not asked again; it never holds back its siblings. Overlapping calls take turns,
+    so each event is returned by exactly one of them.
     """
 
     def __init__(self, children: Iterable[CompletionHandle]) -> None:
@@ -134,31 +137,41 @@ class CompletionWatch:
 
     @property
     def settled(self) -> bool:
-        """True once every watched child's current is terminal."""
+        """True once every watched child's current is terminal or can no longer be observed."""
         return len(self._ended) == len(self._children)
 
-    async def changes(self) -> list[tuple[CompletionHandle, CompletionCurrentSnapshot]]:
+    async def changes(self) -> list[tuple[CompletionHandle, CompletionCurrentSnapshot | Exception]]:
         async with self._turn:
             return await self._collect()
 
-    async def _collect(self) -> list[tuple[CompletionHandle, CompletionCurrentSnapshot]]:
+    async def _collect(self) -> list[tuple[CompletionHandle, CompletionCurrentSnapshot | Exception]]:
         loop = asyncio.get_running_loop()
         for completion_id, child in self._children.items():
             if completion_id in self._ended or completion_id in self._pending:
                 continue
             request = loop.create_task(child.current.next(self._seen.get(completion_id)))
-            # A failure surfaces on the next changes() call; until then it is not unobserved.
+            # A failure is reported by the next changes() call; until then it is not unobserved.
             request.add_done_callback(_absorb_unobserved_failure)
             self._pending[completion_id] = request
         if not self._pending:
             return []
         await asyncio.wait(self._pending.values(), return_when=asyncio.FIRST_COMPLETED)
-        changes: list[tuple[CompletionHandle, CompletionCurrentSnapshot]] = []
+        changes: list[tuple[CompletionHandle, CompletionCurrentSnapshot | Exception]] = []
         for completion_id, request in list(self._pending.items()):
             if not request.done():
                 continue
-            current = request.result()
             del self._pending[completion_id]
+            try:
+                current = request.result()
+            except asyncio.CancelledError:
+                # Only this request was cancelled, never the caller; it still ends observation.
+                self._ended.add(completion_id)
+                changes.append((self._children[completion_id], TransportError("the completion observation was cancelled")))
+                continue
+            except Exception as error:
+                self._ended.add(completion_id)
+                changes.append((self._children[completion_id], error))
+                continue
             self._seen[completion_id] = current.revision
             if current.lifecycle != "active":
                 self._ended.add(completion_id)

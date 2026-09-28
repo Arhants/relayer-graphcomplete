@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "0f654791220a72c09b7e893ad97a403b4826e5f9",
+  "platform": "darwin-arm64",
+  "node": "v22.23.2",
+  "command": "npx vitest run test/eval-app-integration.test.mjs --reporter=json --outputFile=<result.json>",
+  "beforeFiles": {
+    "desktop/eval-main/eval-service.mjs": "7b55d2a0c68bcee21e6405dc48bc06efd84a990cb32dd9faee791e80fbd292c4",
+    "test/eval-app-integration.test.mjs": "119bf20d4cb9c808eee5fc2b5658db5f8223995b28560c2b99540695dbe06a88"
+  },
+  "afterFiles": {
+    "desktop/eval-main/eval-service.mjs": "1cc08470f8315ffe1f92f883e0216caad03d904c0b5bd8856c4e89d73b539530",
+    "test/eval-app-integration.test.mjs": "d00a2a0680b4b6dfa23f8e6ac87895bd318f0ce163f7ac5f79f064a1d1b25282"
+  },
+  "runtimeArtifacts": {
+    "target/debug/relayer-app-server": "87d2e5520ff241507804273140df52b31291cd6bc738e1d59529a606847161d5",
+    "target/debug/relayer-graph-server": "32920b22d4a549d50507f2ce7abc6b87b87664d29004a141c8f9454864ac81bd",
+    "dist/index.js": "50b6bdac6f811858e1a9469fd2cba4dd542f82597296b6b1adc80d0f291916db",
+    "packages/eval-runner/dist/index.js": "4988749604f32a249599c17ddc3b38c8c0db0a31d1ed4b7979d05a37b8b10ce9",
+    "packages/harness-host/dist/index.js": "e58612b8fe972521139a16d887f6362bcda35b971a7ef57de9265a757f0514ee"
+  },
+  "runs": [
+    {
+      "name": "baseline-2",
+      "success": true,
+      "tests": 18,
+      "fileDurationMs": 46886.028,
+      "cases": [
+        {
+          "title": "executes the exact Lantern quartet through one production product/Eval seam",
+          "status": "passed",
+          "durationMs": 25781.622
+        },
+        {
+          "title": "runs an authority-isolated agent-authored Complete pair and preserves child evidence outside human turns",
+          "status": "passed",
+          "durationMs": 12456.158
+        },
+        {
+          "title": "retains graph-memory search and reference evidence in one product thread",
+          "status": "passed",
+          "durationMs": 3293.737
+        },
+        {
+          "title": "runs case \u00d7 harness executions through the product server and preserves reviewable threads",
+          "status": "passed",
+          "durationMs": 5328.028
+        }
+      ],
+      "loadStart": [
+        6.2861328125,
+        11.73876953125,
+        15.79345703125
+      ],
+      "loadEnd": [
+        5.9853515625,
+        10.876953125,
+        15.265625
+      ],
+      "startedAt": 1790551730.993215,
+      "finishedAt": 1790551778.91923
+    },
+    {
+      "name": "after-2",
+      "success": true,
+      "tests": 18,
+      "fileDurationMs": 26739.188,
+      "cases": [
+        {
+          "title": "executes the exact Lantern quartet through one production product/Eval seam",
+          "status": "passed",
+          "durationMs": 5935.361
+        },
+        {
+          "title": "runs an authority-isolated agent-authored Complete pair and preserves child evidence outside human turns",
+          "status": "passed",
+          "durationMs": 12451.198
+        },
+        {
+          "title": "retains graph-memory search and reference evidence in one product thread",
+          "status": "passed",
+          "durationMs": 3242.35
+        },
+        {
+          "title": "runs case \u00d7 harness executions through the product server and preserves reviewable threads",
+          "status": "passed",
+          "durationMs": 5086.188
+        }
+      ],
+      "loadStart": [
+        5.9853515625,
+        10.876953125,
+        15.265625
+      ],
+      "loadEnd": [
+        6.99755859375,
+        10.64892578125,
+        15.029296875
+      ],
+      "startedAt": 1790551778.9353752,
+      "finishedAt": 1790551806.604233
+    },
+    {
+      "name": "baseline-3",
+      "success": true,
+      "tests": 18,
+      "fileDurationMs": 46726.01,
+      "cases": [
+        {
+          "title": "executes the exact Lantern quartet through one production product/Eval seam",
+          "status": "passed",
+          "durationMs": 25472.098
+        },
+        {
+          "title": "runs an authority-isolated agent-authored Complete pair and preserves child evidence outside human turns",
+          "status": "passed",
+          "durationMs": 12702.637
+        },
+        {
+          "title": "retains graph-memory search and reference evidence in one product thread",
+          "status": "passed",
+          "durationMs": 3289.271
+        },
+        {
+          "title": "runs case \u00d7 harness executions through the product server and preserves reviewable threads",
+          "status": "passed",
+          "durationMs": 5235.01
+        }
+      ],
+      "loadStart": [
+        6.99755859375,
+        10.64892578125,
+        15.029296875
+      ],
+      "loadEnd": [
+        8.94189453125,
+        10.73681640625,
+        14.83984375
+      ],
+      "startedAt": 1790551806.619393,
+      "finishedAt": 1790551854.258695
+    },
+    {
+      "name": "after-3",
+      "success": true,
+      "tests": 18,
+      "fileDurationMs": 27572.607,
+      "cases": [
+        {
+          "title": "executes the exact Lantern quartet through one production product/Eval seam",
+          "status": "passed",
+          "durationMs": 6305.253
+        },
+        {
+          "title": "runs an authority-isolated agent-authored Complete pair and preserves child evidence outside human turns",
+          "status": "passed",
+          "durationMs": 12555.304
+        },
+        {
+          "title": "retains graph-memory search and reference evidence in one product thread",
+          "status": "passed",
+          "durationMs": 3368.344
+        },
+        {
+          "title": "runs case \u00d7 harness executions through the product server and preserves reviewable threads",
+          "status": "passed",
+          "durationMs": 5309.608
+        }
+      ],
+      "loadStart": [
+        8.94189453125,
+        10.73681640625,
+        14.83984375
+      ],
+      "loadEnd": [
+        8.46435546875,
+        10.4169921875,
+        14.57861328125
+      ],
+      "startedAt": 1790551854.27536,
+      "finishedAt": 1790551883.109205
+    }
+  ]
+}
