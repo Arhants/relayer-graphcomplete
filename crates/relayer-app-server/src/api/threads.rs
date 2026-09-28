@@ -2579,10 +2579,29 @@ const STARTUP_UNWINDING_BOUND: std::time::Duration = std::time::Duration::from_s
 /// observed at once and concurrently. A child whose run already ended (a harness that
 /// restarted with the server knows no such run) normally has its attempt ended, and its
 /// leases released, before startup serves Desktop, so a provider removal finished at startup
-/// does not wait on it. Startup waits for that at most `STARTUP_UNWINDING_BOUND` in total; a
-/// child the harness still runs, cannot yet report, or that takes longer keeps going in the
-/// background, holding its leases until the run ends.
+/// does not wait on it. Startup waits for finding and finishing them at most
+/// `STARTUP_UNWINDING_BOUND` in total; anything still running, unreported, or not yet read
+/// keeps going in the background, and a child keeps its leases until its run ends.
 pub(crate) async fn resume_unwinding_recursive_children(
+    product: crate::product::ProductService,
+    runtime: crate::runtime::RuntimeClient,
+    reconciler: Option<crate::app_server::ExecutionLeaseReconciler>,
+) {
+    // Dropping the handle when the bound expires detaches the task; it is not cancelled.
+    let resume = tokio::spawn(resume_unwinding_children_until_ended(
+        product, runtime, reconciler,
+    ));
+    if tokio::time::timeout(STARTUP_UNWINDING_BOUND, resume)
+        .await
+        .is_err()
+    {
+        eprintln!(
+            "recursive children still unwinding were not all resumed when startup continued; they finish in the background"
+        );
+    }
+}
+
+async fn resume_unwinding_children_until_ended(
     product: crate::product::ProductService,
     runtime: crate::runtime::RuntimeClient,
     reconciler: Option<crate::app_server::ExecutionLeaseReconciler>,
@@ -2598,10 +2617,6 @@ pub(crate) async fn resume_unwinding_recursive_children(
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     };
-    if unwinding.is_empty() {
-        return;
-    }
-    let deadline = tokio::time::Instant::now() + STARTUP_UNWINDING_BOUND;
     let mut children = tokio::task::JoinSet::new();
     for child in unwinding {
         let product = product.clone();
@@ -2631,17 +2646,7 @@ pub(crate) async fn resume_unwinding_recursive_children(
             }
         });
     }
-    let settled = tokio::time::timeout_at(deadline, async {
-        while children.join_next().await.is_some() {}
-    })
-    .await;
-    if settled.is_err() {
-        eprintln!(
-            "{} recursive children were still unwinding when startup continued; they finish in the background",
-            children.len()
-        );
-    }
-    children.detach_all();
+    while children.join_next().await.is_some() {}
 }
 
 pub(super) async fn invoke_action(
