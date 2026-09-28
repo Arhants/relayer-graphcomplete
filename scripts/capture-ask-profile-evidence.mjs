@@ -2478,7 +2478,7 @@ async function run() {
   let product;
   const modelCatalog = new ModelCatalogService({
     adapters: [new CodexModelCatalogAdapter({ credentials })],
-    publishSnapshot: (snapshot, options) => product.publishProviderCatalog(snapshot, options),
+    publishSnapshot: (snapshot, options) => product.seedProviderCatalog(snapshot, options),
   });
   const refreshServer = await abortableEvidenceOperation(
     "model catalog refresh server startup",

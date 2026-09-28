@@ -855,7 +855,7 @@ async function run() {
   services.push(runtime);
   const runtimeSession = await runtime.start();
   const catalogRefreshServer = await startModelCatalogRefreshServer({
-    refresh: () => product.publishProviderCatalog(catalogSnapshot),
+    refresh: () => product.seedProviderCatalog(catalogSnapshot),
   });
   services.push(catalogRefreshServer);
   product = new RelayerAppServerService({
@@ -869,7 +869,7 @@ async function run() {
   });
   services.push(product);
   productSession = await product.start();
-  await product.publishProviderCatalog(catalogSnapshot);
+  await product.seedProviderCatalog(catalogSnapshot);
 
   const project = await productRequest("/api/projects", {
     method: "POST",

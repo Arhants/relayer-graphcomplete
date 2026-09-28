@@ -156,7 +156,7 @@ async function startRecursiveStack(observed, {
   services.push(product);
   const session = await product.start();
   proxy = await countingBrokerProxy(session.origin);
-  await product.publishProviderCatalog({
+  await product.seedProviderCatalog({
     providerId: "codex",
     label: "Fixture provider",
     connected: true,
