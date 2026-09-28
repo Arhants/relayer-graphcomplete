@@ -11,12 +11,14 @@ on success, failure, or cancellation; it never changes durable debt itself.
 Product authority: PRD PROV-003 (removal and recovery without a second release)
 and PROV-004 (execution-access lifetime). No product decision or eligibility
 rule changes. The changed seams are ProductService's shared in-flight guard
-and `reconcile_terminal_execution_lease`'s busy outcome.
+and `reconcile_terminal_execution_lease`'s busy outcome, plus the runtime
+release request's existing five-second control timeout.
 
 | Checkpoint | Deterministic production-seam test |
 | --- | --- |
 | Concurrent clones send one DELETE while the first response is held; another attempt progresses independently; acknowledged debt sends no new DELETE | `concurrent_terminal_lease_release_is_coalesced` |
 | Cancelling the cleanup caller releases its guard and preserves retryable debt | `cancelled_terminal_lease_release_can_be_retried` |
+| A provider that never responds times out, frees the guard, and permits retry | `stalled_terminal_lease_release_times_out_and_can_be_retried` |
 | Provider failure preserves debt and allows retry; an already-absent provider lease can be acknowledged | `terminal_lease_reconciliation_retries_release_and_accepts_host_absence` |
 | Quarantine/reopen settles accepted output without releasing again | `opening_a_quarantined_thread_accepts_its_attempt_without_releasing_again` |
 
@@ -55,11 +57,27 @@ This is evidence of timing sensitivity, not a full-check pass. Later stages of
 `npm run build` completed successfully in a separate invocation, including both
 Rust servers, the root TypeScript build, and all four workspace package builds.
 
+The initial PR head `329ba06f61aba36154a98da94643f07ae7167372` passed
+[CI run 36484878244](https://github.com/vishaltandale00/relayer-graphcomplete/actions/runs/36484878244).
+Automated review then identified that an unbounded provider request could hold
+the new guard forever. The added stalled-header test failed at its outer
+seven-second deadline before the fix. With the runtime request timeout applied,
+all four focused lease tests passed in 5.35 seconds. This test proves recovery
+from a stalled response header; it does not independently exercise a stalled
+response body. The updated source passed the Rust workspace suite (including 291 app-server
+unit tests), crash-recovery suite, formatting, Clippy, TypeScript checks, and
+`npm run build`. Its aggregate local check reached Vitest but failed because
+the fresh worktree lacked the expected `target` path and Electron installation.
+Those local setup issues were corrected; follow-up JavaScript verification and
+new-head CI are recorded on the PR. A separate secret-boundary run also failed
+its five-second Codex feature-probe command under load; the same command then
+succeeded independently. No secret-boundary pass is inferred from that probe.
+
 ## Source review
 
 Reviewer `/root/review_mapping` found no unresolved correctness, checkpoint,
 or test-subsumption findings for the following source snapshot. This is a
-non-certifying source review without a PR; it does not replace test evidence.
+source review; it does not replace test evidence or certify untested states.
 
 ```text
 crates/relayer-app-server/src/app_server.rs
@@ -67,7 +85,9 @@ crates/relayer-app-server/src/app_server.rs
 crates/relayer-app-server/src/product/service.rs
 aeaf32cf2db617938c4bdf720da8620e40517a29ba1e1eae3412ccc2d9b11d10
 crates/relayer-app-server/src/storage/sqlite/attempts.rs
-b384f7f757b133a96592d75c4b89f1a371251041214fe0b668e51745c3744b48
+31621aaaae09ed650027dace0a9afa27b7cf9eee3f39cd657dd544d0c57ba309
+crates/relayer-app-server/src/runtime.rs
+6fffee96cdff907a1dc07048271ae05247e025d6a730ac22c460cc5e55ca1577
 ```
 
 ## Limits

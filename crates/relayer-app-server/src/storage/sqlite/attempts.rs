@@ -1221,6 +1221,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stalled_terminal_lease_release_times_out_and_can_be_retried() {
+        let (_database, store, interaction_id, route) = seeded_store().await;
+        let attempt = store
+            .begin_interaction_attempt(receipt(interaction_id, &route), "10")
+            .await
+            .unwrap();
+        store
+            .recover_interrupted_interactions("restart", false)
+            .await
+            .unwrap();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let harness = Router::new().route(
+            "/sessions/{thread}/execution-leases/{lease}",
+            routing::delete({
+                let calls = calls.clone();
+                move || {
+                    let calls = calls.clone();
+                    async move {
+                        if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                            std::future::pending::<()>().await;
+                        }
+                        Json(json!({"released":true}))
+                    }
+                }
+            }),
+        );
+        let (runtime, server, _directory) = test_runtime(harness).await;
+        let product = ProductService::new(store.clone(), true);
+        let first = tokio::time::timeout(
+            std::time::Duration::from_secs(7),
+            crate::app_server::reconcile_terminal_execution_lease(&product, &runtime, attempt),
+        )
+        .await;
+        let debt = store.execution_lease_debt(attempt).await;
+        let retry = tokio::time::timeout(
+            std::time::Duration::from_secs(7),
+            crate::app_server::reconcile_terminal_execution_lease(&product, &runtime, attempt),
+        )
+        .await;
+        server.abort();
+        let _ = server.await;
+        assert!(!first.expect("provider request must time out before the test deadline"));
+        assert!(
+            debt.unwrap().is_some(),
+            "timeout must preserve durable debt"
+        );
+        assert!(retry.expect("retry must not remain locked behind the stalled request"));
+        assert!(store.execution_lease_debt(attempt).await.unwrap().is_none());
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
     async fn terminal_lease_reconciliation_retries_release_and_accepts_host_absence() {
         let (_database, store, interaction_id, route) = seeded_store().await;
         let attempt = store
