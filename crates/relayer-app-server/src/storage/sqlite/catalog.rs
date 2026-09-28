@@ -621,6 +621,8 @@ impl SqliteProductStore {
     pub(crate) async fn update_model_settings_defaults(
         &self,
         command: &UpdateModelSettingsDefaultsCommand,
+        app_default_harness_id: &str,
+        permission_available_harnesses: &HashSet<String>,
     ) -> Result<ModelSettingsDefaults, StorageError> {
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         if let Some(harness_id) = command.harness_id.as_deref() {
@@ -664,51 +666,51 @@ impl SqliteProductStore {
             }
         }
         let stored_defaults = load_defaults(&mut transaction).await?;
-        if command.harness_id.is_some() || command.family_id.is_some() {
-            let family_id = command.family_id.or(stored_defaults.family_id);
-            let harness_id = command
-                .harness_id
-                .clone()
-                .unwrap_or(stored_defaults.harness_id);
+        // The default provider and the default family are one pair (PROV-008). Choosing a
+        // provider selects its managed family; choosing a managed family selects its provider.
+        // A later catalog refresh then finds nothing to reconcile.
+        let (provider_id, new_family_id, managed_family) = paired_default_on(
+            &mut transaction,
+            command.provider_id.as_ref(),
+            command.family_id,
+        )
+        .await?;
+        // A provider or managed family chosen without a harness also brings a harness that can
+        // run the managed family, so the save never strands the default harness on a family it
+        // cannot execute.
+        let harness_id = match (&command.harness_id, new_family_id) {
+            (None, Some(family_id)) if managed_family => Some(
+                default_harness_for_family_on(
+                    &mut transaction,
+                    family_id,
+                    &stored_defaults.harness_id,
+                    app_default_harness_id,
+                    permission_available_harnesses,
+                )
+                .await?,
+            ),
+            (harness_id, _) => harness_id.clone(),
+        };
+        if harness_id.is_some() || new_family_id.is_some() {
+            let family_id = new_family_id.or(stored_defaults.family_id);
+            let harness_id = harness_id.clone().unwrap_or(stored_defaults.harness_id);
             let configuration_owned =
                 harness_uses_configuration_model_on(&mut transaction, &harness_id).await?;
-            if let Some(family_id) = family_id.filter(|_| !configuration_owned) {
-                let candidates = sqlx::query_as::<_, (String, String)>(
-                "SELECT provider_id,model_id FROM model_family_members WHERE family_id=?1 ORDER BY position",
-            )
-            .bind(family_id.value())
-            .fetch_all(&mut *transaction)
-            .await?;
-                let mut resolvable = false;
-                for (provider_id, model_id) in candidates {
-                    let validation = ValidateModelSelectionCommand {
-                        harness_id: harness_id.clone(),
-                        family_id,
-                        provider_id: ProviderId::from_database(provider_id),
-                        model_id,
-                    };
-                    if validate_model_selection_on(&mut transaction, &validation)
-                        .await
-                        .is_ok()
-                    {
-                        resolvable = true;
-                        break;
-                    }
-                }
-                if !resolvable {
-                    return Err(StorageError::Catalog(CatalogError::invalid(
-                        "default_family_unresolvable",
-                        "The default family must contain a model resolvable by the default harness.",
-                    )));
-                }
+            if let Some(family_id) = family_id.filter(|_| !configuration_owned)
+                && !family_resolves_on(&mut transaction, &harness_id, family_id).await?
+            {
+                return Err(StorageError::Catalog(CatalogError::invalid(
+                    "default_family_unresolvable",
+                    "The default family must contain a model resolvable by the default harness.",
+                )));
             }
         }
         sqlx::query(
             "UPDATE product_model_preferences SET default_harness_configuration_name=COALESCE(?1,default_harness_configuration_name),default_provider_id=COALESCE(?2,default_provider_id),default_family_id=COALESCE(?3,default_family_id),defaults_modified=1 WHERE singleton=1",
         )
-        .bind(command.harness_id.as_deref())
-        .bind(command.provider_id.as_ref().map(ProviderId::as_str))
-        .bind(command.family_id.map(ModelFamilyId::value))
+        .bind(harness_id.as_deref())
+        .bind(provider_id.as_ref().map(ProviderId::as_str))
+        .bind(new_family_id.map(ModelFamilyId::value))
         .execute(&mut *transaction)
         .await?;
         let defaults = load_defaults(&mut transaction).await?;
@@ -2058,6 +2060,148 @@ fn overlay_digest(
     Ok(format!("sha256:{:x}", digest.finalize()))
 }
 
+/// Whether some member of the family resolves under the harness.
+async fn family_resolves_on(
+    connection: &mut SqliteConnection,
+    harness_id: &str,
+    family_id: ModelFamilyId,
+) -> Result<bool, StorageError> {
+    let candidates = sqlx::query_as::<_, (String, String)>(
+        "SELECT provider_id,model_id FROM model_family_members WHERE family_id=?1 ORDER BY position",
+    )
+    .bind(family_id.value())
+    .fetch_all(&mut *connection)
+    .await?;
+    for (provider_id, model_id) in candidates {
+        let validation = ValidateModelSelectionCommand {
+            harness_id: harness_id.into(),
+            family_id,
+            provider_id: ProviderId::from_database(provider_id),
+            model_id,
+        };
+        if validate_model_selection_on(connection, &validation)
+            .await
+            .is_ok()
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// The default harness that goes with a newly chosen default provider's managed family.
+///
+/// The stored harness stays when it can run the family. Otherwise the choice follows first-run
+/// onboarding: among available harnesses with an enabled permission profile that can run the
+/// family, the application default harness wins, then the lowest configuration name. When none
+/// can, the save is refused and the defaults stay unchanged.
+async fn default_harness_for_family_on(
+    connection: &mut SqliteConnection,
+    family_id: ModelFamilyId,
+    stored_harness_id: &str,
+    app_default_harness_id: &str,
+    permission_available_harnesses: &HashSet<String>,
+) -> Result<String, StorageError> {
+    if harness_uses_configuration_model_on(connection, stored_harness_id).await?
+        || family_resolves_on(connection, stored_harness_id, family_id).await?
+    {
+        return Ok(stored_harness_id.to_owned());
+    }
+    let mut candidates = sqlx::query_scalar::<_, String>(
+        "SELECT configuration_name FROM product_harnesses WHERE product_visible=1 AND available=1 ORDER BY configuration_name",
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    candidates.sort_by_key(|harness_id| harness_id != app_default_harness_id);
+    for harness_id in candidates {
+        if !permission_available_harnesses.contains(&harness_id)
+            || harness_uses_configuration_model_on(connection, &harness_id).await?
+        {
+            continue;
+        }
+        if family_resolves_on(connection, &harness_id, family_id).await? {
+            return Ok(harness_id);
+        }
+    }
+    Err(StorageError::Catalog(CatalogError::invalid(
+        "default_provider_harness_unavailable",
+        "No available harness can run the selected provider's models.",
+    )))
+}
+
+/// Resolves the provider and family a defaults update writes, keeping them paired.
+///
+/// A provider chosen alone brings its enabled managed family; a provider without one is refused,
+/// so the stored defaults stay unchanged. A chosen family must be active and enabled. A managed
+/// family brings its provider, which must be connected and active, and is refused with a
+/// different provider. A custom family keeps whatever provider was chosen or stored. The last
+/// value says whether the family is a managed family.
+async fn paired_default_on(
+    connection: &mut SqliteConnection,
+    provider_id: Option<&ProviderId>,
+    family_id: Option<ModelFamilyId>,
+) -> Result<(Option<ProviderId>, Option<ModelFamilyId>, bool), StorageError> {
+    match (provider_id, family_id) {
+        (None, None) => Ok((None, None, false)),
+        (Some(provider_id), None) => {
+            let managed = sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM model_families WHERE kind='system' AND managed_provider_id=?1 AND lifecycle_state='active' AND enabled=1 ORDER BY id DESC LIMIT 1",
+            )
+            .bind(provider_id.as_str())
+            .fetch_optional(&mut *connection)
+            .await?
+            .ok_or_else(|| {
+                StorageError::Catalog(CatalogError::invalid(
+                    "default_provider_family_unavailable",
+                    "The selected provider has no enabled model family yet. Refresh its models, then choose it again.",
+                ))
+            })?;
+            Ok((
+                Some(provider_id.clone()),
+                Some(ModelFamilyId::from_database(managed)),
+                true,
+            ))
+        }
+        (provider_id, Some(family_id)) => {
+            let owner = sqlx::query_scalar::<_, Option<String>>(
+                "SELECT CASE WHEN kind='system' THEN managed_provider_id END FROM model_families WHERE id=?1 AND lifecycle_state='active' AND enabled=1",
+            )
+            .bind(family_id.value())
+            .fetch_optional(&mut *connection)
+            .await?
+            .ok_or_else(|| {
+                StorageError::Catalog(CatalogError::invalid(
+                    "default_family_unavailable",
+                    "The selected family is unavailable.",
+                ))
+            })?
+            .map(ProviderId::from_database);
+            if let Some(owner) = owner.as_ref() {
+                if provider_id.is_some_and(|chosen| chosen != owner) {
+                    return Err(StorageError::Catalog(CatalogError::invalid(
+                        "default_family_provider_mismatch",
+                        "The default family belongs to a different provider.",
+                    )));
+                }
+                let connected: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM model_providers WHERE id=?1 AND connected=1 AND lifecycle_state='active')",
+                )
+                .bind(owner.as_str())
+                .fetch_one(&mut *connection)
+                .await?;
+                if !connected {
+                    return Err(StorageError::Catalog(CatalogError::invalid(
+                        "provider_disconnected",
+                        "The selected family's provider is not connected.",
+                    )));
+                }
+            }
+            let managed = owner.is_some();
+            Ok((provider_id.cloned().or(owner), Some(family_id), managed))
+        }
+    }
+}
+
 async fn load_defaults(
     connection: &mut SqliteConnection,
 ) -> Result<ModelSettingsDefaults, StorageError> {
@@ -2184,6 +2328,7 @@ async fn load_harnesses(
                 usable_now: false,
                 usable_provider_ids: Vec::new(),
                 usable_family_ids: Vec::new(),
+                permission_available: false,
             })
         })
         .collect()
@@ -2331,8 +2476,10 @@ async fn replace_system_family(
         policy.id,
         policy.version
     );
+    // Only a legacy default owned solely by this provider moves: the statement below retires it.
+    // A legacy family shared with other providers stays active and stays the default.
     let legacy_default: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM product_model_preferences pref JOIN model_families family ON family.id=pref.default_family_id WHERE pref.singleton=1 AND family.kind='system' AND family.managed_provider_id IS NULL AND family.lifecycle_state='active' AND EXISTS(SELECT 1 FROM model_family_members member WHERE member.family_id=family.id AND member.provider_id=?1))",
+        "SELECT EXISTS(SELECT 1 FROM product_model_preferences pref JOIN model_families family ON family.id=pref.default_family_id WHERE pref.singleton=1 AND family.kind='system' AND family.managed_provider_id IS NULL AND family.lifecycle_state='active' AND EXISTS(SELECT 1 FROM model_family_members member WHERE member.family_id=family.id AND member.provider_id=?1) AND NOT EXISTS(SELECT 1 FROM model_family_members member WHERE member.family_id=family.id AND member.provider_id!=?1))",
     )
     .bind(snapshot.provider_id.as_str())
     .fetch_one(&mut *connection)
@@ -4283,11 +4430,15 @@ mod provider_definition_tests {
             .unwrap();
 
         let defaults = store
-            .update_model_settings_defaults(&UpdateModelSettingsDefaultsCommand {
-                harness_id: Some("configuration-owned".into()),
-                provider_id: None,
-                family_id: None,
-            })
+            .update_model_settings_defaults(
+                &UpdateModelSettingsDefaultsCommand {
+                    harness_id: Some("configuration-owned".into()),
+                    provider_id: None,
+                    family_id: None,
+                },
+                "codex-basic",
+                &HashSet::new(),
+            )
             .await
             .unwrap();
 

@@ -74,6 +74,9 @@ pub(crate) struct ProductHarness {
     pub(crate) usable_now: bool,
     pub(crate) usable_provider_ids: Vec<ProviderId>,
     pub(crate) usable_family_ids: Vec<ModelFamilyId>,
+    /// The harness has an enabled permission profile. Only the API knows the runtime's
+    /// permission bindings, so storage reports false and the settings route fills it in.
+    pub(crate) permission_available: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
