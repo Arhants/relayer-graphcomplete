@@ -139,14 +139,31 @@ describe("Retry text a newer draft kept out", () => {
   });
 
   it("can be cleared after a restart that kept it on screen", async () => {
-    world = await new TurnComposerWorld({
-      maxText: 2, maxTurns: 2, turnsA: [failedTurn], persisted: { 1: "the failed prompt" },
-    }).ready();
+    world = await new TurnComposerWorld({ maxText: 2, maxTurns: 2, turnsA: [failedTurn] }).ready();
+    expect(world.prompt.value).toBe("the failed prompt");
+    // An edit undone persists the restored text as the draft.
+    for (const value of ["the failed prompt!", "the failed prompt"]) {
+      world.prompt.value = value;
+      world.prompt.dispatchEvent(new world.window.Event("input"));
+    }
+    const storage = world.storageSnapshot();
+    world.dispose();
+    world = await new TurnComposerWorld({ maxText: 2, maxTurns: 2, turnsA: [failedTurn], storage }).ready();
     expect(world.prompt.value).toBe("the failed prompt");
     world.prompt.value = "";
     world.prompt.dispatchEvent(new world.window.Event("input"));
     await world.apply(["BackgroundRender"]);
     expect(world.prompt.value).toBe("");
+  });
+
+  it("returns when a user's own draft with the same text is cleared", async () => {
+    world = await new TurnComposerWorld({
+      maxText: 2, maxTurns: 2, turnsA: [failedTurn], persisted: { 1: "the failed prompt" },
+    }).ready();
+    world.prompt.value = "";
+    world.prompt.dispatchEvent(new world.window.Event("input"));
+    await world.apply(["BackgroundRender"]);
+    expect(world.prompt.value).toBe("the failed prompt");
   });
 
   it("returns after the draft is cleared and the app restarts", async () => {
@@ -181,6 +198,37 @@ describe("An edit after Send that retypes the same text", () => {
     }
     expect(world.prompt.value).toBe(sentText);
   });
+
+  for (const turnLoads of ["before", "after"]) {
+    it(`is kept across a restart before its turn loads, when the turn loads ${turnLoads} the restart`, async () => {
+      world = await new TurnComposerWorld({ maxText: 2, maxTurns: 2 }).ready();
+      await world.apply(["Type"]);
+      const sentText = world.prompt.value;
+      await world.apply(["ClickSend"]);
+      world.prompt.value = "";
+      world.prompt.dispatchEvent(new world.window.Event("input"));
+      world.prompt.value = sentText;
+      world.prompt.dispatchEvent(new world.window.Event("input"));
+      for (const step of [["PostInserted", "A"], ["PostSucceeds", "A"], ["RefreshSkipped", "A"], ["Settle", "A"]]) {
+        await world.apply(step);
+      }
+      const storage = world.storageSnapshot();
+      world.dispose();
+      const sentTurn = { status: "running", text: sentText };
+      world = await new TurnComposerWorld({
+        maxText: 2, maxTurns: 2, storage,
+        turnsA: turnLoads === "before" ? [{ status: "accepted" }, sentTurn] : [{ status: "accepted" }],
+      }).ready();
+      if (turnLoads === "after") {
+        world.pendingTurn.A = true;
+        world.recordedText.A = sentText;
+        await world.apply(["TurnArrives", "A"]);
+      }
+      expect(world.prompt.value).toBe(sentText);
+      await world.apply(["BackgroundRender"]);
+      expect(world.prompt.value).toBe(sentText);
+    });
+  }
 
   it("is kept when the send settles before its turn loads", async () => {
     world = await new TurnComposerWorld({ maxText: 2, maxTurns: 2 }).ready();

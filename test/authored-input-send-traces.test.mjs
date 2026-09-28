@@ -125,6 +125,21 @@ describe("Send after an answer did not save", () => {
     expect(world.post).not.toBeNull();
   });
 
+  it("is not stopped by a refusal a later change committed past, with no edit between", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    world.input.value = " ";
+    world.input.dispatchEvent(new world.window.Event("change", { bubbles: true }));
+    await world.settled();
+    // A select reports its change with no input event before it.
+    world.input.value = "answer 2";
+    world.input.dispatchEvent(new world.window.Event("change", { bubbles: true }));
+    await world.settled();
+    expect(world.put).not.toBeNull();
+    for (const step of [["ServeCommit"], ["CommitReturns"]]) await world.apply(step);
+    await world.click("#sendInteraction");
+    expect(world.post).not.toBeNull();
+  });
+
   it("is stopped once even after that Node Detail was closed, then sends", async () => {
     world = await new AuthoredInputSendWorld().ready();
     for (const step of [["Type", 1], ["Commit"], ["CommitFails"], ["CommitReturns"]]) await world.apply(step);

@@ -4,8 +4,11 @@ import {
   clearThreadFollowupDraft,
   pendingNewThreadDraft,
   persistPendingNewThreadDraft,
+  persistSettledThreadFollowup,
   persistThreadFollowupDraft,
+  settledThreadFollowup,
   threadFollowupDraft,
+  threadFollowupRestoration,
 } from "../desktop/renderer/src/composer-drafts.js";
 import { normalizeComposerDrafts } from "../desktop/main/ipc/register-ipc.mjs";
 
@@ -51,6 +54,40 @@ describe("composer draft persistence", () => {
     expect(threadFollowupDraft("unsent:43")).toBeNull();
     expect(threadFollowupDraft("unsent:44")).toBe("draft 44");
     expect(threadFollowupDraft("unsent:299")).toBe("draft 299");
+  });
+
+  it("keeps a draft's restoration only with that draft, and a settled send until it is cleared", () => {
+    persistThreadFollowupDraft("t:1", "restored text", { restorationId: "1:7" });
+    expect(threadFollowupRestoration("t:1")).toBe("1:7");
+    // The user's own text in the scope replaces the provenance.
+    persistThreadFollowupDraft("t:1", "restored text");
+    expect(threadFollowupRestoration("t:1")).toBeNull();
+    persistThreadFollowupDraft("t:1", "", { preserveEmpty: true, restorationId: "1:7" });
+    expect(threadFollowupRestoration("t:1")).toBe("1:7");
+    clearThreadFollowupDraft("t:1");
+    expect(threadFollowupRestoration("t:1")).toBeNull();
+
+    persistSettledThreadFollowup(3, { scopeKey: "3:5", originScopeKey: "3:5", text: "sent" });
+    expect(settledThreadFollowup(3)).toEqual({ scopeKey: "3:5", originScopeKey: "3:5", text: "sent" });
+    persistSettledThreadFollowup(3, null);
+    expect(settledThreadFollowup(3)).toBeNull();
+  });
+
+  it("keeps valid restorations and settled sends through the desktop store, dropping the rest", () => {
+    const normalized = normalizeComposerDrafts({
+      pendingNewThread: null,
+      threadFollowups: { "t:1": "restored", "t:2": "" },
+      threadFollowupRestorations: { "t:1": "1:7", "t:2": "2:1", "t:9": "orphan", "t:3": 4 },
+      settledThreadFollowups: {
+        3: { scopeKey: "3:5", originScopeKey: "3:5", text: "sent", extra: true },
+        4: { scopeKey: "4:1", text: "no origin" },
+      },
+    });
+    expect(normalized.threadFollowupRestorations).toEqual({ "t:1": "1:7", "t:2": "2:1" });
+    expect(normalized.settledThreadFollowups).toEqual({ 3: { scopeKey: "3:5", originScopeKey: "3:5", text: "sent" } });
+    expect(normalizeComposerDrafts(null)).toEqual({
+      pendingNewThread: null, threadFollowups: {}, threadFollowupRestorations: {}, settledThreadFollowups: {},
+    });
   });
 
   it("evicts oldest follow-ups by bytes and recovers after an oversized active draft", () => {

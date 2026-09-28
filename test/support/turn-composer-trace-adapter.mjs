@@ -50,7 +50,8 @@ async function settle() {
 export class TurnComposerWorld {
   // turnsA: thread A's turns ({ status, text }) as a restart finds them;
   // persisted: follow-up drafts an earlier session left, keyed by A's turn.
-  constructor({ maxText, maxTurns, turnsA, persisted = {} }) {
+  // storage: an earlier world's storageSnapshot(), in place of persisted.
+  constructor({ maxText, maxTurns, turnsA, persisted = {}, storage = null }) {
     this.maxText = maxText;
     this.maxTurns = maxTurns;
     this.window = new Window({ url: "http://127.0.0.1:3000" });
@@ -61,7 +62,7 @@ export class TurnComposerWorld {
       createElement: () => this.window.document.createElement("svg"),
     }, { get: (target, key) => target[key] ?? {} }));
     this.window.localStorage.clear();
-    this.window.localStorage.setItem("relayerComposerDraftsV1", JSON.stringify({
+    this.window.localStorage.setItem("relayerComposerDraftsV1", storage ?? JSON.stringify({
       threadFollowups: Object.fromEntries(Object.entries(persisted)
         .filter(([, text]) => text != null)
         .map(([turn, text]) => [`${THREAD_ID.A}:${interactionId("A", Number(turn))}`, text])),
@@ -125,6 +126,11 @@ export class TurnComposerWorld {
     if (this.view === "A") this.#render();
     else this.#syncState();
     await settle();
+  }
+
+  // Everything the composer persisted, for a restarted world.
+  storageSnapshot() {
+    return this.window.localStorage.getItem("relayerComposerDraftsV1");
   }
 
   // Not in the model: the draft an earlier session persisted for A's turn.
