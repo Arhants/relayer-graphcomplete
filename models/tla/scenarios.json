@@ -1092,6 +1092,35 @@
       ]
     },
     {
+      "id": "composer-lost-send-after-unrelated-turn",
+      "module": "TurnComposer",
+      "preset": "composer-replay",
+      "init": "view = \"A\"",
+      "promises": [
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain",
+        "SupersededStaysGone"
+      ],
+      "summary": "A turn created elsewhere arrives while a follow-up is pending, and the POST then fails with a server error; the text comes back to the composer.",
+      "steps": [
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "InvokeTurn",
+          "A"
+        ],
+        [
+          "PostLost",
+          "A"
+        ]
+      ]
+    },
+    {
       "id": "composer-retry-of-landed-send",
       "module": "TurnComposer",
       "preset": "composer-replay",
@@ -1780,6 +1809,52 @@
         [
           "MountReturns",
           1
+        ]
+      ]
+    },
+    {
+      "id": "inspector-view-change-voids-waiting-close",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor",
+        "InspectorIsCurrent",
+        "OnlyLatestRequestSelects"
+      ],
+      "summary": "A Close waits on a draft discard, and a new view arrives before the discard returns; the Close made in the old view does not close the inspector.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "Autosave",
+          "n1"
+        ],
+        [
+          "Discard"
+        ],
+        [
+          "Close"
+        ],
+        [
+          "StatePush",
+          "enter",
+          "n1",
+          "n2"
+        ],
+        [
+          "DiscardReturns",
+          "ok"
         ]
       ]
     },

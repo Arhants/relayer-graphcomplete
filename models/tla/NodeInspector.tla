@@ -191,13 +191,14 @@ Reconcile(w) ==
 \* may clear the selection on entering a new view (WS:4210-4380), and the
 \* selection is refreshed with selectNode or the inspector hidden
 \* (WS:3930-3937).
-\* Entering a new view voids a remembered click from the old one, and the
+\* Entering a new view voids a request remembered from the old one, and the
 \* mounted runtime no longer matches the mount key, which includes the
 \* interaction and layer (WS:4906-4912).
 Render(w, r, g, entering) ==
   LET w1 == Reconcile([w EXCEPT !.srev = r, !.graph = g, !.attach = w.sel # None,
                                 !.vid = IF entering THEN w.vid + 1 ELSE w.vid,
-                                !.queued = IF entering /\ w.queued.kind = "select"
+                                !.queued = IF entering /\ (w.queued.kind = "select"
+                                                              \/ LatestRequestSupersedes)
                                            THEN NoRequest ELSE w.queued])
       w2 == IF entering THEN [Bump(w1) EXCEPT !.open = FALSE, !.mounted = None] ELSE w1
       clears == entering /\ w2.sel # None /\ w2.sel \notin g

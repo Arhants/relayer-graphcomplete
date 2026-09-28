@@ -1800,7 +1800,13 @@ export function createProductWorkspace({
   const prepareNodeContextSelectionChange = async () => {
     const requestSequence = ++nodeSelectionSequence;
     if (contextEditor?.resolving) {
+      const viewKey = graphViewKey;
       if (!await awaitUserRequestTurn()) return false;
+      // A request made in a view the workspace has since left is void.
+      if (graphViewKey !== viewKey) {
+        refreshSelection();
+        return false;
+      }
       return prepareNodeContextSelectionChange();
     }
     // A request that proceeds at once voids any still waiting.
@@ -3643,7 +3649,10 @@ export function createProductWorkspace({
       });
       // Only a definite rejection: after a network or server error the send
       // may have committed, and the newer turn may be this very submission.
-      if (!confirmationSendFailureMayHaveCommitted(error)) restoreStrandedSubmission(submission);
+      // A send that may have gone through is handed back too: an unrelated
+      // newer turn carries its text forward, and its own turn, once it
+      // arrives, shows it was sent (SCP-019).
+      restoreStrandedSubmission(submission);
       toast(error.message);
     } finally {
       if (inFlightSubmissions.get(String(submittedThreadId)) === inFlightSubmission) {

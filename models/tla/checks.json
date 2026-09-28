@@ -42,7 +42,8 @@
       "OtherTurns": "FALSE",
       "HoldFromClick": "TRUE",
       "HoldUncertain": "TRUE",
-      "RetireSuperseded": "TRUE"
+      "RetireSuperseded": "TRUE",
+      "HandBackUncertain": "TRUE"
     },
     "composer-fixed": {
       "Threads": "{\"A\", \"B\"}",
@@ -55,7 +56,8 @@
       "OtherTurns": "TRUE",
       "HoldFromClick": "TRUE",
       "HoldUncertain": "TRUE",
-      "RetireSuperseded": "TRUE"
+      "RetireSuperseded": "TRUE",
+      "HandBackUncertain": "TRUE"
     },
     "composer-replay": {
       "Threads": "{\"A\", \"B\"}",
@@ -68,7 +70,8 @@
       "OtherTurns": "TRUE",
       "HoldFromClick": "TRUE",
       "HoldUncertain": "TRUE",
-      "RetireSuperseded": "TRUE"
+      "RetireSuperseded": "TRUE",
+      "HandBackUncertain": "TRUE"
     },
     "inspector-today": {
       "Nodes": "{\"n1\", \"n2\"}",
@@ -1605,6 +1608,23 @@
         "violated": "SupersededStaysGone"
       },
       "finding": "Without retiring it, stranded text the user replaced by typing stays in its scope and is carried forward once the prompt empties (review of #512, SCP-021)."
+    },
+    {
+      "id": "composer-without-uncertain-hand-back",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "HandBackUncertain": "FALSE",
+        "OtherTurns": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives"
+      ],
+      "expect": {
+        "violated": "UnsentDraftSurvives"
+      },
+      "finding": "Without handing it back, the text of a send lost to a network or server error stays stranded in its scope when an unrelated turn arrived while it was pending (review of #512, SCP-019)."
     },
     {
       "id": "inspector-without-queue",

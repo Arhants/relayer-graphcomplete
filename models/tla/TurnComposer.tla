@@ -44,6 +44,10 @@ CONSTANTS
                     \* the click, through Send's input reconciliation, and a
                     \* Send that ends without posting hands back stranded
                     \* text. Before, it was held only once the POST began
+  HandBackUncertain, \* TRUE since review of #512: a send lost to a network or
+                    \* server error hands back text a newer, unrelated turn
+                    \* left in its scope, unless its own turn already
+                    \* arrived. Before, the text stayed stranded there
   RetireSuperseded, \* TRUE since review of #512: stranded text that text typed
                     \* since keeps out of the prompt is retired from its
                     \* scope (SCP-021). Before, it stayed and could be carried
@@ -78,7 +82,7 @@ VARIABLES
   pc,           \* thread -> phase of its in-flight send (inFlightSendThreads)
   owner,        \* sendAttempt?.threadId, or None
   intent,       \* thread -> [text, rev, scope] captured when Send was clicked
-  held,         \* uncertainSubmissions: [scope, rev, landedAt] of sends that
+  held,         \* sends lost to an error: [scope, rev, landedAt, text], for sends that
                 \* may have been sent; landedAt is the turn the send created
                 \* (the renderer recognizes it by its text), or 0
   \* --- ghosts ---
@@ -124,9 +128,10 @@ EnterScope(next) ==
         \* send that may have been sent.
         inFlight == IF HoldFromClick THEN pc[next[1]] # "idle"
                     ELSE pc[next[1]] \notin {"idle", "reconcile"}
+        \* The renderer recognizes a sent draft by its text in a later turn.
         landed == HoldUncertain /\ saved[prior] # NoDraft
-                  /\ \E h \in held : h.scope = prior /\ h.rev = saved[prior].rev
-                                   /\ h.landedAt # 0 /\ next[2] >= h.landedAt
+                  /\ \E h \in held : h.text = saved[prior].text /\ h.landedAt # 0
+                                   /\ prior[2] < h.landedAt /\ next[2] >= h.landedAt
         settling == inFlight /\ intent[next[1]].scope = prior
                     /\ saved[prior].rev = intent[next[1]].rev
         submitting == settling \/ landed
@@ -181,8 +186,8 @@ AwayText(t) ==
 
 Uncertain(scope) ==
   HoldUncertain /\ drafts[scope] # NoDraft
-  /\ \E h \in held : h.scope = scope /\ h.rev = drafts[scope].rev
-                   /\ h.landedAt # 0 /\ latest[scope[1]] >= h.landedAt
+  /\ \E h \in held : h.text = drafts[scope].text /\ h.landedAt # 0
+                   /\ scope[2] < h.landedAt /\ latest[scope[1]] >= h.landedAt
 
 Init ==
   /\ view \in Threads
@@ -355,16 +360,22 @@ PostFails(t) ==
 
 \* The POST fails with a network or server error, before or after the
 \* server recorded the turn (WS confirmationSendFailureMayHaveCommitted).
-\* Nothing is restored (SCP-019), and the prompt keeps its value. Under
-\* HoldUncertain the submission is held once the turn it created arrives;
-\* a POST the server never recorded creates no turn, so text still in the
-\* prompt keeps following the user. Text a newer turn already left in the
-\* submitted scope is not restored (SCP-019), so it is no longer promised.
+\* Under HoldUncertain the submission is held once the turn it created
+\* arrives. Text an unrelated newer turn left in the submitted scope is
+\* handed back as for a rejection, unless the send's own turn already
+\* arrived (SCP-019).
 PostLost(t) ==
   /\ pc[t] \in {"post", "posted"}
   /\ LET i == intent[t]
          created == IF pc[t] # "posted" THEN 0
                     ELSE IF pendingTurn[t] THEN latest[t] + 1 ELSE latest[t]
+         landedNow == created # 0 /\ latest[t] >= created
+         stranded == IF drafts[i.scope] # NoDraft THEN drafts[i.scope].text ELSE 0
+         blocked == HandBackUncertain /\ i.scope # Scope(t) /\ stranded # 0
+                    /\ ~Uncertain(i.scope) /\ ~landedNow
+         newer == IF view = t THEN text ELSE AwayText(t)
+         restore == blocked /\ view = t /\ text = 0
+         retire == blocked /\ newer # 0 /\ RetireSuperseded
          \* The renderer matches the turn by the submission's text, so an
          \* earlier failed send of the same draft that created one counts.
          earlier == {h \in held : h.scope = i.scope /\ h.rev = i.rev /\ h.landedAt # 0}
@@ -372,14 +383,20 @@ PostLost(t) ==
                      THEN (CHOOSE h \in earlier : TRUE).landedAt ELSE created IN
      /\ held' = IF HoldUncertain
                 THEN {h \in held : h.scope # i.scope}
-                     \cup {[scope |-> i.scope, rev |-> i.rev, landedAt |-> landedAt]}
+                     \cup {[scope |-> i.scope, rev |-> i.rev, landedAt |-> landedAt, text |-> i.text]}
                 ELSE held
      /\ uncertainAt' = uncertainAt \cup {[text |-> i.text, scope |-> i.scope]}
-     /\ unsent' = [unsent EXCEPT ![t] = IF @ = i.text /\ Scope(t) # i.scope THEN 0 ELSE @]
+     /\ text' = IF restore THEN stranded ELSE text
+     /\ rev' = IF restore THEN rev + 1 ELSE rev
+     /\ drafts' = IF restore \/ retire THEN [drafts EXCEPT ![i.scope] = NoDraft] ELSE drafts
+     /\ persisted' = IF restore
+                     THEN [persisted EXCEPT ![active] = stranded, ![i.scope] = Null]
+                     ELSE IF retire THEN [persisted EXCEPT ![i.scope] = Null]
+                     ELSE persisted
+     /\ superseded' = IF blocked /\ newer # 0 THEN superseded \cup {stranded} ELSE superseded
   /\ FinallyEffect(t)
   /\ cleared' = 0
-  /\ UNCHANGED <<view, productVars, active, drafts, text, rev, persisted, intent, fresh, sent>>
-  /\ UNCHANGED superseded
+  /\ UNCHANGED <<view, productVars, active, intent, fresh, sent, unsent>>
 
 \* The server records the follow-up turn before it starts the run and
 \* answers (crates/relayer-app-server/src/api/threads.rs:600-666). It does so
@@ -584,6 +601,9 @@ SentTextIsNotShownAgain ==
   \A t \in Threads : pc[t] = "idle" /\ Shown(t) # 0 =>
     \/ Shown(t) \notin sent
     \/ [text |-> Shown(t), scope |-> Scope(t)] \in uncertainAt
+    \* A send that may have gone through follows the user until its own turn
+    \* arrives (SCP-019).
+    \/ \E h \in held : h.text = Shown(t) /\ (h.landedAt = 0 \/ latest[t] < h.landedAt)
 
 \* "Text the user typed since is kept, and the earlier text is not restored"
 \* (SCP-021): stranded text the user replaced is not shown again.
