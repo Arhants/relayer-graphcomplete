@@ -136,14 +136,28 @@ async function shell(name, expanded) {
   results.at(-1).menuControls=menuControls;
   await capture(name);
   const composerControls=await evaluate(`(async()=>{
+    const selectors=['#threadPrompt','#sendInteraction','#threadComposer [data-model-picker-trigger]'];
     const controls=[];
-    for(const selector of ['#threadPrompt','#sendInteraction','#threadComposer [data-model-picker-trigger]']) {
+    for(const selector of selectors) {
       const e=document.querySelector(selector);
       if(!e) throw Error('Missing native composer control '+selector);
       e.scrollIntoView({block:'nearest',inline:'nearest'});
       await new Promise(resolve=>requestAnimationFrame(resolve));
-      const r=e.getBoundingClientRect(), container=document.querySelector('.workspace-layout').getBoundingClientRect();
-      controls.push({selector,visible:e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}),width:r.width,height:r.height,contained:r.left>=Math.max(0,container.left)-.5&&r.right<=Math.min(innerWidth,container.right)+.5&&r.top>=Math.max(0,container.top)-.5&&r.bottom<=Math.min(innerHeight,container.bottom)+.5});
+      const r=e.getBoundingClientRect();
+      let clip={left:0,top:0,right:innerWidth,bottom:innerHeight};
+      for(let parent=e.parentElement;parent;parent=parent.parentElement) {
+        const style=getComputedStyle(parent);
+        const pr=parent.getBoundingClientRect();
+        if(['auto','scroll','hidden','clip'].includes(style.overflowX)) {
+          clip.left=Math.max(clip.left,pr.left+parent.clientLeft);
+          clip.right=Math.min(clip.right,pr.left+parent.clientLeft+parent.clientWidth);
+        }
+        if(['auto','scroll','hidden','clip'].includes(style.overflowY)) {
+          clip.top=Math.max(clip.top,pr.top+parent.clientTop);
+          clip.bottom=Math.min(clip.bottom,pr.top+parent.clientTop+parent.clientHeight);
+        }
+      }
+      controls.push({selector,visible:e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}),width:r.width,height:r.height,contained:r.left>=clip.left-.5&&r.right<=clip.right+.5&&r.top>=clip.top-.5&&r.bottom<=clip.bottom+.5,clip});
     }
     return controls;
   })()`);
@@ -151,6 +165,35 @@ async function shell(name, expanded) {
   results.at(-1).composerControls=composerControls;
   await capture(`${name}-composer-scrolled`);
   await evaluate("document.querySelector('.workspace-layout').scrollTop=0");
+}
+
+async function auditNewThreadComposer(name, threadId) {
+  await evaluate("document.querySelector('#newThread').click()");
+  await waitFor(`${name}: New Thread view`,()=>evaluate("!document.querySelector('#newThreadView').classList.contains('hidden')"));
+  const controls=await evaluate(`(async()=>{
+    const selectors=['#newThreadPrompt','#scopeButton','#permissionButton','#newModelControl [data-model-picker-trigger]','#createThread'];
+    const result=[];
+    for(const selector of selectors) {
+      const e=document.querySelector(selector);
+      if(!e) throw Error('Missing New Thread composer control '+selector);
+      e.scrollIntoView({block:'nearest',inline:'nearest'});
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+      const r=e.getBoundingClientRect();
+      let clip={left:0,top:0,right:innerWidth,bottom:innerHeight};
+      for(let parent=e.parentElement;parent;parent=parent.parentElement) {
+        const style=getComputedStyle(parent),pr=parent.getBoundingClientRect();
+        if(['auto','scroll','hidden','clip'].includes(style.overflowX)) {clip.left=Math.max(clip.left,pr.left+parent.clientLeft);clip.right=Math.min(clip.right,pr.left+parent.clientLeft+parent.clientWidth);}
+        if(['auto','scroll','hidden','clip'].includes(style.overflowY)) {clip.top=Math.max(clip.top,pr.top+parent.clientTop);clip.bottom=Math.min(clip.bottom,pr.top+parent.clientTop+parent.clientHeight);}
+      }
+      result.push({selector,visible:e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}),enabled:!('disabled'in e)||!e.disabled,width:r.width,height:r.height,contained:r.left>=clip.left-.5&&r.right<=clip.right+.5&&r.top>=clip.top-.5&&r.bottom<=clip.bottom+.5,clip});
+    }
+    return result;
+  })()`);
+  assert.ok(controls.every(c=>c.visible&&c.width>0&&c.height>0&&c.contained),`${name}: New Thread composer reachability ${JSON.stringify(controls)}`);
+  results.push({name,controls});
+  await capture(name);
+  await evaluate(`document.querySelector('[data-thread="${threadId}"]').click()`);
+  await waitFor(`${name}: return to saved thread`,()=>evaluate(`import('./src/state.js').then(m=>m.viewState.mainView==='thread'&&String(m.viewState.currentThreadId)===${JSON.stringify(String(threadId))})`));
 }
 const panels = {
   account: ["#desktopAccountLogout"],
@@ -249,6 +292,7 @@ async function main() {
     await shell(`native-${width}-collapsed`, false);
     await evaluate("document.querySelector('#collapseSidebar').click()");
     await shell(`native-${width}-expanded`, true);
+    if(width===375) await auditNewThreadComposer("native-375-expanded-new-thread",thread.id);
     await resize(width + 1);
     if (width < 760) await shell(`native-${width + 1}-preserved`, true);
     await resize(761);

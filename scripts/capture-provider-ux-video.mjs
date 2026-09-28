@@ -470,6 +470,14 @@ async function captureBrowserScene(url, frame, profile, width = 1280, { forcedCo
             composerParent.style.display = 'none';
             assert('hidden composer', !run().activeComposerWithinViewport);
             composerParent.style.display = composerDisplay;
+            const threadComposer = document.querySelector('#threadComposer');
+            const composerTransform = threadComposer.style.transform;
+            for (const [name, transform] of [['composer above viewport', 'translateY(-2000px)'], ['composer below viewport', 'translateY(2000px)']]) {
+              threadComposer.style.transform = transform;
+              const moved = run();
+              assert(name, !moved.activeComposerWithinViewport && moved.composerControlsWithinComposer);
+            }
+            threadComposer.style.transform = composerTransform;
             const newThreadView = document.querySelector('#newThreadView');
             const menu = document.querySelector('#scopeMenu');
             const menuParent = menu.parentElement;

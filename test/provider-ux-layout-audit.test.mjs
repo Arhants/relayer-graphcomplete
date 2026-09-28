@@ -137,6 +137,31 @@ describe("provider UX capture layout audit", () => {
     expect(auditProviderSidebarLayout(snapshot).composerControlsWithinComposer).toBe(false);
   });
 
+  it.each([
+    ["above", -120],
+    ["below", 790],
+  ])("rejects an otherwise valid composer positioned %s the viewport", (_label, top) => {
+    const snapshot = threadSnapshot();
+    const delta = top - snapshot.composer.rect.top;
+    snapshot.composer.rect = rect(snapshot.composer.rect.left, top, snapshot.composer.rect.width, snapshot.composer.rect.height);
+    snapshot.expectedControls = snapshot.expectedControls.map((control) => ({
+      ...control,
+      rect: rect(control.rect.left, control.rect.top + delta, control.rect.width, control.rect.height),
+    }));
+    const result = auditProviderSidebarLayout(snapshot);
+    expect(result.composerControlsWithinComposer).toBe(true);
+    expect(result.activeComposerWithinViewport).toBe(false);
+  });
+
+  it.each([
+    ["above", (snapshot) => { snapshot.expectedControls[0].rect.top = snapshot.composer.rect.top - 1; snapshot.expectedControls[0].rect.bottom -= 1; }],
+    ["below", (snapshot) => { snapshot.expectedControls[0].rect.top = snapshot.composer.rect.bottom; snapshot.expectedControls[0].rect.bottom += 32; }],
+  ])("rejects a composer control protruding %s its composer", (_label, mutate) => {
+    const snapshot = threadSnapshot();
+    mutate(snapshot);
+    expect(auditProviderSidebarLayout(snapshot).composerControlsWithinComposer).toBe(false);
+  });
+
   it("collects computed visibility through actual element ancestors for the production audit", () => {
     const fixture = renderedDomFixture();
     const collect = new Function(`return ${providerSidebarSnapshotFunctionSource}`)();

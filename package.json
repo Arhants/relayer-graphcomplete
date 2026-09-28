@@ -90,6 +90,7 @@
     "@actions/cache": "6.2.0",
     "@actions/core": "3.0.1",
     "@electron/asar": "3.4.1",
+    "@sentry/cli": "3.7.0",
     "@types/node": "^22.20.1",
     "app-builder-lib": "26.15.3",
     "electron": "43.0.0",

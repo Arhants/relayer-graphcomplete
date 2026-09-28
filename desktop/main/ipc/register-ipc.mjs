@@ -79,6 +79,36 @@ export function registerComposerDraftIpc({ ipcMain, settings }) {
   });
 }
 
+function validLayerSelection(key, nodeId) {
+  if (typeof key !== "string" || key.length > 256 || typeof nodeId !== "string" || nodeId.length > 64) return false;
+  try {
+    const ids = JSON.parse(key);
+    return Array.isArray(ids) && ids.length === 3
+      && [...ids, nodeId].every((id) => typeof id === "string" && /^[1-9]\d*$/.test(id));
+  } catch { return false; }
+}
+
+function layerSelectionEntries(value) {
+  return Array.isArray(value) ? value.filter((entry) => (
+    Array.isArray(entry) && entry.length === 2 && validLayerSelection(...entry)
+  )).slice(-512) : [];
+}
+
+export function registerLayerSelectionIpc({ ipcMain, settings }) {
+  ipcMain.handle("relayer:layer-selections-read", async () => (
+    layerSelectionEntries((await settings.read()).layerSelections)
+  ));
+  ipcMain.handle("relayer:layer-selections-remember", async (_event, { key, nodeId } = {}) => {
+    if (!validLayerSelection(key, nodeId)) throw new TypeError("Invalid layer selection.");
+    await settings.update((current) => {
+      const entries = new Map(layerSelectionEntries(current.layerSelections));
+      entries.delete(key);
+      entries.set(key, nodeId);
+      return { ...current, layerSelections: [...entries].slice(-512) };
+    });
+  });
+}
+
 export function registerSharePublishIpc({ ipcMain, coordinator }) {
   if (!coordinator) return;
   if (typeof coordinator.preflight !== "function"
@@ -294,6 +324,7 @@ export function registerDesktopIpc({
     return { appearance };
   });
   registerComposerDraftIpc({ ipcMain, settings });
+  registerLayerSelectionIpc({ ipcMain, settings });
   ipcMain.handle("relayer:tutorial-read", (_event, context) => tutorial.read(context));
   ipcMain.handle("relayer:tutorial-begin-automatic", (_event, context) => tutorial.beginAutomatic(context));
   ipcMain.handle("relayer:tutorial-begin-manual", () => tutorial.beginManual());

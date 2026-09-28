@@ -46,9 +46,7 @@ export function auditProviderSidebarLayout(snapshot) {
     toggleWithinSidebar: contained(snapshot.sidebarToggle, sidebarRect),
     footerControlsWithinSidebar: snapshot.footerControls.length === 2
       && snapshot.footerControls.every((control) => contained(control, sidebarRect)),
-    activeComposerWithinViewport: snapshot.composer.present && snapshot.composer.visible
-      && hasPositiveRect(snapshot.composer.rect)
-      && snapshot.composer.rect.left >= -0.5 && snapshot.composer.rect.right <= snapshot.viewportWidth + 0.5,
+    activeComposerWithinViewport: contained(snapshot.composer, viewport),
     composerControlsWithinComposer: expectedControlsWithinComposer,
     openMenus: Object.values(snapshot.menus).filter((menu) => menu.visible).map((menu) => menu.rect),
     menusWithinViewport,

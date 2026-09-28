@@ -176,6 +176,49 @@ final exit status. A deliberate wrong-minimum assertion is retained externally i
 The superseded check log remains under `factory-418-native/gates/`; only a fresh
 frozen-source gate run can certify this repair.
 
+## Composer and pending-approval narrow-layout repair
+
+The next mapped repair adds vertical containment to the browser capture predicate
+for the active composer and actual-DOM mutations that move it above and below the
+viewport while its controls remain inside it. The native narrow-sidebar runner
+scrolls each saved-thread and New Thread control into view and checks its visible
+rectangle against the viewport and every clipping ancestor. This preserves
+vertical workspace scrolling while rejecting controls that cannot be reached.
+
+The approval dock now reflows against the remaining `.main-area` width. Its
+header and queue controls stack, metadata becomes a single column, and all three
+decision buttons stack and wrap. The deterministic native approval harness
+checks a real pending three-request queue at 375px collapsed, 375px expanded,
+and 620px expanded. It checks queue navigation, the three distinct decision
+controls, two-axis viewport and dock containment, unchanged pending request IDs
+across layout changes, and then continues the existing approval-authority flow.
+That fixture uses a long temporary project path, a longer build command, and a
+long review reason to exercise wrapping. It supplies a rejecting `openExternal`
+stub because the native smoke runner must not open external browsers; draft IPC
+is an in-memory local fixture. These test seams do not replace approval routing.
+Screenshots and `approval-layout.json` are written to
+`RELAYER_APPROVAL_EVIDENCE_DIR`; the existing `npm run test:desktop:approval`
+entry point is the native checkpoint. This source update has not yet completed
+the canonical check/build or final source-bound review; the focused results
+below are separately identified and do not replace those gates.
+
+Focused diagnostic attempts are preserved under
+`/Users/vishal/.codex/worker-pilot/evidence/factory-418-approval-repair/`.
+Attempts 1–9 exposed stale native-fixture setup (external-browser authority,
+draft/share IPC, and account state), an `evaluate` typo, and the initial-load
+focus timing boundary; each attempt has a separate log. No renderer focus call
+is injected by the passing run: it invokes the production `threads.refreshState`
+with a real pending request while the visible thread is active, then preserves
+the focus assertion. The existing three-request pending reload and resolved
+history reload remain in the journey. Automatic focus on a deep-linked pending
+approval while the application shell is still hidden is not claimed by this
+checkpoint. `focused-10` and `focused-12` passed the approval journey; focused-12
+captures the decision group centered in the viewport so all three buttons and
+the session qualifier are visible together. `focused-11` passed the updated
+native sidebar run with 58 scenarios, including saved-thread and New Thread
+composer reachability. These focused results are diagnostics, not the final
+canonical check/build or source-bound review.
+
 
 A subsequent native-titlebar review found that the collapsed toggle's old
 `left:13px;top:9px` box overlapped part of macOS's traffic-light region. The prior
@@ -194,3 +237,22 @@ Incoming Share controls exposed a previously unmeasured narrow header seam. Nati
 A native diagnostic also caught the whole toggle rotating into the reserved80×40 macOS region despite safe final coordinates. Rotation now belongs only to the18px SVG; the32×30 button hit box stays fixed at left13/top43 collapsed and left84/top9 expanded. Native checks sample active transform animations at0/25/50/75/100percent in addition to each resting shell checkpoint. Collapsed header padding78 preserves room beneath the button. Prior final-only clearance assertions do not certify this correction.
 
 Diagnostic failures and fixes live under the external factory-418-ac7657-integration evidence directory. Required canonical check/build, compiled/web Eval, desktop Stop, native sidebar, capture mutation/visual gates, and incoming theme CSP/visual-node-details integration proof must bind the final frozen source. Prior two canonical environment-test failures remain preserved; reduced local concurrency did not establish a pass or a sole cause.
+
+
+## Integration with main 17b50d95
+
+The approval repair was preserved as tree `11e23dbf086f8e1aacd20a16f8ffa4a3bdd39c5e` before integrating the current main branch. Its canonical check failed: 2,627 Vitest tests passed, 18 failed, and 3 were skipped. Failures included process/test/query time budgets, incomplete Eval execution, and a blank onboarding capture. Concurrent external CPU workloads were observed, but contention alone is not established as the cause. The full log remains at `/Users/vishal/.codex/worker-pilot/evidence/factory-418-approval-repair/final-gates/check.log`; later stages did not run.
+
+Main adds authored default-node selection, persistent selection memory, and revised node-detail/annotation geometry. The workspace conflict preserves incoming preferred-node selection followed by the existing sidebar camera-restoration helper. The approved ACC-008 behavior remains intact. Renderer and native evidence must be refreshed for this combined source, including the NDT-003/004 node-input-actions, interaction-context, and project-new-thread desktop entry points. Their existing build prerequisite may be shared across the serialized proof run. The next canonical check uses two Vitest workers through the supported environment setting, with unchanged assertions and timeouts. Final results are recorded externally and in the PR; this paragraph is a plan and failure record, not a pass claim.
+
+The node-input-actions native runner now asserts the real window factory minimum of
+375×640 and tests its 720px layout without changing that minimum. At 720px it
+checks the collapsed 58px rail and its in-rail accessible toggle, requires settled
+Environment content to remain visible, expands the same sidebar in normal flow,
+then collapses it again before restoring the desktop geometry checkpoint. This
+replaces the obsolete 640px temporary minimum and the claim that the toggle is
+unavailable at narrow widths. It is a targeted native checkpoint; it does not
+replace the combined-source canonical gates.
+
+
+The subsequent integration includes completion-client parity and locked release-tool dependencies from main `92a89d6a`. The web Eval fixture previously activated the first node after NDT-003 had already opened that default, so the review adapter correctly rejected a no-op. Its checkpoint now activates a different enabled node and asserts the exact changed selection; the production review adapter remains unchanged. Prior native project-draft restart failure, one passing unchanged retry, the Mac capture wrapper's 120-second timeout (direct capture passed in 153.44 seconds), and Linux's missing `zip` prerequisite remain distinct external receipts. The derived Linux image adds distro `zip`/`unzip` for the new freshness test; it does not change tests or source. New final-source results are pending.

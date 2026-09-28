@@ -40,6 +40,7 @@ async fn accepted_sqlite_graph(path: &std::path::Path) -> GraphDatabase {
         .unwrap();
     let layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: vec![queue.id],
             edges: vec![],
@@ -96,6 +97,7 @@ async fn publish_temporal_current(
         .unwrap();
     let layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: format!("{key}-layer"),
             nodes: vec![content.id],
             edges: vec![],
@@ -223,6 +225,7 @@ async fn draft_target(database: &GraphDatabase, thread: ThreadId) -> NodeId {
         .unwrap();
     let layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "worker-root".into(),
             nodes: vec![worker.id],
             edges: vec![],
@@ -335,6 +338,7 @@ async fn accepted_graph_with_an_edge(
         .unwrap();
     let layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: nodes.clone(),
             edges: vec![edge.id],

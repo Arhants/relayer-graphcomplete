@@ -29,6 +29,8 @@ export interface LayerLayout {
 }
 
 export interface GraphLayer {
+  /** Agent-chosen member to open when no user selection is remembered. */
+  readonly defaultNodeId?: GraphId;
   readonly id: GraphId;
   readonly nodes: readonly GraphId[];
   readonly edges: readonly GraphId[];

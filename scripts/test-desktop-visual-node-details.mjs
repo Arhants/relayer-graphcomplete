@@ -219,6 +219,19 @@ function controlByName(state, name, kind) {
   return state.controls.find((control) => control.name === name && (!kind || control.kind === kind));
 }
 
+async function ensureReviewNodeSelected(session, control, targetNodeId) {
+  invariant(control?.kind === "node" && !control.disabled,
+    `The authored review node is not discoverable and enabled: ${JSON.stringify(control)}`);
+  let state = await session.state();
+  if (String(state.selectedNodeId) !== String(targetNodeId)) {
+    await session.interact({ elementRef: control.elementRef, activate: true });
+    state = await session.state();
+  }
+  invariant(String(state.selectedNodeId) === String(targetNodeId),
+    `Review did not select the exact authored node ${String(targetNodeId)}: ${JSON.stringify(state)}`);
+  return state;
+}
+
 async function openReview({ execution, threadId, turnId, rootLayerId }) {
   const context = evalService.reviewContext(execution.id);
   invariant(context.readOnly === true, "Eval review context is not server-enforced read-only.");
@@ -351,9 +364,7 @@ async function run() {
   let state = opened.state;
   const nodeControl = controlByName(state, "Open Accepted Visual Node Detail", "node");
   invariant(nodeControl, `Authored node is not discoverable: ${JSON.stringify(state.controls)}`);
-  await session.interact({ elementRef: nodeControl.elementRef, activate: true });
-  state = await session.state();
-  invariant(String(state.selectedNodeId) === String(authoredNode.id), "Review did not select the authored node.");
+  state = await ensureReviewNodeSelected(session, nodeControl, authoredNode.id);
   const renderedAsset = await waitForRenderedAsset(reviewWindow);
   invariant(renderedAsset.alt === "Accepted detail status illustration", "Rendered visual asset lost its accessible label.");
   const themeEvidence = { eval: await captureReviewThemes(reviewWindow, session, "Accepted Eval detail") };
@@ -413,7 +424,7 @@ async function run() {
   invariant(String(state.layerId) === String(rootLayer.layer.id), "Reopened review did not restore accepted root state.");
   invariant(state.threadRevision === beforeReopen.threadRevision, "Reopened review observed a different immutable thread revision.");
   const reopenedNodeControl = controlByName(state, "Open Accepted Visual Node Detail", "node");
-  await session.interact({ elementRef: reopenedNodeControl.elementRef, activate: true });
+  state = await ensureReviewNodeSelected(session, reopenedNodeControl, authoredNode.id);
   const reopenedAsset = await waitForRenderedAsset(reviewWindow);
   themeEvidence.reopened = await captureReviewThemes(reviewWindow, session, "Reopened Eval detail");
 
@@ -440,7 +451,7 @@ async function run() {
   session = importedReview.session;
   state = importedReview.state;
   const importedNodeControl = controlByName(state, "Open Accepted Visual Node Detail", "node");
-  await session.interact({ elementRef: importedNodeControl.elementRef, activate: true });
+  state = await ensureReviewNodeSelected(session, importedNodeControl, importedNode.id);
   const importedAsset = await waitForRenderedAsset(reviewWindow);
   invariant(JSON.stringify(importedNode.authoredDetail) === JSON.stringify(authoredNode.authoredDetail), "Import changed the authored theme package");
   themeEvidence.imported = await captureReviewThemes(reviewWindow, session, "Imported Eval detail");
@@ -470,9 +481,8 @@ async function run() {
     const primeReview = await openReview({ execution: primeExecution, threadId: primeThreadId, turnId: primeTurn.id, rootLayerId: primeRoot.layer.id });
     reviewWindow = primeReview.window;
     const primeControl = controlByName(primeReview.state, "Open Prime visual answer", "node");
-    await primeReview.session.interact({ elementRef: primeControl.elementRef, activate: true });
+    const primeState = await ensureReviewNodeSelected(primeReview.session, primeControl, primeNode.id);
     const primeAsset = await waitForRenderedAsset(reviewWindow);
-    const primeState = await primeReview.session.state();
     invariant(controlByName(primeState, "Continue", "invoke-action")?.disabled === true, "Prime invoke escaped review authority");
     const primeScreenshot = await primeReview.session.screenshot({ target: { kind: "element", elementRef: "node-detail" }, mode: "full", label: "Prime Python authored accepted visual detail" });
     primeVisual = { integritySha256: primeNode.authoredDetail.integritySha256, renderedAsset: primeAsset,

@@ -203,6 +203,7 @@ impl World {
             .unwrap();
         let layer = writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "current".into(),
                 nodes: vec![source.id],
                 edges: vec![],
@@ -790,6 +791,7 @@ impl World {
                     .unwrap();
                 let layer = writer
                     .submit_layer(&LayerDraft {
+                        default_node_id: None,
                         client_key: "answer".into(),
                         nodes: vec![answer.id],
                         edges: vec![],

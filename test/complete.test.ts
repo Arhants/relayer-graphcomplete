@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CompletionTerminalError, complete, configureCompletionRuntime, watchCompletions } from "../src/index.js";
 import type {
@@ -30,6 +32,17 @@ function activeCurrent(revision: number): Record<string, unknown> {
     currentLayerId: 6,
     finalLayerId: null,
   };
+}
+
+function jsonResponse(value: unknown, status: number): Response {
+  return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
+}
+
+function proxyErrorPage(): Response {
+  return new Response("<html><body>502 Bad Gateway: /private/runtime/provider-secret</body></html>", {
+    status: 502,
+    headers: { "content-type": "text/html" },
+  });
 }
 
 /** Stubs the broker with a scripted sequence of result observations. */
@@ -170,28 +183,118 @@ describe("complete", () => {
     expect(requests[0]).toBe("POST http://127.0.0.1:43125/api/completions");
   });
 
-  it("preserves a safe broker error detail when child launch is rejected", async () => {
-    stubBroker([], {
-      start: new Response(JSON.stringify({ error: "The source interaction has no model selection to inherit." }), {
-        status: 422,
-        headers: { "content-type": "application/json" },
-      }),
-    });
+  it.each([
+    [422, "The source interaction has no model selection to inherit."],
+    // Exactly the longest detail the broker's message may have.
+    [400, "x".repeat(200)],
+  ])("preserves a safe broker error detail when child launch is rejected with HTTP %i", async (status, error) => {
+    stubBroker([], { start: jsonResponse({ error }, status) });
 
     await expect(complete(inputGraph).result).rejects.toThrow(
-      "Completion broker returned HTTP 422: The source interaction has no model selection to inherit.",
+      new Error(`Completion broker returned HTTP ${status}: ${error}`),
     );
   });
 
-  it("does not expose broker detail from a server failure", async () => {
-    stubBroker([], {
-      start: new Response(JSON.stringify({ error: "/private/runtime/provider-secret" }), {
-        status: 500,
-        headers: { "content-type": "application/json" },
-      }),
-    });
+  it.each([
+    ["a server failure", jsonResponse({ error: "/private/runtime/provider-secret" }, 500)],
+    ["a server failure without a JSON body", proxyErrorPage()],
+    ["a line break", jsonResponse({ error: "The child was refused.\nInjected: a second line" }, 400)],
+    ["a DEL character", jsonResponse({ error: "The child was refused.\u007f" }, 400)],
+    ["an overlong message", jsonResponse({ error: "x".repeat(201) }, 400)],
+    // 101 characters but 202 UTF-16 code units, which is how both clients measure it.
+    ["an overlong message of astral characters", jsonResponse({ error: "\u{1F6AB}".repeat(101) }, 400)],
+  ])("does not expose broker detail from %s", async (_case, start) => {
+    stubBroker([], { start });
 
-    await expect(complete(inputGraph).result).rejects.toThrow(/^Completion broker returned HTTP 500$/u);
+    await expect(complete(inputGraph).result).rejects.toThrow(
+      new Error(`Completion broker returned HTTP ${start.status}`),
+    );
+  });
+
+  it.each([
+    ["HTTP 400: completion does not belong to this execution",
+      () => jsonResponse({ error: "completion does not belong to this execution" }, 400)],
+    // A refusal whose error is not a string names only its status.
+    ["HTTP 409", () => jsonResponse({ error: { code: "idempotency_conflict", message: "different digest" } }, 409)],
+    // So does a refusal without a JSON body, such as a proxy's error page.
+    ["HTTP 502", proxyErrorPage],
+  ])("names a refused observation by its status and safe detail: %s", async (message, refusal) => {
+    stubBroker([refusal(), refusal()]);
+    const handle = complete(inputGraph);
+
+    await expect(handle.result).rejects.toThrow(new Error(`Completion broker returned ${message}`));
+    await expect(handle.current.next()).rejects.toThrow(new Error(`Completion broker returned ${message}`));
+  });
+
+  it("rejects the result with a terminal error only for a stopped or failed child", async () => {
+    const terminal = (lifecycle: string, reason: unknown) => jsonResponse({
+      current: { ...activeCurrent(2), lifecycle },
+      reason,
+    }, 409);
+    stubBroker([
+      terminal("failed", "execution"),
+      terminal("failed", ""),
+      terminal("stopped", 42),
+      terminal("active", "execution"),
+    ]);
+
+    await expect(complete(inputGraph).result).rejects.toMatchObject({ lifecycle: "failed", reason: "execution" });
+    await expect(complete(inputGraph).result).rejects.toMatchObject({ lifecycle: "failed", reason: "" });
+    // A reason that is not a string is not repeated.
+    const stopped = complete(inputGraph).result;
+    await expect(stopped).rejects.toBeInstanceOf(CompletionTerminalError);
+    await expect(stopped).rejects.toMatchObject({ completionId: 41, lifecycle: "stopped", reason: "completion_failed" });
+    // A conflict whose current is still active is a broker refusal, not a terminal state.
+    const active = complete(inputGraph).result;
+    await expect(active).rejects.not.toBeInstanceOf(CompletionTerminalError);
+    await expect(active).rejects.toThrow(new Error("Completion broker returned HTTP 409"));
+  });
+
+  it("accepts only the status the broker answers current and stop with", async () => {
+    stubBroker([jsonResponse(activeCurrent(2), 201)], { stop: () => jsonResponse({ lifecycle: "stopped" }, 201) });
+    const handle = complete(inputGraph);
+
+    await expect(handle.current.snapshot()).rejects.toThrow(new Error("Completion broker returned HTTP 201"));
+    await expect(handle.stop("done")).rejects.toThrow(new Error("Completion broker returned HTTP 201"));
+  });
+
+  it("carries the broker token across a redirect only within the broker's origin", async () => {
+    const landed: { host: string | undefined; authorization: string | undefined }[] = [];
+    const server = createServer((request, response) => {
+      const port = (server.address() as AddressInfo).port;
+      const redirect = { "/api/completions/41/current": "localhost", "/api/completions/40/current": "127.0.0.1" }[
+        request.url ?? ""
+      ];
+      if (request.method === "POST") {
+        let body = "";
+        request.on("data", (chunk) => body += chunk).on("end", () => {
+          const { interactionNode } = JSON.parse(body) as { interactionNode: number };
+          response.writeHead(201, { "content-type": "application/json" })
+            .end(JSON.stringify({ completionId: interactionNode }));
+        });
+      } else if (redirect !== undefined) {
+        response.writeHead(307, { location: `http://${redirect}:${port}/api/completions/77/current` }).end();
+      } else {
+        landed.push({ host: request.headers.host, authorization: request.headers.authorization });
+        response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(activeCurrent(2)));
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const port = (server.address() as AddressInfo).port;
+      vi.stubEnv("RELAYER_COMPLETE_URL", `http://127.0.0.1:${port}/api/completions`);
+      vi.stubEnv("RELAYER_COMPLETE_TOKEN", "broker-token");
+
+      await complete(inputGraph).current.snapshot();
+      await complete({ interactionNode: 40 }).current.snapshot();
+
+      expect(landed).toEqual([
+        { host: `localhost:${port}`, authorization: undefined },
+        { host: `127.0.0.1:${port}`, authorization: "Bearer broker-token" },
+      ]);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 
   it("observes nothing until the child result is actually awaited", async () => {
