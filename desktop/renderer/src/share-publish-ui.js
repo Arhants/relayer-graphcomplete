@@ -302,6 +302,11 @@ export function createSharePublishController({
       || String(getThread()?.id) !== sourceThreadKey) return;
     result = next?.status === "ready" ? null : next;
     failureOrigin = next?.status === "ready" ? null : "preflight";
+    // Export failures may have a main-owned durable failure receipt. Ask main
+    // to dismiss any referenced preflight result on Close; an unavailable
+    // reference is treated as already absent by dismissAndClose.
+    attemptResult = next?.status === "failed"
+      && typeof next?.attemptReferenceId === "string";
     phase = next?.status === "ready" ? "title"
       : next?.code === "share_sign_in_required" ? "signin"
         : "error";

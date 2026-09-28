@@ -1930,7 +1930,9 @@ impl ProjectPathRedactor {
         if !self.contains_private_path(&replaced) {
             // Markdown syntax is not visible to a reader and can otherwise
             // split a private path across emphasis, links, or inert HTML.
-            if self.contains_private_path(&markdown_rendered_text(&replaced)) {
+            if self.contains_private_path(&markdown_rendered_text(&replaced))
+                || self.contains_private_path(&markdown_security_skeleton(&replaced))
+            {
                 return "[project-path]".to_owned();
             }
             return if self.scrub_sensitive {
@@ -1958,6 +1960,7 @@ impl ProjectPathRedactor {
         }
         let redacted = if self.contains_private_path(&redacted)
             || self.contains_private_path(&markdown_rendered_text(&redacted))
+            || self.contains_private_path(&markdown_security_skeleton(&redacted))
         {
             "[project-path]".to_owned()
         } else {
@@ -2129,7 +2132,9 @@ fn redact_share_secrets(value: &str) -> String {
     let redacted = provider_secret_regex()
         .replace_all(&redacted, "$1[redacted-secret]")
         .into_owned();
-    if contains_raw_share_secret(&markdown_rendered_text(&redacted)) {
+    if contains_raw_share_secret(&markdown_rendered_text(&redacted))
+        || contains_relaxed_provider_secret(&markdown_security_skeleton(&redacted))
+    {
         return "[redacted-secret]".into();
     }
     // Ordinary Markdown is decoded again by the renderer. Detect credentials
@@ -2141,7 +2146,8 @@ fn redact_share_secrets(value: &str) -> String {
             let (next, step_changed) = step(&candidate);
             if step_changed
                 && (contains_raw_share_secret(&next)
-                    || contains_raw_share_secret(&markdown_rendered_text(&next)))
+                    || contains_raw_share_secret(&markdown_rendered_text(&next))
+                    || contains_relaxed_provider_secret(&markdown_security_skeleton(&next)))
             {
                 return "[redacted-secret]".into();
             }
@@ -2234,6 +2240,26 @@ fn markdown_rendered_text(value: &str) -> String {
     rendered
 }
 
+/// A deliberately lossy security projection for ambiguous or malformed
+/// Markdown. It removes punctuation that can be interpreted as presentation
+/// syntax while retaining the characters used by private paths and provider
+/// credentials. The relaxed credential matcher intentionally tolerates a
+/// visible-label prefix; false positives redact one public field.
+fn markdown_security_skeleton(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| {
+            character.is_ascii_alphanumeric()
+                || matches!(character, '/' | '\\' | '.' | '_' | ':' | '-' | '=' | '+')
+                || character.is_whitespace()
+        })
+        .collect()
+}
+
+fn contains_relaxed_provider_secret(value: &str) -> bool {
+    relaxed_provider_secret_regex().is_match(value)
+}
+
 fn contains_raw_share_secret(value: &str) -> bool {
     pem_secret_regex().is_match(value)
         || bearer_secret_regex().is_match(value)
@@ -2287,6 +2313,16 @@ fn provider_secret_regex() -> &'static Regex {
             r"(?i)(^|[^A-Za-z0-9_])((?:sk-(?:ant-)?[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[a-z](?:\.xox[a-z])?-[A-Za-z0-9-]{10,}|AKIA[A-Z0-9]{16}|ASIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|hf_[A-Za-z0-9]{20,}|(?:rk|sk)_(?:live|test)_[A-Za-z0-9]{12,}))",
         )
         .expect("valid provider secret redaction regex")
+    })
+}
+
+fn relaxed_provider_secret_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(
+            r"(?i)(?:sk-(?:ant-)?[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[a-z](?:\.xox[a-z])?-[A-Za-z0-9-]{10,}|AKIA[A-Z0-9]{16}|ASIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|hf_[A-Za-z0-9]{20,}|(?:rk|sk)_(?:live|test)_[A-Za-z0-9]{12,})",
+        )
+        .expect("valid relaxed provider secret redaction regex")
     })
 }
 
@@ -3228,6 +3264,9 @@ mod tests {
             "s<!-- > -->k-proj-12345678901234567890",
             "[note]: nope s**k**-proj-12345678901234567890",
             "a < s**k**-proj-12345678901234567890",
+            "a < s**k**-proj-12345678901234567890 >",
+            "[label](s**k**-proj-12345678901234567890",
+            "[label][s**k**-proj-12345678901234567890",
         ] {
             let mut node = authored_node(serde_json::json!({}));
             node.authored_detail = None;
@@ -3255,6 +3294,10 @@ mod tests {
         let project_redactor = ProjectPathRedactor::for_share(Some("/opt/relayer-private"));
         assert_eq!(
             project_redactor.text("/opt/relayer-**private**/secret"),
+            "[project-path]"
+        );
+        assert_eq!(
+            home_redactor.text("a < /Us**ers**/alice/secret >"),
             "[project-path]"
         );
     }

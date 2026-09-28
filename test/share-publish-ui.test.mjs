@@ -376,6 +376,21 @@ describe("share publish renderer boundary", () => {
     expect(test.window.document.querySelector("#shareTitle")).not.toBeNull();
   });
 
+  it("dismisses a referenced preflight failure when Close hides the dialog", async () => {
+    const test = fixture({ preflightResult: {
+      status: "failed",
+      code: "share_export_failed",
+      retryable: false,
+      attemptReferenceId: "SHR-PREFLIGHT",
+    } });
+    await test.window.document.querySelector("#shareConversation").onclick();
+
+    await test.window.document.querySelector('[data-share-action="close"]').onclick();
+
+    expect(test.share.dismiss).toHaveBeenCalledWith("SHR-PREFLIGHT");
+    expect(test.window.document.querySelector("#shareDialog").classList.contains("hidden")).toBe(true);
+  });
+
   it("formats quota reset in local time without offering retry", async () => {
     const test = fixture({ preflightResult: {
       status: "failed",
