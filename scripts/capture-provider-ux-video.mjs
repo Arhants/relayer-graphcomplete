@@ -205,6 +205,40 @@ async function captureBrowserScene(url, frame, profile, width = 1280, { forcedCo
       if (scene === "sidebar-thread-journey") {
         await cdp.call("Emulation.setDeviceMetricsOverride", { width: 620, height: 800, deviceScaleFactor: 1, mobile: false });
         await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+        const gestureChecks = [];
+        const cameraSnapshot = async () => (await cdp.call("Runtime.evaluate", {
+          expression: "JSON.stringify([...document.querySelectorAll('#nodeLayer [data-node]')].map(n => [n.style.left,n.style.top,n.style.getPropertyValue('--graph-zoom')]))",
+          returnByValue: true,
+        })).result.value;
+        for (const ending of ["release", "cancel"]) {
+          await cdp.call("Emulation.setDeviceMetricsOverride", { width: 761, height: 800, deviceScaleFactor: 1, mobile: false });
+          await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+          const before = await cameraSnapshot();
+          const point = (await cdp.call("Runtime.evaluate", {
+            expression: "(() => {const r=document.querySelector('#nodeLayer [data-node]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()",
+            returnByValue: true,
+          })).result.value;
+          await cdp.call("Runtime.evaluate", {
+            expression: `(() => {window.__gestureEndCamera=null;document.querySelector('#nodeLayer [data-node]').addEventListener('${ending === "cancel" ? "pointercancel" : "pointerup"}',()=>{window.__gestureEndCamera=JSON.stringify([...document.querySelectorAll('#nodeLayer [data-node]')].map(n=>[n.style.left,n.style.top,n.style.getPropertyValue('--graph-zoom')]));},{once:true});})()`,
+          });
+          await cdp.call("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
+          await cdp.call("Emulation.setDeviceMetricsOverride", { width: 620, height: 800, deviceScaleFactor: 1, mobile: false });
+          await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+          const during = await cameraSnapshot();
+          if (during !== before) throw new Error("Automatic camera moved during active node gesture.");
+          if (ending === "cancel") {
+            await cdp.call("Runtime.evaluate", {
+              expression: "document.querySelector('#nodeLayer [data-node]').dispatchEvent(new PointerEvent('pointercancel',{bubbles:true,pointerId:1}))",
+            });
+          } else {
+            await cdp.call("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
+          }
+          const after = (await cdp.call("Runtime.evaluate", { expression: "window.__gestureEndCamera", returnByValue: true })).result.value;
+          if (!after || after === before) throw new Error(`Automatic camera did not refit synchronously on node gesture ${ending}.`);
+          if (ending === "cancel") await cdp.call("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
+          gestureChecks.push({ ending, before, during, after, passed: true });
+        }
+        await writeFile(join(outputDirectory, "gesture-resize.json"), JSON.stringify(gestureChecks, null, 2));
         const journeyDirectory = join(outputDirectory, "sidebar-journey-frames");
         await rm(journeyDirectory, { recursive: true, force: true });
         await mkdir(journeyDirectory, { recursive: true });
@@ -1050,7 +1084,8 @@ await mkdir(variantsDirectory, { recursive: true });
 await mkdir(motionDirectory, { recursive: true });
 
 const requestedScene = process.argv.find((argument) => argument.startsWith("--scene="))?.slice("--scene=".length);
-const selectedScene = requestedScene ? (scene) => scene === requestedScene : process.argv.includes("--only-sidebar") ? (scene) => scene.startsWith("sidebar-") : () => true;
+const onlySidebar = process.argv.includes("--only-sidebar");
+const selectedScene = requestedScene ? (scene) => scene === requestedScene : onlySidebar ? (scene) => scene.startsWith("sidebar-") : () => true;
 
 try {
   for (const [scene, caption] of scenes.filter(([scene]) => selectedScene(scene))) {
@@ -1177,7 +1212,7 @@ try {
   }
 
   let motionFrameCount = 0;
-  if (!requestedScene) {
+  if (!requestedScene && !onlySidebar) {
     motionFrameCount = await recordBrowserFlow(
       `http://127.0.0.1:${port}/evidence.html?scene=flow&caption=${encodeURIComponent("Provider setup · deterministic interactive recording")}`,
       motionDirectory,
@@ -1191,18 +1226,27 @@ try {
     }
   }
   if (requestedScene) {
-    const sourceFrame = join(variantsDirectory, `${requestedScene}.png`);
+    const sourceFrame = join(scenes.some(([scene]) => scene === requestedScene) ? framesDirectory : variantsDirectory, `${requestedScene}.png`);
     await copyFile(sourceFrame, join(outputDirectory, `${requestedScene}.png`));
     if (requestedScene === "sidebar-thread-journey") {
       await run(ffmpeg, ["-y", "-framerate", "6", "-i", join(outputDirectory, "sidebar-journey-frames", "%03d.png"), "-vf", "fps=12,format=yuv420p", "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-movflags", "+faststart", join(outputDirectory, "sidebar-collapse-expand-collapse.mp4")], { maxBuffer: 1024 * 1024 * 8 });
     }
     process.stdout.write(`${JSON.stringify({ outputDirectory, scene: requestedScene, screenshot: sourceFrame })}\n`);
+  } else if (onlySidebar) {
+    const captured = variants.filter(({ scene }) => selectedScene(scene));
+    const manifest = {
+      schemaVersion: 1, generator: "scripts/capture-provider-ux-video.mjs", inference: false,
+      scenes: {},
+      variants: Object.fromEntries(await Promise.all(captured.map(async ({ scene, caption, width }) => [scene, {
+        caption, file: `variants/${scene}.png`, width: scene === "sidebar-thread-journey" ? 620 : width, height: 800,
+        ...await fileEvidence(join(variantsDirectory, `${scene}.png`)),
+      }]))),
+    };
+    await writeFile(join(outputDirectory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ outputDirectory, scenes: [], variants: captured.map(({ scene }) => scene) })}\n`);
   } else {
   const recordedFrames = await motionEvidence(motionDirectory);
-  const video = join(outputDirectory, requestedScene ? "sidebar-evidence.mp4" : "provider-ux-demo.mp4");
-  if (requestedScene) {
-    await copyFile(join(variantsDirectory, `${requestedScene}.png`), join(outputDirectory, `${requestedScene}.png`));
-  }
+  const video = join(outputDirectory, "provider-ux-demo.mp4");
   await run(ffmpeg, [
     "-y", "-framerate", "6", "-i", join(motionDirectory, "%04d.png"),
     "-vf", "fps=30,scale=1280:800:flags=lanczos,format=yuv420p",

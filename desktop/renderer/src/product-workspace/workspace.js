@@ -161,18 +161,26 @@ export function observeAutomaticGraphFitOnResize({
   refit,
 }) {
   const Observer = graphWindow?.ResizeObserver;
-  if (!Observer) return () => {};
+  if (!Observer) return { flush: () => {}, dispose: () => {} };
   const initialRect = graphStage.getBoundingClientRect();
   let previousSize = { width: initialRect.width, height: initialRect.height };
+  let pending = false;
+  let disposed = false;
+  const flush = () => {
+    if (disposed || !pending || hasActiveGesture()) return;
+    pending = false;
+    if (getGraphNodes().length > 0 && getCameraRevision() === 0) refit();
+  };
   const observer = new Observer(() => {
+    if (disposed) return;
     const { width, height } = graphStage.getBoundingClientRect();
-    const changed = previousSize !== null
-      && (Math.abs(width - previousSize.width) > 0.5 || Math.abs(height - previousSize.height) > 0.5);
+    const changed = Math.abs(width - previousSize.width) > 0.5 || Math.abs(height - previousSize.height) > 0.5;
     previousSize = { width, height };
-    if (changed && getGraphNodes().length > 0 && getCameraRevision() === 0 && !hasActiveGesture()) refit();
+    pending ||= changed;
+    flush();
   });
   observer.observe(graphStage);
-  return () => observer.disconnect();
+  return { flush, dispose: () => { disposed = true; pending = false; observer.disconnect(); } };
 }
 
 const GRAPH_NODE_HALF_WIDTH = 82;
@@ -2364,7 +2372,7 @@ export function createProductWorkspace({
     drawGraph();
   }
 
-  const disconnectAutomaticGraphFit = observeAutomaticGraphFitOnResize({
+  const automaticGraphFit = observeAutomaticGraphFitOnResize({
     graphStage,
     graphWindow,
     getCameraRevision: () => cameraRevision,
@@ -2450,6 +2458,7 @@ export function createProductWorkspace({
       panning = null;
     }
     if (!panning && !pinching) graphStage.classList.remove("panning");
+    automaticGraphFit.flush();
   };
   graphStage.onpointerup = finishPan;
   graphStage.onpointercancel = finishPan;
@@ -4457,8 +4466,9 @@ export function createProductWorkspace({
           graphWindow?.setTimeout?.(() => { suppressClickAfterDrag = false; }, 0);
         }
         dragging = null;
+        automaticGraphFit.flush();
       };
-      element.onpointercancel = () => { dragging = null; };
+      element.onpointercancel = () => { dragging = null; automaticGraphFit.flush(); };
     });
     const projected = projectLayerNodePositions(state.visibleLayer, graphNodes);
     for (const node of graphNodes) {
@@ -5247,7 +5257,7 @@ export function createProductWorkspace({
     contextDraftLoadRetryAttempts.clear();
     inputDraftLoadRetries?.dispose();
     graphDocument.defaultView.removeEventListener("resize", repositionContextDraftSendWarning);
-    disconnectAutomaticGraphFit();
+    automaticGraphFit.dispose();
     cancelInspectorFit();
     graphDocument.removeEventListener("pointerdown", blurGraphFromOutsidePointer, true);
     graphDocument.removeEventListener("pointerdown", closeTurnPopoverFromOutside, true);

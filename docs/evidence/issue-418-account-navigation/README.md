@@ -87,3 +87,18 @@ The first final-v5 full check failed the existing recorder timing assertion: exp
 The user requested a centered plus inside the collapsed New Thread button, then aligned the sidebar logo to that same centerline. The changed product seam is collapsed sidebar CSS: center its title logo, remove layout space from the hidden shortcut, remove gaps and horizontal padding, and center the icon in both resting and keyboard-focused states. Expanded labels and shortcuts retain their layout. This refines ACC-008 without changing navigation or graph behavior.
 
 The production-renderer capture runner measures the plus span center against the button center before and after keyboard focus, with a half-pixel tolerance. It also checks the sidebar logo against the same horizontal centerline. Collapsed 375px and 620px captures, light appearance, and the collapse/expand/collapse recording exercise this checkpoint. An expanded capture protects the existing label/shortcut layout. The measured audit is included in the existing rendered-evidence gate; no duplicate CSS-text unit test is added. The external evidence folder is `/Users/vishal/.codex/worker-pilot/evidence/factory-418-alignment/`. Exact source receipts, capture results, final required check/build results, and independent review assertions are recorded there and in PR #477. Earlier reviews apply only to their recorded commits.
+
+## Review follow-up checkpoints
+
+Automatic graph fitting defers a resize while a pointer gesture is active, then
+flushes once on release or cancellation. Manual cameras and disposed workspaces
+never consume that pending resize as an automatic fit. The in-process viewport
+test covers these boundaries; the production-renderer journey resizes during a
+real node press and checks both release and cancellation before recording.
+
+Focused main-scene captures copy from `frames/`; variant captures use `variants/`.
+Sidebar-only capture manifests list only newly rendered sidebar variants and no
+omitted provider video. The process-bound evidence test exercises a focused
+onboarding capture, then reuses its output directory with stale sentinel files
+for a sidebar-only run and verifies every declared artifact hash. These checks
+cover capture provenance separately from product layout.

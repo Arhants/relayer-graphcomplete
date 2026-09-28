@@ -34,28 +34,39 @@ describe("graph viewport resize", () => {
     size = { width: 500, height: 420 };
     observer.notify();
     expect(refit).toHaveBeenCalledOnce();
-    cleanup();
+    cleanup.dispose();
     expect(observer.disconnect).toHaveBeenCalledOnce();
   });
 
-  it("does not refit during a graph pointer gesture", () => {
+  it.each(["automatic", "manual", "disposed"])("settles a deferred gesture resize once for %s cameras", (mode) => {
     let size = { width: 500, height: 420 };
+    let gesture = true;
+    let revision = 0;
     const observer = new ResizeObserverFixture(() => {});
     const refit = vi.fn();
-    observeAutomaticGraphFitOnResize({
+    const control = observeAutomaticGraphFitOnResize({
       graphStage: { getBoundingClientRect: () => size },
       graphWindow: { ResizeObserver: class extends ResizeObserverFixture {
         constructor(callback) { super(callback); Object.assign(observer, this); }
       } },
-      getCameraRevision: () => 0,
+      getCameraRevision: () => revision,
       getGraphNodes: () => [{ id: 1 }],
-      hasActiveGesture: () => true,
+      hasActiveGesture: () => gesture,
       refit,
     });
-    observer.notify();
     size = { width: 270, height: 420 };
     observer.notify();
+    observer.notify();
+    control.flush();
     expect(refit).not.toHaveBeenCalled();
+    if (mode === "manual") revision = 1;
+    if (mode === "disposed") control.dispose();
+    gesture = false;
+    control.flush();
+    control.flush();
+    observer.notify();
+    expect(refit).toHaveBeenCalledTimes(mode === "automatic" ? 1 : 0);
+    control.dispose();
   });
   it("resets automatic fit on a fresh view, refits automatic cached views to current bounds, and preserves manual cached cameras", () => {
     const nodes = [
