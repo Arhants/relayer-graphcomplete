@@ -18,7 +18,7 @@ original window. Update the branch to create fresh PR CI when it expires.
 `Merge freshness guard` refreshes a separate `merge-freshness` check at minutes
 7, 22, 37, and 52, on CI completion, relevant PR changes, and main pushes. Manual
 dispatch on main is also available. It never reruns expensive CI or merges PRs.
-Only the latest CI run for the exact current head can qualify; its current
+Only the latest CI run associated with this PR and its exact current head can qualify; its current
 attempt must have a successful `check` job. A matching plan artifact from an
 earlier attempt of that same immutable run is allowed because re-running only
 failed jobs does not repeat a successful plan. This never renews the window.
@@ -37,7 +37,8 @@ PR-specific read and check-write failures are isolated: the sweep continues with
 later PRs and reports unpublished results without including raw API errors.
 After processing all PRs, unpublished results fail the workflow for operator attention.
 
-The privileged sweep checks out protected main with persisted credentials off;
+The privileged sweep pins checkout and script actions to immutable commit SHAs.
+It checks out protected main with persisted credentials off;
 it never checks out or executes PR code, installs PR dependencies, or extracts
 artifact paths. Artifact input is size-bounded JSON read through bounded unzip
 stdout. GitHub API run/job/commit identities are checked independently. As with
@@ -64,6 +65,7 @@ Checkpoint mapping (no product runtime behavior changes):
 | Failed/missing/latest CI, conflicts, malformed evidence | rejection scenarios |
 | Expiration, evidence API failure, changing head | fake GitHub sweep journey |
 | PR read/create/update failure isolation and visible partial failure | two-PR sweep scenarios and workflow contract |
+| Shared head SHA does not select another PR's run or an older success | PR-specific run selection scenario |
 | Artifact bytes never executed or extracted | real ZIP decoder scenarios |
 | Trusted checkout, permissions, schedule and required contexts | workflow/ruleset contract scenario |
 | Existing release authority remains configured | desktop-shell release-authority audit scenario |

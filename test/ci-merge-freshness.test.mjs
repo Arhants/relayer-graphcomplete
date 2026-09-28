@@ -26,10 +26,7 @@ function fakeGitHub(f) {
   const outputs = [];
   api.rest.pulls.list = async () => {};
   api.rest.pulls.get = async () => ({ data: structuredClone(f.pr) });
-  api.rest.actions.listWorkflowRuns = async (args) => {
-    expect(args).toMatchObject({ workflow_id: "ci.yml", head_sha: head, event: "pull_request", per_page: 1 });
-    return { data: { workflow_runs: [f.run] } };
-  };
+  api.rest.actions.listWorkflowRuns = async () => {};
   api.rest.actions.listJobsForWorkflowRunAttempt = async () => {};
   api.rest.actions.listWorkflowRunArtifacts = async () => {};
   api.rest.actions.downloadArtifact = async () => ({ data: f.receipt });
@@ -39,6 +36,10 @@ function fakeGitHub(f) {
   api.paginate = async (method, args) => {
     expect(args.per_page).toBe(100);
     if (method === api.rest.pulls.list) return [f.pr];
+    if (method === api.rest.actions.listWorkflowRuns) {
+      expect(args).toMatchObject({ workflow_id: "ci.yml", head_sha: head, event: "pull_request" });
+      return [{ ...f.run, pull_requests: [{ number: 42, head: { sha: head } }] }];
+    }
     if (method === api.rest.actions.listJobsForWorkflowRunAttempt) {
       expect(args.attempt_number).toBe(f.run.run_attempt);
       return f.jobs;
@@ -131,6 +132,21 @@ describe("scheduled merge freshness", () => {
     expect((await sweep(fake.options))[0].conclusion).toBe("success");
   });
 
+  it("selects the current PR's latest run even when other PRs share its head SHA", async () => {
+    const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
+    const ownRun = { ...f.run, pull_requests: [{ number: 42, head: { sha: head } }] };
+    const unrelated = { ...f.run, id: 12, pull_requests: [{ number: 99, head: { sha: head } }] };
+    let runs = [unrelated, ownRun];
+    fake.api.paginate = async (method, args) => method === fake.api.rest.actions.listWorkflowRuns
+      ? runs : paginate(method, args);
+    expect((await sweep(fake.options))[0].conclusion).toBe("success");
+    // Do not fall back to an older success when this PR has a newer pending run.
+    runs = [unrelated, { ...ownRun, id: 11, status: "in_progress" }, ownRun];
+    expect((await sweep(fake.options))[0].conclusion).toBe("failure");
+    runs = [unrelated];
+    expect((await sweep(fake.options))[0].conclusion).toBe("failure");
+  });
+
   it("accepts a failed-jobs rerun's original plan receipt without renewing its expiry", async () => {
     const f = fixture(), fake = fakeGitHub(f);
     f.run.run_attempt = 2;
@@ -209,6 +225,7 @@ describe("scheduled merge freshness", () => {
     expect(workflow.jobs.refresh.if).toBe("github.ref == 'refs/heads/main'");
     expect(workflow.jobs.refresh.steps[0].with).toEqual({ ref: "refs/heads/main", "persist-credentials": false });
     expect(workflow.jobs.refresh.steps).toHaveLength(2);
+    for (const step of workflow.jobs.refresh.steps) expect(step.uses).toMatch(/@[a-f0-9]{40}$/);
     expect(workflow.jobs.refresh.steps[1].with.script).toContain("result.published === false");
     expect(workflow.jobs.refresh.steps[1].with.script).toContain("core.setFailed(");
     const ci = parse(await read(".github/workflows/ci.yml"));

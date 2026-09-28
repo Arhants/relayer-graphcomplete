@@ -99,10 +99,13 @@ async function refreshPullRequest({ github, owner, repo, repository, listed, clo
   });
   let verdict;
   try {
-    const { data } = await github.rest.actions.listWorkflowRuns({
-      owner, repo, workflow_id: "ci.yml", event: "pull_request", head_sha: pr.head.sha, per_page: 1,
+    const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+      owner, repo, workflow_id: "ci.yml", event: "pull_request", head_sha: pr.head.sha, per_page: 100,
     });
-    const run = data.workflow_runs[0];
+    // Different branch refs can share a SHA. Never borrow another PR's run.
+    // Preserve newest-first API order, including pending or failed runs.
+    const run = runs.find((candidate) => candidate.pull_requests?.some((associated) =>
+      associated.number === pr.number && associated.head?.sha === pr.head.sha));
     let jobs = [], receipt, merge;
     if (run?.status === "completed" && run.conclusion === "success" &&
         clock() - Date.parse(run.created_at) < WINDOW_MS) {
