@@ -578,6 +578,8 @@ impl ProductService {
     pub(crate) async fn update_model_settings_defaults(
         &self,
         command: UpdateModelSettingsDefaultsCommand,
+        app_default_harness_id: &str,
+        permission_available_harnesses: &HashSet<String>,
     ) -> Result<ModelSettingsDefaults, ProductError> {
         let settings = self.storage.load_model_settings().await?;
         if let Some(harness_id) = command.harness_id.as_ref() {
@@ -611,7 +613,11 @@ impl ProductService {
             }
         }
         self.storage
-            .update_model_settings_defaults(&command)
+            .update_model_settings_defaults(
+                &command,
+                app_default_harness_id,
+                permission_available_harnesses,
+            )
             .await
             .map_err(Into::into)
     }
@@ -3313,11 +3319,15 @@ mod tests {
         );
 
         storage
-            .update_model_settings_defaults(&UpdateModelSettingsDefaultsCommand {
-                harness_id: Some("prime-agent-basic".into()),
-                provider_id: None,
-                family_id: None,
-            })
+            .update_model_settings_defaults(
+                &UpdateModelSettingsDefaultsCommand {
+                    harness_id: Some("prime-agent-basic".into()),
+                    provider_id: None,
+                    family_id: None,
+                },
+                "codex-basic",
+                &HashSet::new(),
+            )
             .await
             .unwrap();
         storage
@@ -3588,11 +3598,15 @@ mod tests {
             .unwrap();
         assert_eq!(unchanged.revision, custom.revision);
         service
-            .update_model_settings_defaults(UpdateModelSettingsDefaultsCommand {
-                harness_id: None,
-                provider_id: None,
-                family_id: Some(custom.id),
-            })
+            .update_model_settings_defaults(
+                UpdateModelSettingsDefaultsCommand {
+                    harness_id: None,
+                    provider_id: None,
+                    family_id: Some(custom.id),
+                },
+                "codex-basic",
+                &HashSet::new(),
+            )
             .await
             .unwrap();
         storage
@@ -3643,11 +3657,15 @@ mod tests {
             .unwrap()
             .id;
         service
-            .update_model_settings_defaults(UpdateModelSettingsDefaultsCommand {
-                harness_id: None,
-                provider_id: Some(ProviderId::parse("custom-openai").unwrap()),
-                family_id: None,
-            })
+            .update_model_settings_defaults(
+                UpdateModelSettingsDefaultsCommand {
+                    harness_id: None,
+                    provider_id: Some(ProviderId::parse("custom-openai").unwrap()),
+                    family_id: None,
+                },
+                "codex-basic",
+                &HashSet::new(),
+            )
             .await
             .unwrap();
         let (definition, snapshot) = staged_codex_catalog();
@@ -3704,6 +3722,35 @@ mod tests {
     #[tokio::test]
     async fn settings_added_claude_gets_a_managed_family_without_changing_codex_defaults() {
         let (path, storage, service) = managed_policy_service(1).await;
+        let (codex_family, claude_id) = codex_default_with_settings_claude(&service).await;
+
+        let settings = service.model_settings().await.unwrap();
+        assert_eq!(settings.defaults.harness_id, "codex-basic");
+        assert_eq!(settings.defaults.provider_id.as_str(), "onboarding-codex");
+        assert_eq!(settings.defaults.family_id, Some(codex_family));
+        assert!(settings.families.iter().any(|family| {
+            family
+                .members
+                .iter()
+                .map(|member| member.model_id.as_str())
+                .collect::<Vec<_>>()
+                == vec!["sonnet", "opus", "fable"]
+                && family
+                    .members
+                    .iter()
+                    .all(|member| member.provider_id == claude_id)
+        }));
+
+        drop(service);
+        drop(storage);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    /// Codex is onboarded as the default on codex-basic, then a Claude subscription is added
+    /// through Settings. Only claude-basic can run Claude's managed family.
+    async fn codex_default_with_settings_claude(
+        service: &ProductService,
+    ) -> (ModelFamilyId, ProviderId) {
         let (codex_definition, codex_snapshot) = staged_codex_catalog();
         service
             .create_provider_with_catalog(codex_definition, codex_snapshot)
@@ -3722,11 +3769,15 @@ mod tests {
             .unwrap()
             .id;
         service
-            .update_model_settings_defaults(UpdateModelSettingsDefaultsCommand {
-                harness_id: Some("codex-basic".into()),
-                provider_id: Some(ProviderId::parse("onboarding-codex").unwrap()),
-                family_id: Some(codex_family),
-            })
+            .update_model_settings_defaults(
+                UpdateModelSettingsDefaultsCommand {
+                    harness_id: Some("codex-basic".into()),
+                    provider_id: Some(ProviderId::parse("onboarding-codex").unwrap()),
+                    family_id: Some(codex_family),
+                },
+                "codex-basic",
+                &HashSet::new(),
+            )
             .await
             .unwrap();
 
@@ -3773,27 +3824,77 @@ mod tests {
             .publish_provider_catalog(claude_snapshot)
             .await
             .unwrap();
+        (codex_family, claude_id)
+    }
 
-        let settings = service.model_settings().await.unwrap();
-        assert_eq!(settings.defaults.harness_id, "codex-basic");
-        assert_eq!(settings.defaults.provider_id.as_str(), "onboarding-codex");
-        assert_eq!(settings.defaults.family_id, Some(codex_family));
-        assert!(settings.families.iter().any(|family| {
-            family
-                .members
-                .iter()
-                .map(|member| member.model_id.as_str())
-                .collect::<Vec<_>>()
-                == vec!["sonnet", "opus", "fable"]
-                && family
-                    .members
-                    .iter()
-                    .all(|member| member.provider_id == claude_id)
-        }));
+    #[tokio::test]
+    async fn choosing_a_provider_moves_the_harness_to_one_that_runs_its_family() {
+        let (path, storage, service) = managed_policy_service(1).await;
+        let (codex_family, claude_id) = codex_default_with_settings_claude(&service).await;
+        let claude_family = service
+            .model_settings()
+            .await
+            .unwrap()
+            .families
+            .iter()
+            .find(|family| {
+                family
+                    .managed_policy
+                    .as_ref()
+                    .is_some_and(|policy| policy.provider_id == claude_id)
+            })
+            .unwrap()
+            .id;
+        let choose_claude = |permitted: &'static [&'static str]| {
+            let service = &service;
+            let claude_id = claude_id.clone();
+            async move {
+                service
+                    .update_model_settings_defaults(
+                        UpdateModelSettingsDefaultsCommand {
+                            harness_id: None,
+                            provider_id: Some(claude_id),
+                            family_id: None,
+                        },
+                        "codex-basic",
+                        &permitted.iter().map(|id| (*id).to_owned()).collect(),
+                    )
+                    .await
+            }
+        };
+
+        // No harness with a permission profile can run Claude: refused, nothing changes.
+        let refused = choose_claude(&["codex-basic"]).await.unwrap_err();
+        assert_eq!(
+            catalog_error_code(&refused),
+            Some("default_provider_harness_unavailable")
+        );
+        let unchanged = service.model_settings().await.unwrap().defaults;
+        assert_eq!(unchanged.harness_id, "codex-basic");
+        assert_eq!(unchanged.provider_id.as_str(), "onboarding-codex");
+        assert_eq!(unchanged.family_id, Some(codex_family));
+
+        // codex-basic cannot run Claude's family, so the save moves the harness with it.
+        let moved = choose_claude(&["codex-basic", "claude-basic", "prime-agent-basic"])
+            .await
+            .unwrap();
+        assert_eq!(moved.harness_id, "claude-basic");
+        assert_eq!(moved.provider_id, claude_id);
+        assert_eq!(moved.family_id, Some(claude_family));
 
         drop(service);
         drop(storage);
         std::fs::remove_file(path).unwrap();
+    }
+
+    fn catalog_error_code(error: &ProductError) -> Option<&'static str> {
+        match error {
+            ProductError::Catalog(error)
+            | ProductError::Storage(crate::storage::StorageError::Catalog(error)) => {
+                Some(error.code())
+            }
+            _ => None,
+        }
     }
 
     #[tokio::test]
@@ -3923,11 +4024,15 @@ mod tests {
             .unwrap()
             .id;
         service
-            .update_model_settings_defaults(UpdateModelSettingsDefaultsCommand {
-                harness_id: Some("codex-basic".into()),
-                provider_id: Some(ProviderId::parse("onboarding-codex").unwrap()),
-                family_id: Some(codex_family),
-            })
+            .update_model_settings_defaults(
+                UpdateModelSettingsDefaultsCommand {
+                    harness_id: Some("codex-basic".into()),
+                    provider_id: Some(ProviderId::parse("onboarding-codex").unwrap()),
+                    family_id: Some(codex_family),
+                },
+                "codex-basic",
+                &HashSet::new(),
+            )
             .await
             .unwrap();
         let provider_id = ProviderId::parse("recovering-openrouter").unwrap();

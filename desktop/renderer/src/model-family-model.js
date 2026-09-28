@@ -195,6 +195,44 @@ export function defaultHarnessIsSelectable(settings, harnessId) {
   );
 }
 
+// A provider can be the default only with an enabled managed family that some harness can run,
+// because choosing it also selects that family (PROV-008). Connected providers without one are
+// listed separately so Settings can say how to make them eligible.
+export function defaultProviderChoices(settings) {
+  const runnable = new Set((settings.harnesses ?? [])
+    .filter((harness) => harness.available !== false && harness.usableNow === true)
+    .flatMap((harness) => (harness.usableFamilyIds ?? []).map(String)));
+  const selectable = [];
+  const needsRefresh = [];
+  for (const provider of settings.providers ?? []) {
+    if (provider.connected === false) continue;
+    const family = (settings.families ?? []).find((candidate) => (
+      candidate.kind === "system"
+      && candidate.enabled
+      && String(candidate.managedPolicy?.providerId) === String(provider.id)
+    ));
+    (family && runnable.has(String(family.id)) ? selectable : needsRefresh).push(provider);
+  }
+  return { selectable, needsRefresh };
+}
+
+export function defaultProviderHint(needsRefresh) {
+  if (!needsRefresh.length) return null;
+  const names = needsRefresh.map((provider) => provider.label).join(", ");
+  return needsRefresh.length === 1
+    ? `${names} has no usable model family yet. Refresh its models to make it the default.`
+    : `${names} have no usable model family yet. Refresh their models to make one the default.`;
+}
+
+// Choosing a provider can move the default harness to one that runs its family.
+export function defaultHarnessChangeNotice(previousDefaults, settings) {
+  const harnessId = settings.defaults?.harnessId;
+  if (!previousDefaults || previousDefaults.harnessId === harnessId) return null;
+  const harness = settings.harnesses?.find((item) => item.id === harnessId);
+  const provider = settings.providers?.find((item) => item.id === settings.defaults.providerId);
+  return `Saved. The default harness is now ${harness?.label ?? harnessId}, which can run ${provider?.label ?? settings.defaults.providerId} models.`;
+}
+
 export function availableModels(providerCatalog, providerId) {
   return providerCatalog.find((provider) => provider.id === providerId)?.models ?? [];
 }

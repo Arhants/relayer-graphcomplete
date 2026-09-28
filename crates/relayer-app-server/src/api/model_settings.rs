@@ -247,17 +247,22 @@ pub(super) async fn update_defaults(
             "At least one of harnessId, providerId, or familyId is required.",
         ));
     }
+    let permission_available = permission_available_harnesses(&state).await?;
     Ok(Json(
         state
             .product
-            .update_model_settings_defaults(UpdateModelSettingsDefaultsCommand {
-                harness_id: request.harness_id,
-                provider_id: request.provider_id.map(ProviderId::parse).transpose()?,
-                family_id: request
-                    .family_id
-                    .map(ModelFamilyId::try_from_value)
-                    .transpose()?,
-            })
+            .update_model_settings_defaults(
+                UpdateModelSettingsDefaultsCommand {
+                    harness_id: request.harness_id,
+                    provider_id: request.provider_id.map(ProviderId::parse).transpose()?,
+                    family_id: request
+                        .family_id
+                        .map(ModelFamilyId::try_from_value)
+                        .transpose()?,
+                },
+                &state.default_harness_configuration,
+                &permission_available,
+            )
             .await?,
     ))
 }

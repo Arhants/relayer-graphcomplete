@@ -252,8 +252,10 @@ interaction to `submitted` for a retry, and resetting the execution to
   lifecycle events. A bug that needs more actors is out of reach.
 - **Catalog abstractions:** `CatalogRefresh` has no harness. A family is
   resolvable when it is enabled and has a connected member with available
-  models. The legacy state of a user-chosen default with no family is left
-  out of the default-provider checks.
+  models. That stands for "some harness can run it": the model leaves out
+  the default harness that a provider choice moves along with the family.
+  The legacy state of a user-chosen default with no family is left out of
+  the default-provider checks.
 - **Queue order:** the provider queue is FIFO for queued cancels, but requests
   that queue behind an interior await may start in either order.
 - **Not modeled:**

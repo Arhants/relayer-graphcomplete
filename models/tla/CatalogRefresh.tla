@@ -128,7 +128,7 @@ TypeOK ==
   /\ {fStale, fStaleX, fStaleL, fOldAd, fOldAdX, fUnsafe, fDefault, fAdd, fJoin} \subseteq BOOLEAN
 
 -----------------------------------------------------------------------------
-(* Rust resolution (validate_model_selection_on, CAT:~1641): provider    *)
+(* Rust resolution (validate_model_selection_on, CAT:~1636): provider    *)
 (* active and connected, model available, family enabled.                *)
 FamEnabled(f) == fam[f] = "active" /\ (f = "C" => cEn)
 MemberOK(m) == life[m] = "active" /\ conn[m] /\ models[m]
@@ -169,13 +169,13 @@ Dequeue(p, s) ==
                               IN IF h THEN ClearBh(t) ELSE t]
      /\ pdsHold' = IF h THEN "none" ELSE pdsHold
 
-(* publish_provider_catalog (SVC:619-663, CAT:690-774), one BEGIN        *)
+(* publish_provider_catalog (SVC:619-663, CAT:685-769), one BEGIN        *)
 (* IMMEDIATE transaction. Non-active providers are rejected (SVC:~638,   *)
-(* CAT:~705-711). A connected snapshot with eligible models replaces the *)
-(* managed family (replace_system_family CAT:2334-2452), reactivating    *)
-(* the same family id (CAT:~2394) and moving an unset or managed default *)
-(* (CAT:2440-2449). Zero eligible tombstones the managed family          *)
-(* (CAT:763-771). A disconnected or unavailable snapshot has no managed  *)
+(* CAT:~700-706). A connected snapshot with eligible models replaces the *)
+(* managed family (replace_system_family CAT:2398-2516), reactivating    *)
+(* the same family id (CAT:~2458) and moving an unset or managed default *)
+(* (CAT:2504-2513). Zero eligible tombstones the managed family          *)
+(* (CAT:758-766). A disconnected or unavailable snapshot has no managed  *)
 (* policy (SVC:~672), so it updates only the provider row and models.    *)
 (* isRefresh: the publish came from the catalog queue (not reconnect).   *)
 RustPublish(p, r, e, isRefresh) ==
@@ -399,7 +399,7 @@ ReconnectCancel(p) ==
   /\ q' = [q EXCEPT ![p] = MarkDead(MarkOld(@))]
   /\ UNCHANGED <<life, acct, elig, pdsHold, events, flips, closed, rustVars, flagVars>>
 
-\* remove (PDS:721-761) with guard_provider_removal (CAT:2571-2621) and
+\* remove (PDS:721-761) with guard_provider_removal (CAT:2635-2685) and
 \* tombstone_managed_provider_families (CAT:185-188). No running turns in
 \* this model, so removal_pending finalizes at once: the runtime closes and
 \* the adapter is unregistered (PC:52).
@@ -455,11 +455,14 @@ ConnectFail(p) ==
 -----------------------------------------------------------------------------
 (* User settings (Rust).                                                  *)
 
-\* update_model_settings_defaults with providerId only (CAT:583-688;
-\* model-family-settings.js:522-551). With the fix, paired_default_on
-\* (CAT:2038-2083) selects the provider's enabled managed family in the same
-\* transaction and refuses a provider without one; the family must then
-\* resolve (CAT:638-676). Without it, only the provider was stored.
+\* update_model_settings_defaults with providerId only (CAT:583-683;
+\* model-family-settings.js:536-572). With the fix, paired_default_on
+\* (CAT:2102-2146) selects the provider's enabled managed family in the same
+\* transaction and refuses a provider without one. The family must then
+\* resolve under a harness, which default_harness_for_family_on (CAT:2062-2095)
+\* moves when needed; the model has no harness, so Resolvable stands for
+\* "some harness can run it" (CAT:658-672). Without the fix, only the
+\* provider was stored.
 SetDefaultProvider(p) ==
   /\ UserOps /\ life[p] = "active" /\ conn[p] /\ defProv /= p
   /\ IF DefaultProviderPairsFamily
@@ -469,9 +472,9 @@ SetDefaultProvider(p) ==
   /\ UNCHANGED <<pdsVars, elig, q, closed, conn, models, fam, cEn, flagVars>>
 
 \* update_model_settings_defaults with familyId (resolvable), or
-\* complete_provider_onboarding (CAT:933-1079). The pair is chosen together:
-\* onboarding requires a resolvable member from p (CAT:1582-1639), and a
-\* managed family chosen alone brings its own provider (CAT:2038-2083).
+\* complete_provider_onboarding (CAT:928-1074). The pair is chosen together:
+\* onboarding requires a resolvable member from p (CAT:1577-1634), and a
+\* managed family chosen alone brings its own provider (CAT:2102-2146).
 \* The Settings UI never saves a family alone.
 SetDefaultFamily(f, p) ==
   /\ UserOps /\ Resolvable(f) /\ p \in Members(f) /\ MemberOK(p)
@@ -479,7 +482,7 @@ SetDefaultFamily(f, p) ==
   /\ defFam' = f /\ defProv' = p /\ defMod' = TRUE
   /\ UNCHANGED <<pdsVars, elig, q, closed, conn, models, fam, cEn, flagVars>>
 
-\* update_model_family (CAT:810-851) refuses to disable the default.
+\* update_model_family (CAT:805-846) refuses to disable the default.
 ToggleCustom ==
   /\ UserOps /\ fam["C"] = "active" /\ (cEn => defFam /= "C")
   /\ cEn' = ~cEn
@@ -585,7 +588,7 @@ RefreshKeepsOtherDefault == ~fAdd
 PreInferenceFresh == ~fJoin
 \* DRAFT (tombstoned default, not yet in the PRD): it blocks Send.
 TombDefaultBlocksSend == DefaultTomb => ~SendOK
-\* CODE (replace_system_family comment CAT:2441-2442, prd:780): only this
+\* CODE (replace_system_family comment CAT:2505-2506, prd:780): only this
 \* provider's managed family and an unset/managed default change; the
 \* custom family is never touched by a catalog publish.
 OnlyOwnFamily ==

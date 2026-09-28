@@ -493,7 +493,7 @@ CatalogRefresh(outcome) ==
                  reconCreated, complPc, complCap, exec, alive, bound, cancelQ,
                  ipcDone, defaultFamily>>
 
-\* update_model_settings_defaults (CAT:583-688): the family must resolve.
+\* update_model_settings_defaults (CAT:583-683): the family must resolve.
 SetDefaultFamily(f) ==
   /\ fam[f].state = "active" /\ fam[f].enabled
   /\ f = "managedP" => (sqlConnected /\ defs["P"] = "active")
