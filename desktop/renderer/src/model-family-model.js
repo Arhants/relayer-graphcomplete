@@ -187,12 +187,26 @@ export function defaultHarnessError(settings) {
 export function defaultFamilyRecoveryPresentation(settings) {
   const modelSetup = defaultFamilyModelSetup(settings);
   if (!modelSetup) return null;
-  return {
+  const common = {
     providerId: modelSetup.providerId,
     title: modelSetup.label,
     message: modelSetup.message,
-    actionLabel: modelSetup.actionLabel,
-    actionName: modelSetup.actionName,
+  };
+  if (modelSetup.action === "refresh") {
+    return {
+      ...common,
+      action: "refresh",
+      actionLabel: modelSetup.actionLabel,
+      actionName: modelSetup.actionName,
+      busyName: modelSetup.busyName,
+    };
+  }
+  // A disconnected provider is reconnected from its card under Providers.
+  return {
+    ...common,
+    action: "providers",
+    actionLabel: "Open Providers",
+    actionName: `Reconnect ${modelSetup.providerLabel} under Providers`,
   };
 }
 

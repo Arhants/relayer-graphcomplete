@@ -182,6 +182,15 @@ export function createModelPicker({
   const popover = root.querySelector("[data-model-picker-popover]");
   const triggerLabel = root.querySelector("[data-model-picker-label]");
   const errorElement = root.querySelector("[data-model-picker-error]");
+  // One live region outside the re-rendered panels announces a recovery state once.
+  let statusElement = root.querySelector("[data-model-picker-status]");
+  if (!statusElement) {
+    statusElement = root.ownerDocument.createElement("p");
+    statusElement.className = "sr-only";
+    statusElement.dataset.modelPickerStatus = "";
+    statusElement.setAttribute("role", "status");
+    root.append(statusElement);
+  }
   let currentSettings = settings;
   let currentPinnedHarnessId = pinnedHarnessId;
   let currentSelection = currentSettings
@@ -236,13 +245,13 @@ export function createModelPicker({
   }
 
   function renderModelSetupPanel(panel, families, modelSetup) {
-    const refresh = onRefreshModels
-      ? `<button type="button" class="secondary" data-model-picker-refresh aria-label="${escapeHtmlAttribute(modelSetup.actionName)}" aria-disabled="${refreshingModels}">${refreshingModels ? "Refreshing…" : escapeHtml(modelSetup.actionLabel)}</button>`
-      : `<button type="button" class="secondary" data-model-picker-settings>Open Settings</button>`;
+    const refresh = onRefreshModels && modelSetup.action === "refresh"
+      ? `<button type="button" class="secondary" data-model-picker-refresh aria-label="${escapeHtmlAttribute(refreshingModels ? modelSetup.busyName : modelSetup.actionName)}" aria-busy="${refreshingModels}" aria-disabled="${refreshingModels}">${refreshingModels ? "Refreshing…" : escapeHtml(modelSetup.actionLabel)}</button>`
+      : `<button type="button" class="secondary" data-model-picker-settings${modelSetup.action === "settings" ? ` aria-label="${escapeHtmlAttribute(modelSetup.actionName)}"` : ""}>Open Settings</button>`;
     const otherFamilies = families.length
       ? `<label class="model-family-field"><span>Family</span><select data-model-family aria-label="Model family"><option value="" selected disabled>${escapeHtml(modelSetup.familyName)}</option>${familyOptions(families, null)}</select></label>`
       : "";
-    panel.innerHTML = `<div class="model-picker-empty model-picker-recovery" role="status"><strong>${escapeHtml(modelSetup.label)}</strong><span>${escapeHtml(modelSetup.message)}</span>${refresh}</div>${otherFamilies}`;
+    panel.innerHTML = `<div class="model-picker-empty model-picker-recovery"><strong>${escapeHtml(modelSetup.label)}</strong><span>${escapeHtml(modelSetup.message)}</span>${refresh}</div>${otherFamilies}`;
     if (families.length) bindFamilyChange(panel, families);
     panel.querySelector("[data-model-picker-settings]")?.addEventListener("click", () => {
       onUserTakeover();
@@ -251,13 +260,18 @@ export function createModelPicker({
     });
     const refreshButton = panel.querySelector("[data-model-picker-refresh]");
     if (!refreshButton) return;
-    // Each render replaces the panel, so focus returns to the refresh action, or to the first
-    // model once the family is restored.
-    const restoreFocus = () => requestAnimationFrame(() => (
-      root.querySelector("[data-model-picker-refresh]")
-      ?? root.querySelector("[data-model-option], [data-model-family]")
-      ?? root.querySelector('[data-model-picker-tab="model"]')
-    )?.focus());
+    // Each render replaces the panel and drops focus to the page. Focus returns to the refresh
+    // action, or to the first model once the family is restored, unless the user moved it away.
+    const restoreFocus = () => requestAnimationFrame(() => {
+      const document = root.ownerDocument;
+      const active = document.activeElement;
+      if (active && active !== document.body && !root.contains(active)) return;
+      if (popover.classList.contains("hidden")) return;
+      (root.querySelector("[data-model-picker-refresh]")
+        ?? root.querySelector("[data-model-option]")
+        ?? root.querySelector("[data-model-family]")
+        ?? root.querySelector('[data-model-picker-tab="model"]'))?.focus();
+    });
     refreshButton.onclick = async () => {
       if (refreshingModels) return;
       onUserTakeover();
@@ -430,6 +444,8 @@ export function createModelPicker({
     });
     renderModelPanel();
     renderAdvancedPanel();
+    const status = modelSetup?.message ?? "";
+    if (statusElement.textContent !== status) statusElement.textContent = status;
     errorElement.textContent = error ?? "";
     errorElement.classList.toggle("hidden", !error);
   }

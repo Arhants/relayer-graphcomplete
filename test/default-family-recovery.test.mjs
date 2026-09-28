@@ -29,6 +29,38 @@ const recoveringResponse = await readFile(
   "utf8",
 );
 const recovering = () => JSON.parse(recoveringResponse);
+// The same flow after the provider then disconnected (rejected credentials).
+const disconnectedResponse = await readFile(
+  new URL("./fixtures/model-settings-default-family-disconnected.json", import.meta.url),
+  "utf8",
+);
+const disconnected = () => JSON.parse(disconnectedResponse);
+
+// recovering() after an eligible refresh restored the default family.
+function restored() {
+  const settings = recovering();
+  settings.defaultFamilyRecovery = null;
+  settings.familiesNeedingModelSetup = [];
+  const codex = settings.providers.find((provider) => provider.id === "codex");
+  codex.unavailableReason = null;
+  settings.families.unshift({
+    id: 1,
+    name: "Codex defaults",
+    kind: "system",
+    enabled: true,
+    position: 0,
+    revision: 1,
+    managedPolicy: { providerId: "codex", policyId: "codex-default-family", policyVersion: 1 },
+    members: [{ providerId: "codex", modelId: "gpt-5.6-sol", position: 0 }],
+  });
+  return settings;
+}
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
 const source = (path) => readFile(new URL(`../desktop/renderer/${path}`, import.meta.url), "utf8");
 
 afterEach(() => vi.unstubAllGlobals());
@@ -147,6 +179,108 @@ describe("default family that needs model setup (PROV-008)", () => {
     picker.dispose();
   });
 
+  it("shows a disconnected provider's state, with Open Settings, and never another family", () => {
+    const settings = disconnected();
+    const modelSetup = defaultFamilyModelSetup(settings);
+    expect(modelSetup).toMatchObject({
+      familyId: 1,
+      providerId: "codex",
+      action: "settings",
+      label: "Provider not connected",
+      message: "Codex is not connected, so Codex defaults cannot run. The provider rejected the saved credentials.",
+      actionLabel: "Open Settings",
+      actionName: "Reconnect Codex in Settings",
+    });
+    expect(modelPickerFamilyPresentation(settings, "codex-basic", null).selectedFamily).toBeNull();
+    expect(composerSendTitle({ ready: false, modelSetup, readyTitle: "Send" })).toBe(
+      "Provider not connected. Reconnect Codex in Settings to send.",
+    );
+
+    const onOpenSettings = vi.fn();
+    const onRefreshModels = vi.fn();
+    const { root, picker } = mountPicker(settings, { onOpenSettings, onRefreshModels });
+    expect(root.querySelector("[data-model-picker-label]").textContent).toBe("Provider not connected");
+    picker.open();
+    const panel = root.querySelector('[data-model-picker-panel="model"]');
+    expect(panel.querySelector("[data-model-picker-refresh]")).toBeNull();
+    const open = panel.querySelector("[data-model-picker-settings]");
+    expect(open.getAttribute("aria-label")).toBe("Reconnect Codex in Settings");
+    open.click();
+    expect(onOpenSettings).toHaveBeenCalledOnce();
+    expect(onRefreshModels).not.toHaveBeenCalled();
+    picker.dispose();
+
+    expect(defaultFamilyRecoveryPresentation(settings)).toMatchObject({
+      providerId: "codex",
+      action: "providers",
+      title: "Provider not connected",
+      actionLabel: "Open Providers",
+      actionName: "Reconnect Codex under Providers",
+    });
+    expect(defaultHarnessError(settings)).toBeNull();
+  });
+
+  it("announces the recovery once through a separate live region", () => {
+    const { root, picker } = mountPicker(recovering(), { onRefreshModels: async () => {} });
+    picker.open();
+    const status = root.querySelector("[data-model-picker-status]");
+    expect(status.getAttribute("role")).toBe("status");
+    expect(status.textContent).toBe(
+      "Codex defaults needs model setup. Codex has no models eligible for agent execution.",
+    );
+    expect(status.querySelector("button")).toBeNull();
+    expect(root.querySelector('[data-model-picker-panel="model"] [role="status"]')).toBeNull();
+    picker.dispose();
+  });
+
+  it("marks a refresh in progress as busy and returns focus to the first restored model", async () => {
+    const pending = deferred();
+    let picker;
+    const onRefreshModels = vi.fn(async () => {
+      await pending.promise;
+      picker.setContext({ settings: restored() });
+    });
+    const mounted = mountPicker(recovering(), { onRefreshModels });
+    ({ picker } = mounted);
+    const { root } = mounted;
+    picker.open();
+    const refresh = root.querySelector("[data-model-picker-refresh]");
+    refresh.focus();
+    refresh.click();
+    await vi.waitFor(() => expect(onRefreshModels).toHaveBeenCalledWith("codex"));
+    const busy = root.querySelector("[data-model-picker-refresh]");
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.getAttribute("aria-label")).toBe("Refreshing models for Codex");
+    expect(busy.textContent).toBe("Refreshing…");
+    expect(root.ownerDocument.activeElement).toBe(busy);
+
+    pending.resolve();
+    await vi.waitFor(() => expect(root.querySelector("[data-model-picker-refresh]")).toBeNull());
+    expect(picker.isReady()).toBe(true);
+    expect(root.ownerDocument.activeElement).toBe(root.querySelector("[data-model-option]"));
+    picker.dispose();
+  });
+
+  it("leaves focus where the user moved it during a refresh", async () => {
+    const pending = deferred();
+    const { root, picker, document } = mountPicker(recovering(), {
+      onRefreshModels: () => pending.promise,
+    });
+    const elsewhere = document.createElement("button");
+    document.body.append(elsewhere);
+    picker.open();
+    const refresh = root.querySelector("[data-model-picker-refresh]");
+    refresh.focus();
+    refresh.click();
+    elsewhere.focus();
+    pending.resolve();
+    await vi.waitFor(() => expect(
+      root.querySelector("[data-model-picker-refresh]").getAttribute("aria-busy"),
+    ).toBe("false"));
+    expect(document.activeElement).toBe(elsewhere);
+    picker.dispose();
+  });
+
   it("says why Send is blocked", () => {
     const modelSetup = defaultFamilyModelSetup(recovering());
     expect(composerSendTitle({ ready: false, modelSetup, readyTitle: "Send" })).toBe(
@@ -162,10 +296,12 @@ describe("default family that needs model setup (PROV-008)", () => {
     const settings = recovering();
     expect(defaultFamilyRecoveryPresentation(settings)).toEqual({
       providerId: "codex",
+      action: "refresh",
       title: "Needs model setup",
       message: "Codex defaults needs model setup. Codex has no models eligible for agent execution.",
       actionLabel: "Refresh models",
       actionName: "Refresh models for Codex",
+      busyName: "Refreshing models for Codex",
     });
     expect(defaultHarnessError(settings)).toBeNull();
     // With the default provider as the only provider, the harness has no usable route either.
@@ -210,17 +346,84 @@ describe("default family that needs model setup (PROV-008)", () => {
     expect(html).toContain('id="defaultFamilyRecovery"');
     expect(html).toContain('id="refreshDefaultFamilyModels"');
     expect(settingsSource).toContain("defaultFamilyRecoveryPresentation(settings)");
-    expect(settingsSource).toContain("await refreshProviderModels(recovery.providerId);");
     expect(refresh).toContain("return desktop?.models?.refresh ? refreshProviderModels : null;");
     expect(composer).toContain("onRefreshModels: providerModelsRefreshAction(),");
     expect(graph).toContain("onRefreshModels: providerModelsRefreshAction(),");
-    expect(settingsSource).toContain(
-      'refreshButton.setAttribute("aria-disabled", String(refreshingDefaultFamily || savingDefaults));',
-    );
-    expect(settingsSource).toContain("if (!recovery || refreshingDefaultFamily || savingDefaults) return;");
     expect(threads).toContain("if (!isModelSelectionCatalogError(error)) return;");
     expect(workspace).toContain("send.title = composerSendTitle({");
     expect(threads).toContain('$("#createThread").title = composerSendTitle({');
     expect(main).toContain("setProviderModelsRefreshedHandler(");
+  });
+});
+
+// A behavioural test of the Settings default section, on the real renderer markup and module.
+describe("Settings default section recovery (PROV-008)", () => {
+  async function mountSettings({ responses, refresh }) {
+    vi.resetModules();
+    const window = new Window({ url: "http://127.0.0.1/" });
+    const html = await source("index.html");
+    window.document.write(html.replace(/<script[\s\S]*?<\/script>/g, ""));
+    window.relayerDesktop = refresh ? { models: { refresh } } : {};
+    vi.stubGlobal("window", window);
+    vi.stubGlobal("document", window.document);
+    vi.stubGlobal("location", window.location);
+    vi.stubGlobal("requestAnimationFrame", () => 0);
+    let response = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => responses[Math.min(response++, responses.length - 1)],
+    })));
+    const settings = await import("../desktop/renderer/src/model-family-settings.js");
+    const refreshModule = await import("../desktop/renderer/src/provider-models-refresh.js");
+    refreshModule.setProviderModelsRefreshedHandler(() => settings.refreshModelFamilySettings());
+    await settings.initializeModelFamilySettings();
+    return window.document;
+  }
+
+  it("refreshes the exact provider, marks the action busy, and moves focus once restored", async () => {
+    const pending = deferred();
+    const refresh = vi.fn(() => pending.promise);
+    const document = await mountSettings({ responses: [recovering(), restored()], refresh });
+    const row = document.querySelector("#defaultFamilyRecovery");
+    const button = document.querySelector("#refreshDefaultFamilyModels");
+    expect(row.classList.contains("hidden")).toBe(false);
+    expect(row.getAttribute("role")).toBeNull();
+    expect(document.querySelector("#defaultFamilyRecoveryMessage").getAttribute("role")).toBe("status");
+    expect(button.getAttribute("aria-label")).toBe("Refresh models for Codex");
+
+    button.focus();
+    button.click();
+    expect(refresh).toHaveBeenCalledWith("codex");
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    expect(button.getAttribute("aria-label")).toBe("Refreshing models for Codex");
+    button.click();
+    expect(refresh).toHaveBeenCalledOnce();
+
+    pending.resolve();
+    await vi.waitFor(() => expect(row.classList.contains("hidden")).toBe(true));
+    await vi.waitFor(() => expect(document.activeElement).toBe(document.querySelector("#defaultProviderSelect")));
+  });
+
+  it("points to the default provider choice when the host cannot refresh", async () => {
+    const document = await mountSettings({ responses: [recovering()], refresh: null });
+    expect(document.querySelector("#refreshDefaultFamilyModels").classList.contains("hidden")).toBe(true);
+    expect(document.querySelector("#defaultFamilyRecoveryHint").textContent).toBe(
+      "Choose another default provider above to send meanwhile.",
+    );
+  });
+
+  it("sends a disconnected provider to Providers instead of refreshing", async () => {
+    const refresh = vi.fn();
+    const document = await mountSettings({ responses: [disconnected()], refresh });
+    const providersTab = document.querySelector('[data-settings-tab="providers"]');
+    const opened = vi.fn();
+    providersTab.addEventListener("click", opened);
+    const button = document.querySelector("#refreshDefaultFamilyModels");
+    expect(button.textContent).toBe("Open Providers");
+    expect(button.getAttribute("aria-label")).toBe("Reconnect Codex under Providers");
+    button.click();
+    expect(opened).toHaveBeenCalledOnce();
+    expect(refresh).not.toHaveBeenCalled();
   });
 });

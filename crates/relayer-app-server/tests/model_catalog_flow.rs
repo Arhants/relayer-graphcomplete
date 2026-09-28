@@ -857,21 +857,7 @@ async fn a_default_family_without_eligible_models_needs_model_setup_until_a_refr
         RECOVERY
     );
     // The renderer tests read this exact response as their fixture.
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test/fixtures/model-settings-default-family-recovery.json");
-    if std::env::var_os("RELAYER_WRITE_FIXTURES").is_some() {
-        std::fs::write(
-            &fixture,
-            serde_json::to_string_pretty(&recovering).unwrap() + "\n",
-        )
-        .unwrap();
-    }
-    assert_eq!(
-        serde_json::from_str::<Value>(&std::fs::read_to_string(&fixture).unwrap()).unwrap(),
-        recovering,
-        "regenerate {} with RELAYER_WRITE_FIXTURES=1",
-        fixture.display()
-    );
+    assert_renderer_fixture("model-settings-default-family-recovery.json", &recovering);
 
     // Validate and thread creation both give the provider's recovery reason.
     assert_needs_model_setup(validate(default_family, "gpt-5.6-sol").await).await;
@@ -906,6 +892,54 @@ async fn a_default_family_without_eligible_models_needs_model_setup_until_a_refr
     assert_eq!(unchanged["defaults"], recovering["defaults"]);
     let disabled = response_json(validate(hidden_family, "gpt-5.6-sol").await).await;
     assert_eq!(disabled["code"], "model_family_disabled");
+
+    // A disconnect after the zero-eligible refresh keeps the family selected and in recovery.
+    // The recovery now follows the provider: it is not connected, so Refresh models cannot help.
+    publish(json!({
+        "providerId": "codex",
+        "label": "Codex",
+        "connected": false,
+        "connectionGeneration": 1,
+        "unavailableReason": {
+            "code": "provider_unavailable",
+            "message": "The provider rejected the saved credentials.",
+        },
+        "models": [],
+    }))
+    .await;
+    let disconnected = settings().await;
+    assert_eq!(disconnected["defaults"], recovering["defaults"]);
+    assert_eq!(
+        disconnected["defaultFamilyRecovery"]["familyId"],
+        default_family
+    );
+    assert_eq!(
+        disconnected["defaultFamilyRecovery"]["reason"],
+        json!({
+            "code": "provider_unavailable",
+            "message": "The provider rejected the saved credentials.",
+        })
+    );
+    assert_eq!(
+        disconnected["familiesNeedingModelSetup"],
+        json!([disconnected["defaultFamilyRecovery"]])
+    );
+    assert_renderer_fixture(
+        "model-settings-default-family-disconnected.json",
+        &disconnected,
+    );
+    let refused = validate(default_family, "gpt-5.6-sol").await;
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        response_json(refused).await["code"],
+        "provider_disconnected"
+    );
+    // Reconnecting to the same empty catalog returns to Needs model setup.
+    publish(zero_eligible()).await;
+    assert_eq!(
+        settings().await["defaultFamilyRecovery"],
+        recovering["defaultFamilyRecovery"]
+    );
 
     // A later eligible refresh restores the same family.
     publish(provider_snapshot(None)).await;
@@ -975,6 +1009,127 @@ async fn a_default_family_without_eligible_models_needs_model_setup_until_a_refr
         vec![successor]
     );
     assert_needs_model_setup(validate(successor, &first_member).await).await;
+}
+
+// A managed family the user disabled stays disabled. A zero-eligible refresh tombstones it
+// without taking over that choice: it is not in recovery, keeps model_family_disabled, and a
+// later eligible refresh restores it still disabled.
+#[tokio::test]
+async fn a_disabled_managed_family_stays_disabled_through_a_zero_eligible_refresh() {
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-disabled-managed-family-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
+    let database = root.join("product.sqlite3");
+    let app = open_app(&database, &root).await;
+    configure_codex_policy(&database).await;
+    let send = |method: &str, uri: &str, body: Option<Value>| {
+        let request = if uri.starts_with("/api/internal/") {
+            bearer_request(method, uri, body)
+        } else {
+            cookie_request(method, uri, body)
+        };
+        let app = app.clone();
+        async move { app.oneshot(request).await.unwrap() }
+    };
+    let publish = |snapshot: Value| {
+        let response = send("PUT", "/api/internal/provider-catalog", Some(snapshot));
+        async move {
+            assert_eq!(response.await.status(), StatusCode::NO_CONTENT);
+        }
+    };
+    let settings = || {
+        let response = send("GET", "/api/model-settings", None);
+        async move { response_json(response.await).await }
+    };
+
+    // Codex is the default. Work is a second provider whose managed family the user disables.
+    publish(provider_snapshot(None)).await;
+    let pool = sqlite_pool(&database).await;
+    for statement in [
+        "UPDATE product_harnesses SET available=1,unavailable_reason_code=NULL,unavailable_reason_message=NULL WHERE configuration_name='codex-basic'",
+        "INSERT INTO model_providers(id,label,connected,refreshed_at,adapter_id,access_contract,lifecycle_state) VALUES('work','Work',1,'1','codex-subscription','managed-runtime@1','active')",
+        "INSERT INTO harness_provider_compatibility(harness_configuration_name,provider_id,all_models) VALUES ('codex-basic','work',1)",
+    ] {
+        sqlx::query(statement).execute(&pool).await.unwrap();
+    }
+    pool.close().await;
+    publish(provider_snapshot_for("work", "Work", None)).await;
+    let work_family = settings().await["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|family| family["managedPolicy"]["providerId"] == "work")
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let disabled = send(
+        "PUT",
+        &format!("/api/model-families/{work_family}"),
+        Some(json!({ "enabled": false })),
+    )
+    .await;
+    assert_eq!(disabled.status(), StatusCode::OK);
+    let validate = || {
+        let response = send(
+            "POST",
+            "/api/model-selection/validate",
+            Some(json!({
+                "harnessId": "codex-basic",
+                "familyId": work_family,
+                "providerId": "work",
+                "modelId": "gpt-5.6-sol",
+            })),
+        );
+        async move { response_json(response.await).await["code"].clone() }
+    };
+    assert_eq!(validate().await, "model_family_disabled");
+
+    let mut zero_eligible = provider_snapshot_for("work", "Work", None);
+    for model in zero_eligible["models"].as_array_mut().unwrap() {
+        model["providerDefault"] = json!(false);
+    }
+    zero_eligible
+        .as_object_mut()
+        .unwrap()
+        .remove("systemFamily");
+    publish(zero_eligible).await;
+    let tombstoned = settings().await;
+    assert_eq!(tombstoned["familiesNeedingModelSetup"], json!([]));
+    assert_eq!(validate().await, "model_family_disabled");
+
+    publish(provider_snapshot_for("work", "Work", None)).await;
+    let restored = settings().await;
+    let family = restored["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|family| family["id"] == work_family)
+        .unwrap();
+    assert_eq!(family["enabled"], false);
+    assert_eq!(validate().await, "model_family_disabled");
+}
+
+/// Compares a real /api/model-settings response with the fixture the renderer tests read.
+/// RELAYER_WRITE_FIXTURES=1 regenerates it.
+fn assert_renderer_fixture(name: &str, response: &Value) {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../test/fixtures")
+        .join(name);
+    if std::env::var_os("RELAYER_WRITE_FIXTURES").is_some() {
+        std::fs::write(
+            &fixture,
+            serde_json::to_string_pretty(response).unwrap() + "\n",
+        )
+        .unwrap();
+    }
+    assert_eq!(
+        &serde_json::from_str::<Value>(&std::fs::read_to_string(&fixture).unwrap()).unwrap(),
+        response,
+        "regenerate {} with RELAYER_WRITE_FIXTURES=1",
+        fixture.display()
+    );
 }
 
 fn provider_snapshot(unavailable: Option<&str>) -> Value {

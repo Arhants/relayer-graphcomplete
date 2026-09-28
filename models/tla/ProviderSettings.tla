@@ -649,13 +649,15 @@ CloseLeavesNoOpenRuntime ==
   closed => \A r \in RuntimeIds : rt[r] /= "open"
 
 \* PROV-008 (Q15): the default family is a live, enabled family, or P's
-\* managed family while P stays active. A refresh reporting no eligible
-\* models tombstones that family, and it stays the default in a recovery
-\* state. Disable, delete and provider removal all refuse to break the
-\* default (CAT:803-861, 2656-2706), so P stays active meanwhile. The
-\* invariant does not name the refresh outcome; in this model only the
-\* no_eligible refresh tombstones managedP while P is active.
-DefaultFamilyIsLiveOrAwaitsModels ==
+\* managed family in recovery while P stays active. A refresh reporting no
+\* eligible models tombstones that family, and it stays the default. It
+\* stays in recovery if P later disconnects: connected, it awaits eligible
+\* models; disconnected, a reconnect. Disable, delete and provider removal
+\* all refuse to break the default (CAT:803-861, 2656-2706), so P stays
+\* active meanwhile. The invariant does not name the refresh outcome; in
+\* this model only the no_eligible refresh tombstones managedP while P is
+\* active, and a later refresh of either kind keeps it default.
+DefaultFamilyIsLiveOrInRecovery ==
   \/ fam[defaultFamily].state = "active" /\ fam[defaultFamily].enabled
   \/ defaultFamily = "managedP" /\ defs["P"] = "active"
 

@@ -26,11 +26,17 @@ use std::collections::{HashMap, HashSet};
 const MODEL_SETUP_RECOVERY_CODE: &str = "provider_no_eligible_execution_models";
 const MODEL_SETUP_RECOVERY_MESSAGE: &str = "This model family needs model setup. Its provider has no models eligible for agent execution. Refresh the provider's models.";
 
+const PROVIDER_DISCONNECTED_RECOVERY_CODE: &str = "provider_disconnected";
+const PROVIDER_DISCONNECTED_RECOVERY_MESSAGE: &str =
+    "This model family's provider is not connected. Reconnect it in Settings.";
+
 /// SQL over a `model_families` row aliased `f`: true for a provider's latest managed family while
-/// it is tombstoned and its connected provider reports no eligible execution models.
-macro_rules! family_needs_model_setup_sql {
+/// a zero-eligible refresh keeps it tombstoned for recovery (PROV-008). The user has not disabled
+/// it, and its provider is active: either connected and still reporting no eligible models, or
+/// disconnected since. The recovery reason follows the provider.
+macro_rules! family_in_recovery_sql {
     () => {
-        "(f.kind='system' AND f.managed_provider_id IS NOT NULL AND f.lifecycle_state='tombstoned' AND EXISTS(SELECT 1 FROM model_providers owner WHERE owner.id=f.managed_provider_id AND owner.lifecycle_state='active' AND owner.connected=1 AND owner.unavailable_reason_code='provider_no_eligible_execution_models') AND NOT EXISTS(SELECT 1 FROM model_families newer WHERE newer.managed_provider_id=f.managed_provider_id AND newer.id>f.id))"
+        "(f.kind='system' AND f.managed_provider_id IS NOT NULL AND f.lifecycle_state='tombstoned' AND f.tombstone_cause='no_eligible_models' AND f.enabled=1 AND EXISTS(SELECT 1 FROM model_providers owner WHERE owner.id=f.managed_provider_id AND owner.lifecycle_state='active' AND (owner.connected=0 OR owner.unavailable_reason_code='provider_no_eligible_execution_models')) AND NOT EXISTS(SELECT 1 FROM model_families newer WHERE newer.managed_provider_id=f.managed_provider_id AND newer.id>f.id))"
     };
 }
 
@@ -733,11 +739,10 @@ impl SqliteProductStore {
             {
                 // The default family waits for its provider's models. The harness change is
                 // refused with that reason, and the default family is never moved silently.
-                if family_needs_model_setup_on(&mut transaction, family_id).await? {
-                    return Err(StorageError::Catalog(CatalogError::invalid(
-                        MODEL_SETUP_RECOVERY_CODE,
-                        MODEL_SETUP_RECOVERY_MESSAGE,
-                    )));
+                if let Some((code, message)) =
+                    family_recovery_on(&mut transaction, family_id).await?
+                {
+                    return Err(StorageError::Catalog(CatalogError::invalid(code, message)));
                 }
                 return Err(StorageError::Catalog(CatalogError::invalid(
                     "default_family_unresolvable",
@@ -1732,9 +1737,9 @@ pub(super) async fn validate_model_selection_on(
     command: &ValidateModelSelectionCommand,
 ) -> Result<(), StorageError> {
     let row = sqlx::query(concat!(
-            "SELECT h.product_visible AS harness_visible,h.available AS harness_available,h.model_rules_present,h.execution_access_contracts_json,p.connected AS provider_connected,p.lifecycle_state='active' AS provider_active,p.adapter_id,p.access_contract,m.visible AS model_visible,m.available AS model_available,f.enabled AS family_enabled,",
-            family_needs_model_setup_sql!(),
-            " AS family_needs_model_setup,EXISTS(SELECT 1 FROM harness_provider_compatibility c WHERE c.harness_configuration_name=h.configuration_name AND c.provider_id=p.id AND (c.all_models=1 OR EXISTS(SELECT 1 FROM harness_model_compatibility cm WHERE cm.harness_configuration_name=c.harness_configuration_name AND cm.provider_id=c.provider_id AND cm.model_id=m.model_id))) AS compatible,EXISTS(SELECT 1 FROM model_family_members fm WHERE fm.family_id=f.id AND fm.provider_id=p.id AND fm.model_id=m.model_id) AS member FROM product_harnesses h JOIN model_providers p ON p.id=?2 JOIN provider_models m ON m.provider_id=p.id AND m.model_id=?3 JOIN model_families f ON f.id=?4 WHERE h.configuration_name=?1",
+            "SELECT h.product_visible AS harness_visible,h.available AS harness_available,h.model_rules_present,h.execution_access_contracts_json,p.connected AS provider_connected,p.lifecycle_state='active' AS provider_active,p.adapter_id,p.access_contract,m.visible AS model_visible,m.available AS model_available,f.enabled AS family_enabled,f.lifecycle_state='active' AS family_active,(f.lifecycle_state='active' OR f.tombstone_cause='no_eligible_models') AS family_kept,",
+            family_in_recovery_sql!(),
+            " AS family_in_recovery,EXISTS(SELECT 1 FROM harness_provider_compatibility c WHERE c.harness_configuration_name=h.configuration_name AND c.provider_id=p.id AND (c.all_models=1 OR EXISTS(SELECT 1 FROM harness_model_compatibility cm WHERE cm.harness_configuration_name=c.harness_configuration_name AND cm.provider_id=c.provider_id AND cm.model_id=m.model_id))) AS compatible,EXISTS(SELECT 1 FROM model_family_members fm WHERE fm.family_id=f.id AND fm.provider_id=p.id AND fm.model_id=m.model_id) AS member FROM product_harnesses h JOIN model_providers p ON p.id=?2 JOIN provider_models m ON m.provider_id=p.id AND m.model_id=?3 JOIN model_families f ON f.id=?4 WHERE h.configuration_name=?1",
         ))
         .bind(&command.harness_id)
         .bind(command.provider_id.as_str())
@@ -1771,7 +1776,7 @@ pub(super) async fn validate_model_selection_on(
             "The selected provider is unavailable for new interactions.",
         ),
         (
-            !row.get::<bool, _>("family_needs_model_setup"),
+            !row.get::<bool, _>("family_in_recovery"),
             MODEL_SETUP_RECOVERY_CODE,
             MODEL_SETUP_RECOVERY_MESSAGE,
         ),
@@ -1785,10 +1790,21 @@ pub(super) async fn validate_model_selection_on(
             "model_unavailable",
             "The selected model is unavailable.",
         ),
+        // A family a zero-eligible refresh keeps is not removed: the user's disable still shows.
+        (
+            row.get::<bool, _>("family_kept"),
+            "model_family_removed",
+            "The selected model family was removed.",
+        ),
         (
             row.get::<bool, _>("family_enabled"),
             "model_family_disabled",
             "The selected model family is disabled.",
+        ),
+        (
+            row.get::<bool, _>("family_active"),
+            "model_family_removed",
+            "The selected model family was removed.",
         ),
         (
             row.get::<bool, _>("member"),
@@ -1826,9 +1842,9 @@ pub(super) async fn validate_execution_model_selection_on(
         model_id: selection.model_id.clone(),
     };
     let row = sqlx::query(concat!(
-        "SELECT h.product_visible AS harness_visible,h.available AS harness_available,h.model_rules_present,h.execution_access_contracts_json,p.connected AS provider_connected,p.lifecycle_state='active' AS provider_active,p.adapter_id,p.access_contract,m.visible AS model_visible,m.available AS model_available,f.enabled AS family_enabled,f.lifecycle_state='active' AS family_active,",
-        family_needs_model_setup_sql!(),
-        " AS family_needs_model_setup,EXISTS(SELECT 1 FROM model_family_members fm WHERE fm.family_id=f.id AND fm.provider_id=p.id AND fm.model_id=m.model_id) AS member,EXISTS(SELECT 1 FROM harness_provider_compatibility c WHERE c.harness_configuration_name=h.configuration_name AND c.provider_id=p.id AND (c.all_models=1 OR EXISTS(SELECT 1 FROM harness_model_compatibility cm WHERE cm.harness_configuration_name=c.harness_configuration_name AND cm.provider_id=c.provider_id AND cm.model_id=m.model_id))) AS compatible FROM product_harnesses h JOIN model_providers p ON p.id=?2 JOIN provider_models m ON m.provider_id=p.id AND m.model_id=?3 JOIN model_families f ON f.id=?4 WHERE h.configuration_name=?1",
+        "SELECT h.product_visible AS harness_visible,h.available AS harness_available,h.model_rules_present,h.execution_access_contracts_json,p.connected AS provider_connected,p.lifecycle_state='active' AS provider_active,p.adapter_id,p.access_contract,m.visible AS model_visible,m.available AS model_available,f.enabled AS family_enabled,f.lifecycle_state='active' AS family_active,(f.lifecycle_state='active' OR f.tombstone_cause='no_eligible_models') AS family_kept,",
+        family_in_recovery_sql!(),
+        " AS family_in_recovery,EXISTS(SELECT 1 FROM model_family_members fm WHERE fm.family_id=f.id AND fm.provider_id=p.id AND fm.model_id=m.model_id) AS member,EXISTS(SELECT 1 FROM harness_provider_compatibility c WHERE c.harness_configuration_name=h.configuration_name AND c.provider_id=p.id AND (c.all_models=1 OR EXISTS(SELECT 1 FROM harness_model_compatibility cm WHERE cm.harness_configuration_name=c.harness_configuration_name AND cm.provider_id=c.provider_id AND cm.model_id=m.model_id))) AS compatible FROM product_harnesses h JOIN model_providers p ON p.id=?2 JOIN provider_models m ON m.provider_id=p.id AND m.model_id=?3 JOIN model_families f ON f.id=?4 WHERE h.configuration_name=?1",
     ))
     .bind(harness_id)
     .bind(selection.provider_id.as_str())
@@ -1865,7 +1881,7 @@ pub(super) async fn validate_execution_model_selection_on(
             "The selected provider is unavailable for new interactions.",
         ),
         (
-            !row.get::<bool, _>("family_needs_model_setup"),
+            !row.get::<bool, _>("family_in_recovery"),
             MODEL_SETUP_RECOVERY_CODE,
             MODEL_SETUP_RECOVERY_MESSAGE,
         ),
@@ -1879,8 +1895,9 @@ pub(super) async fn validate_execution_model_selection_on(
             "model_unavailable",
             "The selected model is unavailable.",
         ),
+        // A family a zero-eligible refresh keeps is not removed: the user's disable still shows.
         (
-            row.get::<bool, _>("family_active"),
+            row.get::<bool, _>("family_kept"),
             "model_family_removed",
             "The selected model family was removed.",
         ),
@@ -1888,6 +1905,11 @@ pub(super) async fn validate_execution_model_selection_on(
             row.get::<bool, _>("family_enabled"),
             "model_family_disabled",
             "The selected model family is disabled.",
+        ),
+        (
+            row.get::<bool, _>("family_active"),
+            "model_family_removed",
+            "The selected model family was removed.",
         ),
         (
             row.get::<bool, _>("member"),
@@ -2466,44 +2488,67 @@ async fn load_families(
     Ok(families)
 }
 
-async fn family_needs_model_setup_on(
+/// The stable code and message for a family in recovery, or None.
+async fn family_recovery_on(
     connection: &mut SqliteConnection,
     family_id: ModelFamilyId,
-) -> Result<bool, StorageError> {
-    Ok(sqlx::query_scalar(concat!(
-        "SELECT EXISTS(SELECT 1 FROM model_families f WHERE f.id=?1 AND ",
-        family_needs_model_setup_sql!(),
-        ")"
+) -> Result<Option<(&'static str, &'static str)>, StorageError> {
+    let connected = sqlx::query_scalar::<_, bool>(concat!(
+        "SELECT owner.connected FROM model_families f JOIN model_providers owner ON owner.id=f.managed_provider_id WHERE f.id=?1 AND ",
+        family_in_recovery_sql!()
     ))
     .bind(family_id.value())
-    .fetch_one(&mut *connection)
-    .await?)
+    .fetch_optional(&mut *connection)
+    .await?;
+    Ok(connected.map(|connected| {
+        if connected {
+            (MODEL_SETUP_RECOVERY_CODE, MODEL_SETUP_RECOVERY_MESSAGE)
+        } else {
+            (
+                PROVIDER_DISCONNECTED_RECOVERY_CODE,
+                PROVIDER_DISCONNECTED_RECOVERY_MESSAGE,
+            )
+        }
+    }))
 }
 
-/// Tombstoned managed families whose provider has no eligible models. The default family and a
-/// thread's last selection can still name one, so Settings and both composers can show it and
-/// offer its provider's refresh (PROV-008).
+/// Managed families a zero-eligible refresh keeps tombstoned for recovery. The default family and
+/// a thread's last selection can still name one, so Settings and both composers can show it
+/// (PROV-008). The reason follows the provider: no eligible models while it is connected, which
+/// Refresh models can fix, otherwise its disconnected state, which needs a reconnect.
 async fn load_families_needing_model_setup(
     connection: &mut SqliteConnection,
 ) -> Result<Vec<FamilyModelSetup>, StorageError> {
-    let rows = sqlx::query_as::<_, (i64, String, String)>(concat!(
-        "SELECT f.id,f.name,f.managed_provider_id FROM model_families f WHERE ",
-        family_needs_model_setup_sql!(),
+    let rows = sqlx::query_as::<_, (i64, String, String, bool, Option<String>, Option<String>)>(concat!(
+        "SELECT f.id,f.name,f.managed_provider_id,owner.connected,owner.unavailable_reason_code,owner.unavailable_reason_message FROM model_families f JOIN model_providers owner ON owner.id=f.managed_provider_id WHERE ",
+        family_in_recovery_sql!(),
         " ORDER BY f.id"
     ))
     .fetch_all(&mut *connection)
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(family_id, family_name, provider_id)| FamilyModelSetup {
-            family_id: ModelFamilyId::from_database(family_id),
-            family_name,
-            provider_id: ProviderId::from_database(provider_id),
-            reason: UnavailableReason {
-                code: MODEL_SETUP_RECOVERY_CODE.into(),
-                message: MODEL_SETUP_RECOVERY_MESSAGE.into(),
+        .map(
+            |(family_id, family_name, provider_id, connected, reason_code, reason_message)| {
+                let reason = match (connected, reason_code, reason_message) {
+                    (true, _, _) => UnavailableReason {
+                        code: MODEL_SETUP_RECOVERY_CODE.into(),
+                        message: MODEL_SETUP_RECOVERY_MESSAGE.into(),
+                    },
+                    (false, Some(code), Some(message)) => UnavailableReason { code, message },
+                    (false, _, _) => UnavailableReason {
+                        code: PROVIDER_DISCONNECTED_RECOVERY_CODE.into(),
+                        message: PROVIDER_DISCONNECTED_RECOVERY_MESSAGE.into(),
+                    },
+                };
+                FamilyModelSetup {
+                    family_id: ModelFamilyId::from_database(family_id),
+                    family_name,
+                    provider_id: ProviderId::from_database(provider_id),
+                    reason,
+                }
             },
-        })
+        )
         .collect())
 }
 
@@ -2644,7 +2689,9 @@ async fn replace_system_family(
                         )
                     })
                     .collect::<Vec<_>>();
-            sqlx::query("UPDATE model_families SET name=?1,revision=revision+?2,system_key=?3,enabled=1,lifecycle_state='active',removed_at=NULL WHERE id=?4")
+            // An active family, or one a zero-eligible refresh kept, keeps the user's enabled
+            // choice. A family retired another way comes back enabled.
+            sqlx::query("UPDATE model_families SET name=?1,revision=revision+?2,system_key=?3,enabled=CASE WHEN lifecycle_state='active' OR tombstone_cause='no_eligible_models' THEN enabled ELSE 1 END,lifecycle_state='active',tombstone_cause=NULL,removed_at=NULL WHERE id=?4")
                 .bind(&family_name)
                 .bind(i64::from(changed))
                 .bind(&key)
@@ -2797,7 +2844,8 @@ async fn tombstone_managed_provider_families(
     connection: &mut SqliteConnection,
     provider_id: &str,
 ) -> Result<(), StorageError> {
-    sqlx::query("UPDATE model_families SET lifecycle_state='tombstoned',enabled=0,removed_at=CAST(strftime('%s','now') AS TEXT) WHERE managed_provider_id=?1 AND lifecycle_state='active'")
+    // Kept for recovery (PROV-008): the cause is recorded and `enabled` stays the user's choice.
+    sqlx::query("UPDATE model_families SET lifecycle_state='tombstoned',tombstone_cause='no_eligible_models',removed_at=CAST(strftime('%s','now') AS TEXT) WHERE managed_provider_id=?1 AND lifecycle_state='active'")
         .bind(provider_id)
         .execute(&mut *connection)
         .await?;
@@ -3052,6 +3100,77 @@ mod provider_definition_tests {
             restore_prior_readiness: false,
             unavailable_reason: None,
         }
+    }
+
+    // PROV-008 upgrade: an earlier build tombstoned the default managed family on a zero-eligible
+    // refresh and cleared `enabled`. The migration marks that family as kept for recovery, so it
+    // stays in its recovery state. Families retired another way are not marked.
+    #[tokio::test]
+    async fn upgrade_keeps_an_earlier_zero_eligible_default_family_in_recovery() {
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-family-recovery-upgrade-")
+            .tempdir()
+            .unwrap();
+        let database = temporary.path().join("product.sqlite3");
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                sqlx::sqlite::SqliteConnectOptions::new()
+                    .filename(&database)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        sqlx::migrate::Migrator {
+            migrations: std::borrow::Cow::Owned(
+                super::super::migrations::MIGRATOR
+                    .iter()
+                    .filter(|migration| migration.version <= 36)
+                    .cloned()
+                    .collect(),
+            ),
+            ..sqlx::migrate::Migrator::DEFAULT
+        }
+        .run(&pool)
+        .await
+        .unwrap();
+        for statement in [
+            "INSERT INTO model_providers(id,label,connected,refreshed_at,adapter_id,access_contract,lifecycle_state,unavailable_reason_code,unavailable_reason_message) VALUES('legacy','Legacy',1,'1','codex-subscription','managed-runtime@1','active','provider_no_eligible_execution_models','No eligible models.')",
+            // Retired by a policy upgrade, then its successor was tombstoned by a zero-eligible refresh.
+            "INSERT INTO model_families(id,name,kind,system_key,enabled,position,managed_provider_id,policy_id,policy_version,lifecycle_state,removed_at) VALUES(101,'Legacy v1','system','legacy:p@1',0,(SELECT COUNT(*) FROM model_families),'legacy','p',1,'tombstoned','1')",
+            "INSERT INTO model_families(id,name,kind,system_key,enabled,position,managed_provider_id,policy_id,policy_version,lifecycle_state,removed_at) VALUES(102,'Legacy defaults','system','legacy:p@2',0,(SELECT COUNT(*) FROM model_families),'legacy','p',2,'tombstoned','1')",
+            "UPDATE product_model_preferences SET default_provider_id='legacy',default_family_id=102 WHERE singleton=1",
+        ] {
+            sqlx::query(statement).execute(&pool).await.unwrap();
+        }
+        pool.close().await;
+
+        let store = SqliteProductStore::open(&database).await.unwrap();
+        let recovery = store
+            .load_model_settings()
+            .await
+            .unwrap()
+            .default_family_recovery
+            .expect("the earlier zero-eligible default stays in recovery");
+        assert_eq!(recovery.family_id, ModelFamilyId::from_database(102));
+        assert_eq!(
+            recovery.reason.code,
+            "provider_no_eligible_execution_models"
+        );
+        let marked: Vec<(i64, Option<String>, bool)> =
+            sqlx::query_as("SELECT id,tombstone_cause,enabled FROM model_families WHERE id IN (101,102) ORDER BY id")
+                .fetch_all(&store.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            marked,
+            vec![
+                (101, None, false),
+                (102, Some("no_eligible_models".into()), true)
+            ]
+        );
+        store.pool.close().await;
     }
 
     // PROV-008: execution of a managed family that a zero-eligible refresh tombstoned reports the

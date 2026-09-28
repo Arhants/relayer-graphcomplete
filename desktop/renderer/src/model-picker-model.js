@@ -25,27 +25,42 @@ export function isModelSelectionCatalogError(error) {
   return MODEL_SELECTION_CATALOG_ERRORS.has(error?.code);
 }
 
-// A managed family kept selected while its provider has no eligible models, as the default or a
-// thread's last selection, and the exact-provider refresh that restores it. Null otherwise.
+// A managed family a zero-eligible refresh keeps selected, as the default or a thread's last
+// selection, and the action that restores it (PROV-008). The server's reason follows the
+// provider: while it is connected, Refresh models can restore the family; once it disconnects,
+// only a reconnect in Settings can. Null for any other family.
 export function familyModelSetup(settings, familyId) {
   if (familyId == null) return null;
   const recovery = [settings?.defaultFamilyRecovery, ...(settings?.familiesNeedingModelSetup ?? [])]
-    .find((candidate) => (
-      candidate?.reason?.code === MODEL_SETUP_RECOVERY_CODE
-      && String(candidate.familyId) === String(familyId)
-    ));
+    .find((candidate) => candidate?.reason && String(candidate.familyId) === String(familyId));
   if (!recovery) return null;
   const provider = settings.providers?.find((item) => String(item.id) === String(recovery.providerId));
   const providerLabel = provider?.label ?? recovery.providerId;
-  return {
+  const identity = {
     familyId: recovery.familyId,
     familyName: recovery.familyName,
     providerId: recovery.providerId,
     providerLabel,
-    label: "Needs model setup",
-    message: `${recovery.familyName} needs model setup. ${providerLabel} has no models eligible for agent execution.`,
-    actionLabel: "Refresh models",
-    actionName: `Refresh models for ${providerLabel}`,
+  };
+  if (recovery.reason.code === MODEL_SETUP_RECOVERY_CODE) {
+    return {
+      ...identity,
+      action: "refresh",
+      label: "Needs model setup",
+      message: `${recovery.familyName} needs model setup. ${providerLabel} has no models eligible for agent execution.`,
+      actionLabel: "Refresh models",
+      actionName: `Refresh models for ${providerLabel}`,
+      busyName: `Refreshing models for ${providerLabel}`,
+    };
+  }
+  const detail = recovery.reason.message ? ` ${recovery.reason.message}` : "";
+  return {
+    ...identity,
+    action: "settings",
+    label: "Provider not connected",
+    message: `${providerLabel} is not connected, so ${recovery.familyName} cannot run.${detail}`,
+    actionLabel: "Open Settings",
+    actionName: `Reconnect ${providerLabel} in Settings`,
   };
 }
 

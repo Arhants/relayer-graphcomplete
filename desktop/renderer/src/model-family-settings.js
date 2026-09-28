@@ -318,12 +318,20 @@ function render() {
   $("#defaultProviderHint").textContent = providerHint ?? "";
   $("#defaultProviderHint").classList.toggle("hidden", !providerHint);
   $("#defaultFamilyRecovery").classList.toggle("hidden", !recovery);
-  $("#defaultFamilyRecoveryTitle").textContent = recovery?.title ?? "";
-  $("#defaultFamilyRecoveryMessage").textContent = recovery?.message ?? "";
+  const canAct = recovery?.action === "providers" || Boolean(providerModelsRefreshAction());
+  const busy = refreshingDefaultFamily && recovery?.action === "refresh";
+  // Only the message text is a live region; it changes only when the recovery does.
+  const title = recovery?.title ?? "";
+  const text = recovery?.message ?? "";
+  const hint = recovery && !canAct ? "Choose another default provider above to send meanwhile." : "";
+  if ($("#defaultFamilyRecoveryTitle").textContent !== title) $("#defaultFamilyRecoveryTitle").textContent = title;
+  if ($("#defaultFamilyRecoveryText").textContent !== text) $("#defaultFamilyRecoveryText").textContent = text;
+  if ($("#defaultFamilyRecoveryHint").textContent !== hint) $("#defaultFamilyRecoveryHint").textContent = hint;
   const refreshButton = $("#refreshDefaultFamilyModels");
-  refreshButton.textContent = refreshingDefaultFamily ? "Refreshing…" : recovery?.actionLabel ?? "Refresh models";
-  refreshButton.setAttribute("aria-label", recovery?.actionName ?? "Refresh models");
-  refreshButton.classList.toggle("hidden", !providerModelsRefreshAction());
+  refreshButton.textContent = busy ? "Refreshing…" : recovery?.actionLabel ?? "Refresh models";
+  refreshButton.setAttribute("aria-label", (busy ? recovery?.busyName : recovery?.actionName) ?? "Refresh models");
+  refreshButton.setAttribute("aria-busy", String(busy));
+  refreshButton.classList.toggle("hidden", !canAct);
   refreshButton.setAttribute("aria-disabled", String(refreshingDefaultFamily || savingDefaults));
   const harnessError = defaultHarnessError(settings);
   $("#defaultHarnessError").textContent = harnessError ?? "";
@@ -598,6 +606,12 @@ async function persistDefault(field) {
 async function refreshDefaultFamilyModels() {
   const recovery = defaultFamilyRecoveryPresentation(settings);
   if (!recovery || refreshingDefaultFamily || savingDefaults) return;
+  // A disconnected provider is reconnected from its card under Providers.
+  if (recovery.action === "providers") {
+    $('[data-settings-tab="providers"]')?.click();
+    return;
+  }
+  const refreshButton = $("#refreshDefaultFamilyModels");
   refreshingDefaultFamily = true;
   render();
   setStatus("Refreshing provider models…");
@@ -610,9 +624,13 @@ async function refreshDefaultFamilyModels() {
   } finally {
     refreshingDefaultFamily = false;
     render();
-    // The button is kept, not re-created, so focus stays on it; once the family is restored it
-    // hides, and focus moves to the provider choice beside it.
-    if ($("#defaultFamilyRecovery").classList.contains("hidden")) $("#defaultProviderSelect").focus();
+    // The button is kept, not re-created, so focus stays on it. Once the family is restored the
+    // button hides; if focus was still on it, it moves to the provider choice beside it.
+    const active = document.activeElement;
+    if ($("#defaultFamilyRecovery").classList.contains("hidden")
+      && (active === refreshButton || active === document.body || !active)) {
+      $("#defaultProviderSelect").focus();
+    }
   }
 }
 
