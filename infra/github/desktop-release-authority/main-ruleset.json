@@ -45,7 +45,7 @@
             "integration_id": 15368
           },
           {
-            "context": "merge-freshness",
+            "context": "merge-freshness-status",
             "integration_id": 15368
           }
         ],

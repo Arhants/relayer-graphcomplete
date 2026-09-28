@@ -639,6 +639,14 @@ also shows the node. The camera and layout functions
 have their own tests (`test/graph-camera.test.mjs`,
 `test/graph-layout.test.mjs`).
 
+Since #477, returning to a view restores its camera only if the user moved
+it (camera revision above 0). An automatic camera is refitted, and so are
+the fits after a drop and before leaving, which the model tracks as
+`manualCam`. The fit before leaving therefore matters only for a camera the
+user panned. The replay cannot reach a pan followed by a node drag: the
+pointer moves only while pressed, and a pan keeps the node beside it. So
+that path is covered by the model alone (`canvas-without-fit-before-leaving`).
+
 A fit centers the graph, which the model writes as `Fit`: the one node at
 location 0. The replay reads locations and camera offsets modulo `L`, and
 `FitCentersNode` checks, unreduced, that whenever the camera is a fit of the

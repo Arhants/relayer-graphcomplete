@@ -153,6 +153,37 @@ export async function renderProductNodeDetail({
   return Object.freeze({ authored: true, mountKey, host, ...runtime });
 }
 
+export function observeAutomaticGraphFitOnResize({
+  graphStage,
+  graphWindow,
+  getCameraRevision,
+  getGraphNodes,
+  hasActiveGesture,
+  refit,
+}) {
+  const Observer = graphWindow?.ResizeObserver;
+  if (!Observer) return { flush: () => {}, dispose: () => {} };
+  const initialRect = graphStage.getBoundingClientRect();
+  let previousSize = { width: initialRect.width, height: initialRect.height };
+  let pending = false;
+  let disposed = false;
+  const flush = () => {
+    if (disposed || !pending || hasActiveGesture()) return;
+    pending = false;
+    if (getGraphNodes().length > 0 && getCameraRevision() === 0) refit();
+  };
+  const observer = new Observer(() => {
+    if (disposed) return;
+    const { width, height } = graphStage.getBoundingClientRect();
+    const changed = Math.abs(width - previousSize.width) > 0.5 || Math.abs(height - previousSize.height) > 0.5;
+    previousSize = { width, height };
+    pending ||= changed;
+    flush();
+  });
+  observer.observe(graphStage);
+  return { flush, dispose: () => { disposed = true; pending = false; observer.disconnect(); } };
+}
+
 const GRAPH_NODE_HALF_WIDTH = 82;
 const GRAPH_NODE_TOP = 28;
 const GRAPH_NODE_BOTTOM = 72;
@@ -1415,6 +1446,30 @@ export function compiledNodeDetailCoversActions(detail, actions, node) {
   return (actions ?? []).every((action) => boundActionIds.has(String(action.id)));
 }
 
+export function graphCameraForView({
+  cachedView,
+  cachedLayoutMatches,
+  enteringView,
+  nodes,
+  bounds,
+  currentCamera,
+  currentCameraRevision,
+}) {
+  if (cachedView && cachedLayoutMatches) {
+    if (cachedView.cameraRevision === 0) {
+      return { camera: fitGraphCamera(nodes, bounds), cameraRevision: 0 };
+    }
+    return {
+      camera: { ...cachedView.camera },
+      cameraRevision: cachedView.cameraRevision,
+    };
+  }
+  if (enteringView || !cachedLayoutMatches) {
+    return { camera: fitGraphCamera(nodes, bounds), cameraRevision: 0 };
+  }
+  return { camera: currentCamera, cameraRevision: currentCameraRevision };
+}
+
 export function captureGraphViewState(
   nodes,
   camera,
@@ -2538,6 +2593,8 @@ export function createProductWorkspace({
   function fitAfterDrop() {
     if (!fitGraphAfterDrop || dragging) return;
     fitGraphAfterDrop = false;
+    // An automatic fit, as graphCameraForView makes: camera revision 0.
+    cameraRevision = 0;
     updateCamera(fitGraphCamera(graphNodes, graphStage.getBoundingClientRect()), false);
   }
 
@@ -2549,6 +2606,15 @@ export function createProductWorkspace({
     }
     drawGraph();
   }
+
+  const automaticGraphFit = observeAutomaticGraphFitOnResize({
+    graphStage,
+    graphWindow,
+    getCameraRevision: () => cameraRevision,
+    getGraphNodes: () => graphNodes,
+    hasActiveGesture: () => Boolean(dragging || panning || pinching),
+    refit: () => updateCamera(fitGraphCamera(graphNodes, graphStage.getBoundingClientRect()), false),
+  });
 
   function zoomAt(zoom, anchor = {
     x: graphStage.getBoundingClientRect().width / 2,
@@ -2627,6 +2693,7 @@ export function createProductWorkspace({
       panning = null;
     }
     if (!panning && !pinching) graphStage.classList.remove("panning");
+    automaticGraphFit.flush();
   };
   graphStage.onpointerup = finishPan;
   graphStage.onpointercancel = finishPan;
@@ -4707,7 +4774,10 @@ export function createProductWorkspace({
       if (!preserveHistoricalSelection) $("#inspector").classList.add("hidden");
       // A layout that changed mid-drag is fitted before its view is cached,
       // so returning shows it fitted.
-      if (fitGraphAfterDrop) camera = fitGraphCamera(graphNodes, graphStage.getBoundingClientRect());
+      if (fitGraphAfterDrop) {
+        camera = fitGraphCamera(graphNodes, graphStage.getBoundingClientRect());
+        cameraRevision = 0;
+      }
       saveGraphView();
       // A drag cannot follow its node into another view, which is fitted.
       dragging = null;
@@ -4840,6 +4910,7 @@ export function createProductWorkspace({
         if (!event.buttons) {
           dragging = null;
           fitAfterDrop();
+          automaticGraphFit.flush();
           return;
         }
         const rect = $("#graphStage").getBoundingClientRect();
@@ -4864,10 +4935,12 @@ export function createProductWorkspace({
         }
         dragging = null;
         fitAfterDrop();
+        automaticGraphFit.flush();
       };
       element.onpointercancel = () => {
         dragging = null;
         fitAfterDrop();
+        automaticGraphFit.flush();
       };
     });
     if (dragging) {
@@ -4920,19 +4993,28 @@ export function createProductWorkspace({
         onSelectionChange(selection.selectedNodeId);
       }
     }
-    if (cachedView && cachedLayoutMatches) {
-      camera = { ...cachedView.camera };
-      cameraRevision = cachedView.cameraRevision;
-    } else if (enteringView || !cachedLayoutMatches) {
+    if (dragMoved && dragging && !cachedLayoutMatches) {
       // While a node is dragged, the new layout is fitted after the drop.
-      if (dragMoved && dragging) fitGraphAfterDrop = true;
-      else camera = fitGraphCamera(graphNodes, graphStage.getBoundingClientRect());
+      fitGraphAfterDrop = true;
+    } else {
+      const restoredCamera = graphCameraForView({
+        cachedView,
+        cachedLayoutMatches,
+        enteringView,
+        nodes: graphNodes,
+        bounds: graphStage.getBoundingClientRect(),
+        currentCamera: camera,
+        currentCameraRevision: cameraRevision,
+      });
+      camera = restoredCamera.camera;
+      cameraRevision = restoredCamera.cameraRevision;
     }
     // A drag that ended in this render, when its pointer could not be
     // captured again, gets its fit now.
     if (fitGraphAfterDrop && !dragging) {
       fitGraphAfterDrop = false;
       camera = fitGraphCamera(graphNodes, graphStage.getBoundingClientRect());
+      cameraRevision = 0;
     }
     drawGraph();
   }
@@ -5732,6 +5814,7 @@ export function createProductWorkspace({
     contextDraftLoadRetryAttempts.clear();
     inputDraftLoadRetries?.dispose();
     graphDocument.defaultView.removeEventListener("resize", repositionContextDraftSendWarning);
+    automaticGraphFit.dispose();
     cancelInspectorFit();
     graphDocument.removeEventListener("pointerdown", blurGraphFromOutsidePointer, true);
     graphDocument.removeEventListener("pointerdown", closeTurnPopoverFromOutside, true);

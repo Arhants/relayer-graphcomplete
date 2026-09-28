@@ -16,6 +16,7 @@
           "cam": 0,
           "fitted": false,
           "layout": 0,
+          "manual": false,
           "pinned": false,
           "unfitted": false,
           "w": 4
@@ -32,6 +33,7 @@
         "fitted": true,
         "gen": 1,
         "layout": 1,
+        "manualCam": false,
         "pan": {
           "on": false,
           "startCam": 0,
@@ -55,6 +57,7 @@
           "cam": 0,
           "fitted": false,
           "layout": 0,
+          "manual": false,
           "pinned": false,
           "unfitted": false,
           "w": 4
@@ -71,6 +74,7 @@
         "fitted": true,
         "gen": 1,
         "layout": 1,
+        "manualCam": false,
         "pan": {
           "on": false,
           "startCam": 0,
@@ -95,6 +99,7 @@
           "cam": 0,
           "fitted": false,
           "layout": 0,
+          "manual": false,
           "pinned": false,
           "unfitted": false,
           "w": 4
@@ -111,6 +116,7 @@
         "fitted": false,
         "gen": 1,
         "layout": 1,
+        "manualCam": false,
         "pan": {
           "on": false,
           "startCam": 0,
@@ -134,6 +140,7 @@
           "cam": 0,
           "fitted": false,
           "layout": 1,
+          "manual": false,
           "pinned": true,
           "unfitted": false,
           "w": 1
@@ -150,6 +157,7 @@
         "fitted": false,
         "gen": 2,
         "layout": 1,
+        "manualCam": false,
         "pan": {
           "on": false,
           "startCam": 0,
@@ -173,6 +181,7 @@
           "cam": 0,
           "fitted": false,
           "layout": 1,
+          "manual": false,
           "pinned": true,
           "unfitted": false,
           "w": 1
@@ -189,6 +198,7 @@
         "fitted": false,
         "gen": 2,
         "layout": 1,
+        "manualCam": false,
         "pan": {
           "on": false,
           "startCam": 0,
@@ -212,11 +222,12 @@
           "cam": 0,
           "fitted": false,
           "layout": 1,
+          "manual": false,
           "pinned": true,
           "unfitted": false,
           "w": 1
         },
-        "cam": 0,
+        "cam": 2,
         "drag": {
           "capGen": 0,
           "gen": 0,
@@ -225,9 +236,10 @@
         },
         "dropped": 1,
         "fitDue": false,
-        "fitted": false,
+        "fitted": true,
         "gen": 3,
         "layout": 1,
+        "manualCam": false,
         "pan": {
           "on": false,
           "startCam": 0,

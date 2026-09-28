@@ -62,13 +62,16 @@ VARIABLES
   dropped,      \* where the user last moved N to, while that should hold
   unfitted,     \* the home view shows a layout changed mid-drag that no fit
                 \* or pan has settled
-  fitted        \* the camera is a fit of N where it is now: N is centered
+  fitted,       \* the camera is a fit of N where it is now: N is centered
+  manualCam     \* the user moved the home view's camera since its last fit
+                \* (cameraRevision > 0); a view left with an automatic camera
+                \* is refitted on return (graphCameraForView, #477)
 
 vars == <<view, layout, gen, w, pinned, cam, cache, ptr, pressed, drag, pan, sel,
-          fitDue, dropped, unfitted, fitted>>
+          fitDue, dropped, unfitted, fitted, manualCam>>
 
 NoCache == [w |-> None, pinned |-> FALSE, cam |-> 0, layout |-> 0, unfitted |-> FALSE,
-            fitted |-> FALSE]
+            fitted |-> FALSE, manual |-> FALSE]
 Screen(x) == Wrap(x + cam)
 World(p) == Wrap(p + L - cam)
 Over == view = "home" /\ Screen(w) = ptr        \* the pointer is over N's element
@@ -79,7 +82,7 @@ Init ==
   /\ ptr \in 0..(L - 1) /\ pressed = "none"
   /\ drag = NoDrag /\ pan = [on |-> FALSE, startCam |-> 0, startPtr |-> 0]
   /\ sel = FALSE /\ fitDue = FALSE
-  /\ dropped = None /\ unfitted = FALSE /\ fitted = TRUE
+  /\ dropped = None /\ unfitted = FALSE /\ fitted = TRUE /\ manualCam = FALSE
 
 -----------------------------------------------------------------------------
 (* The pointer.                                                           *)
@@ -97,7 +100,7 @@ Press ==
           /\ pan' = [on |-> TRUE, startCam |-> cam, startPtr |-> ptr]
           /\ UNCHANGED drag
   /\ UNCHANGED <<view, layout, gen, w, pinned, cam, cache, ptr, sel, fitDue, dropped, unfitted,
-                 fitted>>
+                 fitted, manualCam>>
 
 \* A pointer event goes to the element holding capture while it is still in
 \* the document; otherwise to the element under the pointer.
@@ -126,6 +129,7 @@ Move(p) ==
   /\ unfitted' = IF pressed = "stage" /\ view = "home" THEN FALSE ELSE unfitted
   \* Moving N or the camera leaves the fit.
   /\ fitted' = (fitted /\ w' = w /\ cam' = cam)
+  /\ manualCam' = (manualCam \/ (pressed = "stage" /\ view = "home" /\ cam' # cam))
   /\ UNCHANGED <<view, layout, gen, cache, pressed, pan, sel, fitDue>>
 
 \* pointerup and the click that follows it. On N's element, a moved drag
@@ -148,6 +152,7 @@ Release ==
      /\ fitDue' = IF fits THEN FALSE ELSE fitDue
      /\ unfitted' = IF fits THEN FALSE ELSE unfitted
      /\ fitted' = (fitted \/ fits)
+     /\ manualCam' = (manualCam /\ ~fits)
   /\ pan' = [pan EXCEPT !.on = FALSE]
   /\ UNCHANGED <<view, layout, gen, w, pinned, cache, ptr, dropped>>
 
@@ -170,7 +175,7 @@ RenderSame ==
   /\ drag' = Rebind(gen + 1)
   /\ fitted' = (fitted /\ w' = w)
   /\ UNCHANGED <<view, layout, pinned, cam, cache, ptr, pressed, pan, sel, fitDue, dropped,
-                 unfitted>>
+                 unfitted, manualCam>>
 
 \* The accepted layout changes (a newer current revision in the same view):
 \* positions reset to the layout and the camera refits. A node still being
@@ -185,6 +190,7 @@ RenderLayout ==
   /\ fitDue' = Dragging
   /\ unfitted' = Dragging
   /\ fitted' = ~Dragging
+  /\ manualCam' = (manualCam /\ Dragging)
   /\ drag' = Rebind(gen + 1)
   \* A node still being dragged keeps where the user is taking it.
   /\ dropped' = IF Dragging THEN dropped ELSE None
@@ -199,11 +205,12 @@ Leave ==
   \* A fit due from a mid-drag layout change runs before the view is cached.
   /\ LET fits == FitBeforeLeaving /\ fitDue IN
      cache' = [w |-> w, pinned |-> pinned, cam |-> IF fits THEN Fit(w) ELSE cam,
-               layout |-> layout, unfitted |-> unfitted /\ ~fits, fitted |-> fitted \/ fits]
+               layout |-> layout, unfitted |-> unfitted /\ ~fits, fitted |-> fitted \/ fits,
+               manual |-> manualCam /\ ~fits]
   /\ cam' = 0
   /\ drag' = IF KeepDragAcrossRender THEN NoDrag ELSE drag
   /\ fitDue' = FALSE
-  /\ UNCHANGED <<layout, w, pinned, ptr, pressed, pan, sel, dropped, unfitted, fitted>>
+  /\ UNCHANGED <<layout, w, pinned, ptr, pressed, pan, sel, dropped, unfitted, fitted, manualCam>>
 
 \* Returning restores N and the camera from the cache when the layout
 \* signature matches (graphViewCache in renderGraph), else starts from the
@@ -212,13 +219,17 @@ Return ==
   /\ gen < MaxGen /\ view = "away" /\ pressed = "none"
   /\ view' = "home"
   /\ gen' = gen + 1
-  /\ LET hit == cache # NoCache /\ cache.layout = layout IN
+  /\ LET hit == cache # NoCache /\ cache.layout = layout
+         \* Only a camera the user moved is restored; an automatic one is
+         \* refitted (graphCameraForView).
+         restore == hit /\ cache.manual IN
      /\ w' = IF hit /\ cache.pinned THEN cache.w ELSE Canon(layout)
      /\ pinned' = hit /\ cache.pinned
-     /\ cam' = IF hit THEN cache.cam ELSE Fit(Canon(layout))
-     /\ unfitted' = (hit /\ cache.unfitted)
+     /\ cam' = IF restore THEN cache.cam ELSE Fit(w')
+     /\ unfitted' = (restore /\ cache.unfitted)
      \* A restored camera is a fit only if it was one, for N as cached.
-     /\ fitted' = (~hit \/ (cache.fitted /\ (cache.pinned \/ cache.w = Canon(layout))))
+     /\ fitted' = (~restore \/ (cache.fitted /\ (cache.pinned \/ cache.w = Canon(layout))))
+     /\ manualCam' = restore
   /\ UNCHANGED <<layout, cache, ptr, pressed, drag, pan, sel, fitDue, dropped>>
 
 -----------------------------------------------------------------------------
