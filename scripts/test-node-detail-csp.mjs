@@ -8,6 +8,7 @@ app.setName("Relayer Node Detail CSP Check");
 app.commandLine.appendSwitch("disable-gpu");
 
 function browserProof() {
+  const themeCss = String.raw`.probe{padding-left:13px}[data-relayer-theme="dark"]{display:block!important;position:fixed!important;contain:none!important;overflow:visible!important;max-width:none!important}@media(min-width:0px){[data-relayer-\74 heme="light"] .probe{padding-left:19px;color:#182c34}}[data-relayer-theme="dark"] .probe{color:#edf2f3}`;
   return `(async () => {
     const { mountCompiledNodeDetail } = await import("./src/product-workspace/node-detail-runtime.js");
     const canonicalJson = (value) => {
@@ -19,7 +20,7 @@ function browserProof() {
     };
     const content = {
       version: 1,
-      components: [{ id: "probe", order: 0, html: '<section class="probe"><img alt="CSP visual" data-asset-mount="visual"></section>', css: ".probe{padding-left:13px}" }],
+      components: [{ id: "probe", order: 0, html: '<section class="probe"><img alt="CSP visual" data-asset-mount="visual"></section>', css: ${JSON.stringify(themeCss)} }],
       mounts: [{ id: "visual", componentId: "probe", kind: "asset", host: "img", assetId: "visual" }],
       assets: [{ id: "visual", digestSha256: "a".repeat(64), mediaType: "image/svg+xml", representation: "image" }],
     };
@@ -49,12 +50,22 @@ function browserProof() {
         image.addEventListener("load", () => { clearTimeout(timeout); resolveLoad(); }, { once: true });
         image.addEventListener("error", () => { clearTimeout(timeout); rejectLoad(new Error("Blob image was blocked by Product CSP.")); }, { once: true });
       });
+      document.documentElement.dataset.theme = "light";
+      await new Promise(requestAnimationFrame);
+      const light = getComputedStyle(runtime.shadowRoot.querySelector(".probe"));
+      const lightTheme = { paddingLeft: light.paddingLeft, color: light.color };
+      document.documentElement.dataset.theme = "dark";
+      await new Promise(requestAnimationFrame);
       const authored = getComputedStyle(runtime.shadowRoot.querySelector(".probe"));
       const contained = getComputedStyle(host);
       return {
         status: runtime.status,
+        lightTheme,
+        darkColor: authored.color,
         paddingLeft: authored.paddingLeft,
         contain: contained.contain,
+        position: contained.position,
+        overflow: contained.overflow,
         naturalWidth: image.naturalWidth,
         styleElements: runtime.shadowRoot.querySelectorAll("style").length,
         adoptedStyleSheets: runtime.shadowRoot.adoptedStyleSheets.length,
@@ -80,7 +91,12 @@ async function run() {
   const result = await window.webContents.executeJavaScript(browserProof());
   if (result.status !== "mounted"
     || result.paddingLeft !== "13px"
+    || result.lightTheme.paddingLeft !== "19px"
+    || result.lightTheme.color !== "rgb(24, 44, 52)"
+    || result.darkColor !== "rgb(237, 242, 243)"
     || (result.contain !== "content" && !result.contain.includes("layout"))
+    || result.position !== "relative"
+    || result.overflow !== "hidden"
     || result.naturalWidth !== 2
     || result.styleElements !== 0
     || result.adoptedStyleSheets !== 2) {
