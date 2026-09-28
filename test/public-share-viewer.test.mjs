@@ -220,6 +220,15 @@ describe("public share V1 reader", () => {
     expect(snapshot.turnContainingLayer("layer:nested").id).toBe("turn:1");
   });
 
+  it("preserves valid default nodes and rejects defaults outside the public layer", () => {
+    const records = fixtureJsonl().trim().split("\n").map(JSON.parse);
+    const root = records[1].acceptedView.layers[0];
+    root.layer.defaultNodeId = root.nodes[0].id;
+    expect(parsePublicSnapshot(recordsJsonl(records)).state.visibleLayer.layer.defaultNodeId).toBe(root.nodes[0].id);
+    root.layer.defaultNodeId = "node:nested";
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "default_node_outside_layer" }));
+  });
+
   it("reads asset-bearing V2 bytes and resolves only the node's pinned visual content", async () => {
     const { jsonl, asset } = assetFixtureJsonl();
     const snapshot = parsePublicSnapshot(jsonl);
@@ -517,7 +526,14 @@ describe("public share HTML boundary", () => {
 
   it("boots the real ProductWorkspace at the first turn without changing the page URL", async () => {
     const windowRef = new Window({ url: `https://share.example.test/t/${"a".repeat(32)}` });
-    windowRef.document.write(renderPublicViewerTemplate({ snapshot: recordsJsonl(invokeFixtureRecords()) }));
+    const records = invokeFixtureRecords();
+    const root = records[1].acceptedView.layers[0];
+    root.layer.defaultNodeId = root.nodes[0].id;
+    root.layer.nodes.push("node:other");
+    root.nodes.push({ id: "node:other", kind: "concept", icon: "box", title: "Other share choice", detail: "", state: "accepted" });
+    root.layer.layout.placements.push({ nodeId: "node:other", x: .8, y: .8 });
+    const page = renderPublicViewerTemplate({ snapshot: recordsJsonl(records) });
+    windowRef.document.write(page);
     const previous = {
       DOMParser: globalThis.DOMParser,
       document: globalThis.document,
@@ -570,7 +586,21 @@ describe("public share HTML boundary", () => {
       });
       viewer.render();
       expect(windowRef.location.href).toBe(originalUrl);
+      viewer.adapter.selectTurnById("turn:2");
+      viewer.adapter.selectTurnById("turn:1");
+      viewer.render();
+      await windowRef.happyDOM.waitUntilComplete();
+      windowRef.document.querySelector('[data-node="node:other"]').click();
+      await windowRef.happyDOM.waitUntilComplete();
+      expect(viewer.adapter.selection.selectedNodeId).toBe("node:other");
       viewer.dispose();
+      windowRef.document.open();
+      windowRef.document.write(page);
+      const otherShare = bootPublicViewer({ documentRef: windowRef.document, windowRef, onRenderError });
+      await windowRef.happyDOM.waitUntilComplete();
+      expect(otherShare.adapter.selection.selectedNodeId).toBe(root.layer.defaultNodeId);
+      expect(windowRef.localStorage.getItem("relayerLayerSelectionsV1")).toBeNull();
+      otherShare.dispose();
     } finally {
       globalThis.DOMParser = previous.DOMParser;
       globalThis.document = previous.document;

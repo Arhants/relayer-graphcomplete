@@ -87,6 +87,7 @@ export function bootPublicViewer({
   let linkObserver;
   let onLinkClick;
   let onResize;
+  let workspace;
   try {
     const snapshot = parsePublicSnapshot(snapshotLiteral(documentRef));
     const adapter = createPublicViewerAdapter(snapshot);
@@ -102,7 +103,6 @@ export function bootPublicViewer({
       linkObserver = new windowRef.MutationObserver(() => securePublicLinks(host));
       linkObserver.observe(host, { childList: true, subtree: true });
     }
-    let workspace;
     const render = () => {
       workspace.render();
       securePublicLinks(host);
@@ -114,6 +114,8 @@ export function bootPublicViewer({
       getState: () => adapter.state,
       getThread: () => adapter.thread,
       selection: adapter.selection,
+      // Portable IDs repeat across shares; remember choices only within this viewer.
+      layerSelectionMemoryOwner: {},
       showThread: () => {},
       showEmpty: () => {},
       getNavigationHistory: () => ({ canGoBack: false, canGoForward: false }),
@@ -173,6 +175,7 @@ export function bootPublicViewer({
       },
     });
   } catch (error) {
+    workspace?.dispose();
     linkObserver?.disconnect();
     host?.removeEventListener("click", onLinkClick, true);
     windowRef?.removeEventListener?.("resize", onResize);

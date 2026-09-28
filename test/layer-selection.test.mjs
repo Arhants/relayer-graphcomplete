@@ -26,3 +26,13 @@ it("keeps the current choice when persistence fails instead of restoring stale d
   rememberLayerSelection(10, 20, 30, 2);
   expect(rememberedLayerSelection(10, 20, 30)).toBe("2");
 });
+
+it("isolates portable IDs between public viewer instances without browser persistence", () => {
+  const windowRef = new Window({ url: "https://share.example.test" });
+  vi.stubGlobal("window", windowRef);
+  const shareA = {}; const shareB = {};
+  rememberLayerSelection("conversation:1", "turn:1", "layer:1", "node:2", shareA);
+  expect(rememberedLayerSelection("conversation:1", "turn:1", "layer:1", shareA)).toBe("node:2");
+  expect(rememberedLayerSelection("conversation:1", "turn:1", "layer:1", shareB)).toBeNull();
+  expect(windowRef.localStorage.getItem("relayerLayerSelectionsV1")).toBeNull();
+});

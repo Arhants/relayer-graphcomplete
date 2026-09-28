@@ -4,8 +4,7 @@ const memories = new WeakMap();
 const fallback = new Map();
 const hydrated = new WeakSet();
 
-function selectionMemory() {
-  const owner = globalThis.window;
+function selectionMemory(owner) {
   if (!owner || typeof owner !== "object") return fallback;
   if (!memories.has(owner)) memories.set(owner, new Map());
   return memories.get(owner);
@@ -16,16 +15,16 @@ function key(threadId, interactionId, layerId) {
   return JSON.stringify([threadId, interactionId, layerId].map(String));
 }
 
-function storage() {
-  try { return globalThis.window?.localStorage; } catch { return null; }
+function storage(owner) {
+  try { return owner === globalThis.window ? owner?.localStorage : null; } catch { return null; }
 }
 
-function readSelections() {
-  const memory = selectionMemory();
+function readSelections(owner) {
+  const memory = selectionMemory(owner);
   if (hydrated.has(memory)) return;
   hydrated.add(memory);
   try {
-    const entries = JSON.parse(storage()?.getItem(STORAGE_KEY) ?? "null");
+    const entries = JSON.parse(storage(owner)?.getItem(STORAGE_KEY) ?? "null");
     if (Array.isArray(entries)) {
       for (const entry of entries.slice(-MAX_SELECTIONS)) {
         if (Array.isArray(entry) && entry.length === 2 && entry.every((value) => typeof value === "string")) {
@@ -36,21 +35,21 @@ function readSelections() {
   } catch { /* Presentation storage is best effort. */ }
 }
 
-export function rememberedLayerSelection(threadId, interactionId, layerId) {
-  readSelections();
-  const memory = selectionMemory();
+export function rememberedLayerSelection(threadId, interactionId, layerId, owner = globalThis.window) {
+  readSelections(owner);
+  const memory = selectionMemory(owner);
   return memory.get(key(threadId, interactionId, layerId)) ?? null;
 }
 
-export function rememberLayerSelection(threadId, interactionId, layerId, nodeId) {
+export function rememberLayerSelection(threadId, interactionId, layerId, nodeId, owner = globalThis.window) {
   const location = key(threadId, interactionId, layerId);
   if (location == null || nodeId == null) return;
-  readSelections();
-  const memory = selectionMemory();
+  readSelections(owner);
+  const memory = selectionMemory(owner);
   memory.delete(location);
   memory.set(location, String(nodeId));
   while (memory.size > MAX_SELECTIONS) memory.delete(memory.keys().next().value);
-  try { storage()?.setItem(STORAGE_KEY, JSON.stringify([...memory])); } catch { /* Keep the in-memory selection. */ }
+  try { storage(owner)?.setItem(STORAGE_KEY, JSON.stringify([...memory])); } catch { /* Keep the in-memory selection. */ }
 }
 
 /** Resolve IDs against canonical membership, never the resolved-node array order. */
