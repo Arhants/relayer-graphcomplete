@@ -168,6 +168,34 @@ describe("scheduled merge freshness", () => {
     expect((await sweep(fake.options))[0].conclusion).toBe("failure");
   });
 
+  it.each([false, true])("rejects shared heads regardless of PR ordering (reverse=%s)", async (reverse) => {
+    const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
+    const other = { ...structuredClone(f.pr), number: 99 };
+    const prs = reverse ? [other, f.pr] : [f.pr, other];
+    fake.api.paginate = async (method, args) => method === fake.api.rest.pulls.list
+      ? prs : paginate(method, args);
+    fake.api.rest.pulls.get = async ({ pull_number }) => ({ data: structuredClone(prs.find((pr) => pr.number === pull_number)) });
+    const results = await sweep(fake.options);
+    expect(results.every((result) => result.conclusion === "failure")).toBe(true);
+    expect(fake.statuses.some((status) => status.state === "success")).toBe(false);
+    expect(fake.outputs.some((check) => check.conclusion === "success")).toBe(false);
+  });
+
+  it("rechecks shared heads after evidence IO and fails closed when the check is unavailable", async () => {
+    for (const unavailable of [false, true]) {
+      const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
+      let calls = 0;
+      fake.api.paginate = async (method, args) => {
+        if (method !== fake.api.rest.pulls.list || ++calls === 1) return paginate(method, args);
+        expect(fake.statuses[0].state).toBe("pending");
+        if (unavailable) throw new Error("API unavailable");
+        return [f.pr, { ...f.pr, number: 99 }];
+      };
+      expect((await sweep(fake.options))[0].conclusion).toBe("failure");
+      expect(fake.statuses[0].state).toBe("failure");
+    }
+  });
+
   it("revokes success before evidence failure and rejects a head change during IO", async () => {
     const f = fixture(), fake = fakeGitHub(f);
     fake.api.rest.actions.downloadArtifact = async () => { throw new Error("untrusted secret error"); };
@@ -340,8 +368,20 @@ describe("scheduled merge freshness", () => {
       { context: "check", integration_id: 15368 }, { context: STATUS_CONTEXT, integration_id: 15368 },
     ]);
     const label = "main requires GitHub Actions CI and scheduled merge freshness";
-    const audit = () => evaluateDesktopReleaseAuthority({ rulesets: [main] }).find((item) => item.label === label).passed;
+    const rulesets = [main];
+    const audit = () => evaluateDesktopReleaseAuthority({ rulesets }).find((item) => item.label === label).passed;
     expect(audit()).toBe(true);
+    checks.required_status_checks.push({ context: CHECK_NAME, integration_id: 15368 });
+    expect(audit()).toBe(false);
+    checks.required_status_checks.pop();
+    rulesets.push({ ...main, rules: [{ type: "required_status_checks", parameters: {
+      required_status_checks: [{ context: CHECK_NAME.toUpperCase(), integration_id: 15368 }],
+    } }] });
+    expect(audit()).toBe(false);
+    rulesets.pop();
+    checks.required_status_checks.push({ context: "unrelated-protection", integration_id: 15368 });
+    expect(audit()).toBe(true);
+    checks.required_status_checks.pop();
     checks.required_status_checks.pop();
     expect(audit()).toBe(false);
   });

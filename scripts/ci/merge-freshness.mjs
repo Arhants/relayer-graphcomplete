@@ -162,6 +162,17 @@ async function refreshPullRequest({ github, owner, repo, repository, listed, clo
       verdict = current.head.sha === pr.head.sha
         ? evaluateEvidence({ pr: current, run, jobs, receipt, merge, repository, now: clock() })
         : { conclusion: "failure", description: "PR head changed during evaluation" };
+      if (verdict.conclusion === "success") {
+        // Both APIs publish by SHA, while receipts belong to individual PRs.
+        // Re-read after evidence IO: another PR may have adopted this head since
+        // the initial sweep listing. Never let ordering grant its missing proof.
+        const currentPrs = await github.paginate(github.rest.pulls.list, {
+          owner, repo, state: "open", base: "main", per_page: 100,
+        });
+        if (currentPrs.some((other) => other.number !== pr.number && other.head.sha === pr.head.sha)) {
+          verdict = { conclusion: "failure", description: "Multiple open PRs share this head; use a unique head commit" };
+        }
+      }
     }
   } catch {
     verdict = { conclusion: "failure", description: "Freshness evidence unavailable; retry the guard" };

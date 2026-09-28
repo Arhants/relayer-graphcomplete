@@ -57,6 +57,10 @@ The required result is a commit status, independent of Actions workflow suites.
 GitHub can attach API-created checks to the first workflow suite on a head even
 when later PR metadata events create a newer suite selected by the merge box.
 A green check in the API rollup therefore does not prove merge enforcement.
+Both publication APIs are scoped to the head SHA, while receipts belong to a PR.
+Before success, the guard re-lists open main-targeting PRs and rejects any shared
+head. Use a unique head commit for each open PR. Listing failure fails closed;
+PR changes after this check remain subject to the scheduled refresh limitation.
 The old `merge-freshness` check remains dual-published during migration. Both
 revocations are attempted independently before evidence IO; either publication
 failure remains an operator-visible failure. The names intentionally differ:
@@ -84,6 +88,8 @@ Rollout (requires operator approval for publishing and the live ruleset change):
    update from the freshly read existing ruleset: replace only the required
    `merge-freshness` context with `merge-freshness-status`, retaining app 15368,
    required `check`, strict freshness disabled, and every unrelated protection.
+   The audit rejects the legacy requirement in active rulesets explicitly targeting
+   `main` or the default branch. Inspect wildcard rulesets separately.
 4. After the approved update, inspect the real merge gate (including PR #477 if
    still open), the read-only authority audit, and a scheduled expiration sweep.
    The checked-in template and deterministic tests alone do not certify activation.
@@ -108,6 +114,8 @@ Checkpoint mapping (no product runtime behavior changes):
 | Both publications revoked on partial failure; failed final write remains non-success | dual-publication failure journeys |
 | Status history unavailable or capacity near 1,000 cannot strand success | status-history failure and capacity boundary scenarios |
 | Shared head SHA does not select another PR's run or an older success | PR-specific run selection scenario |
+| Shared-head publications cannot lend one PR's evidence to another | both PR orderings, newly shared head after evidence IO, and failed re-list journeys |
+| Migration cannot retain the obsolete required context | authority audit rejects legacy alongside replacement while allowing unrelated checks |
 | Artifact bytes never executed or extracted | real ZIP decoder scenarios |
 | Trusted checkout, permissions, schedule and required contexts | workflow/ruleset contract scenario |
 | Existing release authority remains configured | desktop-shell release-authority audit scenario |
