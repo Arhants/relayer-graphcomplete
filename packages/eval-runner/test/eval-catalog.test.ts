@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createSyntheticExternalCatalog } from "./fixtures/external-catalog.js";
-import { validateEvalCatalogV1, validateEvalChecksV1 } from "../src/eval-catalog.js";
+import { projectCapabilitySuiteCatalog, validateEvalCatalogV1, validateEvalChecksV1 } from "../src/eval-catalog.js";
+import { computeCapabilitySuiteDigest } from "../src/suites/contracts.js";
 
 describe("external evaluation catalog boundary", () => {
   it("validates generic bound cases and their public projections before use", () => {
@@ -24,6 +25,40 @@ describe("external evaluation catalog boundary", () => {
     expect(() => validateEvalCatalogV1({ ...catalog, cases: [...catalog.cases, catalog.cases[0]] })).toThrow("Duplicate evaluation case ID");
     const first = catalog.cases[0]!;
     expect(() => validateEvalCatalogV1({ ...catalog, cases: [{ ...first, definition: { ...first.definition, caseSnapshotDigest: `sha256:${"0".repeat(64)}` } }, catalog.cases[1]] })).toThrow("projection or digest drifted");
+  });
+  it.each(["name", "description"] as const)("rejects %s drift from the authoritative snapshot", (key) => {
+    const catalog = createSyntheticExternalCatalog();
+    const first = catalog.cases[0]!;
+    const changedDefinition = { ...first.definition, [key]: `Drifted ${key}` };
+    const changedBoundDefinition = { ...(first.boundCase.definition as typeof first.definition), [key]: `Drifted ${key}` };
+    expect(() => validateEvalCatalogV1({
+      ...catalog,
+      cases: [{ ...first, definition: changedDefinition, boundCase: { ...first.boundCase, definition: changedBoundDefinition } }, catalog.cases[1]!],
+    })).toThrow(`Case ${key} drifted from its authoritative snapshot`);
+  });
+  it("retains valid individual cases when a well-formed suite cannot resolve", () => {
+    const supplied = createSyntheticExternalCatalog();
+    const suite = supplied.suites[0]!;
+    const missingMember = { ...suite.members[0]!, caseId: "fixture.missing" };
+    const body = { ...suite, members: [missingMember, ...suite.members.slice(1)] };
+    const unresolvedSuite = {
+      ...body,
+      suiteDigest: computeCapabilitySuiteDigest(body),
+    };
+
+    const catalog = validateEvalCatalogV1({ ...supplied, suites: [unresolvedSuite] });
+    expect(catalog.cases.map(({ definition }) => definition.id)).toEqual(["fixture.external-a", "fixture.external-b"]);
+    expect(projectCapabilitySuiteCatalog(catalog.suites[0]!, catalog.cases.map(({ boundCase }) => boundCase))).toMatchObject({
+      available: false,
+      unavailableReason: expect.stringContaining("references missing case: fixture.missing"),
+    });
+  });
+  it("still rejects a malformed suite manifest before catalog admission", () => {
+    const supplied = createSyntheticExternalCatalog();
+    expect(() => validateEvalCatalogV1({
+      ...supplied,
+      suites: [{ ...supplied.suites[0]!, status: "draft" }],
+    })).toThrow("Invalid capability suite status");
   });
   it("owns immutable catalog data while retaining the validated callback references", () => {
     const supplied = createSyntheticExternalCatalog();

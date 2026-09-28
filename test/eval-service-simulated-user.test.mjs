@@ -892,6 +892,70 @@ describe("EvalService simulated-user result persistence", () => {
     }
   });
 
+  it("grades an external workspace only after native semantic children settle", async () => {
+    const { stateFile, configurationPath } = await testPaths();
+    const fixtureCatalog = createSyntheticExternalCatalog();
+    const first = fixtureCatalog.cases[0];
+    const thread = first.definition.threads[0];
+    const definition = {
+      ...first.definition,
+      threads: [{ ...thread, mutationPolicy: "read-only", prompts: [thread.prompts[0], "Inspect the settled first result, then finish."] }],
+    };
+    let workspaceMarker;
+    const materialize = vi.fn(async (input) => {
+      const fixture = await first.materialize(input);
+      workspaceMarker = join(input.workspaceDirectory, "semantic-child-marker.txt");
+      await writeFile(workspaceMarker, "root-terminal\n");
+      return fixture;
+    });
+    const observedMarkers = [];
+    const grade = vi.fn(async () => {
+      const marker = await readFile(workspaceMarker, "utf8");
+      observedMarkers.push(marker.trim());
+      return [{
+        name: "settled-workspace",
+        passed: marker.startsWith("child-") && marker.endsWith("-settled\n"),
+        detail: marker.trim(),
+      }];
+    });
+    const catalog = withExternalIdentity({
+      ...fixtureCatalog,
+      cases: [{ ...first, definition, materialize, grade }, fixtureCatalog.cases[1]],
+    });
+    let now = 0;
+    const clock = { now: () => now, sleep: async (ms) => { now += ms; } };
+    globalThis.fetch = fakeExternalChildProduct(async (phase) => {
+      await writeFile(workspaceMarker, `child-${phase}-settled\n`);
+    });
+    const service = await new EvalService({
+      stateFile,
+      productSession: productSession(),
+      configurationPaths: [configurationPath],
+      platform: "darwin",
+      externalCatalog: catalog,
+      semanticChildDiscoveryClock: clock,
+    }).open();
+
+    const created = await service.createRun({
+      testCaseIds: [definition.id],
+      harnessConfigurationNames: ["fixture-task-system"],
+      judgeConfigurationName: "deterministic-graph-contract",
+    });
+    const execution = (await waitForCompletedRun(service, created.id)).executions[0];
+
+    expect(execution.error).toBeNull();
+    expect(execution.semanticChildren).toEqual([
+      expect.objectContaining({ interactionId: "child-1", status: "accepted" }),
+      expect.objectContaining({ interactionId: "child-2", status: "accepted" }),
+    ]);
+    expect(grade).toHaveBeenCalledTimes(2);
+    expect(observedMarkers).toEqual(["child-1-settled", "child-2-settled"]);
+    expect(execution.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "implementation:turn-1:settled-workspace", passed: true, detail: "child-1-settled" }),
+      expect.objectContaining({ name: "implementation:turn-2:settled-workspace", passed: true, detail: "child-2-settled" }),
+    ]));
+  });
+
   it("keeps external mandatory gates failed for missing or failing verifier checks", async () => {
     for (const mode of ["missing", "failing", "malformed-truthy", "sparse-gate"]) {
       const { stateFile, configurationPath } = await testPaths();
@@ -1092,6 +1156,68 @@ function fakeExternalAcceptedProduct() {
     return base(url, options);
   });
   return { fetch, projects, base };
+}
+
+function fakeExternalChildProduct(onChildSettled) {
+  const base = fakeExternalAcceptedProduct().fetch;
+  const output = acceptedOutput();
+  const root = {
+    id: "interaction-1", sequence: 1, graphNodeId: 1, completionStatus: "accepted",
+    completionOutput: output, completionError: null, text: "Synthetic project task.",
+    permissionProfileId: "auto", effectiveExecutionDigest: `sha256:${"d".repeat(64)}`,
+    effectivePermissionReceipt: { permissionProfileId: "auto" },
+  };
+  let phase = 1;
+  let phaseReads = 0;
+  const mutatedPhases = new Set();
+  return vi.fn(async (url, options = {}) => {
+    const path = new URL(url).pathname;
+    if (path === "/api/state") return jsonResponse({ currentProjection: { events: [] } });
+    if (/^\/api\/threads\/thread-1\/interactions\/interaction-2\/layers\/\d+$/.test(path)) {
+      return jsonResponse({
+        layer: output.rootLayer.layer,
+        nodes: output.rootLayer.nodes,
+        edges: output.rootLayer.edges,
+        actions: output.rootLayer.actions,
+      });
+    }
+    if (path === "/api/threads/thread-1/interactions" && options.method === "POST") {
+      phase = 2;
+      phaseReads = 0;
+      return jsonResponse({ id: "interaction-2" });
+    }
+    if (path !== "/api/threads/thread-1" || (options.method !== undefined && options.method !== "GET")) return base(url, options);
+    phaseReads += 1;
+    const childAccepted = phaseReads >= 3;
+    if (childAccepted && !mutatedPhases.has(phase)) {
+      mutatedPhases.add(phase);
+      await onChildSettled(phase);
+    }
+    const human = phase === 1 ? [root] : [root, {
+      ...root, id: "interaction-2", sequence: 2, graphNodeId: 3,
+      text: "Inspect the settled first result, then finish.",
+    }];
+    const child = {
+      id: `child-${phase}`, sequence: phase * 2, graphNodeId: phase * 2,
+      completionStatus: childAccepted ? "accepted" : "running",
+      completionOutput: null, completionError: null,
+    };
+    return jsonResponse({
+      id: "thread-1",
+      interactions: [
+        ...human,
+        ...(phase === 2 ? [{
+          id: "child-1", sequence: 2, graphNodeId: 2,
+          completionStatus: "accepted", completionOutput: null, completionError: null,
+        }] : []),
+        child,
+      ],
+      actionInvocations: [
+        ...(phase === 2 ? [{ sourceInteractionId: root.id, actionId: "invoke-1", resultInteractionId: "child-1" }] : []),
+        { sourceInteractionId: human.at(-1).id, actionId: `invoke-${phase}`, resultInteractionId: child.id },
+      ],
+    });
+  });
 }
 
 async function testPaths() {

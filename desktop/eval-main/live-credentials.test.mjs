@@ -35,6 +35,54 @@ describe("live Eval credential validation", () => {
     expect(ensureCodexModelCatalog).not.toHaveBeenCalled();
   });
 
+  it("validates and preserves a configuration-owned Codex model instead of requiring a product family", async () => {
+    const settings = {
+      harnesses: [{ id: "codex-layered-navigation-luna", available: true, compatibleProviderIds: [], modelCompatibility: [] }],
+      providers: [],
+      families: [],
+    };
+    const ensureCodexModelCatalog = vi.fn();
+    const close = vi.fn(async () => {});
+    const createCredentials = vi.fn(() => ({ account: async () => ({ status: "connected" }), close }));
+    const validate = createLiveCredentialValidator({
+      resolveModelRoute: createLiveModelRouteResolver({
+        readModelSettings: async () => settings,
+        ensureCodexModelCatalog,
+      }),
+      resolveCodexRuntime: async () => ({ executable: "/managed/codex", environment: {} }),
+      createCredentials,
+    });
+    await expect(validate({
+      name: "codex-layered-navigation-luna",
+      implementation: "codex.basic",
+      settings: { model: "gpt-5.6-luna" },
+    }, reference)).resolves.toEqual({
+      selectedModel: null,
+      productModelSelection: false,
+      configurationModel: "gpt-5.6-luna",
+    });
+    expect(ensureCodexModelCatalog).not.toHaveBeenCalled();
+    expect(createCredentials).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a configuration-owned model pin that differs from the admitted harness model", async () => {
+    const validate = createLiveCredentialValidator({
+      resolveModelRoute: async () => ({
+        selectedModel: null,
+        productModelSelection: false,
+        configurationModel: "gpt-5.6-sol",
+        provider: { id: "codex", adapterId: "codex-subscription", connected: true },
+      }),
+      resolveCodexRuntime: async () => ({ executable: "/managed/codex", environment: {} }),
+    });
+    await expect(validate({
+      name: "codex-layered-navigation-luna",
+      implementation: "codex.basic",
+      settings: { model: "gpt-5.6-luna" },
+    }, reference)).rejects.toThrow("selected live Eval model route is invalid");
+  });
+
   it("bootstraps the Codex catalog for a selected subscription and validates the managed account", async () => {
     const ensureCodexModelCatalog = vi.fn();
     const codexModel = { ...model, providerId: "codex" };

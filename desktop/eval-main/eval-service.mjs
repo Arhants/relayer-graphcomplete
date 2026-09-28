@@ -1445,8 +1445,19 @@ export class EvalService {
             this.configurations.get(name),
             externalLiveAuthorization.credentialReference,
           );
-          if (!pinnedModelResolution?.selectedModel
-            || pinnedModelResolution.productModelSelection !== true) {
+          const configurationModel = this.configurations.get(name)?.settings?.model;
+          const productSelectedRoute = pinnedModelResolution?.selectedModel !== null
+            && pinnedModelResolution?.selectedModel !== undefined
+            && pinnedModelResolution.productModelSelection === true;
+          const configurationModelMatches = pinnedModelResolution?.selectedModel === null
+            && pinnedModelResolution.productModelSelection === false
+            && typeof configurationModel === "string"
+            && configurationModel.trim() !== ""
+            && pinnedModelResolution.configurationModel === configurationModel.trim();
+          const configurationOwnedRoute = this.configurations.get(name)?.implementation === "codex.basic"
+            && configurationModelMatches
+            && harnessUsesConfigurationModel(await this.#productRequest("/api/model-settings"), name);
+          if (!productSelectedRoute && !configurationOwnedRoute) {
             throw new Error("External live Eval did not resolve an exact provider model route.");
           }
           pinnedLiveModelResolutions.set(name, copy(pinnedModelResolution));
@@ -2535,6 +2546,9 @@ export class EvalService {
     execution.modelResolution = {
       selectedModel: copy(selectedModel ?? null),
       productModelSelection,
+      ...(execution.pinnedModelResolution?.configurationModel === undefined
+        ? {}
+        : { configurationModel: execution.pinnedModelResolution.configurationModel }),
     };
     const thread = await this.#productRequest("/api/threads", {
       method: "POST",
@@ -2551,6 +2565,7 @@ export class EvalService {
     const humanInteractionIds = [thread.rootInteractionId];
     const rootInteraction = await this.#waitForInteraction(execution, thread.id, thread.rootInteractionId);
     await this.#captureCandidateTrace(execution, rootInteraction);
+    let settled = await this.#waitForSemanticChildren(execution, thread.id, humanInteractionIds);
     await afterTurn(thread.rootInteractionId, 0);
     for (const [offset, prompt] of prompts.slice(1).entries()) {
       if (execution.harnessConfiguration.implementation === "prime.agent") {
@@ -2569,14 +2584,10 @@ export class EvalService {
       humanInteractionIds.push(interaction.id);
       const completedInteraction = await this.#waitForInteraction(execution, thread.id, interaction.id);
       await this.#captureCandidateTrace(execution, completedInteraction);
+      settled = await this.#waitForSemanticChildren(execution, thread.id, humanInteractionIds);
       await afterTurn(interaction.id, offset + 1);
     }
-    const { detail, semanticChildren } = await this.#waitForSemanticChildren(
-      execution,
-      thread.id,
-      humanInteractionIds,
-    );
-    return { thread, humanInteractionIds, detail, semanticChildren };
+    return { thread, humanInteractionIds, detail: settled.detail, semanticChildren: settled.semanticChildren };
   }
 
   async #judgeAcceptedTurn({

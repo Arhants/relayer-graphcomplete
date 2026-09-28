@@ -38,6 +38,16 @@ export function createLiveModelRouteResolver({
         };
       }
       let settings = await readModelSettings();
+      const configurationModel = configuration?.settings?.model;
+      if (typeof configurationModel === "string" && configurationModel.trim() !== ""
+        && harnessUsesConfigurationModel(settings, harnessName)) {
+        return {
+          selectedModel: null,
+          productModelSelection: false,
+          configurationModel: configurationModel.trim(),
+          provider: { id: "codex", adapterId: "codex-subscription", connected: true },
+        };
+      }
       let selectedModel = firstAvailableSelection(settings, harnessName);
       let provider = providerForSelection(settings, selectedModel);
       // Preserve the legacy first-use Codex catalog bootstrap, but do not
@@ -115,7 +125,7 @@ export function createLiveCredentialValidator({
     } catch {
       throw new Error("The selected live Eval model route is unavailable.");
     }
-    validateResolvedRoute(route, configuration.name);
+    validateResolvedRoute(route, configuration);
 
     if (route.provider.adapterId === "codex-subscription") {
       await validateCodexAccount({ resolveCodexRuntime, createCredentials });
@@ -129,6 +139,7 @@ export function createLiveCredentialValidator({
         modelId: route.selectedModel.modelId,
       },
       productModelSelection: route.productModelSelection,
+      ...(route.configurationModel === undefined ? {} : { configurationModel: route.configurationModel }),
     };
   };
 }
@@ -153,7 +164,7 @@ function providerForSelection(settings, selectedModel) {
   return settings?.providers?.find(({ id }) => id === selectedModel.providerId) ?? null;
 }
 
-function validateResolvedRoute(route, expectedHarnessId) {
+function validateResolvedRoute(route, configuration) {
   const selectedModel = route?.selectedModel;
   const provider = route?.provider;
   if (!provider || provider.connected !== true || !SUPPORTED_PROVIDER_ADAPTERS.has(provider.adapterId)) {
@@ -163,14 +174,22 @@ function validateResolvedRoute(route, expectedHarnessId) {
     throw new Error("The selected model route is invalid.");
   }
   if (selectedModel === null) {
-    if (provider.adapterId !== "codex-subscription" || route.productModelSelection !== false) {
+    const expectedModel = configuration?.settings?.model;
+    const builtInJudge = configuration?.implementation === "codex.basic"
+      && CODEX_JUDGE_CONFIGURATION_NAMES.has(configuration.name);
+    if (builtInJudge && route.configurationModel === undefined
+      && provider.adapterId === "codex-subscription" && route.productModelSelection === false) return;
+    if (configuration?.implementation !== "codex.basic"
+      || provider.adapterId !== "codex-subscription" || route.productModelSelection !== false
+      || typeof expectedModel !== "string" || expectedModel.trim() === ""
+      || route.configurationModel !== expectedModel.trim()) {
       throw new Error("The selected live Eval model route is invalid.");
     }
     return;
   }
   if (!selectedModel || selectedModel.providerId !== provider.id
     || typeof selectedModel.modelId !== "string" || selectedModel.modelId.trim() === ""
-    || selectedModel.harnessId !== expectedHarnessId || route.productModelSelection !== true) {
+    || selectedModel.harnessId !== configuration?.name || route.productModelSelection !== true) {
     throw new Error("The selected live Eval model route is invalid.");
   }
   const model = provider.models?.find(({ id }) => id === selectedModel.modelId);

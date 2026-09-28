@@ -15,6 +15,7 @@ const originalFetch = globalThis.fetch;
 const directoriesForFixture = () => [
   join(repositoryRoot, "harnesses", "fixture-task-system.yaml"),
   join(repositoryRoot, "harnesses", "codex-basic.yaml"),
+  join(repositoryRoot, "harnesses", "codex-layered-navigation-luna.yaml"),
 ];
 
 afterEach(async () => {
@@ -136,6 +137,41 @@ describe("EvalService live external authorization", () => {
         modelId: "gpt-6-sol",
       },
     });
+  });
+
+  it("preserves the admitted configuration-owned Codex model without a product selection override", async () => {
+    const pinnedModelResolution = {
+      selectedModel: null,
+      productModelSelection: false,
+      configurationModel: "gpt-5.6-luna",
+    };
+    const validateLiveCredential = vi.fn(async () => pinnedModelResolution);
+    const { service, product } = await openService({ validateLiveCredential });
+
+    const created = await service.createRun(liveSelection({
+      testCaseIds: [externalCaseIds[0]],
+      harnessConfigurationNames: ["codex-layered-navigation-luna"],
+    }));
+    const completed = await waitForTerminal(service, created.id);
+
+    expect(validateLiveCredential).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "codex-layered-navigation-luna",
+        implementation: "codex.basic",
+        settings: { model: "gpt-5.6-luna", modelReasoningEffort: "medium", promptProfile: "layered-navigation-v1", skipGitRepoCheck: true },
+      }),
+      providerReference,
+    );
+    expect(completed.executions[0]).toMatchObject({
+      pinnedModelResolution,
+      modelResolution: pinnedModelResolution,
+    });
+    const threadRequest = product.mock.calls.find(([url, options]) => (
+      new URL(url).pathname === "/api/threads" && options?.method === "POST"
+    ));
+    const threadBody = JSON.parse(threadRequest[1].body);
+    expect(threadBody.harnessConfigurationName).toBe("codex-layered-navigation-luna");
+    expect(threadBody).not.toHaveProperty("modelSelection");
   });
 
   it("rejects a credential route that would omit its selected model before queueing", async () => {
@@ -299,7 +335,10 @@ function fakeExternalProduct() {
     const path = new URL(url).pathname;
     if (path === "/api/model-settings" && (!options.method || options.method === "GET")) return jsonResponse({
       defaults: { harnessId: "fixture-task-system", familyId: 1 },
-      harnesses: [{ id: "fixture-task-system", available: true, modelCompatibility: [{ providerId: "codex" }] }],
+      harnesses: [
+        { id: "fixture-task-system", available: true, modelCompatibility: [{ providerId: "codex" }] },
+        { id: "codex-layered-navigation-luna", available: true, modelCompatibility: [], compatibleProviderIds: [] },
+      ],
       providers: [{ id: "openai", adapterId: "openai-api", connected: true, models: [{ id: "test-model", visible: true, available: true }] }],
       families: [{ id: 1, enabled: true, position: 0, members: [{ position: 0, providerId: "openai", modelId: "test-model" }] }],
     });

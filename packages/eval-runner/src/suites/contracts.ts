@@ -298,6 +298,13 @@ function validateManifestShape(manifest: CapabilitySuiteManifestV1): void {
     );
 }
 
+/** Validates immutable manifest data without requiring its cases to be installed. */
+export function validateCapabilitySuiteManifestV1(
+  manifest: CapabilitySuiteManifestV1,
+): void {
+  validateManifestShape(manifest);
+}
+
 function requireIdentifier(value: string, label: string): void {
   if (typeof value !== "string" || !/^[a-z0-9][a-z0-9._-]*$/i.test(value))
     throw new Error(`Invalid ${label}: ${String(value)}`);

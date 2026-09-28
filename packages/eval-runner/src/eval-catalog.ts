@@ -2,7 +2,7 @@ import type { BoundAutonomousCase } from "./cases/catalog.js";
 import { bindAutonomousCaseSnapshot, canonicalJson, digestAutonomousCaseSnapshot, sanitizeAutonomousCaseSnapshot } from "./cases/catalog.js";
 import type { AutonomousCaseSnapshot, CaseContentDigest, PublicAutonomousCaseSnapshot } from "./cases/contracts.js";
 import type { EvalCheck } from "./cases/graph-checks.js";
-import { projectCapabilitySuiteCatalog, resolveCapabilitySuite, type CapabilitySuiteManifestV1 } from "./suites/contracts.js";
+import { projectCapabilitySuiteCatalog, resolveCapabilitySuite, validateCapabilitySuiteManifestV1, type CapabilitySuiteManifestV1 } from "./suites/contracts.js";
 
 export interface EvalMaterializeContextV1 {
   readonly caseId: string;
@@ -100,6 +100,9 @@ export function validateEvalCatalogV1(value: unknown): EvalCatalogV1 {
     if (typeof materialize !== "function" || typeof grade !== "function" || typeof evaluateMandatoryGate !== "function") throw new Error(`Evaluation case ${definition.id} must implement its SDK callbacks.`);
     const snapshot = boundCase.snapshot as AutonomousCaseSnapshot;
     if (!snapshot || snapshot.id !== definition.id) throw new Error(`Bound case identity does not match definition ${definition.id}.`);
+    for (const key of ["name", "description"] as const) {
+      if (definition[key] !== snapshot[key]) throw new Error(`Case ${key} drifted from its authoritative snapshot: ${definition.id}.`);
+    }
     const actualDigest = digestAutonomousCaseSnapshot(snapshot);
     const projection = sanitizeAutonomousCaseSnapshot(snapshot);
     if (boundCase.snapshotDigest !== actualDigest || definition.caseSnapshotDigest !== actualDigest || canonicalJson(definition.caseSnapshot) !== canonicalJson(projection) || canonicalJson(boundCase.catalogSnapshot) !== canonicalJson(projection)) throw new Error(`Case snapshot projection or digest drifted: ${definition.id}.`);
@@ -117,13 +120,12 @@ export function validateEvalCatalogV1(value: unknown): EvalCatalogV1 {
     });
   });
   const suiteIds = new Set<string>();
-  const boundCases = cases.map(({ boundCase }) => boundCase);
   const suites = suppliedSuites.map((suite) => {
     assertSerializable(suite);
     if (!isRecord(suite) || typeof suite.id !== "string") throw new Error("Invalid capability suite manifest.");
+    validateCapabilitySuiteManifestV1(suite);
     if (suiteIds.has(suite.id)) throw new Error(`Duplicate capability suite ID: ${suite.id}`);
     suiteIds.add(suite.id);
-    resolveCapabilitySuite(suite, boundCases);
     return deepFreeze(structuredClone(suite));
   });
   return deepFreeze({ schemaVersion: 1, cases, suites });
