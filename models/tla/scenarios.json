@@ -1681,6 +1681,47 @@
       ]
     },
     {
+      "id": "inspector-new-view-selects-first-node",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor",
+        "InspectorIsCurrent",
+        "OnlyLatestRequestSelects"
+      ],
+      "summary": "A new view without the selected node arrives; Node Details stays open on the layer's first node, and after Close a new view selects nothing.",
+      "steps": [
+        [
+          "Click",
+          "n2"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "StatePush",
+          "enter",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Close"
+        ],
+        [
+          "StatePush",
+          "enter",
+          "n1",
+          "n2"
+        ]
+      ]
+    },
+    {
       "id": "canvas-drag-across-render",
       "module": "CanvasGesture",
       "preset": "canvas",

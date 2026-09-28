@@ -133,7 +133,11 @@ export class NodeInspectorWorld {
     this.slotAssets = new Map();
     this.draftRevision = 0;
     this.thread = { id: 3, title: "Thread", harnessId: "fixture", projectId: null, permissionProfileId: null };
-    this.selection = { currentThreadId: 3, currentInteractionId: 5, selectedNodeId: null, layerPath: [] };
+    // The user has closed Node Details, as the spec's initial state says, so
+    // the first view selects nothing.
+    this.selection = {
+      currentThreadId: 3, currentInteractionId: 5, selectedNodeId: null, layerPath: [], nodeDetailsClosed: true,
+    };
     this.state = {
       status: "accepted",
       currentInteractionId: 5,
@@ -161,7 +165,12 @@ export class NodeInspectorWorld {
       getState: () => this.state,
       getThread: () => this.thread,
       selection: this.selection,
-      onSelectionChange: (id) => { if (id != null) world.reported.push(specNode(id)); },
+      // As the desktop host does (threads.js replaceCurrentSelection), a
+      // reported null means the user closed Node Details.
+      onSelectionChange: (id) => {
+        world.selection.nodeDetailsClosed = id == null;
+        if (id != null) world.reported.push(specNode(id));
+      },
       showThread: () => {},
       showEmpty: () => {},
       resolveNodeDetailAsset: (_asset, { node }) => {

@@ -15,6 +15,7 @@
       "action": null,
       "state": {
         "attach": false,
+        "closed": true,
         "detail": {
           "live": false,
           "node": "none",
@@ -127,6 +128,7 @@
       ],
       "state": {
         "attach": false,
+        "closed": false,
         "detail": {
           "live": true,
           "node": "n1",
@@ -239,6 +241,7 @@
       ],
       "state": {
         "attach": true,
+        "closed": false,
         "detail": {
           "live": true,
           "node": "n1",
@@ -350,6 +353,7 @@
       ],
       "state": {
         "attach": true,
+        "closed": false,
         "detail": {
           "live": true,
           "node": "n1",
@@ -471,6 +475,7 @@
       ],
       "state": {
         "attach": true,
+        "closed": false,
         "detail": {
           "live": true,
           "node": "n1",
@@ -592,6 +597,7 @@
       ],
       "state": {
         "attach": true,
+        "closed": false,
         "detail": {
           "live": true,
           "node": "n1",
@@ -716,6 +722,7 @@
       ],
       "state": {
         "attach": true,
+        "closed": false,
         "detail": {
           "live": true,
           "node": "n1",
@@ -838,6 +845,7 @@
       ],
       "state": {
         "attach": true,
+        "closed": false,
         "detail": {
           "live": true,
           "node": "n1",
@@ -960,6 +968,7 @@
       ],
       "state": {
         "attach": true,
+        "closed": false,
         "detail": {
           "live": true,
           "node": "n2",
@@ -1082,6 +1091,7 @@
       ],
       "state": {
         "attach": true,
+        "closed": false,
         "detail": {
           "live": true,
           "node": "n2",
@@ -1204,6 +1214,7 @@
       ],
       "state": {
         "attach": true,
+        "closed": false,
         "detail": {
           "live": true,
           "node": "n2",

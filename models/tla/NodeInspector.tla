@@ -88,10 +88,13 @@ VARIABLES
   op,           \* the discard in flight: [editor identity, draft], or NoOp
   \* --- ghost ---
   want,         \* what the user last asked the inspector to show
-  stray         \* a request the user had superseded committed its node
+  stray,        \* a request the user had superseded committed its node
+  closed        \* the host's nodeDetailsClosed: the user closed Node Details, so
+                \* entering a view selects nothing (threads.js
+                \* replaceCurrentSelection)
 
 vars == <<srev, graph, vid, sel, open, title, detail, mounted, attach, editor, eids,
-          queued, drafts, unsaved, slots, prep, op, want, stray>>
+          queued, drafts, unsaved, slots, prep, op, want, stray, closed>>
 
 (* Operators below work on a record W of every variable, so that render() *)
 (* can compose the dock reconciliation, renderGraph, and selectNode in one *)
@@ -100,7 +103,7 @@ W == [srev |-> srev, graph |-> graph, vid |-> vid, sel |-> sel, open |-> open,
       title |-> title, detail |-> detail, mounted |-> mounted, attach |-> attach,
       editor |-> editor, eids |-> eids,
       queued |-> queued, drafts |-> drafts, unsaved |-> unsaved, slots |-> slots,
-      prep |-> prep, op |-> op, want |-> want, stray |-> stray]
+      prep |-> prep, op |-> op, want |-> want, stray |-> stray, closed |-> closed]
 
 Assign(w) ==
   /\ srev' = w.srev /\ graph' = w.graph /\ vid' = w.vid /\ sel' = w.sel
@@ -108,7 +111,7 @@ Assign(w) ==
   /\ mounted' = w.mounted /\ attach' = w.attach /\ editor' = w.editor
   /\ eids' = w.eids /\ queued' = w.queued /\ drafts' = w.drafts
   /\ unsaved' = w.unsaved /\ slots' = w.slots /\ prep' = w.prep /\ op' = w.op
-  /\ want' = w.want /\ stray' = w.stray
+  /\ want' = w.want /\ stray' = w.stray /\ closed' = w.closed
 
 Key(e) == <<e.node, e.vid>>
 HasDraft(w, n) == <<n, w.vid>> \in w.drafts
@@ -137,7 +140,7 @@ Continue(w, n, r) ==
   LET restore == w.editor = NoEditor /\ HasDraft(w, n)
       reuse == w.mounted = n /\ w.detail.owned /\ w.detail.live
       k == TakenSlot(w)
-      w1 == [w EXCEPT !.sel = n, !.open = TRUE, !.title = [node |-> n, rev |-> r],
+      w1 == [w EXCEPT !.sel = n, !.open = TRUE, !.title = [node |-> n, rev |-> r], !.closed = FALSE,
                       !.editor = IF restore
                                  THEN [node |-> n, eid |-> w.eids + 1, resolving |-> FALSE,
                                        vid |-> w.vid]
@@ -199,7 +202,14 @@ Render(w, r, g, entering) ==
       w2 == IF entering THEN [Bump(w1) EXCEPT !.open = FALSE, !.mounted = None] ELSE w1
       clears == entering /\ w2.sel # None /\ w2.sel \notin g
       w3 == IF clears THEN [Bump(w2) EXCEPT !.sel = None, !.open = FALSE] ELSE w2
-  IN IF w3.sel # None THEN Select(w3, w3.sel, r, FALSE) ELSE [w3 EXCEPT !.open = FALSE]
+      \* Unless the user closed Node Details, entering a view keeps a node that
+      \* is still in it and otherwise selects the layer's first node
+      \* (preferredLayerNode; the layers name no default node).
+      auto == ~w3.closed /\ (entering \/ (w3.sel # None /\ w3.sel \notin g))
+      pick == IF w3.sel # None /\ w3.sel \in g THEN w3.sel
+              ELSE IF "n1" \in g THEN "n1" ELSE IF "n2" \in g THEN "n2" ELSE None
+      w4 == IF auto THEN [w3 EXCEPT !.sel = pick] ELSE w3
+  IN IF w4.sel # None THEN Select(w4, w4.sel, r, FALSE) ELSE [w4 EXCEPT !.open = FALSE]
 
 -----------------------------------------------------------------------------
 (* prepareNodeContextSelectionChange (WS:1624-1646) and what follows it:   *)
@@ -208,7 +218,7 @@ Render(w, r, g, entering) ==
 
 Proceed(w, purpose, g) ==
   IF purpose = "close"
-  THEN [w EXCEPT !.sel = None, !.editor = NoEditor, !.open = FALSE]
+  THEN [w EXCEPT !.sel = None, !.editor = NoEditor, !.open = FALSE, !.closed = TRUE]
   ELSE LET w1 == Render([w EXCEPT !.sel = None], w.srev + 1, g, TRUE)
        IN [w1 EXCEPT !.want = w1.sel]      \* a click in the old view is void
 
@@ -270,7 +280,7 @@ Init ==
   /\ slots = [k \in Slots |-> FreeSlot]
   /\ prep = FreeSlot /\ op = NoOp
   /\ want = None
-  /\ stray = FALSE
+  /\ stray = FALSE /\ closed = TRUE
 
 -----------------------------------------------------------------------------
 (* User actions.                                                          *)
@@ -297,7 +307,7 @@ Annotate ==
   /\ unsaved' = unsaved \cup {<<sel, vid>>}
   /\ want' = Keep(W)
   /\ UNCHANGED <<srev, graph, vid, sel, open, title, detail, mounted, attach, queued, slots,
-                 prep, op, stray>>
+                 prep, op, stray, closed>>
 
 \* Typing in the editor; the controller autosaves after 350 ms.
 EditDraft ==
@@ -305,7 +315,7 @@ EditDraft ==
   /\ unsaved' = unsaved \cup {Key(editor)}
   /\ want' = IF sel = editor.node THEN Keep(W) ELSE want
   /\ UNCHANGED <<srev, graph, vid, sel, open, title, detail, mounted, attach, editor, eids,
-                 queued, drafts, slots, prep, op, stray>>
+                 queued, drafts, slots, prep, op, stray, closed>>
 
 \* × discards the selected node's draft (WS:2704-2720). A saved draft needs
 \* a request (node-context-drafts.js:531-575); discarding a draft that was
@@ -316,7 +326,7 @@ Discard ==
   /\ op' = [eid |-> editor.eid, key |-> Key(editor)]
   /\ want' = IF sel = editor.node THEN Keep(W) ELSE want
   /\ UNCHANGED <<srev, graph, vid, sel, open, title, detail, mounted, attach, eids, queued,
-                 drafts, unsaved, slots, prep, stray>>
+                 drafts, unsaved, slots, prep, stray, closed>>
 
 \* The close button or Escape (WS:1863-1877). A second one while the first
 \* flushes is dropped, and it supersedes the first (WS:1625-1638).
@@ -371,7 +381,7 @@ MountReturns(k) ==
         /\ attach' = IF s.cur THEN TRUE ELSE attach
         /\ slots' = [slots EXCEPT ![k] = FreeSlot]
   /\ UNCHANGED <<srev, graph, vid, sel, open, title, editor, eids, queued, drafts,
-                 unsaved, prep, op, want, stray>>
+                 unsaved, prep, op, want, stray, closed>>
 
 \* The flush in prepareNodeContextSelectionChange returns (WS:1633-1645).
 PrepareReturns(ok) ==
@@ -409,7 +419,7 @@ Autosave(d) ==
   /\ d \in unsaved
   /\ unsaved' = unsaved \ {d}
   /\ UNCHANGED <<srev, graph, vid, sel, open, title, detail, mounted, attach, editor, eids,
-                 queued, drafts, slots, prep, op, want, stray>>
+                 queued, drafts, slots, prep, op, want, stray, closed>>
 
 \* renderThread() with newer state. Entering a new view (another layer or
 \* turn) may bring other nodes. A view change the user did not ask for
