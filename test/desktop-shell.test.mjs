@@ -670,7 +670,11 @@ describe("desktop skeleton", () => {
       expect((await stat(join(directory, "product-data"))).mode & 0o777).toBe(0o700);
       expect(await service.start()).toBe(session);
       const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 204 }));
-      await service.publishProviderCatalog({ providerId: "codex", models: [] });
+      // A publish names the generation its result started with; a lifecycle event advances it.
+      await service.publishProviderCatalog(
+        { providerId: "codex", models: [] },
+        { connectionGeneration: 3, connectionEvent: "signed-out" },
+      );
       expect(fetch).toHaveBeenCalledWith(
         new URL("http://127.0.0.1:43123/api/internal/provider-catalog"),
         expect.objectContaining({
@@ -679,11 +683,26 @@ describe("desktop skeleton", () => {
             Authorization: `Bearer ${session.cookie.value}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ providerId: "codex", models: [] }),
+          body: JSON.stringify({ providerId: "codex", models: [], connectionGeneration: 3, connectionEvent: "signed-out" }),
         }),
       );
       expect(fetch.mock.calls[0][1].headers).not.toHaveProperty("Cookie");
       fetch.mockRestore();
+      // A seeded catalog is published at the provider's current generation.
+      const seedFetch = vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(Response.json([{ id: "work", connectionGeneration: 1 }, { id: "codex", connectionGeneration: 5 }]))
+        .mockResolvedValueOnce(new Response(null, { status: 204 }));
+      await service.seedProviderCatalog({ providerId: "codex", models: [] });
+      expect(seedFetch.mock.calls[0][0]).toEqual(new URL("http://127.0.0.1:43123/api/internal/provider-definitions"));
+      expect(JSON.parse(seedFetch.mock.calls[1][1].body)).toEqual({ providerId: "codex", models: [], connectionGeneration: 5 });
+      seedFetch.mockRestore();
+      const refusedFetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(Response.json(
+        { code: "provider_connection_superseded", error: "The provider connection changed after this catalog result started." },
+        { status: 422 },
+      ));
+      await expect(service.publishProviderCatalog({ providerId: "codex", models: [] }, { connectionGeneration: 4 }))
+        .rejects.toMatchObject({ code: "provider_connection_superseded" });
+      refusedFetch.mockRestore();
       const exportBytes = new TextEncoder().encode('{"recordType":"header"}\n');
       const exportFetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(exportBytes, {
         headers: { "Content-Type": "application/x-ndjson; charset=utf-8" },

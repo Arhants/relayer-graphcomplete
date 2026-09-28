@@ -148,7 +148,7 @@ async function run() {
     systemFamily: { key: "codex", name: "Codex", modelIds: ["fixture-model"] },
   };
   const modelCatalogRefreshServer = await startModelCatalogRefreshServer({
-    refresh: () => product.publishProviderCatalog(catalogSnapshot),
+    refresh: () => product.seedProviderCatalog(catalogSnapshot),
   });
   services.push(modelCatalogRefreshServer);
   let productSession;
@@ -164,7 +164,7 @@ async function run() {
     });
     services.push(product);
     productSession = await product.start();
-    await product.publishProviderCatalog(catalogSnapshot);
+    await product.seedProviderCatalog(catalogSnapshot);
   };
   await startProduct();
   await productRequest(productSession, "/api/model-families", {

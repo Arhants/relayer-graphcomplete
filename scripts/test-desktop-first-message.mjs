@@ -224,7 +224,7 @@ async function run() {
     systemFamily: { key: "codex", name: "Codex", modelIds: ["fixture-model"] },
   };
   const modelCatalogRefreshServer = await startModelCatalogRefreshServer({
-    refresh: () => product.publishProviderCatalog(catalogSnapshot),
+    refresh: () => product.seedProviderCatalog(catalogSnapshot),
   });
   services.push(modelCatalogRefreshServer);
   product = new RelayerAppServerService({
@@ -239,7 +239,7 @@ async function run() {
   });
   services.push(product);
   const productSession = await product.start();
-  await product.publishProviderCatalog(catalogSnapshot);
+  await product.seedProviderCatalog(catalogSnapshot);
   const createWindow = createWindowFactory({
     BrowserWindow,
     desktopDirectory: join(repositoryRoot, "desktop"),
