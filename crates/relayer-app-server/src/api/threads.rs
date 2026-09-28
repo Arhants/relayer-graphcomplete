@@ -3346,7 +3346,6 @@ mod tests {
             Arc, Mutex,
             atomic::{AtomicUsize, Ordering},
         },
-        time::{SystemTime, UNIX_EPOCH},
     };
 
     /// One recursive child bound to its parent execution, with a controllable graph fake.
@@ -3354,7 +3353,6 @@ mod tests {
         state: ApiState,
         product: ProductService,
         thread: Thread,
-        root: std::path::PathBuf,
         starts: Arc<AtomicUsize>,
         headers: HeaderMap,
         current: Arc<Mutex<Value>>,
@@ -3367,13 +3365,14 @@ mod tests {
         _lease: CompletionBrokerLease,
         graph_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
         harness_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
+        /// Declared last so every field holding the database drops before its directory.
+        _root: tempfile::TempDir,
     }
 
     impl BrokerFixture {
         fn finish(self) {
             self.graph_task.abort();
             self.harness_task.abort();
-            fs::remove_dir_all(self.root).unwrap();
         }
     }
 
@@ -3407,17 +3406,12 @@ mod tests {
         agent_authored_complete: bool,
         valid_start_acknowledgement: bool,
     ) -> BrokerFixture {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "relayer-completion-broker-{label}-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
-        let database = root.join("product.sqlite3");
-        let catalog = root.join("catalog.json");
+        let root = tempfile::Builder::new()
+            .prefix(&format!("relayer-completion-broker-{label}-"))
+            .tempdir()
+            .unwrap();
+        let database = root.path().join("product.sqlite3");
+        let catalog = root.path().join("catalog.json");
         fs::write(
             &catalog,
             serde_json::json!({"schemaVersion":1,"configurations":[{"configuration":{
@@ -3720,7 +3714,7 @@ mod tests {
             .unwrap()
             .interaction;
         assert!(product.claim_interaction_preparing(child.id).await.unwrap());
-        let working_directory = root.to_string_lossy().into_owned();
+        let working_directory = root.path().to_string_lossy().into_owned();
         let seeded = runtime
             .prepare(&CompleteInteraction {
                 project_id: None,
@@ -3806,7 +3800,7 @@ mod tests {
             default_harness_configuration: "test".into(),
             allow_harness_override: true,
             allow_conversation_import: false,
-            standalone_workspaces_directory: root.join("workspaces"),
+            standalone_workspaces_directory: root.path().join("workspaces"),
             export_producer: ExportProducer {
                 desktop_version: "test".into(),
                 build_commit: "test".into(),
@@ -3825,7 +3819,7 @@ mod tests {
             state,
             product,
             thread,
-            root,
+            _root: root,
             starts,
             headers,
             current,

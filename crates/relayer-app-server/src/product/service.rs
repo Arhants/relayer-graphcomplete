@@ -2753,9 +2753,6 @@ mod tests {
         HarnessModelRules, ModelFamilyMember, ProviderDefinition, ProviderId,
         RuntimeProductHarness, UnavailableReason,
     };
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static MANAGED_POLICY_TEST_ID: AtomicU64 = AtomicU64::new(0);
 
     #[tokio::test]
     async fn identified_send_replay_rejects_a_different_committed_input_draft() {
@@ -3255,14 +3252,11 @@ mod tests {
 
     #[tokio::test]
     async fn configuration_model_exemption_is_scoped_to_the_selected_harness() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-configuration-model-harness-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-configuration-model-harness-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let storage = SqliteProductStore::open(&path).await.unwrap();
         let mut harnesses = runtime_harnesses();
         harnesses.push(RuntimeProductHarness {
@@ -3311,19 +3305,15 @@ mod tests {
 
         drop(service);
         drop(storage);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn runtime_default_changes_until_the_user_modifies_defaults() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-runtime-default-harness-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-runtime-default-harness-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let storage = SqliteProductStore::open(&path).await.unwrap();
         storage
             .initialize_model_catalog("prime-agent-basic", &runtime_harnesses())
@@ -3380,12 +3370,11 @@ mod tests {
         );
 
         drop(storage);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn staged_provider_requires_a_connected_catalog_and_preserves_hidden_only_recovery() {
-        let (path, storage, service) = managed_policy_service(1).await;
+        let (_directory, _, storage, service) = managed_policy_service(1).await;
         let (definition, snapshot) = staged_codex_catalog();
 
         let mut disconnected = snapshot.clone();
@@ -3429,12 +3418,11 @@ mod tests {
 
         drop(service);
         drop(storage);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn staged_codex_provider_uses_its_managed_default_then_policy_migrates_it() {
-        let (path, storage, service) = managed_policy_service(1).await;
+        let (_directory, _, storage, service) = managed_policy_service(1).await;
         let (definition, snapshot) = staged_codex_catalog();
         service
             .create_provider_with_catalog(definition, snapshot.clone())
@@ -3614,12 +3602,11 @@ mod tests {
 
         drop(service);
         drop(storage);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn policy_version_change_never_replaces_a_custom_default() {
-        let (path, storage, service) = managed_policy_service(1).await;
+        let (_directory, _, storage, service) = managed_policy_service(1).await;
         let (definition, snapshot) = staged_codex_catalog();
         service
             .create_provider_with_catalog(definition, snapshot.clone())
@@ -3677,12 +3664,11 @@ mod tests {
 
         drop(service);
         drop(storage);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn managed_policy_never_replaces_an_explicit_provider_default() {
-        let (path, storage, service) = managed_policy_service(1).await;
+        let (_directory, path, storage, service) = managed_policy_service(1).await;
         let (mut custom_definition, mut custom_snapshot) = staged_codex_catalog();
         custom_definition.id = ProviderId::parse("custom-openai").unwrap();
         custom_definition.adapter_id = "openai-api".into();
@@ -3781,12 +3767,11 @@ mod tests {
 
         drop(service);
         drop(storage);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn settings_added_claude_gets_a_managed_family_without_changing_codex_defaults() {
-        let (path, storage, service) = managed_policy_service(1).await;
+        let (_directory, _, storage, service) = managed_policy_service(1).await;
         let (codex_family, claude_id) = codex_default_with_settings_claude(&service).await;
 
         let settings = service.model_settings().await.unwrap();
@@ -3808,7 +3793,6 @@ mod tests {
 
         drop(service);
         drop(storage);
-        std::fs::remove_file(path).unwrap();
     }
 
     /// Codex is onboarded as the default on codex-basic, then a Claude subscription is added
@@ -3864,7 +3848,7 @@ mod tests {
 
     #[tokio::test]
     async fn choosing_a_provider_moves_the_harness_to_one_that_runs_its_family() {
-        let (path, storage, service) = managed_policy_service(1).await;
+        let (_directory, _, storage, service) = managed_policy_service(1).await;
         let (codex_family, claude_id) = codex_default_with_settings_claude(&service).await;
         let claude_family = service
             .model_settings()
@@ -3961,12 +3945,11 @@ mod tests {
 
         drop(service);
         drop(storage);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn a_moved_harness_prefers_the_app_default_then_the_first_name() {
-        let (path, storage, service) = managed_policy_service(1).await;
+        let (_directory, _, storage, service) = managed_policy_service(1).await;
         // A second harness that can run Claude and sorts before claude-basic.
         let mut harnesses = managed_runtime_harnesses(1);
         let mut alternate = harnesses
@@ -4024,12 +4007,11 @@ mod tests {
 
         drop(service);
         drop(storage);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn a_refresh_keeps_a_shared_legacy_default_family() {
-        let (path, storage, service) = managed_policy_service(1).await;
+        let (_directory, path, storage, service) = managed_policy_service(1).await;
         codex_default_with_settings_claude(&service).await;
         // A legacy system family (no managed provider) shared by Codex and Claude, chosen as
         // the default before managed families existed.
@@ -4079,7 +4061,6 @@ mod tests {
 
         drop(service);
         drop(storage);
-        std::fs::remove_file(path).unwrap();
     }
 
     fn settings_claude_catalog() -> (ProviderDefinition, ProviderCatalogSnapshot) {
@@ -4136,7 +4117,7 @@ mod tests {
             ("openrouter", "qwen/qwen3.8-max"),
             ("vercel-ai-router", "alibaba/qwen3.8-max"),
         ] {
-            let (path, storage, service) = managed_policy_service(3).await;
+            let (_directory, _, storage, service) = managed_policy_service(3).await;
             let mut harnesses = managed_runtime_harnesses(3);
             let prime = harnesses
                 .iter_mut()
@@ -4186,13 +4167,12 @@ mod tests {
             assert_eq!(settings.defaults.family_id, Some(family_id));
             drop(service);
             drop(storage);
-            std::fs::remove_file(path).unwrap();
         }
     }
 
     #[tokio::test]
     async fn openai_api_default_onboarding_selects_its_managed_family_without_custom_setup() {
-        let (path, storage, service) = managed_policy_service(1).await;
+        let (_directory, _, storage, service) = managed_policy_service(1).await;
         let (mut definition, mut snapshot) = staged_codex_catalog();
         definition.id = ProviderId::parse("onboarding-openai").unwrap();
         definition.adapter_id = "openai-api".into();
@@ -4239,12 +4219,11 @@ mod tests {
 
         drop(service);
         drop(storage);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn connected_policy_ineligible_api_provider_recovers_a_managed_family_after_refresh() {
-        let (path, storage, service) = managed_policy_service(1).await;
+        let (_directory, path, storage, service) = managed_policy_service(1).await;
         let (codex_definition, codex_snapshot) = staged_codex_catalog();
         service
             .create_provider_with_catalog(codex_definition, codex_snapshot)
@@ -4435,12 +4414,11 @@ mod tests {
 
         drop(service);
         drop(storage);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn every_api_adapter_materializes_a_provider_scoped_managed_family() {
-        let (path, storage, service) = managed_policy_service(1).await;
+        let (_directory, _, storage, service) = managed_policy_service(1).await;
         for (adapter_id, model_id, access_contract) in [
             ("openai-api", "gpt-5.4", "secret@1"),
             ("anthropic-api", "claude-sonnet-4-20250514", "secret@1"),
@@ -4514,28 +4492,28 @@ mod tests {
 
         drop(service);
         drop(storage);
-        std::fs::remove_file(path).unwrap();
     }
 
     async fn managed_policy_service(
         version: u32,
-    ) -> (std::path::PathBuf, SqliteProductStore, ProductService) {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let test_id = MANAGED_POLICY_TEST_ID.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "relayer-managed-policy-{}-{unique}-{test_id}.sqlite3",
-            std::process::id()
-        ));
+    ) -> (
+        tempfile::TempDir,
+        std::path::PathBuf,
+        SqliteProductStore,
+        ProductService,
+    ) {
+        let directory = tempfile::Builder::new()
+            .prefix("relayer-managed-policy-")
+            .tempdir()
+            .unwrap();
+        let path = directory.path().join("product.sqlite3");
         let storage = SqliteProductStore::open(&path).await.unwrap();
         storage
             .initialize_model_catalog("codex-basic", &managed_runtime_harnesses(version))
             .await
             .unwrap();
         let service = ProductService::new(storage.clone(), true);
-        (path, storage, service)
+        (directory, path, storage, service)
     }
 
     fn staged_codex_catalog() -> (ProviderDefinition, ProviderCatalogSnapshot) {
