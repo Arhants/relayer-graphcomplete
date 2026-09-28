@@ -7,7 +7,7 @@
     "sha256": "b05db96cb2d008e213b3bc6e3398b958f4670ed919547329a607be8f0dc7d865"
   },
   "source": {
-    "commit": "895f89223e2caa69d7d46467fe2d289632797a8e",
+    "commit": "c6813890b2fc3f5c0cb2807f3ce509ef31673931",
     "dirty": true,
     "sourceFiles": {
       "desktop/renderer/assets/relayer-logo.svg": {
@@ -35,8 +35,8 @@
         "sha256": "f1b0d76178c7de024d14a191930f2e419e1a7e9c9396626d56ad45b58a9a4ecf"
       },
       "desktop/renderer/src/composer-drafts.js": {
-        "bytes": 3808,
-        "sha256": "36c4dee570f6591d7781c6943c1c1a269d81de34afaf4214dbbe0889e43d275d"
+        "bytes": 8270,
+        "sha256": "95aef2c4e5c959bd7322d999ee54a42b34e2ce706b744b4eee0fc56bcfa9ee94"
       },
       "desktop/renderer/src/control-activation.js": {
         "bytes": 455,
@@ -95,8 +95,8 @@
         "sha256": "fbcfb3cfbe6ff4650af39839551ccfa13eb9d2dbcc12abb597b8bf9fba55ef64"
       },
       "desktop/renderer/src/product-workspace/node-detail-runtime.js": {
-        "bytes": 29553,
-        "sha256": "8638236175dcb4225866f6728c21e48ac8f50469842c127a03a18614e4a2943e"
+        "bytes": 30845,
+        "sha256": "fbb1a0107c9fcb6c543c81bd7472a8b646e9ce140c92fbf5d2553ee2e8ec875e"
       },
       "desktop/renderer/src/product-workspace/view.js": {
         "bytes": 15062,
@@ -107,8 +107,8 @@
         "sha256": "cc247d05f6eafdce261dd72dad4e420c3cbd5f1bd5ac25fce074dea75937d835"
       },
       "desktop/renderer/src/product-workspace/workspace.js": {
-        "bytes": 213066,
-        "sha256": "a2d996e384ceddf836a2328759a1311240b77648327330cc4df71665dcb00081"
+        "bytes": 253869,
+        "sha256": "1b97c901522f8301d0ca101a85a9a7f9b1656959e7e45a15313cd70dfe10085c"
       },
       "desktop/renderer/src/public-share-viewer/adapter.js": {
         "bytes": 4324,
@@ -119,8 +119,8 @@
         "sha256": "2f357c0bf7b9507fcb77c27bd130bdaf9a8ebce59a99eef94ace3b078a8511d4"
       },
       "desktop/renderer/src/public-share-viewer/snapshot.js": {
-        "bytes": 40874,
-        "sha256": "acc3193c372e0887f322dddf42ffba9eb2f4df069f85cc4204209a8a86524d09"
+        "bytes": 41193,
+        "sha256": "b8d221775f380dc2b35b17f92b930888cddee14f2d2d4640c6c898d2a94698da"
       },
       "desktop/renderer/src/public-share-viewer/template.js": {
         "bytes": 7626,
@@ -158,7 +158,7 @@
   },
   "browser": {
     "electron": "43.0.0",
-    "origin": "http://127.0.0.1:61097",
+    "origin": "http://127.0.0.1:64258",
     "networkRequests": [],
     "unchangedUrl": true,
     "paidInferenceCalls": 0,

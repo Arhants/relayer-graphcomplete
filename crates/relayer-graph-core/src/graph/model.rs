@@ -42,7 +42,7 @@ pub use layer::{GraphLayer, LayerDraft, LayerLayout, NodePlacement, ResolvedLaye
 pub(crate) use node::validate_authored_detail;
 pub use node::{
     AcceptedDetailAsset, AcceptedDetailAssetMetadata, AuthoredDetailUpdate, GraphNode,
-    InteractionInvocation, NodeDraft, PreparedDetailAsset,
+    InteractionInvocation, NodeDraft, PreparedDetailAsset, map_authored_detail_actions,
 };
 pub use record_state::RecordState;
 

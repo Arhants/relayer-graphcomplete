@@ -373,6 +373,24 @@ describe("public share V1 reader", () => {
     expect(compiledNodeDetailCoversActions(detail, stripped.actions, stripped.nodes[0])).toBe(false);
   });
 
+  it("resolves generated aliases for absent provenance layers and preserves explicit legacy keys", () => {
+    const records = fixtureJsonl().trimEnd().split("\n").map(JSON.parse);
+    const root = records[1].acceptedView.layers[0];
+    root.nodes[0].clientKey = root.nodes[0].id;
+    root.actions[0].clientKey = root.actions[0].id;
+    root.actions[0].sourceLayerId = "layer:earlier-source";
+    const detail = { mounts: [{ kind: "capability", capability: { kind: "expand", action: {
+      clientKey: root.actions[0].id, sourceNode: { clientKey: root.nodes[0].id }, sourceLayer: { clientKey: "layer:earlier-source" },
+    } } }] };
+    const projected = parsePublicSnapshot(recordsJsonl(records)).interactions[0].completionOutput.rootLayer;
+    expect(compiledNodeDetailCoversActions(detail, projected.actions, projected.nodes[0])).toBe(true);
+    root.actions[0].sourceLayerId = root.layer.id;
+    root.layer.clientKey = "legacy-private-key";
+    detail.mounts[0].capability.action.sourceLayer.clientKey = "legacy-private-key";
+    const legacy = parsePublicSnapshot(recordsJsonl(records)).interactions[0].completionOutput.rootLayer;
+    expect(compiledNodeDetailCoversActions(detail, legacy.actions, legacy.nodes[0])).toBe(true);
+  });
+
   it("preserves reused action provenance while requiring its node in the displayed layer", () => {
     const records = fixtureJsonl().trim().split("\n").map((line) => JSON.parse(line));
     const reused = records[1].acceptedView.layers[0].actions[0];
