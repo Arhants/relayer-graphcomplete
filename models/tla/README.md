@@ -191,6 +191,7 @@ provider's connection generation, and it will add its own constant.
 | Check | Verdict | Finding |
 | --- | --- | --- |
 | `catalog-refresh-keeps-chosen-default` | Fixed; now passes | Before the fix, the Settings default-provider selector saved only `providerId`. Rust stored that provider with the old provider's managed family. The next catalog publish for the old provider matched "the default family is my managed family" and moved the default provider back. The pairing leaves nothing for a refresh to revert. The check also proves `DefaultIsPaired` and `RefreshKeepsOtherDefault`. Regression test: `catalog_refresh_keeps_the_chosen_default_provider_and_its_managed_family` in `model_catalog_flow.rs`. |
+| `catalog-refresh-keeps-default-chosen-from-unset` | passes | Starts with no default family. A refresh may fill it, with its provider, which PROV-008 allows. Once the user chooses a provider and family, no refresh changes them. With the fix off, the same bounds violate `RefreshKeepsUserDefault`. |
 | `catalog-chosen-default-reverted` | violated: shows why the fix is needed | With `DefaultProviderPairsFamily` off, `Q` connects, the user chooses `Q`, and a refresh of `P` moves the default provider back to `P`. |
 | `catalog-stale-refresh-after-reconnect` | Plausible: needs a stalled refresh; open, PR 4 | A refresh discovers "disconnected" after sign-out, then stalls. The user reconnects, which publishes connected directly. The stalled refresh then publishes its disconnected result, and nothing queued behind it corrects that (CR-V1). |
 | `catalog-old-account-repopulates` | Plausible: an old `model/list` outlasts a full login; open, PR 4 | A refresh discovers eligible models. A reconnect to an account with zero eligible models then tombstones the managed family. The older eligible result publishes afterwards and reactivates it (CR-V3). |
@@ -254,8 +255,13 @@ interaction to `submitted` for a retry, and resetting the execution to
   resolvable when it is enabled and has a connected member with available
   models. That stands for "some harness can run it": the model leaves out
   the default harness that a provider choice moves along with the family.
-  The legacy state of a user-chosen default with no family is left out of
-  the default-provider checks.
+  `RefreshKeepsUserDefault` counts only a provider and family chosen
+  together. A default with no family is not one: a harness-only save also
+  sets `defaults_modified`, and every provider or family save now sets a
+  family. `RefreshKeepsOtherDefault` is checked only from a set default
+  family, because filling an unset family may also set its provider. Legacy
+  system families without a managed provider are not modeled; a service test
+  covers them.
 - **Queue order:** the provider queue is FIFO for queued cancels, but requests
   that queue behind an interior await may start in either order.
 - **Not modeled:**

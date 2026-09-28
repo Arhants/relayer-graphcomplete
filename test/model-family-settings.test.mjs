@@ -275,14 +275,17 @@ describe("default provider choice (PROV-008)", () => {
   const settings = {
     defaults: { harnessId: "codex-basic", providerId: "codex", familyId: 11 },
     harnesses: [
-      { id: "codex-basic", label: "Codex Basic", available: true, usableNow: true, usableFamilyIds: [11] },
-      { id: "claude-basic", label: "Claude Basic", available: true, usableNow: true, usableFamilyIds: [12] },
+      { id: "codex-basic", label: "Codex Basic", available: true, usableNow: true, usableFamilyIds: [11], permissionAvailable: true, modelRules: { allow: [{}] } },
+      { id: "claude-basic", label: "Claude Basic", available: true, usableNow: true, usableFamilyIds: [12], permissionAvailable: true, modelRules: { allow: [{}] } },
+      // Runs the router family but has no permission profile, like Prime without its kernel.
+      { id: "prime-basic", label: "Prime Basic", available: true, usableNow: true, usableFamilyIds: [15], permissionAvailable: false, modelRules: { allow: [{}] } },
     ],
     providers: [
       { id: "codex", label: "Codex", connected: true },
       { id: "claude", label: "Claude", connected: true },
       { id: "fresh", label: "Fresh", connected: true },
       { id: "hidden", label: "Hidden family", connected: true },
+      { id: "router", label: "Router", connected: true },
       { id: "offline", label: "Offline", connected: false },
     ],
     families: [
@@ -290,32 +293,41 @@ describe("default provider choice (PROV-008)", () => {
       { id: 12, kind: "system", enabled: true, managedPolicy: { providerId: "claude" } },
       { id: 13, kind: "system", enabled: false, managedPolicy: { providerId: "hidden" } },
       { id: 14, kind: "custom", enabled: true, managedPolicy: null },
+      { id: 15, kind: "system", enabled: true, managedPolicy: { providerId: "router" } },
     ],
   };
 
-  it("offers only providers whose managed family a harness can run, and hints at the rest", () => {
-    const { selectable, needsRefresh } = defaultProviderChoices(settings);
+  it("offers the providers the server accepts and names the right remedy for the rest", () => {
+    const choices = defaultProviderChoices(settings);
     // Claude is offered although the default harness cannot run it: saving moves the harness.
-    expect(selectable.map((provider) => provider.id)).toEqual(["codex", "claude"]);
-    expect(needsRefresh.map((provider) => provider.id)).toEqual(["fresh", "hidden"]);
-    expect(defaultProviderHint(needsRefresh)).toBe(
-      "Fresh, Hidden family have no usable model family yet. Refresh their models to make one the default.",
+    expect(choices.selectable.map((provider) => provider.id)).toEqual(["codex", "claude"]);
+    expect(choices.needsRefresh.map((provider) => provider.id)).toEqual(["fresh", "hidden"]);
+    // A refresh cannot help a family that only a harness without a permission profile runs.
+    expect(choices.noHarness.map((provider) => provider.id)).toEqual(["router"]);
+    expect(defaultProviderHint(choices)).toBe(
+      "Fresh, Hidden family have no usable model family yet. Refresh their models to make one the default. "
+      + "No available harness can run Router models, so it cannot be the default.",
     );
-    expect(defaultProviderHint(needsRefresh.slice(0, 1))).toBe(
+    expect(defaultProviderHint({ needsRefresh: choices.needsRefresh.slice(0, 1) })).toBe(
       "Fresh has no usable model family yet. Refresh its models to make it the default.",
     );
-    expect(defaultProviderHint([])).toBeNull();
+    expect(defaultProviderHint({ needsRefresh: [], noHarness: [] })).toBeNull();
   });
 
-  it("tells the user when choosing a provider moved the default harness", () => {
-    const moved = {
-      ...settings,
-      defaults: { harnessId: "claude-basic", providerId: "claude", familyId: 12 },
-    };
-    expect(defaultHarnessChangeNotice(settings.defaults, moved)).toBe(
+  it("keeps a provider the current default harness runs without a permission profile", () => {
+    const onRouterHarness = { ...settings, defaults: { ...settings.defaults, harnessId: "prime-basic" } };
+    expect(defaultProviderChoices(onRouterHarness).selectable.map((provider) => provider.id))
+      .toEqual(["codex", "claude", "router"]);
+  });
+
+  it("reports a harness moved by the save from the saved defaults", () => {
+    const saved = { harnessId: "claude-basic", providerId: "claude", familyId: 12 };
+    expect(defaultHarnessChangeNotice(settings.defaults, saved, settings)).toBe(
       "Saved. The default harness is now Claude Basic, which can run Claude models.",
     );
-    expect(defaultHarnessChangeNotice(settings.defaults, settings)).toBeNull();
+    expect(defaultHarnessChangeNotice(settings.defaults, { ...saved, harnessId: "codex-basic" }, settings))
+      .toBeNull();
+    expect(defaultHarnessChangeNotice(settings.defaults, null, settings)).toBeNull();
   });
 });
 
@@ -412,16 +424,19 @@ describe("model family settings layout", () => {
     expect(settingsSource).toContain("await saveModelDefaults({ [field]: candidate })");
     // A saved default provider moves the default family, so the new-thread picker restarts
     // from it just as it does after a harness change.
-    expect(settingsSource).toContain("applyPermissionProfiles?.();\n    resetNewThreadModelPicker();");
+    expect(settingsSource).toContain("await refreshModelSettings({ preserveEdit: true });\n    resetNewThreadModelPicker();");
     expect(settingsSource).not.toContain('if (field === "harnessId") {\n      applyPermissionProfiles');
     // The provider selector lists only eligible providers, shows the refresh hint, and reports
     // a harness moved by the save while loading that harness's permission profiles.
     expect(settingsSource).toContain("const { selectable } = defaultProviderChoices(settings);");
     expect(settingsSource).toContain('$("#defaultProviderHint").textContent = providerHint ?? "";');
-    expect(settingsSource).toContain("defaultHarnessChangeNotice(previous, settings)");
-    expect(settingsSource).toContain("if (harnessNotice) applyPermissionProfiles = await preparePermissionProfiles(settings.defaults.harnessId);");
+    expect(settingsSource).toContain("saved = await saveModelDefaults({ [field]: candidate });");
+    expect(settingsSource).toContain("settings.defaults = { ...saved };");
+    expect(settingsSource).toContain("defaultHarnessChangeNotice(previous, saved, settings)");
+    expect(settingsSource).toContain("if (harnessNotice) applyPermissionProfiles = await preparePermissionProfiles(saved.harnessId);");
     expect(settingsSource).toContain('setStatus(harnessNotice ?? "Saved", "success");');
-    expect(html).toContain('<select id="defaultProviderSelect" aria-describedby="defaultProviderHint"></select><small class="hidden" id="defaultProviderHint"></small>');
+    expect(settingsSource).toContain("if (!saved) settings.defaults = previous;");
+    expect(html).toContain('<select id="defaultProviderSelect" aria-describedby="defaultProviderHint"></select></label>\n              <div class="setting-hint hidden" id="defaultProviderHint"></div>');
     expect(settingsSource).toContain("refreshNewThreadModelPicker();");
     expect(settingsSource).toContain('$("#familyNameInput").value = current.name;');
     expect(settingsSource).not.toContain('value="${escapeHtml(family.name)}"');

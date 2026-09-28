@@ -207,11 +207,13 @@ RustPublish(p, r, e, isRefresh) ==
        /\ fOldAd' = (fOldAd \/ (e.oldAd /\ eff))
        /\ fOldAdX' = (fOldAdX \/ (e.oldAd /\ eff /\ Cls(r) /= Cls(CurTruth(p))))
        /\ fUnsafe' = (fUnsafe \/ (e.sup /\ r = "models"))
-       \* Filling an unset family (NULL) for the unchanged default provider
-       \* is not counted as changing the user's choice.
-       /\ fDefault' = (fDefault \/ (isRefresh /\ defMod
-                                    /\ (ndp /= defProv
-                                        \/ (defFam /= "none" /\ ndf /= defFam))))
+       \* The user's choice is a provider and family chosen together. A default
+       \* with no family is not one: defaults_modified is also set by a
+       \* harness-only save (CAT:583-683), and every provider or family save
+       \* now sets a family. Filling an unset family, with its provider, is
+       \* therefore not counted as changing the user's choice.
+       /\ fDefault' = (fDefault \/ (isRefresh /\ defMod /\ defFam /= "none"
+                                    /\ (ndp /= defProv \/ ndf /= defFam)))
        /\ fAdd' = (fAdd \/ (isRefresh /\ ndp /= defProv))
 
 NoMark == [stale |-> FALSE, oldAd |-> FALSE, sup |-> FALSE]

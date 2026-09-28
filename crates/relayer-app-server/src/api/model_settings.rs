@@ -135,7 +135,12 @@ pub(super) async fn get(
     headers: HeaderMap,
 ) -> Result<Json<ModelSettings>, ApiError> {
     authorize_read(&state, &headers)?;
-    Ok(Json(state.product.model_settings().await?))
+    let mut settings = state.product.model_settings().await?;
+    let permitted = permission_available_in(&state, &settings);
+    for harness in &mut settings.harnesses {
+        harness.permission_available = permitted.contains(&harness.id);
+    }
+    Ok(Json(settings))
 }
 
 pub(super) async fn provider_onboarding_projection(
@@ -247,7 +252,12 @@ pub(super) async fn update_defaults(
             "At least one of harnessId, providerId, or familyId is required.",
         ));
     }
-    let permission_available = permission_available_harnesses(&state).await?;
+    // Only a save without a harness can move the harness, which needs the permission profiles.
+    let permission_available = if request.harness_id.is_none() {
+        permission_available_harnesses(&state).await?
+    } else {
+        HashSet::new()
+    };
     Ok(Json(
         state
             .product
@@ -463,10 +473,14 @@ fn enabled_by_default() -> bool {
 
 async fn permission_available_harnesses(state: &ApiState) -> Result<HashSet<String>, ApiError> {
     let settings = state.product.model_settings().await?;
+    Ok(permission_available_in(state, &settings))
+}
+
+fn permission_available_in(state: &ApiState, settings: &ModelSettings) -> HashSet<String> {
     let Some(runtime) = state.runtime.as_ref() else {
-        return Ok(HashSet::new());
+        return HashSet::new();
     };
-    Ok(settings
+    settings
         .harnesses
         .iter()
         .filter(|harness| runtime.has_configuration(&harness.id))
@@ -483,7 +497,7 @@ async fn permission_available_harnesses(state: &ApiState) -> Result<HashSet<Stri
                 })
         })
         .map(|harness| harness.id.clone())
-        .collect())
+        .collect()
 }
 
 #[cfg(test)]

@@ -316,6 +316,26 @@
       "finding": "Choosing a default provider also selects its managed family, so no later refresh changes the chosen provider or family (fixed, PROV-008; was: the next refresh of the family's provider moved the default provider back to it)."
     },
     {
+      "id": "catalog-refresh-keeps-default-chosen-from-unset",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "InitDefFams": "{\"none\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "DefaultIsPaired",
+        "RefreshKeepsUserDefault"
+      ],
+      "expect": "pass",
+      "finding": "From an unset default family, a refresh may fill the family with its provider, but once the user chooses a provider and family no refresh changes them (PROV-008)."
+    },
+    {
       "id": "catalog-chosen-default-reverted",
       "module": "CatalogRefresh",
       "preset": "catalog-today",

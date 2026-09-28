@@ -631,29 +631,27 @@ impl SqliteProductStore {
         // The default provider and the default family are one pair (PROV-008). Choosing a
         // provider selects its managed family; choosing a managed family selects its provider.
         // A later catalog refresh then finds nothing to reconcile.
-        let (provider_id, new_family_id) = paired_default_on(
+        let (provider_id, new_family_id, managed_family) = paired_default_on(
             &mut transaction,
             command.provider_id.as_ref(),
             command.family_id,
         )
         .await?;
-        // A provider chosen alone also brings a harness that can run its managed family, so the
-        // save never strands the default harness on a family it cannot execute.
-        let harness_id = match (&command.harness_id, &command.provider_id, command.family_id) {
-            (None, Some(_), None) => match new_family_id {
-                Some(family_id) => Some(
-                    default_harness_for_family_on(
-                        &mut transaction,
-                        family_id,
-                        &stored_defaults.harness_id,
-                        app_default_harness_id,
-                        permission_available_harnesses,
-                    )
-                    .await?,
-                ),
-                None => None,
-            },
-            (harness_id, _, _) => harness_id.clone(),
+        // A provider or managed family chosen without a harness also brings a harness that can
+        // run the managed family, so the save never strands the default harness on a family it
+        // cannot execute.
+        let harness_id = match (&command.harness_id, new_family_id) {
+            (None, Some(family_id)) if managed_family => Some(
+                default_harness_for_family_on(
+                    &mut transaction,
+                    family_id,
+                    &stored_defaults.harness_id,
+                    app_default_harness_id,
+                    permission_available_harnesses,
+                )
+                .await?,
+            ),
+            (harness_id, _) => harness_id.clone(),
         };
         if harness_id.is_some() || new_family_id.is_some() {
             let family_id = new_family_id.or(stored_defaults.family_id);
@@ -2096,16 +2094,17 @@ async fn default_harness_for_family_on(
 /// Resolves the provider and family a defaults update writes, keeping them paired.
 ///
 /// A provider chosen alone brings its enabled managed family; a provider without one is refused,
-/// so the stored defaults stay unchanged. A managed family chosen alone brings its provider. A
-/// managed family chosen with a different provider is refused. A custom family keeps whatever
-/// provider was chosen or stored.
+/// so the stored defaults stay unchanged. A chosen family must be active and enabled. A managed
+/// family brings its provider, which must be connected and active, and is refused with a
+/// different provider. A custom family keeps whatever provider was chosen or stored. The last
+/// value says whether the family is a managed family.
 async fn paired_default_on(
     connection: &mut SqliteConnection,
     provider_id: Option<&ProviderId>,
     family_id: Option<ModelFamilyId>,
-) -> Result<(Option<ProviderId>, Option<ModelFamilyId>), StorageError> {
+) -> Result<(Option<ProviderId>, Option<ModelFamilyId>, bool), StorageError> {
     match (provider_id, family_id) {
-        (None, None) => Ok((None, None)),
+        (None, None) => Ok((None, None, false)),
         (Some(provider_id), None) => {
             let managed = sqlx::query_scalar::<_, i64>(
                 "SELECT id FROM model_families WHERE kind='system' AND managed_provider_id=?1 AND lifecycle_state='active' AND enabled=1 ORDER BY id DESC LIMIT 1",
@@ -2122,26 +2121,45 @@ async fn paired_default_on(
             Ok((
                 Some(provider_id.clone()),
                 Some(ModelFamilyId::from_database(managed)),
+                true,
             ))
         }
         (provider_id, Some(family_id)) => {
             let owner = sqlx::query_scalar::<_, Option<String>>(
-                "SELECT managed_provider_id FROM model_families WHERE id=?1 AND kind='system'",
+                "SELECT CASE WHEN kind='system' THEN managed_provider_id END FROM model_families WHERE id=?1 AND lifecycle_state='active' AND enabled=1",
             )
             .bind(family_id.value())
             .fetch_optional(&mut *connection)
             .await?
-            .flatten()
+            .ok_or_else(|| {
+                StorageError::Catalog(CatalogError::invalid(
+                    "default_family_unavailable",
+                    "The selected family is unavailable.",
+                ))
+            })?
             .map(ProviderId::from_database);
-            match (provider_id, owner) {
-                (Some(chosen), Some(owner)) if *chosen != owner => {
-                    Err(StorageError::Catalog(CatalogError::invalid(
+            if let Some(owner) = owner.as_ref() {
+                if provider_id.is_some_and(|chosen| chosen != owner) {
+                    return Err(StorageError::Catalog(CatalogError::invalid(
                         "default_family_provider_mismatch",
                         "The default family belongs to a different provider.",
-                    )))
+                    )));
                 }
-                (chosen, owner) => Ok((chosen.cloned().or(owner), Some(family_id))),
+                let connected: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM model_providers WHERE id=?1 AND connected=1 AND lifecycle_state='active')",
+                )
+                .bind(owner.as_str())
+                .fetch_one(&mut *connection)
+                .await?;
+                if !connected {
+                    return Err(StorageError::Catalog(CatalogError::invalid(
+                        "provider_disconnected",
+                        "The selected family's provider is not connected.",
+                    )));
+                }
             }
+            let managed = owner.is_some();
+            Ok((provider_id.cloned().or(owner), Some(family_id), managed))
         }
     }
 }
@@ -2272,6 +2290,7 @@ async fn load_harnesses(
                 usable_now: false,
                 usable_provider_ids: Vec::new(),
                 usable_family_ids: Vec::new(),
+                permission_available: false,
             })
         })
         .collect()
@@ -2419,8 +2438,10 @@ async fn replace_system_family(
         policy.id,
         policy.version
     );
+    // Only a legacy default owned solely by this provider moves: the statement below retires it.
+    // A legacy family shared with other providers stays active and stays the default.
     let legacy_default: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM product_model_preferences pref JOIN model_families family ON family.id=pref.default_family_id WHERE pref.singleton=1 AND family.kind='system' AND family.managed_provider_id IS NULL AND family.lifecycle_state='active' AND EXISTS(SELECT 1 FROM model_family_members member WHERE member.family_id=family.id AND member.provider_id=?1))",
+        "SELECT EXISTS(SELECT 1 FROM product_model_preferences pref JOIN model_families family ON family.id=pref.default_family_id WHERE pref.singleton=1 AND family.kind='system' AND family.managed_provider_id IS NULL AND family.lifecycle_state='active' AND EXISTS(SELECT 1 FROM model_family_members member WHERE member.family_id=family.id AND member.provider_id=?1) AND NOT EXISTS(SELECT 1 FROM model_family_members member WHERE member.family_id=family.id AND member.provider_id!=?1))",
     )
     .bind(snapshot.provider_id.as_str())
     .fetch_one(&mut *connection)

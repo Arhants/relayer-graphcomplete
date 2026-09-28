@@ -540,6 +540,15 @@ async fn catalog_refresh_keeps_the_chosen_default_provider_and_its_managed_famil
     let work_family = managed_family(&before, "work").unwrap();
     assert_eq!(before["defaults"]["providerId"], "codex");
     assert_eq!(before["defaults"]["familyId"], codex_family);
+    // Settings learns which harnesses the server may move the default to. Without a runtime,
+    // no harness has a permission profile.
+    assert!(
+        before["harnesses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|harness| harness["permissionAvailable"] == false)
+    );
 
     // The Settings selector saves only the provider. Its managed family comes with it.
     let chosen = save_defaults(json!({ "providerId": "work" })).await;

@@ -195,9 +195,13 @@ function providerOptions(selectedProviderId) {
 function defaultProviderOptions() {
   const { selectable } = defaultProviderChoices(settings);
   const current = settings.providers.find((item) => item.id === settings.defaults.providerId);
+  // The saved default stays visible. It is marked unavailable only when it is not connected.
+  const currentLabel = current?.connected === false || !current
+    ? `${current?.label ?? settings.defaults.providerId} (unavailable)`
+    : current.label;
   const stranded = selectable.some((item) => item.id === settings.defaults.providerId)
     ? ""
-    : `<option value="${escapeHtmlAttribute(settings.defaults.providerId)}" selected disabled>${escapeHtml(current?.label ?? settings.defaults.providerId)} (unavailable)</option>`;
+    : `<option value="${escapeHtmlAttribute(settings.defaults.providerId)}" selected disabled>${escapeHtml(currentLabel)}</option>`;
   return `${stranded}${selectable.map((item) => {
     const selected = item.id === settings.defaults.providerId;
     return `<option value="${escapeHtmlAttribute(item.id)}" ${selected ? "selected" : ""}>${escapeHtml(item.label)}</option>`;
@@ -301,7 +305,7 @@ function render() {
   $("#defaultProviderSelect").innerHTML = defaultProviderOptions();
   $("#defaultHarnessSelect").disabled = savingDefaults;
   $("#defaultProviderSelect").disabled = savingDefaults;
-  const providerHint = defaultProviderHint(defaultProviderChoices(settings).needsRefresh);
+  const providerHint = defaultProviderHint(defaultProviderChoices(settings));
   $("#defaultProviderHint").textContent = providerHint ?? "";
   $("#defaultProviderHint").classList.toggle("hidden", !providerHint);
   const harnessError = defaultHarnessError(settings);
@@ -545,21 +549,22 @@ async function persistDefault(field) {
     : $("#defaultProviderSelect").value;
   settings.defaults[field] = candidate;
   render();
-  let saved = false;
+  let saved = null;
   try {
     let applyPermissionProfiles = field === "harnessId"
       ? await preparePermissionProfiles(candidate)
       : null;
-    await saveModelDefaults({ [field]: candidate });
-    saved = true;
-    await refreshModelSettings({ preserveEdit: true });
-    // Choosing a provider also selects its managed family, and may move the default harness to
-    // one that runs it (PROV-008). The permission profiles follow the harness.
+    saved = await saveModelDefaults({ [field]: candidate });
+    // The response is the committed defaults. Choosing a provider also selects its managed
+    // family, and may move the default harness to one that runs it (PROV-008).
+    settings.defaults = { ...saved };
+    if (appState.modelSettings) appState.modelSettings.defaults = { ...saved };
     const harnessNotice = field === "providerId"
-      ? defaultHarnessChangeNotice(previous, settings)
+      ? defaultHarnessChangeNotice(previous, saved, settings)
       : null;
-    if (harnessNotice) applyPermissionProfiles = await preparePermissionProfiles(settings.defaults.harnessId);
+    if (harnessNotice) applyPermissionProfiles = await preparePermissionProfiles(saved.harnessId);
     applyPermissionProfiles?.();
+    await refreshModelSettings({ preserveEdit: true });
     resetNewThreadModelPicker();
     setStatus(harnessNotice ?? "Saved", "success");
   } catch (error) {
