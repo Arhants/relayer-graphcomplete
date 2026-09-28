@@ -1090,6 +1090,137 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn concurrent_terminal_lease_release_is_coalesced() {
+        assert_terminal_lease_overlap(false).await;
+    }
+
+    #[tokio::test]
+    async fn cancelled_terminal_lease_release_can_be_retried() {
+        assert_terminal_lease_overlap(true).await;
+    }
+
+    async fn assert_terminal_lease_overlap(cancel_first: bool) {
+        let (_database, store, interaction_id, route) = seeded_store().await;
+        let attempt = store
+            .begin_interaction_attempt(receipt(interaction_id, &route), "10")
+            .await
+            .unwrap();
+        let other_interaction = sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,completion_status,model_provider_id,provider_model_id,model_family_id) SELECT thread_id,1,'other','1','running',model_provider_id,provider_model_id,model_family_id FROM interactions WHERE id=?1")
+            .bind(interaction_id.value()).execute(&store.pool).await.unwrap().last_insert_rowid();
+        let mut other_receipt = receipt(InteractionId::from_database(other_interaction), &route);
+        other_receipt.execution_lease_id = "lease-other";
+        other_receipt.attempt_admission_id = "00000000-0000-0000-0000-000000000002".into();
+        let other_attempt = store
+            .begin_interaction_attempt(other_receipt, "10")
+            .await
+            .unwrap();
+        store
+            .recover_interrupted_interactions("restart", false)
+            .await
+            .unwrap();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release_first = Arc::new(tokio::sync::Notify::new());
+        let harness = Router::new().route(
+            "/sessions/{thread}/execution-leases/{lease}",
+            routing::delete({
+                let calls = calls.clone();
+                let entered = entered.clone();
+                let release_first = release_first.clone();
+                move || {
+                    let calls = calls.clone();
+                    let entered = entered.clone();
+                    let release_first = release_first.clone();
+                    async move {
+                        if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                            entered.notify_one();
+                            release_first.notified().await;
+                        }
+                        Json(json!({"released":true}))
+                    }
+                }
+            }),
+        );
+        let (runtime, server, _directory) = test_runtime(harness).await;
+        let product = ProductService::new(store.clone(), true);
+        let mut first = tokio::spawn({
+            let product = product.clone();
+            let runtime = runtime.clone();
+            async move {
+                crate::app_server::reconcile_terminal_execution_lease(&product, &runtime, attempt)
+                    .await
+            }
+        });
+        let observed = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            entered.notified().await;
+            // A has reached the provider but cannot acknowledge its debt yet.
+            let debt = store.execution_lease_debt(attempt).await;
+            let second =
+                crate::app_server::reconcile_terminal_execution_lease(&product, &runtime, attempt)
+                    .await;
+            let requests_before_other_attempt = calls.load(Ordering::SeqCst);
+            // A blocked provider must not block cleanup for an unrelated attempt.
+            let other = crate::app_server::reconcile_terminal_execution_lease(
+                &product,
+                &runtime,
+                other_attempt,
+            )
+            .await;
+            (debt, second, requests_before_other_attempt, other)
+        })
+        .await;
+        if cancel_first {
+            first.abort();
+        }
+        release_first.notify_one();
+        let first_result =
+            tokio::time::timeout(std::time::Duration::from_secs(5), &mut first).await;
+        first.abort();
+        let retry = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            crate::app_server::reconcile_terminal_execution_lease(&product, &runtime, attempt),
+        )
+        .await;
+        // Once acknowledged, subsequent reconciliation must never call the provider.
+        let after_ack = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            crate::app_server::reconcile_terminal_execution_lease(&product, &runtime, attempt),
+        )
+        .await;
+        server.abort();
+        let _ = server.await;
+        let (debt, second_result, requests_before_first_finished, other_result) =
+            observed.expect("second caller must defer while first is held");
+        let first_result =
+            first_result.expect("first caller did not finish after releasing its response");
+        assert!(debt.unwrap().is_some());
+        if cancel_first {
+            assert!(first_result.unwrap_err().is_cancelled());
+        } else {
+            assert!(first_result.unwrap());
+        }
+        assert!(
+            other_result,
+            "unrelated attempt must progress while first is held"
+        );
+        assert!(retry.unwrap());
+        assert!(after_ack.unwrap());
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            if cancel_first { 3 } else { 2 }
+        );
+        assert!(
+            !second_result,
+            "in-flight reconciliation remains unresolved"
+        );
+        assert!(store.execution_lease_debt(attempt).await.unwrap().is_none());
+        assert_eq!(
+            requests_before_first_finished, 1,
+            "duplicate release: caller B sent DELETE while caller A was still awaiting its response"
+        );
+    }
+
+    #[tokio::test]
     async fn terminal_lease_reconciliation_retries_release_and_accepts_host_absence() {
         let (_database, store, interaction_id, route) = seeded_store().await;
         let attempt = store
