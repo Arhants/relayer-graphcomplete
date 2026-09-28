@@ -554,6 +554,12 @@ describe("PrimeAgentHarness", () => {
     // A stopped or failed child raises from child.result, so the root must catch it to integrate the rest.
     expect(prompts[0]!.text).toContain("A stopped or failed child raises CompletionTerminalError there instead");
     expect(prompts[0]!.text).toContain("catch it and integrate the work its error.current still retains");
+    // A child the watch can no longer observe arrives as an error change, not a raise, so the loop keeps its siblings.
+    expect(prompts[0]!.text).toContain("Each change is a (child, current) pair, or (child, error) with the exception in place of the current once the watch can no longer observe that child");
+    // Both shapes are tuples, so the root needs the test that tells them apart.
+    expect(prompts[0]!.text).toContain("check isinstance(current, Exception) before reading it");
+    // Such a child's result may raise a plain exception; the root must neither invent its findings nor leak the error.
+    expect(prompts[0]!.text).toContain("If child.result raises any other exception, as it may for a child reported with an error, you cannot read that child's work; present that part as not done, without quoting the error or inventing findings.");
     expect(prompts[1]!.text).not.toContain("prepare_complete");
     expect(prompts[1]!.text).not.toContain("from relayer_graph import complete");
     expect(prompts[0]!.text).toContain("exactly one NodePlacementObject(node, x, y) per member node");

@@ -449,9 +449,13 @@ interface CompletionCurrent {
   next(afterRevision?: number): Promise&lt;CompletionCurrentSnapshot&gt;;
 }
 
+type CompletionChange =
+  | { child: CompletionHandle; current: CompletionCurrentSnapshot }
+  | { child: CompletionHandle; error: Error };
+
 interface CompletionWatch {
   readonly settled: boolean;
-  changes(): Promise&lt;readonly { child: CompletionHandle; current: CompletionCurrentSnapshot }[]&gt;;
+  changes(): Promise&lt;readonly CompletionChange[]&gt;;
 }
 
 interface CompletionTerminalError extends Error {
@@ -474,6 +478,7 @@ interface CompletionTerminalError extends Error {
 <p>Observation is delivered as current-pointer revisions only. There is no token streaming, no partial-layer publication, and no additional event kind.</p>
 <p>An awaiting agent performs no repeated polling. The server holds one observation open and answers when the awaited completion advances, filtered to that caller's grant.</p>
 <p><code>current.next(afterRevision)</code> answers when one child's current moves past that revision or ends. A watch over the children an agent launched reports each such change as one event.</p>
+<p>A watch may lose a child, for example after a refused start. It then reports that child once, with the error instead of a current. The watch does not watch that child again, and <code>settled</code> counts it as ended. The watch never invents a current for it. This report is not an observation event, so observation stays current-pointer revisions only. One child's failure never holds back its siblings' events or the watch settling.</p>
 <p>Restart never reattaches. Interrupted active completions fail safely with <code>application_restart</code> and keep their retained current.</p>
 <p>No provider is asked whether its execution survived. Complete is never re-called as crash recovery for an already-started execution.</p>
 <p>The app server creates the human-root interaction and passes its pointer to Complete. A supported recursive provider adapter derives the prepared pointer from the invoking completion and exact published invoke occurrence. It then passes that same pointer to Complete. The selected harness uses its bound graph client to construct nodes, edges, layers, and actions, then returns with <code>current.return(layer)</code> or the compatible <code>graph.submit(interactionNode)</code>. The accepted result includes the fully resolved first layer so the desktop can display it immediately without a second request. The graph engine persists the same layer and serves later navigation. A model turn ending without Return is failure, never success.</p>
@@ -2374,6 +2379,18 @@ settings:
 <tr><td>Canonical package limits</td><td><code>packages/graph-client/test/detail.test.ts</code> covers stable identities, counts, canonical bytes, source locations, element limits, and depth limits.</td></tr>
 </tbody>
 </table>
+<h3>6.2A Authored light and dark presentation</h3>
+<p>Issue #519: Relayer owns the active light or dark appearance. The agent authors the presentation for both modes in one accepted detail package. Relayer's palette is guidance, not a required palette or layout. Authors may change colors, layout, visual composition, and registered image placements between themes, while preserving the explanation's meaning and user-entered values. No new generation is needed when appearance changes.</p>
+<p>The public CSS selectors <code>[data-relayer-theme="light"]</code> and <code>[data-relayer-theme="dark"]</code> select the product appearance on an inner scope inside the isolated detail surface. An inner scope mirrors the product setting before display and updates that marker in place. The outer host remains inaccessible to authored selectors. Theme switching never replaces the authored page, resets its controls, modifies accepted content, or grants action authority. Controls retain one stable capability mount; authors can reposition them and vary surrounding content freely. Theme-specific images use ordinary pinned asset bindings with CSS controlling visibility. Assets may also be shared across modes.</p>
+<p>Codex and Prime receive the same generic theme guidance and compiler vocabulary. Text, surfaces, borders, chart labels, controls, hover, and keyboard focus must remain readable in both modes. Meaning and readability are authoring and visual-review obligations, not deterministic palette judgments. Existing and newly authored output without theme-specific styling uses the same authored presentation in both modes and is not rejected for omitting variants. Product and read-only Eval share the same mechanism; saved, reopened, exported, and imported packages retain their authored rules and assets without recompilation.</p>
+<h4>#519 verification checkpoints</h4>
+<table><thead><tr><th>Promise or boundary</th><th>Required evidence</th></tr></thead><tbody>
+<tr><td>Public authoring and generic harness delivery</td><td>Compiler and packaged-client tests accept both exact theme selectors and reject broader host selectors. Composed Codex/Prime prompt tests expose theme guidance. Prime bridge tests compile the same CSS.</td></tr>
+<tr><td>In-place appearance and authority</td><td>Production renderer tests preserve input value, focus, DOM identity, scroll and read-only controls across theme changes. Disposal and failed mounting disconnect observation. Existing isolation and capability rejection tests remain required.</td></tr>
+<tr><td>Rendered meaning, contrast, controls and assets</td><td>The CSP command <code>npm run test:desktop:node-detail-csp</code> verifies rendered theme CSS. The visual command <code>npm run test:desktop:visual-node-details</code> captures explanation, chart, control and asset variants in both Product and Eval. It covers switching after entry, reopening accepted output and portable import. Review the rendered screenshots; compilation alone is insufficient.</td></tr>
+<tr><td>Compatibility and immutable replay</td><td>Renderer checks preserve unthemed output. The visual runner verifies unchanged accepted-package integrity through theme changes and saved replay. Both pinned variants must survive export/import.</td></tr>
+</tbody></table>
+<p>These checkpoints specify required proof; they do not claim implementation or a passing run. Full <code>npm run check</code> and <code>npm run build</code> remain the pre-commit gates. No paid inference or release proof is required for this deterministic implementation.</p>
 <h3>6.3 Constrained Product Node Detail runtime</h3>
 <p>Issue <a href="https://github.com/vishaltandale00/relayer-graphcomplete/issues/366">#366</a> mounts the canonical #363 package in the existing Product Desktop Node Details sidebar. Accepted-package storage, pinned-content transport, history, and export/import remain #365 responsibilities; Eval parity remains #371. Product runtime proof therefore does not claim either downstream integration.</p>
 <ul>

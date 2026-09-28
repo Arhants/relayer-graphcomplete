@@ -125,6 +125,10 @@ describe("CodexBasicHarness", () => {
     // A stopped or failed child rejects child.result, so the root must catch it to integrate the rest.
     expect(brokerAuthorized).toContain("A stopped or failed child rejects it with CompletionTerminalError");
     expect(brokerAuthorized).toContain("catch it and integrate the work its error.current still retains");
+    // A child the watch can no longer observe arrives as an error change, not a rejection, so the loop keeps its siblings.
+    expect(brokerAuthorized).toContain("Each change is { child, current }, or { child, error } once the watch can no longer observe that child");
+    // Such a child's result may reject with a plain error; the root must neither invent its findings nor leak the error.
+    expect(brokerAuthorized).toContain("If child.result rejects with any other error, as it may for a child reported with an error, you cannot read that child's work; present that part as not done, without quoting the error or inventing findings.");
   });
 
   it("reuses a native Codex thread only while its pinned presentation version is unchanged", async () => {
