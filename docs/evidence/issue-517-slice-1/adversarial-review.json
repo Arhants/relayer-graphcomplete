@@ -1,0 +1,38 @@
+[
+  {
+    "reviewer": "authority_review",
+    "sourceSha256": "5c4ecc256eba098f070867909ddb4de21fc20ac1c2f2660ea27e51705212334f",
+    "files": [
+      "crates/relayer-app-server/src/api/state.rs",
+      "crates/relayer-app-server/src/api/threads.rs",
+      "crates/relayer-app-server/src/conversation_export_service.rs",
+      "crates/relayer-app-server/src/runtime.rs",
+      "crates/relayer-app-server/tests/product_persistence_flow.rs",
+      "crates/relayer-graph-core/src/graph/database.rs",
+      "crates/relayer-graph-core/src/storage/sqlite/actions.rs",
+      "crates/relayer-graph-core/src/storage/sqlite/migrations/0022_permission_delete_guard.sql",
+      "crates/relayer-graph-core/tests/graph_database.rs",
+      "crates/relayer-graph-server/src/lib.rs"
+    ],
+    "verdict": "No unresolved findings",
+    "mode": "Static adversarial review; independent execution not claimed",
+    "unresolved": []
+  },
+  {
+    "reviewer": "renderer_review",
+    "sourceSha256": "611074241f420da04daa48bda9d8641a6c0a005e99290f95454f860752bbe199",
+    "files": [
+      "crates/relayer-app-server/src/api/state.rs",
+      "crates/relayer-app-server/src/api/threads.rs",
+      "crates/relayer-app-server/src/runtime.rs",
+      "crates/relayer-app-server/tests/product_persistence_flow.rs",
+      "crates/relayer-graph-core/src/graph/database.rs",
+      "crates/relayer-graph-core/src/storage/sqlite/actions.rs",
+      "crates/relayer-graph-server/src/lib.rs",
+      "scripts/run-interaction-permissions-human-gate.mjs"
+    ],
+    "verdict": "No unresolved findings",
+    "mode": "Static adversarial review; independent execution not claimed",
+    "unresolved": []
+  }
+]

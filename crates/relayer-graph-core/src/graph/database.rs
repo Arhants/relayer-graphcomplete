@@ -888,6 +888,39 @@ impl GraphDatabase {
         crate::graph::completion::projections_after(self, after_sequence, limit).await
     }
 
+    /// Native accepted roots whose canonical memberships contain a typed conversion.
+    /// Independent of the feature gate: historical conversions remain authoritative.
+    pub async fn resolved_invoke_roots(
+        &self,
+        completion_ids: &[NodeId],
+    ) -> Result<Vec<NodeId>, GraphError> {
+        if completion_ids.len() > 500 {
+            return Err(GraphError::validation(
+                "too_many_completions",
+                "completionIds",
+                "At most 500 completion IDs are allowed.",
+            ));
+        }
+        let mut connection = self.storage.acquire().await?;
+        let ids: Vec<i64> = completion_ids.iter().map(|id| id.value()).collect();
+        let rows: Vec<i64> = sqlx::query_scalar(
+            "SELECT DISTINCT c.interaction_node_id FROM json_each(?1) requested
+             JOIN completions c ON c.interaction_node_id=requested.value
+             JOIN nodes owner ON owner.id=c.interaction_node_id
+             JOIN actions root ON root.id=c.root_action_id
+             JOIN layer_actions membership ON membership.layer_id=root.target_layer_id
+             JOIN invoke_resolution_transitions receipt ON receipt.action_id=membership.action_id
+             WHERE NOT EXISTS(SELECT 1 FROM graph_imports imported WHERE imported.thread_id=owner.thread_id)")
+            .bind(serde_json::to_string(&ids).map_err(|error|GraphError::Internal(error.to_string()))?)
+            .fetch_all(&mut *connection).await?;
+        rows.into_iter()
+            .map(|id| {
+                NodeId::new(id)
+                    .ok_or_else(|| GraphError::Internal("invalid completion identity".into()))
+            })
+            .collect()
+    }
+
     pub async fn current_projection_page(
         &self,
         completion_ids: &[NodeId],

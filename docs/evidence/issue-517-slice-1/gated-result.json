@@ -14,6 +14,9 @@
     "Two-worker pool",
     "Results store"
   ],
+  "screenshotPath": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/.relayer/evidence/first-message-enter-smoke.png",
+  "evalScreenshotPath": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/.relayer/evidence/first-message-enter-smoke-eval.png",
+  "evalNarrowScreenshotPath": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/.relayer/evidence/first-message-enter-smoke-eval-narrow.png",
   "productNavigationState": {
     "rows": 4,
     "scrollable": true,
@@ -89,16 +92,15 @@
   },
   "invokeResultInteractionId": 2,
   "invokeEvidencePaths": {
-    "unresolved": "gated/01-unresolved.png",
-    "runningDisabled": "gated/02-running-disabled.png",
-    "resolved": "gated/03-resolved.png",
-    "crossInteraction": "gated/04-cross-interaction-destination.png",
-    "revisited": "gated/05-revisited-source.png",
-    "evalCrossInteraction": "gated/06-eval-cross-interaction-destination.png",
-    "reopenedSecondOccurrence": "gated/07-reopened-second-occurrence.png",
-    "reopenedDestination": "gated/08-reopened-destination.png"
+    "unresolved": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/gated/01-unresolved.png",
+    "runningDisabled": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/gated/02-running-disabled.png",
+    "resolved": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/gated/03-resolved.png",
+    "crossInteraction": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/gated/04-cross-interaction-destination.png",
+    "revisited": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/gated/05-revisited-source.png",
+    "evalCrossInteraction": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/gated/06-eval-cross-interaction-destination.png",
+    "reopenedSecondOccurrence": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/gated/07-reopened-second-occurrence.png",
+    "reopenedDestination": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/gated/08-reopened-destination.png"
   },
-  "sourceSnapshot": "source-snapshot.json",
-  "sourceSha256": "d1a67ba8d584fc8a2e4b42e46b865111229642f98d8300d120d2564e27027579",
+  "sourceSha256": "cc93bd318dcc5fcba764857c416589e198a5ea9f90ce9c374be30e995196ee42",
   "backgroundThrottling": false
 }

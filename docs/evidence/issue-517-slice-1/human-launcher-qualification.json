@@ -1,0 +1,33 @@
+{
+  "sourceSha256": "cc93bd318dcc5fcba764857c416589e198a5ea9f90ce9c374be30e995196ee42",
+  "operator": "Codex via native CUA",
+  "humanAcceptance": "pending",
+  "inferenceCalls": 0,
+  "dataDirectory": "/tmp/relayer-pr536-human-qualification-2",
+  "seedGate": false,
+  "interactiveGate": true,
+  "nativeKeyboard": {
+    "typedText": "Keyboard focus check\nSecond line",
+    "shiftEnterInsertedNewline": true,
+    "didNotSend": true,
+    "draftCleared": true
+  },
+  "observed": [
+    "invoke creates accepted interaction 2",
+    "original source compiled button navigates to interaction 2",
+    "Incoming queue / See queue behavior / Results store second occurrence navigates to interaction 2",
+    "window closed; services reopened using same directory",
+    "original button navigates after reopen"
+  ],
+  "positiveInteractionRowsAfterReopen": [
+    [
+      1,
+      "accepted"
+    ],
+    [
+      2,
+      "accepted"
+    ]
+  ],
+  "initialLauncherFailure": "First startup used raw harnessConfigurationName, rejected by Product; repaired to public harnessId and qualified in a fresh directory."
+}

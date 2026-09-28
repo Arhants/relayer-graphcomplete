@@ -424,7 +424,9 @@ impl<'connection> ActionTable<'connection> {
         target_layer_id: LayerId,
         typed_interaction: Option<NodeId>,
     ) -> Result<(), GraphError> {
-        if let Some(interaction) = typed_interaction {
+        if typed_interaction.is_some() {
+            // Publication has accepted the exact plan before this check. Unpublished
+            // sibling actions are excluded, even when their owner is this completion.
             // Traverse node-owned expansion, independent of source-layer provenance.
             // UNION bounds traversal even if historical data already contains a cycle.
             let cyclic: bool = sqlx::query_scalar(
@@ -435,7 +437,7 @@ impl<'connection> ActionTable<'connection> {
                     JOIN layer_nodes n ON n.layer_id=r.id
                     JOIN actions a ON a.source_node_id=n.node_id
                     WHERE a.kind='navigate' AND a.relation='expand'
-                      AND (a.state='accepted' OR (a.state='draft' AND a.owner_interaction_id=?3))
+                      AND a.state='accepted'
                       AND a.target_layer_id IS NOT NULL
                 )
                 SELECT EXISTS(SELECT 1 FROM reachable r JOIN layer_nodes n ON n.layer_id=r.id
@@ -444,7 +446,6 @@ impl<'connection> ActionTable<'connection> {
             )
             .bind(target_layer_id.value())
             .bind(action_id.value())
-            .bind(interaction.value())
             .fetch_one(&mut *self.connection)
             .await?;
             if cyclic {

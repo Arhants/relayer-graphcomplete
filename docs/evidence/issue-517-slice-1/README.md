@@ -55,7 +55,7 @@ an aggregate digest. Evidence-directory edits do not alter that source identity.
 - Default-off Electron journey: [machine result](default-off-result.json), passed.
   It verifies the legacy retained-invoke representation and navigation.
 - Both Electron runs used `RELAYER_INVOKE_EVIDENCE_SKIP_NATIVE_KEYBOARD=1` and clicked
-  production Send. Native keyboard/focus proof is excluded, explicitly recorded as
+  production Send. Native keyboard/focus proof is excluded from those automated runs, explicitly recorded as
   `nativeKeyboardVerified: false`. Test windows disable background throttling;
   background-throttled behavior is not claimed. No paid inference ran.
 
@@ -112,3 +112,39 @@ No test was deleted or subsumed. Slice 2 remains required for portable snapshots
 identity remapping, legacy migration, and inert imported provenance. Persistent
 attached-node editing and B3 remain off and outside this proof.
 
+
+## Second review pass: recovery, immutability, and projection
+
+Changed executable seams and checkpoint mapping:
+
+| Checkpoint | Changed seam | Smallest permanent regression |
+| --- | --- | --- |
+| IP-001 | SQLite migration 0022 prevents permission DELETE downgrades | `typed_permission_storage_is_immutable_and_unknown_versions_fail_closed`; historical unsafe-lease fixture explicitly removes/restores the guard |
+| IP-002 | cycle traversal follows accepted actions after exact-plan publication, excluding discarded sibling drafts | `typed_permissions_temporal_return_and_semantic_child_have_distinct_authority`; genuine cycle/rollback tests remain |
+| IP-002/003 | prepared-child retry accepts an exact converted receipt only with its existing non-reserved durable execution | `broker_exact_retries_launch_once_after_the_durable_fence` |
+| IP-004 | real export checks typed receipts before legacy invocation shape | `conversation_export_uses_real_accepted_graph_and_rejects_read_only_authority` |
+| IP-003/004 | Product selects missing cached memberships using a graph-owned receipt lookup, up to 500 requested IDs per batch | `resolved_invoke_destination_is_readable_cross_thread_in_review_mode`; `unrelated_offline_and_imported_outputs_keep_cached_freshness` |
+| IP-001/003 | receipt lookup is control-only and bounded; gate-off reopen retains conversion identity | `resolved_invoke_roots_require_control_and_bounded_valid_ids`; paired typed/legacy atomic lease fixture |
+| IP-003 | retained human launcher seeds two legacy occurrences then reopens with typed preparation enabled | `scripts/run-interaction-permissions-human-gate.mjs`, local desktop qualification and human gate |
+
+Product caches only the root layer in `completion_output`; descendant layers are read
+canonically when navigated. Therefore the batch selector checks the accepted root's
+membership. A successful lookup does not fetch unrelated legacy outputs. Imported
+threads are excluded from new lookup eligibility, and an unconfigured runtime keeps
+prior offline behavior. A configured runtime whose lookup fails cannot establish
+freshness: all requested native accepted outputs are explicitly marked stale.
+This availability tradeoff is covered separately from selected-output failure and
+wrong-root rejection. No new persisted cache or invalidation architecture is added.
+
+The permission guard is a new migration so existing databases upgrade. Native
+permission-bearing interactions have no deletion workflow; imported canonical cleanup
+has no permission rows and remains covered by the import suites. No test was deleted.
+
+The human launcher retains its explicit data directory, releases fixture invocations
+normally, registers no input blocker, and leaves production keyboard handling intact.
+Closing it stops its services without deleting data; the same command reopens it.
+Human acceptance is pending, regardless of automated evidence.
+
+The separate retained launcher was qualified with native CUA typing and Shift+Enter,
+original and repaired-occurrence navigation, and service reopen. See
+[qualification](human-launcher-qualification.json) and the [human walkthrough](HUMAN-GATE.md).

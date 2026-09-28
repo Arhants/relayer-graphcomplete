@@ -2430,7 +2430,7 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
         "nodeId": 90,
         "rootLayer": {
             "layer": {"id": 500}, "nodes": [], "edges": [],
-            "actions": [{"id": 41, "sourceNodeId": 7, "kind": "invoke", "targetLayerId": null, "state": "accepted"}]
+            "actions": []
         }
     });
     let source_interaction_id = sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,graph_node_id,completion_status,completion_output_json,permission_profile_id) VALUES (?1,1,'Source','1',90,'accepted',?2,'auto')")
@@ -2447,21 +2447,38 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
         .execute(&pool).await.unwrap().last_insert_rowid();
     sqlx::query("INSERT INTO action_invocations(source_interaction_id,action_id,result_interaction_id,created_at) VALUES (?1,41,?2,'3')")
         .bind(reused_source_interaction_id).bind(result_interaction_id).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,graph_node_id,completion_status,completion_output_json,permission_profile_id) VALUES (?1,2,'Unrelated legacy','4',93,'accepted',?2,'auto')")
+        .bind(source_thread_id).bind(json!({"nodeId":93,"rootLayer":{"layer":{"id":503},"nodes":[],"edges":[],"actions":[]}}).to_string()).execute(&pool).await.unwrap();
     pool.close().await;
 
     let canonical_source = json!({
         "nodeId": 90,
         "rootLayer": {
             "layer": {"id": 500}, "nodes": [], "edges": [],
-            "actions": [{"id": 41, "sourceNodeId": 7, "kind": "invoke", "targetLayerId": 501, "state": "accepted"}]
+            "actions": [{"id": 41, "sourceNodeId": 7, "kind": "navigate", "relation":"expand", "resolvedInvokeInteractionId":91, "targetLayerId": 501, "state": "accepted"}]
         }
     });
+    let output_mode = Arc::new(AtomicI64::new(0));
+    let read_mode = output_mode.clone();
+    let lookup_mode = output_mode.clone();
+    let unrelated_reads = Arc::new(AtomicUsize::new(0));
+    let read_unrelated = unrelated_reads.clone();
     let graph = axum::Router::new()
+        .route("/api/control/interactions/93/output", axum::routing::get(move || {
+            let count = read_unrelated.clone(); async move {count.fetch_add(1,Ordering::SeqCst); StatusCode::INTERNAL_SERVER_ERROR}
+        }))
+        .route(
+            "/api/control/resolved-invoke-roots",
+            axum::routing::post(move || {let mode = lookup_mode.load(Ordering::SeqCst); async move {
+                if mode == 3 { StatusCode::INTERNAL_SERVER_ERROR.into_response() }
+                else { axum::Json(json!([90])).into_response() }
+            }}),
+        )
         .route(
             "/api/control/interactions/90/actions/41",
             axum::routing::get(|| async {
                 axum::Json(json!({"action": {
-                    "id": 41, "kind": "invoke", "interactionText": "Continue",
+                    "id": 41, "kind": "navigate", "relation":"expand", "resolvedInvokeInteractionId":91,
                     "targetLayerId": 501, "state": "accepted"
                 }}))
             }),
@@ -2475,8 +2492,13 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
         .route(
             "/api/control/interactions/90/output",
             axum::routing::get(move || {
-                let canonical_source = canonical_source.clone();
-                async move { axum::Json(canonical_source) }
+                let mut canonical_source = canonical_source.clone();
+                let mode = read_mode.load(Ordering::SeqCst);
+                async move {
+                    if mode == 1 { return StatusCode::INTERNAL_SERVER_ERROR.into_response(); }
+                    if mode == 2 { canonical_source["nodeId"] = json!(999); }
+                    axum::Json(canonical_source).into_response()
+                }
             }),
         )
         .route(
@@ -2535,7 +2557,7 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
     assert_eq!(
         response_json(destination).await,
         json!({
-            "actionId": 41, "actionKind": "invoke", "targetLayerId": 501,
+            "actionId": 41, "actionKind": "navigate", "targetLayerId": 501,
             "threadId": result_thread_id, "interactionId": result_interaction_id,
             "rootLayerId": 501
         })
@@ -2555,17 +2577,18 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
     .await;
     assert_eq!(
         state["interactions"][0]["completionOutput"]["rootLayer"]["actions"][0],
-        json!({"id": 41, "sourceNodeId": 7, "kind": "invoke", "targetLayerId": 501, "state": "accepted"})
+        json!({"id": 41, "sourceNodeId": 7, "kind": "navigate", "relation":"expand", "resolvedInvokeInteractionId":91, "targetLayerId": 501, "state": "accepted"})
     );
     let interactions = response_json(
-        app.oneshot(api_request_with_token(
-            "GET",
-            &format!("/api/threads/{source_thread_id}/interactions"),
-            None,
-            "review",
-        ))
-        .await
-        .unwrap(),
+        app.clone()
+            .oneshot(api_request_with_token(
+                "GET",
+                &format!("/api/threads/{source_thread_id}/interactions"),
+                None,
+                "review",
+            ))
+            .await
+            .unwrap(),
     )
     .await;
     assert_eq!(
@@ -2573,6 +2596,26 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
         501
     );
 
+    assert_eq!(unrelated_reads.load(Ordering::SeqCst), 0);
+    assert_eq!(state["interactions"][1]["projectionFresh"], true);
+    for mode in [1, 2, 3] {
+        output_mode.store(mode, Ordering::SeqCst);
+        let view = response_json(
+            app.clone()
+                .oneshot(api_request_with_token(
+                    "GET",
+                    &format!("/api/threads/{source_thread_id}/interactions"),
+                    None,
+                    "review",
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(view["interactions"][0]["projectionFresh"], false);
+        assert_eq!(view["interactions"][1]["projectionFresh"], mode != 3);
+    }
+    assert_eq!(unrelated_reads.load(Ordering::SeqCst), 0);
     graph_task.abort();
     harness_task.abort();
     let _ = fs::remove_dir_all(root);
@@ -3059,6 +3102,7 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
     assert_eq!(repeated_first.accepted_view, first.accepted_view);
 
     let forbidden = app
+        .clone()
         .oneshot(api_request_with_token(
             "GET",
             "/api/threads/1/export",
@@ -3068,6 +3112,87 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
         .await
         .unwrap();
     assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+
+    // Convert the real accepted invoke, retaining the durable Product origin row.
+    // Export must report the declared portability boundary before validating that
+    // row against the now-navigation action shape.
+    graph_database
+        .set_interaction_permissions_enabled(true)
+        .await
+        .unwrap();
+    let child = graph_database
+        .create_interaction_with_invocation(
+            Some(GraphProjectId::new(1).unwrap()),
+            GraphThreadId::new(1).unwrap(),
+            "ignored",
+            Some(relayer_graph_core::InteractionInvocation {
+                source_interaction_node_id: graph_interaction.id,
+                source_action_id: invoked.id,
+            }),
+        )
+        .await
+        .unwrap();
+    let child_writer = graph_database.writer_for_subgraph(child.id).await.unwrap();
+    let answer = child_writer
+        .submit_node(&NodeDraft {
+            client_key: "typed-answer".into(),
+            title: "Result".into(),
+            kind: "note".into(),
+            icon: "file".into(),
+            detail: "Done".into(),
+        })
+        .await
+        .unwrap();
+    let result_layer = child_writer
+        .submit_layer(&LayerDraft {
+            client_key: "typed-result".into(),
+            nodes: vec![answer.id],
+            edges: vec![],
+            size_justification: None,
+            layout: authored_layout(answer.id),
+        })
+        .await
+        .unwrap();
+    child_writer
+        .add_action(&ActionDraft {
+            client_key: "typed-root".into(),
+            source_node_id: child.id,
+            source_layer_id: None,
+            kind: ActionKind::Navigate,
+            relation: Some(NavigateRelation::Expand),
+            label: "Result".into(),
+            variant: ActionVariant::Pill,
+            icon: None,
+            description: None,
+            target_layer_id: Some(result_layer.id),
+            interaction_text: None,
+            input: None,
+        })
+        .await
+        .unwrap();
+    child_writer.complete(child.id).await.unwrap();
+    let pool = sqlite_pool(&product_database).await;
+    sqlx::query("UPDATE interactions SET graph_node_id=?1,completion_status='accepted',completion_error=NULL WHERE id=2")
+        .bind(child.id.value()).execute(&pool).await.unwrap();
+    pool.close().await;
+    let blocked = app
+        .oneshot(api_request("GET", "/api/threads/1/export", None, true))
+        .await
+        .unwrap();
+    assert!(!blocked.status().is_success());
+    assert_ne!(
+        blocked
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok()),
+        Some("application/x-ndjson; charset=utf-8")
+    );
+    let body = response_json(blocked).await;
+    assert!(
+        body.to_string()
+            .contains("Typed invoke resolution portability requires Slice 2."),
+        "{body}"
+    );
 
     graph_task.abort();
     harness_task.abort();
@@ -8562,6 +8687,14 @@ async fn serve_test_app(
         "/api/control/personal-presentation",
         axum::routing::get(|| async { axum::Json(json!({ "schemaVersion": 0 })) }),
     );
+    // Mock graphs predate typed conversions unless a test supplies this route.
+    let app = app.fallback(|uri: axum::http::Uri| async move {
+        if uri.path() == "/api/control/resolved-invoke-roots" {
+            axum::Json(json!([])).into_response()
+        } else {
+            StatusCode::NOT_FOUND.into_response()
+        }
+    });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let task = tokio::spawn(axum::serve(listener, app).into_future());

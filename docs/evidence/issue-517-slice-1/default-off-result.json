@@ -14,6 +14,9 @@
     "Two-worker pool",
     "Results store"
   ],
+  "screenshotPath": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/.relayer/evidence/first-message-enter-smoke.png",
+  "evalScreenshotPath": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/.relayer/evidence/first-message-enter-smoke-eval.png",
+  "evalNarrowScreenshotPath": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/.relayer/evidence/first-message-enter-smoke-eval-narrow.png",
   "productNavigationState": {
     "rows": 4,
     "scrollable": true,
@@ -83,14 +86,13 @@
   },
   "invokeResultInteractionId": 2,
   "invokeEvidencePaths": {
-    "unresolved": "default-off/01-unresolved.png",
-    "runningDisabled": "default-off/02-running-disabled.png",
-    "resolved": "default-off/03-resolved.png",
-    "crossInteraction": "default-off/04-cross-interaction-destination.png",
-    "revisited": "default-off/05-revisited-source.png",
-    "evalCrossInteraction": "default-off/06-eval-cross-interaction-destination.png"
+    "unresolved": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/default-off/01-unresolved.png",
+    "runningDisabled": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/default-off/02-running-disabled.png",
+    "resolved": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/default-off/03-resolved.png",
+    "crossInteraction": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/default-off/04-cross-interaction-destination.png",
+    "revisited": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/default-off/05-revisited-source.png",
+    "evalCrossInteraction": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/default-off/06-eval-cross-interaction-destination.png"
   },
-  "sourceSnapshot": "source-snapshot.json",
-  "sourceSha256": "d1a67ba8d584fc8a2e4b42e46b865111229642f98d8300d120d2564e27027579",
+  "sourceSha256": "cc93bd318dcc5fcba764857c416589e198a5ea9f90ce9c374be30e995196ee42",
   "backgroundThrottling": false
 }

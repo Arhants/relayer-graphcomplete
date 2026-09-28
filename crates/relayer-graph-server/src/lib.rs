@@ -195,6 +195,10 @@ pub fn router(state: ServerState) -> Router {
             "/api/control/input-action-occurrences/canonical",
             post(canonical_input_action_occurrence),
         )
+        .route(
+            "/api/control/resolved-invoke-roots",
+            post(control_resolved_invoke_roots),
+        )
         .route("/api/control/interactions/{id}/output", get(control_output))
         .route(
             "/api/control/interactions/{id}/current",
@@ -1600,6 +1604,26 @@ fn default_projection_limit() -> u32 {
     100
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ResolvedInvokeRootsRequest {
+    completion_ids: Vec<NodeId>,
+}
+
+async fn control_resolved_invoke_roots(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Json(input): Json<ResolvedInvokeRootsRequest>,
+) -> Result<Json<Vec<NodeId>>, ApiError> {
+    require_bearer(&headers, &state.control_token)?;
+    Ok(Json(
+        state
+            .graph
+            .resolved_invoke_roots(&input.completion_ids)
+            .await?,
+    ))
+}
+
 async fn control_current_projections(
     State(state): State<ServerState>,
     headers: HeaderMap,
@@ -2619,6 +2643,71 @@ mod tests {
         http::Request,
     };
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn resolved_invoke_roots_require_control_and_bounded_valid_ids() {
+        let graph = GraphDatabase::in_memory().await.unwrap();
+        let node = graph
+            .create_interaction(None, ThreadId::new(1).unwrap(), "Source")
+            .await
+            .unwrap();
+        let state = ServerState::new(graph, "control");
+        let model_token = mint_capability(&state, node.id, None)
+            .await
+            .unwrap_or_else(|_| panic!("could not mint model capability"));
+        let app = router(state);
+        for token in ["", "wrong", model_token.as_str()] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/control/resolved-invoke-roots")
+                        .header("content-type", "application/json")
+                        .header("authorization", format!("Bearer {token}"))
+                        .body(Body::from(json!({"completionIds":[node.id]}).to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+        for ids in [json!([0]), json!([-1]), json!(vec![node.id; 501])] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/control/resolved-invoke-roots")
+                        .header("content-type", "application/json")
+                        .header("authorization", "Bearer control")
+                        .body(Body::from(json!({"completionIds":ids}).to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert!(response.status().is_client_error());
+        }
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/control/resolved-invoke-roots")
+                    .header("content-type", "application/json")
+                    .header("authorization", "Bearer control")
+                    .body(Body::from(
+                        json!({"completionIds":[node.id.value(),99999]}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            &to_bytes(response.into_body(), 1024).await.unwrap()[..],
+            b"[]"
+        );
+    }
 
     #[tokio::test]
     async fn reminted_capability_reactivates_assets_without_reviving_old_generation() {

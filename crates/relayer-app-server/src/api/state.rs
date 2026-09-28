@@ -101,6 +101,12 @@ pub(super) async fn product_state(
         state.runtime.as_ref(),
         &mut product_state.interactions,
         &product_state.action_invocations,
+        &product_state
+            .threads
+            .iter()
+            .filter(|view| view.thread.imported)
+            .map(|view| view.thread.id)
+            .collect(),
     )
     .await;
     let mut seen_completion_ids = std::collections::HashSet::new();

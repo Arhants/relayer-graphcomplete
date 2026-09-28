@@ -129,6 +129,14 @@ pub(crate) async fn build_conversation_export(
                     closure.node_id
                 )));
             }
+            if std::iter::once(&closure.root_action)
+                .chain(closure.layers.iter().flat_map(|layer| &layer.actions))
+                .any(|action| action.resolved_invoke_interaction_id.is_some())
+            {
+                return Err(ConversationExportBuildError::Invalid(
+                    "Typed invoke resolution portability requires Slice 2.".into(),
+                ));
+            }
             Some(closure)
         } else {
             None

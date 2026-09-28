@@ -6294,6 +6294,19 @@ async fn leased_completion_atomically_resolves_invoke_once_and_survives_reopen_f
     drop(reused_writer);
     database.close().await;
     let reopened = GraphDatabase::open(file.path()).await.unwrap();
+    reopened
+        .set_interaction_permissions_enabled(false)
+        .await
+        .unwrap();
+    let roots = reopened
+        .resolved_invoke_roots(&[source_interaction.id, reused_interaction.id, leased.id])
+        .await
+        .unwrap();
+    assert_eq!(roots.len(), if typed { 2 } else { 0 });
+    if typed {
+        assert!(roots.contains(&source_interaction.id));
+        assert!(roots.contains(&reused_interaction.id));
+    }
     let recovered = reopened
         .create_interaction_with_invocation(
             Some(project(1)),
@@ -6697,6 +6710,13 @@ async fn typed_permission_storage_is_immutable_and_unknown_versions_fail_closed(
             .await
             .is_err()
     );
+    assert!(
+        sqlx::query("DELETE FROM interaction_permissions WHERE interaction_node_id=?1")
+            .bind(interaction.id.value())
+            .execute(&fixture)
+            .await
+            .is_err()
+    );
     sqlx::query("DROP TRIGGER interaction_permissions_immutable")
         .execute(&fixture)
         .await
@@ -6751,7 +6771,7 @@ async fn typed_permissions_temporal_return_and_semantic_child_have_distinct_auth
         .create_interaction(None, thread(1), "Source")
         .await
         .unwrap();
-    let (_, invoke) = accepted_invoke(&database, &source).await;
+    let (source_node, invoke) = accepted_invoke(&database, &source).await;
     let parent = database.writer_for_subgraph(source.id).await.unwrap();
     let child = parent
         .prepare_recursive_completion(invoke.id)
@@ -6773,6 +6793,21 @@ async fn typed_permissions_temporal_return_and_semantic_child_have_distinct_auth
         .unwrap();
     let answer = node(&writer, "answer").await;
     let layer = single_node_layer(&writer, "root", &answer).await;
+    // A discarded sibling has an unpublished node-owned expansion back to the
+    // leased source. It is not part of the current that Return accepts.
+    let sibling = single_node_layer(&writer, "discarded-sibling", &answer).await;
+    let back = single_node_layer(&writer, "discarded-back", &source_node).await;
+    navigate(
+        &writer,
+        "unpublished-back",
+        &answer,
+        &sibling,
+        &back,
+        NavigateRelation::Expand,
+    )
+    .await;
+    writer.discard_layer(sibling.id).await.unwrap();
+    writer.discard_layer(back.id).await.unwrap();
     root_expand(&writer, &child, &layer).await;
     writer
         .transition_current(
@@ -7052,6 +7087,11 @@ async fn typed_imported_invoke_cannot_gain_authority_through_writable_occurrence
         .execute(&pool)
         .await
         .unwrap();
+    // Simulate the pre-guard database that admitted this historical unsafe lease.
+    sqlx::query("DROP TRIGGER interaction_permissions_no_delete")
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("DELETE FROM interaction_permissions WHERE interaction_node_id=?1")
         .bind(old.id.value())
         .execute(&pool)
@@ -7072,6 +7112,7 @@ async fn typed_imported_invoke_cannot_gain_authority_through_writable_occurrence
         .execute(&pool)
         .await
         .unwrap();
+    sqlx::query("CREATE TRIGGER interaction_permissions_no_delete BEFORE DELETE ON interaction_permissions BEGIN SELECT RAISE(ABORT, 'immutable_interaction_permissions'); END;").execute(&pool).await.unwrap();
     pool.close().await;
     let reopened = GraphDatabase::open(file.path()).await.unwrap();
     let old_writer = reopened.writer_for_subgraph(old.id).await.unwrap();

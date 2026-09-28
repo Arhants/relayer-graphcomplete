@@ -1,26 +1,26 @@
 {
   "sourceSnapshot": "source-snapshot.json",
-  "sourceSha256": "d1a67ba8d584fc8a2e4b42e46b865111229642f98d8300d120d2564e27027579",
-  "recordedAt": "2026-09-28T01:46:19.067759+00:00",
-  "preFixImplementationCommit": "a7efc4ff6bcbd8df45c3143a94d604dfab92f372",
-  "redObservation": {
-    "passed": 7,
-    "failed": [
-      "typed_imported_invoke_cannot_gain_authority_through_writable_occurrence",
-      "typed_conversion_updates_legacy_occurrences_atomically"
-    ],
-    "scope": "Initial permanent reproductions, before later rollback/reopen extensions"
+  "sourceSha256": "cc93bd318dcc5fcba764857c416589e198a5ea9f90ce9c374be30e995196ee42",
+  "recordedAt": "2026-09-28T02:36:18.026735+00:00",
+  "preFixImplementationCommit": "2625eb0a79694b697e464ff086ee8287c1bbba50",
+  "redObservations": {
+    "broker_exact_retries_launch_once_after_the_durable_fence": "converted replay failed: prepared completion requires an accepted invoke action",
+    "typed_permission_storage_is_immutable_and_unknown_versions_fail_closed": "DELETE unexpectedly succeeded",
+    "typed_permissions_temporal_return_and_semantic_child_have_distinct_authority": "discarded unpublished sibling caused expand_cycle",
+    "resolved_invoke_destination_is_readable_cross_thread_in_review_mode": "cached absent action remained null instead of canonical action"
   },
   "verification": {
     "npm run check": {
       "exitCode": 0,
       "graphDatabaseCases": 92,
       "typedCases": 9,
-      "legacyLadybugInventoryAndReopen": "passed in default and crash-feature suites",
+      "appServerUnitCases": 271,
+      "productPersistenceCases": 28,
+      "graphServerReceiptBoundary": "passed",
       "vitestPassed": 2483,
       "vitestSkipped": 3,
       "separateSecretBoundaryPassed": 2,
-      "pythonAndReceiptAndPrdChecks": "passed"
+      "rustWorkspaceCrashReconciliationPythonReceiptPrd": "passed"
     },
     "npm run build": {
       "exitCode": 0
@@ -32,12 +32,22 @@
     "desktopDefaultOff": {
       "exitCode": 0,
       "result": "default-off-result.json"
-    }
+    },
+    "humanLauncherQualification": "human-launcher-qualification.json",
+    "adversarialReview": "adversarial-review.json"
   },
   "limitations": [
-    "Native keyboard/focus not verified",
+    "Human acceptance pending",
+    "Automated desktop runners skip synthetic keyboard proof; separate native CUA qualification verifies typing, focus, and Shift+Enter",
     "Background throttling disabled for desktop evidence",
-    "History-size performance not measured",
-    "No live, paid-inference, signed release, merge, or deployment proof"
-  ]
+    "History-size performance not measured; one receipt lookup per 500 requested accepted native completion IDs",
+    "Receipt lookup failure marks all queried native accepted roots stale; unconfigured runtime retains prior offline behavior",
+    "No paid inference, signed-release, merge, or deployment proof"
+  ],
+  "logSha256": {
+    "check": "821528c1beff41d5810760062df60df0d04c49effaf9152fda8f01a4d539502d",
+    "build": "d9412746310f4455bf7dbab86584e81c2ea57491604e7e2d5d63a5d6402fb60f",
+    "desktopGated": "d6b6f1a49d6455ceb99b97e2465d87e44c34ce3a1ec07b74192cd70755196cd3",
+    "desktopDefault": "3ef611aba968866a1d9bc01a4606a01c3a755c82aa55d4e4f6889bbd19f3d952"
+  }
 }

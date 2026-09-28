@@ -1312,6 +1312,27 @@ impl RuntimeClient {
         self.revoke_capability(&prepared.graph_token).await
     }
 
+    pub(crate) async fn resolved_invoke_roots(
+        &self,
+        ids: &[i64],
+    ) -> Result<std::collections::HashSet<i64>, RuntimeError> {
+        let mut roots = std::collections::HashSet::new();
+        for chunk in ids.chunks(500) {
+            let response = self
+                .client
+                .post(self.graph_url.join("api/control/resolved-invoke-roots")?)
+                .bearer_auth(&self.graph_control_token)
+                .timeout(CONTROL_REQUEST_TIMEOUT)
+                .json(&serde_json::json!({"completionIds":chunk}))
+                .send()
+                .await?;
+            let selected: Vec<i64> =
+                serde_json::from_value(response_json(response, StatusCode::OK).await?)?;
+            roots.extend(selected.into_iter().filter(|id| chunk.contains(id)));
+        }
+        Ok(roots)
+    }
+
     pub(crate) async fn completion_output(
         &self,
         interaction_node_id: i64,
