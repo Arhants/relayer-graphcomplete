@@ -394,8 +394,13 @@ async function run() {
     const turn = box('.interaction-banner');
     const heading = box('.thread-header');
     const workspace = box('.workspace-layout');
+    const logo = box('.sidebar-title .logo');
+    const newThread = box('#newThread');
+    const plus = box('#newThread span');
     return { sidebarWidth: sidebar.width, detailWidth: inspector.width, graphWidth: graph.width,
       environmentWidth: environment.width, turnWidth: turn.width,
+      sidebarIconsCentered: Math.abs(logo.left + logo.width / 2 - sidebar.left - sidebar.width / 2) <= 1
+        && Math.abs(plus.left + plus.width / 2 - newThread.left - newThread.width / 2) <= 1,
       headingWidth: heading.width, detailTop: inspector.top, detailBottom: inspector.bottom,
       collapsedStructure: environment.width === 0 && environment.height === 0
         && Math.abs(turn.left - graph.left) <= 1 && Math.abs(turn.right - graph.right) <= 1
@@ -412,10 +417,13 @@ async function run() {
   const freedSidebarWidth = expandedSidebarGeometry.sidebarWidth - collapsedSidebarGeometry.sidebarWidth;
   if (freedSidebarWidth <= 0
     || Math.abs(collapsedSidebarGeometry.detailWidth - collapsedSidebarGeometry.graphWidth) > 1
-    || !collapsedSidebarGeometry.collapsedStructure
+    || !collapsedSidebarGeometry.collapsedStructure || !collapsedSidebarGeometry.sidebarIconsCentered
     || !collapsedSidebarGeometry.overlayContained || !collapsedSidebarGeometry.pageFits) {
     throw new Error(`Sidebar collapse did not create the full-height detail layout: ${JSON.stringify({ expandedSidebarGeometry, collapsedSidebarGeometry })}`);
   }
+  await evaluate("document.querySelector('#newThread').focus()");
+  if (!(await readSidebarGeometry()).sidebarIconsCentered) throw new Error('Collapsed sidebar icons shift on keyboard focus.');
+  await evaluate("document.querySelector('#newThread').blur()");
   if (process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR) {
     await writeFile(join(process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR, "node-detail-sidebar-collapsed.png"), (await window.webContents.capturePage()).toPNG());
   }

@@ -178,3 +178,8 @@ html[data-theme="light"] .annotation-panel{background:#fafaf9;box-shadow:0 18px 
 /* Collapsed desktop: full-width heading above equal graph and detail columns. */
 body.sidebar-collapsed .environment-panel{display:none}
 @media(min-width:1101px){body.sidebar-collapsed .workspace-layout{grid-template-columns:repeat(2,minmax(0,1fr))}body.sidebar-collapsed .thread-header{grid-column:1 / -1}body.sidebar-collapsed .thread-workspace{display:contents}body.sidebar-collapsed .interaction-banner{margin-left:0}body.sidebar-collapsed .graph-column{grid-column:1;grid-row:3}body.sidebar-collapsed .inspector{grid-column:2;grid-row:2 / 4;width:100%;margin-top:8px}}
+
+/* Hidden collapsed labels must not retain flex gaps or shortcut spacing. */
+body.sidebar-collapsed .sidebar-title{justify-content:center;gap:0}
+body.sidebar-collapsed .sidebar-title strong,body.sidebar-collapsed .new-thread-button kbd{display:none}
+body.sidebar-collapsed .new-thread-button{gap:0;padding-inline:0}
