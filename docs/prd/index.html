@@ -822,7 +822,8 @@ interface CompletionTerminalError extends Error {
 <li>When Relayer gives up on a running turn, it cancels the turn. The access is released once the native turn settles.</li>
 <li>A turn cannot start on an admission whose release has already begun.</li>
 <li><strong>PROV-003:</strong> Removing a provider during a turn finishes without a restart once Relayer has recorded the turn's outcome.</li>
-<li>A removal whose turn outcome is still unrecorded when the application restarts stays pending until a later restart. Finishing it in-session is planned.</li>
+<li>After a restart, a removal still waiting on a turn finishes without another restart once that turn's outcome is recorded.</li>
+<li>If Relayer cannot reconcile an interrupted turn at restart, its outcome is recorded when its thread is opened. Recording it at restart is planned.</li>
 <li>A native turn that ignores cancellation keeps its access until it ends, so Remove waits for it. A per-turn force-stop after two minutes is planned.</li>
 <li>Remove's waiting state for running turns and an explicit <strong>Stop turns and remove</strong> action are planned.</li>
 </ul>

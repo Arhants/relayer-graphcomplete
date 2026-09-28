@@ -282,7 +282,8 @@ none yet, so the model follows today's code for them.
 | `leases-view-debt` | Fixed; now passes | Finding D. Before the fix: settling a quarantined attempt (from the thread view or an invoke action's destination) made lease debt but did not wake the reconciler. The debt then waited for a restart. The settle now wakes it (`QuarantineSettleWakesReconciler`). `leases-view-debt-reverted` shows the old trace. |
 | `leases-persist-lease` | Fixed; now passes | Finding C, lease half. Before the fix: when a turn's terminal state could not be persisted, nothing released its lease. The host now releases it when the native turn ends. `leases-persist-lease-reverted` shows the old trace. |
 | `leases-restart-quarantine`, `leases-restart-persist` | Fixed; now pass | Finding E, startup half. A removal waited on a running attempt, and the user quit. At the next start, an interrupted submitted input was quarantined, or a failed persist had left it quarantined, so its attempt stayed `running`. `reconcileStartup`'s refused finalize then failed every start. A refused finalize now leaves `P` `removal_pending`, and the app starts. `leases-restart-quarantine-reverted` shows the old trace. |
-| `leases-restart-removal` | Confirmed, open, PR 2 | Finding E, removal half. After that restart, `P` stays `removal_pending` while the quarantined attempt runs. Once the thread view settles the attempt, the reconciler's release finds no host entry, because host memory is fresh after the restart. Nothing acknowledges, so the finalize is not retried until the next restart. |
+| `leases-restart-drained-removal` | Fixed; now passes | Finding E, removal half. After that restart, once the quarantined attempt becomes terminal, the reconciler's release finds no host entry, because host memory is fresh. A release for a lease the host no longer tracks retries every drained removal (`UnknownReleaseRetriesFinalize`), so the removal finishes without another restart. The same path covers access the host forgot ten minutes after releasing it. `leases-forgotten-release-reverted` shows removal waiting for a restart without it. |
+| `leases-restart-removal` | Confirmed, open, PR #545 | After that restart, the quarantined attempt stays `running` until its thread is opened or the app restarts again. Opening the thread is a user action, so the removal can stay pending meanwhile. PR #545 marks such attempts ended at restart. |
 | `leases-persist-attempt` | Confirmed, open, PR 2 | Finding C, attempt half. When a turn's terminal state cannot be persisted, its attempt stays `running`, which blocks the provider tombstone. A harness approval that is aborted, expired or cancelled reaches this with no fault. |
 | `leases-hang` | Confirmed (missing feature), open | Finding G. A cancelled native turn that ignores the cancellation keeps its provider access forever, so removal waits forever. A per-turn force-stop is planned for a later PR. |
 
@@ -296,17 +297,17 @@ The fixes are:
    acknowledgement retries it (`AckRetriesFinalize`). Landed.
 4. Settling a quarantined attempt wakes the reconciler
    (`QuarantineSettleWakesReconciler`). Landed.
+5. A release for a lease the host no longer tracks retries every drained
+   removal (`UnknownReleaseRetriesFinalize`). Landed.
 
 The `*-reverted` checks turn one landed fix off and show its old trace. In
 them the acknowledgement call is attributed to `AckRetriesFinalize`, so a
 reverted `HostReleasesOnSettle` still acknowledges. The open findings C and
 E have no fix constants yet. Startup error isolation (L6) is not modeled.
 A release and its acknowledgement are one step, and acknowledgements do not
-fail in the model. The code retries a failed acknowledgement on the host's
-timer, and forgets access released without an owner after ten minutes. An
-owner release for a lease the host no longer tracks asks the providers to
-retry every drained removal, so no acknowledgement is lost. None of this is
-modeled.
+fail in the model, so the host's retry of a failed acknowledgement is not
+modeled. The ten-minute forget of access released without an owner is
+modeled (`ForgetReleased`).
 
 ## Limits
 

@@ -42,7 +42,8 @@
       "HostReleasesOnSettle": "TRUE",
       "ClaimRejectsReleasing": "TRUE",
       "AckRetriesFinalize": "TRUE",
-      "QuarantineSettleWakesReconciler": "TRUE"
+      "QuarantineSettleWakesReconciler": "TRUE",
+      "UnknownReleaseRetriesFinalize": "TRUE"
     },
     "catalog-today": {
       "MaxQ": "2",
@@ -475,6 +476,22 @@
       "finding": "Without the acknowledgement retry, the finalize refused while the attempt still ran is never retried, and removal waits for a restart."
     },
     {
+      "id": "leases-forgotten-release-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "UnknownReleaseRetriesFinalize": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "RemovalCompletes"
+      ],
+      "expect": {
+        "violated": "RemovalCompletes"
+      },
+      "finding": "Without the unknown-release retry, access released before the owner's release is forgotten after ten minutes; the owner's later release finds nothing to acknowledge, and removal waits for a restart."
+    },
+    {
       "id": "leases-view-debt",
       "module": "ExecutionLeases",
       "preset": "leases-today",
@@ -596,7 +613,22 @@
       "expect": {
         "violated": "RemovalCompletes"
       },
-      "finding": "Open (E, PR 2): after that restart the provider stays removal_pending while the quarantined attempt runs; and once the thread view settles it, the reconciler's release finds no host entry to acknowledge, so the finalize is not retried until the next restart."
+      "finding": "Open (E, PR #545): after a restart, a quarantined submitted input's attempt stays running until its thread is opened or the app restarts again, so the removal stays pending meanwhile."
+    },
+    {
+      "id": "leases-restart-drained-removal",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "StartupQuarantine": "TRUE",
+        "MaxRestarts": "1"
+      },
+      "fair": true,
+      "properties": [
+        "DrainedRemovalCompletes"
+      ],
+      "expect": "pass",
+      "finding": "After a restart, once the quarantined attempt becomes terminal, the owner's release of a lease the fresh host does not know retries every drained removal, so the removal finishes in-session."
     },
     {
       "id": "leases-persist-attempt",
