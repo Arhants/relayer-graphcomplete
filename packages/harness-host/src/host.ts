@@ -2525,17 +2525,17 @@ function captureHarnessState(harness: Harness): HarnessSessionState {
   return state;
 }
 
-/**
- * Waits for a native turn to settle. Once the turn is force-stopped, waits at most
- * FORCE_STOPPED_TURN_SETTLE_MS more and then rejects, so the host can release the turn's
- * access even if the harness never settles. A later settlement is ignored.
- */
 type ForceStoppedNativeOutcome = "settled" | "rejected" | "did not settle within ten seconds";
 
 class ForceStoppedTurnDidNotSettle extends Error {
   constructor() { super("The force-stopped turn did not settle within ten seconds"); }
 }
 
+/**
+ * Waits for a native turn to settle. Once the turn is force-stopped, waits at most
+ * FORCE_STOPPED_TURN_SETTLE_MS more and then rejects, so the host can release the turn's
+ * access even if the harness never settles. A later settlement is ignored.
+ */
 async function settledOrForceStopped(native: PromiseLike<void>, forceSignal: AbortSignal): Promise<void> {
   const settled = Promise.resolve(native);
   void settled.catch(() => undefined);

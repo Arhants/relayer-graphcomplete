@@ -139,6 +139,7 @@
       "PersistCanFail": "FALSE",
       "StartupQuarantine": "FALSE",
       "HarnessCanHang": "FALSE",
+      "UserCanStop": "FALSE",
       "HostReleasesOnSettle": "TRUE",
       "ClaimRejectsReleasing": "TRUE",
       "AckRetriesFinalize": "TRUE",
@@ -414,6 +415,7 @@
         "PersistCanFail": "TRUE",
         "StartupQuarantine": "TRUE",
         "HarnessCanHang": "TRUE",
+        "UserCanStop": "TRUE",
         "StartupCleanupCanFail": "TRUE"
       },
       "invariants": [
@@ -777,6 +779,43 @@
       "finding": "Without it, a turn whose terminal state cannot be persisted leaves its attempt running, which blocks the provider tombstone until a restart."
     },
     {
+      "id": "leases-persist-attempt-forced",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE",
+        "RustCanAbandon": "TRUE",
+        "HarnessCanHang": "TRUE",
+        "UserCanStop": "TRUE"
+      },
+      "fair": true,
+      "properties": [
+        "AttemptEndsAfterTurn"
+      ],
+      "expect": "pass",
+      "finding": "A cancelled turn that ignored the cancellation and was force-stopped also stops holding the provider: its attempt ends even when its terminal state cannot be persisted. The turn is cancelled by Rust giving up or by the user's Stop."
+    },
+    {
+      "id": "leases-persist-attempt-forced-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE",
+        "RustCanAbandon": "TRUE",
+        "HarnessCanHang": "TRUE",
+        "UserCanStop": "TRUE",
+        "PersistFailureEndsWait": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "AttemptEndsAfterTurn"
+      ],
+      "expect": {
+        "violated": "AttemptEndsAfterTurn"
+      },
+      "finding": "Without C's attempt fix, a force-stopped turn whose terminal state cannot be persisted leaves its attempt running, so it keeps holding the provider."
+    },
+    {
       "id": "leases-persist-removal",
       "module": "ExecutionLeases",
       "preset": "leases-today",
@@ -845,7 +884,8 @@
       "preset": "leases-today",
       "constants": {
         "HarnessCanHang": "TRUE",
-        "RustCanAbandon": "TRUE"
+        "RustCanAbandon": "TRUE",
+        "UserCanStop": "TRUE"
       },
       "fair": true,
       "properties": [

@@ -370,8 +370,8 @@ unsupported compiler overrides and target directories disable reuse. The
 reviewed build scripts/configuration in `scripts/ci/packaging-input-contract.json`
 name the input-contract boundary: changing or adding one disables reuse until its
 external inputs have been reviewed and the contract updated. Never update those
-digests mechanically to obtain a hit. Signed release compilation is unchanged:
-its debug profile and dSYM evidence need a separate artifact contract.
+digests mechanically to obtain a hit. Development entries cannot supply signed
+release compilation; the separate signed-profile contract below owns that reuse.
 
 A miss or rejected entry builds fresh. Concurrent cache writers fall back; failed
 compilation is not retried or published. License readiness and the actual ASAR,
@@ -420,6 +420,54 @@ observed 36-second response. Longer waits still fall back immediately; each
 restore gets at most two SDK attempts. Telemetry records the chosen delay or
 budget rejection. Retrying a service failure does not imply an incompatible or
 absent cache entry will become a hit.
+
+## Signed Preview native compilation cache
+
+The manual macOS arm64 signed-candidate job opts into a separate
+`relayer.signed-native-cache/v1` workflow artifact. It contains only the two
+unsigned Rust release binaries (`CARGO_PROFILE_RELEASE_DEBUG=1`, default
+features), their dSYMs, and a manifest. Development/CI Ladybug and runtime entries
+are never accepted as signed-profile output. A verified runtime hit avoids the
+entire Rust/Ladybug/OpenSSL compilation and Cargo fetch; a miss fetches the locked
+dependency closure and uses the existing pinned offline native build.
+
+Input identity reuses the reviewed packaging input contract and binds all crate,
+native-source and packaging bytes, repository/cache paths, target, toolchains,
+SDK, feature/profile settings, symbol tools, signed build/telemetry implementation
+and signed workflow. Unsupported ambient build settings disable reuse. Native
+content can be reused across commits with identical inputs; the current
+candidate still requires its own exact-source main CI and fresh release metadata.
+
+Restore searches at most five pages of 100 recent workflow artifacts and considers up to five
+matching identities. Each entry requires GitHub API provenance for this repository,
+this manual main signed workflow, a completed successful run and successful
+macOS arm64 package job in the named attempt. Artifact name and receipt bind run,
+attempt and source commit. Download uses the immutable artifact ID and requires
+its API SHA-256 archive digest before extraction. ZIP extraction accepts only the
+fixed binary/dSYM/manifest inventory, rejects links, duplicates and extra paths,
+and bounds compressed and expanded bytes to 2 GiB. GitHub normalizes ZIP modes;
+the extractor reinstates only code-owned binary executable modes before comparing
+the sealed inventory. A post-download metadata check rejects a changed attempt.
+
+Sealing generates symbols while Cargo objects exist, rejects dsymutil warning or
+error diagnostics, and requires compilation units, valid DWARF and matching
+arm64 UUIDs. Restore verifies every file hash and mode. Installation and telemetry
+retain and recheck the authenticated inventory, including copied destination
+bytes. Telemetry consumes these dSYMs instead of trying to reconstruct them from
+bare cached binaries, then still correlates them with the freshly signed package.
+This is structural symbol validation, not proof of live Sentry symbolication.
+
+Restoration, rejection, eviction and cache-save failures are logged and fall back
+to fresh compilation or already-built output. Compiler failures propagate without
+retry. Only fresh native outputs are uploaded (30-day retention); a hit does not
+republish its producer's receipt. Set `RELAYER_SIGNED_NATIVE_CACHE=0` to disable
+this acceleration. Local builds remain fresh by default. Licensing, Electron
+assembly, afterPack, signing, notarization, exact-source verification, current
+source maps, telemetry upload and immutable candidate/publication gates remain
+fresh and mandatory. No test result or release acceptance is cached.
+
+Checkpoint mappings, local results and the outstanding authorized signed-run
+proof gate are recorded in [signed cache evidence](../evidence/signed-native-cache/README.md).
 
 ### Command resource profiles
 

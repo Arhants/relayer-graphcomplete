@@ -1073,8 +1073,9 @@ async fn stop_before_native_execution(
 /// or cancelled), the attempt ends with it. Otherwise it stays undecided for canonical
 /// reconciliation, and only the end of the wait is recorded. Either way it stops counting
 /// toward the provider removal drain, and its lease is released now. That release does not
-/// free access a native turn still uses: the harness host abandons a turn it still runs and
-/// releases the access only once the turn settles.
+/// free access a native turn still uses: the harness host abandons a turn it still runs. It
+/// releases the access when the turn settles, or at most ten seconds after the host force-stops
+/// the turn.
 async fn end_native_wait(execution: &InteractionExecutionService, attempt_id: Option<i64>) {
     let Some(attempt_id) = attempt_id else { return };
     for retry in 1..=LIVE_RECONCILIATION_ATTEMPTS {

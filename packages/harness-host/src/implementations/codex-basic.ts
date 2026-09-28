@@ -493,6 +493,10 @@ export class CodexBasicHarness implements Harness {
         'model_providers.relayer_execution_provider.wire_api="responses"',
         "model_providers.relayer_execution_provider.requires_openai_auth=false",
         "model_providers.relayer_execution_provider.supports_websockets=false",
+        // Codex 0.147 snapshots capture the app-server environment and source
+        // those exports after shell filtering. Disable that path for API-key
+        // access so snapshots cannot persist or reintroduce provider secrets.
+        "features.shell_snapshot=false",
         'shell_environment_policy.inherit="all"',
         "shell_environment_policy.ignore_default_excludes=true",
         'shell_environment_policy.filters.OPENAI_API_KEY="exclude"',
