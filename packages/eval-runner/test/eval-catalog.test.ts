@@ -25,6 +25,76 @@ describe("external evaluation catalog boundary", () => {
     const first = catalog.cases[0]!;
     expect(() => validateEvalCatalogV1({ ...catalog, cases: [{ ...first, definition: { ...first.definition, caseSnapshotDigest: `sha256:${"0".repeat(64)}` } }, catalog.cases[1]] })).toThrow("projection or digest drifted");
   });
+  it("owns immutable catalog data while retaining the validated callback references", () => {
+    const supplied = createSyntheticExternalCatalog();
+    const mutableCases = supplied.cases.map((registration) => ({
+      ...registration,
+      definition: structuredClone(registration.definition),
+      boundCase: structuredClone(registration.boundCase),
+    }));
+    const mutableSuites = structuredClone(supplied.suites);
+    const callbacks = mutableCases.map(({ materialize, grade, evaluateMandatoryGate }) => ({ materialize, grade, evaluateMandatoryGate }));
+    const catalog = validateEvalCatalogV1({ schemaVersion: 1, cases: mutableCases, suites: mutableSuites });
+
+    (mutableCases[0]!.definition as { name: string }).name = "Mutated after validation";
+    (mutableCases[0]!.boundCase.snapshot.artifacts.task as { text: string }).text = "Mutated task";
+    (mutableSuites[0]!.members[0] as { caseId: string }).caseId = "fixture.replaced";
+
+    expect(catalog.cases[0]!.definition.name).toBe("External fixture A");
+    expect(catalog.cases[0]!.boundCase.snapshot.artifacts.task.text).toBe("Implement the synthetic fixture change and verify it.");
+    expect(catalog.suites[0]!.members[0]!.caseId).toBe("fixture.external-a");
+    expect(catalog.cases[0]!.materialize).toBe(callbacks[0]!.materialize);
+    expect(catalog.cases[0]!.grade).toBe(callbacks[0]!.grade);
+    expect(catalog.cases[0]!.evaluateMandatoryGate).toBe(callbacks[0]!.evaluateMandatoryGate);
+    expect(Object.isFrozen(catalog.cases[0]!.definition)).toBe(true);
+    expect(Object.isFrozen(catalog.cases[0]!.boundCase.snapshot.artifacts)).toBe(true);
+    expect(Object.isFrozen(catalog.suites[0]!.members)).toBe(true);
+  });
+  it("rejects a snapshot task that differs from the executable initial prompt", () => {
+    const supplied = createSyntheticExternalCatalog();
+    const first = supplied.cases[0]!;
+    const changedDefinition = structuredClone(first.definition);
+    (changedDefinition.threads[0]!.prompts as string[])[0] = "A different executable prompt.";
+    const changedBoundDefinition = structuredClone(first.boundCase.definition) as typeof changedDefinition;
+    (changedBoundDefinition.threads[0]!.prompts as string[])[0] = "A different executable prompt.";
+    expect(() => validateEvalCatalogV1({
+      ...supplied,
+      cases: [{ ...first, definition: changedDefinition, boundCase: { ...first.boundCase, definition: changedBoundDefinition } }, supplied.cases[1]!],
+    })).toThrow("snapshot task does not match executable initial prompt");
+  });
+  it("rejects catalog accessors without invoking them", () => {
+    const supplied = createSyntheticExternalCatalog();
+    let reads = 0;
+    const definition = structuredClone(supplied.cases[0]!.definition);
+    Object.defineProperty(definition, "name", {
+      enumerable: true,
+      get() { reads += 1; return "Race-dependent name"; },
+    });
+    expect(() => validateEvalCatalogV1({
+      ...supplied,
+      cases: [{ ...supplied.cases[0]!, definition }, supplied.cases[1]!],
+    })).toThrow("cannot contain accessors");
+    expect(reads).toBe(0);
+
+    const boundCase = structuredClone(supplied.cases[0]!.boundCase);
+    Object.defineProperty(boundCase.snapshot.artifacts.task, "text", {
+      enumerable: true,
+      get() { reads += 1; return "Race-dependent snapshot task"; },
+    });
+    expect(() => validateEvalCatalogV1({
+      ...supplied,
+      cases: [{ ...supplied.cases[0]!, boundCase }, supplied.cases[1]!],
+    })).toThrow("cannot contain accessors");
+    expect(reads).toBe(0);
+
+    const rootReads = { count: 0 };
+    expect(() => validateEvalCatalogV1({
+      get schemaVersion() { rootReads.count += 1; return 1; },
+      cases: supplied.cases,
+      suites: supplied.suites,
+    })).toThrow("cannot contain accessors");
+    expect(rootReads.count).toBe(0);
+  });
   it("projects grader checks to immutable plain SDK data and rejects malformed truthy results", () => {
     const projected = validateEvalChecksV1([{ name: "workspace:contract", passed: true, detail: "Passed.", ignored: "private" }]);
     expect(projected).toEqual([{ name: "workspace:contract", passed: true, detail: "Passed." }]);

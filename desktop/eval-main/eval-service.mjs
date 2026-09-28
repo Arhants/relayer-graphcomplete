@@ -1,3 +1,4 @@
+import { evalSelectionRequiresLiveAuthorization, validateExternalLiveAuthorization } from "../eval-renderer/eval-live-authorization.js";
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
@@ -564,7 +565,7 @@ function externalMandatoryGateReceipt(gate, checks, evaluate) {
   };
 }
 
-function mandatoryGateReceipt(gate, checks) {
+export function mandatoryGateReceipt(gate, checks) {
   const patterns = {
     "functional-behavior": ["behavior-lower-boundary", "behavior-upper-boundary", "behavior-decimal-number", "behavior-integer-numeric-string", "behavior-decimal-numeric-string", "behavior-custom-fallback"],
     "regression-safety": ["implementation-build", "implementation-typecheck", "implementation-focused-tests"],
@@ -573,6 +574,9 @@ function mandatoryGateReceipt(gate, checks) {
     "independent-reproduction": ["diagnosis-reproduces-seeded-failure"],
     "hidden-behavior": ["validation-build", "hidden-behavior"],
     "scoped-delivery": ["required-delivery-files", "delivery-commit", "delivery-clean"],
+    "required-deliverables": ["required-deliverables"],
+    "behavior-or-structure": ["behavior-or-structure"],
+    "scoped-commit": ["delivery-commit", "delivery-clean"],
   }[gate.id];
   const matched = Array.isArray(patterns)
     ? checks.filter((check) => patterns.some((pattern) => check.name.includes(pattern)))
@@ -937,6 +941,7 @@ export class EvalService {
     candidateTraceAttributionLoader = null,
     candidateTraceRequired = false,
     ensureModelCatalog = async () => {},
+    validateLiveCredential = null,
     selectPrimeModel = null,
     primeModelAvailability = null,
     conversationImportEnabled = false,
@@ -973,6 +978,7 @@ export class EvalService {
     this.candidateTraceAttributionLoader = candidateTraceAttributionLoader;
     this.candidateTraceRequired = candidateTraceRequired;
     this.ensureModelCatalog = ensureModelCatalog;
+    this.validateLiveCredential = validateLiveCredential;
     this.selectPrimeModel = selectPrimeModel;
     this.primeModelAvailability = primeModelAvailability;
     this.conversationImportEnabled = conversationImportEnabled;
@@ -1034,7 +1040,7 @@ export class EvalService {
         }
         const hasJudgeEvidence = (execution.turns || []).some((turn) => (turn.judgeResults || []).length > 0);
         if (hasJudgeEvidence && ((execution.presentationGrade === undefined && executionWasInFlight)
-          || (execution.presentationGrade?.status === "pending" && normalizedInFlightJudge))) {
+          || (execution.presentationGrade?.status === "pending" && (normalizedInFlightJudge || executionWasInFlight)))) {
           execution.presentationGrade = presentationGradeFromTurns(execution.turns, true);
         }
       }
@@ -1049,6 +1055,7 @@ export class EvalService {
   catalog() {
     const availableConfigurations = new Set(this.configurations.keys());
     return {
+      externalCaseIds: [...this.externalCases.keys()],
       cases: copy(this.cases
         .filter(({ id }) => !this.unavailableCaseIds.has(id))
         .map(({ promptsForRun: _promptsForRun, gradeExecution: _gradeExecution, ...definition }) => definition)),
@@ -1118,7 +1125,7 @@ export class EvalService {
     return this.getRun(located.run.id);
   }
 
-  async rejudgeExecution(executionId, judgeConfigurationName) {
+  async rejudgeExecution(executionId, judgeConfigurationName, liveAuthorization = null) {
     const located = this.#findExecution(executionId);
     if (!simulatedUserJudgeIds.has(judgeConfigurationName)) {
       throw new Error("Judge-only reruns require a simulated-user judge configuration.");
@@ -1129,7 +1136,38 @@ export class EvalService {
     const operationKey = `rejudge:${executionId}`;
     if (this.running.has(operationKey)) throw new Error("This execution is already being rejudged.");
 
+    const externalExecution = this.externalCases.has(located.execution.testCaseId)
+      || located.execution.catalogIdentity !== null && located.execution.catalogIdentity !== undefined;
     const operation = (async () => {
+      if (externalExecution && judgeConfigurationName !== deterministicJudgeId) {
+        const normalizedLiveAuthorization = validateExternalLiveAuthorization({
+          selection: {
+            harnessConfigurationNames: [located.execution.harnessConfigurationName],
+            judgeConfigurationName,
+          },
+          resolvedCaseIds: [located.execution.testCaseId],
+          authorization: liveAuthorization,
+          externalCaseIds: [located.execution.testCaseId],
+          harnessConfigurations: [located.execution.harnessConfiguration],
+        });
+        if (!normalizedLiveAuthorization) {
+          throw new Error("External live rejudging requires explicit live authorization.");
+        }
+        if (typeof this.validateLiveCredential !== "function") {
+          throw new Error("External live Eval has no trusted credential validator.");
+        }
+        await this.validateLiveCredential(
+          { name: judgeConfigurationName, implementation: "codex.basic" },
+          normalizedLiveAuthorization.credentialReference,
+        );
+        located.execution.liveJudgeAuthorizations ??= [];
+        located.execution.liveJudgeAuthorizations.push({
+          ...normalizedLiveAuthorization,
+          authorizedAt: new Date().toISOString(),
+        });
+        await this.#changed();
+      }
+
       const executionForJudge = {
         ...located.execution,
         judgeConfiguration: { name: judgeConfigurationName },
@@ -1383,6 +1421,31 @@ export class EvalService {
         judgeConfiguration: { name: judgeConfigurationName },
       }, this.configurations);
     for (const plan of plans) validateEvalPermissionProfiles(plan, this.cases);
+    const authorizationCatalog = {
+      externalCaseIds: [...this.externalCases.keys()],
+      harnessConfigurations: [...this.configurations.values()],
+    };
+    const externalLiveAuthorization = validateExternalLiveAuthorization({
+      selection: { harnessConfigurationNames, judgeConfigurationName },
+      resolvedCaseIds: testCaseIds,
+      authorization: selection?.liveAuthorization,
+      ...authorizationCatalog,
+    });
+    if (externalLiveAuthorization) {
+      if (typeof this.validateLiveCredential !== "function") {
+        throw new Error("External live Eval has no trusted credential validator.");
+      }
+      for (const name of harnessConfigurationNames) {
+        if (evalSelectionRequiresLiveAuthorization({
+          harnessConfigurationNames: [name], judgeConfigurationName: deterministicJudgeId,
+        }, authorizationCatalog, testCaseIds)) {
+          await this.validateLiveCredential(this.configurations.get(name), externalLiveAuthorization.credentialReference);
+        }
+      }
+      if (judgeConfigurationName !== deterministicJudgeId) {
+        await this.validateLiveCredential({ name: judgeConfigurationName, implementation: "codex.basic" }, externalLiveAuthorization.credentialReference);
+      }
+    }
     const run = {
       schemaVersion: 1,
       id,
@@ -1395,10 +1458,10 @@ export class EvalService {
       testCaseIds: [...testCaseIds],
       harnessConfigurationNames: [...harnessConfigurationNames],
       judgeConfigurationName,
-      liveAuthorization: testCaseIds.includes(RECURSIVE_COMPLETE_EVAL_CASE_ID)
+      liveAuthorization: externalLiveAuthorization ?? (testCaseIds.includes(RECURSIVE_COMPLETE_EVAL_CASE_ID)
         || testCaseIds.includes(RECURSIVE_GRAPH_MEMORY_CASE_ID)
         ? copy(selection?.liveAuthorization || null)
-        : null,
+        : null),
       comparison: testCaseIds.includes(RECURSIVE_COMPLETE_EVAL_CASE_ID) ? {
         kind: "visual-node-details-pair",
         temporalRuntimeFeatures: copy(RECURSIVE_TEMPORAL_FEATURES),
@@ -2269,10 +2332,15 @@ export class EvalService {
       }
       const deterministicPassed = execution.checks.length > 0
         && execution.checks.every((check) => check.passed);
-      const outcomeChecks = execution.caseSnapshot
-        ? execution.checks.filter((check) => check.name.includes(":workspace:"))
-        : execution.checks;
       const externalCase = this.externalCases.get(definition.id);
+      const externalOutcomeChecks = executedThreads.flatMap(({ workspaceChecks }) => (
+        [...workspaceChecks.values()].flat()
+      ));
+      const outcomeChecks = externalCase
+        ? externalOutcomeChecks
+        : execution.caseSnapshot
+          ? execution.checks.filter((check) => check.name.includes(":workspace:"))
+          : execution.checks;
       execution.outcomeGrade = definition.id === RECURSIVE_GRAPH_MEMORY_CASE_ID
         ? recursiveGraphMemoryOutcomeGrade()
         : externalCase

@@ -24,6 +24,7 @@ import { EvalService } from "./eval-service.mjs";
 import { loadExternalEvalCatalog } from "./external-catalog.mjs";
 import { loadAtomicAnnotationSnapshots } from "./annotation-snapshot-loader.mjs";
 import { loadJudgeScreenshotArtifact } from "./judge-screenshot-loader.mjs";
+import { createLiveCredentialValidator } from "./live-credentials.mjs";
 import {
   LOCAL_SIMULATED_USER_JUDGE_CONFIGURATION as LOCAL_INPUT_GROUNDING_JUDGE_CONFIGURATION,
   buildInputGroundingTopology,
@@ -239,6 +240,10 @@ async function start() {
     ensureModelCatalog: ensureEvalCodexCatalog,
     selectPrimeModel: primeProvider ? (harnessId) => primeProvider.select(harnessId) : null,
     primeModelAvailability: primeProvider ? (harnessId) => primeProvider.availability(harnessId) : null,
+    validateLiveCredential: createLiveCredentialValidator({
+      resolveCodexRuntime: () => managedCodexRuntime.resolve(),
+      selectPrimeModel: primeProvider ? (harnessId) => primeProvider.select(harnessId) : null,
+    }),
     conversationImportEnabled: true,
     annotationSnapshotLoader: (threadIds) => loadAnnotationSnapshots(productSession, threadIds),
     targetKey: evalTarget.key,

@@ -40,3 +40,11 @@ The lock pins repository, commit, and entrypoint. The loader verifies tracked fi
 To update cases, change and verify the external repository, commit its source and compiled modules, then update this repository's lock to that immutable commit and rerun host integration checks. Restart the Eval host after changing a catalog pin: Node caches imported modules for the process lifetime. Never edit the pinned checkout in place and treat its previous receipts as current evidence.
 
 The [host checkpoint map](docs/evidence/external-eval-catalog/README.md) separates required proof from recorded results. Live model baselines require their declared credential and cost controls; no paid inference is part of the default test suite.
+
+## Live external runs
+
+Selecting a real harness or model judge for external cases requires an explicit confirmation and a positive declared USD cost cap. Authorization binds the resolved cases, harness configurations, and judge; changing that selection requires new authorization. The host checks the connected provider credential before queueing work and stores only its opaque reference with the authorization. The declared cap is recorded, not a provider billing cutoff. Deterministic fixture runs with the deterministic judge do not require live authorization.
+
+The loader copies verified tracked catalog files into a private, read-only snapshot before importing code. Its installed dependencies, including the linked host SDK, remain trusted developer tooling rather than part of the catalog Git pin. Git replacements, grafts, filesystem-monitor hooks, and clean filters cannot redirect catalog verification.
+
+External judge-only reruns also require fresh authorization for their case, harness identity, and selected judge. Their authorization is recorded separately from the original run.

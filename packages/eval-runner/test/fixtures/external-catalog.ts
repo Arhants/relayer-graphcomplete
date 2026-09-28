@@ -28,7 +28,14 @@ const boundCases = originals.map((original, index) => {
     category: original.snapshot.category,
     taskType: original.snapshot.taskType,
     authoringStatus: original.snapshot.authoringStatus,
-    artifacts: original.snapshot.artifacts,
+    artifacts: {
+      ...original.snapshot.artifacts,
+      task: {
+        ...original.snapshot.artifacts.task,
+        text: definition.threads[0]!.prompts[0]!,
+        contentDigest: digest(definition.threads[0]!.prompts[0]!),
+      },
+    },
     presentation: original.snapshot.presentation,
   }));
 });

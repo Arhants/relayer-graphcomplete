@@ -13,6 +13,7 @@ import {
   createRunFromControls,
   selectionFromControls,
 } from "./configuration-model.js";
+import { authorizeExternalLiveSelection } from "./eval-live-authorization.js";
 
 const api = window.relayerEval;
 const $ = (selector) => document.querySelector(selector);
@@ -125,7 +126,17 @@ async function configure() {
 async function startRun() {
   let selection = selectionFromControls(document);
   if ((!selection.suiteId && !selection.testCaseIds.length) || !selection.harnessConfigurationNames.length) return toast("Select at least one case or suite and one harness.");
-  selection = authorizeRecursiveCompleteSelection(selection, (message) => window.confirm(message));
+  try {
+    selection = authorizeRecursiveCompleteSelection(selection, (message) => window.confirm(message));
+    if (selection === null) return;
+    selection = authorizeExternalLiveSelection(selection, catalog, {
+      requestCostCap: (message) => window.prompt(message, "10.00"),
+      confirmLiveRun: (message) => window.confirm(message),
+    });
+  } catch (error) {
+    toast(error.message);
+    return;
+  }
   if (selection === null) return;
   $("#startRun").disabled = true;
   try {

@@ -18,6 +18,7 @@ import {
   evalModelSelectionRequest,
   judgeArtifactEvidenceForExecution,
   judgeArtifactForExecution,
+  mandatoryGateReceipt,
   presentationGradeFromTurns,
   resolveH3PermissionProfile,
 } from "../desktop/eval-main/eval-service.mjs";
@@ -53,6 +54,22 @@ afterEach(async () => {
 });
 
 describe("EvalService simulated-user result persistence", () => {
+  it("maps every calibration verifier gate to its emitted production checks", () => {
+    const checks = [
+      { name: "workspace:required-deliverables", passed: true, detail: "All required files exist." },
+      { name: "workspace:behavior-or-structure", passed: true, detail: "The behavioral verifier passed." },
+      { name: "workspace:delivery-commit", passed: true, detail: "One delivery commit exists." },
+      { name: "workspace:delivery-clean", passed: true, detail: "The workspace is clean." },
+    ];
+    for (const gate of [
+      { id: "required-deliverables", label: "Required deliverables" },
+      { id: "behavior-or-structure", label: "Behavior or structure" },
+      { id: "scoped-commit", label: "Scoped commit" },
+    ]) {
+      expect(mandatoryGateReceipt(gate, checks)).toMatchObject({ status: "completed", passed: true });
+    }
+  });
+
   it("normalizes each selected recursive review by its own schema in a mixed-history projection", () => {
     const legacy = {
       status: "completed",
@@ -616,6 +633,21 @@ describe("EvalService simulated-user result persistence", () => {
           harnessConfigurationName: "fixture-task-system",
           status: "interrupted",
           turns: [{ judgeResults: [{ id: "judge-already-completed", status: "completed" }] }],
+        }, {
+          id: "execution-completed-judge-pending-grade",
+          testCaseId: "empty-project.task-system.single-turn",
+          harnessConfigurationName: "fixture-task-system",
+          status: "running",
+          presentationGrade: { status: "pending" },
+          turns: [{ judgeResults: [{
+            id: "judge-completed-before-restart",
+            status: "completed",
+            review: {
+              schemaVersion: 6,
+              contractId: "recursive-presentation-judge-v6",
+              turn: { criterionJudgments: {} },
+            },
+          }] }],
         }],
       }],
     }, null, 2)}\n`);
@@ -634,6 +666,7 @@ describe("EvalService simulated-user result persistence", () => {
       error: "Simulated-user review was interrupted before finalization.",
     });
     expect(restored.executions[1]).not.toHaveProperty("presentationGrade");
+    expect(restored.executions[2].presentationGrade).toMatchObject({ status: "completed" });
     expect(restored.bundleRef).toMatch(/^runs\/.*\/bundle\.json$/);
     expect(JSON.parse(await readFile(join(dirname(stateFile), restored.bundleRef), "utf8"))).toMatchObject({
       run: { status: "interrupted" },
@@ -770,7 +803,7 @@ describe("EvalService simulated-user result persistence", () => {
     globalThis.fetch = product.fetch;
     const fixtureCatalog = createSyntheticExternalCatalog();
     const materialize = vi.fn(fixtureCatalog.cases[0].materialize);
-    const grade = vi.fn(fixtureCatalog.cases[0].grade);
+    const grade = vi.fn(async () => [{ name: "arbitrary-public-check-name", passed: true, detail: "Synthetic deterministic result." }]);
     const catalog = withExternalIdentity({
       ...fixtureCatalog,
       cases: fixtureCatalog.cases.map((entry, index) => index === 0 ? { ...entry, materialize, grade } : entry),
