@@ -593,6 +593,171 @@ async fn catalog_refresh_keeps_the_chosen_default_provider_and_its_managed_famil
     fs::remove_dir_all(root).unwrap();
 }
 
+// PROV-002: a catalog result is tied to the connection generation it started with. Sign-out and
+// a completed reconnect advance the generation in their own publish transaction, and the store
+// rejects a result from an older generation inside the write transaction, so it changes nothing.
+#[tokio::test]
+async fn a_catalog_result_from_a_superseded_connection_generation_has_no_effect() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "relayer-connection-generation-{}-{unique}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let database = root.join("product.sqlite3");
+    let app = open_app(&database, &root).await;
+    configure_codex_policy(&database).await;
+    let publish = |snapshot: Value| {
+        let app = app.clone();
+        async move {
+            app.oneshot(bearer_request(
+                "PUT",
+                "/api/internal/provider-catalog",
+                Some(snapshot),
+            ))
+            .await
+            .unwrap()
+        }
+    };
+    let stamped = |mut snapshot: Value, generation: i64, event: Option<&str>| {
+        snapshot["connectionGeneration"] = json!(generation);
+        if let Some(event) = event {
+            snapshot["connectionEvent"] = json!(event);
+        }
+        snapshot
+    };
+    let signed_out = || {
+        json!({
+            "providerId": "codex",
+            "label": "Codex",
+            "connected": false,
+            "models": [],
+        })
+    };
+    let zero_eligible = || {
+        let mut snapshot = provider_snapshot(None);
+        for model in snapshot["models"].as_array_mut().unwrap() {
+            model["providerDefault"] = json!(false);
+        }
+        snapshot.as_object_mut().unwrap().remove("systemFamily");
+        snapshot
+    };
+    let state = || {
+        let database = database.clone();
+        async move {
+            let pool = sqlite_pool(&database).await;
+            let provider: (bool, i64) = sqlx::query_as(
+                "SELECT connected,connection_generation FROM model_providers WHERE id='codex'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let family: String = sqlx::query_scalar(
+                "SELECT lifecycle_state FROM model_families WHERE kind='system' AND managed_provider_id='codex'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            pool.close().await;
+            (provider.0, provider.1, family)
+        }
+    };
+    let assert_superseded = |response: Response<Body>| async move {
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            response_json(response).await["code"],
+            "provider_connection_superseded"
+        );
+    };
+
+    // Every publish names its generation; one that does not is refused.
+    let mut unstamped = provider_snapshot(None);
+    unstamped
+        .as_object_mut()
+        .unwrap()
+        .remove("connectionGeneration");
+    assert_eq!(
+        publish(unstamped).await.status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        publish(provider_snapshot(None)).await.status(),
+        StatusCode::NO_CONTENT
+    );
+    let definitions = response_json(
+        app.clone()
+            .oneshot(bearer_request(
+                "GET",
+                "/api/internal/provider-definitions",
+                None,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(definitions[0]["connectionGeneration"], 1);
+    assert_eq!(state().await, (true, 1, "active".to_owned()));
+
+    // Sign-out commits the disconnected state and generation 2 together.
+    assert_eq!(
+        publish(stamped(signed_out(), 1, Some("signed-out")))
+            .await
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(state().await, (false, 2, "active".to_owned()));
+    // A refresh that discovered the old account before the sign-out cannot reconnect it.
+    assert_superseded(publish(stamped(provider_snapshot(None), 1, None)).await).await;
+    assert_eq!(state().await, (false, 2, "active".to_owned()));
+
+    // CR-V1: a refresh discovers "disconnected" under generation 2 and stalls. The reconnect
+    // completes and publishes connected; the stalled result then changes nothing.
+    assert_eq!(
+        publish(stamped(provider_snapshot(None), 2, Some("reconnected")))
+            .await
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(state().await, (true, 3, "active".to_owned()));
+    assert_superseded(publish(stamped(signed_out(), 2, None)).await).await;
+    assert_eq!(state().await, (true, 3, "active".to_owned()));
+
+    // CR-V3: a refresh discovers eligible models under generation 3. A reconnect to an account
+    // with zero eligible models tombstones the managed family. The older eligible result cannot
+    // repopulate it.
+    assert_eq!(
+        publish(stamped(zero_eligible(), 3, Some("reconnected")))
+            .await
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(state().await, (true, 4, "tombstoned".to_owned()));
+    assert_superseded(publish(stamped(provider_snapshot(None), 3, None)).await).await;
+    assert_eq!(state().await, (true, 4, "tombstoned".to_owned()));
+    // A refresh started under the current generation still repairs the family.
+    assert_eq!(
+        publish(stamped(provider_snapshot(None), 4, None))
+            .await
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(state().await, (true, 4, "active".to_owned()));
+
+    // A lifecycle event must match what it commits.
+    assert_eq!(
+        publish(stamped(provider_snapshot(None), 4, Some("signed-out")))
+            .await
+            .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(state().await, (true, 4, "active".to_owned()));
+
+    fs::remove_dir_all(root).unwrap();
+}
+
 fn provider_snapshot(unavailable: Option<&str>) -> Value {
     provider_snapshot_for("codex", "Codex", unavailable)
 }
@@ -610,6 +775,7 @@ fn provider_snapshot_for(provider_id: &str, label: &str, unavailable: Option<&st
         "providerId": provider_id,
         "label": label,
         "connected": true,
+        "connectionGeneration": 1,
         "models": ids.iter().enumerate().map(|(order, id)| {
             let is_unavailable = unavailable == Some(*id);
             json!({

@@ -340,7 +340,7 @@ async function prepareRoute({ session, productServer, runtime, resolver, profile
       throw new Error(`Provider creation failed (${response.status}): ${await response.text()}`);
     }
   } else {
-    await productServer.publishProviderCatalog(catalog);
+    await productServer.seedProviderCatalog(catalog);
   }
 
   const prime = profile.implementation === "prime.agent";

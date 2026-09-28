@@ -506,8 +506,8 @@ if (primaryInstance) {
       },
       diagnostics: providerDiagnostics,
     });
-    const publishCatalog = (snapshot, { signal } = {}) => (
-      productServer.publishProviderCatalog(snapshot, { signal })
+    const publishCatalog = (snapshot, { signal, connectionGeneration, connectionEvent } = {}) => (
+      productServer.publishProviderCatalog(snapshot, { signal, connectionGeneration, connectionEvent })
     );
     providerComposition = createProviderComposition({
       registry: productionProviderAdapterRegistry,

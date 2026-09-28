@@ -153,7 +153,7 @@ renderer.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `provider-leased-runtime` | Plausible: narrow window | Rust admits a turn while `P` still reads connected in SQLite, and the user then signs out and reconnects. When the harness takes its lease, `acquireExecution` hands out the runtime the pending reconnect registered, because it never checks `pendingConnections`. A failed handoff, a cancel or a terminal check then runs `#cancelPendingConnection`, which closes that runtime under the turn. |
+| `provider-leased-runtime` | Plausible: narrow window | Rust admits a turn while `P` still reads connected in SQLite, and the user then signs out and reconnects. When the harness takes its lease, `acquireExecution` hands out the runtime the pending reconnect registered, because it never checks `pendingConnections`. A failed handoff, a cancel or a terminal check then runs `#cancelPendingConnection`, which closes that runtime under the turn. Since PR 4 the cancel registers a fresh runtime in its place (F4), but the leased one still closes. |
 | `provider-remove-during-reconnect` | Fixed; now passes | Before the fix: after sign out, Reconnect, then Remove, the pending reconnect outlived the removal and could still complete. Now `remove()` drops it as the provider enters `removal_pending`, which "immediately blocks new attempts through it" (docs/architecture.md). The runtime stays in `this.runtimes` for turns still draining, and it closes with the tombstone. The PRD is silent here, so this is an architecture-backed decision. Scenario: `provider-remove-during-reconnect`. |
 | `provider-attempt-ownership` | Fixed; now passes | Before the fix: `bindConnection` ran only after `connect()`/`reconnect()` (including `login()`) and `openExternal` resolved. It added a `destroyed` listener to contents already destroyed, and that listener never fired. It now cancels the attempt instead. This restores PRD BRW-005. Scenario: `provider-destroyed-before-bind`. |
 | `provider-close` | Plausible: depends on shutdown order | `close()` waits for lifecycle tasks but not for the queue, and `acquireExecution` ignores `closing`. A turn admitted before shutdown can create and register a runtime after the maps are cleared. |
@@ -164,13 +164,16 @@ renderer.
 This model covers the model catalog and the default provider and family:
 
 - **Desktop main:** the per-provider catalog refresh queue
-  (`model-catalog-service.mjs`), which captures its adapter when a refresh is
-  requested. It also covers the pre-inference join, `close()`, the unavailable
-  stub's explicit recovery, and logout, reconnect, remove and connect at the
-  points where they meet that queue.
+  (`model-catalog-service.mjs`). Before PR 4 a refresh captured its adapter
+  when it was requested; now it resolves the adapter and the connection
+  generation when it runs. The model also covers the pre-inference join,
+  `close()`, the unavailable stub's explicit recovery, and logout, reconnect,
+  remove and connect at the points where they meet that queue.
 - **SQLite catalog:** a publish reactivates or tombstones the provider's
-  managed family and reconciles an unset or managed default. It also covers
-  the user's default provider and family choices and the removal guard.
+  managed family and reconciles an unset or managed default. With the
+  generation, it first refuses a result from an older connection generation.
+  It also covers the user's default provider and family choices and the
+  removal guard.
 
 There are two providers: the existing managed provider `P`, and `Q`, which
 starts absent and may connect. The families are their managed families `mP`
@@ -178,26 +181,43 @@ and `mQ`, and one custom family `C` with members from both. Each check
 shrinks the bounds in `catalog-today`. On an idle machine the two slowest,
 the default-provider checks, take about 10 and 20 seconds.
 
-`catalog-today` has one fix constant:
+`catalog-today` has four fix constants, all landed:
 
 - `DefaultProviderPairsFamily`: choosing a default provider also selects that
   provider's enabled managed family, in the same transaction. A provider
-  without one is refused, and the defaults stay unchanged. Landed (PROV-008).
+  without one is refused, and the defaults stay unchanged (PROV-008).
+- `ConnectionGeneration`: each provider row carries a connection generation.
+  Logout, reconnect completion and removal advance it in their own
+  transaction. A refresh resolves its adapter and generation when it starts.
+  Rust refuses a publish from an older generation inside its write
+  transaction. Logout commits its signed-out state itself and no longer waits
+  for its refresh inside the provider queue (PROV-002).
+- `ReconnectKeepsAdapter`: a cancelled or failed reconnect leaves the active
+  provider a catalog adapter. Recovery refuses while a reconnect is pending,
+  so it never discovers through that reconnect's runtime (F4, L1).
+- `AdapterAfterCommit`: connect registers the catalog adapter only after the
+  definition commits (PROV-007).
 
-The five open bug checks below are fixed together by a later PR, the provider
-connection generation (PR 4). That PR ties each catalog result to the
-provider's connection generation, and it will add its own constant.
+Each `-reverted` check turns one constant off and keeps the others on, so its
+violation comes only from its own mechanism.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
 | `catalog-refresh-keeps-chosen-default` | Fixed; now passes | Before the fix, the Settings default-provider selector saved only `providerId`. Rust stored that provider with the old provider's managed family. The next catalog publish for the old provider matched "the default family is my managed family" and moved the default provider back. The pairing leaves nothing for a refresh to revert. The check also proves `DefaultIsPaired` and `RefreshKeepsOtherDefault`. Regression test: `catalog_refresh_keeps_the_chosen_default_provider_and_its_managed_family` in `model_catalog_flow.rs`. |
 | `catalog-refresh-keeps-default-chosen-from-unset` | passes | Starts with no default family. A refresh may fill it, with its provider, which PROV-008 allows. Once the user chooses a provider and family, no refresh changes them. With the fix off, the same bounds violate `RefreshKeepsUserDefault` through the same trace as `catalog-chosen-default-reverted`. |
 | `catalog-chosen-default-reverted` | violated: shows why the fix is needed | With `DefaultProviderPairsFamily` off, `Q` connects, the user chooses `Q`, and a refresh of `P` moves the default provider back to `P`. |
-| `catalog-stale-refresh-after-reconnect` | Plausible: needs a stalled refresh; open, PR 4 | A refresh discovers "disconnected" after sign-out, then stalls. The user reconnects, which publishes connected directly. The stalled refresh then publishes its disconnected result, and nothing queued behind it corrects that (CR-V1). |
-| `catalog-old-account-repopulates` | Plausible: an old `model/list` outlasts a full login; open, PR 4 | A refresh discovers eligible models. A reconnect to an account with zero eligible models then tombstones the managed family. The older eligible result publishes afterwards and reactivates it (CR-V3). |
-| `catalog-stale-adapter-capture` | Confirmed; open, PR 4 | A refresh captures the unavailable stub when it is requested, and the stub answers "could not be activated". Before that result publishes, a reconnect registers the real runtime and publishes connected. The stub's result then publishes over it (F3/V2). |
-| `catalog-stub-recovery-logout-deadlock` | Latent: the UI hides Sign out while the stub is registered; open, PR 4 | An explicit refresh through the stub waits for the provider queue. Logout holds that queue while it waits for its own refresh, which is queued behind the explicit one. Neither returns (CR-V7). |
-| `catalog-no-restore-after-cancelled-reconnect` | Confirmed, low; open, PR 4 | A cancelled reconnect unregisters the catalog adapter while the provider stays active. A tombstoned default family then never restores, because no refresh can run (V8). |
+| `catalog-stale-refresh-after-reconnect` | Fixed; now passes | Before the fix, a refresh discovered "disconnected" after sign-out, then stalled. The user reconnected, which published connected directly. The stalled refresh then published its disconnected result, and nothing queued behind it corrected that (CR-V1, plausible: needs a stall). Now that result carries the older generation and has no effect. The check also proves `NoStaleEffect`. Regression tests: `drops a refresh that discovered before a reconnect completed` in `provider-connection-generation.test.mjs`, and `a_catalog_result_from_a_superseded_connection_generation_has_no_effect` in `model_catalog_flow.rs`. |
+| `catalog-stale-refresh-after-reconnect-reverted` | violated: shows why the fix is needed | With `ConnectionGeneration` off, the stalled result publishes over the reconnect. |
+| `catalog-old-account-repopulates` | Fixed; now passes | Before the fix, a refresh discovered eligible models. A reconnect to an account with zero eligible models then tombstoned the managed family. The older eligible result published afterwards and reactivated it (CR-V3, plausible: an old `model/list` outlasts a full login). Now it carries the older generation. Regression test: the same Rust flow test. |
+| `catalog-old-account-repopulates-reverted` | violated: shows why the fix is needed | With `ConnectionGeneration` off, the older eligible result reactivates the family. |
+| `catalog-stale-adapter-capture` | Fixed; now passes | Before the fix, a refresh captured the unavailable stub when it was requested, and the stub answered "could not be activated". A reconnect or recovery then registered the real runtime and published connected. The stub's result then published over it (F3/V2, confirmed). A refresh now resolves its adapter when it runs. Regression test: `keeps a recovered provider connected when a refresh requested during recovery runs after it`. |
+| `catalog-stale-adapter-capture-reverted` | violated: shows why the fix is needed | With `ConnectionGeneration` off, the captured stub contradicts the reconnect. |
+| `catalog-stub-recovery-logout-deadlock` | Fixed; now passes | Before the fix, an explicit refresh through the stub waited for the provider queue. Logout held that queue while it waited for its own refresh, queued behind the explicit one. Neither returned (CR-V7, latent: the UI hides Sign out while the stub is registered). Logout now commits its signed-out state with the next generation and does not wait for the refresh. Regression test: `signs out while an explicit recovery is queued behind another refresh`. |
+| `catalog-stub-recovery-logout-deadlock-reverted` | violated: shows why the fix is needed | With `ConnectionGeneration` off, logout never returns. |
+| `catalog-no-restore-after-cancelled-reconnect` | Fixed; now passes | Before the fix, a cancelled reconnect unregistered the catalog adapter while the provider stayed active. A tombstoned default family then never restored, because no refresh could run (V8, F4, confirmed). Recovery could also discover through the pending reconnect's runtime (L1). The check proves `ActiveProviderHasAdapter`, including when the fresh runtime cannot start and the recovery adapter stands in, and `DefaultRestores`. Regression tests: `keeps a catalog adapter for an active provider whose reconnect is cancelled`, `falls back to the recovery adapter when a cancelled reconnect cannot restart the runtime`, and `does not recover through the runtime of a pending reconnect`. |
+| `catalog-no-restore-after-cancelled-reconnect-reverted` | violated: shows why the fix is needed | With `ReconnectKeepsAdapter` off, a cancelled reconnect leaves the active provider with no adapter. |
+| `catalog-connect-adapter-after-commit` | Fixed; now passes | Checks `AdapterOnlyForDefinition`. Before the fix, connect registered the catalog adapter before the definition committed, so a refresh could run for a provider that did not exist (F1). Regression test: `publishes nothing and registers no adapter before the definition exists, and a refused create leaves nothing`. |
+| `catalog-connect-adapter-after-commit-reverted` | violated: shows why the fix is needed | With `AdapterAfterCommit` off, the adapter exists before the definition. |
 | `catalog-own-family` | passes | A catalog publish changes only its own provider's managed family and never the custom family. |
 | `catalog-tombstoned-default-blocks-send` | passes | A default family tombstoned by a zero-eligible publish stays the default and blocks Send. |
 | `catalog-default-restores` | passes | With the real adapter registered, a tombstoned default family restores once its provider is healthy again. |
@@ -251,6 +271,21 @@ interaction to `submitted` for a retry, and resetting the execution to
   and a single child at depth 1 with head revision at most 3. `CatalogRefresh`
   has two providers, two queued refreshes per provider, and at most two
   lifecycle events. A bug that needs more actors is out of reach.
+- **Connection generation:** removing the generation check from `Publish`
+  makes `catalog-stale-refresh-after-reconnect`, `catalog-old-account-repopulates`
+  and `catalog-stale-adapter-capture` fail, so their passes are not vacuous.
+  A logout whose signed-out publish fails advances nothing and supersedes
+  nothing. A cancelled reconnect whose fresh runtime fails to start swaps the
+  adapter for the stub within one generation; a real result already in
+  flight may still publish, which PROV-002 allows because the account and
+  generation are unchanged. No check covers restoring through the recovery
+  adapter: that needs an explicit refresh, a user action the model does not
+  make fair. `CatalogRefresh` checks the generation once, at publish. The code checks twice: the catalog service before it publishes,
+  and Rust inside the write transaction. The model's single check stands for
+  both. A lifecycle write whose response is lost is not modeled; a JS test
+  covers the refresh that relearns the generation. The ad hoc
+  `ProviderConnect` model, which covers a crash between the create's commit
+  and its reply (F2), is not promoted; a JS test covers F2.
 - **Catalog abstractions:** `CatalogRefresh` has no harness. A family is
   resolvable when it is enabled and has a connected member with available
   models. That stands for "some harness can run it": the model leaves out

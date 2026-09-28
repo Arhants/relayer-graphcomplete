@@ -171,7 +171,7 @@ async function run() {
     adapters: [new CodexModelCatalogAdapter({ credentials })],
     publishSnapshot: (snapshot) => {
       if (!product) throw new Error("Relayer app server is not ready to accept a provider catalog.");
-      return product.publishProviderCatalog(snapshot);
+      return product.seedProviderCatalog(snapshot);
     },
   });
   const modelCatalogRefreshServer = await startModelCatalogRefreshServer({
