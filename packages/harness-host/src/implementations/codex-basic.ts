@@ -157,6 +157,8 @@ interface NormalizedCollaborationItem {
 
 export class CodexBasicHarness implements Harness {
   readonly supportsInvokedComplete = true;
+  /** Each turn runs in its own app-server process group, so a force-stop ends only that turn. */
+  readonly supportsForceStop = true;
   private readonly clientModuleUrl: string;
   private readonly completeModuleUrl: string;
   private readonly resolved: ResolvedCodexConfiguration;
@@ -229,6 +231,8 @@ export class CodexBasicHarness implements Harness {
     }
     const capability = context.graph.acquireCapability();
     const resolvedRuntime = await this.codexRuntime(context.access);
+    // A turn force-stopped while resolving its runtime no longer holds access: write nothing.
+    context.forceSignal?.throwIfAborted();
     const environment = this.graphEnvironment(capability, context.completionBroker, context.access, resolvedRuntime.environment);
     let authHome: string | undefined;
     try {
@@ -274,7 +278,13 @@ export class CodexBasicHarness implements Harness {
       graphAuthoringCommandIds: new Set(),
       fallbackGraphAuthoringEnabled: this.dependencies.graphAuthoringLauncherPath === undefined,
     };
+    // The host's per-turn force-stop kills this turn's app-server process group, exactly as a
+    // harness force shutdown does, and no other turn's. A turn force-stopped before it spawns
+    // never spawns.
+    context.forceSignal?.throwIfAborted();
     const forceShutdown = new AbortController();
+    const forceTurn = () => forceShutdown.abort(context.forceSignal?.reason);
+    context.forceSignal?.addEventListener("abort", forceTurn, { once: true });
     this.activeForceShutdowns.add(forceShutdown);
     try {
       await run({
@@ -312,6 +322,7 @@ export class CodexBasicHarness implements Harness {
         onServerRequest: (method, params) => traceCodexAppServerNotification(context, method, params, traceState),
       });
     } finally {
+      context.forceSignal?.removeEventListener("abort", forceTurn);
       this.activeForceShutdowns.delete(forceShutdown);
       closeIncompleteCollaborationSpans(traceState);
     }

@@ -163,6 +163,11 @@ const EXECUTION_RELEASE_RETRY_MS = 30_000;
 /** How long access released without an owner waits for the owner's acknowledgement. */
 const UNACKNOWLEDGED_RELEASE_TTL_MS = 10 * 60_000;
 const HARNESS_CLOSE_SESSION_TIMEOUT_MS = 5_000;
+/** A cancelled turn that has not settled after this long is force-stopped (PROV-004). */
+export const CANCELLED_TURN_FORCE_STOP_MS = 2 * 60_000;
+/** How long the host waits for a force-stopped turn to settle before releasing its access. */
+export const FORCE_STOPPED_TURN_SETTLE_MS = 10_000;
+const FORCE_STOPPED_TURN_MESSAGE = "The turn did not stop within two minutes of cancellation, so it was force-stopped.";
 
 export type HarnessEffectBoundary = "none" | "partial_output" | "graph_write" | "tool_effect" | "unknown";
 
@@ -764,6 +769,19 @@ export class HarnessHost {
   }): Promise<HarnessCompleteResult | HarnessInvokedCompletionObservation> {
     const { threadId, interactionId, session, capability } = input;
     const controller = new AbortController();
+    // Per-turn force-stop: once this completion is cancelled, a harness that supports it gets
+    // two minutes to settle before this one turn, and nothing else, is force-stopped.
+    const forceController = new AbortController();
+    let forceTimer: NodeJS.Timeout | undefined;
+    const armForceStop = () => {
+      if (session.harness.supportsForceStop !== true || forceTimer !== undefined) return;
+      forceTimer = setTimeout(
+        () => forceController.abort(new Error(FORCE_STOPPED_TURN_MESSAGE)),
+        CANCELLED_TURN_FORCE_STOP_MS,
+      );
+      forceTimer.unref?.();
+    };
+    controller.signal.addEventListener("abort", armForceStop, { once: true });
     const detachSignal = forwardAbort(input.signal, controller);
     const completeCallId = randomUUID();
     const approvals = session.approvals.beginCompletion({ interactionId, completeCallId });
@@ -800,11 +818,14 @@ export class HarnessHost {
         () => { nativeStarted = true; },
         input.admissionInteractionId,
         () => controller.abort(new Error("Provider execution access was released by its owner")),
+        forceController.signal,
       );
     } catch (error) {
       operationError = error;
       if (!nativeStarted && error !== null && typeof error === "object") executionNotStartedErrors.add(error);
     }
+    controller.signal.removeEventListener("abort", armForceStop);
+    if (forceTimer !== undefined) clearTimeout(forceTimer);
     session.approvals.endCompletion(
       completeCallId,
       "aborted",
@@ -1084,6 +1105,7 @@ export class HarnessHost {
     onNativeStarted?: () => void,
     admissionInteractionId: number = productInteractionId,
     abandonCompletion?: () => void,
+    forceSignal: AbortSignal = new AbortController().signal,
   ): Promise<HarnessCompleteResult | HarnessInvokedCompletionObservation> {
     const graph = new RelayerGraphClient(capability);
     const interactionNodeId = capability.nodeId;
@@ -1205,6 +1227,8 @@ export class HarnessHost {
         }
         selectedAccess = accessLease.access;
       }
+      // A turn cancelled and force-stopped before its native work starts ends as a cancellation.
+      if (forceSignal.aborted) throw signal.reason;
       harnessStarted = true;
       onNativeStarted?.();
       const native = session.harness.complete({
@@ -1220,18 +1244,29 @@ export class HarnessHost {
         ...(model === undefined ? {} : { model }),
         ...(accessBundle === undefined ? {} : { accessBundle }),
         ...(selectedAccess === undefined ? {} : { access: selectedAccess }),
+        ...(session.harness.supportsForceStop === true ? { forceSignal } : {}),
       }, signal);
       onNativeExecution?.(isNativeExecutionHandle(native) ? native : undefined);
-      await native;
+      await settledOrForceStopped(native, forceSignal);
     } catch (error) {
-      // Adapters may reject with this exact AbortSignal reason before native work
-      // starts. Distinct abort, quiescence, or cleanup errors remain failures.
-      if (!signal.aborted || (error !== signal.reason && !(error instanceof NativeExecutionCancelled))) {
+      if (forceSignal.aborted && harnessStarted) {
+        // A force-stopped turn is a failure however its native work ended.
+        const failure = normalizeHarnessFailure(error, harnessStarted, observedTrace.effectBoundary());
+        completionError = new HarnessExecutionFailure(
+          FORCE_STOPPED_TURN_MESSAGE,
+          "execution",
+          failure.effectBoundary,
+          { cause: error },
+        );
+      } else if (!signal.aborted || (error !== signal.reason && !(error instanceof NativeExecutionCancelled))) {
+        // Adapters may reject with this exact AbortSignal reason before native work
+        // starts. Distinct abort, quiescence, or cleanup errors remain failures.
         completionError = normalizeHarnessFailure(error, harnessStarted, observedTrace.effectBoundary());
       }
     } finally {
       scope.close();
-      // The native turn has ended (or never started), so nothing uses the claimed access.
+      // The native turn has ended, was force-stopped, or never started, so nothing uses the
+      // claimed access. Only this completion's claim is settled.
       if (claimedExecutionLeaseId !== undefined) this.settleExecutionAccess(claimedExecutionLeaseId);
       if (releaseAccessAfterCompletion) {
         try {
@@ -2456,6 +2491,36 @@ function captureHarnessState(harness: Harness): HarnessSessionState {
   const state = readHarnessState(harness.state());
   if (state === undefined) throw new Error("Harness did not return implementation state");
   return state;
+}
+
+/**
+ * Waits for a native turn to settle. Once the turn is force-stopped, waits at most
+ * FORCE_STOPPED_TURN_SETTLE_MS more and then rejects, so the host can release the turn's
+ * access even if the harness never settles. A later settlement is ignored.
+ */
+async function settledOrForceStopped(native: PromiseLike<void>, forceSignal: AbortSignal): Promise<void> {
+  const settled = Promise.resolve(native);
+  void settled.catch(() => undefined);
+  let timer: NodeJS.Timeout | undefined;
+  let detach = () => {};
+  const abandoned = new Promise<never>((_resolve, reject) => {
+    const expire = () => {
+      timer = setTimeout(() => reject(forceSignal.reason), FORCE_STOPPED_TURN_SETTLE_MS);
+      timer.unref?.();
+    };
+    if (forceSignal.aborted) {
+      expire();
+      return;
+    }
+    forceSignal.addEventListener("abort", expire, { once: true });
+    detach = () => forceSignal.removeEventListener("abort", expire);
+  });
+  try {
+    await Promise.race([settled, abandoned]);
+  } finally {
+    detach();
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 function forwardAbort(signal: AbortSignal | undefined, controller: AbortController): () => void {

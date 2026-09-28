@@ -241,6 +241,12 @@ export interface HarnessRunContext {
   /** Execution-scoped and never persisted in harness session state or receipts. */
   readonly access?: HarnessExecutionAccess;
   readonly trace: HarnessTraceSink;
+  /**
+   * Present only for a harness that declares `supportsForceStop`. It aborts when this
+   * completion was cancelled and its native turn has not settled within two minutes. The
+   * harness then ends this one turn's native work, and nothing else, and settles.
+   */
+  readonly forceSignal?: AbortSignal;
 }
 
 /**
@@ -357,6 +363,12 @@ export interface Harness {
   traceSupport?(): HarnessTraceSupport;
   /** Root Complete is mandatory; this opts the same method into agent-invoked Complete. */
   readonly supportsInvokedComplete?: true;
+  /**
+   * complete() honours HarnessRunContext.forceSignal by ending only that turn's native work.
+   * The host then releases the turn's provider access, waiting a bounded time for the turn
+   * to settle. Without it, a cancelled turn that never settles keeps its access.
+   */
+  readonly supportsForceStop?: true;
   complete(context: HarnessRunContext, signal?: AbortSignal): NativeExecutionHandle | Promise<void>;
   state(): HarnessSessionState;
   dispose?(): void | Promise<void>;

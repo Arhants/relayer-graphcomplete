@@ -225,7 +225,7 @@ none yet, so the model follows today's code for them.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `leases-safety` | passes | With every fault on, a leased runtime stays open, a turn runs only under held access, access is never released while its turn runs (`AccessKeptWhileTurnRuns`), and the app always starts. |
+| `leases-safety` | passes | With every fault on, a leased runtime stays open, a turn runs only under held access, access is never released while its turn runs (`AccessKeptWhileTurnRuns`), only a cancelled turn is ever force-stopped (`OnlyCancelledTurnsForceStopped`), and the app always starts. |
 | `leases-ideal` | passes | With no faults, every lease is released, every lease debt is reconciled, every attempt whose turn ended becomes terminal, and a removal completes without a restart. |
 | `leases-abandon` | Fixed; now passes | Finding B. Before the fix: after Rust gave up on a running turn, its lease release freed the access while the native turn still ran. Removal could then close the runtime and delete its home under it. Now access lives as long as the native turn. An owner's release of a running turn cancels the turn and returns at once. The host releases the access as soon as the native turn ends, and keeps the entry until the owner's release (`HostReleasesOnSettle`). `leases-abandon-reverted` shows the old trace. |
 | `leases-timer-claim` | Fixed; now passes | Finding A, plausible: needs a 30 s stall. Before the fix: the admission timer's release could be in flight when the claim ran, and it then freed the access under the running turn. Once any release is decided for an admission, the claim refuses it, even if that release failed (`ClaimRejectsReleasing`). `leases-timer-claim-reverted` shows the old trace. `leases-claim-after-failed-release` covers a failed release. It turns A2's fix off, because a refused finalize is the only way the model has for a release to fail. |
@@ -235,7 +235,7 @@ none yet, so the model follows today's code for them.
 | `leases-restart-quarantine`, `leases-restart-persist` | Fixed; now pass | Finding E, startup half. A removal waited on a running attempt, and the user quit. At the next start, an interrupted submitted input was quarantined, or a failed persist had left it quarantined, so its attempt stayed `running`. `reconcileStartup`'s refused finalize then failed every start. A refused finalize now leaves `P` `removal_pending`, and the app starts. `leases-restart-quarantine-reverted` shows the old trace. |
 | `leases-restart-removal` | Confirmed, open, PR 2 | Finding E, removal half. After that restart, `P` stays `removal_pending` while the quarantined attempt runs. Once the thread view settles the attempt, the reconciler's release finds no host entry, because host memory is fresh after the restart. Nothing acknowledges, so the finalize is not retried until the next restart. |
 | `leases-persist-attempt` | Confirmed, open, PR 2 | Finding C, attempt half. When a turn's terminal state cannot be persisted, its attempt stays `running`, which blocks the provider tombstone. A harness approval that is aborted, expired or cancelled reaches this with no fault. |
-| `leases-hang` | Confirmed (missing feature), open | Finding G. A cancelled native turn that ignores the cancellation keeps its provider access forever, so removal waits forever. A per-turn force-stop is planned for a later PR. |
+| `leases-hang` | Fixed for Codex and Prime; now passes | Finding G. Before the fix: a cancelled native turn that ignored the cancellation kept its provider access forever, so removal waited forever. Now a cancelled turn still running after two minutes is force-stopped, and its access is then released (`ForceStopsCancelledTurn`, action `ForceStop`). The force-stop ends only that turn. The model assumes every harness supports it and that it always ends the native work. In the code the kill or disposal is best effort, and the host releases the access at most ten seconds later, so `AccessKeptWhileTurnRuns` holds only under that assumption. `claude.basic` has no force-stop, so its turn that never settles still keeps its access. `OnlyCancelledTurnsForceStopped` follows from the action's guard; it documents the promise rather than testing the sibling case. `leases-hang-reverted` shows the old trace. |
 
 The fixes are:
 
@@ -247,6 +247,8 @@ The fixes are:
    acknowledgement retries it (`AckRetriesFinalize`). Landed.
 4. Settling a quarantined attempt wakes the reconciler
    (`QuarantineSettleWakesReconciler`). Landed.
+5. A cancelled turn still running after two minutes is force-stopped, and
+   its access is released (`ForceStopsCancelledTurn`). Landed.
 
 The `*-reverted` checks turn one landed fix off and show its old trace. In
 them the acknowledgement call is attributed to `AckRetriesFinalize`, so a
@@ -262,7 +264,9 @@ neither is modeled.
 - **Bounds:** one provider plus one new connection, one renderer, one lease,
   and a single child at depth 1 with head revision at most 3. The lease model
   has one provider, at most two turns and two restarts, and one turn per
-  thread. A bug that needs more actors is out of reach.
+  thread. A bug that needs more actors is out of reach. So the model cannot
+  show that a force-stop spares a sibling turn on the same thread; the
+  harness-host, Codex and Prime tests cover that.
 - **Queue order:** the provider queue is FIFO for queued cancels, but requests
   that queue behind an interior await may start in either order.
 - **Not modeled:**

@@ -373,6 +373,61 @@ class PrimeAgentSessionLifecycle {
   }
 }
 
+/**
+ * One turn's force-stop. The turn binds the one native session it runs on; when the host's
+ * force signal fires, only that session is stopped and the turn stops waiting for it.
+ */
+class PrimeTurnForceStop {
+  private stopSession: (() => void) | undefined;
+  private readonly detachStop: () => void;
+
+  constructor(private readonly signal: AbortSignal | undefined) {
+    const stop = () => this.stop();
+    signal?.addEventListener("abort", stop, { once: true });
+    this.detachStop = () => signal?.removeEventListener("abort", stop);
+  }
+
+  /**
+   * Binds the session this turn is about to run on. A turn force-stopped before then does
+   * not run, and stops nothing: a later root turn may already be using that root session.
+   */
+  bind(stopSession: () => void): void {
+    this.signal?.throwIfAborted();
+    this.stopSession = stopSession;
+  }
+
+  /** Settles with the execution, or as soon as the force-stop fires; a later settlement is ignored. */
+  race(execution: Promise<void>): Promise<void> {
+    void execution.catch(() => undefined);
+    const signal = this.signal;
+    if (signal === undefined) return execution;
+    let detachRace = () => {};
+    const forced = new Promise<never>((_resolve, reject) => {
+      const onForce = () => reject(signal.reason);
+      if (signal.aborted) {
+        onForce();
+        return;
+      }
+      signal.addEventListener("abort", onForce, { once: true });
+      detachRace = () => signal.removeEventListener("abort", onForce);
+    });
+    return Promise.race([execution, forced]).finally(() => {
+      detachRace();
+      this.detachStop();
+    });
+  }
+
+  private stop(): void {
+    const stopSession = this.stopSession;
+    this.stopSession = undefined;
+    try {
+      stopSession?.();
+    } catch {
+      // Best effort: the turn still stops waiting, and the host releases its access.
+    }
+  }
+}
+
 const PRIME_ADAPTERS: Readonly<Record<string, PrimeAdapterMapping>> = Object.freeze({
   "openai-api": Object.freeze({ api: "openai-responses", implementationVersion: "2" }),
   "anthropic-api": Object.freeze({ api: "anthropic-messages", implementationVersion: "2" }),
@@ -382,6 +437,8 @@ const PRIME_ADAPTERS: Readonly<Record<string, PrimeAdapterMapping>> = Object.fre
 
 export class PrimeAgentHarness implements Harness {
   readonly supportsInvokedComplete = true;
+  /** An invoked child runs in its own session; a root turn's force-stop replaces the root session. */
+  readonly supportsForceStop = true;
   private forceShutdownStarted = false;
   private gracefullyDisposed = false;
   private gracefulDisposePromise: Promise<void> | undefined;
@@ -389,6 +446,11 @@ export class PrimeAgentHarness implements Harness {
   private readonly pendingInvokedSessions = new Set<Promise<PrimeAgentSessionLifecycle>>();
   private sessionHandle: PrimeAgentSessionHandle | undefined;
   private sessionPersonalPresentationVersionId: number | null | undefined;
+  /**
+   * Root turns acquire the root session one at a time. A force-stopped root turn stops
+   * waiting at once, so its acquisition may still run when the next root turn starts.
+   */
+  private pendingRootSessionAcquisition: Promise<void> | undefined;
   private readonly presentationInstructions: { current: string };
 
   private constructor(
@@ -399,7 +461,7 @@ export class PrimeAgentHarness implements Harness {
     private readonly createKernelBoundary: PrimeAgentDependencies["createKernelBoundary"],
     private readonly createSession: (sessionManager: unknown) => Promise<PrimeAgentSession>,
     private readonly createSessionManager: () => unknown,
-    private readonly savedSessionFile: string | undefined,
+    private resumableSessionFile: string | undefined,
     savedPresentationVersionId: number | null | undefined,
     presentationInstructions: { current: string },
     sessionHandle?: PrimeAgentSessionHandle,
@@ -562,8 +624,9 @@ export class PrimeAgentHarness implements Harness {
     const controller = new AbortController();
     const abort = () => controller.abort(signal?.reason ?? new Error("Prime Agent completion was cancelled"));
     signal?.addEventListener("abort", abort, { once: true });
+    const forceStop = new PrimeTurnForceStop(context.forceSignal);
     if (context.origin.kind === "root") {
-      const execution = this.executeRoot(context, controller.signal)
+      const execution = forceStop.race(this.executeRoot(context, controller.signal, forceStop))
         .finally(() => signal?.removeEventListener("abort", abort));
       return nativeExecutionHandle(execution, (reason) => controller.abort(new Error(reason)));
     }
@@ -573,7 +636,7 @@ export class PrimeAgentHarness implements Harness {
       resolveAttached = resolve;
       rejectAttached = reject;
     });
-    const execution = this.executeInvoked(context, resolveAttached, controller.signal)
+    const execution = forceStop.race(this.executeInvoked(context, resolveAttached, controller.signal, forceStop))
       .finally(() => signal?.removeEventListener("abort", abort));
     void execution.catch(rejectAttached);
     return nativeExecutionHandle(
@@ -583,9 +646,24 @@ export class PrimeAgentHarness implements Harness {
     );
   }
 
-  private async executeRoot(context: HarnessRunContext, signal: AbortSignal): Promise<void> {
-    const candidateSession = this.sessionFor(context);
-    const session = candidateSession instanceof Promise ? await candidateSession : candidateSession;
+  private async executeRoot(context: HarnessRunContext, signal: AbortSignal, forceStop: PrimeTurnForceStop): Promise<void> {
+    const previous = this.pendingRootSessionAcquisition;
+    const candidate = previous === undefined
+      ? this.sessionFor(context)
+      : previous.then(() => this.sessionFor(context));
+    if (candidate instanceof Promise) {
+      const acquired = candidate.then(() => undefined, () => undefined);
+      this.pendingRootSessionAcquisition = acquired;
+      void acquired.then(() => {
+        if (this.pendingRootSessionAcquisition === acquired) this.pendingRootSessionAcquisition = undefined;
+      });
+    }
+    const session = candidate instanceof Promise ? await candidate : candidate;
+    const handle = this.sessionHandle?.session === session ? this.sessionHandle : undefined;
+    forceStop.bind(() => {
+      if (handle !== undefined) this.forceStopRootSession(handle);
+      else void session.abort().catch(() => undefined);
+    });
     if (signal.aborted) {
       await session.abort();
       signal.throwIfAborted();
@@ -597,6 +675,7 @@ export class PrimeAgentHarness implements Harness {
     context: HarnessRunContext,
     attach: (identity: JsonObject) => void,
     signal: AbortSignal,
+    forceStop: PrimeTurnForceStop,
   ): Promise<void> {
     signal.throwIfAborted();
     if (this.forceShutdownStarted) throw new Error("Prime Agent harness is shutting down");
@@ -619,7 +698,11 @@ export class PrimeAgentHarness implements Harness {
     try {
       executionOutcome = this.forceShutdownStarted
         ? { ok: false, error: new Error("Prime Agent harness is shutting down") }
-        : await operationOutcome(() => this.executeOn(lifecycle.session, context, signal));
+        : await operationOutcome(() => {
+          // A force-stop ends this child's own session only: never the root or a sibling.
+          forceStop.bind(() => lifecycle.forceShutdown());
+          return this.executeOn(lifecycle.session, context, signal);
+        });
     } finally {
       disposalOutcome = await operationOutcome(() => lifecycle.dispose());
       this.invokedSessions.delete(lifecycle);
@@ -758,6 +841,26 @@ export class PrimeAgentHarness implements Harness {
     this.disposeNativeOnce(handle);
   }
 
+  /**
+   * Force-stops the root session a cancelled root turn is stuck in. Invoked children run in
+   * their own sessions and keep running. The stopped session may still write its session
+   * file, so the next root turn starts a fresh native session instead of resuming it.
+   */
+  private forceStopRootSession(handle: PrimeAgentSessionHandle): void {
+    if (this.sessionHandle === handle) {
+      this.sessionHandle = undefined;
+      this.sessionPersonalPresentationVersionId = undefined;
+      this.resumableSessionFile = undefined;
+    }
+    this.installNativeDisposeGuard(handle);
+    try {
+      void handle.session.abort().catch(() => undefined);
+    } catch {
+      // Force disposal continues if a nonconforming provider throws synchronously.
+    }
+    this.disposeNativeOnce(handle);
+  }
+
   private sessionFor(context: HarnessRunContext): PrimeAgentSession | Promise<PrimeAgentSession> {
     this.throwIfShuttingDown();
     const versionId = context.personalPresentation?.attachment.versionInteractionNodeId ?? null;
@@ -808,10 +911,10 @@ export class PrimeAgentHarness implements Harness {
     this.throwIfShuttingDown();
     if (this.sessionHandle === previousHandle) this.sessionHandle = undefined;
     this.presentationInstructions.current = personalPresentationNativeInstructions(context);
-    const resumeSavedSession = this.savedSessionFile !== undefined
+    const resumeSavedSession = this.resumableSessionFile !== undefined
       && this.sessionPersonalPresentationVersionId === versionId;
     const sessionManager = resumeSavedSession
-      ? this.primeAgent.SessionManager.open(this.savedSessionFile!)
+      ? this.primeAgent.SessionManager.open(this.resumableSessionFile!)
       : this.createSessionManager();
     const session = await this.createSession(sessionManager);
     const replacement = primeSessionHandle(session);

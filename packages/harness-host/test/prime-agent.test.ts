@@ -784,6 +784,184 @@ describe("PrimeAgentHarness", () => {
     expect(rootNativeDispose).toHaveBeenCalledOnce();
   });
 
+  it("force-stops only a stuck invoked child's own session, never the root turn or a sibling child", async () => {
+    let releaseRoot!: () => void;
+    const rootGate = new Promise<void>((resolve) => { releaseRoot = resolve; });
+    let releaseSibling!: () => void;
+    const siblingGate = new Promise<void>((resolve) => { releaseSibling = resolve; });
+    const root = primeSession("/tmp/root.jsonl", { promptAndWait: vi.fn(async () => rootGate) });
+    // A wedged child: neither its prompt nor its abort ever settles.
+    const stuckChild = primeSession("/tmp/stuck-child.jsonl", {
+      promptAndWait: vi.fn(() => new Promise<void>(() => undefined)),
+      abort: vi.fn(() => new Promise<void>(() => undefined)),
+    });
+    const sibling = primeSession("/tmp/sibling.jsonl", { promptAndWait: vi.fn(async () => siblingGate) });
+    const rootNativeDispose = root.dispose;
+    const stuckChildNativeDispose = stuckChild.dispose;
+    const siblingNativeDispose = sibling.dispose;
+    const sessions = [root, stuckChild, sibling];
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7,
+      workingDirectory: "/tmp/project",
+      ...fullPermission,
+      configuration,
+    }, { loadModule: async () => ({
+      ...runScopeApi(),
+      SessionManager: { create: vi.fn(() => "fresh"), open: vi.fn() },
+      createHostRequestHandler: (handler: unknown) => handler,
+      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionFromServices: vi.fn(async () => {
+        const session = sessions.shift();
+        if (session === undefined) throw new Error("unexpected Prime session creation");
+        return { session };
+      }),
+    }) as never });
+    const cancel = new AbortController();
+    const stuckForce = new AbortController();
+
+    const rootTurn = harness.complete({ ...runContext(50, "root"), forceSignal: new AbortController().signal });
+    await vi.waitFor(() => expect(root.promptAndWait).toHaveBeenCalledOnce());
+    const stuck = harness.complete(
+      { ...invokedRunContext(runContext(51, "stuck"), 151), forceSignal: stuckForce.signal },
+      cancel.signal,
+    );
+    await vi.waitFor(() => expect(stuckChild.promptAndWait).toHaveBeenCalledOnce());
+    const siblingTurn = harness.complete({
+      ...invokedRunContext(runContext(52, "sibling"), 152),
+      forceSignal: new AbortController().signal,
+    });
+    await vi.waitFor(() => expect(sibling.promptAndWait).toHaveBeenCalledOnce());
+
+    cancel.abort(new Error("cancelled"));
+    stuckForce.abort(new Error("force-stopped after two minutes"));
+
+    await expect(stuck).rejects.toThrow("force-stopped after two minutes");
+    expect(stuckChild.abort).toHaveBeenCalled();
+    expect(stuckChildNativeDispose).toHaveBeenCalledOnce();
+    expect(root.abort).not.toHaveBeenCalled();
+    expect(rootNativeDispose).not.toHaveBeenCalled();
+    expect(sibling.abort).not.toHaveBeenCalled();
+    expect(siblingNativeDispose).not.toHaveBeenCalled();
+
+    releaseSibling();
+    await siblingTurn;
+    releaseRoot();
+    await rootTurn;
+    expect(harness.state()).toEqual({
+      primeAgentSessionFile: "/tmp/root.jsonl",
+      primeAgentSessionPersonalPresentationVersionId: null,
+    });
+    expect(harness.supportsForceStop).toBe(true);
+  });
+
+  it("replaces the root session after force-stopping a stuck root turn, leaving a running child alone", async () => {
+    let releaseChild!: () => void;
+    const childGate = new Promise<void>((resolve) => { releaseChild = resolve; });
+    // A wedged root turn on the restored session: neither its prompt nor its abort settles.
+    const stuckRoot = primeSession("/tmp/saved.jsonl", {
+      promptAndWait: vi.fn(() => new Promise<void>(() => undefined)),
+      abort: vi.fn(() => new Promise<void>(() => undefined)),
+    });
+    const child = primeSession("/tmp/child.jsonl", { promptAndWait: vi.fn(async () => childGate) });
+    const replacement = primeSession("/tmp/replacement.jsonl");
+    const stuckRootNativeDispose = stuckRoot.dispose;
+    const childNativeDispose = child.dispose;
+    const sessions = [stuckRoot, child, replacement];
+    const create = vi.fn(() => "fresh-manager");
+    const open = vi.fn(() => "saved-manager");
+    const createAgentSessionFromServices = vi.fn(async () => {
+      const session = sessions.shift();
+      if (session === undefined) throw new Error("unexpected Prime session creation");
+      return { session };
+    });
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7,
+      workingDirectory: "/tmp/project",
+      ...fullPermission,
+      configuration,
+      savedState: {
+        primeAgentSessionFile: "/tmp/saved.jsonl",
+        primeAgentSessionPersonalPresentationVersionId: null,
+      },
+    }, { loadModule: async () => ({
+      ...runScopeApi(),
+      SessionManager: { create, open },
+      createHostRequestHandler: (handler: unknown) => handler,
+      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionFromServices,
+    }) as never });
+    const cancel = new AbortController();
+    const rootForce = new AbortController();
+
+    const stuckTurn = harness.complete({ ...runContext(61, "root"), forceSignal: rootForce.signal }, cancel.signal);
+    await vi.waitFor(() => expect(stuckRoot.promptAndWait).toHaveBeenCalledOnce());
+    const childTurn = harness.complete({
+      ...invokedRunContext(runContext(62, "child"), 162),
+      forceSignal: new AbortController().signal,
+    });
+    await vi.waitFor(() => expect(child.promptAndWait).toHaveBeenCalledOnce());
+
+    cancel.abort(new Error("cancelled"));
+    rootForce.abort(new Error("force-stopped after two minutes"));
+
+    await expect(stuckTurn).rejects.toThrow("force-stopped after two minutes");
+    expect(stuckRoot.abort).toHaveBeenCalled();
+    expect(stuckRootNativeDispose).toHaveBeenCalledOnce();
+    expect(child.abort).not.toHaveBeenCalled();
+    expect(childNativeDispose).not.toHaveBeenCalled();
+    // The stopped session may still write its file, so it is neither saved nor resumed.
+    expect(harness.state()).toEqual({});
+
+    await harness.complete({ ...runContext(63, "root"), forceSignal: new AbortController().signal });
+    expect(open).toHaveBeenCalledOnce();
+    expect(createAgentSessionFromServices).toHaveBeenLastCalledWith(expect.objectContaining({ sessionManager: "fresh-manager" }));
+    expect(replacement.promptAndWait).toHaveBeenCalledOnce();
+    expect(harness.state()).toEqual({
+      primeAgentSessionFile: "/tmp/replacement.jsonl",
+      primeAgentSessionPersonalPresentationVersionId: null,
+    });
+
+    releaseChild();
+    await childTurn;
+  });
+
+  it("lets a root turn force-stopped while acquiring its session finish before the next root turn acquires one", async () => {
+    let releaseReload!: () => void;
+    const reloadGate = new Promise<void>((resolve) => { releaseReload = resolve; });
+    const reloads: string[] = [];
+    const session = primeSession("/tmp/root.jsonl");
+    const reload = vi.fn(async () => {
+      const call = reload.mock.calls.length;
+      reloads.push(`start-${call}`);
+      if (call === 1) await reloadGate;
+      reloads.push(`end-${call}`);
+    });
+    Object.assign(session, { reload });
+    const harness = await createHarness(session);
+    const rootForce = new AbortController();
+
+    // The stuck root turn is still reloading its presentation instructions when it is force-stopped.
+    const stuck = harness.complete({ ...presentationRunContext(70, "stuck", 90), forceSignal: rootForce.signal });
+    await vi.waitFor(() => expect(reloads).toEqual(["start-1"]));
+    rootForce.abort(new Error("force-stopped after two minutes"));
+    await expect(stuck).rejects.toThrow("force-stopped after two minutes");
+
+    const next = harness.complete({ ...runContext(71, "next"), forceSignal: new AbortController().signal });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(reloads).toEqual(["start-1"]);
+    releaseReload();
+    await next;
+
+    // The stale reload finished before the next turn chose its session, so the stale turn's
+    // presentation pin cannot overwrite the next turn's.
+    expect(reloads).toEqual(["start-1", "end-1"]);
+    expect(session.promptAndWait).toHaveBeenCalledOnce();
+    expect(harness.state()).toEqual({
+      primeAgentSessionFile: "/tmp/root.jsonl",
+      primeAgentSessionPersonalPresentationVersionId: null,
+    });
+  });
+
   it("maps an admitted family to isolated native providers and reuses the session across root changes", async () => {
     const scopes: ControlledRunScope[] = [];
     const providerRequests: Array<{ provider: string; modelId: string; apiKey: string | undefined }> = [];

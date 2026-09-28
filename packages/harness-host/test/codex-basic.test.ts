@@ -238,6 +238,49 @@ describe("CodexBasicHarness", () => {
     expect(submitted?.forceSignal?.aborted).toBe(true);
   });
 
+  it("force-stops only the turn whose force signal fires, and never spawns an already force-stopped turn", async () => {
+    const submitted = new Map<string, CodexAppServerTurnOptions>();
+    const harness = harnessFixture("auto", (options) => {
+      submitted.set(options.environment.RELAYER_GRAPH_TOKEN!, options);
+      return new Promise((_resolve, reject) => {
+        // Like a wedged turn: cancellation is ignored, and only the process kill ends it.
+        options.forceSignal?.addEventListener("abort", () => reject(options.forceSignal?.reason), { once: true });
+      });
+    });
+    const turn = (id: number, token: string, origin: HarnessRunContext["origin"], forceSignal: AbortSignal): HarnessRunContext => ({
+      ...runContext(id, token),
+      origin,
+      forceSignal,
+      ...(origin.kind === "invoke" ? {
+        model: { providerId: "codex", adapterId: "codex-subscription", modelId: "gpt-test" },
+        access: codexAccess(),
+      } : {}),
+    });
+    const rootForce = new AbortController();
+    const stuckChildForce = new AbortController();
+    const siblingForce = new AbortController();
+    const root = harness.complete(turn(1, "root-token", { kind: "root" }, rootForce.signal));
+    const stuckChild = harness.complete(turn(2, "stuck-token", { kind: "invoke", sourceCompletionId: 1, actionId: 102 }, stuckChildForce.signal));
+    const sibling = harness.complete(turn(3, "sibling-token", { kind: "invoke", sourceCompletionId: 1, actionId: 103 }, siblingForce.signal));
+    await vi.waitFor(() => expect(submitted.size).toBe(3));
+
+    stuckChildForce.abort(new Error("force-stopped after two minutes"));
+
+    await expect(stuckChild).rejects.toThrow("force-stopped after two minutes");
+    expect(submitted.get("stuck-token")?.forceSignal?.aborted).toBe(true);
+    expect(submitted.get("root-token")?.forceSignal?.aborted).toBe(false);
+    expect(submitted.get("sibling-token")?.forceSignal?.aborted).toBe(false);
+
+    const alreadyForced = new AbortController();
+    alreadyForced.abort(new Error("forced before spawn"));
+    await expect(harness.complete(turn(4, "late-token", { kind: "root" }, alreadyForced.signal))).rejects.toThrow("forced before spawn");
+    expect(submitted.has("late-token")).toBe(false);
+
+    harness.forceShutdown();
+    await Promise.allSettled([root, sibling]);
+    expect(harness.supportsForceStop).toBe(true);
+  });
+
   it("rejects an unsupported implementation version", () => {
     expect(() => new CodexBasicHarness({
       threadId: 1,

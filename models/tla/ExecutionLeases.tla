@@ -49,8 +49,12 @@ CONSTANTS
                          \* drain-incomplete returns false instead of throwing
                          \* (RAS:392); the owner's acknowledgement
                          \* (HH:1003-1006 -> PDS:633-635) retries it
-  QuarantineSettleWakesReconciler \* THR:1185-1197: settling a quarantined
+  QuarantineSettleWakesReconciler, \* THR:1185-1197: settling a quarantined
                          \* interaction wakes the lease reconciler
+  ForceStopsCancelledTurn \* HH runCompletion (armForceStop) and
+                         \* settledOrForceStopped: a cancelled turn still
+                         \* running after two minutes is force-stopped, and
+                         \* its access is released
 
 Lives == {"active", "removal_pending", "tombstoned"}
 
@@ -78,7 +82,8 @@ VARIABLES
   hReq,      \* t -> releaseRequested: a release was decided
   hOwn,      \* t -> ownerReleased: the owner's release arrived
   abort,     \* t -> the completion's AbortController has fired
-  nat,       \* t -> native harness turn using the provider runtime
+  nat,       \* t -> native harness turn using the provider runtime:
+             \*      none | running | done | forced (ended by a force-stop)
   hClosed,   \* harness host closed flag (HH:1305)
   \* --- process ---
   app,       \* up | rustDown | down | startFailed
@@ -256,10 +261,8 @@ Claim(t) ==
 (* completion claimed to settled and starts its release at once            *)
 (* (HH:1186-1188, 973-982), before the response reaches Rust. Before the   *)
 (* fix it moved it to awaiting-terminal with no timer and waited for       *)
-(* Rust's DELETE.                                                          *)
-NatEnd(t) ==
-  /\ nat[t] = "running"
-  /\ nat' = [nat EXCEPT ![t] = "done"]
+(* Rust's DELETE. ForceStop settles a turn the same way (SettleTurn).     *)
+SettleTurn(t) ==
   /\ IF hl[t] = "claimed"
      THEN IF HostReleasesOnSettle
           THEN /\ hl' = [hl EXCEPT ![t] = "settled"]
@@ -272,13 +275,35 @@ NatEnd(t) ==
   /\ UNCHANGED <<rLife, att, quar, acked, wake, wBusy, jLife, jsHeld, rt,
                  pClosed, hReq, hOwn, abort, hClosed, app, restarts>>
 
+NatEnd(t) ==
+  /\ nat[t] = "running"
+  /\ nat' = [nat EXCEPT ![t] = "done"]
+  /\ SettleTurn(t)
+
+(* The per-turn force-stop (HH runCompletion, armForceStop): a completion  *)
+(* whose cancel signal fired arms one two-minute timer. If its native turn *)
+(* still runs when it fires, the harness ends that one turn: Codex kills   *)
+(* the turn's own app-server process group, and Prime disposes the turn's  *)
+(* own session. executeCompletion (settledOrForceStopped) waits at most    *)
+(* ten more seconds, fails the turn, and settles its claimed access        *)
+(* exactly as NatEnd does. Only t changes, so a sibling is never touched.  *)
+(* Abstractions: the kill or disposal always ends the native work (the     *)
+(* code's best effort), and the harness declares supportsForceStop. Turns  *)
+(* here are on separate threads; turns sharing a thread (a root and its    *)
+(* invoked children) are covered by the harness-host tests.                *)
+ForceStop(t) ==
+  /\ ForceStopsCancelledTurn
+  /\ abort[t] /\ nat[t] = "running"
+  /\ nat' = [nat EXCEPT ![t] = "forced"]
+  /\ SettleTurn(t)
+
 (* Rust stops waiting while the harness is still running: the approval    *)
 (* reconciliation failure path cancels, waits 2 s, and breaks with Err     *)
 (* (EX:510-536), or the /complete HTTP request fails (RT:900-930; no      *)
 (* request timeout). The cancel (HH:1273-1285) or the dropped request      *)
 (* (HH:1766) aborts the completion, but the native turn unwinds on its     *)
-(* own schedule. Nothing forces it to stop: a per-turn force-stop is not   *)
-(* built.                                                                  *)
+(* own schedule. With ForceStopsCancelledTurn, a turn that ignores the     *)
+(* cancellation is force-stopped (ForceStop).                              *)
 GiveUp(t) ==
   /\ RustCanAbandon /\ app = "up"
   /\ rpc[t] = "waiting" /\ nat[t] = "running"
@@ -504,6 +529,7 @@ Restart(Q) ==
 Next ==
   \/ \E t \in Turns :
        \/ Admit(t) \/ Begin(t) \/ Claim(t) \/ NatEnd(t) \/ GiveUp(t)
+       \/ ForceStop(t)
        \/ \E ok \in BOOLEAN : Persist(t, ok)
        \/ InlineRelease(t) \/ WorkerTry(t)
        \/ TimerFire(t) \/ ReleaseDone(t) \/ HostCloseRelease(t)
@@ -516,6 +542,7 @@ Next ==
 (* promises, the reconciler, and a begun shutdown keep running. User       *)
 (* actions (Admit, Remove, reading a quarantined input, quit, restart) and *)
 (* the Rust give-up are not fair. NatEnd is fair unless HarnessCanHang.    *)
+(* ForceStop is driven by the host's timer, so it is fair.                 *)
 Fairness ==
   /\ \A t \in Turns :
        /\ WF_vars(Begin(t)) /\ WF_vars(Claim(t))
@@ -524,6 +551,7 @@ Fairness ==
        /\ WF_vars(TimerFire(t)) /\ WF_vars(ReleaseDone(t))
        /\ WF_vars(HostCloseRelease(t))
        /\ (~HarnessCanHang => WF_vars(NatEnd(t)))
+       /\ WF_vars(ForceStop(t))
   /\ WF_vars(WorkerWake) /\ WF_vars(\E t \in Turns : WorkerTry(t))
   /\ WF_vars(WorkerIdle)
   /\ WF_vars(HostCloseStart) /\ WF_vars(PdsClose) /\ WF_vars(ShutdownDone)
@@ -549,7 +577,7 @@ TypeOK ==
   /\ hRel \in [Turns -> BOOLEAN] /\ hTimer \in [Turns -> BOOLEAN]
   /\ hReq \in [Turns -> BOOLEAN] /\ hOwn \in [Turns -> BOOLEAN]
   /\ abort \in [Turns -> BOOLEAN]
-  /\ nat \in [Turns -> {"none", "running", "done"}]
+  /\ nat \in [Turns -> {"none", "running", "done", "forced"}]
   /\ app \in {"up", "rustDown", "down", "startFailed"}
   /\ restarts \in 0..MaxRestarts
 
@@ -585,6 +613,12 @@ RuntimeOpenWhileTurnRunsAlways ==
 NoTimerOnClaimedAccess ==
   \A t \in Turns : hTimer[t] => hl[t] /= "claimed"
 
+\* PROV-004 (per-turn force-stop): only a cancelled turn is ever
+\* force-stopped, so a turn nobody cancelled, such as a healthy sibling, is
+\* never stopped.
+OnlyCancelledTurnsForceStopped ==
+  \A t \in Turns : nat[t] = "forced" => abort[t]
+
 \* DRAFT PROV-003 (restart finishes a removal) + CODE PC:81-83 (startup
 \* assumes reconcileStartup succeeds): the app always starts.
 StartupSucceeds == app /= "startFailed"
@@ -616,11 +650,11 @@ LeaseEventuallyReleased ==
 \* attempt blocks the tombstone (CAT:190-199).
 AttemptSettlesAfterTurn ==
   \A t \in Turns :
-    (att[t] = "running" /\ nat[t] = "done" /\ app = "up")
+    (att[t] = "running" /\ nat[t] \in {"done", "forced"} /\ app = "up")
       ~> (att[t] = "terminal" \/ app /= "up")
 
-\* A cancelled turn's access is eventually released, even if its native
-\* turn ignores the cancellation.
+\* PROV-004: a cancelled turn's access is eventually released, even if its
+\* native turn ignores the cancellation (through the per-turn force-stop).
 CancelledAccessEventuallyReleased ==
   \A t \in Turns :
     (abort[t] /\ jsHeld[t] /\ app = "up") ~> (~jsHeld[t] \/ app /= "up")
