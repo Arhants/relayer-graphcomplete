@@ -812,9 +812,13 @@ export class ProviderDefinitionService {
             const remaining = (this.activeExecutions.get(id) ?? 1) - 1;
             if (remaining > 0) this.activeExecutions.set(id, remaining);
             else this.activeExecutions.delete(id);
-            const current = this.definitions.find((item) => item.id === id);
-            if (remaining === 0 && current?.lifecycleState === "removal_pending") await this.#finalizeRemoval(current);
+            await this.#finalizeDrainedRemoval(id);
           });
+        },
+        // The lease owner has durably recorded that the work using this access ended. A
+        // removal the store refused while that work still counted as running can finish now.
+        acknowledge: async () => {
+          await this.#serialized(() => this.#finalizeDrainedRemoval(id));
         },
       });
     });
@@ -911,6 +915,31 @@ export class ProviderDefinitionService {
     });
   }
 
+  /**
+   * Retries every removal whose provider has no running lease. Called when an owner
+   * acknowledges a lease the harness host no longer tracks.
+   */
+  async finalizeDrainedRemovals() {
+    await this.#serialized(async () => {
+      await this.#initialize();
+      for (const { id } of this.definitions.filter(({ lifecycleState }) => lifecycleState === "removal_pending")) {
+        await this.#finalizeDrainedRemoval(id);
+      }
+    });
+  }
+
+  async #finalizeDrainedRemoval(id) {
+    const current = this.definitions.find((item) => item.id === id);
+    if (!this.activeExecutions.has(id) && current?.lifecycleState === "removal_pending") {
+      await this.#finalizeRemoval(current);
+    }
+  }
+
+  /**
+   * Tombstones a drained provider. Returns false, leaving it `removal_pending`, while the
+   * store still records an execution attempt through it as running; that attempt's
+   * acknowledgement retries.
+   */
   async #finalizeRemoval(definition) {
     const next = this.definitions.map((item) => item.id === definition.id ? {
       ...item,
@@ -918,7 +947,12 @@ export class ProviderDefinitionService {
       lifecycleState: "tombstoned",
       removedAt: new Date().toISOString(),
     } : item);
-    await this.definitionStore.save(next);
+    try {
+      await this.definitionStore.save(next);
+    } catch (error) {
+      if (error?.code === "provider_execution_drain_incomplete") return false;
+      throw error;
+    }
     this.definitions = next;
     // The authoritative tombstone must commit before destructive cleanup. If a
     // durable running attempt still references this provider, the store rejects
@@ -928,6 +962,7 @@ export class ProviderDefinitionService {
     await this.onRuntimeRemoved(definition);
     await this.removeRuntimeState(definition);
     if (definition.credentialReference) await this.credentialStore.delete(definition.credentialReference);
+    return true;
   }
 
   async reconcileStartup() {
