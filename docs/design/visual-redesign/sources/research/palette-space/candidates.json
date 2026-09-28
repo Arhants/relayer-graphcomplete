@@ -1,0 +1,1949 @@
+[
+  {
+    "id": "K1",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdjSuSZyMwY",
+      "how": "chips"
+    },
+    "region": "poster",
+    "name": "Nocturne Orbit",
+    "swatches": [
+      "#332E34",
+      "#7779DF",
+      "#F54731"
+    ],
+    "roles": {
+      "ground": "#332E34",
+      "ink": "#7779DF",
+      "accent": "#F54731"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 1; the dark poster canvas and the hue seed of every neutral, h321)",
+      "ink": "exact source colour (chip 2)",
+      "accent": "exact source colour (chip 3)"
+    },
+    "semantic_plan": {
+      "interaction": "periwinkle",
+      "selection": "periwinkle ring",
+      "running": "neutral ink",
+      "accent_means": "failure only (danger)",
+      "danger": "the accent"
+    },
+    "role_rationale": "Gen-1 prototype A as specified in brief §6.1: charcoal is the graph's poster canvas under darker chrome, periwinkle is every interactive signal, red is spent only on failure.",
+    "character": "A charcoal night sky where periwinkle is every touchable thing and one red spark means something broke.",
+    "ui_risks": [
+      "accent is red: kept for failure only, so the palette has no positive rationed signal",
+      "periwinkle ring on the charcoal canvas is only 3.53:1: little headroom for thin strokes",
+      "charcoal canvas under darker chrome can read dim rather than dark"
+    ],
+    "intended_default_theme": "dark",
+    "relation_to_gen1": "is A",
+    "checks": {
+      "oklch": {
+        "ground": "L0.31 C0.013 h321",
+        "ink": "L0.62 C0.151 h280",
+        "accent": "L0.65 C0.214 h31"
+      },
+      "contrast": {
+        "ink_on_ground": 3.53,
+        "accent_on_ground": 3.69,
+        "accent_on_ink": 1.04,
+        "ink_on_white": 3.76,
+        "ink_on_black": 5.58
+      },
+      "accent_vs_signal_red": {
+        "dE": 0,
+        "hue_gap": 0,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 30.3
+    }
+  },
+  {
+    "id": "K2",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdjSuSZyMwY",
+      "how": "chips"
+    },
+    "region": "pop",
+    "name": "Surly Sticker",
+    "swatches": [
+      "#FDFAEA",
+      "#E65979",
+      "#C1E357"
+    ],
+    "roles": {
+      "ground": "#FDFAEA",
+      "ink": "#E65979",
+      "accent": "#C1E357"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 1; paper canvas and warm neutral seed)",
+      "ink": "exact source colour (chip 2)",
+      "accent": "exact source colour (chip 3)"
+    },
+    "semantic_plan": {
+      "interaction": "rose",
+      "selection": "rose ring",
+      "running": "rose",
+      "accent_means": "accepted (lime appears only when GraphComplete accepts a turn)",
+      "danger": "derived brick #B23B19 (brief), not the rose"
+    },
+    "role_rationale": "Gen-1 prototype B as specified in brief §6.2: paper ground, one pink ink doing all interaction, lime rationed to acceptance.",
+    "character": "A risograph sticker sheet: warm paper, one hot pink ink, and a lime stamp that only appears when the work is accepted.",
+    "ui_risks": [
+      "rose ink is ΔE 8.1 from signal red: failure had to move to a brick red",
+      "lime is 1.39:1 on paper: usable only as a large fill carrying ink text, never as a thin mark",
+      "rose ring on paper is 3.30:1: little headroom",
+      "running and selection share the rose (gene Q test)"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "is B",
+    "checks": {
+      "oklch": {
+        "ground": "L0.98 C0.021 h98",
+        "ink": "L0.66 C0.176 h9",
+        "accent": "L0.86 C0.169 h122"
+      },
+      "contrast": {
+        "ink_on_ground": 3.3,
+        "accent_on_ground": 1.39,
+        "accent_on_ink": 2.37,
+        "ink_on_white": 3.46,
+        "ink_on_black": 6.07
+      },
+      "accent_vs_signal_red": {
+        "dE": 35,
+        "hue_gap": 91,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 35.4
+    }
+  },
+  {
+    "id": "K3",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdjSuSZyMwY",
+      "how": "chips"
+    },
+    "region": "pop",
+    "name": "Apex Index",
+    "swatches": [
+      "#9AB9C2",
+      "#0C6FDC",
+      "#FEFD15"
+    ],
+    "roles": {
+      "ground": "#9AB9C2",
+      "ink": "#0C6FDC",
+      "accent": "#FEFD15"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 1; the light-theme 'blueprint' graph canvas and cool neutral seed)",
+      "ink": "exact source colour (chip 2)",
+      "accent": "exact source colour (chip 3)"
+    },
+    "semantic_plan": {
+      "interaction": "cobalt",
+      "selection": "derived darker cobalt #0059B7 on powder (brief)",
+      "running": "cobalt",
+      "accent_means": "work not yet accepted (highlighter behind draft titles)",
+      "danger": "derived #B33736 (brief)"
+    },
+    "role_rationale": "Gen-1 prototype C as specified in brief §6.3: powder canvas printed like a blueprint, cobalt drives everything interactive and live, yellow marks what is not accepted yet.",
+    "character": "An engineer's index card: powder-blue blueprint, cobalt ink, and a highlighter-yellow stroke for anything unfinished.",
+    "ui_risks": [
+      "exact cobalt is 2.33:1 on the powder canvas: the ring uses a derived darker cobalt",
+      "electric yellow is 1.09:1 on white: highlighter fill only",
+      "powder ground is mid-light: weak dark-mode neutral, so dark uses a derived near-black"
+    ],
+    "intended_default_theme": "system",
+    "relation_to_gen1": "is C",
+    "checks": {
+      "oklch": {
+        "ground": "L0.77 C0.036 h217",
+        "ink": "L0.55 C0.186 h256",
+        "accent": "L0.96 C0.207 h109"
+      },
+      "contrast": {
+        "ink_on_ground": 2.33,
+        "accent_on_ground": 1.91,
+        "accent_on_ink": 4.46,
+        "ink_on_white": 4.86,
+        "ink_on_black": 4.32
+      },
+      "accent_vs_signal_red": {
+        "dE": 41.4,
+        "hue_gap": 79,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 55.6
+    }
+  },
+  {
+    "id": "K4",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdjSuSZyMwY",
+      "how": "chips"
+    },
+    "region": "poster",
+    "name": "Small Things Stamp",
+    "swatches": [
+      "#B9B864",
+      "#D5E3FB",
+      "#F44731"
+    ],
+    "roles": {
+      "ground": "#B9B864",
+      "ink": "#D5E3FB",
+      "accent": "#F44731"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 1; the olive sidebar block in both themes and the olive neutral seed)",
+      "ink": "exact source colour (chip 2)",
+      "accent": "exact source colour (chip 3)"
+    },
+    "semantic_plan": {
+      "interaction": "no chrome accent: primary is ink (light) / ice (dark)",
+      "selection": "ice ring (dark) / derived #496CAC (light)",
+      "running": "neutral ink",
+      "accent_means": "failure only (danger)",
+      "danger": "the accent"
+    },
+    "role_rationale": "Gen-1 prototype D as specified in brief §6.4: olive and ice are grounds, never signals; colour lives in the graph's family stamps; red is failure only.",
+    "character": "A letterpress editorial page: an olive block, ice-white type, and colour saved for the stamps on the graph.",
+    "ui_risks": [
+      "accent is red: failure only, no positive signal",
+      "ice ink is 1.30:1 on white: it only works on dark, so light selection is a derived blue",
+      "status colours on the olive block measure 1.64–2.51:1, so sidebar marks must sit in discs"
+    ],
+    "intended_default_theme": "dark",
+    "relation_to_gen1": "is D",
+    "checks": {
+      "oklch": {
+        "ground": "L0.77 C0.107 h108",
+        "ink": "L0.91 C0.036 h261",
+        "accent": "L0.65 C0.213 h31"
+      },
+      "contrast": {
+        "ink_on_ground": 1.6,
+        "accent_on_ground": 1.74,
+        "accent_on_ink": 2.8,
+        "ink_on_white": 1.3,
+        "ink_on_black": 16.21
+      },
+      "accent_vs_signal_red": {
+        "dE": 0.2,
+        "hue_gap": 0,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 35.7
+    }
+  },
+  {
+    "id": "K5",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdwI_GkSwTZ",
+      "how": "chips"
+    },
+    "region": "poster",
+    "name": "Lido Coral",
+    "swatches": [
+      "#048297",
+      "#DA6666",
+      "#F6F9F8"
+    ],
+    "roles": {
+      "ground": "#F6F9F8",
+      "ink": "#048297",
+      "accent": "#DA6666",
+      "support": [
+        "#048297"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 3; the only chip neutral enough to seed chrome)",
+      "ink": "exact source colour (chip 1)",
+      "accent": "exact source colour (chip 2)",
+      "support": "chip 1 again as an optional light-theme poster canvas (white labels 4.52:1)"
+    },
+    "semantic_plan": {
+      "interaction": "teal",
+      "selection": "teal ring (4.27:1 on the off-white)",
+      "running": "teal or neutral (open gene)",
+      "accent_means": "failure (coral is the only strong accent and is red, so it becomes danger)",
+      "danger": "the accent"
+    },
+    "role_rationale": "The creator's ground chip is teal, but a mid teal (L0.56) cannot seed a chrome ramp, so the off-white seeds chrome and teal becomes the interaction ink. Coral (h22) is ΔE 7.3 from signal red, so under the red rule it becomes the failure colour and interaction stays teal. The teal field survives as an optional poster canvas behind the graph.",
+    "character": "Sea-glass teal and coral on clean white, like a lido in summer.",
+    "ui_risks": [
+      "accent is coral red (h22, ΔE 7.3 from signal red): collides with failure, so it is planned as danger and the palette has no positive rationed signal",
+      "coral as danger is soft (C0.15): failure reads less urgent than A's or D's red",
+      "teal ink is 4.27:1 on the off-white: text-grade links need a slightly darker derived teal",
+      "teal hue 214 is where Gen-1 put the F2 Code family: families must move off cyan",
+      "figure/ground inverts from the poster unless teal is also used as the canvas"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "near C (one cool interaction hue on a light ground), with soft coral for failure",
+    "checks": {
+      "oklch": {
+        "ground": "L0.98 C0.003 h174",
+        "ink": "L0.56 C0.098 h214",
+        "accent": "L0.65 C0.146 h22"
+      },
+      "contrast": {
+        "ink_on_ground": 4.27,
+        "accent_on_ground": 3.26,
+        "accent_on_ink": 1.31,
+        "ink_on_white": 4.52,
+        "ink_on_black": 4.65
+      },
+      "accent_vs_signal_red": {
+        "dE": 7.3,
+        "hue_gap": 9,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 25.9
+    }
+  },
+  {
+    "id": "K6",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdwI_GkSwTZ",
+      "how": "chips"
+    },
+    "region": "poster",
+    "name": "Mustard Cellar",
+    "swatches": [
+      "#D8B44D",
+      "#390F14",
+      "#8B3047"
+    ],
+    "roles": {
+      "ground": "#D8B44D",
+      "ink": "#390F14",
+      "accent": "#8B3047"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 1; sidebar block / poster canvas and warm neutral seed h90)",
+      "ink": "exact source colour (chip 2)",
+      "accent": "exact source colour (chip 3)"
+    },
+    "semantic_plan": {
+      "interaction": "oxblood ink in light (D-style ink primary); mustard in dark (role swap on the dark ground)",
+      "selection": "berry ring (8.04:1 on white, 4.04:1 on mustard)",
+      "running": "neutral ink",
+      "accent_means": "selection and the one live highlight (berry is ΔE 22.8 from signal red, so it is not forced to be danger)",
+      "danger": "a separate bright red, kept ≥ 20° of hue and clearly lighter than the berry"
+    },
+    "role_rationale": "Keeps the poster's mustard field as the block ground. Oxblood is almost black, so it works as a D-style ink primary rather than a coloured signal. Berry is dark enough (ΔE 22.8 from signal red) to stay a rationed accent rather than become danger.",
+    "character": "A wine-bar menu: mustard card stock, oxblood type, and one berry flourish.",
+    "ui_risks": [
+      "all three chips are warm (h8–90): there is no cool colour, so families will have to supply all the contrast",
+      "berry (h8) is only 22° of hue from failure red: separated from danger by lightness only",
+      "mustard ground (h90) sits on the warning-amber hue: approval must move or it reads as chrome",
+      "oxblood ink is nearly --text, so ink buttons and the focus ring look alike",
+      "mustard as a canvas is loud (C0.127) for six family colours; berry ring on mustard has only 4.04:1"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "near D (an earth-tone block ground with an ink primary), warmer and with a wine accent",
+    "checks": {
+      "oklch": {
+        "ground": "L0.78 C0.127 h90",
+        "ink": "L0.24 C0.067 h17",
+        "accent": "L0.45 C0.125 h8"
+      },
+      "contrast": {
+        "ink_on_ground": 8.43,
+        "accent_on_ground": 4.04,
+        "accent_on_ink": 2.09,
+        "ink_on_white": 16.77,
+        "ink_on_black": 1.25
+      },
+      "accent_vs_signal_red": {
+        "dE": 22.8,
+        "hue_gap": 22,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 21.5
+    }
+  },
+  {
+    "id": "K7",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdwI_GkSwTZ",
+      "how": "chips"
+    },
+    "region": "poster",
+    "name": "Deep Sea Rose",
+    "swatches": [
+      "#07526C",
+      "#062636",
+      "#D96972"
+    ],
+    "roles": {
+      "ground": "#062636",
+      "ink": "#67A7C4",
+      "accent": "#D96972",
+      "support": [
+        "#07526C"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 2; dark chrome and neutral seed h235)",
+      "ink": "derived from #07526C: lightness raised 0.41→0.70 (chroma and hue kept) so the ring clears 3.25:1 on the teal canvas and 5.90:1 on midnight",
+      "accent": "exact source colour (chip 3)",
+      "support": "chip 1 as the graph's poster canvas (white labels 8.63:1), A-style"
+    },
+    "semantic_plan": {
+      "interaction": "light teal (derived)",
+      "selection": "light teal ring",
+      "running": "neutral ink",
+      "accent_means": "failure (rose is ΔE 8.5 from signal red, so under the red rule it becomes danger)",
+      "danger": "the accent; dark-theme failure outlines need a lighter derived rose (2.55:1 on the teal canvas)"
+    },
+    "role_rationale": "The deep-sea teal stays the field, as in the poster, but as the graph canvas under midnight chrome (A's canvas-under-chrome pattern). Neither dark chip can carry interaction on a dark ground, so the ink is the same teal made lighter. Rose is the only warm chip and is close to red, so it becomes failure.",
+    "character": "Night diving: two blues deep enough to feel cold and one rose flare that only appears when something goes wrong.",
+    "ui_risks": [
+      "accent is rose (h17, ΔE 8.5 from signal red): collides with failure, planned as danger, no positive signal",
+      "rose is 2.55:1 on the teal canvas: failure outlines on the canvas need a lighter derived rose",
+      "ink is derived (L +0.29), so the palette's interaction colour is not a creator chip",
+      "teal canvas vs midnight chrome is 1.82:1: the canvas edge relies on a border",
+      "near-duplicate of A's structure"
+    ],
+    "intended_default_theme": "dark",
+    "relation_to_gen1": "near A (dark canvas under darker chrome, cool ink, warm accent = failure), in teal instead of violet",
+    "checks": {
+      "oklch": {
+        "ground": "L0.25 C0.047 h235",
+        "ink": "L0.70 C0.078 h229",
+        "accent": "L0.66 C0.141 h17"
+      },
+      "contrast": {
+        "ink_on_ground": 5.9,
+        "accent_on_ground": 4.64,
+        "accent_on_ink": 1.27,
+        "ink_on_white": 2.66,
+        "ink_on_black": 7.9
+      },
+      "accent_vs_signal_red": {
+        "dE": 8.5,
+        "hue_gap": 14,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 21.5
+    }
+  },
+  {
+    "id": "K8",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdwI_GkSwTZ",
+      "how": "chips"
+    },
+    "region": "poster",
+    "name": "Cocoa Bubblegum",
+    "swatches": [
+      "#D9DCD9",
+      "#725345",
+      "#DE5276"
+    ],
+    "roles": {
+      "ground": "#D9DCD9",
+      "ink": "#725345",
+      "accent": "#DE5276"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 1; pale grey canvas and near-neutral seed)",
+      "ink": "exact source colour (chip 2)",
+      "accent": "exact source colour (chip 3)"
+    },
+    "semantic_plan": {
+      "interaction": "cocoa",
+      "selection": "cocoa ring (5.00:1 on the grey)",
+      "running": "hot pink",
+      "accent_means": "live work: running and the one primary action (Send)",
+      "danger": "a derived brick / orange-red, never next to the pink"
+    },
+    "role_rationale": "Keeps the poster's order: grey field, cocoa figure, pink spark. Cocoa carries interaction at 6.91:1 on white, and pink is rationed to what is live.",
+    "character": "Milk chocolate and bubblegum on a cool grey card: sweet, but calm until something is running.",
+    "ui_risks": [
+      "hot pink is ΔE 8.6 from signal red (h8): danger must move to a brick or orange-red and the two must never share a region",
+      "cocoa is low-chroma (C0.047): links and selection can read as brown body text",
+      "the grey ground is cool (h146) while cocoa and pink are warm: tinted neutrals must pick a side",
+      "pale grey is 1.38:1 against white: surfaces need a derived lighter paper"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "near B (pink as the loud colour on a pale ground), but pink is rationed and interaction is cocoa",
+    "checks": {
+      "oklch": {
+        "ground": "L0.89 C0.005 h146",
+        "ink": "L0.47 C0.047 h45",
+        "accent": "L0.63 C0.176 h8"
+      },
+      "contrast": {
+        "ink_on_ground": 5,
+        "accent_on_ground": 2.72,
+        "accent_on_ink": 1.83,
+        "ink_on_white": 6.91,
+        "ink_on_black": 3.04
+      },
+      "accent_vs_signal_red": {
+        "dE": 8.6,
+        "hue_gap": 23,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 21.6
+    }
+  },
+  {
+    "id": "K9",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdwI_GkSwTZ",
+      "how": "chips"
+    },
+    "region": "pop",
+    "name": "Riso Ultramarine",
+    "swatches": [
+      "#F5EACF",
+      "#1708E3",
+      "#FF7543"
+    ],
+    "roles": {
+      "ground": "#F5EACF",
+      "ink": "#1708E3",
+      "accent": "#FF7543"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 1; warm paper seed h88)",
+      "ink": "exact source colour (chip 2)",
+      "accent": "exact source colour (chip 3)"
+    },
+    "semantic_plan": {
+      "interaction": "ultramarine",
+      "selection": "ultramarine ring (8.05:1 on cream)",
+      "running": "ultramarine or neutral (open gene)",
+      "accent_means": "failure (orange h40 is ΔE 8.5 from signal red, so it becomes danger)",
+      "danger": "the accent"
+    },
+    "role_rationale": "Keeps the creator's order exactly: cream paper, ultramarine ink, orange spark. The orange is close to red, so it is spent on failure and interaction comes from the ink.",
+    "character": "A two-colour risograph print: electric ultramarine and fluoro orange on cream paper.",
+    "ui_risks": [
+      "accent is orange-red (h40, ΔE 8.5 from signal red): collides with failure, planned as danger; orange failure also crowds warning amber, so approval must go ochre-yellow",
+      "ultramarine is 2.18:1 on black: dark theme needs a much lighter derived blue, and the electric quality may not survive",
+      "ultramarine (C0.28) beside orange vibrates (chromostereopsis: saturated blue and red-orange seem to sit at different depths)",
+      "orange is 2.23:1 on cream: failure text needs a derived darker orange-red"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "near C (saturated blue interaction on a light ground), more electric, on warm paper",
+    "checks": {
+      "oklch": {
+        "ground": "L0.94 C0.037 h88",
+        "ink": "L0.42 C0.281 h266",
+        "accent": "L0.72 C0.180 h40"
+      },
+      "contrast": {
+        "ink_on_ground": 8.05,
+        "accent_on_ground": 2.23,
+        "accent_on_ink": 3.61,
+        "ink_on_white": 9.63,
+        "ink_on_black": 2.18
+      },
+      "accent_vs_signal_red": {
+        "dE": 8.5,
+        "hue_gap": 9,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 52
+    }
+  },
+  {
+    "id": "K10",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdbpiL7SZV3",
+      "how": "chips"
+    },
+    "region": "pop",
+    "name": "Blaze Periwinkle",
+    "swatches": [
+      "#A1B6FA",
+      "#FB6016",
+      "#410606"
+    ],
+    "roles": {
+      "ground": "#410606",
+      "ink": "#A1B6FA",
+      "accent": "#FB6016"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 3; dark neutral seed h27)",
+      "ink": "exact source colour (chip 1)",
+      "accent": "exact source colour (chip 2)"
+    },
+    "semantic_plan": {
+      "interaction": "periwinkle",
+      "selection": "periwinkle ring (8.45:1 on maroon)",
+      "running": "neutral ink",
+      "accent_means": "failure (blaze orange is the only strong accent and is orange-red)",
+      "danger": "the accent (5.41:1 on maroon)"
+    },
+    "role_rationale": "The creator's ground chip is periwinkle, but at C0.10 it is too colourful to seed chrome and it is the only non-red chip, so it becomes the ink. Maroon seeds a warm dark ground. Blaze orange becomes failure under the red rule.",
+    "character": "A vibrating complementary pair: blaze orange against periwinkle, held on a maroon-black ground.",
+    "ui_risks": [
+      "accent is blaze orange (h41): collides with failure, planned as danger; it also crowds warning amber",
+      "the maroon seed (h27) tints every dark neutral toward red, so danger-soft backgrounds blur into chrome",
+      "periwinkle is 1.98:1 on white: light theme needs a derived deeper periwinkle",
+      "figure/ground inverts from the poster (the periwinkle field becomes the ink)",
+      "structurally a near-copy of A, so low novelty"
+    ],
+    "intended_default_theme": "dark",
+    "relation_to_gen1": "near A (periwinkle interaction, orange-red failure, dark ground; periwinkle ΔE 17.3 from A's), on a warmer maroon ground",
+    "checks": {
+      "oklch": {
+        "ground": "L0.24 C0.089 h27",
+        "ink": "L0.79 C0.100 h271",
+        "accent": "L0.68 C0.203 h41"
+      },
+      "contrast": {
+        "ink_on_ground": 8.45,
+        "accent_on_ground": 5.41,
+        "accent_on_ink": 1.56,
+        "ink_on_white": 1.98,
+        "ink_on_black": 10.59
+      },
+      "accent_vs_signal_red": {
+        "dE": 5.2,
+        "hue_gap": 10,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 29.7
+    }
+  },
+  {
+    "id": "K11",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdbpiL7SZV3",
+      "how": "chips"
+    },
+    "region": "poster",
+    "name": "Linen Burgundy",
+    "swatches": [
+      "#EBE0D9",
+      "#640A2A",
+      "#D83B36"
+    ],
+    "roles": {
+      "ground": "#EBE0D9",
+      "ink": "#640A2A",
+      "accent": "#D83B36"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 1; warm linen paper seed h55)",
+      "ink": "exact source colour (chip 2)",
+      "accent": "exact source colour (chip 3)"
+    },
+    "semantic_plan": {
+      "interaction": "burgundy",
+      "selection": "burgundy ring (10.01:1 on linen)",
+      "running": "neutral ink",
+      "accent_means": "failure only (red h27)",
+      "danger": "the accent"
+    },
+    "role_rationale": "Keeps the creator's order: linen paper, burgundy ink, red spark. Red is spent on failure; burgundy carries interaction.",
+    "character": "A wine label: linen stock, burgundy script and a single red seal.",
+    "ui_risks": [
+      "accent is red (h27): failure only, no positive signal",
+      "burgundy ink (h7) and danger red share a hue family: 'selected' and 'failed' both read red, separated only by lightness (ΔE 27.3)",
+      "burgundy is 1.62:1 on black: dark theme needs a derived rose ink",
+      "the warm linen ground is close to B's paper"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "near D (ink-led editorial chrome, red for failure only) on B-like warm paper",
+    "checks": {
+      "oklch": {
+        "ground": "L0.91 C0.015 h55",
+        "ink": "L0.33 C0.122 h7",
+        "accent": "L0.59 C0.195 h27"
+      },
+      "contrast": {
+        "ink_on_ground": 10.01,
+        "accent_on_ground": 3.52,
+        "accent_on_ink": 2.84,
+        "ink_on_white": 12.97,
+        "ink_on_black": 1.62
+      },
+      "accent_vs_signal_red": {
+        "dE": 6.4,
+        "hue_gap": 4,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 27.3
+    }
+  },
+  {
+    "id": "K12",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdbpiL7SZV3",
+      "how": "chips"
+    },
+    "region": "poster",
+    "name": "Mocha Amber",
+    "swatches": [
+      "#946E65",
+      "#0D4A51",
+      "#FFB500"
+    ],
+    "roles": {
+      "ground": "#946E65",
+      "ink": "#0D4A51",
+      "accent": "#FFB500"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 1; mocha sidebar block and warm neutral seed h34)",
+      "ink": "exact source colour (chip 2)",
+      "accent": "exact source colour (chip 3)"
+    },
+    "semantic_plan": {
+      "interaction": "deep teal",
+      "selection": "deep teal ring (9.93:1 on white)",
+      "running": "neutral ink",
+      "accent_means": "'needs you': amber becomes the approval (warning) signal, the one thing that asks for the user",
+      "danger": "a derived red, kept away from mocha"
+    },
+    "role_rationale": "Keeps mocha as the ground block (D's olive pattern), deep teal as the ink, and amber as the rationed spark. Amber already is the warning hue, so rather than fight it the plan makes amber mean 'Relayer needs your decision'.",
+    "character": "A 1970s coffee-house: mocha walls, deep teal trim and one amber lamp.",
+    "ui_risks": [
+      "accent is amber (h79): it is the warning hue, so it can only mean approval, not a new meaning",
+      "mocha is mid-tone (L0.57): a weak neutral in both modes; as a block it needs dark text (4.68:1) and white fails (4.49:1)",
+      "deep teal is 2.12:1 on black: dark theme needs a derived lighter teal",
+      "teal ring on mocha is 2.21:1: the ring cannot sit on a mocha surface",
+      "amber is 1.77:1 on white: fill-only in light"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "near D (earthy block ground, dark ink) with a C-like yellow rationed signal",
+    "checks": {
+      "oklch": {
+        "ground": "L0.57 C0.051 h34",
+        "ink": "L0.38 C0.059 h207",
+        "accent": "L0.82 C0.171 h79"
+      },
+      "contrast": {
+        "ink_on_ground": 2.21,
+        "accent_on_ground": 2.54,
+        "accent_on_ink": 5.61,
+        "ink_on_white": 9.93,
+        "ink_on_black": 2.12
+      },
+      "accent_vs_signal_red": {
+        "dE": 23.8,
+        "hue_gap": 48,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 49.4
+    }
+  },
+  {
+    "id": "K13",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdbpiL7SZV3",
+      "how": "chips"
+    },
+    "region": "poster",
+    "name": "Butter Lagoon",
+    "swatches": [
+      "#EED778",
+      "#02C7AA",
+      "#2F4A51"
+    ],
+    "roles": {
+      "ground": "#2F4A51",
+      "ink": "#EED778",
+      "accent": "#02C7AA"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 3; slate-teal poster canvas and dark neutral seed h216)",
+      "ink": "exact source colour (chip 1)",
+      "accent": "exact source colour (chip 2)"
+    },
+    "semantic_plan": {
+      "interaction": "butter",
+      "selection": "butter ring (6.59:1 on slate)",
+      "running": "neutral ink",
+      "accent_means": "accepted (turquoise is the positive signal, like B's lime)",
+      "danger": "a derived red"
+    },
+    "role_rationale": "Inverted from the creator's order: on a butter ground turquoise is only 1.50:1, while on the slate both butter (6.59:1) and turquoise (4.39:1) work. Slate becomes the A-style poster canvas, butter the ink, turquoise the rationed 'accepted' signal.",
+    "character": "A tropical lagoon at dusk: butter-yellow light and turquoise water over slate.",
+    "ui_risks": [
+      "figure/ground inverts from the poster (butter field becomes the ink)",
+      "butter ink (h96) is near warning amber: approval must move toward orange",
+      "turquoise (h177) as 'accepted' sits between success green and the cyan F2 Code family: families must avoid cyan-green",
+      "turquoise is 2.15:1 on white: light theme needs a derived deeper turquoise",
+      "slate is mid-dark (L0.39): dark chrome needs a derived darker slate"
+    ],
+    "intended_default_theme": "dark",
+    "relation_to_gen1": "near A (tinted dark poster canvas, light ink) with B's 'accepted' gene in turquoise",
+    "checks": {
+      "oklch": {
+        "ground": "L0.39 C0.035 h216",
+        "ink": "L0.88 C0.118 h96",
+        "accent": "L0.74 C0.137 h177"
+      },
+      "contrast": {
+        "ink_on_ground": 6.59,
+        "accent_on_ground": 4.39,
+        "accent_on_ink": 1.5,
+        "ink_on_white": 1.44,
+        "ink_on_black": 14.63
+      },
+      "accent_vs_signal_red": {
+        "dE": 35,
+        "hue_gap": 146,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 21.6
+    }
+  },
+  {
+    "id": "K14",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdrIvMmS2jA",
+      "how": "chips"
+    },
+    "region": "poster",
+    "name": "Lilac Ember",
+    "swatches": [
+      "#B89AFE",
+      "#8D2222",
+      "#E68F2F"
+    ],
+    "roles": {
+      "ground": "#B89AFE",
+      "ink": "#8D2222",
+      "accent": "#E68F2F"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 1; lilac hue seed h297 (and the dark-theme interaction ring))",
+      "ink": "exact source colour (chip 2)",
+      "accent": "exact source colour (chip 3)"
+    },
+    "semantic_plan": {
+      "interaction": "lavender (the ground chip), because the ink is red",
+      "selection": "lavender ring (9.09:1 on black)",
+      "running": "neutral ink",
+      "accent_means": "approval (tangerine h63 sits on the warning hue)",
+      "danger": "the oxblood ink (red), lightened for dark"
+    },
+    "role_rationale": "Keeps the creator's order, but both hot chips land on existing states: oxblood is red, so the print ink becomes failure and interaction moves to lavender; tangerine is on the warning hue, so it becomes approval.",
+    "character": "Embers on a lilac dusk: soft violet with a dark red and a tangerine glow.",
+    "ui_risks": [
+      "ink is oxblood red: primary ink would read as failure, so it is planned as danger and interaction moves to the ground's lavender",
+      "tangerine (h63) is on the warning hue: it can only mean 'needs approval'",
+      "both hot chips are used up by existing states: no new rationed signal",
+      "lavender as a canvas is too colourful (C0.14) for six family colours; tangerine on lavender is 1.09:1",
+      "oxblood is 2.38:1 on black: dark failure needs a derived lighter red"
+    ],
+    "intended_default_theme": "dark",
+    "relation_to_gen1": "near A (violet interaction, red failure, dark default), with an amber approval signal",
+    "checks": {
+      "oklch": {
+        "ground": "L0.75 C0.143 h297",
+        "ink": "L0.43 C0.143 h26",
+        "accent": "L0.73 C0.148 h63"
+      },
+      "contrast": {
+        "ink_on_ground": 3.81,
+        "accent_on_ground": 1.09,
+        "accent_on_ink": 3.5,
+        "ink_on_white": 8.81,
+        "ink_on_black": 2.38
+      },
+      "accent_vs_signal_red": {
+        "dE": 14.3,
+        "hue_gap": 33,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 31.2
+    }
+  },
+  {
+    "id": "K15",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdrIvMmS2jA",
+      "how": "chips"
+    },
+    "region": "poster",
+    "name": "Caramel Sky",
+    "swatches": [
+      "#A06737",
+      "#86CAFC",
+      "#F5ECD9"
+    ],
+    "roles": {
+      "ground": "#F5ECD9",
+      "ink": "#A06737",
+      "accent": "#86CAFC"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 3; cream paper seed h86)",
+      "ink": "exact source colour (chip 1)",
+      "accent": "exact source colour (chip 2)"
+    },
+    "semantic_plan": {
+      "interaction": "caramel",
+      "selection": "caramel ring (3.98:1 on cream)",
+      "running": "neutral ink",
+      "accent_means": "a sky-blue highlighter fill behind 'not yet accepted' work (C's yellow gene in blue), fill-only on light",
+      "danger": "a derived red"
+    },
+    "role_rationale": "The creator's ground chip is caramel, but a mid brown (L0.57) makes a muddy chrome, so cream seeds the paper and caramel becomes the ink. Sky is the only cool chip and becomes a highlighter-style signal.",
+    "character": "A bakery window on a clear morning: caramel, cream and one patch of sky.",
+    "ui_risks": [
+      "no strong accent: sky is 1.51:1 on cream, so it only works as a fill carrying ink text",
+      "caramel ink (h59) is on the orange/warning band: approval must move and links look like warnings",
+      "caramel ring 3.98:1 on cream, but text-grade links need a derived darker caramel",
+      "low energy overall: may read as 'another beige app'",
+      "figure/ground inverts from the poster"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "near D (earthy tones plus a pale cool blue, little chrome accent)",
+    "checks": {
+      "oklch": {
+        "ground": "L0.95 C0.027 h86",
+        "ink": "L0.57 C0.097 h59",
+        "accent": "L0.81 C0.099 h241"
+      },
+      "contrast": {
+        "ink_on_ground": 3.98,
+        "accent_on_ground": 1.51,
+        "accent_on_ink": 2.64,
+        "ink_on_white": 4.68,
+        "ink_on_black": 4.49
+      },
+      "accent_vs_signal_red": {
+        "dE": 34.5,
+        "hue_gap": 149,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 31.5
+    }
+  },
+  {
+    "id": "K16",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DdrIvMmS2jA",
+      "how": "chips"
+    },
+    "region": "pop",
+    "name": "Lemon Midnight",
+    "swatches": [
+      "#EBE201",
+      "#C1D8EE",
+      "#020125"
+    ],
+    "roles": {
+      "ground": "#020125",
+      "ink": "#C1D8EE",
+      "accent": "#EBE201"
+    },
+    "role_origin": {
+      "ground": "exact source colour (chip 3; navy-black ground and neutral seed h270)",
+      "ink": "exact source colour (chip 2)",
+      "accent": "exact source colour (chip 1)"
+    },
+    "semantic_plan": {
+      "interaction": "mist blue",
+      "selection": "mist ring (13.86:1 on navy)",
+      "running": "neutral ink",
+      "accent_means": "work not yet accepted (C's highlighter gene)",
+      "danger": "a derived red"
+    },
+    "role_rationale": "Inverted from the creator's order: the lemon field is too bright to live under chrome, while navy gives mist 13.86:1 and lemon 14.91:1. Mist becomes the ink, lemon the rationed signal.",
+    "character": "A lemon moon over a navy night, with mist-blue type.",
+    "ui_risks": [
+      "lemon (h107) is about 30° from warning amber: approval must go orange",
+      "mist ink is low-chroma (C0.039): selection vs white text is carried by a faint blue tint, as with D's ice (mist is ΔE 4.2 from D's ice)",
+      "mist is 1.47:1 on white: light theme needs a derived navy-blue ink",
+      "lemon is 1.36:1 on white: fill-only in light",
+      "the navy seed makes dark neutrals strongly blue",
+      "lemon is ΔE 7.5 from C's yellow: reuses C's signal more than it adds"
+    ],
+    "intended_default_theme": "dark",
+    "relation_to_gen1": "near D (pale cool ink on near-black) with C's yellow signal",
+    "checks": {
+      "oklch": {
+        "ground": "L0.13 C0.078 h270",
+        "ink": "L0.87 C0.039 h247",
+        "accent": "L0.89 C0.191 h107"
+      },
+      "contrast": {
+        "ink_on_ground": 13.86,
+        "accent_on_ground": 14.91,
+        "accent_on_ink": 1.08,
+        "ink_on_white": 1.47,
+        "ink_on_black": 14.32
+      },
+      "accent_vs_signal_red": {
+        "dE": 34.9,
+        "hue_gap": 76,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 22.3
+    }
+  },
+  {
+    "id": "K17",
+    "source": {
+      "account": "kanishyamo",
+      "post": "reel/DVOW2mtkrep",
+      "how": "kmeans"
+    },
+    "region": "pop",
+    "name": "Pop Kelly",
+    "swatches": [
+      "#F97AAC",
+      "#0F9A2F",
+      "#17171B",
+      "#E2E2B4",
+      "#2665D7",
+      "#E0E338"
+    ],
+    "roles": {
+      "ground": "#17171B",
+      "ink": "#F97AAC",
+      "accent": "#0F9A2F",
+      "support": [
+        "#E2E2B4",
+        "#2665D7",
+        "#E0E338"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (main colour 3; near-black ground seed)",
+      "ink": "exact source colour (main colour 1)",
+      "accent": "exact source colour (main colour 2)",
+      "support": "exact support colours: butter cream = light-theme paper; cobalt and acid yellow kept for content (chart series), not chrome"
+    },
+    "semantic_plan": {
+      "interaction": "pop pink",
+      "selection": "pink ring (8.41:1 on black)",
+      "running": "pink or neutral (open gene)",
+      "accent_means": "accepted (kelly green is the success hue, so it becomes the one positive signal)",
+      "danger": "a derived orange-red, never next to the pink"
+    },
+    "role_rationale": "The main pair is pink and green on an ink ground, so ink seeds the dark ground, pink carries interaction and green is rationed to acceptance, where green already means success. Cream, cobalt and acid yellow stay as support for light paper and authored charts.",
+    "character": "A gig poster: pop pink and kelly green punched out of black.",
+    "ui_risks": [
+      "kelly green is the success hue: fine as 'accepted', but no node family may be green",
+      "pink ink (h357) is ΔE 9.3 from B's rose and about 34° from failure red: danger must be clearly orange-red and never adjacent",
+      "pink is 2.50:1 on white: light theme needs a derived deeper pink",
+      "six source colours invite spending them all: chrome must ration to pink plus green",
+      "pink vs green differ mostly in hue for red-green colour-blind viewers (luminance L0.74 vs 0.60 helps), so they need glyphs"
+    ],
+    "intended_default_theme": "dark",
+    "relation_to_gen1": "near B (pink interaction plus a green-yellow 'accepted' stamp), inverted onto black",
+    "checks": {
+      "oklch": {
+        "ground": "L0.21 C0.008 h286",
+        "ink": "L0.74 C0.163 h357",
+        "accent": "L0.60 C0.182 h145"
+      },
+      "contrast": {
+        "ink_on_ground": 7.16,
+        "accent_on_ground": 4.84,
+        "accent_on_ink": 1.48,
+        "ink_on_white": 2.5,
+        "ink_on_black": 8.41
+      },
+      "accent_vs_signal_red": {
+        "dE": 33.7,
+        "hue_gap": 115,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 36.1
+    }
+  },
+  {
+    "id": "M1",
+    "source": {
+      "account": "meghatheeng",
+      "post": "reel/DZSQUT5za6x",
+      "how": "kmeans"
+    },
+    "region": "photographic",
+    "name": "Roadside Fog",
+    "swatches": [
+      "#ABB0B3",
+      "#ECEBEA",
+      "#918C81",
+      "#493C3C",
+      "#276459",
+      "#855E58",
+      "#1F191D",
+      "#106451",
+      "#8EA8CF",
+      "#A6B192",
+      "#92595D"
+    ],
+    "roles": {
+      "ground": "#ECEBEA",
+      "ink": "#276459",
+      "accent": "#6087C2",
+      "support": [
+        "#1F191D",
+        "#ABB0B3",
+        "#A6B192"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (whole-video cluster, 16%)",
+      "ink": "exact source colour (whole-video cluster, 11%)",
+      "accent": "derived from #8EA8CF: chroma lifted 0.064→0.1 (hue 258.3 kept, L 0.726→0.62; mark use); 3.07:1 on the default ground; ΔE 11.2 from the source",
+      "support": "exact clusters: #1F191D dark-theme ground, #ABB0B3 fog mid-grey, #A6B192 sage"
+    },
+    "semantic_plan": {
+      "interaction": "forest-teal",
+      "selection": "forest-teal ring (5.78:1 on fog)",
+      "running": "neutral ink",
+      "accent_means": "a quiet sky-blue signal (e.g. attached / new), chroma 0.10",
+      "danger": "a derived red"
+    },
+    "role_rationale": "Fog-white ground, the film's forest-teal as ink, and the cornflower sky as the accent. The most chromatic cluster (forest #106451, C0.082) shares the ink's hue and the next (mauve #92595D, C0.075, h15) sits on the failure hue, so the accent comes from the cornflower sky.",
+    "character": "An overcast road trip: fog greys, a pine-green ink and one patch of sky.",
+    "ui_risks": [
+      "forest-teal ink (h179) is about 30° from success green: 'selected' may read as 'accepted'",
+      "the accent needed L 0.73→0.62 as well as the chroma lift to reach 3:1 on fog (ΔE 11.2 from the source)",
+      "cool fog greys sit next to warm brown clusters: tinted neutrals must choose one",
+      "chrome will be much quieter than the six family colours, which may look pasted on"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "near C (cool pale ground, legibility-first) but with a green-teal ink",
+    "checks": {
+      "oklch": {
+        "ground": "L0.94 C0.002 h68",
+        "ink": "L0.46 C0.065 h179",
+        "accent": "L0.62 C0.100 h258"
+      },
+      "contrast": {
+        "ink_on_ground": 5.78,
+        "accent_on_ground": 3.07,
+        "accent_on_ink": 1.88,
+        "ink_on_white": 6.88,
+        "ink_on_black": 3.05
+      },
+      "accent_vs_signal_red": {
+        "dE": 29.2,
+        "hue_gap": 132,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 19.3
+    }
+  },
+  {
+    "id": "M2",
+    "source": {
+      "account": "meghatheeng",
+      "post": "reel/Ddt3eIdTu8W",
+      "how": "kmeans"
+    },
+    "region": "photographic",
+    "name": "Vanity Blush",
+    "swatches": [
+      "#574D48",
+      "#181216",
+      "#363233",
+      "#A3897C",
+      "#7E6E66",
+      "#D39886",
+      "#E3B7A9"
+    ],
+    "roles": {
+      "ground": "#181216",
+      "ink": "#A3897C",
+      "accent": "#DF927A",
+      "support": [
+        "#363233",
+        "#E3B7A9"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (whole-video cluster (cocoa black))",
+      "ink": "exact source colour (whole-video cluster (latte))",
+      "accent": "derived from #D39886: chroma lifted 0.076→0.1 (hue 37.7 kept; mark use); 7.5:1 on the default ground; ΔE 2.4 from the source",
+      "support": "exact clusters: #363233 raised surface, #E3B7A9 blush as the only light seed"
+    },
+    "semantic_plan": {
+      "interaction": "latte",
+      "selection": "latte ring (5.65:1)",
+      "running": "neutral ink",
+      "accent_means": "the one warm glow: running / live work",
+      "danger": "a derived red, kept clearly more saturated than the blush"
+    },
+    "role_rationale": "A night palette: cocoa-black ground, latte as the ink, blush lifted just to C0.10 as the glow. Grounds come from the neutral clusters; blush is the only chromatic cluster.",
+    "character": "2 am at the vanity mirror: cocoa black with one warm blush of light.",
+    "ui_risks": [
+      "accent blush (h38) is ΔE 14.3 from signal red and 7° of hue: a failure red must be much more saturated to stay distinct",
+      "latte ink is low-chroma (C0.037): selection reads as muted text",
+      "no cool colour anywhere: families must bring all the hue contrast",
+      "no light neutral cluster: the light theme would be seeded from pinkish blush #E3B7A9",
+      "near-duplicate of M7"
+    ],
+    "intended_default_theme": "dark",
+    "relation_to_gen1": "new warm-dark region; nearest A (dark-first, neutral-ink running)",
+    "checks": {
+      "oklch": {
+        "ground": "L0.19 C0.012 h339",
+        "ink": "L0.65 C0.037 h48",
+        "accent": "L0.73 C0.100 h38"
+      },
+      "contrast": {
+        "ink_on_ground": 5.65,
+        "accent_on_ground": 7.5,
+        "accent_on_ink": 1.33,
+        "ink_on_white": 3.27,
+        "ink_on_black": 6.43
+      },
+      "accent_vs_signal_red": {
+        "dE": 14.3,
+        "hue_gap": 7,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 10.4
+    }
+  },
+  {
+    "id": "M3",
+    "source": {
+      "account": "meghatheeng",
+      "post": "reel/DdrQ8KsTbCh",
+      "how": "kmeans"
+    },
+    "region": "photographic",
+    "name": "Olive Chilli",
+    "swatches": [
+      "#C3AE98",
+      "#E6DCC9",
+      "#4F4737",
+      "#957966",
+      "#3F251F",
+      "#C03636",
+      "#19110F",
+      "#464A32"
+    ],
+    "roles": {
+      "ground": "#E6DCC9",
+      "ink": "#464A32",
+      "accent": "#C03636",
+      "support": [
+        "#19110F",
+        "#C3AE98"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (whole-video cluster (sand))",
+      "ink": "exact source colour (segment colour, olive drab, 56% of a scene)",
+      "accent": "exact source colour (whole-video cluster, C0.174; no lift needed)",
+      "support": "exact clusters: #19110F dark-theme ground, #C3AE98 mid sand"
+    },
+    "semantic_plan": {
+      "interaction": "olive drab",
+      "selection": "olive ring (6.76:1 on sand)",
+      "running": "neutral ink",
+      "accent_means": "failure only (chilli is red, so it becomes danger)",
+      "danger": "the accent (4.04:1 on sand)"
+    },
+    "role_rationale": "Sand ground, olive-drab ink (the characterful segment colour), chilli as the one strong colour, which, being red, is spent on failure.",
+    "character": "Army-surplus olive and sand with a chilli-red sneaker stripe.",
+    "ui_risks": [
+      "accent is chilli red (h25): collides with failure, planned as danger, so there is no positive signal",
+      "olive ink is low-chroma (C0.039): selection and links read close to body text",
+      "olive drab is on the same hue family as D's olive: little new ground",
+      "chilli is 3.39:1 on the dark ground: dark-theme failure marks pass, but failure text needs a lighter derived red"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "near D (olive plus red failure only), lighter and sandier",
+    "checks": {
+      "oklch": {
+        "ground": "L0.90 C0.028 h84",
+        "ink": "L0.40 C0.039 h116",
+        "accent": "L0.54 C0.175 h25"
+      },
+      "contrast": {
+        "ink_on_ground": 6.76,
+        "accent_on_ground": 4.04,
+        "accent_on_ink": 1.67,
+        "ink_on_white": 9.19,
+        "ink_on_black": 2.29
+      },
+      "accent_vs_signal_red": {
+        "dE": 11.4,
+        "hue_gap": 5,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 23
+    }
+  },
+  {
+    "id": "M4",
+    "source": {
+      "account": "meghatheeng",
+      "post": "reel/DdosdaCTVOP",
+      "how": "kmeans"
+    },
+    "region": "photographic",
+    "name": "Oat Terracotta",
+    "swatches": [
+      "#BFB2A2",
+      "#AD8B72",
+      "#A46244",
+      "#834432",
+      "#46302F",
+      "#E3D8CA",
+      "#1D1417"
+    ],
+    "roles": {
+      "ground": "#E3D8CA",
+      "ink": "#834432",
+      "accent": "#A66142",
+      "support": [
+        "#1D1417",
+        "#BFB2A2"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (whole-video cluster (oat))",
+      "ink": "exact source colour (whole-video cluster (rust), C0.09)",
+      "accent": "derived from #A46244: chroma lifted 0.096→0.1 (hue 44.8 kept; mark use); 3.39:1 on the default ground; ΔE 0.4 from the source",
+      "support": "exact clusters: #1D1417 dark-theme ground, #BFB2A2 mid oat"
+    },
+    "semantic_plan": {
+      "interaction": "rust",
+      "selection": "rust ring (5.26:1 on oat)",
+      "running": "neutral ink",
+      "accent_means": "terracotta highlight (live work)",
+      "danger": "a derived red, which will be hard to separate"
+    },
+    "role_rationale": "Oat ground, rust as the characterful mid-dark ink, terracotta (the most chromatic cluster) as the accent with a tiny chroma lift.",
+    "character": "Terracotta pots on oat linen: warm, earthy, sun-baked.",
+    "ui_risks": [
+      "the whole palette sits in the red-orange band (h37–45): ink and accent both read like failure",
+      "ink vs accent is only ΔE 10.4 and 8° of hue: effectively one colour at two lightnesses",
+      "accent is ΔE 8.9 from light warning amber",
+      "weak as a standalone UI palette; better as a warm neutral donor"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "new warm-earth region; nearest B (warm paper)",
+    "checks": {
+      "oklch": {
+        "ground": "L0.89 C0.022 h74",
+        "ink": "L0.46 C0.091 h37",
+        "accent": "L0.56 C0.100 h44"
+      },
+      "contrast": {
+        "ink_on_ground": 5.26,
+        "accent_on_ground": 3.39,
+        "accent_on_ink": 1.55,
+        "ink_on_white": 7.4,
+        "ink_on_black": 2.84
+      },
+      "accent_vs_signal_red": {
+        "dE": 14.5,
+        "hue_gap": 14,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 10.4
+    }
+  },
+  {
+    "id": "M5",
+    "source": {
+      "account": "meghatheeng",
+      "post": "reel/Ddl-7mUTXmB",
+      "how": "kmeans"
+    },
+    "region": "photographic",
+    "name": "Tungsten Kitchen",
+    "swatches": [
+      "#191418",
+      "#382F30",
+      "#877364",
+      "#A8907C",
+      "#60524A",
+      "#C8AF98",
+      "#E8D4BF"
+    ],
+    "roles": {
+      "ground": "#191418",
+      "ink": "#A8907C",
+      "accent": "#E1A76E",
+      "support": [
+        "#382F30",
+        "#60524A",
+        "#877364",
+        "#C8AF98",
+        "#E8D4BF"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (whole-video cluster, darkest)",
+      "ink": "exact source colour (whole-video cluster)",
+      "accent": "derived from #C8AF98: chroma lifted 0.043→0.1 (hue 64.7 kept; mark use); 8.62:1 on the default ground; ΔE 5.7 from the source",
+      "support": "the exact warm-brown ramp, darkest to lightest: a ready-made dark-mode neutral ramp"
+    },
+    "semantic_plan": {
+      "interaction": "warm taupe",
+      "selection": "taupe ring (6.02:1)",
+      "running": "neutral ink",
+      "accent_means": "the tungsten glow (needs a meaning; closest natural fit is approval)",
+      "danger": "a derived red"
+    },
+    "role_rationale": "The seven clusters form a clean warm-brown ramp, so this is a neutral-ramp donor more than a three-role palette. Ink is the taupe mid step; the accent had to be made by lifting the most chromatic step (C0.043) to C0.10.",
+    "character": "Cooking under a tungsten bulb: a seamless ramp from charcoal-brown to warm cream.",
+    "ui_risks": [
+      "no real accent: the accent needed the biggest relative chroma lift (0.043→0.10)",
+      "the lifted accent (h65) is ΔE 10.3 from dark warning amber and 10° of hue: it collides with approval",
+      "ink is low-chroma (C0.041): selection reads as muted text",
+      "best used as the dark neutral ramp for another warm palette, not as a candidate on its own"
+    ],
+    "intended_default_theme": "dark",
+    "relation_to_gen1": "new warm-dark neutral ramp; could replace A's or D's dark neutrals",
+    "checks": {
+      "oklch": {
+        "ground": "L0.20 C0.011 h333",
+        "ink": "L0.67 C0.041 h62",
+        "accent": "L0.77 C0.100 h65"
+      },
+      "contrast": {
+        "ink_on_ground": 6.02,
+        "accent_on_ground": 8.62,
+        "accent_on_ink": 1.43,
+        "ink_on_white": 3.02,
+        "ink_on_black": 6.95
+      },
+      "accent_vs_signal_red": {
+        "dE": 18.8,
+        "hue_gap": 34,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 11.7
+    }
+  },
+  {
+    "id": "M6",
+    "source": {
+      "account": "meghatheeng",
+      "post": "reel/DdY3Pb9Tx_6",
+      "how": "kmeans"
+    },
+    "region": "photographic",
+    "name": "Bone Umber",
+    "swatches": [
+      "#E2D6CB",
+      "#C4B0A1",
+      "#5F3D31",
+      "#AB8775",
+      "#1B1518",
+      "#875F52",
+      "#382929"
+    ],
+    "roles": {
+      "ground": "#E2D6CB",
+      "ink": "#5F3D31",
+      "accent": "#9A543D",
+      "support": [
+        "#1B1518",
+        "#C4B0A1"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (whole-video cluster (bone))",
+      "ink": "exact source colour (whole-video cluster (umber))",
+      "accent": "derived from #875F52: chroma lifted 0.056→0.1 (hue 38.8 kept; mark use); 3.97:1 on the default ground; ΔE 4.3 from the source",
+      "support": "exact clusters: #1B1518 dark-theme ground, #C4B0A1 fawn"
+    },
+    "semantic_plan": {
+      "interaction": "umber",
+      "selection": "umber ring (6.69:1 on bone)",
+      "running": "neutral ink",
+      "accent_means": "a rust highlight",
+      "danger": "a derived red"
+    },
+    "role_rationale": "Bone ground, umber ink, and the most chromatic cluster lifted to C0.10 as the accent.",
+    "character": "Bone, fawn and umber: an old leather-bound book.",
+    "ui_risks": [
+      "monochrome umber: every cluster sits at h39–48, so ink and accent share a hue",
+      "the lifted accent (h39) is ΔE 17.0 from signal red at 8° of hue: reads as a muted failure",
+      "umber ink is low-chroma (C0.052)",
+      "near-duplicate of M4 and M10"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "new warm-earth region; nearest B (warm paper)",
+    "checks": {
+      "oklch": {
+        "ground": "L0.88 C0.020 h65",
+        "ink": "L0.40 C0.052 h40",
+        "accent": "L0.52 C0.100 h39"
+      },
+      "contrast": {
+        "ink_on_ground": 6.69,
+        "accent_on_ground": 3.97,
+        "accent_on_ink": 1.69,
+        "ink_on_white": 9.55,
+        "ink_on_black": 2.2
+      },
+      "accent_vs_signal_red": {
+        "dE": 17,
+        "hue_gap": 8,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 13.6
+    }
+  },
+  {
+    "id": "M7",
+    "source": {
+      "account": "meghatheeng",
+      "post": "reel/DdWhuzSTxx7",
+      "how": "kmeans"
+    },
+    "region": "photographic",
+    "name": "Perfume Greige",
+    "swatches": [
+      "#554E47",
+      "#151113",
+      "#353431",
+      "#A58E7D",
+      "#837166",
+      "#DAA590",
+      "#E7D0C2"
+    ],
+    "roles": {
+      "ground": "#151113",
+      "ink": "#A58E7D",
+      "accent": "#E99E80",
+      "support": [
+        "#353431",
+        "#554E47",
+        "#E7D0C2"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (whole-video cluster (near-black))",
+      "ink": "exact source colour (whole-video cluster (greige))",
+      "accent": "derived from #DAA590: chroma lifted 0.07→0.099 (hue 42.6 kept; mark use); 8.62:1 on the default ground; ΔE 3.0 from the source",
+      "support": "exact clusters: #353431 and #554E47 charcoal-greige surfaces, #E7D0C2 light seed"
+    },
+    "semantic_plan": {
+      "interaction": "greige",
+      "selection": "greige ring (6.03:1)",
+      "running": "neutral ink",
+      "accent_means": "a skin-blush glow (live work)",
+      "danger": "a derived red"
+    },
+    "role_rationale": "Charcoal greige ground, greige ink, skin blush lifted just to C0.10. Unlike M2 its mid surfaces are neutral charcoal (h67–92) rather than cocoa.",
+    "character": "A perfume ad at dusk: charcoal greige and the blush of skin.",
+    "ui_risks": [
+      "near-duplicate of M2 (same ground, ink and blush roles)",
+      "the accent (h43) is ΔE 16.7 from signal red at 12° of hue: failure must be much more saturated",
+      "greige ink is low-chroma (C0.037): selection reads as muted text",
+      "no cool colour"
+    ],
+    "intended_default_theme": "dark",
+    "relation_to_gen1": "new warm-dark region; nearest A (dark-first, neutral running)",
+    "checks": {
+      "oklch": {
+        "ground": "L0.18 C0.008 h346",
+        "ink": "L0.66 C0.037 h59",
+        "accent": "L0.77 C0.099 h43"
+      },
+      "contrast": {
+        "ink_on_ground": 6.03,
+        "accent_on_ground": 8.62,
+        "accent_on_ink": 1.43,
+        "ink_on_white": 3.1,
+        "ink_on_black": 6.77
+      },
+      "accent_vs_signal_red": {
+        "dE": 16.7,
+        "hue_gap": 12,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 12.2
+    }
+  },
+  {
+    "id": "M8",
+    "source": {
+      "account": "meghatheeng",
+      "post": "reel/DdRg_mMzOtL",
+      "how": "kmeans"
+    },
+    "region": "photographic",
+    "name": "Petrol Camel",
+    "swatches": [
+      "#C7A886",
+      "#5B6F70",
+      "#D5D5CF",
+      "#A48167",
+      "#211D1E",
+      "#789FB4",
+      "#444D4D",
+      "#495C61"
+    ],
+    "roles": {
+      "ground": "#D5D5CF",
+      "ink": "#495C61",
+      "accent": "#D7A366",
+      "support": [
+        "#211D1E",
+        "#789FB4",
+        "#5B6F70"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (whole-video cluster (fog))",
+      "ink": "exact source colour (recurring segment colour (petrol teal))",
+      "accent": "derived from #C7A886: chroma lifted 0.059→0.1 (hue 69.3 kept; fill use only (no lightness change)); 1.53:1 on the default ground; ΔE 4.1 from the source; a mark-grade version would need L 0.75→0.58 (#9F6D2F)",
+      "support": "exact clusters: #211D1E dark-theme ground, #789FB4 dusk blue (fallback accent), #5B6F70 petrol mid"
+    },
+    "semantic_plan": {
+      "interaction": "petrol teal",
+      "selection": "petrol ring (4.77:1 on fog)",
+      "running": "neutral ink",
+      "accent_means": "a camel highlighter fill carrying ink text (7.67:1); closest natural meaning is approval",
+      "danger": "a derived red"
+    },
+    "role_rationale": "The best-balanced photographic palette: a cool petrol ink and a warm camel accent on fog. Camel is the most chromatic cluster; it is lifted in chroma only and used as a fill, because making it mark-grade turns it ochre.",
+    "character": "A Delhi winter afternoon: fog, petrol-teal shadows and camel wool.",
+    "ui_risks": [
+      "the lifted camel (h70) is ΔE 8.4 from dark warning amber and 5° of hue: it is the warning colour unless it means approval",
+      "petrol ink is very low-chroma (C0.025): selection may read as grey",
+      "the camel fill is 1.53:1 on fog: fill-only, never a thin mark",
+      "dusk blue (h232) as a fallback accent would sit only 16° from the petrol ink"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "near C (cool grey-blue ground, blue-teal ink), much quieter, with a warm fill signal",
+    "checks": {
+      "oklch": {
+        "ground": "L0.87 C0.008 h107",
+        "ink": "L0.46 C0.025 h216",
+        "accent": "L0.75 C0.100 h70"
+      },
+      "contrast": {
+        "ink_on_ground": 4.77,
+        "accent_on_ground": 1.53,
+        "accent_on_ink": 3.12,
+        "ink_on_white": 7.03,
+        "ink_on_black": 2.99
+      },
+      "accent_vs_signal_red": {
+        "dE": 18.2,
+        "hue_gap": 39,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 31.4
+    }
+  },
+  {
+    "id": "M9",
+    "source": {
+      "account": "meghatheeng",
+      "post": "reel/DdEi0RaTXqZ",
+      "how": "kmeans"
+    },
+    "region": "photographic",
+    "name": "Powder Lime",
+    "swatches": [
+      "#D1D9E6",
+      "#000000",
+      "#C5A6AB",
+      "#A08079",
+      "#7F5853",
+      "#231D1E",
+      "#B7C247"
+    ],
+    "roles": {
+      "ground": "#D1D9E6",
+      "ink": "#7F5853",
+      "accent": "#B7C247",
+      "support": [
+        "#231D1E",
+        "#C5A6AB"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (whole-video cluster, 40% (powder blue))",
+      "ink": "exact source colour (whole-video cluster (rosewood))",
+      "accent": "exact source colour (end-card segment colour, C0.146; no chroma lift; fill-only on light (1.37:1 on powder), 10.8:1 on black)",
+      "support": "exact clusters: #231D1E dark-theme ground, #C5A6AB dusty rose"
+    },
+    "semantic_plan": {
+      "interaction": "rosewood",
+      "selection": "rosewood ring (4.32:1 on powder)",
+      "running": "neutral ink",
+      "accent_means": "accepted (B's lime gene): a fill carrying ink text",
+      "danger": "a derived red"
+    },
+    "role_rationale": "Powder-blue ground (the dominant cluster), rosewood as the characterful mid-dark ink, and the end-card lime as the one chromatic accent, which is already strong enough and needs no lift.",
+    "character": "A beauty lab: powder blue, dusty rose and a lime label.",
+    "ui_risks": [
+      "lime is fill-only on light (1.37:1 on powder); a mark-grade lime would be #788000 (L 0.78→0.57), which loses its character",
+      "rosewood ink is 4.32:1 on powder: text-grade links need a slightly darker derived rosewood",
+      "rosewood (h27) is on the failure-red hue family at low chroma: 'selected' may look muted-red",
+      "lime is ΔE 8.8 from B's lime: it reuses B's signal more than it adds"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "a B×C cross: C's powder-blue ground with B's lime 'accepted' stamp",
+    "checks": {
+      "oklch": {
+        "ground": "L0.88 C0.020 h260",
+        "ink": "L0.50 C0.053 h27",
+        "accent": "L0.78 C0.146 h114"
+      },
+      "contrast": {
+        "ink_on_ground": 4.32,
+        "accent_on_ground": 1.37,
+        "accent_on_ink": 3.16,
+        "ink_on_white": 6.13,
+        "ink_on_black": 3.42
+      },
+      "accent_vs_signal_red": {
+        "dE": 27.9,
+        "hue_gap": 83,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 32
+    }
+  },
+  {
+    "id": "M10",
+    "source": {
+      "account": "meghatheeng",
+      "post": "reel/DdB07uhzWzv",
+      "how": "kmeans"
+    },
+    "region": "photographic",
+    "name": "Chestnut Cut",
+    "swatches": [
+      "#8A7562",
+      "#A4907D",
+      "#46291B",
+      "#E3D6CB",
+      "#C7AD9D",
+      "#6B5947",
+      "#211717"
+    ],
+    "roles": {
+      "ground": "#E3D6CB",
+      "ink": "#46291B",
+      "accent": "#A26C34",
+      "support": [
+        "#211717",
+        "#A4907D"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (whole-video cluster (light))",
+      "ink": "exact source colour (whole-video cluster (chestnut), also the most chromatic cluster at C0.050)",
+      "accent": "derived from #8A7562: chroma lifted 0.038→0.1 (hue 64.1 kept; mark use); 3.12:1 on the default ground; ΔE 6.1 from the source; taken from the next most chromatic cluster because chestnut is the ink",
+      "support": "exact clusters: #211717 dark-theme ground, #A4907D mid"
+    },
+    "semantic_plan": {
+      "interaction": "chestnut",
+      "selection": "chestnut ring (9.26:1)",
+      "running": "neutral ink",
+      "accent_means": "an ochre highlight (would have to be approval)",
+      "danger": "a derived red"
+    },
+    "role_rationale": "A neutral brown ramp. Chestnut is both the most characterful and the most chromatic cluster, so it takes the ink and the accent is made from the next cluster.",
+    "character": "A barber's chair: chestnut leather and warm wood.",
+    "ui_risks": [
+      "no source accent: the accent is a lifted neutral (0.038→0.10)",
+      "the lifted accent (h64) is ΔE 5.8 from light warning amber: it is the warning colour",
+      "chestnut ink is almost --text (9.26:1): ink buttons and the focus ring look alike",
+      "near-duplicate of M5, M6 and M11"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "new warm-earth neutral ramp; nearest D (ink-led, no chrome accent)",
+    "checks": {
+      "oklch": {
+        "ground": "L0.88 C0.021 h63",
+        "ink": "L0.31 C0.050 h46",
+        "accent": "L0.58 C0.100 h64"
+      },
+      "contrast": {
+        "ink_on_ground": 9.26,
+        "accent_on_ground": 3.12,
+        "accent_on_ink": 2.97,
+        "ink_on_white": 13.18,
+        "ink_on_black": 1.59
+      },
+      "accent_vs_signal_red": {
+        "dE": 15.9,
+        "hue_gap": 34,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 26.9
+    }
+  },
+  {
+    "id": "M11",
+    "source": {
+      "account": "meghatheeng",
+      "post": "reel/Dcyb5TFTwPd",
+      "how": "kmeans"
+    },
+    "region": "photographic",
+    "name": "Toffee Supper",
+    "swatches": [
+      "#85644E",
+      "#251D1E",
+      "#553F38",
+      "#AE8866",
+      "#C2B2A2",
+      "#DCDCD3",
+      "#010001"
+    ],
+    "roles": {
+      "ground": "#251D1E",
+      "ink": "#85644E",
+      "accent": "#BC824C",
+      "support": [
+        "#010001",
+        "#553F38",
+        "#DCDCD3"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (whole-video cluster (dark))",
+      "ink": "exact source colour (whole-video cluster (toffee))",
+      "accent": "derived from #AE8866: chroma lifted 0.066→0.101 (hue 63.1 kept; mark use); 5.05:1 on the default ground; ΔE 3.4 from the source",
+      "support": "exact clusters: #010001 deepest black, #553F38 raised surface, #DCDCD3 light-theme seed"
+    },
+    "semantic_plan": {
+      "interaction": "toffee",
+      "selection": "toffee ring (3.09:1)",
+      "running": "neutral ink",
+      "accent_means": "a caramel glow (would have to be approval)",
+      "danger": "a derived red"
+    },
+    "role_rationale": "Dark supper-table ground, toffee ink, caramel (the most chromatic cluster) lifted to C0.10.",
+    "character": "Dinner back home: toffee, caramel and a dark wooden table.",
+    "ui_risks": [
+      "toffee ring is only 3.09:1 on the ground, below the 3.2:1 thin-stroke margin: selection needs a derived lighter toffee",
+      "ink and accent share a hue (h55 vs 63)",
+      "the lifted caramel (h63) is ΔE 5.1 from light warning amber: it is the warning colour",
+      "near-duplicate of M5 and M10"
+    ],
+    "intended_default_theme": "dark",
+    "relation_to_gen1": "new warm-dark region; nearest A (dark-first)",
+    "checks": {
+      "oklch": {
+        "ground": "L0.24 C0.013 h10",
+        "ink": "L0.53 C0.054 h55",
+        "accent": "L0.65 C0.101 h63"
+      },
+      "contrast": {
+        "ink_on_ground": 3.09,
+        "accent_on_ground": 5.05,
+        "accent_on_ink": 1.64,
+        "ink_on_white": 5.34,
+        "ink_on_black": 3.93
+      },
+      "accent_vs_signal_red": {
+        "dE": 13.9,
+        "hue_gap": 32,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 13.2
+    }
+  },
+  {
+    "id": "M12",
+    "source": {
+      "account": "meghatheeng",
+      "post": "p/DRr59dOCGLY",
+      "how": "kmeans"
+    },
+    "region": "photographic",
+    "name": "Parchment Chilli",
+    "swatches": [
+      "#E6DECD",
+      "#BFAB99",
+      "#967B69",
+      "#4E3F39",
+      "#C33E3C",
+      "#1E1313",
+      "#E688A4",
+      "#9D5738"
+    ],
+    "roles": {
+      "ground": "#E6DECD",
+      "ink": "#4E3F39",
+      "accent": "#E688A4",
+      "support": [
+        "#C33E3C",
+        "#1E1313",
+        "#9D5738"
+      ]
+    },
+    "role_origin": {
+      "ground": "exact source colour (carousel cluster (parchment))",
+      "ink": "exact source colour (carousel cluster (cocoa))",
+      "accent": "exact source colour (small pink accent, C0.119; no chroma lift; fill-only on light (1.86:1 on parchment); a mark-grade version would be #BC627E)",
+      "support": "exact: #C33E3C chilli = danger, #1E1313 dark-theme ground, #9D5738 terracotta (kept out of chrome)"
+    },
+    "semantic_plan": {
+      "interaction": "cocoa ink (D-style ink primary)",
+      "selection": "cocoa ring (7.49:1)",
+      "running": "neutral ink",
+      "accent_means": "a pink stamp for accepted / chosen work ('pick me')",
+      "danger": "chilli #C33E3C, the most chromatic cluster, which is red"
+    },
+    "role_rationale": "The most chromatic cluster is chilli, which is red, so it becomes failure. The next most chromatic, pink (C0.119), becomes the rationed accent. Terracotta is the more colourful mid tone, but it is ΔE 8.3 (CVD 2.2) from chilli, so the ink is the cocoa cluster instead.",
+    "character": "A love letter on parchment: cocoa ink, a pink kiss and a chilli-red seal.",
+    "ui_risks": [
+      "pink is fill-only on parchment (1.86:1)",
+      "pink (h1) and chilli failure (h25) are both warm reds: keep pink as a large fill and failure as outline plus glyph",
+      "cocoa ink is low-chroma and near --text: ink buttons vs focus ring",
+      "terracotta must stay out of chrome (ΔE 2.2 from chilli under red-green colour blindness)"
+    ],
+    "intended_default_theme": "light",
+    "relation_to_gen1": "near B (warm paper plus pink) with A/D's red-for-failure",
+    "checks": {
+      "oklch": {
+        "ground": "L0.90 C0.024 h86",
+        "ink": "L0.38 C0.023 h43",
+        "accent": "L0.73 C0.119 h1"
+      },
+      "contrast": {
+        "ink_on_ground": 7.49,
+        "accent_on_ground": 1.86,
+        "accent_on_ink": 4.02,
+        "ink_on_white": 10.03,
+        "ink_on_black": 2.09
+      },
+      "accent_vs_signal_red": {
+        "dE": 15.2,
+        "hue_gap": 29,
+        "ref": "#F54731"
+      },
+      "ink_vs_accent_dE": 36.7
+    }
+  }
+]

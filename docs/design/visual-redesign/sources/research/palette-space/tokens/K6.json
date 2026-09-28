@@ -1,0 +1,3683 @@
+{
+ "id": "K6",
+ "name": "Mustard Cellar",
+ "engine": "palette-space/engine.mjs v1",
+ "candidate": {
+  "swatches": [
+   "#D8B44D",
+   "#390F14",
+   "#8B3047"
+  ],
+  "roles": {
+   "ground": "#D8B44D",
+   "ink": "#390F14",
+   "accent": "#8B3047"
+  },
+  "semantic_plan": {
+   "interaction": "oxblood ink in light (D-style ink primary); mustard in dark (role swap on the dark ground)",
+   "selection": "berry ring (8.04:1 on white, 4.04:1 on mustard)",
+   "running": "neutral ink",
+   "accent_means": "selection and the one live highlight (berry is ΔE 22.8 from signal red, so it is not forced to be danger)",
+   "danger": "a separate bright red, kept ≥ 20° of hue and clearly lighter than the berry"
+  },
+  "intended_default_theme": "light",
+  "relation_to_gen1": "near D (an earth-tone block ground with an ink primary), warmer and with a wine accent"
+ },
+ "plan": {
+  "ground": "#D8B44D",
+  "neutralSeed": "#D8B44D",
+  "placement": "sidebar",
+  "gene": "D",
+  "channel": "tile",
+  "grid": "crosses",
+  "gridTarget": 1.33,
+  "primary": "interaction",
+  "interaction": {
+   "light": "#390F14",
+   "dark": "#D8B44D"
+  },
+  "accent": "#8B3047",
+  "accentRole": "selection",
+  "running": "neutral",
+  "selection": "accent",
+  "danger": {
+   "swatch": "#F54731"
+  },
+  "success": {
+   "derive": true
+  },
+  "warning": {
+   "derive": true,
+   "h": 70,
+   "L": {
+    "light": 0.55,
+    "dark": 0.62
+   }
+  },
+  "draft": {
+   "neutral": true,
+   "Loff": {
+    "light": -0.1,
+    "dark": -0.14
+   }
+  },
+  "familyAnchor": "ground-hue",
+  "familyAnchorWidth": 14,
+  "familySearch": {
+   "restarts": 40,
+   "randomRestarts": 200
+  },
+  "seriesCount": 5,
+  "origin": {
+   "gene": "parsed relation_to_gen1 \"near D (an earth-tone block ground with \"",
+   "placement": "parsed role_origin.ground mentions a sidebar block",
+   "interaction": "override: K6: (1) interaction role swap from overrides.json kept (oxblood primary in light, mustard in dark). (2) danger = signal red #F54731 exact, as semantic_plan.danger asks (a separate bright red >= 20 deg from berry and lighter than it); the derived h45 rust #9C522E sat dE 6.4 from warning and 10.5 from the berry ring, and the dark h36 salmon 9.8 from the dark ring. It reuses Gen-1 A/D's red set. (3) warning h70 (Gen-1 B/D hue, still 20 deg from mustard) at dark L 0.62: the derived dark amber sat dE 5.5 from the mustard primary, so an approval pill read as a button; L 0.62 clears mustard (16.9) and keeps red-vs-amber CVD at 3.6, inside Gen-1's 2.1-4.6 (L 0.66 would collapse it to 0.5; above mustard the amber goes pastel and meets success green under CVD). Light stays at the engine's L 0.55. (4) light sidebar-text = oxblood #390F14 exact: the poster's own type-on-mustard pair (8.43:1, 6.81 on hover). (5) accent-solid-alt folded onto the primary (oxblood light, mustard dark), as K4 does for gene D (no chrome accent): the derived alts were a dusty rose #C4666D (dE 10.5 from danger, in no source chip) and a dark mustard #917200 (dE 6.8 from the new warning)",
+   "accentRole": "parsed semantic_plan.accent_means \"selection and the one live highlight (berry is ΔE \"",
+   "running": "parsed semantic_plan.running: neutral ink",
+   "selection": "parsed: accent_means is selection",
+   "danger": "override: K6: (1) interaction role swap from overrides.json kept (oxblood primary in light, mustard in dark). (2) danger = signal red #F54731 exact, as semantic_plan.danger asks (a separate bright red >= 20 deg from berry and lighter than it); the derived h45 rust #9C522E sat dE 6.4 from warning and 10.5 from the berry ring, and the dark h36 salmon 9.8 from the dark ring. It reuses Gen-1 A/D's red set. (3) warning h70 (Gen-1 B/D hue, still 20 deg from mustard) at dark L 0.62: the derived dark amber sat dE 5.5 from the mustard primary, so an approval pill read as a button; L 0.62 clears mustard (16.9) and keeps red-vs-amber CVD at 3.6, inside Gen-1's 2.1-4.6 (L 0.66 would collapse it to 0.5; above mustard the amber goes pastel and meets success green under CVD). Light stays at the engine's L 0.55. (4) light sidebar-text = oxblood #390F14 exact: the poster's own type-on-mustard pair (8.43:1, 6.81 on hover). (5) accent-solid-alt folded onto the primary (oxblood light, mustard dark), as K4 does for gene D (no chrome accent): the derived alts were a dusty rose #C4666D (dE 10.5 from danger, in no source chip) and a dark mustard #917200 (dE 6.8 from the new warning)",
+   "warning": "override: K6: (1) interaction role swap from overrides.json kept (oxblood primary in light, mustard in dark). (2) danger = signal red #F54731 exact, as semantic_plan.danger asks (a separate bright red >= 20 deg from berry and lighter than it); the derived h45 rust #9C522E sat dE 6.4 from warning and 10.5 from the berry ring, and the dark h36 salmon 9.8 from the dark ring. It reuses Gen-1 A/D's red set. (3) warning h70 (Gen-1 B/D hue, still 20 deg from mustard) at dark L 0.62: the derived dark amber sat dE 5.5 from the mustard primary, so an approval pill read as a button; L 0.62 clears mustard (16.9) and keeps red-vs-amber CVD at 3.6, inside Gen-1's 2.1-4.6 (L 0.66 would collapse it to 0.5; above mustard the amber goes pastel and meets success green under CVD). Light stays at the engine's L 0.55. (4) light sidebar-text = oxblood #390F14 exact: the poster's own type-on-mustard pair (8.43:1, 6.81 on hover). (5) accent-solid-alt folded onto the primary (oxblood light, mustard dark), as K4 does for gene D (no chrome accent): the derived alts were a dusty rose #C4666D (dE 10.5 from danger, in no source chip) and a dark mustard #917200 (dE 6.8 from the new warning)"
+  },
+  "notes": [],
+  "tokenOverrides": {
+   "light": {
+    "sidebar-text": "#390F14",
+    "accent-solid-alt": "#390F14",
+    "accent-solid-alt-label": "#FFFFFF"
+   },
+   "dark": {
+    "accent-solid-alt": "#D8B44D",
+    "accent-solid-alt-label": "#110F0C"
+   }
+  }
+ },
+ "light": {
+  "tokens": {
+   "bg": "#FBF8F1",
+   "sidebar": "#D8B44D",
+   "surface": "#FFFDF7",
+   "field": "#F4F1E7",
+   "overlay": "#FFFDF7",
+   "hover": "#EDE9DF",
+   "selected": "#E6E2D6",
+   "border": "#DDD9CE",
+   "border-strong": "#8A867C",
+   "text": "#1C1A16",
+   "text-muted": "#68645C",
+   "text-faint": "#8F8B82",
+   "canvas-bg": "#FBF8F1",
+   "edge": "#8F8B82",
+   "edge-strong": "#68645C",
+   "node-fill": "#FFFDF7",
+   "node-stroke": "#8F8B82",
+   "accent-solid": "#390F14",
+   "accent-solid-label": "#FFFFFF",
+   "accent-solid-hover": "#2D040A",
+   "accent-solid-alt": "#390F14",
+   "accent-solid-alt-label": "#FFFFFF",
+   "accent-soft-bg": "#FFE8E9",
+   "accent-text": "#42000E",
+   "signal-fill": "#8B3047",
+   "signal-fill-label": "#FFFFFF",
+   "signal-soft-bg": "#FFE8EB",
+   "danger-solid": "#F54731",
+   "danger-solid-label": "#1C1A16",
+   "danger-text": "#D5210B",
+   "danger-soft-bg": "#FFEBE7",
+   "danger-strong": "#E1311C",
+   "danger-strong-label": "#FFFFFF",
+   "success-solid": "#378450",
+   "success-solid-label": "#FFFFFF",
+   "success-text": "#2F7C49",
+   "success-soft-bg": "#E1F7E5",
+   "warning-solid": "#9A6418",
+   "warning-solid-label": "#FFFFFF",
+   "warning-text": "#976213",
+   "warning-soft-bg": "#FFEDD9",
+   "draft-solid": "#5B5546",
+   "draft-solid-label": "#FFFFFF",
+   "draft-text": "#736D5D",
+   "draft-soft-bg": "#F2F0EB",
+   "canvas-label": "#1C1A16",
+   "canvas-label-muted": "#68645C",
+   "canvas-grid": "#DBD8D1",
+   "selection-ring": "#8B3047",
+   "focus-ring": "#1C1A16",
+   "running": "#1C1A16",
+   "signal-mark": "#8B3047",
+   "draft-outline": "#8F8B82",
+   "danger-outline": "#F54731",
+   "diff-add": "#2F7C49",
+   "diff-del": "#D5210B",
+   "stop-bg": "#F4F1E7",
+   "stop-glyph": "#1C1A16",
+   "sidebar-hover": "#C5A137",
+   "sidebar-text": "#390F14",
+   "sidebar-muted": "#3D3932"
+  },
+  "source": {
+   "bg": "neutral-2",
+   "sidebar": "exact ground #D8B44D (sidebar block)",
+   "surface": "neutral-1",
+   "field": "neutral-3",
+   "overlay": "neutral-1",
+   "hover": "neutral-4",
+   "selected": "neutral-5",
+   "border": "neutral-6",
+   "border-strong": "neutral-8 -> L -0.158 (WCAG 3:1) -> L -0.018 (>= 3.2:1 thin-stroke margin)",
+   "text": "neutral-12",
+   "text-muted": "neutral-11",
+   "text-faint": "neutral-9 -> L -0.015 (WCAG 3:1)",
+   "canvas-bg": "neutral-2",
+   "edge": "neutral-9 -> L -0.015 (>= 3.2:1 thin-stroke margin)",
+   "edge-strong": "neutral-11",
+   "node-fill": "neutral-1",
+   "node-stroke": "neutral-9 -> L -0.015 (>= 3.2:1 thin-stroke margin)",
+   "accent-solid": "exact #390F14 (interaction, accent-9)",
+   "accent-solid-label": "white",
+   "accent-solid-hover": "accent-10",
+   "accent-solid-alt": "override (was #C4666D)",
+   "accent-solid-alt-label": "override (was #1C1A16)",
+   "accent-soft-bg": "accent-3",
+   "accent-text": "accent-11",
+   "signal-fill": "exact #8B3047 (accent; selection)",
+   "signal-fill-label": "white",
+   "signal-soft-bg": "signal-3",
+   "danger-solid": "exact #F54731",
+   "danger-solid-label": "neutral ink",
+   "danger-text": "L 0.56 until 4.5:1 on chrome and its soft bg",
+   "danger-soft-bg": "tint",
+   "danger-strong": "danger-solid L 0.648 -> 0.593 for a white label (WCAG 4.5 and APCA 75)",
+   "danger-strong-label": "white",
+   "success-solid": "h 152 L 0.550",
+   "success-solid-label": "white",
+   "success-text": "L 0.56 -0.035 until 4.5:1 on chrome and its soft bg",
+   "success-soft-bg": "tint",
+   "warning-solid": "h 70 L 0.550",
+   "warning-solid-label": "white",
+   "warning-text": "L 0.56 -0.020 until 4.5:1 on chrome and its soft bg",
+   "warning-soft-bg": "tint",
+   "draft-solid": "neutral h 90 L 0.450",
+   "draft-solid-label": "white",
+   "draft-text": "L 0.56 -0.025 until 4.5:1 on chrome and its soft bg",
+   "draft-soft-bg": "tint",
+   "canvas-label": "= --text",
+   "canvas-label-muted": "= --text-muted",
+   "canvas-grid": "crosses: canvas hue/chroma, L -0.098 to 1.33:1",
+   "selection-ring": "accent #8B3047",
+   "focus-ring": "= --text (brief §2.5: focus is never the accent)",
+   "running": "= --text (neutral ink)",
+   "signal-mark": "exact accent #8B3047",
+   "draft-outline": "= --node-stroke (dashed)",
+   "danger-outline": "= --danger-solid",
+   "diff-add": "= --success-text",
+   "diff-del": "= --danger-text",
+   "stop-bg": "= --field (Stop is neutral)",
+   "stop-glyph": "= --text",
+   "sidebar-hover": "sidebar L -0.06",
+   "sidebar-text": "override (was #1C1A16)",
+   "sidebar-muted": "text-muted L -0.158 (>= 4.6 on block and hover; brief D)"
+  },
+  "neutral": {
+   "steps": [
+    "#FFFDF7",
+    "#FBF8F1",
+    "#F4F1E7",
+    "#EDE9DF",
+    "#E6E2D6",
+    "#DDD9CE",
+    "#D2CEC3",
+    "#C0BCB1",
+    "#949086",
+    "#88847A",
+    "#68645C",
+    "#1C1A16"
+   ],
+   "hue": 89.8,
+   "chroma": 0.016,
+   "pinned": null,
+   "rebasedL": 0
+  },
+  "functional": {
+   "danger": {
+    "hue": 30.7,
+    "chroma": 0.214,
+    "fromSwatch": "#F54731"
+   },
+   "success": {
+    "hue": 152,
+    "chroma": 0.11,
+    "fromSwatch": null
+   },
+   "warning": {
+    "hue": 70,
+    "chroma": 0.11,
+    "fromSwatch": null
+   },
+   "draft": {
+    "hue": 89.8,
+    "chroma": 0.025,
+    "fromSwatch": null
+   }
+  },
+  "fixes": [
+   {
+    "token": "text-faint",
+    "before": "#949086",
+    "after": "#8F8B82"
+   },
+   {
+    "token": "border-strong",
+    "before": "#C0BCB1",
+    "after": "#8F8B81"
+   }
+  ]
+ },
+ "dark": {
+  "tokens": {
+   "bg": "#110F0C",
+   "sidebar": "#32280C",
+   "surface": "#171511",
+   "field": "#211E17",
+   "overlay": "#28251E",
+   "hover": "#28251E",
+   "selected": "#302D24",
+   "border": "#3A372E",
+   "border-strong": "#777368",
+   "text": "#F0EEE7",
+   "text-muted": "#BDB9B0",
+   "text-faint": "#726E64",
+   "canvas-bg": "#110F0C",
+   "edge": "#68645A",
+   "edge-strong": "#B6B2A9",
+   "node-fill": "#211E17",
+   "node-stroke": "#726E64",
+   "accent-solid": "#D8B44D",
+   "accent-solid-label": "#110F0C",
+   "accent-solid-hover": "#E7C25C",
+   "accent-solid-alt": "#D8B44D",
+   "accent-solid-alt-label": "#110F0C",
+   "accent-soft-bg": "#291F04",
+   "accent-text": "#D3B66A",
+   "signal-fill": "#8B3047",
+   "signal-fill-label": "#FFFFFF",
+   "signal-soft-bg": "#32171C",
+   "danger-solid": "#F54731",
+   "danger-solid-label": "#110F0C",
+   "danger-text": "#FFA190",
+   "danger-soft-bg": "#3A1B16",
+   "danger-strong": "#E1311C",
+   "danger-strong-label": "#FFFFFF",
+   "success-solid": "#74CF8E",
+   "success-solid-label": "#110F0C",
+   "success-text": "#7AD595",
+   "success-soft-bg": "#132B1A",
+   "warning-solid": "#B67617",
+   "warning-solid-label": "#110F0C",
+   "warning-text": "#F2AE5B",
+   "warning-soft-bg": "#33210A",
+   "draft-solid": "#928C7B",
+   "draft-solid-label": "#110F0C",
+   "draft-text": "#C4BDAC",
+   "draft-soft-bg": "#272520",
+   "canvas-label": "#F0EEE7",
+   "canvas-label-muted": "#BDB9B0",
+   "canvas-grid": "#2C2A26",
+   "selection-ring": "#B8586D",
+   "focus-ring": "#F0EEE7",
+   "running": "#F0EEE7",
+   "signal-mark": "#AD4E63",
+   "draft-outline": "#726E64",
+   "danger-outline": "#F54731",
+   "diff-add": "#7AD595",
+   "diff-del": "#FFA190",
+   "stop-bg": "#211E17",
+   "stop-glyph": "#F0EEE7",
+   "sidebar-hover": "#3C3216",
+   "sidebar-text": "#F0EEE7",
+   "sidebar-muted": "#BDB9B0"
+  },
+  "source": {
+   "bg": "neutral-1",
+   "sidebar": "ground hue at L 0.28, C 0.045 (deep sidebar block)",
+   "surface": "neutral-2",
+   "field": "neutral-3",
+   "overlay": "neutral-4",
+   "hover": "neutral-4",
+   "selected": "neutral-5",
+   "border": "neutral-6",
+   "border-strong": "neutral-8 -> L +0.070 (WCAG 3:1) -> L +0.018 (>= 3.2:1 thin-stroke margin)",
+   "text": "neutral-12",
+   "text-muted": "neutral-11 -> L +0.022 (APCA Lc 60)",
+   "text-faint": "neutral-9",
+   "canvas-bg": "neutral-1",
+   "edge": "neutral-8 -> L +0.035 (>= 3.2:1 thin-stroke margin)",
+   "edge-strong": "neutral-11",
+   "node-fill": "neutral-3",
+   "node-stroke": "neutral-9",
+   "accent-solid": "exact #D8B44D (interaction, accent-9)",
+   "accent-solid-label": "neutral-1",
+   "accent-solid-hover": "accent-10",
+   "accent-solid-alt": "override (was #917200)",
+   "accent-solid-alt-label": "override (was #FFFFFF)",
+   "accent-soft-bg": "accent-3",
+   "accent-text": "accent-11 -> L +0.003 (APCA Lc 60)",
+   "signal-fill": "exact #8B3047 (accent; selection)",
+   "signal-fill-label": "white",
+   "signal-soft-bg": "signal-3",
+   "danger-solid": "exact #F54731",
+   "danger-solid-label": "neutral ink",
+   "danger-text": "L 0.80 until 4.5:1 on chrome and its soft bg",
+   "danger-soft-bg": "tint",
+   "danger-strong": "danger-solid L 0.648 -> 0.593 for a white label (WCAG 4.5 and APCA 75)",
+   "danger-strong-label": "white",
+   "success-solid": "h 152 L 0.780",
+   "success-solid-label": "neutral ink",
+   "success-text": "L 0.80 until 4.5:1 on chrome and its soft bg",
+   "success-soft-bg": "tint",
+   "warning-solid": "h 70 L 0.620",
+   "warning-solid-label": "neutral ink",
+   "warning-text": "L 0.80 until 4.5:1 on chrome and its soft bg",
+   "warning-soft-bg": "tint",
+   "draft-solid": "neutral h 90 L 0.640",
+   "draft-solid-label": "neutral ink",
+   "draft-text": "L 0.80 until 4.5:1 on chrome and its soft bg",
+   "draft-soft-bg": "tint",
+   "canvas-label": "= --text",
+   "canvas-label-muted": "= --text-muted",
+   "canvas-grid": "crosses: canvas hue/chroma, L 0.115 to 1.33:1",
+   "selection-ring": "accent #8B3047 L +0.135 (>= 3.2:1 and Lc 30 on the canvas)",
+   "focus-ring": "= --text (brief §2.5: focus is never the accent)",
+   "running": "= --text (neutral ink)",
+   "signal-mark": "accent L 0.103 (>= 3.2:1 on page, surface, canvas, node fill)",
+   "draft-outline": "= --node-stroke (dashed)",
+   "danger-outline": "= --danger-solid",
+   "diff-add": "= --success-text",
+   "diff-del": "= --danger-text",
+   "stop-bg": "= --field (Stop is neutral)",
+   "stop-glyph": "= --text",
+   "sidebar-hover": "sidebar L +0.04",
+   "sidebar-text": "= --text",
+   "sidebar-muted": "= --text-muted"
+  },
+  "neutral": {
+   "steps": [
+    "#110F0C",
+    "#171511",
+    "#211E17",
+    "#28251E",
+    "#302D24",
+    "#3A372E",
+    "#48453B",
+    "#5E5A50",
+    "#726E64",
+    "#7F7C71",
+    "#B6B2A9",
+    "#F0EEE7"
+   ],
+   "hue": 89.8,
+   "chroma": 0.016,
+   "pinned": null,
+   "rebasedL": 0
+  },
+  "functional": {
+   "danger": {
+    "hue": 30.7,
+    "chroma": 0.214,
+    "fromSwatch": "#F54731"
+   },
+   "success": {
+    "hue": 152,
+    "chroma": 0.127,
+    "fromSwatch": null
+   },
+   "warning": {
+    "hue": 70,
+    "chroma": 0.127,
+    "fromSwatch": null
+   },
+   "draft": {
+    "hue": 89.8,
+    "chroma": 0.025,
+    "fromSwatch": null
+   }
+  },
+  "fixes": [
+   {
+    "token": "text-muted",
+    "before": "#B6B2A9",
+    "after": "#BDB9B0"
+   },
+   {
+    "token": "accent-text",
+    "before": "#D2B569",
+    "after": "#D3B66A"
+   },
+   {
+    "token": "border-strong",
+    "before": "#5E5A50",
+    "after": "#726E63"
+   }
+  ]
+ },
+ "families": {
+  "channel": "tile",
+  "channelWhat": "whole tile on the canvas and surface",
+  "reservedFloor": 10,
+  "grounds": {
+   "light": {
+    "canvas-bg": "#FBF8F1",
+    "surface": "#FFFDF7"
+   },
+   "dark": {
+    "canvas-bg": "#110F0C",
+    "surface": "#171511"
+   }
+  },
+  "reserved": {
+   "light": {
+    "accent-solid": "#390F14",
+    "selection-ring": "#8B3047",
+    "danger-solid": "#F54731",
+    "danger-strong": "#E1311C",
+    "danger-text": "#D5210B",
+    "warning-solid": "#9A6418",
+    "success-solid": "#378450"
+   },
+   "dark": {
+    "accent-solid": "#D8B44D",
+    "selection-ring": "#B8586D",
+    "danger-solid": "#F54731",
+    "danger-strong": "#E1311C",
+    "danger-text": "#FFA190",
+    "warning-solid": "#B67617",
+    "success-solid": "#74CF8E",
+    "signal-fill": "#8B3047",
+    "signal-mark": "#AD4E63"
+   }
+  },
+  "hueRules": [
+   {
+    "kind": "interaction",
+    "h": 8.3,
+    "gap": 30,
+    "from": "selection-ring (light) #8B3047"
+   },
+   {
+    "kind": "danger",
+    "h": 30.7,
+    "gap": 30,
+    "from": "danger-solid (light) #F54731"
+   },
+   {
+    "kind": "warning",
+    "h": 69.5,
+    "gap": 20,
+    "from": "warning-solid (light) #9A6418"
+   },
+   {
+    "kind": "success",
+    "h": 151.7,
+    "gap": 20,
+    "from": "success-solid (light) #378450"
+   }
+  ],
+  "pool": 4652,
+  "anchor": null,
+  "rows": [
+   {
+    "fam": "F1",
+    "h": 336,
+    "hueName": "magenta",
+    "anchored": false,
+    "light": {
+     "hex": "#8C0779",
+     "oklch": "oklch(44.0% 0.190 336.0)",
+     "grounds": {
+      "canvas-bg": 8.18,
+      "surface": 8.53
+     },
+     "nearestReserved": {
+      "token": "selection-ring",
+      "hex": "#8B3047",
+      "dE": 10.8,
+      "dECVD": 9.3
+     },
+     "icon": "white",
+     "iconContrast": 8.67
+    },
+    "dark": {
+     "hex": "#BB42A4",
+     "oklch": "oklch(58.0% 0.190 336.1)",
+     "grounds": {
+      "canvas-bg": 4.04,
+      "surface": 3.84
+     },
+     "nearestReserved": {
+      "token": "selection-ring",
+      "hex": "#B8586D",
+      "dE": 10.7,
+      "dECVD": 9.2
+     },
+     "icon": "white",
+     "iconContrast": 4.74
+    }
+   },
+   {
+    "fam": "F2",
+    "h": 105,
+    "hueName": "olive/yellow-green",
+    "anchored": false,
+    "light": {
+     "hex": "#999000",
+     "oklch": "oklch(64.1% 0.136 105.2)",
+     "grounds": {
+      "canvas-bg": 3.12,
+      "surface": 3.25
+     },
+     "nearestReserved": {
+      "token": "warning-solid",
+      "hex": "#9A6418",
+      "dE": 12.1,
+      "dECVD": 9.3
+     },
+     "icon": "ink #1B1B17",
+     "iconContrast": 5.22
+    },
+    "dark": {
+     "hex": "#E4D600",
+     "oklch": "oklch(86.0% 0.182 104.8)",
+     "grounds": {
+      "canvas-bg": 12.68,
+      "surface": 12.08
+     },
+     "nearestReserved": {
+      "token": "accent-solid",
+      "hex": "#D8B44D",
+      "dE": 10.3,
+      "dECVD": 9.1
+     },
+     "icon": "ink #1B1B17",
+     "iconContrast": 11.45
+    }
+   },
+   {
+    "fam": "F3",
+    "h": 300,
+    "hueName": "purple",
+    "anchored": false,
+    "light": {
+     "hex": "#A670F3",
+     "oklch": "oklch(66.0% 0.191 300.3)",
+     "grounds": {
+      "canvas-bg": 3.18,
+      "surface": 3.31
+     },
+     "nearestReserved": {
+      "token": "selection-ring",
+      "hex": "#8B3047",
+      "dE": 28.1,
+      "dECVD": 27
+     },
+     "icon": "ink #1B1B17",
+     "iconContrast": 5.13
+    },
+    "dark": {
+     "hex": "#C09AFF",
+     "oklch": "oklch(76.0% 0.146 300.3)",
+     "grounds": {
+      "canvas-bg": 8.48,
+      "surface": 8.08
+     },
+     "nearestReserved": {
+      "token": "danger-text",
+      "hex": "#FFA190",
+      "dE": 19.1,
+      "dECVD": 17.3
+     },
+     "icon": "ink #1B1B17",
+     "iconContrast": 7.66
+    }
+   },
+   {
+    "fam": "F4",
+    "h": 129,
+    "hueName": "olive/yellow-green",
+    "anchored": false,
+    "light": {
+     "hex": "#3E5E00",
+     "oklch": "oklch(44.0% 0.117 128.9)",
+     "grounds": {
+      "canvas-bg": 7.06,
+      "surface": 7.36
+     },
+     "nearestReserved": {
+      "token": "success-solid",
+      "hex": "#378450",
+      "dE": 12,
+      "dECVD": 11.6
+     },
+     "icon": "white",
+     "iconContrast": 7.48
+    },
+    "dark": {
+     "hex": "#629100",
+     "oklch": "oklch(60.0% 0.159 128.9)",
+     "grounds": {
+      "canvas-bg": 5.07,
+      "surface": 4.84
+     },
+     "nearestReserved": {
+      "token": "warning-solid",
+      "hex": "#B67617",
+      "dE": 14.5,
+      "dECVD": 2.5
+     },
+     "icon": "ink #1B1B17",
+     "iconContrast": 4.58
+    }
+   },
+   {
+    "fam": "F5",
+    "h": 213,
+    "hueName": "cyan/sky",
+    "anchored": false,
+    "light": {
+     "hex": "#0090A5",
+     "oklch": "oklch(60.0% 0.105 212.6)",
+     "grounds": {
+      "canvas-bg": 3.58,
+      "surface": 3.73
+     },
+     "nearestReserved": {
+      "token": "success-solid",
+      "hex": "#378450",
+      "dE": 12,
+      "dECVD": 11.7
+     },
+     "icon": "ink #1B1B17",
+     "iconContrast": 4.55
+    },
+    "dark": {
+     "hex": "#64E5FF",
+     "oklch": "oklch(85.9% 0.118 213.1)",
+     "grounds": {
+      "canvas-bg": 12.93,
+      "surface": 12.32
+     },
+     "nearestReserved": {
+      "token": "success-solid",
+      "hex": "#74CF8E",
+      "dE": 14.9,
+      "dECVD": 14.4
+     },
+     "icon": "ink #1B1B17",
+     "iconContrast": 11.67
+    }
+   },
+   {
+    "fam": "F6",
+    "h": 273,
+    "hueName": "indigo/violet",
+    "anchored": false,
+    "light": {
+     "hex": "#363DB8",
+     "oklch": "oklch(43.9% 0.190 273.0)",
+     "grounds": {
+      "canvas-bg": 7.87,
+      "surface": 8.2
+     },
+     "nearestReserved": {
+      "token": "selection-ring",
+      "hex": "#8B3047",
+      "dE": 23.7,
+      "dECVD": 19.1
+     },
+     "icon": "white",
+     "iconContrast": 8.34
+    },
+    "dark": {
+     "hex": "#596AE8",
+     "oklch": "oklch(58.0% 0.190 273.2)",
+     "grounds": {
+      "canvas-bg": 4.24,
+      "surface": 4.04
+     },
+     "nearestReserved": {
+      "token": "selection-ring",
+      "hex": "#B8586D",
+      "dE": 23.6,
+      "dECVD": 19.9
+     },
+     "icon": "white",
+     "iconContrast": 4.51
+    }
+   }
+  ],
+  "score": {
+   "minMetric": 1.321,
+   "meanMetric": 1.75,
+   "note": "min over pairs and themes of min(dE_normal/15, dE_CVD/8); >= 1 meets report 08's targets"
+  },
+  "stats": {
+   "light": {
+    "minNormal": 19.9,
+    "worstNormalPair": "#8C0779/#363DB8",
+    "minCVD": 11.4,
+    "worstCvdPair": "#A670F3/#0090A5",
+    "minTritan": 6.6
+   },
+   "dark": {
+    "minNormal": 19.8,
+    "worstNormalPair": "#BB42A4/#596AE8",
+    "minCVD": 11.3,
+    "worstCvdPair": "#C09AFF/#64E5FF",
+    "minTritan": 8.3
+   }
+  }
+ },
+ "authoring": {
+  "rules": "text/text-muted/link >= 4.5 on page and card; border >= 3; focus = text; series marks >= 3 on page and card; series dE >= 10 from danger and accent, >= 8 from status, >= 10 from every family colour; hue gap >= 20 within the series; maximise min(normal/15, CVD/8)",
+  "light": {
+   "page": "transparent",
+   "pageResolved": "#FFFDF7",
+   "card": "#F4F1E7",
+   "text": "#1C1A16",
+   "text-muted": "#68645C",
+   "border": "#8A867C",
+   "rule": "#DDD9CE",
+   "link": "#42000E",
+   "focus": "#1C1A16",
+   "source": {
+    "card": "= --field",
+    "text": "= --text",
+    "text-muted": "= --text-muted",
+    "border": "= --border-strong",
+    "link": "= --accent-text",
+    "focus": "= text"
+   }
+  },
+  "dark": {
+   "page": "transparent",
+   "pageResolved": "#171511",
+   "card": "#211E17",
+   "text": "#F0EEE7",
+   "text-muted": "#BDB9B0",
+   "border": "#777368",
+   "rule": "#3A372E",
+   "link": "#D3B66A",
+   "focus": "#F0EEE7",
+   "source": {
+    "card": "= --field",
+    "text": "= --text",
+    "text-muted": "= --text-muted",
+    "border": "= --border-strong",
+    "link": "= --accent-text",
+    "focus": "= text"
+   }
+  },
+  "seriesPool": 1867,
+  "seriesCount": "5 colours",
+  "series": [
+   {
+    "slot": 1,
+    "name": "green",
+    "h": 156,
+    "light": {
+     "hex": "#02A05E",
+     "oklch": "oklch(62.1% 0.150 155.9)",
+     "onCard": 3,
+     "onPage": 3.33,
+     "label": "#1C1A16",
+     "labelContrast": 5.12,
+     "nearestReserved": {
+      "token": "success-solid",
+      "hex": "#378450",
+      "dE": 8
+     }
+    },
+    "dark": {
+     "hex": "#73EEA7",
+     "oklch": "oklch(86.0% 0.150 156.0)",
+     "onCard": 11.5,
+     "onPage": 12.6,
+     "label": "#110F0C",
+     "labelContrast": 13.23,
+     "nearestReserved": {
+      "token": "success-solid",
+      "hex": "#74CF8E",
+      "dE": 8.3
+     }
+    }
+   },
+   {
+    "slot": 2,
+    "name": "orange/brown",
+    "h": 66,
+    "light": {
+     "hex": "#6F4100",
+     "oklch": "oklch(42.1% 0.094 66.1)",
+     "onCard": 7.64,
+     "onPage": 8.49,
+     "label": "#FFFFFF",
+     "labelContrast": 8.63,
+     "nearestReserved": {
+      "token": "selection-ring",
+      "hex": "#8B3047",
+      "dE": 11.2
+     }
+    },
+    "dark": {
+     "hex": "#DC8818",
+     "oklch": "oklch(69.9% 0.150 65.8)",
+     "onCard": 6,
+     "onPage": 6.58,
+     "label": "#110F0C",
+     "labelContrast": 6.9,
+     "nearestReserved": {
+      "token": "warning-solid",
+      "hex": "#B67617",
+      "dE": 8.4
+     }
+    }
+   },
+   {
+    "slot": 3,
+    "name": "blue",
+    "h": 255,
+    "light": {
+     "hex": "#4087DE",
+     "oklch": "oklch(62.0% 0.150 255.0)",
+     "onCard": 3.24,
+     "onPage": 3.6,
+     "label": "#1C1A16",
+     "labelContrast": 4.75,
+     "nearestReserved": {
+      "token": "family F5",
+      "hex": "#0090A5",
+      "dE": 10.3
+     }
+    },
+    "dark": {
+     "hex": "#60A7FF",
+     "oklch": "oklch(72.1% 0.148 254.8)",
+     "onCard": 6.71,
+     "onPage": 7.35,
+     "label": "#110F0C",
+     "labelContrast": 7.72,
+     "nearestReserved": {
+      "token": "family F3",
+      "hex": "#C09AFF",
+      "dE": 12
+     }
+    }
+   },
+   {
+    "slot": 4,
+    "name": "purple",
+    "h": 303,
+    "light": {
+     "hex": "#592A88",
+     "oklch": "oklch(39.9% 0.150 303.1)",
+     "onCard": 8.8,
+     "onPage": 9.78,
+     "label": "#FFFFFF",
+     "labelContrast": 9.95,
+     "nearestReserved": {
+      "token": "family F6",
+      "hex": "#363DB8",
+      "dE": 10.4
+     }
+    },
+    "dark": {
+     "hex": "#E1CDFF",
+     "oklch": "oklch(88.1% 0.071 303.2)",
+     "onCard": 11.39,
+     "onPage": 12.48,
+     "label": "#110F0C",
+     "labelContrast": 13.1,
+     "nearestReserved": {
+      "token": "family F5",
+      "hex": "#64E5FF",
+      "dE": 14
+     }
+    }
+   },
+   {
+    "slot": 5,
+    "name": "magenta",
+    "h": 336,
+    "light": {
+     "hex": "#B659A2",
+     "oklch": "oklch(60.1% 0.150 336.1)",
+     "onCard": 3.76,
+     "onPage": 4.18,
+     "label": "#FFFFFF",
+     "labelContrast": 4.25,
+     "nearestReserved": {
+      "token": "family F3",
+      "hex": "#A670F3",
+      "dE": 12.6
+     }
+    },
+    "dark": {
+     "hex": "#D071BB",
+     "oklch": "oklch(68.0% 0.150 336.0)",
+     "onCard": 5.35,
+     "onPage": 5.87,
+     "label": "#110F0C",
+     "labelContrast": 6.16,
+     "nearestReserved": {
+      "token": "family F1",
+      "hex": "#BB42A4",
+      "dE": 10.7
+     }
+    }
+   }
+  ],
+  "seriesStats": {
+   "light": {
+    "minNormal": 19.6,
+    "worstNormalPair": "#4087DE/#B659A2",
+    "minCVD": 10.4,
+    "worstCvdPair": "#02A05E/#B659A2",
+    "minTritan": 4.1
+   },
+   "dark": {
+    "minNormal": 19.6,
+    "worstNormalPair": "#60A7FF/#E1CDFF",
+    "minCVD": 10.4,
+    "worstCvdPair": "#60A7FF/#D071BB",
+    "minTritan": 5.4
+   }
+  },
+  "snippet": {
+   "light": "[data-relayer-theme=\"light\"] .explanation { color: #1c1a16; background-color: #fffdf7; }",
+   "dark": "[data-relayer-theme=\"dark\"] .explanation { color: #f0eee7; background-color: #171511; }",
+   "sentence": "Relayer light uses pale amber/ochre-tinted neutral surfaces and dark text; dark uses deep amber/ochre-tinted neutral surfaces and light text."
+  }
+ },
+ "exact": {
+  "used": [
+   {
+    "theme": "light",
+    "token": "sidebar",
+    "hex": "#D8B44D",
+    "sourceRole": "ground"
+   },
+   {
+    "theme": "light",
+    "token": "accent-solid",
+    "hex": "#390F14",
+    "sourceRole": "ink"
+   },
+   {
+    "theme": "light",
+    "token": "accent-solid-alt",
+    "hex": "#390F14",
+    "sourceRole": "ink"
+   },
+   {
+    "theme": "light",
+    "token": "signal-fill",
+    "hex": "#8B3047",
+    "sourceRole": "accent"
+   },
+   {
+    "theme": "light",
+    "token": "selection-ring",
+    "hex": "#8B3047",
+    "sourceRole": "accent"
+   },
+   {
+    "theme": "light",
+    "token": "signal-mark",
+    "hex": "#8B3047",
+    "sourceRole": "accent"
+   },
+   {
+    "theme": "light",
+    "token": "sidebar-text",
+    "hex": "#390F14",
+    "sourceRole": "ink"
+   },
+   {
+    "theme": "dark",
+    "token": "accent-solid",
+    "hex": "#D8B44D",
+    "sourceRole": "ground"
+   },
+   {
+    "theme": "dark",
+    "token": "accent-solid-alt",
+    "hex": "#D8B44D",
+    "sourceRole": "ground"
+   },
+   {
+    "theme": "dark",
+    "token": "signal-fill",
+    "hex": "#8B3047",
+    "sourceRole": "accent"
+   }
+  ],
+  "unused": []
+ },
+ "checks": {
+  "floors": {
+   "text": 4.5,
+   "mark": 3,
+   "strokeMargin": 3.2,
+   "edgeStrongTarget": 4.5,
+   "ringApcaMin": 30,
+   "iconOnFill": 4.5,
+   "familyReservedStroke": 12,
+   "familyReserved": 10,
+   "familyInteractionGap": 30,
+   "familyStatusGap": 20,
+   "familyDangerGapTile": 30,
+   "familyPairGap": 20,
+   "familyNormalTarget": 15,
+   "familyCvdTarget": 8,
+   "familyNormalSanity": 10,
+   "familyCvdSanity": 6,
+   "seriesNormalTarget": 15,
+   "seriesCvdTarget": 8,
+   "seriesDanger": 10,
+   "seriesAccent": 10,
+   "seriesStatus": 8,
+   "seriesFamily": 10
+  },
+  "contrast": [
+   {
+    "theme": "light",
+    "fg": "text",
+    "bg": "bg",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FBF8F1",
+    "ratio": 16.38,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text",
+    "bg": "surface",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FFFDF7",
+    "ratio": 17.08,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text",
+    "bg": "field",
+    "fgHex": "#1C1A16",
+    "bgHex": "#F4F1E7",
+    "ratio": 15.37,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text",
+    "bg": "overlay",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FFFDF7",
+    "ratio": 17.08,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text",
+    "bg": "hover",
+    "fgHex": "#1C1A16",
+    "bgHex": "#EDE9DF",
+    "ratio": 14.33,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text",
+    "bg": "selected",
+    "fgHex": "#1C1A16",
+    "bgHex": "#E6E2D6",
+    "ratio": 13.41,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text",
+    "bg": "node-fill",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FFFDF7",
+    "ratio": 17.08,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text",
+    "bg": "accent-soft-bg",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FFE8E9",
+    "ratio": 14.87,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text",
+    "bg": "danger-soft-bg",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FFEBE7",
+    "ratio": 15.13,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text",
+    "bg": "success-soft-bg",
+    "fgHex": "#1C1A16",
+    "bgHex": "#E1F7E5",
+    "ratio": 15.42,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text",
+    "bg": "warning-soft-bg",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FFEDD9",
+    "ratio": 15.2,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text",
+    "bg": "draft-soft-bg",
+    "fgHex": "#1C1A16",
+    "bgHex": "#F2F0EB",
+    "ratio": 15.26,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text-muted",
+    "bg": "bg",
+    "fgHex": "#68645C",
+    "bgHex": "#FBF8F1",
+    "ratio": 5.55,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text-muted",
+    "bg": "surface",
+    "fgHex": "#68645C",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.79,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text-muted",
+    "bg": "field",
+    "fgHex": "#68645C",
+    "bgHex": "#F4F1E7",
+    "ratio": 5.21,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text-muted",
+    "bg": "overlay",
+    "fgHex": "#68645C",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.79,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text-muted",
+    "bg": "hover",
+    "fgHex": "#68645C",
+    "bgHex": "#EDE9DF",
+    "ratio": 4.86,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text-muted",
+    "bg": "selected",
+    "fgHex": "#68645C",
+    "bgHex": "#E6E2D6",
+    "ratio": 4.55,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "text-muted",
+    "bg": "node-fill",
+    "fgHex": "#68645C",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.79,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "accent-text",
+    "bg": "bg",
+    "fgHex": "#42000E",
+    "bgHex": "#FBF8F1",
+    "ratio": 15.99,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "accent-text",
+    "bg": "surface",
+    "fgHex": "#42000E",
+    "bgHex": "#FFFDF7",
+    "ratio": 16.68,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "accent-text",
+    "bg": "field",
+    "fgHex": "#42000E",
+    "bgHex": "#F4F1E7",
+    "ratio": 15.01,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "accent-text",
+    "bg": "overlay",
+    "fgHex": "#42000E",
+    "bgHex": "#FFFDF7",
+    "ratio": 16.68,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "accent-text",
+    "bg": "hover",
+    "fgHex": "#42000E",
+    "bgHex": "#EDE9DF",
+    "ratio": 13.99,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "accent-text",
+    "bg": "selected",
+    "fgHex": "#42000E",
+    "bgHex": "#E6E2D6",
+    "ratio": 13.1,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "accent-text",
+    "bg": "accent-soft-bg",
+    "fgHex": "#42000E",
+    "bgHex": "#FFE8E9",
+    "ratio": 14.52,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "accent-solid-label",
+    "bg": "accent-solid",
+    "fgHex": "#FFFFFF",
+    "bgHex": "#390F14",
+    "ratio": 16.77,
+    "floor": 4.5,
+    "kind": "label on primary",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "accent-solid-alt-label",
+    "bg": "accent-solid-alt",
+    "fgHex": "#FFFFFF",
+    "bgHex": "#390F14",
+    "ratio": 16.77,
+    "floor": 4.5,
+    "kind": "label on alt primary",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "accent-solid",
+    "bg": "bg",
+    "fgHex": "#390F14",
+    "bgHex": "#FBF8F1",
+    "ratio": 15.81,
+    "floor": 3,
+    "kind": "control fill",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "accent-solid",
+    "bg": "surface",
+    "fgHex": "#390F14",
+    "bgHex": "#FFFDF7",
+    "ratio": 16.48,
+    "floor": 3,
+    "kind": "control fill",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "selection-ring",
+    "bg": "canvas-bg",
+    "fgHex": "#8B3047",
+    "bgHex": "#FBF8F1",
+    "ratio": 7.58,
+    "floor": 3,
+    "kind": "selection ring",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "light",
+    "fg": "focus-ring",
+    "bg": "bg",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FBF8F1",
+    "ratio": 16.38,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "focus-ring",
+    "bg": "surface",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FFFDF7",
+    "ratio": 17.08,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "focus-ring",
+    "bg": "field",
+    "fgHex": "#1C1A16",
+    "bgHex": "#F4F1E7",
+    "ratio": 15.37,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "focus-ring",
+    "bg": "overlay",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FFFDF7",
+    "ratio": 17.08,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "focus-ring",
+    "bg": "hover",
+    "fgHex": "#1C1A16",
+    "bgHex": "#EDE9DF",
+    "ratio": 14.33,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "focus-ring",
+    "bg": "selected",
+    "fgHex": "#1C1A16",
+    "bgHex": "#E6E2D6",
+    "ratio": 13.41,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "focus-ring",
+    "bg": "canvas-bg",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FBF8F1",
+    "ratio": 16.38,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "focus-ring",
+    "bg": "node-fill",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FFFDF7",
+    "ratio": 17.08,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "running",
+    "bg": "canvas-bg",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FBF8F1",
+    "ratio": 16.38,
+    "floor": 3,
+    "kind": "running arc",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "border-strong",
+    "bg": "bg",
+    "fgHex": "#8A867C",
+    "bgHex": "#FBF8F1",
+    "ratio": 3.42,
+    "floor": 3,
+    "kind": "control boundary",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "light",
+    "fg": "border-strong",
+    "bg": "surface",
+    "fgHex": "#8A867C",
+    "bgHex": "#FFFDF7",
+    "ratio": 3.57,
+    "floor": 3,
+    "kind": "control boundary",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "light",
+    "fg": "border-strong",
+    "bg": "field",
+    "fgHex": "#8A867C",
+    "bgHex": "#F4F1E7",
+    "ratio": 3.21,
+    "floor": 3,
+    "kind": "control boundary",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "light",
+    "fg": "border-strong",
+    "bg": "overlay",
+    "fgHex": "#8A867C",
+    "bgHex": "#FFFDF7",
+    "ratio": 3.57,
+    "floor": 3,
+    "kind": "control boundary",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "light",
+    "fg": "edge",
+    "bg": "canvas-bg",
+    "fgHex": "#8F8B82",
+    "bgHex": "#FBF8F1",
+    "ratio": 3.2,
+    "floor": 3,
+    "kind": "edge",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "light",
+    "fg": "node-stroke",
+    "bg": "canvas-bg",
+    "fgHex": "#8F8B82",
+    "bgHex": "#FBF8F1",
+    "ratio": 3.2,
+    "floor": 3,
+    "kind": "node outline",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "light",
+    "fg": "edge-strong",
+    "bg": "canvas-bg",
+    "fgHex": "#68645C",
+    "bgHex": "#FBF8F1",
+    "ratio": 5.55,
+    "floor": 3,
+    "kind": "edge (hover/selected)",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "draft-outline",
+    "bg": "canvas-bg",
+    "fgHex": "#8F8B82",
+    "bgHex": "#FBF8F1",
+    "ratio": 3.2,
+    "floor": 3,
+    "kind": "draft outline",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "light",
+    "fg": "canvas-label",
+    "bg": "canvas-bg",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FBF8F1",
+    "ratio": 16.38,
+    "floor": 4.5,
+    "kind": "canvas label",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "canvas-label-muted",
+    "bg": "canvas-bg",
+    "fgHex": "#68645C",
+    "bgHex": "#FBF8F1",
+    "ratio": 5.55,
+    "floor": 4.5,
+    "kind": "canvas caption",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "danger-outline",
+    "bg": "canvas-bg",
+    "fgHex": "#F54731",
+    "bgHex": "#FBF8F1",
+    "ratio": 3.4,
+    "floor": 3,
+    "kind": "failed outline",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "light",
+    "fg": "danger-solid",
+    "bg": "bg",
+    "fgHex": "#F54731",
+    "bgHex": "#FBF8F1",
+    "ratio": 3.4,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "danger-solid",
+    "bg": "surface",
+    "fgHex": "#F54731",
+    "bgHex": "#FFFDF7",
+    "ratio": 3.54,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "danger-solid",
+    "bg": "field",
+    "fgHex": "#F54731",
+    "bgHex": "#F4F1E7",
+    "ratio": 3.19,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "danger-solid",
+    "bg": "node-fill",
+    "fgHex": "#F54731",
+    "bgHex": "#FFFDF7",
+    "ratio": 3.54,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "danger-solid-label",
+    "bg": "danger-solid",
+    "fgHex": "#1C1A16",
+    "bgHex": "#F54731",
+    "ratio": 4.82,
+    "floor": 4.5,
+    "kind": "label on status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "danger-text",
+    "bg": "bg",
+    "fgHex": "#D5210B",
+    "bgHex": "#FBF8F1",
+    "ratio": 4.89,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "danger-text",
+    "bg": "surface",
+    "fgHex": "#D5210B",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.1,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "danger-text",
+    "bg": "field",
+    "fgHex": "#D5210B",
+    "bgHex": "#F4F1E7",
+    "ratio": 4.59,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "danger-text",
+    "bg": "overlay",
+    "fgHex": "#D5210B",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.1,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "danger-text",
+    "bg": "danger-soft-bg",
+    "fgHex": "#D5210B",
+    "bgHex": "#FFEBE7",
+    "ratio": 4.51,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "success-solid",
+    "bg": "bg",
+    "fgHex": "#378450",
+    "bgHex": "#FBF8F1",
+    "ratio": 4.32,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "success-solid",
+    "bg": "surface",
+    "fgHex": "#378450",
+    "bgHex": "#FFFDF7",
+    "ratio": 4.51,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "success-solid",
+    "bg": "field",
+    "fgHex": "#378450",
+    "bgHex": "#F4F1E7",
+    "ratio": 4.06,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "success-solid",
+    "bg": "node-fill",
+    "fgHex": "#378450",
+    "bgHex": "#FFFDF7",
+    "ratio": 4.51,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "success-solid-label",
+    "bg": "success-solid",
+    "fgHex": "#FFFFFF",
+    "bgHex": "#378450",
+    "ratio": 4.59,
+    "floor": 4.5,
+    "kind": "label on status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "success-text",
+    "bg": "bg",
+    "fgHex": "#2F7C49",
+    "bgHex": "#FBF8F1",
+    "ratio": 4.83,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "success-text",
+    "bg": "surface",
+    "fgHex": "#2F7C49",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.04,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "success-text",
+    "bg": "field",
+    "fgHex": "#2F7C49",
+    "bgHex": "#F4F1E7",
+    "ratio": 4.53,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "success-text",
+    "bg": "overlay",
+    "fgHex": "#2F7C49",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.04,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "success-text",
+    "bg": "success-soft-bg",
+    "fgHex": "#2F7C49",
+    "bgHex": "#E1F7E5",
+    "ratio": 4.55,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "warning-solid",
+    "bg": "bg",
+    "fgHex": "#9A6418",
+    "bgHex": "#FBF8F1",
+    "ratio": 4.7,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "warning-solid",
+    "bg": "surface",
+    "fgHex": "#9A6418",
+    "bgHex": "#FFFDF7",
+    "ratio": 4.9,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "warning-solid",
+    "bg": "field",
+    "fgHex": "#9A6418",
+    "bgHex": "#F4F1E7",
+    "ratio": 4.41,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "warning-solid",
+    "bg": "node-fill",
+    "fgHex": "#9A6418",
+    "bgHex": "#FFFDF7",
+    "ratio": 4.9,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "warning-solid-label",
+    "bg": "warning-solid",
+    "fgHex": "#FFFFFF",
+    "bgHex": "#9A6418",
+    "ratio": 4.99,
+    "floor": 4.5,
+    "kind": "label on status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "warning-text",
+    "bg": "bg",
+    "fgHex": "#976213",
+    "bgHex": "#FBF8F1",
+    "ratio": 4.86,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "warning-text",
+    "bg": "surface",
+    "fgHex": "#976213",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.07,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "warning-text",
+    "bg": "field",
+    "fgHex": "#976213",
+    "bgHex": "#F4F1E7",
+    "ratio": 4.56,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "warning-text",
+    "bg": "overlay",
+    "fgHex": "#976213",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.07,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "warning-text",
+    "bg": "warning-soft-bg",
+    "fgHex": "#976213",
+    "bgHex": "#FFEDD9",
+    "ratio": 4.51,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "draft-solid",
+    "bg": "bg",
+    "fgHex": "#5B5546",
+    "bgHex": "#FBF8F1",
+    "ratio": 6.99,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "draft-solid",
+    "bg": "surface",
+    "fgHex": "#5B5546",
+    "bgHex": "#FFFDF7",
+    "ratio": 7.29,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "draft-solid",
+    "bg": "field",
+    "fgHex": "#5B5546",
+    "bgHex": "#F4F1E7",
+    "ratio": 6.56,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "draft-solid",
+    "bg": "node-fill",
+    "fgHex": "#5B5546",
+    "bgHex": "#FFFDF7",
+    "ratio": 7.29,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "draft-solid-label",
+    "bg": "draft-solid",
+    "fgHex": "#FFFFFF",
+    "bgHex": "#5B5546",
+    "ratio": 7.41,
+    "floor": 4.5,
+    "kind": "label on status solid",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "draft-text",
+    "bg": "bg",
+    "fgHex": "#736D5D",
+    "bgHex": "#FBF8F1",
+    "ratio": 4.86,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "draft-text",
+    "bg": "surface",
+    "fgHex": "#736D5D",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.07,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "draft-text",
+    "bg": "field",
+    "fgHex": "#736D5D",
+    "bgHex": "#F4F1E7",
+    "ratio": 4.56,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "draft-text",
+    "bg": "overlay",
+    "fgHex": "#736D5D",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.07,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "draft-text",
+    "bg": "draft-soft-bg",
+    "fgHex": "#736D5D",
+    "bgHex": "#F2F0EB",
+    "ratio": 4.53,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "danger-strong-label",
+    "bg": "danger-strong",
+    "fgHex": "#FFFFFF",
+    "bgHex": "#E1311C",
+    "ratio": 4.51,
+    "floor": 4.5,
+    "kind": "white glyph on failed badge",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "diff-add",
+    "bg": "surface",
+    "fgHex": "#2F7C49",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.04,
+    "floor": 4.5,
+    "kind": "diff text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "diff-del",
+    "bg": "surface",
+    "fgHex": "#D5210B",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.1,
+    "floor": 4.5,
+    "kind": "diff text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "diff-add",
+    "bg": "field",
+    "fgHex": "#2F7C49",
+    "bgHex": "#F4F1E7",
+    "ratio": 4.53,
+    "floor": 4.5,
+    "kind": "diff text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "diff-del",
+    "bg": "field",
+    "fgHex": "#D5210B",
+    "bgHex": "#F4F1E7",
+    "ratio": 4.59,
+    "floor": 4.5,
+    "kind": "diff text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "stop-glyph",
+    "bg": "stop-bg",
+    "fgHex": "#1C1A16",
+    "bgHex": "#F4F1E7",
+    "ratio": 15.37,
+    "floor": 4.5,
+    "kind": "Stop glyph",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "signal-fill-label",
+    "bg": "signal-fill",
+    "fgHex": "#FFFFFF",
+    "bgHex": "#8B3047",
+    "ratio": 8.04,
+    "floor": 4.5,
+    "kind": "label on accent fill",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "signal-mark",
+    "bg": "bg",
+    "fgHex": "#8B3047",
+    "bgHex": "#FBF8F1",
+    "ratio": 7.58,
+    "floor": 3,
+    "kind": "accent as a mark",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "light",
+    "fg": "signal-mark",
+    "bg": "surface",
+    "fgHex": "#8B3047",
+    "bgHex": "#FFFDF7",
+    "ratio": 7.91,
+    "floor": 3,
+    "kind": "accent as a mark",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "light",
+    "fg": "signal-mark",
+    "bg": "canvas-bg",
+    "fgHex": "#8B3047",
+    "bgHex": "#FBF8F1",
+    "ratio": 7.58,
+    "floor": 3,
+    "kind": "accent as a mark",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "light",
+    "fg": "signal-mark",
+    "bg": "node-fill",
+    "fgHex": "#8B3047",
+    "bgHex": "#FFFDF7",
+    "ratio": 7.91,
+    "floor": 3,
+    "kind": "accent as a mark",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "light",
+    "fg": "sidebar-text",
+    "bg": "sidebar",
+    "fgHex": "#390F14",
+    "bgHex": "#D8B44D",
+    "ratio": 8.43,
+    "floor": 4.5,
+    "kind": "sidebar text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "sidebar-muted",
+    "bg": "sidebar",
+    "fgHex": "#3D3932",
+    "bgHex": "#D8B44D",
+    "ratio": 5.77,
+    "floor": 4.5,
+    "kind": "sidebar text",
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "sidebar-muted",
+    "bg": "sidebar-hover",
+    "fgHex": "#3D3932",
+    "bgHex": "#C5A137",
+    "ratio": 4.66,
+    "floor": 4.5,
+    "kind": "sidebar text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text",
+    "bg": "bg",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#110F0C",
+    "ratio": 16.48,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text",
+    "bg": "surface",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#171511",
+    "ratio": 15.7,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text",
+    "bg": "field",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#211E17",
+    "ratio": 14.32,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text",
+    "bg": "overlay",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#28251E",
+    "ratio": 13.17,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text",
+    "bg": "hover",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#28251E",
+    "ratio": 13.17,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text",
+    "bg": "selected",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#302D24",
+    "ratio": 11.85,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text",
+    "bg": "node-fill",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#211E17",
+    "ratio": 14.32,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text",
+    "bg": "accent-soft-bg",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#291F04",
+    "ratio": 14,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text",
+    "bg": "danger-soft-bg",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#3A1B16",
+    "ratio": 13.42,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text",
+    "bg": "success-soft-bg",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#132B1A",
+    "ratio": 13.03,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text",
+    "bg": "warning-soft-bg",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#33210A",
+    "ratio": 13.27,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text",
+    "bg": "draft-soft-bg",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#272520",
+    "ratio": 13.19,
+    "floor": 4.5,
+    "kind": "text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text-muted",
+    "bg": "bg",
+    "fgHex": "#BDB9B0",
+    "bgHex": "#110F0C",
+    "ratio": 9.78,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text-muted",
+    "bg": "surface",
+    "fgHex": "#BDB9B0",
+    "bgHex": "#171511",
+    "ratio": 9.32,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text-muted",
+    "bg": "field",
+    "fgHex": "#BDB9B0",
+    "bgHex": "#211E17",
+    "ratio": 8.5,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text-muted",
+    "bg": "overlay",
+    "fgHex": "#BDB9B0",
+    "bgHex": "#28251E",
+    "ratio": 7.81,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text-muted",
+    "bg": "hover",
+    "fgHex": "#BDB9B0",
+    "bgHex": "#28251E",
+    "ratio": 7.81,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text-muted",
+    "bg": "selected",
+    "fgHex": "#BDB9B0",
+    "bgHex": "#302D24",
+    "ratio": 7.03,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "text-muted",
+    "bg": "node-fill",
+    "fgHex": "#BDB9B0",
+    "bgHex": "#211E17",
+    "ratio": 8.5,
+    "floor": 4.5,
+    "kind": "text (placeholders)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "accent-text",
+    "bg": "bg",
+    "fgHex": "#D3B66A",
+    "bgHex": "#110F0C",
+    "ratio": 9.72,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "accent-text",
+    "bg": "surface",
+    "fgHex": "#D3B66A",
+    "bgHex": "#171511",
+    "ratio": 9.26,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "accent-text",
+    "bg": "field",
+    "fgHex": "#D3B66A",
+    "bgHex": "#211E17",
+    "ratio": 8.45,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "accent-text",
+    "bg": "overlay",
+    "fgHex": "#D3B66A",
+    "bgHex": "#28251E",
+    "ratio": 7.77,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "accent-text",
+    "bg": "hover",
+    "fgHex": "#D3B66A",
+    "bgHex": "#28251E",
+    "ratio": 7.77,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "accent-text",
+    "bg": "selected",
+    "fgHex": "#D3B66A",
+    "bgHex": "#302D24",
+    "ratio": 6.99,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "accent-text",
+    "bg": "accent-soft-bg",
+    "fgHex": "#D3B66A",
+    "bgHex": "#291F04",
+    "ratio": 8.26,
+    "floor": 4.5,
+    "kind": "text (links)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "accent-solid-label",
+    "bg": "accent-solid",
+    "fgHex": "#110F0C",
+    "bgHex": "#D8B44D",
+    "ratio": 9.62,
+    "floor": 4.5,
+    "kind": "label on primary",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "accent-solid-alt-label",
+    "bg": "accent-solid-alt",
+    "fgHex": "#110F0C",
+    "bgHex": "#D8B44D",
+    "ratio": 9.62,
+    "floor": 4.5,
+    "kind": "label on alt primary",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "accent-solid",
+    "bg": "bg",
+    "fgHex": "#D8B44D",
+    "bgHex": "#110F0C",
+    "ratio": 9.62,
+    "floor": 3,
+    "kind": "control fill",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "accent-solid",
+    "bg": "surface",
+    "fgHex": "#D8B44D",
+    "bgHex": "#171511",
+    "ratio": 9.16,
+    "floor": 3,
+    "kind": "control fill",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "selection-ring",
+    "bg": "canvas-bg",
+    "fgHex": "#B8586D",
+    "bgHex": "#110F0C",
+    "ratio": 4.24,
+    "floor": 3,
+    "kind": "selection ring",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "dark",
+    "fg": "focus-ring",
+    "bg": "bg",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#110F0C",
+    "ratio": 16.48,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "focus-ring",
+    "bg": "surface",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#171511",
+    "ratio": 15.7,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "focus-ring",
+    "bg": "field",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#211E17",
+    "ratio": 14.32,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "focus-ring",
+    "bg": "overlay",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#28251E",
+    "ratio": 13.17,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "focus-ring",
+    "bg": "hover",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#28251E",
+    "ratio": 13.17,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "focus-ring",
+    "bg": "selected",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#302D24",
+    "ratio": 11.85,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "focus-ring",
+    "bg": "canvas-bg",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#110F0C",
+    "ratio": 16.48,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "focus-ring",
+    "bg": "node-fill",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#211E17",
+    "ratio": 14.32,
+    "floor": 3,
+    "kind": "focus ring",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "running",
+    "bg": "canvas-bg",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#110F0C",
+    "ratio": 16.48,
+    "floor": 3,
+    "kind": "running arc",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "border-strong",
+    "bg": "bg",
+    "fgHex": "#777368",
+    "bgHex": "#110F0C",
+    "ratio": 4.04,
+    "floor": 3,
+    "kind": "control boundary",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "dark",
+    "fg": "border-strong",
+    "bg": "surface",
+    "fgHex": "#777368",
+    "bgHex": "#171511",
+    "ratio": 3.85,
+    "floor": 3,
+    "kind": "control boundary",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "dark",
+    "fg": "border-strong",
+    "bg": "field",
+    "fgHex": "#777368",
+    "bgHex": "#211E17",
+    "ratio": 3.51,
+    "floor": 3,
+    "kind": "control boundary",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "dark",
+    "fg": "border-strong",
+    "bg": "overlay",
+    "fgHex": "#777368",
+    "bgHex": "#28251E",
+    "ratio": 3.23,
+    "floor": 3,
+    "kind": "control boundary",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "dark",
+    "fg": "edge",
+    "bg": "canvas-bg",
+    "fgHex": "#68645A",
+    "bgHex": "#110F0C",
+    "ratio": 3.24,
+    "floor": 3,
+    "kind": "edge",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "dark",
+    "fg": "node-stroke",
+    "bg": "canvas-bg",
+    "fgHex": "#726E64",
+    "bgHex": "#110F0C",
+    "ratio": 3.76,
+    "floor": 3,
+    "kind": "node outline",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "dark",
+    "fg": "edge-strong",
+    "bg": "canvas-bg",
+    "fgHex": "#B6B2A9",
+    "bgHex": "#110F0C",
+    "ratio": 9.05,
+    "floor": 3,
+    "kind": "edge (hover/selected)",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "draft-outline",
+    "bg": "canvas-bg",
+    "fgHex": "#726E64",
+    "bgHex": "#110F0C",
+    "ratio": 3.76,
+    "floor": 3,
+    "kind": "draft outline",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "dark",
+    "fg": "canvas-label",
+    "bg": "canvas-bg",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#110F0C",
+    "ratio": 16.48,
+    "floor": 4.5,
+    "kind": "canvas label",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "canvas-label-muted",
+    "bg": "canvas-bg",
+    "fgHex": "#BDB9B0",
+    "bgHex": "#110F0C",
+    "ratio": 9.78,
+    "floor": 4.5,
+    "kind": "canvas caption",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "danger-outline",
+    "bg": "canvas-bg",
+    "fgHex": "#F54731",
+    "bgHex": "#110F0C",
+    "ratio": 5.31,
+    "floor": 3,
+    "kind": "failed outline",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "dark",
+    "fg": "danger-solid",
+    "bg": "bg",
+    "fgHex": "#F54731",
+    "bgHex": "#110F0C",
+    "ratio": 5.31,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "danger-solid",
+    "bg": "surface",
+    "fgHex": "#F54731",
+    "bgHex": "#171511",
+    "ratio": 5.06,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "danger-solid",
+    "bg": "field",
+    "fgHex": "#F54731",
+    "bgHex": "#211E17",
+    "ratio": 4.62,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "danger-solid",
+    "bg": "node-fill",
+    "fgHex": "#F54731",
+    "bgHex": "#211E17",
+    "ratio": 4.62,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "danger-solid-label",
+    "bg": "danger-solid",
+    "fgHex": "#110F0C",
+    "bgHex": "#F54731",
+    "ratio": 5.31,
+    "floor": 4.5,
+    "kind": "label on status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "danger-text",
+    "bg": "bg",
+    "fgHex": "#FFA190",
+    "bgHex": "#110F0C",
+    "ratio": 9.8,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "danger-text",
+    "bg": "surface",
+    "fgHex": "#FFA190",
+    "bgHex": "#171511",
+    "ratio": 9.34,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "danger-text",
+    "bg": "field",
+    "fgHex": "#FFA190",
+    "bgHex": "#211E17",
+    "ratio": 8.52,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "danger-text",
+    "bg": "overlay",
+    "fgHex": "#FFA190",
+    "bgHex": "#28251E",
+    "ratio": 7.83,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "danger-text",
+    "bg": "danger-soft-bg",
+    "fgHex": "#FFA190",
+    "bgHex": "#3A1B16",
+    "ratio": 7.98,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "success-solid",
+    "bg": "bg",
+    "fgHex": "#74CF8E",
+    "bgHex": "#110F0C",
+    "ratio": 10.08,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "success-solid",
+    "bg": "surface",
+    "fgHex": "#74CF8E",
+    "bgHex": "#171511",
+    "ratio": 9.6,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "success-solid",
+    "bg": "field",
+    "fgHex": "#74CF8E",
+    "bgHex": "#211E17",
+    "ratio": 8.76,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "success-solid",
+    "bg": "node-fill",
+    "fgHex": "#74CF8E",
+    "bgHex": "#211E17",
+    "ratio": 8.76,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "success-solid-label",
+    "bg": "success-solid",
+    "fgHex": "#110F0C",
+    "bgHex": "#74CF8E",
+    "ratio": 10.08,
+    "floor": 4.5,
+    "kind": "label on status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "success-text",
+    "bg": "bg",
+    "fgHex": "#7AD595",
+    "bgHex": "#110F0C",
+    "ratio": 10.73,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "success-text",
+    "bg": "surface",
+    "fgHex": "#7AD595",
+    "bgHex": "#171511",
+    "ratio": 10.23,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "success-text",
+    "bg": "field",
+    "fgHex": "#7AD595",
+    "bgHex": "#211E17",
+    "ratio": 9.33,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "success-text",
+    "bg": "overlay",
+    "fgHex": "#7AD595",
+    "bgHex": "#28251E",
+    "ratio": 8.58,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "success-text",
+    "bg": "success-soft-bg",
+    "fgHex": "#7AD595",
+    "bgHex": "#132B1A",
+    "ratio": 8.49,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "warning-solid",
+    "bg": "bg",
+    "fgHex": "#B67617",
+    "bgHex": "#110F0C",
+    "ratio": 5.1,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "warning-solid",
+    "bg": "surface",
+    "fgHex": "#B67617",
+    "bgHex": "#171511",
+    "ratio": 4.86,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "warning-solid",
+    "bg": "field",
+    "fgHex": "#B67617",
+    "bgHex": "#211E17",
+    "ratio": 4.43,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "warning-solid",
+    "bg": "node-fill",
+    "fgHex": "#B67617",
+    "bgHex": "#211E17",
+    "ratio": 4.43,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "warning-solid-label",
+    "bg": "warning-solid",
+    "fgHex": "#110F0C",
+    "bgHex": "#B67617",
+    "ratio": 5.1,
+    "floor": 4.5,
+    "kind": "label on status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "warning-text",
+    "bg": "bg",
+    "fgHex": "#F2AE5B",
+    "bgHex": "#110F0C",
+    "ratio": 10.01,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "warning-text",
+    "bg": "surface",
+    "fgHex": "#F2AE5B",
+    "bgHex": "#171511",
+    "ratio": 9.53,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "warning-text",
+    "bg": "field",
+    "fgHex": "#F2AE5B",
+    "bgHex": "#211E17",
+    "ratio": 8.7,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "warning-text",
+    "bg": "overlay",
+    "fgHex": "#F2AE5B",
+    "bgHex": "#28251E",
+    "ratio": 7.99,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "warning-text",
+    "bg": "warning-soft-bg",
+    "fgHex": "#F2AE5B",
+    "bgHex": "#33210A",
+    "ratio": 8.06,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "draft-solid",
+    "bg": "bg",
+    "fgHex": "#928C7B",
+    "bgHex": "#110F0C",
+    "ratio": 5.7,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "draft-solid",
+    "bg": "surface",
+    "fgHex": "#928C7B",
+    "bgHex": "#171511",
+    "ratio": 5.43,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "draft-solid",
+    "bg": "field",
+    "fgHex": "#928C7B",
+    "bgHex": "#211E17",
+    "ratio": 4.96,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "draft-solid",
+    "bg": "node-fill",
+    "fgHex": "#928C7B",
+    "bgHex": "#211E17",
+    "ratio": 4.96,
+    "floor": 3,
+    "kind": "status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "draft-solid-label",
+    "bg": "draft-solid",
+    "fgHex": "#110F0C",
+    "bgHex": "#928C7B",
+    "ratio": 5.7,
+    "floor": 4.5,
+    "kind": "label on status solid",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "draft-text",
+    "bg": "bg",
+    "fgHex": "#C4BDAC",
+    "bgHex": "#110F0C",
+    "ratio": 10.23,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "draft-text",
+    "bg": "surface",
+    "fgHex": "#C4BDAC",
+    "bgHex": "#171511",
+    "ratio": 9.74,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "draft-text",
+    "bg": "field",
+    "fgHex": "#C4BDAC",
+    "bgHex": "#211E17",
+    "ratio": 8.89,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "draft-text",
+    "bg": "overlay",
+    "fgHex": "#C4BDAC",
+    "bgHex": "#28251E",
+    "ratio": 8.17,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "draft-text",
+    "bg": "draft-soft-bg",
+    "fgHex": "#C4BDAC",
+    "bgHex": "#272520",
+    "ratio": 8.18,
+    "floor": 4.5,
+    "kind": "status text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "danger-strong-label",
+    "bg": "danger-strong",
+    "fgHex": "#FFFFFF",
+    "bgHex": "#E1311C",
+    "ratio": 4.51,
+    "floor": 4.5,
+    "kind": "white glyph on failed badge",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "diff-add",
+    "bg": "surface",
+    "fgHex": "#7AD595",
+    "bgHex": "#171511",
+    "ratio": 10.23,
+    "floor": 4.5,
+    "kind": "diff text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "diff-del",
+    "bg": "surface",
+    "fgHex": "#FFA190",
+    "bgHex": "#171511",
+    "ratio": 9.34,
+    "floor": 4.5,
+    "kind": "diff text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "diff-add",
+    "bg": "field",
+    "fgHex": "#7AD595",
+    "bgHex": "#211E17",
+    "ratio": 9.33,
+    "floor": 4.5,
+    "kind": "diff text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "diff-del",
+    "bg": "field",
+    "fgHex": "#FFA190",
+    "bgHex": "#211E17",
+    "ratio": 8.52,
+    "floor": 4.5,
+    "kind": "diff text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "stop-glyph",
+    "bg": "stop-bg",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#211E17",
+    "ratio": 14.32,
+    "floor": 4.5,
+    "kind": "Stop glyph",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "signal-fill-label",
+    "bg": "signal-fill",
+    "fgHex": "#FFFFFF",
+    "bgHex": "#8B3047",
+    "ratio": 8.04,
+    "floor": 4.5,
+    "kind": "label on accent fill",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "signal-mark",
+    "bg": "bg",
+    "fgHex": "#AD4E63",
+    "bgHex": "#110F0C",
+    "ratio": 3.69,
+    "floor": 3,
+    "kind": "accent as a mark",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "dark",
+    "fg": "signal-mark",
+    "bg": "surface",
+    "fgHex": "#AD4E63",
+    "bgHex": "#171511",
+    "ratio": 3.51,
+    "floor": 3,
+    "kind": "accent as a mark",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "dark",
+    "fg": "signal-mark",
+    "bg": "canvas-bg",
+    "fgHex": "#AD4E63",
+    "bgHex": "#110F0C",
+    "ratio": 3.69,
+    "floor": 3,
+    "kind": "accent as a mark",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "dark",
+    "fg": "signal-mark",
+    "bg": "node-fill",
+    "fgHex": "#AD4E63",
+    "bgHex": "#211E17",
+    "ratio": 3.2,
+    "floor": 3,
+    "kind": "accent as a mark",
+    "pass": true,
+    "margin": 3.2
+   },
+   {
+    "theme": "dark",
+    "fg": "sidebar-text",
+    "bg": "sidebar",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#32280C",
+    "ratio": 12.52,
+    "floor": 4.5,
+    "kind": "sidebar text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "sidebar-muted",
+    "bg": "sidebar",
+    "fgHex": "#BDB9B0",
+    "bgHex": "#32280C",
+    "ratio": 7.43,
+    "floor": 4.5,
+    "kind": "sidebar text",
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "sidebar-muted",
+    "bg": "sidebar-hover",
+    "fgHex": "#BDB9B0",
+    "bgHex": "#3C3216",
+    "ratio": 6.46,
+    "floor": 4.5,
+    "kind": "sidebar text",
+    "pass": true
+   }
+  ],
+  "authoringContrast": [
+   {
+    "theme": "light",
+    "fg": "authoring text",
+    "bg": "page",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FFFDF7",
+    "ratio": 17.08,
+    "floor": 4.5,
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "authoring text",
+    "bg": "card",
+    "fgHex": "#1C1A16",
+    "bgHex": "#F4F1E7",
+    "ratio": 15.37,
+    "floor": 4.5,
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "authoring text-muted",
+    "bg": "page",
+    "fgHex": "#68645C",
+    "bgHex": "#FFFDF7",
+    "ratio": 5.79,
+    "floor": 4.5,
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "authoring text-muted",
+    "bg": "card",
+    "fgHex": "#68645C",
+    "bgHex": "#F4F1E7",
+    "ratio": 5.21,
+    "floor": 4.5,
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "authoring link",
+    "bg": "page",
+    "fgHex": "#42000E",
+    "bgHex": "#FFFDF7",
+    "ratio": 16.68,
+    "floor": 4.5,
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "authoring link",
+    "bg": "card",
+    "fgHex": "#42000E",
+    "bgHex": "#F4F1E7",
+    "ratio": 15.01,
+    "floor": 4.5,
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "authoring border",
+    "bg": "page",
+    "fgHex": "#8A867C",
+    "bgHex": "#FFFDF7",
+    "ratio": 3.57,
+    "floor": 3,
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "authoring border",
+    "bg": "card",
+    "fgHex": "#8A867C",
+    "bgHex": "#F4F1E7",
+    "ratio": 3.21,
+    "floor": 3,
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "authoring focus",
+    "bg": "page",
+    "fgHex": "#1C1A16",
+    "bgHex": "#FFFDF7",
+    "ratio": 17.08,
+    "floor": 3,
+    "pass": true
+   },
+   {
+    "theme": "light",
+    "fg": "authoring focus",
+    "bg": "card",
+    "fgHex": "#1C1A16",
+    "bgHex": "#F4F1E7",
+    "ratio": 15.37,
+    "floor": 3,
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "authoring text",
+    "bg": "page",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#171511",
+    "ratio": 15.7,
+    "floor": 4.5,
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "authoring text",
+    "bg": "card",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#211E17",
+    "ratio": 14.32,
+    "floor": 4.5,
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "authoring text-muted",
+    "bg": "page",
+    "fgHex": "#BDB9B0",
+    "bgHex": "#171511",
+    "ratio": 9.32,
+    "floor": 4.5,
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "authoring text-muted",
+    "bg": "card",
+    "fgHex": "#BDB9B0",
+    "bgHex": "#211E17",
+    "ratio": 8.5,
+    "floor": 4.5,
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "authoring link",
+    "bg": "page",
+    "fgHex": "#D3B66A",
+    "bgHex": "#171511",
+    "ratio": 9.26,
+    "floor": 4.5,
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "authoring link",
+    "bg": "card",
+    "fgHex": "#D3B66A",
+    "bgHex": "#211E17",
+    "ratio": 8.45,
+    "floor": 4.5,
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "authoring border",
+    "bg": "page",
+    "fgHex": "#777368",
+    "bgHex": "#171511",
+    "ratio": 3.85,
+    "floor": 3,
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "authoring border",
+    "bg": "card",
+    "fgHex": "#777368",
+    "bgHex": "#211E17",
+    "ratio": 3.51,
+    "floor": 3,
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "authoring focus",
+    "bg": "page",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#171511",
+    "ratio": 15.7,
+    "floor": 3,
+    "pass": true
+   },
+   {
+    "theme": "dark",
+    "fg": "authoring focus",
+    "bg": "card",
+    "fgHex": "#F0EEE7",
+    "bgHex": "#211E17",
+    "ratio": 14.32,
+    "floor": 3,
+    "pass": true
+   }
+  ],
+  "families": {
+   "minPairwise": {
+    "light": {
+     "minNormal": 19.9,
+     "worstNormalPair": "#8C0779/#363DB8",
+     "minCVD": 11.4,
+     "worstCvdPair": "#A670F3/#0090A5",
+     "minTritan": 6.6
+    },
+    "dark": {
+     "minNormal": 19.8,
+     "worstNormalPair": "#BB42A4/#596AE8",
+     "minCVD": 11.3,
+     "worstCvdPair": "#C09AFF/#64E5FF",
+     "minTritan": 8.3
+    }
+   },
+   "nearestReserved": {
+    "fam": "F2",
+    "theme": "dark",
+    "token": "accent-solid",
+    "hex": "#D8B44D",
+    "dE": 10.3,
+    "dECVD": 9.1
+   },
+   "score": {
+    "minMetric": 1.321,
+    "meanMetric": 1.75,
+    "note": "min over pairs and themes of min(dE_normal/15, dE_CVD/8); >= 1 meets report 08's targets"
+   }
+  },
+  "series": {
+   "minPairwise": {
+    "light": {
+     "minNormal": 19.6,
+     "worstNormalPair": "#4087DE/#B659A2",
+     "minCVD": 10.4,
+     "worstCvdPair": "#02A05E/#B659A2",
+     "minTritan": 4.1
+    },
+    "dark": {
+     "minNormal": 19.6,
+     "worstNormalPair": "#60A7FF/#E1CDFF",
+     "minCVD": 10.4,
+     "worstCvdPair": "#60A7FF/#D071BB",
+     "minTritan": 5.4
+    }
+   }
+  },
+  "failures": [],
+  "warnings": [],
+  "pass": true
+ }
+}

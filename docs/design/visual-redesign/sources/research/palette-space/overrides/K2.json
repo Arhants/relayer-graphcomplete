@@ -1,0 +1,6 @@
+{
+ "K2": {
+  "_why": "K2 is Gen-1 B: report 08 set B's warning at hue 70, not the engine's shared 75; with it K2 reproduces all 88 brief §6.2 tokens exactly (families unchanged)",
+  "warning": { "h": 70 }
+ }
+}
