@@ -4050,6 +4050,8 @@ export function createProductWorkspace({
     const thread = getThread();
     if (!thread) {
       nodeSelectionSequence += 1;
+      // A request still waiting for a draft belongs to the thread left.
+      userRequestTicket += 1;
       contextEditor = null;
       releaseSendAttempt();
       if (contextDraftSendWarning.open) {

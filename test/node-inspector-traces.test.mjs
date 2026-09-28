@@ -76,4 +76,19 @@ describe("A request waiting for a resolving draft", () => {
     await world.apply(["DiscardReturns", "ok"], quietModel, quietModel);
     expect(await turnChange).toBe(false);
   });
+
+  it("is void once the user leaves every thread for New Thread", async () => {
+    const trace = traces.find((candidate) => candidate.scenario === "inspector-view-change-during-discard");
+    const discard = trace.steps.findIndex(({ action }) => action?.[0] === "Discard");
+    world = await new NodeInspectorWorld().ready();
+    for (let index = 1; index <= discard; index += 1) {
+      await world.apply(trace.steps[index].action, trace.steps[index - 1].state, trace.steps[index].state);
+    }
+    const back = world.workspace.prepareSelectionChange();
+    world.thread = null;
+    world.selection.currentThreadId = null;
+    world.workspace.render();
+    await world.apply(["DiscardReturns", "ok"], quietModel, quietModel);
+    expect(await back).toBe(false);
+  });
 });
