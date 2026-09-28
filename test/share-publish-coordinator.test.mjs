@@ -514,6 +514,42 @@ describe("share publication coordinator", () => {
     expect(JSON.stringify(report.mock.calls)).not.toContain("Bearer secret");
   });
 
+  it("persists preflight exporter failure state before reporting and reuses its reference", async () => {
+    const report = vi.fn(async () => ({ accepted: true }));
+    const exportSnapshot = vi.fn(async () => {
+      throw new ShareSnapshotExportError("share_export_failed");
+    });
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot,
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer secret", generation: 1 }),
+      sourceThreadIdentity: async (threadId) => `installation:test:thread:${threadId}`,
+      publish: vi.fn(),
+      issueHandledShareFailureReporter: () => ({ report }),
+      createReferenceId: () => "SHR-PREFLIGHT",
+    });
+
+    await expect(coordinator.preflight({ threadId: 42 })).resolves.toEqual({
+      status: "failed",
+      attemptReferenceId: "SHR-PREFLIGHT",
+      code: "share_export_failed",
+      retryable: false,
+    });
+    await expect(coordinator.pending({ threadId: 42 })).resolves.toEqual({
+      status: "failed",
+      attemptReferenceId: "SHR-PREFLIGHT",
+      code: "share_export_failed",
+      retryable: false,
+    });
+    await expect(coordinator.retry("SHR-PREFLIGHT")).resolves.toEqual({
+      status: "failed",
+      attemptReferenceId: "SHR-PREFLIGHT",
+      code: "share_export_failed",
+      retryable: false,
+    });
+    expect(exportSnapshot).toHaveBeenCalledOnce();
+    expect(report).toHaveBeenCalledOnce();
+  });
+
   it("does not report expected eligibility and validation failures", async () => {
     const report = vi.fn();
     const coordinator = createSharePublishCoordinator({

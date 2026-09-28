@@ -384,12 +384,19 @@ export function createSharePublishCoordinator({
     async preflight({ threadId } = {}) {
       const reference = createReferenceId();
       let failureReporter = null;
+      let account = null;
+      let sourceThreadId = null;
+      let failureAttempt = null;
       try {
         if (!Number.isSafeInteger(threadId) || threadId <= 0) {
           throw new TypeError("Share preflight input is invalid.");
         }
-        const account = exactAccount(await accountSession());
+        account = exactAccount(await accountSession());
         failureReporter = issueHandledShareFailureReporter({ generation: account.generation });
+        sourceThreadId = await sourceThreadIdentity(threadId);
+        if (typeof sourceThreadId !== "string" || !sourceThreadId.trim()) {
+          throw new TypeError("Share source-thread identity is invalid.");
+        }
         // This deliberately does not retain bytes or create an attempt. A
         // maximum-width public title makes the size check conservative; Create
         // remains the one boundary that freezes accepted history and identity.
@@ -408,8 +415,37 @@ export function createSharePublishCoordinator({
         await assertAuthority();
         return Object.freeze({ status: "ready" });
       } catch (error) {
-        await report(error, reference, failureReporter);
-        return closedFailure(error, reference);
+        const result = closedFailure(error, reference);
+        if (account !== null && sourceThreadId !== null
+          && ["share_snapshot_too_large", "share_export_failed"].includes(result.code)) {
+          const record = {
+            reference,
+            attemptId: createAttemptId(),
+            ownerKey: account.ownerKey,
+            threadId,
+            sourceThreadId,
+            title: "",
+            snapshotBytes: new Uint8Array(),
+            metadata: null,
+            createdAt: now(),
+            lastFailure: result,
+            reportedFailures: new Set(),
+            completed: false,
+            failureOnly: true,
+            publishedUrl: null,
+            running: false,
+            dismissing: false,
+          };
+          try {
+            await save(record);
+            remember(record);
+            failureAttempt = record;
+          } catch {
+            failureAttempt = null;
+          }
+        }
+        await report(error, reference, failureReporter, failureAttempt);
+        return result;
       } finally {
         failureReporter?.revoke?.();
       }

@@ -1956,7 +1956,9 @@ impl ProjectPathRedactor {
             }
             rest = after;
         }
-        let redacted = if self.contains_private_path(&redacted) {
+        let redacted = if self.contains_private_path(&redacted)
+            || self.contains_private_path(&markdown_rendered_text(&redacted))
+        {
             "[project-path]".to_owned()
         } else {
             redacted
@@ -2159,19 +2161,7 @@ fn redact_share_secrets(value: &str) -> String {
 /// intentionally conservative: false positives redact one public field, while
 /// a false negative would disclose the reconstructed secret.
 fn markdown_rendered_text(value: &str) -> String {
-    // Reference definitions do not render. Removing them first also prevents
-    // the label used by `[text][label]` from being mistaken for visible text.
-    let visible_source = value
-        .split_inclusive('\n')
-        .filter(|line| {
-            let trimmed = line.trim_start_matches([' ', '\t']);
-            let Some(rest) = trimmed.strip_prefix('[') else {
-                return true;
-            };
-            !rest.contains("]:")
-        })
-        .collect::<String>();
-    let characters: Vec<char> = visible_source.chars().collect();
+    let characters: Vec<char> = value.chars().collect();
     let mut rendered = String::with_capacity(value.len());
     let mut index = 0;
     while index < characters.len() {
@@ -2187,8 +2177,10 @@ fn markdown_rendered_text(value: &str) -> String {
                 }
             }
             '<' => {
+                let tag_start = index;
                 index += 1;
                 let mut quote = None;
+                let mut closed = false;
                 while index < characters.len() {
                     let character = characters[index];
                     if let Some(active) = quote {
@@ -2199,9 +2191,14 @@ fn markdown_rendered_text(value: &str) -> String {
                         quote = Some(character);
                     } else if character == '>' {
                         index += 1;
+                        closed = true;
                         break;
                     }
                     index += 1;
+                }
+                if !closed {
+                    rendered.push('<');
+                    index = tag_start + 1;
                 }
             }
             ']' if characters.get(index + 1) == Some(&'(') => {
@@ -3229,6 +3226,8 @@ mod tests {
             "sk-proj-12345<span title=\">\">6</span>78901234567890",
             "s[k][x]-proj-12345678901234567890\n\n[x]: https://example.test",
             "s<!-- > -->k-proj-12345678901234567890",
+            "[note]: nope s**k**-proj-12345678901234567890",
+            "a < s**k**-proj-12345678901234567890",
         ] {
             let mut node = authored_node(serde_json::json!({}));
             node.authored_detail = None;
@@ -3246,6 +3245,10 @@ mod tests {
         let home_redactor = ProjectPathRedactor::for_share(None);
         assert_eq!(
             home_redactor.text("/Us**ers**/alice/.ssh/id_rsa"),
+            "[project-path]"
+        );
+        assert_eq!(
+            home_redactor.text("/Us**ers**/alice/.ssh/id_rsa /Us%65rs/bob/file"),
             "[project-path]"
         );
 
