@@ -2181,39 +2181,12 @@ fn markdown_rendered_text(value: &str) -> String {
     let mut index = 0;
     while index < characters.len() {
         match characters[index] {
-            '<' if characters[index..].starts_with(&['<', '!', '-', '-']) => {
-                index += 4;
-                while index < characters.len() {
-                    if characters[index..].starts_with(&['-', '-', '>']) {
-                        index += 3;
-                        break;
-                    }
-                    index += 1;
-                }
-            }
             '<' => {
-                let tag_start = index;
-                index += 1;
-                let mut quote = None;
-                let mut closed = false;
-                while index < characters.len() {
-                    let character = characters[index];
-                    if let Some(active) = quote {
-                        if character == active {
-                            quote = None;
-                        }
-                    } else if matches!(character, '\'' | '"') {
-                        quote = Some(character);
-                    } else if character == '>' {
-                        index += 1;
-                        closed = true;
-                        break;
-                    }
-                    index += 1;
-                }
-                if !closed {
+                if let Some(end) = inline_html_end(&characters, index) {
+                    index = end;
+                } else {
                     rendered.push('<');
-                    index = tag_start + 1;
+                    index += 1;
                 }
             }
             ']' if characters.get(index + 1) == Some(&'(') => {
@@ -2255,7 +2228,7 @@ fn markdown_rendered_text(value: &str) -> String {
 /// credentials. The relaxed credential matcher intentionally tolerates a
 /// visible-label prefix; false positives redact one public field.
 fn markdown_security_skeleton(value: &str) -> String {
-    strip_well_formed_inline_html(value)
+    strip_markdown_presentation(value)
         .chars()
         .filter(|character| {
             character.is_alphanumeric()
@@ -2265,74 +2238,112 @@ fn markdown_security_skeleton(value: &str) -> String {
         .collect()
 }
 
-/// Remove only structurally complete inline HTML before building the lossy
-/// security projection. Malformed outer Markdown/HTML remains available for
-/// scanning, while valid nested tags cannot contribute their tag-name bytes to
-/// (or split) a credential or private path.
-fn strip_well_formed_inline_html(value: &str) -> String {
+/// Remove structurally complete inline HTML and closed Markdown destinations
+/// before building the lossy security projection. Malformed outer syntax is
+/// preserved so nested visible text remains scannable.
+fn strip_markdown_presentation(value: &str) -> String {
     let characters: Vec<char> = value.chars().collect();
     let mut stripped = String::with_capacity(value.len());
     let mut index = 0;
     while index < characters.len() {
-        if characters[index] != '<' {
-            stripped.push(characters[index]);
-            index += 1;
+        if characters[index] == '<' {
+            if let Some(end) = inline_html_end(&characters, index) {
+                index = end;
+            } else {
+                stripped.push('<');
+                index += 1;
+            }
             continue;
         }
-
-        if characters[index..].starts_with(&['<', '!', '-', '-']) {
-            if let Some(offset) = characters[index + 4..]
-                .windows(3)
-                .position(|window| window == ['-', '-', '>'])
-            {
-                index += 4 + offset + 3;
+        if characters[index] == ']' && characters.get(index + 1) == Some(&'(') {
+            let mut cursor = index + 2;
+            let mut depth = 1usize;
+            while cursor < characters.len() {
+                match characters[cursor] {
+                    '\\' => cursor = cursor.saturating_add(1),
+                    '(' => depth = depth.saturating_add(1),
+                    ')' => {
+                        depth = depth.saturating_sub(1);
+                        if depth == 0 {
+                            index = cursor + 1;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                cursor += 1;
+            }
+            if depth == 0 {
                 continue;
             }
-            stripped.push('<');
-            index += 1;
-            continue;
-        }
-
-        let name_index = if characters.get(index + 1) == Some(&'/') {
-            index + 2
-        } else {
-            index + 1
-        };
-        if !characters
-            .get(name_index)
-            .is_some_and(|character| character.is_ascii_alphabetic())
+        } else if characters[index] == ']'
+            && characters.get(index + 1) == Some(&'[')
+            && let Some(offset) = characters[index + 2..]
+                .iter()
+                .position(|character| *character == ']')
         {
-            stripped.push('<');
-            index += 1;
+            index += 2 + offset + 1;
             continue;
         }
-
-        let mut cursor = name_index + 1;
-        let mut quote = None;
-        let mut closed = false;
-        while cursor < characters.len() {
-            let character = characters[cursor];
-            if let Some(active) = quote {
-                if character == active {
-                    quote = None;
-                }
-            } else if matches!(character, '\'' | '"') {
-                quote = Some(character);
-            } else if character == '>' {
-                cursor += 1;
-                closed = true;
-                break;
-            }
-            cursor += 1;
-        }
-        if closed {
-            index = cursor;
-        } else {
-            stripped.push('<');
-            index += 1;
-        }
+        stripped.push(characters[index]);
+        index += 1;
     }
     stripped
+}
+
+/// Return the byte-independent character offset after a complete HTML comment
+/// or grammar-shaped tag. An unquoted nested `<`, or punctuation immediately
+/// after a tag name, makes the construct malformed and therefore visible.
+fn inline_html_end(characters: &[char], index: usize) -> Option<usize> {
+    if characters[index..].starts_with(&['<', '!', '-', '-']) {
+        return characters[index + 4..]
+            .windows(3)
+            .position(|window| window == ['-', '-', '>'])
+            .map(|offset| index + 4 + offset + 3);
+    }
+
+    let name_start = if characters.get(index + 1) == Some(&'/') {
+        index + 2
+    } else {
+        index + 1
+    };
+    if !characters
+        .get(name_start)
+        .is_some_and(|character| character.is_ascii_alphabetic())
+    {
+        return None;
+    }
+    let mut cursor = name_start + 1;
+    while characters
+        .get(cursor)
+        .is_some_and(|character| character.is_ascii_alphanumeric() || *character == '-')
+    {
+        cursor += 1;
+    }
+    if !characters
+        .get(cursor)
+        .is_some_and(|character| character.is_whitespace() || matches!(character, '/' | '>'))
+    {
+        return None;
+    }
+
+    let mut quote = None;
+    while cursor < characters.len() {
+        let character = characters[cursor];
+        if let Some(active) = quote {
+            if character == active {
+                quote = None;
+            }
+        } else if matches!(character, '\'' | '"') {
+            quote = Some(character);
+        } else if character == '<' {
+            return None;
+        } else if character == '>' {
+            return Some(cursor + 1);
+        }
+        cursor += 1;
+    }
+    None
 }
 
 fn contains_relaxed_share_secret(value: &str) -> bool {
@@ -3364,6 +3375,10 @@ mod tests {
             "a < s**k**-proj-12345678901234567890",
             "a < s**k**-proj-12345678901234567890 >",
             "a < s<em>k</em>-proj-12345678901234567890 >",
+            "<s<em>k</em>-proj-12345678901234567890>",
+            "<s<!-- > -->k-proj-12345678901234567890>",
+            "<s[k](https://example.test)-proj-12345678901234567890>",
+            "a < s[k](https://example.test)-proj-12345678901234567890 >",
             "[label](s**k**-proj-12345678901234567890",
             "[label](s<em>k</em>-proj-12345678901234567890",
             "[label][s**k**-proj-12345678901234567890",
