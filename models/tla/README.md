@@ -175,8 +175,8 @@ This model covers the model catalog and the default provider and family:
 There are two providers: the existing managed provider `P`, and `Q`, which
 starts absent and may connect. The families are their managed families `mP`
 and `mQ`, and one custom family `C` with members from both. Each check
-shrinks the bounds in `catalog-today`. On an idle machine the slowest,
-`catalog-refresh-keeps-chosen-default`, takes about 10 seconds.
+shrinks the bounds in `catalog-today`. On an idle machine the two slowest,
+the default-provider checks, take about 10 and 20 seconds.
 
 `catalog-today` has one fix constant:
 
