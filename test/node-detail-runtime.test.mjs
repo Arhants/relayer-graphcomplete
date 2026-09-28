@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Window } from "happy-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NodeDetailAuthoring, html, css } from "../packages/graph-client/src/index.ts";
 
 import { compiledNodeDetailReviewControls, mountCompiledNodeDetail } from "../desktop/renderer/src/product-workspace/node-detail-runtime.js";
 import { createReviewPresentationAdapter } from "../desktop/renderer/src/review-tools.js";
@@ -43,6 +44,68 @@ function mountedCss(shadowRoot, index) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("compiled Node Detail product runtime", () => {
+  it.each([
+    ['*{color:red}p:only-child{color:blue;--note:"[data-relayer-theme=dark]"}', false],
+    ['[title="[data-relayer-theme=dark]"] p{color:red}', false],
+    ['@media(min-width:0px){[data-relayer-theme="dark"] p{color:cyan}}', true],
+  ])("adds a theme scope only for parsed theme selectors: %s", async (source, themed) => {
+    const window = new Window();
+    const authoring = new NodeDetailAuthoring();
+    authoring.setComponent("page", html`<p>Original presentation</p>`, css(Object.assign([source], { raw: [source] })));
+    const detail = authoring.checkpoint();
+    const host = window.document.createElement("div");
+    window.document.body.append(host);
+    const runtime = await mountCompiledNodeDetail({ host, detail });
+    expect(runtime.status).toBe("mounted");
+    const paragraph = host.shadowRoot.querySelector("p");
+    expect(paragraph.parentNode).toBe(themed ? host.shadowRoot.querySelector("gc-detail-theme") : host.shadowRoot);
+    window.document.documentElement.dataset.theme = "light";
+    await window.happyDOM.waitUntilComplete();
+    expect(host.shadowRoot.querySelector("p")).toBe(paragraph);
+    expect(Boolean(host.shadowRoot.querySelector("gc-detail-theme"))).toBe(themed);
+    runtime.dispose();
+    await window.happyDOM.close();
+  });
+
+  it("mirrors product appearance for public compiled CSS and releases observation on disposal and failed mounting", async () => {
+    const window = new Window();
+    window.document.documentElement.dataset.theme = "light";
+    const authoring = new NodeDetailAuthoring();
+    authoring.setComponent("theme", html`<p>Meaning stays the same.</p>`, css`
+      [data-relayer-theme="light"] p { color: #182c34; }
+      [data-relayer-theme="dark"] p { color: #edf2f3; }
+    `);
+    const detail = authoring.checkpoint();
+    const original = JSON.stringify(detail);
+    const host = window.document.createElement("div");
+    window.document.body.append(host);
+    const runtime = await mountCompiledNodeDetail({ host, detail });
+    expect(runtime.status).toBe("mounted");
+    const themeScope = host.shadowRoot.querySelector("gc-detail-theme");
+    expect(themeScope.dataset.relayerTheme).toBe("light");
+    const content = host.shadowRoot.querySelector("p");
+    window.document.documentElement.dataset.theme = "dark";
+    await window.happyDOM.waitUntilComplete();
+    expect(themeScope.dataset.relayerTheme).toBe("dark");
+    expect(host.shadowRoot.querySelector("p")).toBe(content);
+    expect(JSON.stringify(detail)).toBe(original);
+    runtime.dispose();
+    window.document.documentElement.dataset.theme = "light";
+    await window.happyDOM.waitUntilComplete();
+    expect(themeScope.dataset.relayerTheme).toBe("dark");
+
+    const badHost = window.document.createElement("div");
+    const invalid = compiledPackage({ version: 1, components: detail.components,
+      mounts: [{ id: "missing", componentId: "theme", kind: "capability", host: "a",
+        capability: { kind: "link", href: "https://example.com" } }], assets: [] });
+    const disconnect = vi.spyOn(window.MutationObserver.prototype, "disconnect");
+    const failed = await mountCompiledNodeDetail({ host: badHost, detail: invalid });
+    expect(failed.status).toBe("fallback");
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    disconnect.mockRestore();
+    await window.happyDOM.close();
+  });
+
   it("mounts authored layout in isolation and composes an ordinary external link with an independent visual asset", async () => {
     const window = new Window({ url: "http://127.0.0.1:3000" });
     const host = window.document.createElement("div");
@@ -795,9 +858,12 @@ describe("compiled Node Detail product runtime", () => {
       await window.happyDOM.waitUntilComplete();
       window.document.querySelector('[aria-label="Show Context illustration annotations"]').click();
       window.document.querySelector('[aria-label="Open Context illustration details"]').click();
-      await window.happyDOM.waitUntilComplete();
-      expect(resolver).toHaveBeenCalledWith(asset, expect.objectContaining({ interaction: source, layerId: 99, thread, node }));
-      expect(window.document.querySelector("#detailContent [data-node-detail-runtime]").shadowRoot.querySelector("img").src).toBe("blob:http://127.0.0.1:3000/context-image");
+      // Package integrity uses native WebCrypto, outside Happy DOM's task tracking.
+      // Observe the completed asset mount rather than only draining DOM tasks.
+      await vi.waitFor(() => {
+        expect(resolver).toHaveBeenCalledWith(asset, expect.objectContaining({ interaction: source, layerId: 99, thread, node }));
+        expect(window.document.querySelector("#detailContent [data-node-detail-runtime]")?.shadowRoot?.querySelector("img")?.src).toBe("blob:http://127.0.0.1:3000/context-image");
+      });
     } finally { workspace.dispose(); }
   });
 

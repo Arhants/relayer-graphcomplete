@@ -553,6 +553,8 @@ Codex native subagents are available when useful. Subagents may directly author,
 Answer the current user interaction by authoring and accepting a useful graph layer that truthfully presents the completed work or genuine blocker.
 
 ${GRAPH_PRESENTATION_GUIDANCE}
+${CODEX_VISUAL_GUIDANCE}
+${CODEX_ASSET_GUIDANCE}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interactionNode.id}
@@ -689,6 +691,8 @@ Do not turn a node, relationship, path, list, record, or arbitrary string into a
 After doing the underlying work, answer the current user interaction with a useful graph that truthfully presents the result, evidence, and limitations. A flat answer is valid. Add navigation only when opening it would materially improve understanding or support; apply that same test again inside every layer you author.
 
 ${GRAPH_PRESENTATION_GUIDANCE}
+${CODEX_VISUAL_GUIDANCE}
+${CODEX_ASSET_GUIDANCE}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation && context !== undefined ? personalPresentationPrompt(context) : ""}
 
 Current interaction node: ${interactionNode.id}
@@ -733,7 +737,7 @@ The graph service enforces exact provenance, target visibility, layer size, expa
 }
 
 function currentWorkspaceMechanicsJs(): string {
-  return `Read current with const current = await graph.getCurrent(). After submitting a layer, you may update the pointer with await graph.advanceCurrent(layer, current.headRevision, "a-stable-operation-key"). Once a layer is current, the next current layer must keep a navigation path back to it, so the user can always return to what they saw. This applies to every later advanceCurrent and to the root layer of your final graph.submit. After submitting the new layer and before advancing to it or submitting, add a reference navigate action from one of its draft nodes created for this interaction to current.currentLayerId. Reused accepted nodes cannot take new actions, so every layer you make current needs at least one new draft node to carry that reference.`;
+  return `Read current with let current = await graph.getCurrent(). The first current layer may contain visible accepted nodes; when no prior current exists, it needs no new draft carrier. When a prior current exists, every later current layer and the root of your final graph.submit must retain a navigation path back to that prior current. Reuse an existing valid path when one already exists; otherwise, after submitting the new layer and before publishing it, add a reference navigate action from one of its draft nodes created for this interaction to current.currentLayerId. Reused accepted nodes cannot take new actions. Give each distinct logical advanceCurrent transition its own stable operation key. Save that transition's exact layer, expected headRevision, and operation key together. After submitting the complete closure and registering all its actions, publish it with await graph.advanceCurrent(layer, expectedHeadRevision, operationKey). An exact retry reuses all three unchanged. After a successful nonterminal advanceCurrent, refresh with current = await graph.getCurrent() before building the next logical transition, so its revision and backreference use the new current. Use a different stable key for that next transition. A successful terminal graph.submit ends graph access: do not call getCurrent or perform any further graph reads or writes afterward.`;
 }
 
 function semanticCompletionGuidanceJs(
@@ -742,7 +746,7 @@ function semanticCompletionGuidanceJs(
   nativeAgentLabel: string,
 ): string {
   if (context?.completionBroker === undefined) return "";
-  return `For explicit semantic child work, give each child its own invoke action. First author and submit those invoke actions in their layer and advance that layer as current. Only after that succeeds, prepare each child separately with const inputGraph = await graph.prepareComplete(invokeAction); one input graph starts exactly one child. Import complete and watchCompletions from ${completeModuleUrl}. Start with const children = [] and launch each child from its own input graph with children.push(complete(inputGraph)). Each handle returns immediately with completionId, current, and result; launch every independent child before watching them. Every change to a child's current is an event you may act on. Create const watch = watchCompletions(children) once. Then run const changes = await watch.changes(); it resolves as soon as any child's current moves or ends, even when that takes minutes. After each event, decide whether the user now needs a better view, for example when a workstream reaches a finding or finishes. Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting. Repeat until watch.settled is true. Your turn ending does not wait for children, so never leave them unawaited. Then integrate every child and return this completion. await child.result gives a succeeded child's final layer. A stopped or failed child rejects it with CompletionTerminalError, also exported by that module; catch it and integrate the work its error.current still retains. Native ${nativeAgentLabel} subagents remain inside this completion and do not create semantic children by themselves.\n`;
+  return `For explicit semantic child work, give each child its own invoke action. First author and submit those invoke actions in their layer and advance that layer as current. Only after that succeeds, prepare each child separately with const inputGraph = await graph.prepareComplete(invokeAction); one input graph starts exactly one child. Import complete and watchCompletions from ${completeModuleUrl}. Start with const children = [] and launch each child from its own input graph with children.push(complete(inputGraph)). Each handle returns immediately with completionId, current, and result; launch every independent child before watching them. Every change to a child's current is an event you may act on. Create const watch = watchCompletions(children) once. Then run const changes = await watch.changes(); it resolves as soon as any child's current moves or ends, even when that takes minutes. Each change is { child, current }, or { child, error } once the watch can no longer observe that child, for example because its start was refused; the watch then stops watching it. After each event, decide whether the user now needs a better view, for example when a workstream reaches a finding or finishes. Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting. Repeat until watch.settled is true. Your turn ending does not wait for children, so never leave them unawaited. Then integrate every child and return this completion. await child.result gives a succeeded child's final layer. A stopped or failed child rejects it with CompletionTerminalError, also exported by that module; catch it and integrate the work its error.current still retains. If child.result rejects with any other error, as it may for a child reported with an error, you cannot read that child's work; present that part as not done, without quoting the error or inventing findings. Native ${nativeAgentLabel} subagents remain inside this completion and do not create semantic children by themselves.\n`;
 }
 
 function graphAuthoringCommand(launcher: string | undefined): string {
@@ -817,8 +821,8 @@ function redactPersonalPresentationTraceData(
   if (traceValues === undefined) return value;
   if (typeof value === "string") {
     const values = includeFragments
-      ? [traceValues.exactBlock, ...traceValues.fragments]
-      : [traceValues.exactBlock];
+      ? [traceValues.exactBlock, ...traceValues.legacyBlocks, ...traceValues.fragments]
+      : [traceValues.exactBlock, ...traceValues.legacyBlocks];
     return values.reduce(
       (sanitized, traceValue) => sanitized.split(traceValue).join("[redacted-personal-presentation]"),
       value,
@@ -1177,7 +1181,7 @@ function parseCodexBasicConfiguration(context: HarnessFactoryContext): ResolvedC
   const additionalDirectories = optionalStringArray(configuration.additionalDirectories, "additionalDirectories");
   const promptProfile = optionalEnum(configuration.promptProfile, ["layered-navigation-v1", "layered-navigation-multi-agent-v1"] as const, "promptProfile");
   const rootSessionMode = optionalEnum(configuration.rootSessionMode, ["resume", "fresh"] as const, "rootSessionMode");
-  optionalEnum(configuration.personalPresentationVersion, ["personal-presentation-v0", "personal-presentation-v1", "personal-presentation-v2", "personal-presentation-v3"] as const, "personalPresentationVersion");
+  optionalEnum(configuration.personalPresentationVersion, ["personal-presentation-v0", "personal-presentation-v1", "personal-presentation-v2", "personal-presentation-v3", "personal-presentation-v4"] as const, "personalPresentationVersion");
   const permission = parseCodexPermissionBinding(context.permissionProfileId, context.permissionBinding);
 
   return {
@@ -1254,3 +1258,7 @@ function optionalStringArray(value: unknown, field: string): readonly string[] |
 export function createCodexBasicFactory(dependencies: CodexBasicDependencies = {}): HarnessFactory {
   return (context) => new CodexBasicHarness(context, dependencies);
 }
+
+const CODEX_VISUAL_GUIDANCE = "The following public API recipe demonstrates authoring mechanics only; its placeholder content and layout are not a recommended response design. For visual Node Details: Import the exported html, css, and detailCapability helpers. At minimum, call node.detailAuthoring.setComponent(\"main\", html`<section><h2>Summary</h2><p>Details</p></section>`, css`section { display: grid; gap: 0.75rem; }`), await graph.checkpointNodeDetail(node), and then await graph.submitNode(node). When a node has actions, create each stable action object with its sourceLayer before checkpointing, bind that same object in the page with the matching detailCapability helper, and pass it to graph.addAction after submitting the layer.";
+
+const CODEX_ASSET_GUIDANCE = `For image assets, import assetRef from the supplied clientModuleUrl. Use const scope = await graph.visualAssets.scope(); await graph.visualAssets.listAssets({ scope }); await graph.visualAssets.listTags({ scope }); await graph.visualAssets.inspect(assetId, scope). Register caller-read bytes with await graph.visualAssets.add({ scope, name, file: { name, mediaType, async read() { return bytes; } } }); bind the returned asset.id with html\`<img asset=\${assetRef(asset.id)} alt="Description">\`. The host resolves and pins content. Never supply compiled packages, mounts, hashes, raw image URLs, or executable JavaScript.`;

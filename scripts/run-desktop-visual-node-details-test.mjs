@@ -53,12 +53,19 @@ try {
     && result?.passed === true
     && result.cleanupCompleted === true
     && result.paidInferenceCalls === 0
+    && (!process.env.RELAYER_PRIME_VISUAL_EXPORT || (manifest?.assertions?.primeVisual?.renderedAsset?.naturalWidth > 0
+      && manifest?.assertions?.primeVisual?.screenshot?.tileCount >= 1))
     && manifest?.schemaVersion === 1
     && manifest?.paidInferenceCalls === 0
     && manifest?.screenshot?.mode === "full"
     && manifest?.screenshot?.tileCount >= 1
     && manifest?.assertions?.serverMutationRejected?.code === "read_only_session"
     && manifest?.assertions?.reopened === true
+    && manifest?.assertions?.themes?.acceptedPackageUnchanged === true
+    && ["eval", "reopened", "imported"].every(key => manifest?.assertions?.themes?.[key]?.length === 2
+      && manifest.assertions.themes[key].every(item => item.screenshot?.tileCount >= 1 && item.disabled === true && item.cssPreserved && item.valuePreserved))
+    && manifest?.assertions?.themes?.product?.length === 3
+    && manifest.assertions.themes.product.every(item => item.disabled === false && item.valuePreserved && item.focusPreserved && item.sameInput && item.screenshotPaths?.length > 0)
     && manifest?.assertions?.visualAsset?.renderedAsset?.naturalWidth > 0
     && manifest?.assertions?.visualAssetReopened?.naturalWidth > 0
     && manifest?.assertions?.visualAssetExportImport?.portabilityPending === false

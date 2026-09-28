@@ -139,6 +139,8 @@ The Issue #363 client foundation attaches one `NodeDetailAuthoring` builder to e
 
 Issue #365 makes that compiler output an immutable graph record. The graph server verifies the shared canonical SHA-256 before storing `authoredDetail`; SQLite reopen, accepted-closure reads, TypeScript node responses, and conversation export/import all carry the same package beside the legacy Markdown fallback. Draft resubmission follows a three-state rule (omit retains, `null` clears, a package replaces), and conversation export omits a package that would carry a private project path in any raw or decoded form, recording `authoredDetailOmitted` beside the redacted fallback. The visual-assets Module owns digest-addressed catalog storage, provenance, scope, and media validation. The graph capability derives completion scope and calls a private host bridge with an independent token and generation. Submission prepares the exact canonical package through that bridge and pins validated bytes to graph nodes; accepted-image reads require an accepted node association. Conversation export carries globally deduplicated `visualAssetContent` records between the header and turns, with each content record bounded by the existing JSONL line limit. Import validates media through the same host library, stages bytes by digest within the private import session, and publishes node associations and content atomically. Product reads additionally require accepted-node membership in a layer readable by the selected thread interaction. This uses the ordinary graph layer authority for current and historical accepted state. Development and packaged harnesses receive the same HTML, CSS, capability, and logical asset authoring surface. Product's isolated runtime still validates the complete persisted package and degrades unavailable legacy or imported asset mounts safely; #371 owns Eval proof through that runtime.
 
+Authored theme presentation (#519) is renderer state, not graph state or harness execution. The public reference exposes `[data-relayer-theme="light"]` and `[data-relayer-theme="dark"]` theme selectors on a runtime-owned inner scope; the compiler still rejects host and ancestor selectors. Product and Eval mirror the document's active appearance onto the inner scope, initially and on changes, without replacing controls or altering package bytes. Only stylesheets whose parsed selectors reference the theme attribute receive the inner scope and observer. Unthemed packages retain their existing DOM ancestry. Disposal and failed mounting release the observer. Theme variants remain ordinary accepted CSS and pinned assets, so storage and portable import need no new schema. Generic harness guidance supplies theme references without imposing a palette, layout, or deterministic aesthetic gate. Unthemed output keeps its original styling. Existing containment and capability authority remain unchanged.
+
 ## Target self-assessing policy invariants
 
 The following apply when the optional recursive self-assessment policy is enabled; they are not prerequisites for the initial direct recursive completion slice.
@@ -446,3 +448,24 @@ Rust authority plus a scoped human annotation credential. Browser-supplied
 cookies never become upstream credentials. Judges use fresh Chromium contexts
 and the shared production renderer. The terminal owns shutdown; browser tabs do
 not own execution. See ADR 0003 and PRD section 9 for the product contract.
+
+## Prime instruction discovery boundary
+
+Prime filters native context-file admission to canonical descendants of the selected
+workspace and its managed private agent directory. This preserves workspace-owned
+instructions while preventing a standalone app workspace nested under a development
+checkout from inheriting that checkout’s AGENTS.md. The same filter runs on resource
+reload and excludes symlinks that resolve outside the admitted roots. This boundary
+controls model instructions; it does not redefine filesystem read permissions.
+
+### Explanatory presentation delivery
+
+Production Codex and Prime configurations select the immutable V4 presentation
+for new threads. It adds task-adaptive explanatory presentation without changing
+V0–V3 or existing pins. Shared semantics belong in the presentation graph. Each
+harness supplies a compact capability overview and language-appropriate public
+API recipes; examples demonstrate mechanics, not response design. Native
+parents are instructed to pass the pinned preference and applicable recipes to
+graph-authoring children. That instruction is not automatic child injection.
+Acceptance establishes graph integrity; rendered-result review establishes
+whether the chosen representation communicates the task effectively.

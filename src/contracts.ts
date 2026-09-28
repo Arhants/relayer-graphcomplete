@@ -90,19 +90,24 @@ export interface CompletionCurrent {
   next(afterRevision?: number): Promise<CompletionCurrentSnapshot>;
 }
 
-/** One change to a watched child's current. */
-export interface CompletionChange {
-  readonly child: CompletionHandle;
-  readonly current: CompletionCurrentSnapshot;
-}
+/**
+ * One change to a watched child's current, or the error that ended the watch's observation
+ * of that child, for example a refused start. A child is reported with an error once and
+ * is not watched again; the watch never invents a current for it.
+ */
+export type CompletionChange =
+  | { readonly child: CompletionHandle; readonly current: CompletionCurrentSnapshot; readonly error?: undefined }
+  | { readonly child: CompletionHandle; readonly error: Error; readonly current?: undefined };
 
 /** Waits on several children at once, reporting each change to any child's current. */
 export interface CompletionWatch {
-  /** True once every watched child's current is terminal. */
+  /** True once every watched child's current is terminal or can no longer be observed. */
   readonly settled: boolean;
   /**
    * Resolves as soon as at least one child's current has moved or ended since the last
    * call, with every change seen by then. The first call reports each child's current.
+   * A child that cannot be observed is reported with its error instead, never by
+   * rejecting, so it does not hold back its siblings.
    * Resolves to no changes once the watch is settled.
    */
   changes(): Promise<readonly CompletionChange[]>;

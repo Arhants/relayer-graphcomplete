@@ -97,6 +97,124 @@ async function waitForRenderedAsset(window, timeoutMs = 10_000) {
   throw new Error("Accepted visual asset did not load through the production Node Detail runtime.");
 }
 
+async function inspectTheme(window, theme, editable = false) {
+  const result = await window.webContents.executeJavaScript(`(async () => {
+    const { applyAppearance } = await import('./src/ui.js');
+    const host = document.querySelector('.node-detail-runtime-host');
+    const root = host.shadowRoot;
+    const input = root.querySelector('input');
+    const themeScope = root.querySelector('gc-detail-theme');
+    const originalInput = input;
+    const originalPage = root.querySelector('.summary');
+    const beforeCss = root.adoptedStyleSheets.map(sheet => [...sheet.cssRules].map(rule => rule.cssText).join('')).join('');
+    if (${editable}) {
+      if (input.disabled) throw new Error('Product input is disabled');
+      input.value = 'Keep energy for dinner and lights';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.focus();
+      input.setSelectionRange(5, 11);
+    }
+    const beforeValue = input.value;
+    const scroll = document.querySelector("#detailContent");
+    const beforeScroll = scroll.scrollTop;
+    applyAppearance(${JSON.stringify(theme)});
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+    const color = element => getComputedStyle(element).color;
+    const background = element => getComputedStyle(element).backgroundColor;
+    const luminance = color => {
+      const channels = color.match(/[\\d.]+/g).slice(0, 3).map(Number).map(n => {
+        const c = n / 255; return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4;
+      });
+      return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
+    };
+    const contrast = (a, b) => { const x=luminance(a), y=luminance(b); return (Math.max(x,y)+.05)/(Math.min(x,y)+.05); };
+    const visible = [...root.querySelectorAll('img')].filter(image => getComputedStyle(image).display !== 'none');
+    await Promise.all(visible.map(image => image.decode()));
+    const text = root.querySelector('.summary');
+    const bar = root.querySelector('.midday');
+    const afterCss = root.adoptedStyleSheets.map(sheet => [...sheet.cssRules].map(rule => rule.cssText).join('')).join('');
+    return {
+      theme: themeScope.dataset.relayerTheme, value: input.value,
+      sameInput: input === root.querySelector('input'), samePage: originalPage === root.querySelector('.summary'),
+      scrollPreserved: scroll.scrollTop === beforeScroll,
+      valuePreserved: beforeValue === input.value, cssPreserved: beforeCss === afterCss,
+      focusPreserved: !${editable} || (root.activeElement === originalInput && input.selectionStart === 5 && input.selectionEnd === 11),
+      disabled: input.disabled, textColor: color(text), surface: background(themeScope),
+      contrast: { text: contrast(color(text), background(themeScope)),
+        chartLabel: contrast(color(bar), background(bar)), control: contrast(color(input), background(input)) },
+      visibleAssets: visible.map(image => ({ alt: image.alt, width: image.naturalWidth, source: new URL(image.src).protocol })),
+    };
+  })()`);
+  invariant(result.theme === theme && result.sameInput && result.samePage && result.valuePreserved && result.focusPreserved && result.scrollPreserved && result.cssPreserved,
+    `Theme switch reset authored state: ${JSON.stringify(result)}`);
+  invariant(result.disabled === !editable, `Theme switch changed control authority: ${JSON.stringify(result)}`);
+  invariant(Object.values(result.contrast).every(value => value >= 4.5), `Theme contrast failed: ${JSON.stringify(result)}`);
+  invariant(result.visibleAssets.length === 1 && result.visibleAssets[0].width > 0 && result.visibleAssets[0].source === 'blob:'
+    && result.visibleAssets[0].alt === `Accepted detail status illustration${theme === 'light' ? ' light' : ''}`,
+    `Wrong theme asset: ${JSON.stringify(result)}`);
+  return result;
+}
+
+async function captureReviewThemes(window, session, label) {
+  const results = [];
+  for (const theme of ['light', 'dark']) {
+    const inspection = await inspectTheme(window, theme);
+    const shot = await session.screenshot({ target: { kind: 'element', elementRef: 'node-detail' }, mode: 'full', label: `${label} ${theme}` });
+    invariant(shot.screenshot.tileCount >= 1, 'Theme screenshot missing');
+    results.push({ ...inspection, screenshot: shot.screenshot,
+      screenshotDirectory: session.artifactDirectoryFor(shot.screenshot.screenshotId) });
+  }
+  return results;
+}
+
+async function captureProductThemes(threadId, turnId, nodeId) {
+  const window = new BrowserWindow({ width: 1400, height: 1200, show: true,
+    webPreferences: { partition: `theme-product-${randomBytes(8).toString('hex')}`, contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  try {
+    await window.webContents.session.cookies.set({ url: productSession.origin, name: productSession.cookie.name,
+      value: productSession.cookie.value, httpOnly: true, sameSite: 'strict', secure: false });
+    await window.loadURL(`${productSession.origin}/?threadId=${threadId}&interactionId=${turnId}`);
+    const deadline = Date.now() + 15_000;
+    let ready = false;
+    let selected = false;
+    while (Date.now() < deadline && !ready) {
+      const found = await window.webContents.executeJavaScript(`Boolean(document.querySelector('[data-node="${nodeId}"]'))`);
+      if (found && !selected) {
+        await window.webContents.executeJavaScript(`document.querySelector('[data-node="${nodeId}"]').click()`);
+        selected = true;
+      }
+      ready = await window.webContents.executeJavaScript(`Boolean(document.querySelector('.node-detail-runtime-host')?.shadowRoot?.querySelector('input:not(:disabled)'))`);
+      if (!ready) await new Promise(resolveWait => setTimeout(resolveWait, 25));
+    }
+    invariant(ready, 'Mutable Product detail did not become ready');
+    const results = [];
+    for (const theme of ['light', 'dark', 'light']) {
+      const inspection = await inspectTheme(window, theme, true);
+      // Use the same paint-fenced tiled capture implementation as Eval, without
+      // creating a read-only session or changing this Product window's authority.
+      const plan = await window.webContents.executeJavaScript(`(async () => {
+        const { createReviewPresentationAdapter } = await import('./src/review-tools.js');
+        window.themeEvidenceCapture = createReviewPresentationAdapter({ executionId: 'theme-product',
+          root: document, windowObject: window, getPresentationState: () => ({}), navigateHistory: async () => {} });
+        return window.themeEvidenceCapture.capturePlan({ target: { kind: 'element', elementRef: 'node-detail' }, mode: 'full' });
+      })()`);
+      const screenshotPaths = [];
+      try {
+        for (const tile of plan.tiles) {
+          const prepared = await window.webContents.executeJavaScript(`window.themeEvidenceCapture.prepareCaptureTile(${JSON.stringify(tile)})`);
+          const path = join(artifactDirectory, `product-${results.length}-${theme}-${tile.index}.png`);
+          await writeFile(path, (await window.webContents.capturePage(prepared.clip)).toPNG());
+          screenshotPaths.push(path);
+        }
+      } finally { await window.webContents.executeJavaScript('window.themeEvidenceCapture.restoreCapture()'); }
+      invariant(screenshotPaths.length > 0, 'Product screenshot tiles missing');
+      results.push({ ...inspection, screenshotPaths });
+    }
+    return results;
+  } finally { window.destroy(); }
+}
+
 function controlByName(state, name, kind) {
   return state.controls.find((control) => control.name === name && (!kind || control.kind === kind));
 }
@@ -217,7 +335,7 @@ async function run() {
   invariant(authoredNode?.authoredDetail?.version === 1, "Accepted node is missing its canonical authored package.");
   invariant(JSON.stringify(authoredNode.authoredDetail.components.map(({ id }) => id))
     === JSON.stringify(["primary", "status", "facts", "visual", "navigation", "actions"]), "Authored component order drifted.");
-  invariant(authoredNode.authoredDetail.assets.length === 1, "Accepted package did not retain its pinned visual asset.");
+  invariant(authoredNode.authoredDetail.assets.length === 2, "Accepted package did not retain its pinned visual asset.");
   const [acceptedAsset] = authoredNode.authoredDetail.assets;
   invariant(acceptedAsset.mediaType === "image/svg+xml" && /^[a-f0-9]{64}$/.test(acceptedAsset.digestSha256),
     "Accepted package visual asset pin is invalid.");
@@ -238,6 +356,8 @@ async function run() {
   invariant(String(state.selectedNodeId) === String(authoredNode.id), "Review did not select the authored node.");
   const renderedAsset = await waitForRenderedAsset(reviewWindow);
   invariant(renderedAsset.alt === "Accepted detail status illustration", "Rendered visual asset lost its accessible label.");
+  const themeEvidence = { eval: await captureReviewThemes(reviewWindow, session, "Accepted Eval detail") };
+  themeEvidence.product = await captureProductThemes(threadId, turn.id, authoredNode.id);
   const expectedControls = [
     ["Open implementation notes", "navigate-action", false],
     ["Open referenced evidence", "navigate-action", false],
@@ -295,6 +415,7 @@ async function run() {
   const reopenedNodeControl = controlByName(state, "Open Accepted Visual Node Detail", "node");
   await session.interact({ elementRef: reopenedNodeControl.elementRef, activate: true });
   const reopenedAsset = await waitForRenderedAsset(reviewWindow);
+  themeEvidence.reopened = await captureReviewThemes(reviewWindow, session, "Reopened Eval detail");
 
   const exportPath = join(artifactDirectory, "conversation.jsonl");
   await writeFile(exportPath, await product.exportConversation(threadId), { mode: 0o600 });
@@ -321,6 +442,11 @@ async function run() {
   const importedNodeControl = controlByName(state, "Open Accepted Visual Node Detail", "node");
   await session.interact({ elementRef: importedNodeControl.elementRef, activate: true });
   const importedAsset = await waitForRenderedAsset(reviewWindow);
+  invariant(JSON.stringify(importedNode.authoredDetail) === JSON.stringify(authoredNode.authoredDetail), "Import changed the authored theme package");
+  themeEvidence.imported = await captureReviewThemes(reviewWindow, session, "Imported Eval detail");
+  const unchangedThread = await productRequest(productSession, `/api/threads/${encodeURIComponent(threadId)}`);
+  const unchangedNode = unchangedThread.interactions.find(item => item.id === turn.id).completionOutput.rootLayer.nodes.find(item => item.id === authoredNode.id);
+  invariant(JSON.stringify(unchangedNode.authoredDetail) === JSON.stringify(authoredNode.authoredDetail), "Theme switching changed accepted package bytes");
   const importedScreenshot = await session.screenshot({
     target: { kind: "element", elementRef: "node-detail" },
     mode: "full",
@@ -329,6 +455,30 @@ async function run() {
   const importedScreenshotDirectory = session.artifactDirectoryFor(importedScreenshot.screenshot.screenshotId);
   invariant(importedScreenshotDirectory && importedScreenshot.screenshot.tileCount >= 1,
     "Imported image evidence was not retained by ReviewSession.");
+
+  let primeVisual;
+  if (process.env.RELAYER_PRIME_VISUAL_EXPORT) {
+    const primeRun = await evalService.importConversation(process.env.RELAYER_PRIME_VISUAL_EXPORT);
+    const primeExecution = primeRun.executions[0];
+    const primeThreadId = primeExecution.threadIds[0];
+    const primeThread = await productRequest(productSession, `/api/threads/${primeThreadId}`);
+    const primeTurn = primeThread.interactions.find((item) => item.completionStatus === "accepted");
+    const primeRoot = primeTurn.completionOutput.rootLayer;
+    const primeNode = primeRoot.nodes.find((item) => item.title === "Prime visual answer");
+    invariant(primeNode?.authoredDetail?.assets.length === 1, "Prime export lost its compiled image pin");
+    reviewWindow.destroy();
+    const primeReview = await openReview({ execution: primeExecution, threadId: primeThreadId, turnId: primeTurn.id, rootLayerId: primeRoot.layer.id });
+    reviewWindow = primeReview.window;
+    const primeControl = controlByName(primeReview.state, "Open Prime visual answer", "node");
+    await primeReview.session.interact({ elementRef: primeControl.elementRef, activate: true });
+    const primeAsset = await waitForRenderedAsset(reviewWindow);
+    const primeState = await primeReview.session.state();
+    invariant(controlByName(primeState, "Continue", "invoke-action")?.disabled === true, "Prime invoke escaped review authority");
+    const primeScreenshot = await primeReview.session.screenshot({ target: { kind: "element", elementRef: "node-detail" }, mode: "full", label: "Prime Python authored accepted visual detail" });
+    primeVisual = { integritySha256: primeNode.authoredDetail.integritySha256, renderedAsset: primeAsset,
+      screenshot: primeScreenshot.screenshot, screenshotDirectory: primeReview.session.artifactDirectoryFor(primeScreenshot.screenshot.screenshotId),
+      importedFromPrimeFactoryPython: true };
+  }
 
   const manifest = {
     schemaVersion: 1,
@@ -341,6 +491,8 @@ async function run() {
     screenshot: screenshot.screenshot,
     screenshotDirectory,
     assertions: {
+      ...(primeVisual === undefined ? {} : { primeVisual }),
+      themes: { ...themeEvidence, acceptedPackageUnchanged: true },
       ordinaryEvalProductState: true,
       authoredLayoutMounted: true,
       controlsDiscovered: expectedControls.map(([name]) => name),

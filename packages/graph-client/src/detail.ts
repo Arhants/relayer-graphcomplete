@@ -2028,3 +2028,20 @@ function canonicalJson(value: unknown): string {
   const record = value as Record<string, unknown>;
   return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
 }
+
+/** Read-only authoring vocabulary from the compiler's own allowlists. Values still undergo validation. */
+export function detailAuthoringReference() {
+  return Object.freeze({
+    limits: DETAIL_AUTHORING_LIMITS,
+    elements: [...SAFE_HTML_ELEMENTS],
+    globalAttributes: [...GLOBAL_HTML_ATTRIBUTES],
+    runtimeOwnedAttributes: [...RUNTIME_STATE_ATTRIBUTES],
+    elementAttributes: Object.fromEntries(Object.entries(ELEMENT_HTML_ATTRIBUTES).map(([tag, attributes]) => [tag, [...attributes]])),
+    cssProperties: [...SAFE_CSS_PROPERTIES],
+    cssFunctions: [...SAFE_CSS_FUNCTIONS],
+    cssAtRules: [...SAFE_CSS_AT_RULES],
+    cssPseudoClasses: [...SAFE_CSS_PSEUDO_CLASSES],
+    cssPseudoElements: [...SAFE_CSS_PSEUDO_ELEMENTS],
+    themeSelectors: ['[data-relayer-theme="light"]', '[data-relayer-theme="dark"]'],
+  });
+}

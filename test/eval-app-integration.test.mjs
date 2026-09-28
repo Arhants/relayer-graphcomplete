@@ -232,6 +232,9 @@ describe("Relayer Eval application service", () => {
     expect(visualNodeDetailCheck(partialVisualOutput, "personal-presentation-v3").passed).toBe(false);
     expect(visualNodeDetailCheck(malformedOutput, "personal-presentation-v3").passed).toBe(false);
     expect(visualNodeDetailCheck(visualOutput, "personal-presentation-v3").passed).toBe(true);
+    expect(visualNodeDetailCheck(visualOutput, "personal-presentation-v4").passed).toBe(true);
+    expect(visualNodeDetailCheck(plainOutput, "personal-presentation-v4").passed).toBe(false);
+    expect(visualNodeDetailCheck(partialVisualOutput, "personal-presentation-v4").passed).toBe(false);
     const acceptedClosure = acceptedTopologyNodes({ layers: [
       { nodes: [{ id: 1, title: "Root", authoredDetail: compiledDetail }] },
       { nodes: [{ id: 2, title: "Nested" }] },
@@ -362,7 +365,7 @@ describe("Relayer Eval application service", () => {
     ]);
   });
 
-  it("renders the complete V3 Node Detail recipe without losing executable guidance", () => {
+  it("renders V3 presentation requirements independently of the harness language", () => {
     const rendered = renderPersonalPresentationGuidance({
       attachment: { interactionNodeId: 1, versionInteractionNodeId: 3, rootLayerId: 4 },
       graph: {
@@ -384,10 +387,13 @@ describe("Relayer Eval application service", () => {
         }],
       },
     });
-    expect(rendered).toContain(AUTHORED_VISUAL_NODE_DETAILS_PREFERENCE);
+    expect(rendered).toContain("every node you create");
+    expect(rendered).toContain("exact source layer");
+    expect(rendered).toContain("Mount every action");
+    expect(rendered).toContain("keyboard operable, and accessible");
     expect(rendered).not.toContain("visual assets");
     for (const fragment of ["html", "css", "detailCapability", "setComponent", "checkpointNodeDetail", "submitNode", "graph.addAction"]) {
-      expect(rendered).toContain(fragment);
+      expect(rendered).not.toContain(fragment);
     }
   });
 
@@ -608,7 +614,19 @@ describe("Relayer Eval application service", () => {
         members: [{ providerId: "codex", modelId: "fixture-model" }],
       }),
     });
+    // Lantern's fixture awaits child.result before returning its final root.
+    // All native work is real; only the subsequent idle observation window
+    // advances virtually. The fire-and-forget Complete pair below retains
+    // the production clock and observes genuinely pending child execution.
+    let discoveryTime = 0;
     const evalService = await new EvalService({
+      semanticChildDiscoveryClock: {
+        now: () => discoveryTime,
+        async sleep(ms) {
+          await new Promise((yieldToIo) => setImmediate(yieldToIo));
+          discoveryTime += ms;
+        },
+      },
       stateFile: join(dataDirectory, "eval-data", "test-runs.json"),
       productSession,
       configurationPaths,
@@ -1672,10 +1690,8 @@ describe("Relayer Eval application service", () => {
     expect(authoredNode.authoredDetail).toMatchObject({
       version: 1,
       assets: [
-        expect.objectContaining({
-          mediaType: "image/svg+xml",
-          representation: "image",
-        }),
+        expect.objectContaining({ mediaType: "image/svg+xml", representation: "image" }),
+        expect.objectContaining({ mediaType: "image/svg+xml", representation: "image" }),
       ],
     });
     expect(authoredNode.authoredDetail.assets[0].digestSha256).toMatch(

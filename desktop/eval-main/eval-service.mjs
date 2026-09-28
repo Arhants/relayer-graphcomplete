@@ -195,6 +195,10 @@ const MAX_CONVERSATION_IMPORT_BYTES = 256 * 1024 * 1024;
 const ANNOTATION_EXPORT_EXECUTION_STATUSES = new Set(["passed", "failed", "imported"]);
 const ANNOTATION_EXPORT_TURN_STATUSES = new Set(["accepted", "failed", "stopped"]);
 const SEMANTIC_CHILD_DISCOVERY_TIMEOUT_MS = 5_000;
+const realDiscoveryClock = Object.freeze({
+  now: () => Date.now(),
+  sleep: (ms) => new Promise((resolveWait) => setTimeout(resolveWait, ms)),
+});
 const execFileAsync = promisify(execFile);
 
 export function semanticChildDiscoveryObservation({
@@ -347,12 +351,12 @@ export function visualNodeDetailCheck(output, personalPresentationVersion) {
     && Array.isArray(authoredDetail.assets)
     && /^[a-f0-9]{64}$/.test(authoredDetail.integritySha256 || "")
   ));
-  const treatment = personalPresentationVersion === "personal-presentation-v3";
+  const treatment = ["personal-presentation-v3", "personal-presentation-v4"].includes(personalPresentationVersion);
   return {
     name: "visual-node-detail:authored-output",
     passed: treatment ? nodes.length > 0 && compiledNodes.length === nodes.length : authoredNodes.length === 0,
     detail: treatment
-      ? `The V3 treatment must accept a compiled visual Node Detail for every accepted node; observed ${compiledNodes.length} valid package${compiledNodes.length === 1 ? "" : "s"} across ${nodes.length} node${nodes.length === 1 ? "" : "s"}.`
+      ? `The authored presentation must accept a compiled visual Node Detail for every accepted node; observed ${compiledNodes.length} valid package${compiledNodes.length === 1 ? "" : "s"} across ${nodes.length} node${nodes.length === 1 ? "" : "s"}.`
       : `The pre-#404 V2 control must retain plain node details; observed ${authoredNodes.length} authored visual Node Detail${authoredNodes.length === 1 ? "" : "s"}.`,
   };
 }
@@ -423,7 +427,8 @@ export function recursiveCompleteChecks(execution, { requireChildWhenEnabled = f
   });
   const personalPresentationVersion = execution.harnessConfiguration?.settings?.personalPresentationVersion;
   if ((personalPresentationVersion === "personal-presentation-v2"
-    || personalPresentationVersion === "personal-presentation-v3") && children.length > 0) {
+    || personalPresentationVersion === "personal-presentation-v3"
+    || personalPresentationVersion === "personal-presentation-v4") && children.length > 0) {
     for (const child of children.filter((candidate) => candidate.status === "accepted")) {
       checks.push({
         ...visualNodeDetailCheck(
@@ -917,6 +922,7 @@ export class EvalService {
     annotationSnapshotLoader = null,
     platform = process.platform,
     targetKey = null,
+    semanticChildDiscoveryClock = realDiscoveryClock,
   }) {
     this.stateFile = stateFile;
     this.productSession = productSession;
@@ -942,6 +948,7 @@ export class EvalService {
     this.annotationSnapshotLoader = annotationSnapshotLoader;
     this.platform = platform;
     this.targetKey = targetKey;
+    this.semanticChildDiscoveryClock = semanticChildDiscoveryClock;
     this.runs = [];
     this.configurations = new Map();
     this.running = new Map();
@@ -2483,12 +2490,15 @@ export class EvalService {
   }
 
   async #waitForSemanticChildren(execution, threadId, humanInteractionIds) {
+    // Native execution keeps its real-time bound even when a deterministic
+    // fixture advances only the discovery quiet window.
     const deadline = Date.now() + 10 * 60_000;
-    const discoveryDeadline = Date.now() + SEMANTIC_CHILD_DISCOVERY_TIMEOUT_MS;
+    const clock = this.semanticChildDiscoveryClock;
+    const discoveryDeadline = clock.now() + SEMANTIC_CHILD_DISCOVERY_TIMEOUT_MS;
     const boundedObservation = semanticChildDiscoveryIsBounded(execution.harnessConfiguration);
     let discoveryObservation = {
       signature: null,
-      stableSince: Date.now(),
+      stableSince: clock.now(),
       stable: false,
     };
     for (;;) {
@@ -2513,7 +2523,7 @@ export class EvalService {
         previousSignature: discoveryObservation.signature,
         stableSince: discoveryObservation.stableSince,
         signature,
-        now: Date.now(),
+        now: clock.now(),
         discoveryDeadline,
         boundedObservation,
       });
@@ -2567,7 +2577,7 @@ export class EvalService {
       if (Date.now() >= deadline) {
         throw new Error(`Semantic children did not settle within 10 minutes: ${pending.map(({ resultInteractionId }) => resultInteractionId).join(", ")}.`);
       }
-      await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+      await clock.sleep(250);
     }
   }
 

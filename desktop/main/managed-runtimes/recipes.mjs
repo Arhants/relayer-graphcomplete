@@ -138,10 +138,10 @@ function primeRecipe(target) {
     moduleRelativePath: join("js", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "index.js"),
     runtimeContract: {
       primeSourceCommit: "f6130839ad3043f1cd3d5294fe03023035bfcd5c",
-      primeBridgeCommit: "8f33cfc30a3ce5f52f158122f34d523418aeca3e",
+      primeBridgeCommit: "3635b59066ebf4facf1a6d0285b005056644226b",
       javascript: {
-        dependencyClosureSha256: "8c86ed5c66b6022559fb9903426fec212a757bd4837eff2f7dafea6fe1f54062",
-        repositoryDependencyClosureSha256: "afd4e30957510486bc8ca473a41a616313783a4243000bb32f5f2536797b5af6",
+        dependencyClosureSha256: "1253fd136c0d63e751fffdae68327a1b5cbb3176f2b9780de372744f8b83ef41",
+        repositoryDependencyClosureSha256: "02f15fb2ce6366f1e9709e66336a94476dc6605bb8618885afea9e7d2e19766f",
         packages: [{
           name: "@earendil-works/pi-agent-core", version: "0.8.1",
           archiveSha256: "56d1bc00321a310c9e75c0ca33a6241fec0f559c514a046acc1d68d1c7be4f08",
@@ -152,8 +152,8 @@ function primeRecipe(target) {
           treeSha256: "2bbbd8b3207c9d5c21bfc274023dab7a9fd2755ac6c05c6a9be6d8c19f635704",
         }, {
           name: "@earendil-works/pi-coding-agent", version: "0.8.1",
-          archiveSha256: "a5608c3d617d345a4f1315e9f314c61dfb047c0741d41d0d3eb918ba2c082aaf",
-          treeSha256: "93cf3da2c0777fd7cf88db0e7a524895625c6c2507541eaeb3d6f325ab4ee89f",
+          archiveSha256: "e1aaf66cb2c79c42f12920a4bc3faf02db34e42a26ac144571f2f987e8bbde9e",
+          treeSha256: "7e6d1580a6b08b0ad37f52f5b38902705a93374def95bb603fbd7bbc33a3be6f",
         }, {
           name: "@earendil-works/pi-tui", version: "0.8.1",
           archiveSha256: "40517b0d5600557a31e395a0c344dbb9af7d3f8c000bea65561ef81b83142507",
@@ -169,7 +169,7 @@ function primeRecipe(target) {
         wheelArtifactIds,
         requirements,
         client: {
-          sha256: "501b35589f70ff67f34a200fc1a7fd05b4c2a7256400fb7c4d260848a122995a",
+          sha256: "228a6da4afa824fa03afe4bb21c67396bf5747dc8a8666202859f19a406c6343",
           installRule: "copy-package-v1",
         },
       },
