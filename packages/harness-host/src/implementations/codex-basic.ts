@@ -1,6 +1,6 @@
 import { RELAYER_ICON_NAMES, type GraphCapability, type GraphNode } from "@relayer/graph-client";
-import { createHash } from "node:crypto";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
 import { INTERACTION_INPUT_GUIDANCE, renderInteractionInput } from "../interaction-input.js";
@@ -55,11 +55,14 @@ const CODEX_BASIC_ADAPTERS = new Set(["codex-subscription", ...CODEX_BASIC_SECRE
 // file so the durable copy stays in the OS credential store (PRD AGT-007).
 async function writeCodexApiKeyAuthFile(codexHome: string, apiKey: string): Promise<void> {
   await mkdir(codexHome, { recursive: true });
-  await writeFile(
-    join(codexHome, "auth.json"),
-    `${JSON.stringify({ auth_mode: "apikey", OPENAI_API_KEY: apiKey })}\n`,
-    { mode: 0o600 },
-  );
+  // Replace atomically: another turn's Codex process may be reading the current file.
+  const temporary = join(codexHome, `.auth.json.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporary, `${JSON.stringify({ auth_mode: "apikey", OPENAI_API_KEY: apiKey })}\n`, { mode: 0o600 });
+    await rename(temporary, join(codexHome, "auth.json"));
+  } finally {
+    await rm(temporary, { force: true });
+  }
 }
 
 async function removeCodexApiKeyAuthFile(codexHome: string): Promise<void> {
@@ -72,6 +75,23 @@ async function removeCodexApiKeyAuthFile(codexHome: string): Promise<void> {
 }
 
 const CODEX_API_KEY_AUTH_USERS = new Map<string, number>();
+/**
+ * Writes and removals of one CODEX_HOME's auth.json run one at a time. A turn whose cleanup
+ * outlives it (a force-stopped turn the host stopped waiting for) therefore cannot delete the
+ * file a later turn on that home has since written.
+ */
+const CODEX_API_KEY_AUTH_FILE_OPERATIONS = new Map<string, Promise<void>>();
+
+function serializedCodexApiKeyAuthFileOperation(codexHome: string, operation: () => Promise<void>): Promise<void> {
+  const previous = CODEX_API_KEY_AUTH_FILE_OPERATIONS.get(codexHome) ?? Promise.resolve();
+  const current = previous.then(operation);
+  const tail = current.catch(() => undefined);
+  CODEX_API_KEY_AUTH_FILE_OPERATIONS.set(codexHome, tail);
+  void tail.then(() => {
+    if (CODEX_API_KEY_AUTH_FILE_OPERATIONS.get(codexHome) === tail) CODEX_API_KEY_AUTH_FILE_OPERATIONS.delete(codexHome);
+  });
+  return current;
+}
 
 function retainCodexApiKeyAuth(codexHome: string): void {
   CODEX_API_KEY_AUTH_USERS.set(codexHome, (CODEX_API_KEY_AUTH_USERS.get(codexHome) ?? 0) + 1);
@@ -84,7 +104,11 @@ async function releaseCodexApiKeyAuth(
   const users = CODEX_API_KEY_AUTH_USERS.get(codexHome) ?? 0;
   if (users <= 1) {
     CODEX_API_KEY_AUTH_USERS.delete(codexHome);
-    await remove(codexHome);
+    await serializedCodexApiKeyAuthFileOperation(codexHome, async () => {
+      // A later turn retained this home meanwhile; the file it writes after this must survive.
+      if ((CODEX_API_KEY_AUTH_USERS.get(codexHome) ?? 0) > 0) return;
+      await remove(codexHome);
+    });
     return;
   }
   CODEX_API_KEY_AUTH_USERS.set(codexHome, users - 1);
@@ -242,7 +266,8 @@ export class CodexBasicHarness implements Harness {
         if (apiKey !== undefined && apiKey !== "" && codexHome !== undefined && codexHome !== "") {
           retainCodexApiKeyAuth(codexHome);
           authHome = codexHome;
-          await (this.dependencies.writeCodexApiKeyAuthFile ?? writeCodexApiKeyAuthFile)(codexHome, apiKey);
+          const write = this.dependencies.writeCodexApiKeyAuthFile ?? writeCodexApiKeyAuthFile;
+          await serializedCodexApiKeyAuthFileOperation(codexHome, () => write(codexHome, apiKey));
         }
       }
       await this.runCodexTurn(context, attach, signal, environment, resolvedRuntime.executable, persistentRootSession, personalPresentationVersionId);

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1170,6 +1170,70 @@ describe("CodexBasicHarness", () => {
       })).rejects.toThrow("codex turn failed");
       await expect(readFile(join(codexHome, "auth.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
+      await rm(codexHome, { recursive: true, force: true });
+    }
+  });
+
+  it("never lets a force-stopped turn's late auth.json removal delete the next turn's credentials", async () => {
+    const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-home-"));
+    let releaseStaleRemoval!: () => void;
+    const staleRemovalGate = new Promise<void>((resolve) => { releaseStaleRemoval = resolve; });
+    let removals = 0;
+    const removeCodexApiKeyAuthFile = async (home: string) => {
+      removals += 1;
+      // The force-stopped turn's unlink is still pending after the host stopped waiting for it.
+      if (removals === 1) await staleRemovalGate;
+      await unlink(join(home, "auth.json")).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+    };
+    const reads: unknown[] = [];
+    let runs = 0;
+    const access = (apiKey: string) => ({
+      kind: "secret" as const, contract: "secret@1" as const, providerId: "openai-work", adapterId: "openai-api",
+      adapterImplementationVersion: "1", endpoint: "https://api.openai.test/v1", fields: { "api-key": apiKey },
+      runtime: {
+        runtimeId: "codex" as const, version: "0.147.0", executable: "/managed/codex",
+        environment: { CODEX_HOME: codexHome, RELAYER_CODEX_BINARY: "/managed/codex" },
+      },
+    });
+    const harness = new CodexBasicHarness(context("auto"), {
+      removeCodexApiKeyAuthFile,
+      runAppServerTurn: async (options) => {
+        runs += 1;
+        if (runs === 1) {
+          await new Promise<void>((_resolve, reject) => options.forceSignal?.addEventListener("abort", () => reject(options.forceSignal?.reason), { once: true }));
+        }
+        // The successor's run reads its credentials after the stale removal was let through.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        reads.push(JSON.parse(await readFile(join(codexHome, "auth.json"), "utf8")));
+        return { threadId: "api-thread", turnId: "turn", status: "completed" as const };
+      },
+    });
+    const turn = (id: number, apiKey: string, forceSignal: AbortSignal): HarnessRunContext => ({
+      ...runContext(id, `token-${id}`),
+      model: { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" },
+      access: access(apiKey),
+      forceSignal,
+    });
+    try {
+      const force = new AbortController();
+      const stale = harness.complete(turn(1, "first-secret", force.signal)).then(() => undefined, () => undefined);
+      await vi.waitFor(() => expect(runs).toBe(1));
+      force.abort(new Error("force-stopped after two minutes"));
+      await vi.waitFor(() => expect(removals).toBe(1));
+
+      // The host stopped waiting, so the next root turn starts on the same CODEX_HOME.
+      const next = harness.complete(turn(2, "next-secret", new AbortController().signal));
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      releaseStaleRemoval();
+      await next;
+      await stale;
+
+      expect(reads).toEqual([{ auth_mode: "apikey", OPENAI_API_KEY: "next-secret" }]);
+      await expect(readFile(join(codexHome, "auth.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      releaseStaleRemoval();
       await rm(codexHome, { recursive: true, force: true });
     }
   });

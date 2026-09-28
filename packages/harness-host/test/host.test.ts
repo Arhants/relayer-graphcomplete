@@ -2141,6 +2141,52 @@ describe("HarnessHost", () => {
     }
   });
 
+  it("answers an invoked start whose native attachment never settles once the force-stopped run ends", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-force-stop-start-"));
+    let started = false;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : url.endsWith("/neighbors")
+        ? new Response(JSON.stringify({ nodes: [] }), { status: 200, headers: { "content-type": "application/json" } })
+        : graphReadResponse(url, 2, [], 102)));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        implementations: { test: () => ({
+          supportsInvokedComplete: true,
+          supportsForceStop: true,
+          complete() {
+            started = true;
+            // Neither the execution nor its attachment ever settles, even after the force-stop.
+            return nativeExecutionHandle(new Promise<void>(() => undefined), undefined, new Promise(() => undefined));
+          },
+          state: emptyState,
+        }) },
+      });
+      await host.initialize();
+      await host.createSession({ threadId: 1, permissionProfileId: "auto", configuration: completeEnabledConfiguration, workingDirectory: directory });
+      const start = host.startInvokedCompletion(1, invoked(graph(2, "child-token")))
+        .then(() => "resolved", (error: unknown) => error);
+      await vi.waitFor(() => expect(started).toBe(true));
+
+      expect(host.cancel(1, 2)).toBe(true);
+      await vi.advanceTimersByTimeAsync(130_000);
+      // The run itself ends as a settled cancellation; the start must answer with it too.
+      await expect(host.observeInvokedCompletion(1, 2)).rejects.toThrow("cancelled for thread 1");
+      let outcome: unknown = "still pending";
+      void start.then((value) => { outcome = value; });
+      await settleMicrotasks();
+      expect((outcome as Error).constructor.name).toBe("HarnessCancellationSettled");
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("keeps a cancelled turn's access until it settles when its harness cannot force-stop", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-no-force-stop-"));

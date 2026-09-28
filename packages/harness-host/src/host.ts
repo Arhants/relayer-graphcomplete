@@ -704,7 +704,6 @@ export class HarnessHost {
     }
     let resolveStarted!: (value: HarnessInvokedCompletionStart) => void;
     let rejectStarted!: (error: unknown) => void;
-    let nativeReported = false;
     const started = new Promise<HarnessInvokedCompletionStart>((resolve, reject) => {
       resolveStarted = resolve;
       rejectStarted = reject;
@@ -730,7 +729,6 @@ export class HarnessHost {
       } : {}),
       ...(signal === undefined ? {} : { signal }),
       onNativeExecution: (native) => {
-        nativeReported = true;
         if (native?.attached === undefined) {
           resolveStarted({ completionId: capability.nodeId });
           return;
@@ -741,9 +739,14 @@ export class HarnessHost {
         );
       },
     }).then(() => ({ completionId: capability.nodeId }));
-    void run.catch((error) => {
-      if (!nativeReported) rejectStarted(error);
-    });
+    // The start acknowledgement never outlives the run. A run can end before its native
+    // attachment settles, for example when a force-stopped child's adapter never settles
+    // either: the start then answers with the run's end instead of waiting forever. An
+    // attachment that already settled wins, because a promise settles once.
+    void run.then(
+      () => resolveStarted({ completionId: capability.nodeId }),
+      (error: unknown) => rejectStarted(error),
+    );
     const entry = { invocationDigest, run, started };
     session.invokedCompletionRuns.set(capability.nodeId, entry);
     return entry;
