@@ -429,7 +429,7 @@ describe("model family settings layout", () => {
     expect(settingsSource).toContain("await saveModelDefaults({ [field]: candidate })");
     // A saved default provider moves the default family, so the new-thread picker restarts
     // from it just as it does after a harness change.
-    expect(settingsSource).toContain("await refreshModelSettings({ preserveEdit: true });\n    resetNewThreadModelPicker();");
+    expect(settingsSource).toContain("await refreshModelSettings({ preserveEdit: true });\n    } catch (error) {\n      reconcileError ??= error;\n    }\n    resetNewThreadModelPicker();");
     expect(settingsSource).not.toContain('if (field === "harnessId") {\n      applyPermissionProfiles');
     // The provider selector lists only eligible providers, shows the refresh hint, and reports
     // a harness moved by the save while loading that harness's permission profiles.
@@ -438,7 +438,7 @@ describe("model family settings layout", () => {
     expect(settingsSource).toContain("saved = await saveModelDefaults({ [field]: candidate });");
     expect(settingsSource).toContain("settings.defaults = { ...saved };");
     expect(settingsSource).toContain("defaultHarnessChangeNotice(previous, saved, settings)");
-    expect(settingsSource).toContain("if (harnessNotice) applyPermissionProfiles = await preparePermissionProfiles(saved.harnessId);");
+    expect(settingsSource).toContain("applyPermissionProfiles = await preparePermissionProfiles(saved.harnessId);");
     expect(settingsSource).toContain('setStatus(harnessNotice ?? "Saved", "success");');
     expect(settingsSource).toContain("if (!saved) settings.defaults = previous;");
     expect(html).toContain('<select id="defaultProviderSelect" aria-describedby="defaultProviderHint"></select></label>\n              <div class="setting-hint hidden" id="defaultProviderHint"></div>');
@@ -448,5 +448,11 @@ describe("model family settings layout", () => {
     expect(settingsSource).toContain("if (savingOrder) return;");
     expect(settingsSource).toContain('savingOrder || index === 0 ? "disabled"');
     expect(settingsSource).toContain('savingOrder || index === settings.families.length - 1 ? "disabled"');
+    // A committed save reconciles the new-thread picker and fails closed on permission
+    // profiles even when loading the moved harness's profiles fails.
+    const reconcile = settingsSource.slice(settingsSource.indexOf("let reconcileError = null;"));
+    expect(reconcile).toContain("applyPermissionProfiles = clearPermissionSelection;");
+    expect(reconcile.indexOf("resetNewThreadModelPicker();"))
+      .toBeLessThan(reconcile.indexOf("if (reconcileError) throw reconcileError;"));
   });
 });
