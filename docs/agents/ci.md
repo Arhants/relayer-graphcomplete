@@ -1,8 +1,79 @@
 # Pull-request CI
 
-CI keeps one branch-rule context named `check`. The context is an aggregator: it
+CI keeps its verification aggregator named `check`. The context
 passes only when planning, quick deterministic checks, and every selected
 chapter pass. A selected chapter that is skipped is a failure.
+
+## Scheduled merge freshness
+
+The approved merge policy permits conflict-free PRs behind main while their
+current head has successful CI evidence less than 12 hours old. Age starts at
+GitHub's original CI run creation time, not PR creation, author timestamps, job
+completion, or a rerun. The plan job records the actual checkout's two parents
+and observes `refs/heads/main`; the base parent must equal that observation.
+All ordinary CI jobs use the same event merge SHA. A newer main commit does not
+immediately invalidate otherwise recent evidence. A rerun cannot extend the
+original window. Update the branch to create fresh PR CI when it expires.
+
+`Merge freshness guard` refreshes a separate `merge-freshness` check at minutes
+7, 22, 37, and 52, on CI completion, relevant PR changes, and main pushes. Manual
+dispatch on main is also available. It never reruns expensive CI or merges PRs.
+Only the latest CI run associated with this PR and its exact current head can qualify; its current
+attempt must have a successful `check` job. A matching plan artifact from an
+earlier attempt of that same immutable run is allowed because re-running only
+failed jobs does not repeat a successful plan. This never renews the window.
+Missing/expired evidence, conflicts, unknown mergeability, and per-PR API or
+artifact errors fail closed when the sweep can publish a check. Older PRs
+without the new artifact must run fresh CI after rollout.
+
+This is **scheduled, not atomic, expiration**. GitHub can delay or drop cron
+jobs. A failed list request or check-write request, disabled workflow, rate
+limit, or timeout can leave a previous success visible until a later sweep.
+There is no maximum-lateness guarantee. The sweep first publishes an in-progress
+check before reading evidence, rechecks the head before completing it, and uses
+one non-cancelling concurrency group to prevent overlapping stale writers.
+Brief pending checks during refresh are expected.
+PR-specific read and check-write failures are isolated: the sweep continues with
+later PRs and reports unpublished results without including raw API errors.
+After processing all PRs, unpublished results fail the workflow for operator attention.
+
+The privileged sweep pins checkout and script actions to immutable commit SHAs.
+It checks out protected main with persisted credentials off;
+it never checks out or executes PR code, installs PR dependencies, or extracts
+artifact paths. Artifact input is size-bounded JSON read through bounded unzip
+stdout. GitHub API run/job/commit identities are checked independently. As with
+existing CI, reviewed PR workflow code is a trust root for the correctness of
+the actual tests and receipt generation; this is not an attestation against a
+malicious rewrite of the CI workflow. Its token can read Actions, content and PRs
+and write checks, but cannot merge, write source, deploy, or access cloud secrets.
+
+Rollout: merge the workflow through normal reviewed CI, exercise real valid and
+expired/missing evidence and fork PR metadata, then add `merge-freshness` from
+the GitHub Actions app (15368) to the existing main ruleset. Retain required
+`check`; keep strict freshness disabled. Do not claim enforcement until that
+ruleset change and a real scheduled sweep are verified. The checked-in ruleset
+is the intended end state, not proof of activation. Release/tag/environment
+protections are unchanged. Rollback removes only the new required context and
+restores strict freshness before disabling the guard, with operator approval.
+
+Checkpoint mapping (no product runtime behavior changes):
+
+| Boundary | Deterministic checkpoint |
+| --- | --- |
+| Exact head, main merge, run and attempt identity | `test/ci-merge-freshness.test.mjs`: receipt and policy scenarios |
+| 12-hour edge, future/invalid time, reruns | policy clock scenarios |
+| Failed/missing/latest CI, conflicts, malformed evidence | rejection scenarios |
+| Expiration, evidence API failure, changing head | fake GitHub sweep journey |
+| PR read/create/update failure isolation and visible partial failure | two-PR sweep scenarios and workflow contract |
+| Shared head SHA does not select another PR's run or an older success | PR-specific run selection scenario |
+| Artifact bytes never executed or extracted | real ZIP decoder scenarios |
+| Trusted checkout, permissions, schedule and required contexts | workflow/ruleset contract scenario |
+| Existing release authority remains configured | desktop-shell release-authority audit scenario |
+
+Focused entry: `npx vitest run test/ci-merge-freshness.test.mjs`.
+Workflow/planner changes still select the full existing CI portfolio; required
+local gates remain `npm run check` and `npm run build`. Hosted scheduled evidence
+is a separate activation gate, not supplied by local fakes.
 
 ## Integration trains
 
