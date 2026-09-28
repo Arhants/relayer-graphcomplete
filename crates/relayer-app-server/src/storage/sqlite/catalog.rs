@@ -3397,7 +3397,7 @@ mod provider_definition_tests {
     }
 
     /// #556: users an earlier upgrade already left pending are not waiting for a digest
-    /// change. Migration 0037 marks their pending routes due once, and nothing else.
+    /// change. Migration 0039 marks their pending routes due once, and nothing else.
     #[tokio::test]
     async fn the_update_migration_marks_routes_an_earlier_upgrade_left_pending() {
         let directory = readiness_root("backfill");
@@ -3418,7 +3418,7 @@ mod provider_definition_tests {
             migrations: std::borrow::Cow::Owned(
                 super::super::migrations::MIGRATOR
                     .iter()
-                    .filter(|migration| migration.version <= 36)
+                    .filter(|migration| migration.version < 39)
                     .cloned()
                     .collect(),
             ),

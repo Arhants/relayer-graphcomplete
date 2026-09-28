@@ -450,7 +450,7 @@ The model checks the digest trigger only. A newly activated recipe also
 starts the automatic evaluation, but that trigger lives in Desktop memory,
 so the model leaves it out. A quit before its result commits loses it; the
 next start then restores the old ready record, because the digest did not
-change. Migration 0037 also marks every loaded route startup left pending.
+change. Migration 0039 also marks every loaded route startup left pending.
 The model starts after that migration, so it does not cover the backfill.
 The automatic evaluation skips a harness whose runtime was never
 installed; the model has one harness whose runtime starts installed. The installer test "stages and activates the
