@@ -793,6 +793,7 @@ interface CompletionTerminalError extends Error {
 <li>A refresh uses the provider's catalog adapter as it is when the refresh runs, not when it was requested.</li>
 <li>A cancelled or failed reconnect leaves the provider refreshable. It keeps a live catalog, or its recovery path if the provider could not be activated.</li>
 <li>A cancelled or failed reconnect records the signed-out state with the next generation, as sign-out does. Every result still in flight becomes inert.</li>
+<li>If that record fails, the reconnect keeps its sign-in, as an unknown outcome does. The next refresh settles the provider's state.</li>
 <li>Recovery never uses the runtime a pending reconnect is signing in. Until that reconnect settles, recovery reports the provider unavailable.</li>
 <li>No catalog refresh starts or publishes while a reconnect is pending.</li>
 <li>Sign-out records the disconnected state itself. It does not wait for a catalog refresh.</li>

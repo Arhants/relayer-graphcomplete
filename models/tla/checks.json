@@ -164,7 +164,8 @@
       "RefreshSkipsPendingReconnect": "TRUE",
       "LostReconnectAdopted": "TRUE",
       "AdoptChecksBaseline": "TRUE",
-      "CancelSignsOut": "TRUE"
+      "CancelSignsOut": "TRUE",
+      "CancelKeepsUnrecordedLogin": "TRUE"
     }
   },
   "checks": [
@@ -1985,7 +1986,7 @@
         "CancelRecordsSignedOut"
       ],
       "expect": "pass",
-      "finding": "A settled reconnect commits signed-out with the next generation, so it never leaves the app server reading ready over the login it wiped, with every fault on."
+      "finding": "A settled reconnect never leaves the app server reading ready over the login it wiped: it commits signed-out first, and keeps the login when that publish fails, with every fault on."
     },
     {
       "id": "lifecycle-cancel-records-signed-out-reverted",
@@ -2002,6 +2003,22 @@
         "violated": "CancelRecordsSignedOut"
       },
       "finding": "With CancelSignsOut off, a sign-out whose publish failed leaves Rust ready; a reconnect then starts and is cancelled, wiping the login while Rust still reads ready."
+    },
+    {
+      "id": "lifecycle-cancel-keeps-unrecorded-login-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "CancelKeepsUnrecordedLogin": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "CancelRecordsSignedOut"
+      ],
+      "expect": {
+        "violated": "CancelRecordsSignedOut"
+      },
+      "finding": "With CancelKeepsUnrecordedLogin off, a cancel whose signed-out publish fails still wipes the login, while a failed sign-out left the app server reading ready."
     },
     {
       "id": "lifecycle-straddling-refresh",

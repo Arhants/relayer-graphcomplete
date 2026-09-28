@@ -50,6 +50,8 @@ function productServer(definitions = []) {
     loseNextResponse: null,
     // Every publish fails before reaching the store, as when the app server is unreachable.
     publishFails: false,
+    // Fails only the next n publishes, as when one request is lost.
+    failNextPublishes: 0,
     failedPublishes: 0,
     // Stalls the next definition save after it is reached, holding the provider queue.
     holdNextSave: null,
@@ -90,7 +92,8 @@ function productServer(definitions = []) {
       },
     },
     async publishCatalog(snapshot, { connectionGeneration, connectionEvent } = {}) {
-      if (server.publishFails) {
+      if (server.publishFails || server.failNextPublishes > 0) {
+        if (server.failNextPublishes > 0) server.failNextPublishes -= 1;
         server.failedPublishes += 1;
         throw new Error("app server unreachable");
       }
@@ -547,6 +550,34 @@ describe("PROV-002: a superseded provider result is inert", () => {
     }
   });
 
+  // The cancel could not record signed out: the app server was unreachable. It may still read
+  // the provider connected, so the cancel keeps the login and the reconnect's runtime rather
+  // than leaving the app server admitting turns with no login.
+  it("keeps the login when a cancelled reconnect cannot record signed out", async () => {
+    const world = managedWorld();
+    const server = productServer([managedDefinition]);
+    const composition = compose({ registry: world.registry, server, removeRuntimeState: world.removeRuntimeState });
+    try {
+      await composition.start();
+      await composition.providerDefinitions.logout(managedDefinition.id);
+      const pending = await composition.providerDefinitions.reconnect(managedDefinition.id);
+      world.account = "connected";
+      server.publishFails = true;
+      await expect(composition.providerDefinitions.cancelConnection(pending.connectionId)).resolves.toBe(true);
+      server.publishFails = false;
+      expect(world.homeWipes).toBe(0);
+      expect(world.account).toBe("connected");
+      expect(world.runtimes[0].closed).toBe(false);
+      expect(composition.providerDefinitions.pendingConnections.has(managedDefinition.id)).toBe(false);
+      // Settings follows the app server, and the next refresh settles the state.
+      await composition.modelCatalog.explicitRefresh(managedDefinition.id);
+      expect(server.connected(managedDefinition.id)).toBe(true);
+      expect((await composition.providerDefinitions.list())[0]).toMatchObject({ connected: true, unavailableReason: null });
+    } finally {
+      await composition.close();
+    }
+  });
+
   // A refresh resolved its generation before a reconnect started and read the account after
   // the browser sign-in. It reached its publish only after the reconnect was cancelled. The
   // cancel moved nothing, so the refresh published "connected" over the wiped login.
@@ -612,7 +643,8 @@ describe("PROV-002: a superseded provider result is inert", () => {
 
   // An unanswered publish is adopted only when it provably committed. A publish that failed
   // before the write, a discovery that failed before any publish, and a reconnect a sign-out
-  // superseded while its refusal's answer was lost all settle as failed, as before.
+  // superseded while its refusal's answer was lost all settle as failed, as before. Only the
+  // reconnect's own publish fails, so the settle records signed out and wipes the login.
   it("settles a reconnect whose unanswered publish did not commit", async () => {
     for (const failure of ["publish", "discovery", "superseded"]) {
       const world = managedWorld();
@@ -628,11 +660,10 @@ describe("PROV-002: a superseded provider result is inert", () => {
           world.catalogUnavailable = true;
           server.loadFails = true;
         } else {
-          server.publishFails = true;
+          server.failNextPublishes = 1;
         }
         await expect(composition.providerDefinitions.completeConnection(pending.connectionId))
           .rejects.toMatchObject({ name: "TerminalConnectionFailure" });
-        server.publishFails = false;
         server.loadFails = false;
         expect(world.homeWipes, failure).toBe(1);
         expect(server.connected(managedDefinition.id), failure).toBe(false);

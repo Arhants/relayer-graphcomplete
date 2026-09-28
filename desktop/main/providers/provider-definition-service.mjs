@@ -675,15 +675,24 @@ export class ProviderDefinitionService {
       // connected, and makes stale any refresh that resolved its generation before the
       // reconnect and read the account mid-sign-in. It commits before the wipe, so the app
       // server never reads connected over a home with no login.
-      if (!this.closing) {
-        await this.#commitSignedOut(pending.candidate, {
-          onFailure: (error) => this.diagnostics?.write({
-            category: "provider_reconnect_cancel_sign_out_failed",
-            adapterId: pending.candidate.adapterId,
-            providerId: connectionId,
-            ...providerDiagnosticDetails(error),
-          }).catch(() => undefined),
-        });
+      const recorded = !this.closing && await this.#commitSignedOut(pending.candidate, {
+        onFailure: (error) => this.diagnostics?.write({
+          category: "provider_reconnect_cancel_sign_out_failed",
+          adapterId: pending.candidate.adapterId,
+          providerId: connectionId,
+          ...providerDiagnosticDetails(error),
+        }).catch(() => undefined),
+      });
+      if (!recorded) {
+        // The app server may still read connected, so wiping the login would leave it
+        // admitting turns with none. As for an unknown reconnect outcome, the login and the
+        // reconnect's runtime are kept, Settings follows the app server, and the next refresh
+        // settles the state. During shutdown, close() closes the runtime.
+        if (!this.closing) {
+          this.statusOverrides.delete(connectionId);
+          await this.#activateCommitted(pending.candidate, pending.runtime);
+        }
+        return true;
       }
       if (this.runtimes.get(connectionId) === pending.runtime) this.runtimes.delete(connectionId);
       await Promise.allSettled([

@@ -38,8 +38,10 @@ CONSTANTS MaxRt,          \* runtime objects that may be created
                                     \* back, and keeps the login unless it was refused
           AdoptChecksBaseline,      \* it adopts only one step past a baseline it read, and
                                     \* never after a sign-out superseded it
-          CancelSignsOut            \* a cancelled or failed reconnect commits signed-out with
+          CancelSignsOut,           \* a cancelled or failed reconnect commits signed-out with
                                     \* the next generation, as sign-out does
+          CancelKeepsUnrecordedLogin \* when that publish fails, or during shutdown, it keeps
+                                    \* the login and runtime instead of wiping them
 
 VARIABLES
   life,     \* active | removal_pending | tombstoned        (app server row)
@@ -197,30 +199,35 @@ SignIn ==
 \* the fix, a runtime a lease holds is never closed or wiped; only the entry
 \* goes. With CancelSignsOut, it first commits signed-out with the next
 \* generation, relearning a stale one once, as sign-out does. That publish
-\* can fail like sign-out's (the known limit), and it is skipped once
-\* close() began.
+\* can fail like sign-out's, and it is skipped once close() began. With
+\* CancelKeepsUnrecordedLogin, an unrecorded cancel then keeps the login and
+\* the reconnect's runtime, as an unknown reconnect outcome does.
 CancelEffect(g0, j0, r0) ==
   /\ pend' = NoPend
-  /\ IF CancelSparesLease /\ turn = "held"
-     THEN /\ gen' = g0 /\ jsGen' = j0 /\ ready' = r0
-          /\ UNCHANGED <<auth, rmap, rtState, underLease, cancelLeftReady>>
-     ELSE
-       /\ auth' = FALSE
-       /\ LET r0t == pend.rt
-              closedMap == [rtState EXCEPT ![r0t] = "closed"]
-          IN IF ~pend.created /\ ~closing /\ life = "active" /\ \E r \in Rts : closedMap[r] = "unused"
-             THEN LET r == CHOOSE x \in Rts : closedMap[x] = "unused"
-                  IN rmap' = r /\ rtState' = [closedMap EXCEPT ![r] = "open"]
-             ELSE /\ rmap' = IF rmap = r0t THEN 0 ELSE rmap
-                  /\ rtState' = closedMap
-       /\ Harm(pend.rt, TRUE)
-       /\ \/ /\ CancelSignsOut /\ ~closing
+  /\ LET Wipe ==
+         /\ auth' = FALSE
+         /\ LET r0t == pend.rt
+                closedMap == [rtState EXCEPT ![r0t] = "closed"]
+            IN IF ~pend.created /\ ~closing /\ life = "active" /\ \E r \in Rts : closedMap[r] = "unused"
+               THEN LET r == CHOOSE x \in Rts : closedMap[x] = "unused"
+                    IN rmap' = r /\ rtState' = [closedMap EXCEPT ![r] = "open"]
+               ELSE /\ rmap' = IF rmap = r0t THEN 0 ELSE rmap
+                    /\ rtState' = closedMap
+         /\ Harm(pend.rt, TRUE)
+         \* The ghost counts a wipe that leaves the app server reading P ready.
+         /\ cancelLeftReady' = (cancelLeftReady \/ ready')
+       \* The login and the reconnect's runtime stay the provider's own.
+       Keep == /\ rmap' = pend.rt /\ UNCHANGED <<auth, rtState, underLease, cancelLeftReady>>
+     IN IF CancelSparesLease /\ turn = "held"
+        THEN /\ gen' = g0 /\ jsGen' = j0 /\ ready' = r0
+             /\ UNCHANGED <<auth, rmap, rtState, underLease, cancelLeftReady>>
+        ELSE
+          \/ /\ CancelSignsOut /\ ~closing          \* signed-out recorded
              /\ gen' = g0 + 1 /\ jsGen' = g0 + 1 /\ ready' = FALSE
-             /\ UNCHANGED cancelLeftReady
-          \/ /\ ~CancelSignsOut \/ closing \/ SignOutPublishCanFail
+             /\ Wipe
+          \/ /\ ~CancelSignsOut \/ closing \/ SignOutPublishCanFail   \* not recorded
              /\ gen' = g0 /\ jsGen' = j0 /\ ready' = r0
-             \* Counted only when no signed-out publish was attempted at all.
-             /\ cancelLeftReady' = (cancelLeftReady \/ (~CancelSignsOut /\ ~closing /\ r0))
+             /\ IF CancelSignsOut /\ CancelKeepsUnrecordedLogin THEN Keep ELSE Wipe
 
 \* The user cancels, the window is destroyed (BRW-005), or the poll gives up.
 Cancel ==
@@ -377,9 +384,9 @@ AdoptsOnlyCommittedReconnect == ~badAdopt
 \* would read P connected with no login (the P4 finding).
 CommittedReconnectKeepsLogin == ~wipedCommit
 
-\* PROV-002: a settled reconnect records signed out. It never leaves the app
-\* server reading P ready over the home it wiped, even after a sign-out whose
-\* publish failed.
+\* PROV-002: a settled reconnect never leaves the app server reading P ready
+\* over the home it wiped: it records signed out first, and keeps the login
+\* when it cannot. This holds even after a sign-out whose publish failed.
 CancelRecordsSignedOut == ~cancelLeftReady
 
 \* PROV-002 ("User actions supersede automatic ones"): no automatic refresh
