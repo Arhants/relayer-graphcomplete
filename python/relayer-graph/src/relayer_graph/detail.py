@@ -13,12 +13,12 @@ class DetailBinding:
     value: Any
     key: str = ""
 
-    def to_wire(self, owner: Any) -> dict[str, Any]:
+    def to_wire(self, owner: Any, *, _repair_source: Any = None) -> dict[str, Any]:
         if self.kind == "asset":
             return {"kind": "asset", "logicalId": self.value}
         if self.kind == "link":
             return {"kind": "link", "key": self.key, "href": self.value}
-        return {"kind": "action", "key": self.key, "action": self.value.to_detail_wire(owner)}
+        return {"kind": "action", "key": self.key, "action": self.value.to_detail_wire(owner, _repair_source=_repair_source)}
 
 
 def asset_ref(logical_id: str) -> DetailBinding:
@@ -44,8 +44,8 @@ class DetailTemplate:
     def __deepcopy__(self, memo: Any) -> "DetailTemplate":
         return self
 
-    def to_wire(self, owner: Any) -> dict[str, Any]:
-        return {"strings": list(self.strings), "values": [value.to_wire(owner) for value in self.values]}
+    def to_wire(self, owner: Any, *, _repair_source: Any = None) -> dict[str, Any]:
+        return {"strings": list(self.strings), "values": [value.to_wire(owner, _repair_source=_repair_source) for value in self.values]}
 
 
 def html(strings: str | Sequence[str], *values: DetailBinding) -> DetailTemplate:
@@ -63,6 +63,7 @@ def html(strings: str | Sequence[str], *values: DetailBinding) -> DetailTemplate
 @dataclass
 class _Owner:
     client_key: str
+    node: Any
     scope: tuple[str, int] | None = None
 
 
@@ -75,7 +76,7 @@ class NodeDetailAuthoring:
     def __init__(self, owner: Any = None, authority: Any = None) -> None:
         if authority is not _authority:
             raise TypeError("Use node.detail_authoring; components require an owning node")
-        _authoring[self] = (ref(owner), _Owner(owner.client_key), {})
+        _authoring[self] = (ref(owner), _Owner(owner.client_key, ref(owner)), {})
         self._components: dict[str, tuple[DetailTemplate, str]] = {}
         self._cleared = False
         self._frozen = False
@@ -141,10 +142,16 @@ class NodeDetailAuthoring:
         self._validate_owner(owner)
         for markup, _ in self._components.values():
             self._check_template(markup, attachment=False)
-        return {"clear": self._cleared, "components": [
-            {"id": key, "markup": markup.to_wire(owner), "styles": styles}
-            for key, (markup, styles) in self._components.items()
-        ]}
+        components = []
+        for key, (markup, styles) in self._components.items():
+            original = _templates[markup]
+            # _check_template authenticated the scope/key match. Preserve only this
+            # template's first owner's exact provenance; never grant a key-wide alias.
+            repair_source = None if original is None else original.node()
+            if repair_source is not None and repair_source.client_key != original.client_key:
+                raise ValueError("detail_owner_identity_changed: the original template owner changed identity; create fresh node-specific HTML")
+            components.append({"id": key, "markup": markup.to_wire(owner, _repair_source=repair_source), "styles": styles})
+        return {"clear": self._cleared, "components": components}
 
 
 def _create_owned_authoring(owner: Any) -> NodeDetailAuthoring:

@@ -23,6 +23,26 @@ Prime clean-root proof; and the A/B capture below. No tests were deleted.
 Standalone-builder tests now use owned builders; malformed-template and
 constructor misuse checks observe the same rejection boundaries earlier.
 
+## Action-bearing repair follow-up
+
+PR review found that a bound replacement could attach an owned template but
+could not checkpoint or submit its actions: their source layer still contained
+the original exact node object. Both clients now preserve that first owner's
+exact provenance for the reused template after validating logical ownership.
+They revalidate the original live key and never authorize arbitrary matching-key
+nodes or fresh templates through another component's provenance. Python keeps a
+weak reference and never treats a collected original as permission to skip
+source-layer membership validation.
+
+The focused regression first reproduced the failure in both clients. Ownership
+tests now cover all four capability kinds, checkpoint, submit, repeated repair,
+mixed fresh/reused components, same-key strangers, original-key mutation, and
+Python owner lifetime. The Prime bridge checkpoint executes the Python client to
+produce actual replacement payloads, then runs the production TypeScript bridge
+and compiler and verifies identical packages and exact action mounts. The video
+below continues to demonstrate sibling rejection and distinct content; it does
+not demonstrate action activation or action-bearing repair.
+
 ## A-to-B video
 
 The 27-second walkthrough video is assembled from verified stable screenshots.
@@ -84,9 +104,9 @@ those real frames in the video; it is not a continuous screen recording. Failed 
 
 [Verification receipt](verification.json) records successful `npm run check`,
 `npm run build`, the existing Electron visual-detail proof, Prime clean-root
-runtime proof, and the final A/B capture. The full check passed 2,785 default
+runtime proof, and the final A/B capture. The full check passed 2,788 default
 Vitest tests (three intentionally skipped), two separate Codex secret-boundary
-tests, and all 52 Python tests, plus Rust and repository contract checks.
+tests, and all 55 Python tests, plus Rust and repository contract checks.
 
 [Watch the A-to-B video](video/ownership-a-to-b.mp4). The [video manifest](video/manifest.json)
 records the accepted packages and six selected views. The [desktop manifest](desktop-manifest.json)

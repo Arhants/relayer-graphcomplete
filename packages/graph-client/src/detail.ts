@@ -331,6 +331,7 @@ export function css(strings: TemplateStringsArray, ...values: readonly unknown[]
 }
 
 interface DetailOwner {
+  readonly object: NodeObject;
   readonly clientKey: string;
   scope?: string;
 }
@@ -367,7 +368,7 @@ export class NodeDetailAuthoring {
   constructor(owner: NodeObject, authority: symbol) {
     if (authority !== AUTHORING_CONSTRUCTOR) throw new TypeError("Use node.detailAuthoring; components require an owning node");
     AUTHORING_STATE.set(this, {
-      components: new Map(), owner, identity: { clientKey: owner.clientKey },
+      components: new Map(), owner, identity: { object: owner, clientKey: owner.clientKey },
       frozen: false, finalization: undefined, finalizedDetail: undefined, cleared: false,
     });
   }
@@ -465,7 +466,18 @@ export function snapshotAuthoredNodeDetailProgram(
   let references = 0;
   const components = Object.freeze([...state.components.entries()].map(([componentId, component]) => {
     const id = typeof componentId === "string" ? componentId : "";
-    const markup = materializeDetailTemplate(id, component.markup, "html", owner, referencesByObject, invalidReferences, ids, issues);
+    const original = TEMPLATE_STATE.get(component.markup)?.owner;
+    let repairSource: NodeObject | undefined;
+    if (original !== undefined && original !== state.identity
+      && original.scope !== undefined && original.scope === state.identity.scope
+      && original.clientKey === state.identity.clientKey) {
+      if (safeMaterializeOwner(original.object)?.clientKey !== original.clientKey) {
+        return invalidNodeDetailProgram("detail_owner_identity_changed", id, "markup", "The original template owner changed identity; create fresh node-specific HTML");
+      }
+      // Only this reused template carries its first owner's exact action provenance.
+      repairSource = original.object;
+    }
+    const markup = materializeDetailTemplate(id, component.markup, "html", owner, referencesByObject, invalidReferences, ids, issues, repairSource);
     references += markup.bindings.filter((_binding, index) => bindingKind(markup, index) === "asset").length;
     const styles = materializeDetailTemplate(id, component.styles, "css", owner, referencesByObject, invalidReferences, ids, issues);
     return Object.freeze({ id, markup, styles, order: component.order });
@@ -519,6 +531,7 @@ function materializeDetailTemplate(
   invalidReferences: Set<object>,
   assetIds: Set<string>,
   issues: DetailCompilationIssue[],
+  repairSource?: NodeObject,
 ): MaterializedDetailTemplate {
   try {
     if (typeof value !== "object" || value === null || isProxy(value) || Object.getPrototypeOf(value) !== Object.prototype) {
@@ -549,7 +562,7 @@ function materializeDetailTemplate(
         return Object.freeze({ capability: Object.freeze({ matched: false }) });
       }
       if (kindAtBinding === "gc") {
-        return Object.freeze({ capability: safeMaterializeDetailCapability(bindingValue, owner?.object) });
+        return Object.freeze({ capability: safeMaterializeDetailCapability(bindingValue, owner?.object, repairSource) });
       }
       const asset = materializeAssetReference(bindingValue, referencesByObject, invalidReferences);
       const location = bindingLocation(shell, index);
@@ -1509,6 +1522,7 @@ function safeCapabilityValidationCodes(
 function safeMaterializeDetailCapability(
   value: unknown,
   owner: NodeObject | undefined,
+  repairSource?: NodeObject,
 ): DetailCapabilityMaterialization {
   if (typeof value !== "object" || value === null) return Object.freeze({ matched: false });
   try {
@@ -1543,7 +1557,7 @@ function safeMaterializeDetailCapability(
     if (actionValue === INVALID_DESCRIPTOR_VALUE || !hasExactDescriptorFields(descriptors, allowed)) {
       return Object.freeze({ matched: true });
     }
-    const action = materializeAction(actionValue, owner);
+    const action = materializeAction(actionValue, owner, repairSource);
     return Object.freeze({
       matched: true,
       ...(action === undefined ? {} : { capability: Object.freeze({ key, kind, action }) }),
@@ -1575,7 +1589,7 @@ function hasExactDescriptorFields(
   });
 }
 
-function materializeAction(value: unknown, owner: NodeObject | undefined): MaterializedAction | undefined {
+function materializeAction(value: unknown, owner: NodeObject | undefined, repairSource?: NodeObject): MaterializedAction | undefined {
   if (!isOrdinaryRecord(value)) return undefined;
   const descriptors = Object.getOwnPropertyDescriptors(value) as unknown as Record<PropertyKey, PropertyDescriptor>;
   const snapshot: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
@@ -1586,7 +1600,7 @@ function materializeAction(value: unknown, owner: NodeObject | undefined): Mater
     snapshot[field] = field === "options" && descriptor.value !== undefined
       ? materializeOptions(descriptor.value)
       : field === "sourceLayer"
-        ? materializeSourceLayer(descriptor.value, owner)
+        ? materializeSourceLayer(descriptor.value, owner, repairSource)
         : field === "target"
           ? materializeLayerTarget(descriptor.value)
         : descriptor.value;
@@ -1658,7 +1672,7 @@ function safeMaterializeOwner(owner: NodeObject | undefined): AuthenticatedNodeD
   }
 }
 
-function materializeSourceLayer(value: unknown, owner: NodeObject | undefined): MaterializedSourceLayer | undefined {
+function materializeSourceLayer(value: unknown, owner: NodeObject | undefined, repairSource?: NodeObject): MaterializedSourceLayer | undefined {
   if (typeof value !== "object"
     || value === null
     || isProxy(value)
@@ -1677,7 +1691,7 @@ function materializeSourceLayer(value: unknown, owner: NodeObject | undefined): 
     || typeof clientKeyDescriptor.value !== "string"
     || nodesDescriptor === undefined
     || !("value" in nodesDescriptor)) return undefined;
-  const containsOwner = materializeLayerOwnerMembership(nodesDescriptor.value, owner);
+  const containsOwner = materializeLayerOwnerMembership(nodesDescriptor.value, owner, repairSource);
   if (containsOwner === undefined) return undefined;
   return Object.freeze({ clientKey: clientKeyDescriptor.value, containsOwner });
 }
@@ -1709,7 +1723,7 @@ function materializeLayerTarget(value: unknown): MaterializedLayerTarget | undef
   return Object.freeze({ kind: "accepted", id });
 }
 
-function materializeLayerOwnerMembership(value: unknown, owner: NodeObject | undefined): boolean | undefined {
+function materializeLayerOwnerMembership(value: unknown, owner: NodeObject | undefined, repairSource?: NodeObject): boolean | undefined {
   if (!Array.isArray(value) || isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype) return undefined;
   const descriptors = Object.getOwnPropertyDescriptors(value) as unknown as Record<PropertyKey, PropertyDescriptor>;
   const lengthDescriptor = descriptors.length;
@@ -1727,7 +1741,7 @@ function materializeLayerOwnerMembership(value: unknown, owner: NodeObject | und
     expected.add(field);
     const descriptor = descriptors[field];
     if (descriptor === undefined || !("value" in descriptor) || descriptor.enumerable !== true) return undefined;
-    if (descriptor.value === owner) containsOwner = true;
+    if (descriptor.value === owner || (repairSource !== undefined && descriptor.value === repairSource)) containsOwner = true;
   }
   if (Reflect.ownKeys(descriptors).some((field) => !expected.has(field))) return undefined;
   return containsOwner;
