@@ -167,6 +167,12 @@ Render(t, isRunning) == EnterScopeEffect(Scope(t), isRunning)
 
 \* The scope's draft is a send that may have been sent; it is not handed
 \* back (SCP-019).
+\* The text thread t's composer would show, while another thread is shown:
+\* its newest scope's persisted draft, else the draft saved when it was left.
+AwayText(t) ==
+  IF persisted[Scope(t)] # Null THEN persisted[Scope(t)]
+  ELSE IF drafts[Scope(t)] # NoDraft THEN drafts[Scope(t)].text ELSE 0
+
 Uncertain(scope) ==
   HoldUncertain /\ drafts[scope] # NoDraft
   /\ \E h \in held : h.scope = scope /\ h.rev = drafts[scope].rev
@@ -281,11 +287,12 @@ ReconcileEnds(t) ==
   /\ pc[t] = "reconcile"
   /\ LET i == intent[t]
          stranded == IF drafts[i.scope] # NoDraft THEN drafts[i.scope].text ELSE 0
-         handsBack == HoldFromClick /\ view = t /\ active # i.scope
-                      /\ stranded # 0 /\ ~Uncertain(i.scope)
-         restore == handsBack /\ text = 0
+         blocked == HoldFromClick /\ i.scope # Scope(t) /\ stranded # 0 /\ ~Uncertain(i.scope)
+         \* The newer text of thread t, shown or not.
+         newer == IF view = t THEN text ELSE AwayText(t)
+         restore == blocked /\ view = t /\ text = 0
          \* Text typed since wins; the stranded text is retired (SCP-021).
-         retire == handsBack /\ text # 0 /\ RetireSuperseded
+         retire == blocked /\ newer # 0 /\ RetireSuperseded
      IN /\ text' = IF restore THEN stranded ELSE text
         /\ rev' = IF restore THEN rev + 1 ELSE rev
         /\ drafts' = IF restore \/ retire THEN [drafts EXCEPT ![i.scope] = NoDraft] ELSE drafts
@@ -293,7 +300,7 @@ ReconcileEnds(t) ==
                         THEN [persisted EXCEPT ![active] = stranded, ![i.scope] = Null]
                         ELSE IF retire THEN [persisted EXCEPT ![i.scope] = Null]
                         ELSE persisted
-        /\ superseded' = IF handsBack /\ text # 0 THEN superseded \cup {stranded} ELSE superseded
+        /\ superseded' = IF blocked /\ newer # 0 THEN superseded \cup {stranded} ELSE superseded
   /\ pc' = [pc EXCEPT ![t] = "idle"]
   /\ owner' = IF owner = t THEN None ELSE owner
   /\ cleared' = 0
@@ -321,11 +328,12 @@ PostFails(t) ==
   /\ pc[t] = "post"
   /\ LET i == intent[t]
          stranded == IF drafts[i.scope] # NoDraft THEN drafts[i.scope].text ELSE 0
-         handsBack == CarryUnsentDraft /\ view = t /\ active # i.scope
-                      /\ stranded # 0 /\ ~Uncertain(i.scope)
-         restore == handsBack /\ text = 0
+         blocked == CarryUnsentDraft /\ i.scope # Scope(t) /\ stranded # 0 /\ ~Uncertain(i.scope)
+         \* The newer text of thread t, shown or not.
+         newer == IF view = t THEN text ELSE AwayText(t)
+         restore == blocked /\ view = t /\ text = 0
          \* Text typed since wins; the stranded text is retired (SCP-021).
-         retire == handsBack /\ text # 0 /\ RetireSuperseded
+         retire == blocked /\ newer # 0 /\ RetireSuperseded
      IN /\ text' = IF restore THEN stranded ELSE text
         /\ rev' = IF restore THEN rev + 1 ELSE rev
         /\ drafts' = IF restore \/ retire THEN [drafts EXCEPT ![i.scope] = NoDraft] ELSE drafts
@@ -333,7 +341,7 @@ PostFails(t) ==
                         THEN [persisted EXCEPT ![active] = stranded, ![i.scope] = Null]
                         ELSE IF retire THEN [persisted EXCEPT ![i.scope] = Null]
                         ELSE persisted
-        /\ superseded' = IF handsBack /\ text # 0 THEN superseded \cup {stranded} ELSE superseded
+        /\ superseded' = IF blocked /\ newer # 0 THEN superseded \cup {stranded} ELSE superseded
   /\ FinallyEffect(t)
   /\ cleared' = 0
   /\ UNCHANGED <<view, productVars, active, intent, fresh, sent, unsent>>

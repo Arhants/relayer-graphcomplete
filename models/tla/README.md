@@ -332,7 +332,7 @@ created elsewhere to keep the per-promise checks fast; `composer-fixed` and
 | `composer-invoked-turns` | Fixed; now passes | Before the fix (review of #512): the submission was held only once `submitInteraction` began, after Send had waited for authored input commits. A turn created elsewhere that arrived during the wait carried the text into its scope, and the Send then posted it and cleared only the older scope, so the sent text stayed. The submission is now held from the click. A Send that ends without posting hands back text a newer turn left in its scope into the empty prompt, as a rejected POST does; text typed since wins. One thread, three turns. Regression tests: the "newer turn arriving while Send waits" cases in `test/authored-input-send-traces.test.mjs`, since only that world holds a Send on an authored commit. The draft-send warning, which the model leaves out, also holds the text while open and hands it back when cancelled; a test in the same file covers it. |
 | `composer-without-click-hold` | Records the bug | With `HoldFromClick` off, the text is carried away while Send waits. |
 | `composer-without-uncertain-hold` | Records the bug | With `HoldUncertain` off, the text of a POST that failed after the server recorded it is carried into the turn it created, and could be sent again (SCP-019). The renderer recognizes that turn by the text: any draft whose text a later turn of the thread carries was sent, which also holds after a restart. An unrelated turn, or a POST that never reached the server, still carries the text forward. A retry refused after the turn arrived does not hand the text back. Scenarios: `composer-uncertain-send-stays-put`, `composer-retry-of-landed-send`. |
-| `composer-without-retire` | Records the bug | With `RetireSuperseded` off, stranded text that newer typing kept out of the prompt stays in its scope, and is carried forward once the prompt empties (`SupersededStaysGone`, SCP-021). It is now retired from its scope and storage. Scenario: `composer-superseded-text-retired`. |
+| `composer-without-retire` | Records the bug | With `RetireSuperseded` off, stranded text that newer typing kept out of the prompt stays in its scope, and is carried forward once the prompt empties (`SupersededStaysGone`, SCP-021). It is now retired from its scope and storage, also when the send settles while another thread is shown and that thread's newest scope holds newer text. Scenarios: `composer-superseded-text-retired`, `composer-superseded-text-retired-off-thread`. |
 | `composer-fixed` | passes | With every candidate fix, every composer promise holds. |
 
 The candidate fixes are:
@@ -350,6 +350,12 @@ The candidate fixes are:
 4. `HoldUncertain`: after a network or server error, holding the
    submission once a turn with its text arrives, so its text is neither
    carried into that turn nor handed back. Landed in review of #512.
+
+A restored retry that the user's non-empty draft keeps out stays pending,
+and returns once the user empties the composer; an empty value persisted
+after the user cleared restored text is a tombstone, and wins (SCP-020). The
+model leaves restored retry drafts out; unit tests in
+`test/workspace-keyboard.test.mjs` cover these rules.
 
 `SentTextIsNotShownAgain` allows the text of a send that may have been sent
 to stay in the prompt of the scope it was sent from, where the user sees it

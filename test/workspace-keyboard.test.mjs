@@ -1629,6 +1629,33 @@ describe("product workspace keyboard behavior", () => {
       });
   });
 
+  it("returns retry text the user's draft kept out once the user empties the composer", () => {
+    const entered = transitionComposerDraftScope(createComposerDraftScopeState(), {
+      threadId: 10,
+      interactionId: 100,
+      currentPromptValue: "",
+      persistedDraftText: "my newer draft",
+    });
+    const withheld = transitionComposerDraftScope(entered.state, {
+      threadId: 10,
+      interactionId: 100,
+      currentPromptValue: "my newer draft",
+      currentPromptRevision: entered.promptRevision,
+      restoredDraft: { text: "the failed prompt" },
+      persistedDraftText: "my newer draft",
+    });
+    expect(withheld.promptValue).toBe("my newer draft");
+    const emptied = transitionComposerDraftScope(withheld.state, {
+      threadId: 10,
+      interactionId: 100,
+      currentPromptValue: "",
+      currentPromptRevision: withheld.promptRevision + 1,
+      restoredDraft: { text: "the failed prompt" },
+      persistedDraftText: "",
+    });
+    expect(emptied.promptValue).toBe("the failed prompt");
+  });
+
   it("keeps an explicit empty follow-up tombstone ahead of a failed prompt restoration", () => {
     const transition = transitionComposerDraftScope(createComposerDraftScopeState(), {
       threadId: 10,

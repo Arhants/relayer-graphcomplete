@@ -1178,6 +1178,61 @@
       ]
     },
     {
+      "id": "composer-superseded-text-retired-off-thread",
+      "module": "TurnComposer",
+      "preset": "composer-replay",
+      "init": "view = \"A\"",
+      "promises": [
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain",
+        "SupersededStaysGone"
+      ],
+      "summary": "A send is refused while another thread is shown, after a newer turn arrived and the user typed new text; the refused text stays out when the thread is shown again.",
+      "steps": [
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "InvokeTurn",
+          "A"
+        ],
+        [
+          "TurnFinishes",
+          "A"
+        ],
+        [
+          "Type"
+        ],
+        [
+          "SwitchThread",
+          "B"
+        ],
+        [
+          "PostFails",
+          "A"
+        ],
+        [
+          "SwitchThread",
+          "A"
+        ],
+        [
+          "Erase"
+        ],
+        [
+          "SwitchThread",
+          "B"
+        ],
+        [
+          "SwitchThread",
+          "A"
+        ]
+      ]
+    },
+    {
       "id": "composer-cleared-send-stays-cleared",
       "module": "TurnComposer",
       "preset": "composer-replay",

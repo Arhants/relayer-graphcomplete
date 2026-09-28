@@ -1201,7 +1201,9 @@ export function transitionComposerDraftScope(state, {
     drafts.set(nextScopeKey, {
       promptValue,
       promptRevision,
-      restoredDraftInteractionId: restorationArrived
+      // A restoration the user's draft keeps out stays pending: once the
+      // user empties the composer, the retry text returns (SCP-020).
+      restoredDraftInteractionId: restores
         ? interactionId
         : currentDraft.restoredDraftInteractionId,
     });
@@ -1234,23 +1236,37 @@ export function transitionComposerDraftScope(state, {
       restoredDraftInteractionId: null,
     });
     drafts.delete(carried.scopeKey);
+  } else if (restoredDraft && persistedDraftText === null && !stored?.promptValue
+    && String(stored?.restoredDraftInteractionId) !== String(interactionId)) {
+    // A pending restoration fills an empty composer: an emptied composer
+    // holds no draft (SCP-020). An empty value persisted after the user
+    // cleared the restored text is a tombstone, and wins.
+    drafts.set(nextScopeKey, {
+      promptValue: restoredDraft.text,
+      promptRevision: Math.max(stored?.promptRevision ?? 0, currentPromptRevision) + 1,
+      restoredDraftInteractionId: interactionId,
+    });
   } else if (persistedDraftText !== null && stored?.promptValue !== persistedDraftText) {
     // A scope's revision only moves forward, so settlement's revision check
     // can tell an edit from the text it sent. Unchanged text keeps its
-    // revision (below); changed text takes one above any it had.
+    // revision (below); changed text takes one above any it had. The user's
+    // draft wins over a restoration, which stays pending; an empty tombstone
+    // consumes it.
     drafts.set(nextScopeKey, {
       promptValue: persistedDraftText,
       promptRevision: Math.max(stored?.promptRevision ?? 0, currentPromptRevision) + 1,
-      restoredDraftInteractionId: restoredDraft ? interactionId : null,
+      restoredDraftInteractionId: restoredDraft && !persistedDraftText
+        ? interactionId
+        : stored?.restoredDraftInteractionId ?? null,
     });
-  } else if (persistedDraftText !== null && restoredDraft) {
-    // Unchanged persisted text keeps its revision and wins over the restoration.
+  } else if (persistedDraftText === "" && restoredDraft) {
+    // An unchanged empty tombstone keeps its revision and consumes the restoration.
     drafts.set(nextScopeKey, { ...stored, restoredDraftInteractionId: interactionId });
   } else if (!drafts.has(nextScopeKey)) {
     drafts.set(nextScopeKey, {
-      promptValue: restoredDraft?.text ?? "",
+      promptValue: "",
       promptRevision: currentPromptRevision + 1,
-      restoredDraftInteractionId: restoredDraft ? interactionId : null,
+      restoredDraftInteractionId: null,
     });
   }
   return {
@@ -3455,17 +3471,27 @@ export function createProductWorkspace({
   // carried forward later (SCP-021).
   const restoreStrandedSubmission = (submission) => {
     const { activeScopeKey } = composerDraftScopeState;
-    if (String(getThread()?.id) !== String(submission.threadId)
-      || activeScopeKey === submission.scopeKey) return;
+    const shown = String(getThread()?.id) === String(submission.threadId);
+    if (shown && activeScopeKey === submission.scopeKey) return;
     const stored = composerDraftScopeState.drafts.get(submission.scopeKey);
     const stranded = stored?.promptValue;
     if (!stranded) return;
     if (sentByLaterTurn(submission.threadId, submission.scopeKey, stranded)) return;
+    // While another thread is shown, the send's thread's newest scope
+    // decides: newer text there supersedes the stranded text, and an empty
+    // one carries it forward when the thread is shown again.
+    const newestTurn = shown ? null : (getState().interactions || [])
+      .filter((turn) => String(turn.threadId) === String(submission.threadId)).at(-1);
+    const newestScopeKey = newestTurn ? composerDraftScopeKey(submission.threadId, newestTurn.id) : null;
+    if (!shown && (!newestScopeKey || newestScopeKey === submission.scopeKey
+      || !(threadFollowupDraft(newestScopeKey) ?? composerDraftScopeState.drafts.get(newestScopeKey)?.promptValue))) {
+      return;
+    }
     const drafts = new Map(composerDraftScopeState.drafts);
     drafts.delete(submission.scopeKey);
     composerDraftScopeState = { activeScopeKey, drafts };
     clearThreadFollowupDraft(submission.scopeKey);
-    if (prompt.value) return;
+    if (!shown || prompt.value) return;
     prompt.value = stranded;
     composerPromptRevision += 1;
     persistThreadFollowupDraft(activeScopeKey, stranded);
