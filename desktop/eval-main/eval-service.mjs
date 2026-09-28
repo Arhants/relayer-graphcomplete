@@ -56,7 +56,12 @@ import {
   validateEvalChecksV1,
 } from "@relayer/eval-runner";
 import { loadHarnessConfigurations } from "@relayer/harness-host";
-import { firstAvailableSelection, harnessUsesConfigurationModel } from "../renderer/src/model-picker-model.js";
+import {
+  defaultFamilyRecoveryError,
+  firstAvailableSelection,
+  harnessUsesConfigurationModel,
+  requireDefaultModelSelection,
+} from "../renderer/src/model-picker-model.js";
 import { RECURSIVE_TEMPORAL_FEATURES } from "../main/services/graphcomplete-runtime.mjs";
 import {
   buildAcceptedReviewTopology,
@@ -2607,8 +2612,13 @@ export class EvalService {
         `/api/model-selection/default?harnessId=${encodeURIComponent(execution.harnessConfigurationName)}`,
       );
       productModelSelection = true;
+      // A recovering default family is refused with its code (PROV-008).
       if (selectedModel === null) {
-        throw new Error("claude-basic has no connected compatible model; connect Claude or Anthropic before running this matrix cell.");
+        requireDefaultModelSelection(
+          selectedModel,
+          await this.#productRequest("/api/model-settings"),
+          "claude-basic has no connected compatible model; connect Claude or Anthropic before running this matrix cell.",
+        );
       }
     } else {
       if (execution.harnessConfiguration.implementation === "codex.basic") {
@@ -2621,6 +2631,11 @@ export class EvalService {
         execution.harnessConfigurationName,
       );
       const modelLessEvalFixture = execution.harnessConfiguration.implementation.startsWith("fixture.");
+      // A recovering default family is refused, never replaced by another family (PROV-008).
+      const recoveryError = productModelSelection && selectedModel === null && !modelLessEvalFixture
+        ? defaultFamilyRecoveryError(modelSettings)
+        : null;
+      if (recoveryError) throw recoveryError;
       if (productModelSelection && selectedModel === null && !modelLessEvalFixture) {
         throw new Error(`Eval has no available model for ${execution.harnessConfigurationName}.`);
       }

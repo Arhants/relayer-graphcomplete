@@ -1,4 +1,5 @@
 import { createModelPicker } from "./model-picker.js";
+import { providerModelsRefreshAction } from "./provider-models-refresh.js";
 import { pickerSelectionPayload } from "./model-picker-model.js";
 import { validateModelSelection } from "./model-settings-api.js";
 import { preparePermissionProfiles } from "./permission-profiles.js";
@@ -19,6 +20,7 @@ export function initializeNewThreadModelPicker({
     onUserTakeover,
     onSelectionChange,
     onOpenSettings,
+    onRefreshModels: providerModelsRefreshAction(),
     prepareHarnessChange: preparePermissionProfiles,
     validateSelection: (selection) => validateModelSelection({
       harnessId: selection.harnessId,
@@ -36,6 +38,10 @@ export function closeNewThreadModelPicker() {
 
 export function newThreadModelSelectionReady() {
   return Boolean(newThreadPicker?.isReady());
+}
+
+export function newThreadModelSetup() {
+  return newThreadPicker?.modelSetup() ?? null;
 }
 
 export function newThreadModelSelectionPayload() {

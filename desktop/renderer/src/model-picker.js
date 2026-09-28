@@ -1,5 +1,6 @@
 import {
   availablePickerFamilies,
+  familyModelSetup,
   harnessUsesConfigurationModel,
   modelPickerContextCandidate,
   pickerSelectionIsAvailable,
@@ -25,16 +26,32 @@ function harnessFor(settings, harnessId) {
   return settings?.harnesses?.find((harness) => harness.id === harnessId);
 }
 
+// A family that needs model setup stays the selection (PROV-008), whether it is the default or a
+// thread's last family: the picker names it and offers its provider's refresh instead of
+// pre-showing another family.
+export function modelPickerModelSetup(settings, selection) {
+  if (!settings || pickerSelectionIsAvailable(settings, selection)) return null;
+  return familyModelSetup(settings, selection?.familyId ?? settings.defaults?.familyId);
+}
+
 export function modelPickerFamilyPresentation(settings, harnessId, selection) {
   const families = settings ? availablePickerFamilies(settings, harnessId) : [];
+  const modelSetup = modelPickerModelSetup(settings, selection);
   const selectedFamily = families.find((family) => (
     String(family.id) === String(selection?.familyId)
-  )) ?? families[0] ?? null;
+  )) ?? (modelSetup ? null : families[0] ?? null);
   return {
     families,
     selectedFamily,
+    modelSetup,
     requiresExplicitSelection: Boolean(selectedFamily) && !pickerSelectionIsAvailable(settings, selection),
   };
+}
+
+export function composerSendTitle({ ready, modelSetup = null, readyTitle }) {
+  if (ready) return readyTitle;
+  if (modelSetup) return `${modelSetup.label}. ${modelSetup.actionName} to send.`;
+  return "Choose an available model in Settings before sending";
 }
 
 export function modelPickerMemberIsSelected(familyId, selection, member) {
@@ -156,6 +173,7 @@ export function createModelPicker({
   onUserTakeover = () => {},
   onSelectionChange = () => {},
   onOpenSettings = () => {},
+  onRefreshModels = null,
   prepareHarnessChange = async () => () => {},
   validateSelection = async () => {},
 }) {
@@ -164,6 +182,15 @@ export function createModelPicker({
   const popover = root.querySelector("[data-model-picker-popover]");
   const triggerLabel = root.querySelector("[data-model-picker-label]");
   const errorElement = root.querySelector("[data-model-picker-error]");
+  // One live region outside the re-rendered panels announces a recovery state once.
+  let statusElement = root.querySelector("[data-model-picker-status]");
+  if (!statusElement) {
+    statusElement = root.ownerDocument.createElement("p");
+    statusElement.className = "sr-only";
+    statusElement.dataset.modelPickerStatus = "";
+    statusElement.setAttribute("role", "status");
+    root.append(statusElement);
+  }
   let currentSettings = settings;
   let currentPinnedHarnessId = pinnedHarnessId;
   let currentSelection = currentSettings
@@ -175,6 +202,7 @@ export function createModelPicker({
   let error = null;
   let disabled = false;
   let validatingHarness = false;
+  let refreshingModels = false;
   const harnessValidationGate = createModelPickerRequestGate();
 
   function selectionReady() {
@@ -196,33 +224,11 @@ export function createModelPicker({
     onSelectionChange(currentSelection);
   }
 
-  function renderModelPanel() {
-    const panel = root.querySelector('[data-model-picker-panel="model"]');
-    const { families, selectedFamily } = modelPickerFamilyPresentation(
-      currentSettings,
-      selectedHarnessId(),
-      currentSelection,
-    );
-    if (!selectedFamily) {
-      if (harnessUsesConfigurationModel(currentSettings, selectedHarnessId())) {
-        panel.innerHTML = `<div class="model-picker-empty"><strong>Harness default</strong><span>The model is set by this harness configuration.</span></div>`;
-        return;
-      }
-      panel.innerHTML = `<div class="model-picker-empty"><strong>No available models</strong><button type="button" class="secondary" data-model-picker-settings>Open Settings</button></div>`;
-      panel.querySelector("[data-model-picker-settings]").onclick = () => {
-        onUserTakeover();
-        close();
-        onOpenSettings();
-      };
-      return;
-    }
-    panel.innerHTML = `<label class="model-family-field"><span>Family</span><select data-model-family aria-label="Model family">${families.map((family) => `<option value="${escapeHtmlAttribute(family.id)}" ${String(family.id) === String(selectedFamily.id) ? "selected" : ""}>${escapeHtml(family.name)}</option>`).join("")}</select></label>
-      <div class="model-option-list" role="radiogroup" aria-label="Models in ${escapeHtmlAttribute(selectedFamily.name)}">${selectedFamily.availableMembers.map((member) => {
-        const model = modelFor(currentSettings, member.providerId, member.modelId);
-        const provider = currentSettings.providers.find((item) => item.id === member.providerId);
-        const checked = modelPickerMemberIsSelected(selectedFamily.id, currentSelection, member);
-        return `<button type="button" role="radio" aria-checked="${checked}" data-model-option data-provider-id="${escapeHtmlAttribute(member.providerId)}" data-model-id="${escapeHtmlAttribute(member.modelId)}"><span><strong>${escapeHtml(model?.label ?? member.modelId)}</strong><small>${escapeHtml(provider?.label ?? member.providerId)}</small></span><i aria-hidden="true">${checked ? "✓" : ""}</i></button>`;
-      }).join("")}</div>`;
+  function familyOptions(families, selectedFamily) {
+    return families.map((family) => `<option value="${escapeHtmlAttribute(family.id)}" ${String(family.id) === String(selectedFamily?.id) ? "selected" : ""}>${escapeHtml(family.name)}</option>`).join("");
+  }
+
+  function bindFamilyChange(panel, families) {
     panel.querySelector("[data-model-family]").onchange = (event) => {
       onUserTakeover();
       const nextFamily = families.find((family) => String(family.id) === event.target.value);
@@ -236,6 +242,89 @@ export function createModelPicker({
       });
       requestAnimationFrame(() => root.querySelector("[data-model-family]")?.focus());
     };
+  }
+
+  function renderModelSetupPanel(panel, families, modelSetup) {
+    const refresh = onRefreshModels && modelSetup.action === "refresh"
+      ? `<button type="button" class="secondary" data-model-picker-refresh aria-label="${escapeHtmlAttribute(refreshingModels ? modelSetup.busyName : modelSetup.actionName)}" aria-busy="${refreshingModels}" aria-disabled="${refreshingModels}">${refreshingModels ? "Refreshing…" : escapeHtml(modelSetup.actionLabel)}</button>`
+      : `<button type="button" class="secondary" data-model-picker-settings${modelSetup.action === "settings" ? ` aria-label="${escapeHtmlAttribute(modelSetup.actionName)}"` : ""}>Open Settings</button>`;
+    const otherFamilies = families.length
+      ? `<label class="model-family-field"><span>Family</span><select data-model-family aria-label="Model family"><option value="" selected disabled>${escapeHtml(modelSetup.familyName)}</option>${familyOptions(families, null)}</select></label>`
+      : "";
+    panel.innerHTML = `<div class="model-picker-empty model-picker-recovery"><strong>${escapeHtml(modelSetup.label)}</strong><span>${escapeHtml(modelSetup.message)}</span>${refresh}</div>${otherFamilies}`;
+    if (families.length) bindFamilyChange(panel, families);
+    // A disconnected provider is reconnected on its card under Providers; otherwise the Settings
+    // defaults show the recovery and the other providers.
+    panel.querySelector("[data-model-picker-settings]")?.addEventListener("click", () => {
+      onUserTakeover();
+      close();
+      onOpenSettings(modelSetup.action === "settings" ? "providers" : "models");
+    });
+    const refreshButton = panel.querySelector("[data-model-picker-refresh]");
+    if (!refreshButton) return;
+    // Each render replaces the panel and drops focus to the page. Focus returns to the refresh
+    // action, or to the first model once the family is restored, unless the user moved it away.
+    const restoreFocus = () => requestAnimationFrame(() => {
+      const document = root.ownerDocument;
+      const active = document.activeElement;
+      if (active && active !== document.body && !root.contains(active)) return;
+      if (popover.classList.contains("hidden")) return;
+      (root.querySelector("[data-model-picker-refresh]")
+        ?? root.querySelector("[data-model-option]")
+        ?? root.querySelector("[data-model-family]")
+        ?? root.querySelector('[data-model-picker-tab="model"]'))?.focus();
+    });
+    refreshButton.onclick = async () => {
+      if (refreshingModels) return;
+      onUserTakeover();
+      refreshingModels = true;
+      error = null;
+      render();
+      restoreFocus();
+      try {
+        await onRefreshModels(modelSetup.providerId);
+      } catch (refreshError) {
+        error = refreshError instanceof Error ? refreshError.message : String(refreshError);
+      } finally {
+        refreshingModels = false;
+        render();
+        restoreFocus();
+      }
+    };
+  }
+
+  function renderModelPanel() {
+    const panel = root.querySelector('[data-model-picker-panel="model"]');
+    const { families, selectedFamily, modelSetup } = modelPickerFamilyPresentation(
+      currentSettings,
+      selectedHarnessId(),
+      currentSelection,
+    );
+    if (!selectedFamily && modelSetup) {
+      renderModelSetupPanel(panel, families, modelSetup);
+      return;
+    }
+    if (!selectedFamily) {
+      if (harnessUsesConfigurationModel(currentSettings, selectedHarnessId())) {
+        panel.innerHTML = `<div class="model-picker-empty"><strong>Harness default</strong><span>The model is set by this harness configuration.</span></div>`;
+        return;
+      }
+      panel.innerHTML = `<div class="model-picker-empty"><strong>No available models</strong><button type="button" class="secondary" data-model-picker-settings>Open Settings</button></div>`;
+      panel.querySelector("[data-model-picker-settings]").onclick = () => {
+        onUserTakeover();
+        close();
+        onOpenSettings();
+      };
+      return;
+    }
+    panel.innerHTML = `<label class="model-family-field"><span>Family</span><select data-model-family aria-label="Model family">${familyOptions(families, selectedFamily)}</select></label>
+      <div class="model-option-list" role="radiogroup" aria-label="Models in ${escapeHtmlAttribute(selectedFamily.name)}">${selectedFamily.availableMembers.map((member) => {
+        const model = modelFor(currentSettings, member.providerId, member.modelId);
+        const provider = currentSettings.providers.find((item) => item.id === member.providerId);
+        const checked = modelPickerMemberIsSelected(selectedFamily.id, currentSelection, member);
+        return `<button type="button" role="radio" aria-checked="${checked}" data-model-option data-provider-id="${escapeHtmlAttribute(member.providerId)}" data-model-id="${escapeHtmlAttribute(member.modelId)}"><span><strong>${escapeHtml(model?.label ?? member.modelId)}</strong><small>${escapeHtml(provider?.label ?? member.providerId)}</small></span><i aria-hidden="true">${checked ? "✓" : ""}</i></button>`;
+      }).join("")}</div>`;
+    bindFamilyChange(panel, families);
     panel.querySelectorAll("[data-model-option]").forEach((button) => {
       button.onclick = () => {
         onUserTakeover();
@@ -340,11 +429,12 @@ export function createModelPicker({
     const hasAvailableModels = currentSettings
       ? availablePickerFamilies(currentSettings, selectedHarnessId()).length > 0
       : false;
+    const modelSetup = ready ? null : modelPickerModelSetup(currentSettings, currentSelection);
     triggerLabel.textContent = labels?.compact
-      ?? (configurationOwnedModel ? "Harness default" : (hasAvailableModels ? "Choose model" : "Set up models"));
+      ?? (configurationOwnedModel ? "Harness default" : modelSetup?.label ?? (hasAvailableModels ? "Choose model" : "Set up models"));
     trigger.title = labels
       ? `Model: ${labels.compact}`
-      : (configurationOwnedModel ? "Model set by harness configuration" : "Choose an available model");
+      : (configurationOwnedModel ? "Model set by harness configuration" : modelSetup?.message ?? "Choose an available model");
     trigger.disabled = disabled;
     root.querySelectorAll("[data-model-picker-tab]").forEach((tab) => {
       const selected = tab.dataset.modelPickerTab === activeTab;
@@ -356,6 +446,8 @@ export function createModelPicker({
     });
     renderModelPanel();
     renderAdvancedPanel();
+    const status = modelSetup?.message ?? "";
+    if (statusElement.textContent !== status) statusElement.textContent = status;
     errorElement.textContent = error ?? "";
     errorElement.classList.toggle("hidden", !error);
   }
@@ -437,6 +529,7 @@ export function createModelPicker({
     },
     getSelection: () => selectionReady() ? { ...currentSelection } : null,
     isReady: selectionReady,
+    modelSetup: () => selectionReady() ? null : modelPickerModelSetup(currentSettings, currentSelection),
     open,
     setDisabled(nextDisabled) {
       disabled = Boolean(nextDisabled);
@@ -451,6 +544,9 @@ export function createModelPicker({
     } = {}) {
       harnessValidationGate.invalidate();
       validatingHarness = false;
+      const recoveringFamilyId = selectionReady()
+        ? null
+        : modelPickerModelSetup(currentSettings, currentSelection)?.familyId ?? null;
       currentSettings = nextSettings;
       currentPinnedHarnessId = nextPinnedHarnessId;
       currentSelection = currentSettings
@@ -463,6 +559,22 @@ export function createModelPicker({
           replaceSelection,
         }))
         : null;
+      // A refresh that ends the selected family's recovery can restore it with another roster.
+      // The family is kept, and its first available model replaces one it no longer has, as when
+      // the thread is first opened (PROV-008).
+      if (
+        recoveringFamilyId != null
+        && currentSettings
+        && !selectionReady()
+        && String(currentSelection?.familyId) === String(recoveringFamilyId)
+        && !modelPickerModelSetup(currentSettings, currentSelection)
+      ) {
+        const restored = resolveUnsentModelIntent(currentSettings, {
+          ...currentSelection,
+          harnessId: selectedHarnessId(),
+        });
+        if (restored.selection) currentSelection = restored.selection;
+      }
       error = null;
       render();
       onSelectionChange(selectionReady() ? currentSelection : null);

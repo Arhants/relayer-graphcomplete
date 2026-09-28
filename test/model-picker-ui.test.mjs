@@ -309,7 +309,9 @@ describe("composer model picker UI contract", () => {
   it("routes every model setup failure to Models and harnesses", async () => {
     const graph = await readFile(new URL("../desktop/renderer/src/graph.js", import.meta.url), "utf8");
     const threads = await readFile(new URL("../desktop/renderer/src/threads.js", import.meta.url), "utf8");
-    const modelTab = 'setSettingsTab("models");';
+    const modelTab = "setSettingsTab(tab);";
+    expect(graph).toContain('onOpenSettings: (tab = "models") => {');
+    expect(graph.indexOf(modelTab)).toBeGreaterThan(-1);
     expect(graph.indexOf(modelTab)).toBeLessThan(graph.indexOf('querySelector("#settingsButton")?.click();'));
     expect(threads.match(/setSettingsTab\("models"\);/g)).toHaveLength(2);
   });

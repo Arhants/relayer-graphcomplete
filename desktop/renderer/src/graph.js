@@ -12,6 +12,7 @@ import { createAnnotationApi } from "./annotation-api.js";
 import { createNodeContextDraftApi } from "./node-context-drafts.js";
 import { createNodeInputDraftApi } from "./node-input-drafts.js";
 import { projectComposerGate } from "./project-composer-navigation.js";
+import { providerModelsRefreshAction } from "./provider-models-refresh.js";
 import {
   getNavigationHistory,
   navigateHistory,
@@ -98,10 +99,11 @@ function workspace() {
       inputIdentityRevision,
       inputDraftRevision,
     )),
-    onOpenSettings: () => {
-      setSettingsTab("models");
+    onOpenSettings: (tab = "models") => {
+      setSettingsTab(tab);
       document.querySelector("#settingsButton")?.click();
     },
+    onRefreshModels: providerModelsRefreshAction(),
     onNavigateLayer: async (layerId, navigation) => {
       const { navigateLayer } = await import("./threads.js");
       const source = {

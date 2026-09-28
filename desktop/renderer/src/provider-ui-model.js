@@ -1,4 +1,21 @@
 const PROVIDER_LIFECYCLES = new Set(["active", "removal_pending", "tombstoned"]);
+
+// After a Refresh models action: reload the provider cards and every model surface. Thread state
+// is refreshed only for an open thread; with none, /api/state would select and open a saved thread
+// and take the user away from the New Thread composer.
+export function createProviderModelsRefreshedHandler({
+  currentThreadId,
+  refreshProviderSettings,
+  refreshModelUi,
+  refreshThreadState,
+}) {
+  return async () => {
+    await refreshProviderSettings();
+    await refreshModelUi();
+    const threadId = currentThreadId();
+    if (threadId != null) await refreshThreadState(threadId);
+  };
+}
 const CONNECTION_MODES = new Set(["secret-fields", "managed-login", "existing-runtime-auth"]);
 
 function compareLabel(left, right) {

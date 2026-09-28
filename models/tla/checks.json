@@ -232,12 +232,10 @@
       "preset": "providers",
       "invariants": [
         "TypeOK",
-        "DefaultFamilyIsLive"
+        "DefaultFamilyIsLiveOrManagedByActiveProvider"
       ],
-      "expect": {
-        "violated": "DefaultFamilyIsLive"
-      },
-      "finding": "Open product question: a catalog refresh reporting no eligible models tombstones the default family until a later refresh reactivates it. No PRD promise covers this."
+      "expect": "pass",
+      "finding": "The default family is live, or P's managed family while P is active, as after a no-eligible refresh whether P stays connected or disconnects (decided; PROV-008 Q15). The enabled choice and the recovery cause are checked by the Rust tests, not this model."
     },
     {
       "id": "completion-safety-holds",
