@@ -42,6 +42,9 @@
 (*     is pending (F4, L1). Landed.                                       *)
 (*   AdapterAfterCommit: connect registers the catalog adapter only after *)
 (*     the definition commits (PROV-007). Landed.                         *)
+(*   RefreshSkipsPendingReconnect: a refresh resolves no generation while *)
+(*     a reconnect is pending (PDS refreshGeneration), so it neither runs *)
+(*     nor publishes until the reconnect settles (PROV-002). Landed.      *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets
 
@@ -58,7 +61,8 @@ CONSTANTS MaxQ,        \* entries per provider queue
           DefaultProviderPairsFamily, \* fix: a provider choice moves the family
           ConnectionGeneration,       \* fix: results carry their generation
           ReconnectKeepsAdapter,      \* fix: a cancelled reconnect keeps an adapter
-          AdapterAfterCommit          \* fix: connect registers after its commit
+          AdapterAfterCommit,         \* fix: connect registers after its commit
+          RefreshSkipsPendingReconnect \* fix: no refresh during a pending reconnect
 
 Provs == {"P", "Q"}
 Fams == {"mP", "mQ", "C"}
@@ -319,11 +323,12 @@ SkipAborted(p) ==
 SkipGone(p) ==
   /\ ConnectionGeneration
   /\ q[p] /= << >> /\ Head(q[p]).pc = "queued" /\ ~Head(q[p]).ab
-  /\ (adapter[p] = "none" \/ life[p] /= "active")
+  /\ (adapter[p] = "none" \/ life[p] /= "active" \/ (RefreshSkipsPendingReconnect /\ pending[p]))
   /\ Dequeue(p, q[p])
   /\ UNCHANGED <<life, acct, elig, adapter, hasRt, pending, pendNew, pendGen, gen,
                  events, flips, closed, rustVars, flagVars>>
-Runnable(p) == ~ConnectionGeneration \/ (adapter[p] /= "none" /\ life[p] = "active")
+Runnable(p) == ~ConnectionGeneration
+               \/ (adapter[p] /= "none" /\ life[p] = "active" /\ ~(RefreshSkipsPendingReconnect /\ pending[p]))
 
 \* Discovery through a captured real adapter reads the current upstream
 \* (MSA:39-79). A runtime closed since capture only fails (DiscoverFail).
@@ -406,7 +411,9 @@ Publish(p) ==
   /\ q[p] /= << >>
   /\ LET e == Head(q[p]) IN
      /\ e.pc = "pub"
-     /\ IF e.ab \/ (ConnectionGeneration /\ e.g /= gen[p])
+     \* MCS drops a result whose generation changed, or resolves none while a
+     \* reconnect is pending, before it publishes.
+     /\ IF e.ab \/ (ConnectionGeneration /\ e.g /= gen[p]) \/ (RefreshSkipsPendingReconnect /\ pending[p])
         THEN UNCHANGED <<rustVars, flagVars>>
         ELSE RustPublish(p, e.res, e, TRUE)
   /\ Dequeue(p, q[p])
@@ -719,9 +726,11 @@ OnlyOwnFamily ==
             /\ cEn' = cEn]_vars
 
 \* DRAFT (tombstoned default) liveness: it restores once its provider
-\* is healthy and its refresh machinery is registered.
+\* is healthy and its refresh machinery is registered. A provider whose
+\* reconnect is still pending has not settled: no refresh runs for it.
 Healthy(ad) == /\ life["P"] = "active" /\ acct["P"] = "conn" /\ elig["P"]
                /\ ~closed /\ adapter["P"] \in ad
+               /\ ~(RefreshSkipsPendingReconnect /\ pending["P"])
 TombP == defFam = "mP" /\ fam["mP"] = "tomb"
 DefaultRestores ==
   (TombP /\ Healthy({"real"})) ~> (~TombP \/ ~Healthy({"real"}))

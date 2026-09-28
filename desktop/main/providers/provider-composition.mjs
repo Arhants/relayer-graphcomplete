@@ -21,9 +21,10 @@ export function createProviderComposition({
   const modelCatalog = new ModelCatalogService({
     adapters: [],
     diagnostics,
-    // Each refresh carries the connection generation it started with (PROV-002).
+    // Each refresh carries the connection generation it started with (PROV-002). None runs
+    // while a reconnect is pending.
     connectionGenerations: {
-      current: (providerId) => providerDefinitions.connectionGeneration(providerId),
+      current: (providerId) => providerDefinitions.refreshGeneration(providerId),
       resync: (providerId) => providerDefinitions.resyncConnectionGeneration(providerId),
     },
     publishSnapshot: async (snapshot, options) => {

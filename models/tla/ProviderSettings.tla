@@ -109,23 +109,27 @@ Init ==
   /\ defaultFamily \in Families
 
 -----------------------------------------------------------------------------
-(* #cancelPendingConnection (PDS:598-650) for every id in S. Both branches *)
-(* delete the runtime from this.runtimes and close it; neither consults    *)
-(* leases. The reconnect branch marks the provider signed out. A reconnect *)
-(* that reused the live runtime then registers a fresh runtime in its      *)
-(* place, so the active provider keeps a catalog adapter (F4); one that    *)
-(* created its runtime leaves the recovery adapter it never replaced.     *)
+(* #cancelPendingConnection (PDS) for every id in S. Both branches delete  *)
+(* the runtime from this.runtimes and close it. The reconnect branch marks *)
+(* the provider signed out. A reconnect that reused the live runtime then  *)
+(* registers a fresh runtime in its place, so the active provider keeps a  *)
+(* catalog adapter (F4); one that created its runtime leaves the recovery  *)
+(* adapter it never replaced. A reconnect never closes a runtime a lease   *)
+(* holds (PROV-004): it only drops its entry. acquireExecution refuses     *)
+(* while a reconnect is pending, so that branch only guards the invariant. *)
 CancelSetEffect(S) ==
-  LET live == {i \in S : pend[i].kind /= "none"}
-      restore == /\ "P" \in live /\ pend["P"].kind = "reconnect"
+  LET spared == "P" \in S /\ pend["P"].kind = "reconnect" /\ Holders /= {}
+      live == {i \in S : pend[i].kind /= "none"}
+      torn == IF spared THEN live \ {"P"} ELSE live
+      restore == /\ "P" \in torn /\ pend["P"].kind = "reconnect"
                  /\ ~reconCreated /\ defs["P"] = "active" /\ ~closing
                  /\ FreeRts /= {}
   IN /\ pend' = [i \in Ids |-> IF i \in live THEN NoPend ELSE pend[i]]
-     /\ rmap' = [i \in Ids |-> IF i \in live
+     /\ rmap' = [i \in Ids |-> IF i \in torn
                                 THEN (IF i = "P" /\ restore THEN NextRt ELSE NoRt)
                                 ELSE rmap[i]]
      /\ rt' = [r \in RuntimeIds |->
-                IF \E i \in live : pend[i].rt = r THEN "closed"
+                IF \E i \in torn : pend[i].rt = r THEN "closed"
                 ELSE IF restore /\ r = NextRt THEN "open" ELSE rt[r]]
      /\ override' = IF "P" \in live /\ pend["P"].kind = "reconnect"
                     THEN "logged_out" ELSE override
@@ -385,9 +389,10 @@ CompleteFinish(id, outcome) ==
 (* A turn on provider P. Rust admission resolves the plan against SQLite  *)
 (* (CAT:1634-1712: provider connected and active), and only later does    *)
 (* the harness call the lease broker (RTB:181-227) -> acquireExecution    *)
-(* (PDS:795-821), which checks only that the definition is active and     *)
-(* does not look at closing. #runtimeFor awaits onRuntimeReady before     *)
-(* registering a new runtime (PDS:825-843).                               *)
+(* (PDS). It refuses once close() began, for a definition that is not     *)
+(* active, and while a reconnect is pending (PROV-004). #runtimeFor awaits *)
+(* onRuntimeReady before registering a new runtime; a runtime that        *)
+(* finishes starting after close() began is closed again instead.         *)
 ExecAdmit(e) ==
   /\ exec[e].pc = "idle"
   /\ defs["P"] = "active" /\ sqlConnected
@@ -399,7 +404,7 @@ ExecAdmit(e) ==
 
 ExecAcquire(e) ==
   /\ exec[e].pc = "admitted" /\ Free
-  /\ IF defs["P"] /= "active"
+  /\ IF closing \/ defs["P"] /= "active" \/ pend["P"].kind /= "none"
      THEN /\ exec' = [exec EXCEPT ![e] = [pc |-> "done", rt |-> NoRt]]
           /\ UNCHANGED <<lock, rt>>
      ELSE IF rmap["P"] /= NoRt
@@ -419,10 +424,15 @@ ExecAcquire(e) ==
 ExecRegistered(e) ==
   /\ exec[e].pc = "creating"
   /\ lock' = "none"
-  /\ rmap' = [rmap EXCEPT !["P"] = exec[e].rt]
-  /\ override' = "none"
-  /\ exec' = [exec EXCEPT ![e].pc = "holding"]
-  /\ UNCHANGED <<defs, rt, pend, prep, cancelled, closing, closed, connPc,
+  /\ IF closing
+     THEN /\ rt' = [rt EXCEPT ![exec[e].rt] = "closed"]
+          /\ exec' = [exec EXCEPT ![e] = [pc |-> "done", rt |-> NoRt]]
+          /\ UNCHANGED <<rmap, override>>
+     ELSE /\ rmap' = [rmap EXCEPT !["P"] = exec[e].rt]
+          /\ override' = "none"
+          /\ exec' = [exec EXCEPT ![e].pc = "holding"]
+          /\ UNCHANGED rt
+  /\ UNCHANGED <<defs, pend, prep, cancelled, closing, closed, connPc,
                  connRt, reconPc, reconRt, reconCreated, complPc, complCap,
                  alive, bound, cancelQ, ipcDone, sqlConnected, fam,
                  defaultFamily>>
@@ -484,7 +494,8 @@ Remove ==
 -----------------------------------------------------------------------------
 (* Model settings in SQLite. Catalog refresh runs on the model catalog    *)
 (* service's own queue, not the provider queue, through whichever runtime *)
-(* is registered, including one reused by a pending reconnect.            *)
+(* is registered. No refresh runs or publishes while a reconnect is       *)
+(* pending (PDS refreshGeneration, PROV-002).                             *)
 
 \* publish_provider_catalog (CAT:683-767). "no_eligible" is the
 \* provider_no_eligible_execution_models reason, which tombstones P's
@@ -492,7 +503,7 @@ Remove ==
 \* publish with eligible models reactivates the same family id
 \* (replace_system_family, CAT:2455-2478).
 CatalogRefresh(outcome) ==
-  /\ defs["P"] = "active" /\ ~closed
+  /\ defs["P"] = "active" /\ ~closed /\ pend["P"].kind = "none"
   /\ sqlConnected' = (outcome = "models")
   /\ fam' = CASE outcome = "models" ->
                    [fam EXCEPT !["managedP"] = [state |-> "active", enabled |-> TRUE]]
@@ -622,10 +633,11 @@ TypeOK ==
   /\ override \in {"none", "logged_out", "login_pending"}
   /\ defaultFamily \in Families
 
-\* A runtime a running turn holds is never closed under it. The logout and
-\* reconnect guards refuse while leases exist, and #finalizeRemoval waits
-\* for the last lease: "the runtime and credentials remain usable by that
-\* attempt" (PDS:918-920). Shutdown closing everything is out of scope.
+\* A runtime a running turn holds is never closed under it (PROV-004). The
+\* logout and reconnect guards refuse while leases exist, acquireExecution
+\* refuses while a reconnect is pending, and #finalizeRemoval waits for the
+\* last lease: "the runtime and credentials remain usable by that attempt".
+\* Shutdown closing everything is out of scope.
 LeasedRuntimeStaysOpen ==
   ~closing =>
     \A e \in Execs : exec[e].pc = "holding" => rt[exec[e].rt] = "open"

@@ -47,7 +47,8 @@ check can therefore come only from its own mechanism.
 
 `CatalogRefresh` follows the same rule with `catalog-today`, which mirrors
 the code. It has one constant per landed fix, and each open bug check keeps
-every landed fix on.
+every landed fix on. `ProviderLeaseLifecycle` does the same with
+`lifecycle-today`.
 
 A fix PR flips its constant in `completion-today` or `catalog-today`. That
 check then passes, so the PR must also flip its expectation to `pass`;
@@ -158,10 +159,10 @@ renderer.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `provider-leased-runtime` | Plausible: narrow window | Rust admits a turn while `P` still reads connected in SQLite, and the user then signs out and reconnects. When the harness takes its lease, `acquireExecution` hands out the runtime the pending reconnect registered, because it never checks `pendingConnections`. A failed handoff, a cancel or a terminal check then runs `#cancelPendingConnection`, which closes that runtime under the turn. Since PR 4 the cancel registers a fresh runtime in its place (F4), but the leased one still closes. |
+| `provider-leased-runtime` | Fixed; now passes | Before the fix (plausible: narrow window): Rust admitted a turn while `P` still read connected in SQLite, and the user then signed out and reconnected. When the harness took its lease, `acquireExecution` handed out the runtime the pending reconnect registered, because it never checked `pendingConnections`. A failed handoff, a cancel or a terminal check then ran `#cancelPendingConnection`, which closed that runtime and wiped its home under the turn (PROV-004). Now `acquireExecution` refuses while a reconnect is pending, and a settling reconnect never closes or wipes a runtime a lease holds. When the sign-out's publish failed, Rust kept admitting turns through the whole reconnect, so the window was wide. `ProviderLeaseLifecycle` checks each fix and its reverted form. Regression tests: `refuses a turn's provider access while a reconnect is pending`, `refuses access during a reconnect after a sign-out the app server never recorded` and `never closes or wipes a leased runtime when a reconnect settles` in `provider-connection-generation.test.mjs`. |
 | `provider-remove-during-reconnect` | Fixed; now passes | Before the fix: after sign out, Reconnect, then Remove, the pending reconnect outlived the removal and could still complete. Now `remove()` drops it as the provider enters `removal_pending`, which "immediately blocks new attempts through it" (docs/architecture.md). The runtime stays in `this.runtimes` for turns still draining, and it closes with the tombstone. The PRD is silent here, so this is an architecture-backed decision. Scenario: `provider-remove-during-reconnect`. |
 | `provider-attempt-ownership` | Fixed; now passes | Before the fix: `bindConnection` ran only after `connect()`/`reconnect()` (including `login()`) and `openExternal` resolved. It added a `destroyed` listener to contents already destroyed, and that listener never fired. It now cancels the attempt instead. This restores PRD BRW-005. Scenario: `provider-destroyed-before-bind`. |
-| `provider-close` | Plausible: depends on shutdown order | `close()` waits for lifecycle tasks but not for the queue, and `acquireExecution` ignores `closing`. A turn admitted before shutdown can create and register a runtime after the maps are cleared. |
+| `provider-close` | Fixed; now passes | Before the fix (plausible: depends on shutdown order): `close()` waited for lifecycle tasks but not for the queue, and `acquireExecution` ignored `closing`. A turn admitted before shutdown could create and register a runtime after the maps were cleared, and nothing closed it. Now `acquireExecution` refuses once `close()` begins, and `#runtimeFor` closes a runtime that finishes starting after it. `close()` still does not wait for the queue. Regression test: `refuses access once shutdown begins, and closes a runtime that finished starting after it`. |
 | `provider-default-family` | Needs a product decision | A catalog refresh that reports `provider_no_eligible_execution_models` tombstones the provider's managed family even when it is the default family. A later refresh with eligible models reactivates the same family. Disable, delete and removal all refuse to break the default family, but the PRD makes no promise here. |
 
 ### `CatalogRefresh.tla`
@@ -186,7 +187,7 @@ and `mQ`, and one custom family `C` with members from both. Each check
 shrinks the bounds in `catalog-today`. On an idle machine the two slowest,
 the default-provider checks, take about 10 and 20 seconds.
 
-`catalog-today` has four fix constants, all landed:
+`catalog-today` has five fix constants, all landed:
 
 - `DefaultProviderPairsFamily`: choosing a default provider also selects that
   provider's enabled managed family, in the same transaction. A provider
@@ -202,6 +203,11 @@ the default-provider checks, take about 10 and 20 seconds.
   so it never discovers through that reconnect's runtime (F4, L1).
 - `AdapterAfterCommit`: connect registers the catalog adapter only after the
   definition commits (PROV-007).
+- `RefreshSkipsPendingReconnect`: while a reconnect is pending, a refresh
+  resolves no generation. It neither runs nor publishes until the reconnect
+  settles, and `DefaultRestores` counts a provider as healthy only then. This
+  model has no provider home, so `ProviderLeaseLifecycle` checks what the fix
+  prevents.
 
 Each `-reverted` check turns one constant off and keeps the others on, so its
 violation comes only from its own mechanism.
@@ -408,6 +414,80 @@ If the app server alone restarted, its restored row would stay the record.
 It would accept the coordinator's next generation, and the coordinator's
 counter only grows.
 
+### `ProviderLeaseLifecycle.tla`
+
+This model covers one managed provider `P` where its lifecycle meets a turn's
+execution lease, the catalog refresh and the connection generation:
+
+- **Desktop main:** sign-out, reconnect, its cancel and completion, removal,
+  `close()`, and `acquireExecution` with the runtime it may start. The provider
+  queue is a lock, and a lease that starts a runtime holds it across
+  `#runtimeFor`'s awaits, which `close()` does not wait for.
+- **Provider home:** one boolean, whether it holds a login. Wiping the runtime
+  state removes it.
+- **App server:** the connection generation and whether `P` reads ready. Rust
+  admits the turn only while it does (PROV-006).
+
+There is one turn and at most three runtimes. Two faults are constants. The
+sign-out's publish can fail, which is only logged. A reconnect's publish can
+get no answer, whether or not it committed. Reading the generation, at the
+reconnect's start or back after that publish, can fail too. Sign-out is also
+accepted while a reconnect is pending: Settings does not offer it then, but
+the service does not refuse it. A sign-out's publish can fail before it
+commits, or commit and lose its answer.
+
+`lifecycle-today` mirrors the code. It has every fault on and six fix
+constants, all landed:
+
+- `LeaseWaitsForReconnect`: `acquireExecution` refuses while a reconnect is
+  pending (PROV-004).
+- `CancelSparesLease`: a settling reconnect never closes or wipes a runtime a
+  lease holds. With the first fix this is unreachable; it guards the
+  invariant.
+- `ShutdownRefusesLeases`: `acquireExecution` refuses once `close()` begins,
+  and a runtime that finishes starting after it is closed again.
+- `RefreshSkipsPendingReconnect`: no refresh runs or publishes while a
+  reconnect is pending (PROV-002: user actions supersede automatic ones).
+- `LostReconnectAdopted`: a reconnect whose publish got no answer reads the
+  generation back. Unmoved, the publish never committed, and the reconnect
+  settles as before. Otherwise the login may be committed, so it is kept.
+- `AdoptChecksBaseline`: the reconnect is adopted as connected only when the
+  generation reads exactly one past a baseline it read at its start, and no
+  sign-out ran meanwhile. A sign-out the app server answered makes the
+  refusal certain, so the reconnect settles as failed. An unanswered
+  sign-out, any other advance, or a failed read keeps the reconnect's runtime
+  and login without adopting it.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `lifecycle-lease-during-reconnect` | Fixed; now passes | Checks `PROV004_NoCloseUnderLease` with every fault on. This is `provider-leased-runtime`, with the provider home added. |
+| `lifecycle-lease-acquire-guard-alone` | passes | With `CancelSparesLease` off, the acquire guard alone keeps PROV-004: no lease exists while a reconnect is pending. |
+| `lifecycle-lease-cancel-guard-alone` | passes | With `LeaseWaitsForReconnect` off, the cancel guard alone also keeps PROV-004. |
+| `lifecycle-lease-during-reconnect-reverted` | violated: shows why the fix is needed | With both lease fixes off, a turn leases the runtime a pending reconnect is signing in, and cancelling the reconnect closes it and wipes its home. Either fix alone passes, so this check turns both off. |
+| `lifecycle-close` | Fixed; now passes | Checks `CloseLeavesNoOpenRuntime`. This is `provider-close`. |
+| `lifecycle-close-reverted` | violated: shows why the fix is needed | With `ShutdownRefusesLeases` off, a lease queued before shutdown registers a runtime after `close()` cleared the maps. |
+| `lifecycle-refresh-during-reconnect` | Fixed; now passes | Before the fix (plausible: Settings reopened while a reconnect is pending): the refresh discovered through the runtime the reconnect reuses and published ready. Cancelling the reconnect wiped the login but superseded nothing, so Rust admitted turns that Settings showed signed out, and they failed. Checks `ReadyMeansSignedIn` with the sign-out fault off. Regression test: `runs no refresh while a reconnect is pending, so a cancelled reconnect leaves the app server signed out`. |
+| `lifecycle-refresh-during-reconnect-reverted` | violated: shows why the fix is needed | With `RefreshSkipsPendingReconnect` off: sign out, reconnect, sign in, refresh, cancel. |
+| `lifecycle-lost-reconnect-answer` | Fixed; now passes | Before the fix (plausible: needs a lost answer): only a superseded refusal relearned the generation. Any other error settled the reconnect and wiped the login the app server had just committed. Rust then read connected with no login. This was the reconnect counterpart of F2. Regression tests: `adopts a reconnect the app server committed before its answer was lost`, `keeps the login of a reconnect whose outcome is unknown` and `registers the runtime a reconnect created when its outcome is unknown`. Keeping the login of an unknown outcome is not yet a PRD decision. If the publish never committed, the next refresh publishes the signed-in account at the old generation, with no reconnect event. |
+| `lifecycle-lost-reconnect-answer-reverted` | violated: shows why the fix is needed | With `LostReconnectAdopted` off, the committed reconnect's cancel wipes its login. |
+| `lifecycle-lost-answer-adopts-only-commit` | Fixed; now passes | Checks `AdoptsOnlyCommittedReconnect`: an unanswered reconnect is adopted only when the app server committed it. An independent review found that an earlier draft of this fix adopted any advance past the baseline. Regression tests: `settles a reconnect whose unanswered publish did not commit`, which also covers a publish or discovery that failed before any commit; `neither adopts nor wipes a reconnect whose unanswered publish cannot be proven`; and `settles a reconnect the app server refused with a code it could not have committed`. |
+| `lifecycle-lost-answer-adopts-only-commit-reverted` | violated: shows why the fix is needed | With `AdoptChecksBaseline` off: a sign-out commits but loses its answer, and the reconnect cannot read its baseline. Its publish at the older generation never commits, yet the read shows an advance, and the reconnect is adopted. Before the baseline and sign-out checks, a sign-out during the reconnect led to the same adoption. |
+| `lifecycle-committed-reconnect-keeps-login` | Fixed; now passes | Checks `CommittedReconnectKeepsLogin` with every fault on: a reconnect the app server committed is never settled and wiped. The review found that marking every sign-out as superseding, answered or not, broke this through a failed sign-out publish during the reconnect; this check catches that version. Regression test: `neither adopts nor wipes a reconnect whose unanswered publish cannot be proven`. |
+| `lifecycle-committed-reconnect-keeps-login-reverted` | violated: shows why the fix is needed | With `LostReconnectAdopted` off, the committed reconnect whose answer was lost is settled and its login wiped. |
+| `lifecycle-removal-completes` | passes | PROV-003: a removal that waited on the turn finishes once the turn releases, with every fault on. |
+
+`ReadyMeansSignedIn` is checked with the sign-out fault off. A failed
+sign-out publish leaves Rust ready with no login by itself; the next refresh
+corrects it. While a reconnect is pending, no refresh runs, so that state
+lasts until the reconnect settles. Settling it does not publish a signed-out
+state, and the lease guard keeps turns off the reconnect's runtime meanwhile.
+Discovery is atomic here: a refresh that started before the reconnect and
+read the account mid-sign-in is not modeled. The code drops such a result if
+it reaches its pre-publish check while the reconnect is pending. A cancel
+does not advance the generation, so a result that reaches the check after the
+cancel still publishes. The cancel closes the reused runtime, so that
+discovery usually fails first.
+
 ## Limits
 
 - **Bounds:** one provider plus one new connection, one renderer, one lease,
@@ -428,10 +508,17 @@ counter only grows.
   adapter: that needs an explicit refresh, a user action the model does not
   make fair. `CatalogRefresh` checks the generation once, at publish. The code checks twice: the catalog service before it publishes,
   and Rust inside the write transaction. The model's single check stands for
-  both. A lifecycle write whose response is lost is not modeled; a JS test
+  both. `CatalogRefresh` does not model a lifecycle write whose response is lost; a JS test
   covers the refresh that relearns the generation. The ad hoc
   `ProviderConnect` model, which covers a crash between the create's commit
   and its reply (F2), is not promoted; a JS test covers F2.
+  `ProviderLeaseLifecycle` models a reconnect whose answer is lost. It makes
+  each publish atomic, so a request whose answer was lost has already
+  committed or never will. A sign-out request sent before a reconnect that
+  reaches the app server only after the reconnect read its baseline breaks
+  that assumption: the reconnect's refused publish can then read one step
+  past its baseline and be adopted. That needs three faults and is not
+  modeled.
 - **Catalog abstractions:** `CatalogRefresh` has no harness. A family is
   resolvable when it is enabled and has a connected member with available
   models. That stands for "some harness can run it": the model leaves out
