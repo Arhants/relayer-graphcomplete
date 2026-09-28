@@ -7,7 +7,7 @@
     "sha256": "b05db96cb2d008e213b3bc6e3398b958f4670ed919547329a607be8f0dc7d865"
   },
   "source": {
-    "commit": "9cb91a08e769ed09cf2d8ae5053041fc23233793",
+    "commit": "1370d0c7f3d1c1b2d5f62d8e7bdab1123caa5efc",
     "dirty": false,
     "sourceFiles": {
       "desktop/renderer/assets/relayer-logo.svg": {
@@ -99,20 +99,20 @@
         "sha256": "5acd7064cadf5090c92f90a205515f0c78de8370e2e15ac3a6fc59032a8fde5f"
       },
       "desktop/renderer/src/product-workspace/workspace.js": {
-        "bytes": 205154,
-        "sha256": "3743b7c0e5454e015228f1d3cdca53a39988832363564532f5c480708bfb0718"
+        "bytes": 208587,
+        "sha256": "9bbecb253fbd46a23f3d26ec4b5e2f6217313ef05004236a18c738c7e4e9cf3b"
       },
       "desktop/renderer/src/public-share-viewer/adapter.js": {
-        "bytes": 4137,
-        "sha256": "8056892bce4363a9fd5da53e4be1b26f5d8cb85bba37bf60af56d3b9ec4df07d"
+        "bytes": 4324,
+        "sha256": "4289fa31c5293732affe016e1b497f01c5155a42eab9a7c0c354e608905fc471"
       },
       "desktop/renderer/src/public-share-viewer/main.js": {
-        "bytes": 6820,
-        "sha256": "4571566695a237dcebd161579871c660fb64e7044cbfdd6fff7b6ef1d69a55f5"
+        "bytes": 7002,
+        "sha256": "2045958c07a5f36734e97cfc33737857a3232ae87a839e968fb659a0f8fcf6e1"
       },
       "desktop/renderer/src/public-share-viewer/snapshot.js": {
-        "bytes": 32168,
-        "sha256": "451ab8a034f9997d18ec85e06eb5dbc1841e8c50140745c50a8de87584f4eeaf"
+        "bytes": 40588,
+        "sha256": "01c54102e4dff2ee5b80d7cecf30160edb9a50db99ddfd61b98674078b882d26"
       },
       "desktop/renderer/src/public-share-viewer/template.js": {
         "bytes": 6324,
@@ -123,16 +123,16 @@
         "sha256": "612af5184f4e25e8db190e21eca79c098c08b8e682f5a8dcb12870bd64cb0c4f"
       },
       "desktop/renderer/src/share-publish-ui.js": {
-        "bytes": 15305,
-        "sha256": "0ff28e4f5fe3413f25d72236d3586c5d459add1866e42092784cb16bd77accd7"
+        "bytes": 18856,
+        "sha256": "a0b24b41acd3d8b7cd7e2320a0d2559f4ea4d840ef44ba059d3165c99b0ca389"
       },
       "desktop/renderer/src/ui.js": {
         "bytes": 1279,
         "sha256": "d7cd6e4a2c45d2d85e6068bc2e5d1a66c35b75b546ba432600c5008180b3cab1"
       },
       "desktop/renderer/styles.css": {
-        "bytes": 96685,
-        "sha256": "274b046a1605cfdbf4aa194554c276048ec6c5812adde301ef8beea8c6431d7a"
+        "bytes": 97769,
+        "sha256": "509a136be72f4ad569f268eb254dc0a72ef312e3b7af182f47d3a4861b25c331"
       },
       "desktop/renderer/vendor/lucide.min.js": {
         "bytes": 386702,
@@ -150,7 +150,7 @@
   },
   "browser": {
     "electron": "43.0.0",
-    "origin": "http://127.0.0.1:58671",
+    "origin": "http://127.0.0.1:55267",
     "networkRequests": [],
     "unchangedUrl": true,
     "paidInferenceCalls": 0,
