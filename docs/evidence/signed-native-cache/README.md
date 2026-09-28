@@ -39,7 +39,7 @@ Base: `f80766648b4ff06b64584c042a7afcd5ccb410f3`, fetched from `origin/main`.
 Local branch: `codex/signed-native-cache` in the dedicated managed worktree.
 Node: 22.23.2. Rust: 1.98.0. No signed workflow or release action was executed.
 
-Final executable/workflow/test source digest:
+Original cache executable/workflow/test source digest (unchanged by merge-readiness fixes):
 `7b9b7fa3c99b41e744cbb404b698fab4086651832e11630f9a289edbfaaf29d1`.
 Algorithm: sort the eight paths listed below; hash each UTF-8 path, one NUL, and
 its raw 32-byte file SHA-256 into one SHA-256 stream.
@@ -81,16 +81,16 @@ Rust 1.98.0, including source/lock identity and inventory hashes. Local checks
 used its exported library/include paths. It was not used as signed-profile
 output. No cache verification failure was suppressed to obtain a native hit.
 
-### Failures and unresolved gate
+### Initial failures (preserved)
 
-`npm run check` is **not green**. Its final attempt reached the unchanged
+At the initial PR commit, `npm run check` was **not green**. Its final attempt reached the unchanged
 `packages/harness-host/test/codex-secret-provider-process.test.ts:138` probe,
 which reported `OPENAI_API_KEY_PRESENT` and `OPENAI_BASE_URL_PRESENT` instead of
 absence in its model-requested shell. These are synthetic test credentials.
 One additional isolated `npm run test:codex-secret-boundary` run reproduced the
 failure (one failed, one passed). An earlier invocation passed both cases.
-No provider/runtime source or this test was changed. The boundary failure remains
-unresolved and must not be hidden by the passing cache or telemetry results.
+No provider/runtime source or this test was changed in that initial commit.
+The merge-readiness follow-up below records the subsequent diagnosis and fix.
 
 Earlier attempts are retained separately: the first full check encountered an
 Electron first-download race and a test loaded against an earlier in-flight
@@ -116,9 +116,62 @@ this checkout; the assertions above are the durable checked-in summary.
   no unresolved actionable findings. Reviewer ran the nine cache cases and two
   evidence-collector cases successfully.
 
-Both reviews are **non-certifying without a PR**. Their source assertions apply
+These assertions are recorded in PR #552. Their source assertions apply
 only to the recorded executable digest; changing that scope invalidates them.
-They do not override the failed repository check or certify a signed candidate.
+They do not certify a signed candidate.
+
+### Merge-readiness follow-up
+
+The full local check reproduced the native secret-boundary failure after all
+2,688 ordinary JavaScript tests passed. Eleven isolated probe invocations had
+passed earlier; those passes did not establish that the failure was fixed.
+A diagnostic loopback fixture waited for Codex 0.147's actual shell snapshot
+before returning its shell request. It deterministically exposed synthetic
+provider variables: snapshots capture the app-server environment and source it
+after shell-policy filtering. Disabling snapshots removed that path.
+
+Additional changed seams and checkpoints:
+
+- Secret-backed Codex execution now enforces `features.shell_snapshot=false`.
+  PRD AGT-007 already excludes credentials from persistence and diagnostics.
+  The warm harness test checks the production override. The native probe checks
+  that the pinned binary parses the exact production overrides with snapshots
+  disabled even when the fixture enables them, then exercises actual endpoint
+  authentication and shell-variable exclusion. The regression failed against
+  the old source and passed after the fix. The separate fresh-child graph
+  capability scenario still runs. Managed subscription access is unchanged.
+- CI run `36422173151` stopped producing test output after about two minutes and
+  was cancelled after about 18 minutes. The only unfinished isolated file was
+  `ci-merge-freshness.test.mjs`; cleanup found its orphaned `unzip` process.
+  The decoder now uses SIGKILL when its existing time/output bounds are exceeded.
+  A TERM-handling pipe stall is the inferred cause, not a confirmed Linux replay.
+  The real ZIP checkpoint now supplies a 1 MiB compressible member under the
+  archive size bound and runs the production decoder in a child with a seven
+  second process-group deadline. It requires a bounded-output/time rejection.
+  No freshness acceptance rule or required check was weakened.
+
+Focused results: 46 harness cases, two native boundary cases, and 34 freshness
+cases passed. No tests were removed. The full `npm run check` and `npm run build`
+then passed on the recorded cache and follow-up source digests: 2,688 ordinary
+JavaScript tests, two native boundary cases, 47 Python cases, Rust suites,
+receipt checks, and readability. Hosted CI for the follow-up commit remains a
+separate required gate recorded in the PR.
+
+Follow-up adversarial reviewer `verification_review` accepted five-file digest
+`952766d573b9bb939d330a5a5a76ff8d6c88edd7ab4ce96c3baf269b97efd438`
+above base `eebe67e00547c483441efb29909646e59b08fbbe`, with no unresolved
+actionable findings. Scope: secret snapshot prevention, native authentication
+and shell authority, bounded ZIP termination. The reviewer independently ran
+80 adapter/freshness cases and two native process cases successfully. This
+digest uses the algorithm above over these paths:
+
+```
+packages/harness-host/src/implementations/codex-basic.ts
+packages/harness-host/test/codex-basic.test.ts
+packages/harness-host/test/codex-secret-provider-process.test.ts
+scripts/ci/merge-freshness.mjs
+test/ci-merge-freshness.test.mjs
+```
 
 ### Remaining authorized release-context proof
 

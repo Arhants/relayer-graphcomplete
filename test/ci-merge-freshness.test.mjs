@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -209,9 +209,32 @@ describe("scheduled merge freshness", () => {
       expect(await decodeReceipt(await readFile(archive))).toEqual(fixture().receipt);
       await expect(decodeReceipt(Buffer.alloc(65537))).rejects.toThrow("too large");
       await expect(decodeReceipt(Buffer.from("invalid"))).rejects.toThrow();
-      await writeFile(file, "x".repeat(20000));
+      // Exceed OS pipe capacity while keeping the compressed archive within the
+      // input bound. Isolate synchronous unzip so a termination regression cannot
+      // hang the test worker; kill the whole process group on an outer deadline.
+      await writeFile(file, "x".repeat(1024 * 1024));
       execFileSync("zip", ["-q", archive, "freshness.json"], { cwd: directory });
-      await expect(decodeReceipt(await readFile(archive))).rejects.toThrow();
+      expect((await readFile(archive)).byteLength).toBeLessThan(64 * 1024);
+      const decoder = new URL("../scripts/ci/merge-freshness.mjs", import.meta.url).href;
+      const code = `import { readFile } from 'node:fs/promises';
+        import { decodeReceipt } from ${JSON.stringify(decoder)};
+        try { await decodeReceipt(await readFile(process.argv[1])); process.exitCode = 1; }
+        catch (error) { if (error.code !== 'ENOBUFS' && error.code !== 'ETIMEDOUT') throw error; }`;
+      await new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, ["--input-type=module", "-e", code, archive], {
+          detached: true, stdio: "ignore",
+        });
+        const timeout = setTimeout(() => {
+          try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); }
+          reject(new Error("Oversized ZIP decoder did not terminate within seven seconds"));
+        }, 7000);
+        child.once("error", (error) => { clearTimeout(timeout); reject(error); });
+        child.once("exit", (code, signal) => {
+          clearTimeout(timeout);
+          if (code === 0) resolve();
+          else reject(new Error(`ZIP decoder exited ${code ?? signal}`));
+        });
+      });
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
 

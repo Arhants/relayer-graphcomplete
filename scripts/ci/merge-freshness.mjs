@@ -63,7 +63,9 @@ export async function decodeReceipt(bytes) {
     const archive = join(directory, "receipt.zip");
     await writeFile(archive, Buffer.from(bytes));
     const raw = execFileSync("unzip", ["-p", archive, "freshness.json"], {
-      encoding: "utf8", maxBuffer: 8192, timeout: 5000, stdio: ["ignore", "pipe", "pipe"],
+      // Info-ZIP can handle SIGTERM while blocked writing oversized stdout.
+      // A synchronous child must exit even after the parent stops draining it.
+      encoding: "utf8", maxBuffer: 8192, timeout: 5000, killSignal: "SIGKILL", stdio: ["ignore", "pipe", "pipe"],
     });
     return JSON.parse(raw);
   } finally {

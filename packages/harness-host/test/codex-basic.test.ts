@@ -866,6 +866,7 @@ describe("CodexBasicHarness", () => {
         'model_providers.relayer_execution_provider.wire_api="responses"',
         "model_providers.relayer_execution_provider.requires_openai_auth=false",
         "model_providers.relayer_execution_provider.supports_websockets=false",
+        "features.shell_snapshot=false",
         'shell_environment_policy.inherit="all"',
         "shell_environment_policy.ignore_default_excludes=true",
         'shell_environment_policy.filters.OPENAI_API_KEY="exclude"',
