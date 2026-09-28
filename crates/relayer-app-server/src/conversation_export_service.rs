@@ -1931,7 +1931,7 @@ impl ProjectPathRedactor {
             // Markdown syntax is not visible to a reader and can otherwise
             // split a private path across emphasis, links, or inert HTML.
             if self.contains_private_path(&markdown_rendered_text(&replaced))
-                || self.contains_private_path(&markdown_security_skeleton(&replaced))
+                || self.contains_markdown_private_path(&replaced)
             {
                 return "[project-path]".to_owned();
             }
@@ -1960,7 +1960,7 @@ impl ProjectPathRedactor {
         }
         let redacted = if self.contains_private_path(&redacted)
             || self.contains_private_path(&markdown_rendered_text(&redacted))
-            || self.contains_private_path(&markdown_security_skeleton(&redacted))
+            || self.contains_markdown_private_path(&redacted)
         {
             "[project-path]".to_owned()
         } else {
@@ -2026,6 +2026,15 @@ impl ProjectPathRedactor {
         // A path hidden behind an impractically deep chain of encodings must not
         // escape merely because the bounded decoder stopped making progress.
         true
+    }
+
+    fn contains_markdown_private_path(&self, value: &str) -> bool {
+        let skeleton = markdown_security_skeleton(value);
+        self.contains_private_path(&skeleton)
+            || self.project_paths.iter().any(|path| {
+                let projected_path = markdown_security_skeleton(path);
+                !projected_path.is_empty() && skeleton.contains(&projected_path)
+            })
     }
 
     fn optional(&self, value: Option<&str>) -> Option<String> {
@@ -2246,7 +2255,7 @@ fn markdown_rendered_text(value: &str) -> String {
 /// credentials. The relaxed credential matcher intentionally tolerates a
 /// visible-label prefix; false positives redact one public field.
 fn markdown_security_skeleton(value: &str) -> String {
-    value
+    strip_well_formed_inline_html(value)
         .chars()
         .filter(|character| {
             character.is_alphanumeric()
@@ -2254,6 +2263,76 @@ fn markdown_security_skeleton(value: &str) -> String {
                 || character.is_whitespace()
         })
         .collect()
+}
+
+/// Remove only structurally complete inline HTML before building the lossy
+/// security projection. Malformed outer Markdown/HTML remains available for
+/// scanning, while valid nested tags cannot contribute their tag-name bytes to
+/// (or split) a credential or private path.
+fn strip_well_formed_inline_html(value: &str) -> String {
+    let characters: Vec<char> = value.chars().collect();
+    let mut stripped = String::with_capacity(value.len());
+    let mut index = 0;
+    while index < characters.len() {
+        if characters[index] != '<' {
+            stripped.push(characters[index]);
+            index += 1;
+            continue;
+        }
+
+        if characters[index..].starts_with(&['<', '!', '-', '-']) {
+            if let Some(offset) = characters[index + 4..]
+                .windows(3)
+                .position(|window| window == ['-', '-', '>'])
+            {
+                index += 4 + offset + 3;
+                continue;
+            }
+            stripped.push('<');
+            index += 1;
+            continue;
+        }
+
+        let name_index = if characters.get(index + 1) == Some(&'/') {
+            index + 2
+        } else {
+            index + 1
+        };
+        if !characters
+            .get(name_index)
+            .is_some_and(|character| character.is_ascii_alphabetic())
+        {
+            stripped.push('<');
+            index += 1;
+            continue;
+        }
+
+        let mut cursor = name_index + 1;
+        let mut quote = None;
+        let mut closed = false;
+        while cursor < characters.len() {
+            let character = characters[cursor];
+            if let Some(active) = quote {
+                if character == active {
+                    quote = None;
+                }
+            } else if matches!(character, '\'' | '"') {
+                quote = Some(character);
+            } else if character == '>' {
+                cursor += 1;
+                closed = true;
+                break;
+            }
+            cursor += 1;
+        }
+        if closed {
+            index = cursor;
+        } else {
+            stripped.push('<');
+            index += 1;
+        }
+    }
+    stripped
 }
 
 fn contains_relaxed_share_secret(value: &str) -> bool {
@@ -3284,7 +3363,9 @@ mod tests {
             "[note]: nope s**k**-proj-12345678901234567890",
             "a < s**k**-proj-12345678901234567890",
             "a < s**k**-proj-12345678901234567890 >",
+            "a < s<em>k</em>-proj-12345678901234567890 >",
             "[label](s**k**-proj-12345678901234567890",
+            "[label](s<em>k</em>-proj-12345678901234567890",
             "[label][s**k**-proj-12345678901234567890",
             "a < B**earer** abc.def.ghi >",
             "a < e**yJ**hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.synthetic_signature >",
@@ -3325,6 +3406,11 @@ mod tests {
         let unicode_redactor = ProjectPathRedactor::for_share(Some("/opt/café"));
         assert_eq!(
             unicode_redactor.text("a < /opt/ca**fé**/secret >"),
+            "[project-path]"
+        );
+        let punctuation_redactor = ProjectPathRedactor::for_share(Some("/opt/secret-project@prod"));
+        assert_eq!(
+            punctuation_redactor.text("a < /opt/secret-**project**@prod/file >"),
             "[project-path]"
         );
     }
