@@ -36,7 +36,9 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers.get("content-length", "0"))) or b"{}")
         Handler.requests.append((self.path, dict(self.headers), body))
         Handler.next_id += 1
-        if self.path == "/api/completions":
+        if self.path == "/api/completions" and body["interactionNode"] == 93:
+            self._reply({"error": "The harness configuration changed while this child was launching."}, 409)
+        elif self.path == "/api/completions":
             self._reply({"completionId": body["interactionNode"]}, 201)
         elif self.path == "/api/completions/91/stop":
             self._reply({
@@ -456,7 +458,7 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
     def _held_children():
-        """Children whose next() calls stay open until the test releases them by id:after_revision."""
+        """Children whose next() calls stay open until the test resolves or fails them by id:after_revision."""
         releases: dict[str, asyncio.Future] = {}
         asked: list[str] = []
 
@@ -531,6 +533,81 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
         releases["2:-"].set_result(CompletionCurrentSnapshot(2, "active", 0, 0, None))
         self.assertEqual([(child.completion_id, current.revision) for child, current in await second], [(2, 0)])
         self.assertEqual(asked, ["1:-", "2:-", "1:0"])
+
+    async def test_a_watch_reports_a_child_it_can_no_longer_observe_once_and_keeps_its_sibling(self):
+        async def turns():
+            for _ in range(5):
+                await asyncio.sleep(0)
+
+        releases, asked, Child = self._held_children()
+        watch = CompletionWatch([Child(1), Child(2)])
+        first = asyncio.ensure_future(watch.changes())
+        await turns()
+        releases["1:-"].set_result(CompletionCurrentSnapshot(1, "active", 0, 0, None))
+        await first
+
+        # Child 1's observation fails while child 2 moves; both reach the parent together.
+        second = asyncio.ensure_future(watch.changes())
+        await turns()
+        releases["1:0"].set_exception(TransportError("completion broker returned HTTP 500"))
+        releases["2:-"].set_result(CompletionCurrentSnapshot(2, "active", 0, 0, None))
+        await turns()
+        reported = sorted(await second, key=lambda change: change[0].completion_id)
+        self.assertEqual([child.completion_id for child, _ in reported], [1, 2])
+        self.assertIsInstance(reported[0][1], TransportError)
+        self.assertEqual(str(reported[0][1]), "completion broker returned HTTP 500")
+        self.assertEqual(reported[1][1].revision, 0)
+        self.assertFalse(watch.settled)
+
+        # Child 1 is not asked again; child 2's later events still arrive and settle the watch.
+        third = asyncio.ensure_future(watch.changes())
+        await turns()
+        releases["2:0"].set_result(CompletionCurrentSnapshot(2, "succeeded", 1, 1, 1))
+        self.assertEqual([(child.completion_id, current.lifecycle) for child, current in await third], [(2, "succeeded")])
+        self.assertTrue(watch.settled)
+        self.assertEqual(await watch.changes(), [])
+        self.assertEqual(asked, ["1:-", "2:-", "1:0", "2:0"])
+
+    async def test_a_watch_reports_a_child_whose_start_the_broker_refuses(self):
+        previous = os.environ.copy()
+        try:
+            os.environ["RELAYER_COMPLETE_URL"] = self.url + "/api/completions"
+            os.environ["RELAYER_COMPLETE_TOKEN"] = "broker-token"
+            releases, _, Child = self._held_children()
+            refused = complete(CompletionInputGraph(93))
+            watch = CompletionWatch([refused, Child(2)])
+
+            [(child, error)] = await watch.changes()
+            self.assertIs(child, refused)
+            self.assertIsInstance(error, TransportError)
+            self.assertEqual(str(error), "completion broker returned HTTP 409")
+
+            later = asyncio.ensure_future(watch.changes())
+            await asyncio.sleep(0)
+            releases["2:-"].set_result(CompletionCurrentSnapshot(2, "failed", 0, 0, None))
+            self.assertEqual([(child.completion_id, current.lifecycle) for child, current in await later], [(2, "failed")])
+            self.assertTrue(watch.settled)
+        finally:
+            os.environ.clear()
+            os.environ.update(previous)
+
+    async def test_a_watch_reports_a_cancelled_observation_without_raising(self):
+        async def turns():
+            for _ in range(5):
+                await asyncio.sleep(0)
+
+        releases, asked, Child = self._held_children()
+        watch = CompletionWatch([Child(1), Child(2)])
+        first = asyncio.ensure_future(watch.changes())
+        await turns()
+        releases["1:-"].set_result(CompletionCurrentSnapshot(1, "succeeded", 0, 0, 0))
+        releases["2:-"].cancel()
+        await turns()
+        reported = sorted(await first, key=lambda change: change[0].completion_id)
+        self.assertEqual(reported[0][1].lifecycle, "succeeded")
+        self.assertIsInstance(reported[1][1], TransportError)
+        self.assertTrue(watch.settled)
+        self.assertEqual(asked, ["1:-", "2:-"])
 
     async def test_completion_current_rejects_coerced_identity_fields(self):
         with self.assertRaisesRegex(TransportError, "invalid revision"):

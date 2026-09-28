@@ -1,0 +1,114 @@
+{
+  "sourceSnapshot": {
+    "base": "c3d6d6721d065f03532ef233fa13ba2734a760c6",
+    "sha256": "a82902aff97911ea4b43a5980d5dfe0cec1737c2e245c6f325714e9edc3e6f3e",
+    "algorithm": "sorted path + NUL + bytes + NUL",
+    "files": [
+      "desktop/renderer/src/product-workspace/node-detail-runtime.js",
+      "docs/architecture.md",
+      "docs/prd/index.html",
+      "packages/eval-runner/src/fixtures/node-detail.ts",
+      "packages/graph-client/src/detail.ts",
+      "packages/graph-client/test/detail.test.ts",
+      "packages/harness-host/src/implementations/graph-presentation-guidance.ts",
+      "packages/harness-host/test/graph-presentation-guidance-assertions.ts",
+      "packages/harness-host/test/prime-visual-authoring.test.ts",
+      "scripts/run-desktop-visual-node-details-test.mjs",
+      "scripts/test-desktop-visual-node-details.mjs",
+      "scripts/test-node-detail-csp.mjs",
+      "test/eval-app-integration.test.mjs",
+      "test/graph-client-packaged-detail.test.mjs",
+      "test/node-detail-runtime.test.mjs"
+    ]
+  },
+  "review": {
+    "reviewer": "/root/theme_design_review",
+    "scope": "conditional theme scope, compiler restrictions, lifecycle, authority, input continuity, guidance, persistence, PRD mapping, evidence assertions",
+    "verdict": "no blocking findings",
+    "unresolvedFindings": [],
+    "certifying": false
+  },
+  "focused": {
+    "passed": true,
+    "files": 8,
+    "tests": 262
+  },
+  "visual": {
+    "passed": true,
+    "paidInferenceCalls": 0,
+    "runId": "run-2026-09-28T00-21-00-332Z-48136860",
+    "sourceSha256": "a82902aff97911ea4b43a5980d5dfe0cec1737c2e245c6f325714e9edc3e6f3e"
+  },
+  "csp": {
+    "passed": true,
+    "lightColor": "rgb(24, 44, 52)",
+    "darkColor": "rgb(237, 242, 243)",
+    "contain": "content",
+    "position": "relative",
+    "overflow": "hidden"
+  },
+  "check": {
+    "passed": true,
+    "node": "22.23.2",
+    "rustFormatClippyDefaultAndCrashSuites": true,
+    "workspaceTypes": true,
+    "vitest": {
+      "filesPassed": 189,
+      "filesSkipped": 1,
+      "testsPassed": 2487,
+      "testsSkipped": 3
+    },
+    "secretBoundary": {
+      "passed": 2
+    },
+    "python": {
+      "passed": 37
+    },
+    "receiptLint": true,
+    "prdReadability": true
+  },
+  "build": {
+    "passed": true,
+    "via": "both declared rendered npm entry points run npm run build first"
+  },
+  "limitations": [
+    "No paid generation, release or packaged-app proof.",
+    "Review is non-certifying without a PR.",
+    "Contrast figures apply to the deterministic fixture, not all possible agent output."
+  ],
+  "priorFailures": [
+    {
+      "context": "Initial full check under Node 26",
+      "failures": [
+        "Expected one pinned fixture asset; fixture now intentionally supplies two. Expectation updated.",
+        "Unchanged exact-port IPv4 boundary test failed ERR_ACCESS_DENIED under Node 26. Passed under existing Node 22.23.2."
+      ]
+    },
+    {
+      "context": "Initial rendered proof setup",
+      "failures": [
+        "Electron framework symlink absent from incomplete npm extraction. Restored from cached official Electron 43 archive before native proof."
+      ]
+    },
+    {
+      "context": "Initial native cache admission",
+      "failures": [
+        "Ambient generated Ladybug source tree rejected. Task-local registry restored pinned source before successful bundle verification."
+      ]
+    }
+  ],
+  "logs": [
+    {
+      "file": "check.txt",
+      "sha256": "202c4a41ad98ecc490aee4a58d0b8b60b6909429fdcc35faefe2d3f48b247875"
+    },
+    {
+      "file": "csp.txt",
+      "sha256": "1f0ec9b4d5fe8edda059d03d075daf3ec53fd604908d7a7b0657fe4d024f2567"
+    },
+    {
+      "file": "focused.txt",
+      "sha256": "d4e8eeccb5e08df52bbe7aa12c18cf9e129a24c43715d46e0610258ffd9f7b2f"
+    }
+  ]
+}
