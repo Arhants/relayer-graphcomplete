@@ -1490,28 +1490,35 @@ async fn launch_prepared_child(
         ));
     }
 
-    let prepared = match prepare_interaction(&state, &thread, &outcome.interaction, false).await {
+    // Only the launch that claims the child's preparation may fail it after a refusal. A
+    // concurrent duplicate that finds it claimed and fails on its own must not end a child the
+    // claiming launch is still running.
+    let claimed = state
+        .product
+        .claim_interaction_preparing(outcome.interaction.id)
+        .await?;
+    let refused = |state: &ApiState, thread: Thread, interaction: Interaction| {
+        if claimed {
+            spawn_refused_launch_cleanup(
+                state.clone(),
+                thread,
+                interaction,
+                input.interaction_node,
+            );
+        }
+    };
+    let prepared = match prepare_interaction(&state, &thread, &outcome.interaction, claimed).await {
         Ok(Preparation::Prepared { prepared, .. }) => *prepared,
         // This launch claimed the child and cannot tell whether its preparation happened, or
         // it failed outright. Nothing will launch the child, so it fails in both stores.
         Ok(Preparation::Ambiguous) => {
-            spawn_refused_launch_cleanup(
-                state.clone(),
-                thread,
-                outcome.interaction,
-                input.interaction_node,
-            );
+            refused(&state, thread, outcome.interaction);
             return Err(ApiError::internal(
                 "recursive completion preparation did not finish",
             ));
         }
         Err(error) => {
-            spawn_refused_launch_cleanup(
-                state.clone(),
-                thread,
-                outcome.interaction,
-                input.interaction_node,
-            );
+            refused(&state, thread, outcome.interaction);
             return Err(error);
         }
         Ok(Preparation::NotOwned) => {
@@ -1572,7 +1579,7 @@ async fn launch_prepared_child(
                 &timestamp,
             )
             .await?;
-        let claimed = state
+        let launch_claimed = state
             .product
             .claim_completion_execution_launching(
                 outcome.interaction.id,
@@ -1580,22 +1587,17 @@ async fn launch_prepared_child(
                 &timestamp,
             )
             .await?;
-        Ok::<_, ApiError>((permission_origin_digest, reserved, claimed))
+        Ok::<_, ApiError>((permission_origin_digest, reserved, launch_claimed))
     }
     .await;
-    let (permission_origin_digest, reserved, claimed) = match reservation {
+    let (permission_origin_digest, reserved, launch_claimed) = match reservation {
         Ok(reservation) => reservation,
         Err(error) => {
-            spawn_refused_launch_cleanup(
-                state.clone(),
-                thread,
-                outcome.interaction,
-                input.interaction_node,
-            );
+            refused(&state, thread, outcome.interaction);
             return Err(error);
         }
     };
-    if !claimed {
+    if !launch_claimed {
         let existing = match reserved {
             CompletionExecutionReserveOutcome::Created(execution)
             | CompletionExecutionReserveOutcome::Existing(execution) => execution,
@@ -2075,6 +2077,7 @@ async fn fail_refused_launch(
                 completion_id,
                 &thread.harness_configuration_name,
                 &reason,
+                current.lifecycle == relayer_graph_core::CompletionLifecycle::Active,
                 &completion_timestamp(),
             )
             .await?
@@ -2091,21 +2094,28 @@ async fn fail_refused_launch(
         }
     }
     let current = runtime.completion_current(completion_id).await?;
-    if current.lifecycle != relayer_graph_core::CompletionLifecycle::Active {
-        return Ok(true);
+    if current.lifecycle == relayer_graph_core::CompletionLifecycle::Active {
+        if let Err(error) = runtime
+            .fail_graph_completion(
+                completion_id,
+                &format!("recursive-launch-refused:{}", interaction.id),
+                "preparation_failed",
+            )
+            .await
+        {
+            eprintln!("recursive completion {completion_id} refused-launch graph retry: {error}");
+        }
+        if runtime.completion_current(completion_id).await?.lifecycle
+            == relayer_graph_core::CompletionLifecycle::Active
+        {
+            return Ok(false);
+        }
     }
-    if let Err(error) = runtime
-        .fail_graph_completion(
-            completion_id,
-            &format!("recursive-launch-refused:{}", interaction.id),
-            "preparation_failed",
-        )
-        .await
-    {
-        eprintln!("recursive completion {completion_id} refused-launch graph retry: {error}");
-    }
-    Ok(runtime.completion_current(completion_id).await?.lifecycle
-        != relayer_graph_core::CompletionLifecycle::Active)
+    state
+        .product
+        .confirm_refused_child_graph_failure(interaction.id)
+        .await?;
+    Ok(true)
 }
 
 fn spawn_failed_recursive_start_cleanup(

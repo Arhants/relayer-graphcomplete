@@ -5048,6 +5048,12 @@ async fn interrupted_action_invocation_remains_submitted_for_source_pair_recover
     let thread_id = thread["id"].as_i64().unwrap();
     let source_interaction_id = thread["rootInteractionId"].as_i64().unwrap();
     let pool = sqlite_pool(&database).await;
+    // A user invokes an action only from an accepted source.
+    sqlx::query("UPDATE interactions SET completion_status='accepted' WHERE id=?1")
+        .bind(source_interaction_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     let created_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()

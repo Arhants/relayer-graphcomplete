@@ -226,9 +226,13 @@ impl SqliteProductStore {
         };
         let model_selection = match model_selection {
             Some(value) => Some(value.clone()),
-            None => sqlx::query("SELECT model_provider_id,provider_model_id,model_family_id FROM interactions WHERE thread_id=?1 ORDER BY sequence DESC LIMIT 1")
-                .bind(thread_id.value()).fetch_optional(&mut *tx).await?
-                .map(|row| super::interactions::interaction_model_selection_from_row(&row, 0, 1, 2)).transpose()?.flatten(),
+            None => sqlx::query(super::LATEST_HUMAN_TURN_MODEL)
+                .bind(thread_id.value())
+                .fetch_optional(&mut *tx)
+                .await?
+                .map(|row| super::interactions::interaction_model_selection_from_row(&row, 0, 1, 2))
+                .transpose()?
+                .flatten(),
         };
         if let Some(selection) = model_selection.as_ref() {
             let command = ValidateModelSelectionCommand {

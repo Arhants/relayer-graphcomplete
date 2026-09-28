@@ -3799,6 +3799,7 @@ mod tests {
             result_interaction_id: InteractionId::from_database(result),
             result_completion_status: "accepted".into(),
             created_at: "2026-01-01T00:00:00Z".into(),
+            agent_invoked: false,
         };
         let mut interactions = vec![
             interaction(1, "accepted"),
@@ -4608,6 +4609,7 @@ mod tests {
             result_interaction_id: result_id,
             created_at: "2".into(),
             result_completion_status: "failed".into(),
+            agent_invoked: false,
         };
         let turn_sequences = [(source_id, 1), (result_id, 2)].into_iter().collect();
         let mut ids = PortableIds::default();

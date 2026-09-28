@@ -509,7 +509,10 @@ impl SqliteProductStore {
     /// changes then. With `interrupted`, the previous process is gone: nothing runs the child
     /// any more, so a running child fails too, and so does one whose execution row settled
     /// without its product row (an older build settled only the row when activation failed).
+    /// With `graph_pending`, the graph current is still to be failed, and the child is marked
+    /// until `confirm_refused_child_graph_failure` records that it was.
     /// Returns whether this call failed the child.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn fail_unlaunched_recursive_child(
         &self,
         interaction_id: InteractionId,
@@ -517,6 +520,7 @@ impl SqliteProductStore {
         harness_configuration_name: &str,
         safe_reason: &str,
         interrupted: bool,
+        graph_pending: bool,
         timestamp: &str,
     ) -> Result<bool, StorageError> {
         if safe_reason.is_empty() {
@@ -562,8 +566,32 @@ impl SqliteProductStore {
         .bind(interaction_id.value())
         .execute(&mut *transaction)
         .await?;
+        if graph_pending {
+            sqlx::query(
+                "UPDATE action_invocations SET graph_failure_pending=1
+                 WHERE result_interaction_id=?1 AND authoritative=1",
+            )
+            .bind(interaction_id.value())
+            .execute(&mut *transaction)
+            .await?;
+        }
         transaction.commit().await?;
         Ok(true)
+    }
+
+    /// Records that a refused child's graph current is terminal, so startup stops revisiting it.
+    pub(crate) async fn confirm_refused_child_graph_failure(
+        &self,
+        interaction_id: InteractionId,
+    ) -> Result<(), StorageError> {
+        sqlx::query(
+            "UPDATE action_invocations SET graph_failure_pending=0
+             WHERE result_interaction_id=?1 AND graph_failure_pending=1",
+        )
+        .bind(interaction_id.value())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     /// Atomically makes an interrupted recursive execution non-launchable and projects the

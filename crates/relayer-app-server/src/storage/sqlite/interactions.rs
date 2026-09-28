@@ -280,16 +280,14 @@ impl SqliteProductStore {
         }
         let model_selection = match model_selection {
             Some(selection) => Some(selection.clone()),
-            None => sqlx::query(
-                "SELECT model_provider_id,provider_model_id,model_family_id FROM interactions WHERE thread_id=?1 ORDER BY sequence DESC LIMIT 1",
-            )
-            .bind(thread_id.value())
-            .fetch_optional(&mut *transaction)
-            .await?
-            .as_ref()
-            .map(|row| interaction_model_selection_from_row(row, 0, 1, 2))
-            .transpose()?
-            .flatten(),
+            None => sqlx::query(super::LATEST_HUMAN_TURN_MODEL)
+                .bind(thread_id.value())
+                .fetch_optional(&mut *transaction)
+                .await?
+                .as_ref()
+                .map(|row| interaction_model_selection_from_row(row, 0, 1, 2))
+                .transpose()?
+                .flatten(),
         };
         if let Some(selection) = model_selection.as_ref() {
             let command = ValidateModelSelectionCommand {
@@ -1413,7 +1411,8 @@ mod tests {
             }
             _ => panic!("the child is new"),
         };
-        sqlx::query("UPDATE interactions SET completion_status='running' WHERE id=?1")
+        // The child runs on another model; a new human turn still inherits the root's.
+        sqlx::query("UPDATE interactions SET completion_status='running',provider_model_id='second-model' WHERE id=?1")
             .bind(child.id.value())
             .execute(&store.pool)
             .await
@@ -1428,6 +1427,13 @@ mod tests {
             .insert_interaction(thread.id, "Next question", None, true, true)
             .await
             .unwrap_or_else(|error| panic!("a running child held the thread: {error}"));
+        assert_eq!(
+            next.model_selection
+                .as_ref()
+                .map(|selection| selection.model_id.as_str()),
+            Some("first-model"),
+            "a new human turn inherits the latest human turn's model, not the child's"
+        );
         let held = store
             .insert_interaction(thread.id, "Queued", None, true, true)
             .await

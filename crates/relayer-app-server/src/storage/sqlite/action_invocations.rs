@@ -73,6 +73,8 @@ impl SqliteProductStore {
     /// after the result was created, is an agent's child. The acceptance time is read from the
     /// source's accepted attempt only for a source that is not itself a launched child: a
     /// child's attempt finishes after its provider unwinds, which can be after acceptance.
+    /// A root an older build accepted without an attempt row carries no acceptance time, so a
+    /// result of it stays unmarked: the product row records no other acceptance evidence.
     /// Returns how many were marked.
     pub(crate) async fn mark_unrecorded_agent_children(&self) -> Result<u64, StorageError> {
         let marked = sqlx::query(
@@ -105,9 +107,8 @@ impl SqliteProductStore {
         let rows: Vec<(i64, i64)> = sqlx::query_as(
             "SELECT result.id,result.graph_node_id FROM interactions result
              JOIN action_invocations ai ON ai.result_interaction_id=result.id
-             WHERE ai.authoritative=1 AND ai.agent_invoked=1
-               AND result.completion_status='failed' AND result.completion_error='preparation_failed'
-               AND result.graph_node_id IS NOT NULL
+             WHERE ai.authoritative=1 AND ai.agent_invoked=1 AND ai.graph_failure_pending=1
+               AND result.completion_status='failed' AND result.graph_node_id IS NOT NULL
              ORDER BY result.id",
         )
         .fetch_all(&self.pool)
@@ -216,6 +217,8 @@ impl SqliteProductStore {
         // The graph lease is durable and keyed by the immutable source pair. Preserve the result
         // as submitted so invoking the same action can remint authority for that exact graph node
         // and resume it rather than terminalizing the only interaction allowed to consume it.
+        // An agent's child left here is not resumed by a user's invoke; startup's background
+        // retry ends it, and its message says so.
         let result = sqlx::query(
             "UPDATE interactions
              SET completion_status=CASE
@@ -224,6 +227,8 @@ impl SqliteProductStore {
                    ELSE 'failed'
                  END,
                  completion_error=CASE
+                   WHEN id IN (SELECT result_interaction_id FROM action_invocations WHERE graph_lease_required=1 AND authoritative=1 AND agent_invoked=1)
+                     THEN 'Delegated work was interrupted when Relayer stopped. It ends as soon as the graph can be reached.'
                    WHEN id IN (SELECT result_interaction_id FROM action_invocations WHERE graph_lease_required=1 AND authoritative=1)
                      THEN ?1
                    ELSE 'Legacy action invocation was interrupted before graph acceptance. Its action remains unresolved.'
@@ -435,6 +440,7 @@ impl SqliteProductStore {
             result_interaction_id: interaction.id,
             result_completion_status: interaction.completion_status.clone(),
             created_at: timestamp,
+            agent_invoked: recursive,
         };
         transaction.commit().await?;
         Ok(ActionInvocationInsertOutcome::Created {
@@ -466,7 +472,7 @@ pub(super) async fn fetch_action_invocations(
     thread_id: ThreadId,
 ) -> Result<Vec<ActionInvocation>, StorageError> {
     let rows = sqlx::query(
-        "SELECT ai.source_interaction_id,ai.action_id,ai.result_interaction_id,ai.created_at,result.completion_status
+        "SELECT ai.source_interaction_id,ai.action_id,ai.result_interaction_id,ai.created_at,result.completion_status,ai.agent_invoked
          FROM action_invocations ai
          JOIN interactions source ON source.id=ai.source_interaction_id
          JOIN interactions result ON result.id=ai.result_interaction_id
@@ -489,7 +495,7 @@ pub(super) async fn fetch_action_invocations_for_export(
     thread_id: ThreadId,
 ) -> Result<Vec<ActionInvocation>, StorageError> {
     let rows = sqlx::query(
-        "SELECT ai.source_interaction_id,ai.action_id,ai.result_interaction_id,ai.created_at,result.completion_status
+        "SELECT ai.source_interaction_id,ai.action_id,ai.result_interaction_id,ai.created_at,result.completion_status,ai.agent_invoked
          FROM action_invocations ai
          JOIN interactions source ON source.id=ai.source_interaction_id
          JOIN interactions result ON result.id=ai.result_interaction_id
@@ -508,7 +514,7 @@ async fn existing_for_action_scope(
     action_id: i64,
 ) -> Result<Option<(ActionInvocation, Interaction)>, StorageError> {
     let Some(row) = sqlx::query(
-        "SELECT ai.source_interaction_id,ai.action_id,ai.result_interaction_id,ai.created_at,result.completion_status
+        "SELECT ai.source_interaction_id,ai.action_id,ai.result_interaction_id,ai.created_at,result.completion_status,ai.agent_invoked
          FROM interactions requested_source
          JOIN threads requested_thread ON requested_thread.id=requested_source.thread_id
          JOIN action_invocations ai ON ai.action_id=?2
@@ -560,6 +566,7 @@ fn invocation_from_row(row: &SqliteRow) -> Result<ActionInvocation, StorageError
         result_interaction_id: InteractionId::from_database(row.try_get(2)?),
         created_at: row.try_get(3)?,
         result_completion_status: row.try_get(4)?,
+        agent_invoked: row.try_get(5)?,
     })
 }
 

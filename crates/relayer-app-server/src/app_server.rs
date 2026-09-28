@@ -73,6 +73,15 @@ async fn reconcile_interrupted_interaction(
         .interaction_input(interaction.id)
         .await
         .map_err(StartupReconciliationError::retryable)?;
+    // An agent's child is only ever failed at startup, so its graph interaction is located
+    // without the checks a new run needs: its saved model or harness policy may no longer
+    // validate, and that must not keep its current active.
+    if agent_child && interaction.graph_node_id.is_none() {
+        let graph_node_id =
+            locate_agent_child_node(storage, runtime, permission_catalog, &interaction).await?;
+        return fail_interrupted_recursive_child(storage, runtime, &interaction, graph_node_id)
+            .await;
+    }
     if interaction.graph_node_id.is_none() && (invocation.is_some() || durable_input.is_some()) {
         if interaction.completion_status == "not_started"
             && !storage
@@ -392,17 +401,15 @@ async fn fail_interrupted_recursive_child(
             )));
         }
     };
-    let harness = interaction
-        .harness_configuration_name
-        .as_deref()
-        .unwrap_or("unknown");
+    let harness = thread_harness(storage, interaction).await?;
     if !storage
         .fail_unlaunched_recursive_child(
             interaction.id,
             graph_node_id,
-            harness,
+            &harness,
             &reason,
             true,
+            false,
             &startup_timestamp(),
         )
         .await
@@ -413,6 +420,141 @@ async fn fail_interrupted_recursive_child(
             interaction.id
         )));
     }
+    Ok(())
+}
+
+/// The harness a failed row records: its thread's, as ordinary failures record it.
+async fn thread_harness(
+    storage: &SqliteProductStore,
+    interaction: &Interaction,
+) -> Result<String, StartupReconciliationError> {
+    Ok(storage
+        .get_thread(interaction.thread_id)
+        .await
+        .map_err(StartupReconciliationError::retryable)?
+        .map(|thread| thread.harness_configuration_name)
+        .or_else(|| interaction.harness_configuration_name.clone())
+        .unwrap_or_else(|| "unknown".into()))
+}
+
+/// Finds an unbound agent child's graph interaction through its invoke occurrence. The graph
+/// keys the child by that occurrence, so this returns the node the parent prepared and
+/// creates nothing new. No capability is minted, and nothing is bound.
+async fn locate_agent_child_node(
+    storage: &SqliteProductStore,
+    runtime: &RuntimeClient,
+    permission_catalog: &PermissionCatalog,
+    interaction: &Interaction,
+) -> Result<i64, StartupReconciliationError> {
+    let (source_interaction_node_id, source_action_id) = storage
+        .invocation_graph_occurrence(interaction.id)
+        .await
+        .map_err(StartupReconciliationError::retryable)?
+        .ok_or_else(|| {
+            StartupReconciliationError::deterministic(anyhow::anyhow!(
+                "agent child {} has no invoke occurrence",
+                interaction.id
+            ))
+        })?;
+    let thread = storage
+        .get_thread(interaction.thread_id)
+        .await
+        .map_err(StartupReconciliationError::retryable)?
+        .ok_or_else(|| {
+            StartupReconciliationError::deterministic(anyhow::anyhow!(
+                "missing thread for {}",
+                interaction.id
+            ))
+        })?;
+    let permission = permission_catalog
+        .profile(&thread.permission_profile_id)
+        .map_err(StartupReconciliationError::deterministic)?;
+    let prepared = runtime
+        .prepare(&crate::runtime::CompleteInteraction {
+            project_id: thread.project_id.map(ProjectId::value),
+            product_interaction_id: interaction.id.value(),
+            thread_id: thread.id.value(),
+            interaction_id: interaction.id.value(),
+            text: &interaction.text,
+            working_directory: "",
+            harness_configuration_name: &thread.harness_configuration_name,
+            permission_profile: permission,
+            model_selection: None,
+            model_plan: None,
+            attempt_admission_id: None,
+            execution_lease_id: None,
+            harness_policy: None,
+            invocation: Some(crate::runtime::PreparedInvocation {
+                source_interaction_node_id,
+                source_action_id,
+            }),
+            input_identity: None,
+            input_digest: None,
+            contexts: &[],
+            personal_presentation: None,
+            submitted_inputs: &[],
+        })
+        .await
+        .map_err(StartupReconciliationError::from_runtime)?;
+    Ok(prepared.graph_node_id)
+}
+
+/// Ends an agent's child whose startup reconciliation failed for good. Its current is failed
+/// with `application_restart` when its graph interaction is known and carries the child's own
+/// invoke occurrence, and then its product row; otherwise only the product row is quarantined.
+/// A node whose provenance does not match is never failed: it may belong to something else.
+async fn end_agent_child_after_failure(
+    storage: &SqliteProductStore,
+    runtime: &RuntimeClient,
+    permission_catalog: &PermissionCatalog,
+    id: crate::product::InteractionId,
+    error: &StartupReconciliationError,
+) -> anyhow::Result<()> {
+    let Some(interaction) = storage.get_interaction(id).await? else {
+        return Ok(());
+    };
+    let node = match interaction.graph_node_id {
+        Some(node) => Some(node),
+        None => locate_agent_child_node(storage, runtime, permission_catalog, &interaction)
+            .await
+            .ok(),
+    };
+    let occurrence = storage.invocation_graph_occurrence(id).await?;
+    if let Some(node) = node {
+        let provenance = runtime
+            .interaction_metadata(node)
+            .await
+            .ok()
+            .and_then(|metadata| {
+                metadata.invocation.map(|invocation| {
+                    (
+                        invocation.source_interaction_node_id,
+                        invocation.source_action_id,
+                    )
+                })
+            });
+        if provenance.is_some() && provenance == occurrence {
+            match fail_interrupted_recursive_child(storage, runtime, &interaction, node).await {
+                Ok(()) => return Ok(()),
+                Err(failure) => eprintln!(
+                    "interrupted recursive child {id} could not be failed in both stores: {failure}"
+                ),
+            }
+        }
+    }
+    eprintln!(
+        "quarantining interrupted recursive child {id} after reconciliation failure: {error}"
+    );
+    let harness = thread_harness(storage, &interaction)
+        .await
+        .map_err(|error| anyhow::anyhow!("{error}"))?;
+    storage
+        .fail_interaction_completion(
+            id,
+            &harness,
+            &format!("{} {error}", crate::product::RECONCILIATION_PENDING_PREFIX),
+        )
+        .await?;
     Ok(())
 }
 
@@ -568,6 +710,17 @@ pub(crate) async fn reconcile_interrupted_work(
                     );
                     continue;
                 }
+                if storage.is_agent_invoked_child(interaction.id).await? {
+                    end_agent_child_after_failure(
+                        storage,
+                        runtime,
+                        permission_catalog,
+                        interaction.id,
+                        &error,
+                    )
+                    .await?;
+                    continue;
+                }
                 eprintln!(
                     "quarantining interrupted interaction {} after reconciliation failure: {error}",
                     interaction.id
@@ -673,6 +826,12 @@ pub(crate) async fn reconcile_interrupted_work(
 /// agent's child that startup preserved after a transient failure is reconciled again in the
 /// background until it ends. Nothing else would end it before the next restart, since its
 /// parent's execution is gone and a user's invoke does not run it.
+/// The first pause before startup retries an interrupted child it kept; each later retry
+/// waits twice as long, up to the cap. A summary is logged every few retries.
+const INTERRUPTED_CHILD_RETRY_FIRST: Duration = Duration::from_millis(250);
+const INTERRUPTED_CHILD_RETRY_CAP: Duration = Duration::from_secs(60);
+const INTERRUPTED_CHILD_RETRY_LOG_EVERY: u32 = 10;
+
 fn spawn_interrupted_children_retry(
     storage: SqliteProductStore,
     runtime: RuntimeClient,
@@ -680,8 +839,18 @@ fn spawn_interrupted_children_retry(
     mut children: Vec<crate::product::InteractionId>,
 ) {
     tokio::spawn(async move {
+        let mut delay = INTERRUPTED_CHILD_RETRY_FIRST;
+        let mut round = 0_u32;
         while !children.is_empty() {
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(delay).await;
+            delay = (delay * 2).min(INTERRUPTED_CHILD_RETRY_CAP);
+            round += 1;
+            if round.is_multiple_of(INTERRUPTED_CHILD_RETRY_LOG_EVERY) {
+                eprintln!(
+                    "{} interrupted recursive child(ren) still waiting for the graph after {round} retries",
+                    children.len()
+                );
+            }
             let mut pending = Vec::new();
             for id in children {
                 let interaction = match storage.get_interaction(id).await {
@@ -710,19 +879,20 @@ fn spawn_interrupted_children_retry(
                     Ok(()) => {}
                     Err(error) if error.is_retryable() => pending.push(id),
                     Err(error) => {
-                        eprintln!(
-                            "quarantining interrupted recursive child {id} after reconciliation failure: {error}"
-                        );
-                        let _ = storage
-                            .fail_interaction_completion(
-                                id,
-                                "unknown",
-                                &format!(
-                                    "{} {error}",
-                                    crate::product::RECONCILIATION_PENDING_PREFIX
-                                ),
-                            )
-                            .await;
+                        if let Err(failure) = end_agent_child_after_failure(
+                            &storage,
+                            &runtime,
+                            &permission_catalog,
+                            id,
+                            &error,
+                        )
+                        .await
+                        {
+                            eprintln!(
+                                "interrupted recursive child {id} could not be ended; retrying: {failure}"
+                            );
+                            pending.push(id);
+                        }
                     }
                 }
             }
@@ -732,7 +902,9 @@ fn spawn_interrupted_children_retry(
 }
 
 /// Finishes the graph half for agent children the refused-launch cleanup failed in the
-/// product before a restart interrupted it. A failure is logged; the next start retries it.
+/// product before a restart interrupted it. Only children still marked pending are read, and
+/// each is unmarked once its current is confirmed terminal. A failure is logged; the next
+/// start retries it.
 async fn fail_refused_children_graph(storage: &SqliteProductStore, runtime: &RuntimeClient) {
     let children = match storage.refused_children_awaiting_graph_failure().await {
         Ok(children) => children,
@@ -742,13 +914,16 @@ async fn fail_refused_children_graph(storage: &SqliteProductStore, runtime: &Run
         }
     };
     for (interaction_id, graph_node_id) in children {
-        let active = runtime
-            .completion_current(graph_node_id)
-            .await
-            .is_ok_and(|current| {
-                current.lifecycle == relayer_graph_core::CompletionLifecycle::Active
-            });
-        if active
+        let current = match runtime.completion_current(graph_node_id).await {
+            Ok(current) => current,
+            Err(error) => {
+                eprintln!(
+                    "refused recursive child {interaction_id} current read failed; the next start retries it: {error}"
+                );
+                continue;
+            }
+        };
+        if current.lifecycle == relayer_graph_core::CompletionLifecycle::Active
             && let Err(error) = runtime
                 .fail_graph_completion(
                     graph_node_id,
@@ -758,6 +933,14 @@ async fn fail_refused_children_graph(storage: &SqliteProductStore, runtime: &Run
                 .await
         {
             eprintln!("refused recursive child {interaction_id} graph failure retry: {error}");
+            continue;
+        }
+
+        if let Err(error) = storage
+            .confirm_refused_child_graph_failure(interaction_id)
+            .await
+        {
+            eprintln!("refused recursive child {interaction_id} could not be unmarked: {error}");
         }
     }
 }

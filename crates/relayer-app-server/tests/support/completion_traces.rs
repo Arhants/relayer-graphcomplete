@@ -112,6 +112,9 @@ struct GraphFaults {
     garble_preparation: AtomicBool,
     /// This many control reads of a completion's current answer 503 first.
     fail_current_reads: std::sync::atomic::AtomicUsize,
+    /// While set, invalidating a node's capabilities is refused with a 409, a deterministic
+    /// failure startup cannot retry.
+    refuse_invalidation: AtomicBool,
 }
 
 struct World {
@@ -301,6 +304,18 @@ impl World {
                             StatusCode::SERVICE_UNAVAILABLE,
                             axum::Json(serde_json::json!({
                                 "error":{"code":"unavailable","message":"graph busy"}
+                            })),
+                        )
+                            .into_response();
+                    }
+                    if request.method() == axum::http::Method::DELETE
+                        && request.uri().path() == "/api/control/capabilities"
+                        && faults.refuse_invalidation.load(Ordering::SeqCst)
+                    {
+                        return (
+                            StatusCode::CONFLICT,
+                            axum::Json(serde_json::json!({
+                                "error":{"code":"conflict","message":"refused"}
                             })),
                         )
                             .into_response();
@@ -773,6 +788,16 @@ impl World {
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
+    }
+
+    async fn graph_failure_pending(&self) -> bool {
+        sqlx::query_scalar(
+            "SELECT graph_failure_pending FROM action_invocations WHERE result_interaction_id=?1",
+        )
+        .bind(self.child.id.value())
+        .fetch_one(&self.pool)
+        .await
+        .unwrap()
     }
 
     async fn child_row(&self) -> Interaction {
@@ -2242,6 +2267,10 @@ async fn an_ambiguous_preparation_fails_the_claimed_child_in_both_stores() {
         child.completion_error.as_deref(),
         Some("preparation_failed")
     );
+    assert!(
+        !world.graph_failure_pending().await,
+        "a confirmed graph half is not revisited at startup"
+    );
 
     let (status, _) = world
         .launch(&broker)
@@ -2431,10 +2460,17 @@ async fn a_restart_that_cannot_reach_the_graph_fails_the_child_once_it_can() {
     world.set_parent_status("running").await;
     world.faults.fail_current_reads.store(1, Ordering::SeqCst);
     world.restart().await;
+    let kept = world.child_row().await;
     assert_eq!(
-        world.child_row().await.completion_status,
-        "submitted",
+        kept.completion_status, "submitted",
         "startup kept the child while the graph was unreachable"
+    );
+    assert!(
+        kept.completion_error
+            .as_deref()
+            .is_some_and(|error| error.starts_with("Delegated work was interrupted")),
+        "a kept child does not ask the user to invoke it again: {:?}",
+        kept.completion_error
     );
 
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -2470,5 +2506,144 @@ async fn a_users_invoke_does_not_run_an_agents_child() {
         "submitted"
     );
     assert_eq!(world.child_row().await.completion_status, "submitted");
+    world.finish().await;
+}
+
+/// A deterministic startup failure on a bound child, here a refused capability invalidation,
+/// still fails its graph current with `application_restart` and then its product row.
+#[tokio::test]
+async fn a_deterministic_startup_failure_fails_the_child_in_both_stores() {
+    let world = World::new("restart-deterministic", false).await;
+    world.set_parent_status("running").await;
+    world
+        .faults
+        .refuse_invalidation
+        .store(true, Ordering::SeqCst);
+    world.restart().await;
+
+    let state = world.observe().await;
+    assert_eq!(state["life"], "failed", "the graph half ends too: {state}");
+    assert_eq!(state["why"], "application_restart", "{state}");
+    assert_eq!(state["status"], "failed", "{state}");
+    let child = world.child_row().await;
+    assert_eq!(
+        child.completion_error.as_deref(),
+        Some("application_restart")
+    );
+    assert_eq!(child.harness_configuration_name.as_deref(), Some(HARNESS));
+    world.finish().await;
+}
+
+/// An unbound child whose saved model no longer validates is still located and failed at
+/// startup: failing it needs neither its model nor its harness policy.
+#[tokio::test]
+async fn a_restart_fails_an_unbound_child_whose_model_no_longer_validates() {
+    let world = World::build("restart-invalid-model", true, false).await;
+    assert!(
+        world
+            .product
+            .claim_interaction_preparing(world.child.id)
+            .await
+            .unwrap()
+    );
+    sqlx::query("UPDATE model_families SET enabled=0 WHERE id=1")
+        .execute(&world.pool)
+        .await
+        .unwrap();
+    world.set_parent_status("failed").await;
+    world.restart().await;
+
+    let state = world.observe().await;
+    assert_eq!(state["life"], "failed", "{state}");
+    assert_eq!(state["why"], "application_restart", "{state}");
+    assert_eq!(state["status"], "failed", "{state}");
+    let child = world.child_row().await;
+    assert_eq!(child.graph_node_id, Some(world.completion_id));
+    assert_eq!(child.harness_configuration_name.as_deref(), Some(HARNESS));
+    world.finish().await;
+}
+
+/// The refused-launch cleanup failed the product row, then the application stopped before it
+/// failed the graph current. The next start finishes the graph half and stops revisiting it.
+#[tokio::test]
+async fn a_restart_finishes_the_graph_half_of_a_refused_child() {
+    let world = World::unprepared("refused-graph-half").await;
+    assert!(
+        world
+            .product
+            .claim_interaction_preparing(world.child.id)
+            .await
+            .unwrap()
+    );
+    assert!(
+        world
+            .product
+            .fail_unlaunched_recursive_child(
+                world.child.id,
+                world.completion_id,
+                HARNESS,
+                "preparation_failed",
+                true,
+                "1",
+            )
+            .await
+            .unwrap()
+    );
+    assert!(world.graph_failure_pending().await);
+    assert_eq!(world.observe().await["life"], "active");
+
+    world.restart().await;
+    let state = world.observe().await;
+    assert_eq!(state["life"], "failed", "{state}");
+    assert_eq!(state["why"], "preparation_failed", "{state}");
+    assert!(
+        !world.graph_failure_pending().await,
+        "the child is unmarked"
+    );
+    world.finish().await;
+}
+
+/// A duplicate launch that finds the child already claimed by another launch, and whose own
+/// preparation then ends ambiguously, refuses without failing the child: the claiming launch
+/// still runs it.
+#[tokio::test]
+async fn a_duplicate_launchs_refusal_leaves_the_claiming_launch_its_child() {
+    let world = World::unprepared("duplicate-refusal").await;
+    let (broker, _lease) = world.broker();
+    // Another launch holds the preparation claim and is still preparing.
+    assert!(
+        world
+            .product
+            .claim_interaction_preparing(world.child.id)
+            .await
+            .unwrap()
+    );
+    world
+        .faults
+        .garble_preparation
+        .store(true, Ordering::SeqCst);
+    let refused = world.launch(&broker).await;
+    world
+        .faults
+        .garble_preparation
+        .store(false, Ordering::SeqCst);
+    assert!(
+        refused.is_err(),
+        "the duplicate's ambiguous preparation is refused"
+    );
+
+    tokio::time::sleep(Duration::from_millis(750)).await;
+    let state = world.observe().await;
+    assert_eq!(state["life"], "active", "the child was not failed: {state}");
+    assert_eq!(state["status"], "submitted", "{state}");
+
+    // The claiming launch carries on and starts the child.
+    *world.harness.start.lock().unwrap() = "ok";
+    let (status, _) = world
+        .launch(&broker)
+        .await
+        .unwrap_or_else(|error| panic!("the claiming launch: {}", error.message()));
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(world.child_row().await.completion_status, "running");
     world.finish().await;
 }

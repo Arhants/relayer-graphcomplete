@@ -245,6 +245,9 @@ pub(crate) struct ActionInvocation {
     pub(crate) result_interaction_id: InteractionId,
     pub(crate) result_completion_status: String,
     pub(crate) created_at: String,
+    /// An agent launched this result through its completion broker: a semantic child, not a
+    /// human turn.
+    pub(crate) agent_invoked: bool,
 }
 
 #[derive(Debug, Clone, Copy)]

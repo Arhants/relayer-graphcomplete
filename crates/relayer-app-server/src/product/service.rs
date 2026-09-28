@@ -1699,6 +1699,7 @@ impl ProductService {
         graph_completion_id: i64,
         harness_configuration_name: &str,
         safe_reason: &str,
+        graph_pending: bool,
         timestamp: &str,
     ) -> Result<bool, ProductError> {
         Ok(self
@@ -1709,8 +1710,19 @@ impl ProductService {
                 harness_configuration_name,
                 safe_reason,
                 false,
+                graph_pending,
                 timestamp,
             )
+            .await?)
+    }
+
+    pub(crate) async fn confirm_refused_child_graph_failure(
+        &self,
+        interaction_id: InteractionId,
+    ) -> Result<(), ProductError> {
+        Ok(self
+            .storage
+            .confirm_refused_child_graph_failure(interaction_id)
             .await?)
     }
 
