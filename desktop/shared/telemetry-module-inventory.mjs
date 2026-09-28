@@ -13,6 +13,8 @@ export const APPROVED_TELEMETRY_MODULES = Object.freeze({
     "desktop/renderer/src/graph.js",
     "desktop/renderer/src/harness-settings-model.js",
     "desktop/renderer/src/harness-settings.js",
+    "desktop/renderer/src/human-task-grading.js",
+    "desktop/renderer/src/human-task-observer.js",
     "desktop/renderer/src/interaction-failure-model.js",
     "desktop/renderer/src/interaction-request-model.js",
     "desktop/renderer/src/main.js",

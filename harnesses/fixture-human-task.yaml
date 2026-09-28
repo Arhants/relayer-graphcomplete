@@ -1,0 +1,9 @@
+schemaVersion: 1
+name: fixture-human-task
+implementation: fixture.task-system
+implementationVersion: 1
+permissionBindings:
+  ask: {}
+  auto: {}
+  full: {}
+settings: {}

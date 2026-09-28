@@ -989,7 +989,7 @@ describe("Relayer Eval application service", () => {
     const completed = await waitForCompletedRun(evalService, created.id, 20_000);
     const execution = completed.executions[0];
 
-    expect(completed.status).toBe("passed");
+    expect(completed.status, JSON.stringify({ error: execution.error, checks: execution.checks.filter((check) => !check.passed) })).toBe("passed");
     expect(execution.threadIds).toHaveLength(1);
     expect(execution.turns).toHaveLength(2);
     expect(execution.turns.every((turn) => !turn.prompt.includes("GRAPH_MEMORY_ANCHOR:"))).toBe(true);
@@ -1429,6 +1429,7 @@ describe("Relayer Eval application service", () => {
     const productSession = await product.start();
     const workspaceGrades = [];
     const acceptedTopologyGrades = [];
+    let fixtureDiscoveryTime = 0;
     const evalService = await new EvalService({
       stateFile: join(dataDirectory, "eval-data", "test-runs.json"),
       productSession,
@@ -1436,6 +1437,13 @@ describe("Relayer Eval application service", () => {
       candidateTraceExporter: (interactionId, targetDirectory, correlation) => runtime.exportCandidateTrace(interactionId, targetDirectory, correlation),
       candidateTraceRequired: true,
       conversationImportEnabled: true,
+      // This fixture never delegates. Keep the real product execution, but do
+      // not spend a five-second child-discovery window for each scripted step.
+      // Recursive and fire-and-forget cases retain their own clocks above.
+      semanticChildDiscoveryClock: {
+        now: () => fixtureDiscoveryTime,
+        async sleep(ms) { await new Promise((resolve) => setImmediate(resolve)); fixtureDiscoveryTime += ms; },
+      },
       projectFixtureMaterializer: async ({ workspaceDirectory }) => {
         await mkdir(workspaceDirectory, { recursive: true });
         return {

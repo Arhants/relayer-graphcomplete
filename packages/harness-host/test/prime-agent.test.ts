@@ -1029,6 +1029,11 @@ describe("PrimeAgentHarness", () => {
   ])("preserves configured thinking through the actual native request ($reasoning/$reasoningEffort)", async ({ imageInput, reasoning, reasoningEffort, expected }) => {
     const native = await import("@earendil-works/pi-coding-agent");
     const workspace = await mkdtemp(join(tmpdir(), "prime-reasoning-"));
+    const authStorage = native.AuthStorage.inMemory();
+    const modelRegistry = native.ModelRegistry.inMemory(authStorage);
+    // In-memory auth still reads ambient provider credentials. This fixture starts
+    // unconfigured; only the real run-scoped model below may supply a request model.
+    vi.spyOn(modelRegistry, "refreshAvailableModels").mockResolvedValue([]);
     const payloads: Record<string, unknown>[] = [];
     let session: Awaited<ReturnType<typeof native.createAgentSessionFromServices>>["session"] | undefined;
     const harness = await PrimeAgentHarness.create({
@@ -1037,7 +1042,7 @@ describe("PrimeAgentHarness", () => {
     }, { loadModule: async () => ({
       ...native,
       createAgentSessionServices: async (options: Parameters<typeof native.createAgentSessionServices>[0]) => native.createAgentSessionServices({
-        ...options, agentDir: join(workspace, "agent"), authStorage: native.AuthStorage.inMemory(),
+        ...options, agentDir: join(workspace, "agent"), authStorage, modelRegistry,
         settingsManager: native.SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }),
         resourceLoaderOptions: { ...options.resourceLoaderOptions, noExtensions: true, noSkills: true, noPromptTemplates: true },
       }),

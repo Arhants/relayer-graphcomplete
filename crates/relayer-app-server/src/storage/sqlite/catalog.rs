@@ -2377,9 +2377,10 @@ async fn replace_system_family(
     replace_family_members(connection, id, &members).await?;
     compact_family_positions(connection).await?;
     // Move only an unset or managed default. A user-owned custom family is never replaced by
-    // reconciliation. The entire catalog/family/default transition commits atomically.
+    // reconciliation. A separately chosen provider survives even when the saved family
+    // still belongs to this provider. The entire transition commits atomically.
     if reconcile_managed_default {
-        sqlx::query("UPDATE product_model_preferences SET default_family_id=CASE WHEN ?3 OR EXISTS(SELECT 1 FROM model_families current WHERE current.id=default_family_id AND current.kind='system' AND current.managed_provider_id=?2) OR (default_family_id IS NULL AND (default_provider_id IS NULL OR default_provider_id=?2 OR NOT EXISTS(SELECT 1 FROM model_providers chosen WHERE chosen.id=default_provider_id AND chosen.lifecycle_state='active' AND chosen.connected=1))) THEN ?1 ELSE default_family_id END,default_provider_id=CASE WHEN ?3 OR EXISTS(SELECT 1 FROM model_families current WHERE current.id=default_family_id AND current.kind='system' AND current.managed_provider_id=?2) OR (default_family_id IS NULL AND (default_provider_id IS NULL OR default_provider_id=?2 OR NOT EXISTS(SELECT 1 FROM model_providers chosen WHERE chosen.id=default_provider_id AND chosen.lifecycle_state='active' AND chosen.connected=1))) THEN ?2 ELSE default_provider_id END WHERE singleton=1")
+        sqlx::query("UPDATE product_model_preferences SET default_family_id=CASE WHEN ?3 OR EXISTS(SELECT 1 FROM model_families current WHERE current.id=default_family_id AND current.kind='system' AND current.managed_provider_id=?2) OR (default_family_id IS NULL AND (default_provider_id IS NULL OR default_provider_id=?2 OR NOT EXISTS(SELECT 1 FROM model_providers chosen WHERE chosen.id=default_provider_id AND chosen.lifecycle_state='active' AND chosen.connected=1))) THEN ?1 ELSE default_family_id END,default_provider_id=CASE WHEN ((default_provider_id IS NULL OR default_provider_id=?2) AND (?3 OR EXISTS(SELECT 1 FROM model_families current WHERE current.id=default_family_id AND current.kind='system' AND current.managed_provider_id=?2))) OR (default_family_id IS NULL AND (default_provider_id IS NULL OR default_provider_id=?2 OR NOT EXISTS(SELECT 1 FROM model_providers chosen WHERE chosen.id=default_provider_id AND chosen.lifecycle_state='active' AND chosen.connected=1))) THEN ?2 ELSE default_provider_id END WHERE singleton=1")
             .bind(id.value())
             .bind(snapshot.provider_id.as_str())
             .bind(legacy_default)
@@ -3321,6 +3322,106 @@ mod provider_definition_tests {
                 "unknown".into()
             )
         );
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn managed_catalog_refresh_preserves_a_separately_chosen_default_provider() {
+        let path = std::env::temp_dir().join(format!(
+            "relayer-explicit-provider-{}-{}.sqlite3",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = SqliteProductStore::open(&path).await.unwrap();
+        let mut named = definition("work-codex");
+        named.adapter_id = "codex-subscription".into();
+        named.access_contract = "managed-runtime@1".into();
+        named.endpoint = None;
+        named.credential_reference = None;
+        store
+            .sync_provider_definitions(&[named.clone()])
+            .await
+            .unwrap();
+        let snapshot = |provider_id: ProviderId| ProviderCatalogSnapshot {
+            label: provider_id.as_str().into(),
+            provider_id,
+            connected: true,
+            unavailable_reason: None,
+            models: vec![crate::product::CatalogModelSnapshot {
+                id: "model-one".into(),
+                label: "Model One".into(),
+                order: 0,
+                visible: true,
+                available: true,
+                unavailable_reason: None,
+                provider_default: true,
+                replacement_model_id: None,
+                metadata: serde_json::json!({}),
+            }],
+            system_family: Some(SystemFamilySnapshot {
+                key: "ignored".into(),
+                name: "Managed models".into(),
+                model_ids: vec!["model-one".into()],
+            }),
+        };
+        let codex = snapshot(ProviderId::parse("codex").unwrap());
+        let work = snapshot(named.id.clone());
+        let policy = FamilyPolicyReference {
+            id: "codex-default-family".into(),
+            version: 1,
+        };
+        for catalog in [&codex, &work] {
+            store
+                .publish_provider_catalog(catalog, Some(&policy), "1")
+                .await
+                .unwrap();
+        }
+        let prior = store.load_model_settings().await.unwrap().defaults;
+        assert_eq!(prior.provider_id.as_str(), "codex");
+        let chosen = store
+            .update_model_settings_defaults(&UpdateModelSettingsDefaultsCommand {
+                harness_id: None,
+                provider_id: Some(named.id.clone()),
+                family_id: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(chosen.family_id, prior.family_id);
+        // Settings reload refreshes both providers. Neither owns the explicit
+        // provider selection simply because its managed family is still saved.
+        for catalog in [&codex, &work] {
+            store
+                .publish_provider_catalog(catalog, Some(&policy), "2")
+                .await
+                .unwrap();
+        }
+        let refreshed = store.load_model_settings().await.unwrap().defaults;
+        assert_eq!(refreshed.provider_id, named.id);
+        assert_eq!(refreshed.family_id, prior.family_id);
+        // Policy migration still replaces its own managed family atomically.
+        store
+            .publish_provider_catalog(
+                &codex,
+                Some(&FamilyPolicyReference {
+                    version: 2,
+                    ..policy
+                }),
+                "3",
+            )
+            .await
+            .unwrap();
+        let migrated = store.load_model_settings().await.unwrap().defaults;
+        assert_eq!(migrated.provider_id, named.id);
+        assert_ne!(migrated.family_id, prior.family_id);
+        store.pool.close().await;
+        let reopened = SqliteProductStore::open(&path).await.unwrap();
+        let restored = reopened.load_model_settings().await.unwrap().defaults;
+        assert_eq!(restored.provider_id, named.id);
+        assert_eq!(restored.family_id, migrated.family_id);
+        reopened.pool.close().await;
         std::fs::remove_file(path).unwrap();
     }
 
