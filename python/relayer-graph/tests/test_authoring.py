@@ -79,7 +79,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path.endswith("/edges"):
             self._reply({"edge": {"id": Handler.next_id, "endpoints": body["endpoints"], "state": "draft"}})
         elif self.path.endswith("/layers"):
-            self._reply({"layer": {"id": Handler.next_id, "nodes": body["nodes"], "edges": body["edges"], "layout": body["layout"], "state": "draft"}})
+            self._reply({"layer": {"id": Handler.next_id, "nodes": body["nodes"], "edges": body["edges"], "layout": body["layout"], "defaultNodeId": body.get("defaultNodeId"), "state": "draft"}})
         elif self.path.endswith("/discard"):
             layer_id = int(self.path.split("/")[-2])
             self._reply({"layer": {"id": layer_id, "nodes": [1], "edges": [], "state": "stopped"}})
@@ -220,7 +220,7 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
             NodePlacementObject(queue, 0.25, 0.5),
             NodePlacementObject(worker, 0.75, 0.5),
         ))
-        layer = LayerObject((queue, worker), (edge,), layout, client_key="root")
+        layer = LayerObject((queue, worker), (edge,), layout, client_key="root", default_node=worker)
         await self.client.submit_layer(layer)
         self.assertIsNotNone(queue.ref); self.assertIsNotNone(edge.ref); self.assertIsNotNone(layer.ref)
         self.assertEqual(Handler.requests[-1][2]["nodes"], [queue.ref.id, worker.ref.id])
@@ -232,6 +232,8 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
             ],
         })
         self.assertEqual(layer.ref.layout.version, 1)
+        self.assertEqual(Handler.requests[-1][2]["defaultNodeId"], worker.ref.id)
+        self.assertEqual(layer.ref.default_node_id, worker.ref.id)
         self.assertEqual(Handler.requests[0][1]["Authorization"], "Bearer secret")
 
     async def test_submit_and_completion_output_use_the_active_interaction(self):
