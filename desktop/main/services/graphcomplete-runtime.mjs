@@ -184,11 +184,14 @@ function onceRelease(release) {
   };
 }
 
-export function createProviderExecutionAccessBroker(acquireProviderExecution) {
+export function createProviderExecutionAccessBroker(acquireProviderExecution, { acknowledgeUnknownRelease } = {}) {
   if (typeof acquireProviderExecution !== "function") {
     throw new TypeError("Provider execution acquisition must be a function.");
   }
   return Object.freeze({
+    ...(typeof acknowledgeUnknownRelease === "function"
+      ? { acknowledgeUnknownRelease: () => acknowledgeUnknownRelease() }
+      : {}),
     async acquire(selection, acceptedContracts, signal) {
       if (!nonEmptyString(selection?.providerId) || !nonEmptyString(selection?.adapterId)) {
         throw new Error("Execution selection must identify an exact provider definition and adapter.");
@@ -279,6 +282,7 @@ export class GraphCompleteRuntimeService {
     harnessHostModuleUrl,
     candidateTrace,
     acquireProviderExecution,
+    acknowledgeUnknownProviderRelease,
     temporalFeatures = {},
     spawnProcess = spawn,
     fetchRequest = fetch,
@@ -306,6 +310,7 @@ export class GraphCompleteRuntimeService {
     this.harnessHostModuleUrl = harnessHostModuleUrl;
     this.candidateTrace = candidateTrace;
     this.acquireProviderExecution = acquireProviderExecution;
+    this.acknowledgeUnknownProviderRelease = acknowledgeUnknownProviderRelease;
     this.temporalFeatures = Object.freeze({
       schemaRead: temporalFeatures.schemaRead === true,
       rootCurrentWrite: temporalFeatures.rootCurrentWrite === true,
@@ -498,7 +503,9 @@ export class GraphCompleteRuntimeService {
         },
         ...(this.candidateTrace ? { trace: this.candidateTrace } : {}),
         ...(this.acquireProviderExecution ? {
-          accessBroker: createProviderExecutionAccessBroker(this.acquireProviderExecution),
+          accessBroker: createProviderExecutionAccessBroker(this.acquireProviderExecution, {
+            acknowledgeUnknownRelease: this.acknowledgeUnknownProviderRelease,
+          }),
         } : {}),
         }), async (lateHarnessHost) => {
           await lateHarnessHost.close();

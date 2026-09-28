@@ -254,8 +254,10 @@ reverted `HostReleasesOnSettle` still acknowledges. The open findings C and
 E have no fix constants yet. Startup error isolation (L6) is not modeled.
 A release and its acknowledgement are one step, and acknowledgements do not
 fail in the model. The code retries a failed acknowledgement on the host's
-timer, and forgets access released without an owner after ten minutes;
-neither is modeled.
+timer, and forgets access released without an owner after ten minutes. An
+owner release for a lease the host no longer tracks asks the providers to
+retry every drained removal, so no acknowledgement is lost. None of this is
+modeled.
 
 ## Limits
 

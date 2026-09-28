@@ -959,7 +959,12 @@ export class HarnessHost {
    */
   async releaseProviderExecution(executionLeaseId: string): Promise<boolean> {
     const pending = this.pendingExecutionAccess.get(executionLeaseId);
-    if (pending === undefined) return false;
+    if (pending === undefined) {
+      // The acknowledgement this lease would have carried must not be lost: a failure here is
+      // returned to the owner, which retries.
+      await this.options.accessBroker?.acknowledgeUnknownRelease?.();
+      return false;
+    }
     pending.ownerReleased = true;
     if (pending.state === "claimed") {
       pending.abandon?.();

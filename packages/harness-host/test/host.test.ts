@@ -1945,15 +1945,16 @@ describe("HarnessHost", () => {
     }
   });
 
-  it("forgets access released without an owner once the acknowledgement window passes", async () => {
+  it("forgets access released without an owner, and still acknowledges the owner's late release", async () => {
     vi.useFakeTimers();
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-unacknowledged-release-"));
     const release = vi.fn();
     const acknowledge = vi.fn();
+    const acknowledgeUnknownRelease = vi.fn();
     try {
       const host = new HarnessHost({
         stateFile: join(directory, "sessions.json"), controlToken: "control",
-        accessBroker: { async acquire() {
+        accessBroker: { acknowledgeUnknownRelease, async acquire() {
           return {
             access: {
               kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
@@ -1979,8 +1980,11 @@ describe("HarnessHost", () => {
       await vi.advanceTimersByTimeAsync(30_000);
       expect(release).toHaveBeenCalledOnce();
       await vi.advanceTimersByTimeAsync(10 * 60_000);
+      // The owner's release arrives after the host forgot the lease. The acknowledgement it
+      // carries still reaches the providers, so a removal waiting on it can finish.
       expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(false);
       expect(acknowledge).not.toHaveBeenCalled();
+      expect(acknowledgeUnknownRelease).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
       await rm(directory, { recursive: true, force: true });
