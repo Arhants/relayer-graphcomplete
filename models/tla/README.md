@@ -282,7 +282,8 @@ none yet, so the model follows today's code for them.
 | `leases-view-debt` | Fixed; now passes | Finding D. Before the fix: settling a quarantined attempt (from the thread view or an invoke action's destination) made lease debt but did not wake the reconciler. The debt then waited for a restart. The settle now wakes it (`QuarantineSettleWakesReconciler`). `leases-view-debt-reverted` shows the old trace. |
 | `leases-persist-lease` | Fixed; now passes | Finding C, lease half. Before the fix: when a turn's terminal state could not be persisted, nothing released its lease. The host now releases it when the native turn ends. `leases-persist-lease-reverted` shows the old trace. |
 | `leases-restart-quarantine`, `leases-restart-persist` | Fixed; now pass | Finding E, startup half. A removal waited on a running attempt, and the user quit. At the next start, an interrupted submitted input was quarantined, or a failed persist had left it quarantined, so its attempt stayed `running`. `reconcileStartup`'s refused finalize then failed every start. A refused finalize now leaves `P` `removal_pending`, and the app starts. `leases-restart-quarantine-reverted` shows the old trace. |
-| `leases-restart-removal` | Confirmed, open, PR 2 | Finding E, removal half. After that restart, `P` stays `removal_pending` while the quarantined attempt runs. Once the thread view settles the attempt, the reconciler's release finds no host entry, because host memory is fresh after the restart. Nothing acknowledges, so the finalize is not retried until the next restart. |
+| `leases-restart-drained-removal` | Fixed; now passes | Finding E, removal half. After that restart, once the quarantined attempt becomes terminal, the reconciler's release finds no host entry, because host memory is fresh. A release for a lease the host no longer tracks retries every drained removal (`UnknownReleaseRetriesFinalize`), so the removal finishes without another restart. The same path covers access the host forgot ten minutes after releasing it. `leases-forgotten-release-reverted` shows removal waiting for a restart without it. |
+| `leases-restart-removal` | Confirmed, open, PR #545 | After that restart, the quarantined attempt stays `running` until its thread is opened or the app restarts again. Opening the thread is a user action, so the removal can stay pending meanwhile. PR #545 marks such attempts ended at restart. |
 | `leases-persist-attempt` | Confirmed, open, PR 2 | Finding C, attempt half. When a turn's terminal state cannot be persisted, its attempt stays `running`, which blocks the provider tombstone. A harness approval that is aborted, expired or cancelled reaches this with no fault. |
 | `leases-hang` | Fixed for Codex and Prime; now passes | Finding G. Before the fix: a cancelled native turn that ignored the cancellation kept its provider access forever, so removal waited forever. Now a cancelled turn still running after two minutes is force-stopped, and its access is then released (`ForceStopsCancelledTurn`, action `ForceStop`). The force-stop ends only that turn. The model assumes every harness supports it and that it always ends the native work. In the code the kill or disposal is best effort, and the host releases the access at most ten seconds later, so `AccessKeptWhileTurnRuns` holds only under that assumption. `claude.basic` has no force-stop, so its turn that never settles still keeps its access. `OnlyCancelledTurnsForceStopped` follows from the action's guard; it documents the promise rather than testing the sibling case. `leases-hang-reverted` shows the old trace. |
 
@@ -296,7 +297,9 @@ The fixes are:
    acknowledgement retries it (`AckRetriesFinalize`). Landed.
 4. Settling a quarantined attempt wakes the reconciler
    (`QuarantineSettleWakesReconciler`). Landed.
-5. A cancelled turn still running after two minutes is force-stopped, and
+5. A release for a lease the host no longer tracks retries every drained
+   removal (`UnknownReleaseRetriesFinalize`). Landed.
+6. A cancelled turn still running after two minutes is force-stopped, and
    its access is released (`ForceStopsCancelledTurn`). Landed.
 
 The `*-reverted` checks turn one landed fix off and show its old trace. In
@@ -304,11 +307,61 @@ them the acknowledgement call is attributed to `AckRetriesFinalize`, so a
 reverted `HostReleasesOnSettle` still acknowledges. The open findings C and
 E have no fix constants yet. Startup error isolation (L6) is not modeled.
 A release and its acknowledgement are one step, and acknowledgements do not
-fail in the model. The code retries a failed acknowledgement on the host's
-timer, and forgets access released without an owner after ten minutes. An
-owner release for a lease the host no longer tracks asks the providers to
-retry every drained removal, so no acknowledgement is lost. None of this is
-modeled.
+fail in the model, so the host's retry of a failed acknowledgement is not
+modeled. The ten-minute forget of access released without an owner is
+modeled (`ForgetReleased`).
+
+### `HarnessReadiness.tla`
+
+This model covers harness readiness from evaluation to admission:
+
+- **Desktop main:** the readiness coordinator's generations, its
+  publication chain, and startup's file-only runtime validation.
+- **Stores:** the app server's `product_harnesses` row and, before the fix,
+  the readiness copy in `harness-configurations.json`.
+- **Restart:** a crash at any point, then the whole next startup.
+- **Admission:** Send admits only a route the app server holds ready.
+
+There is one harness configuration, three evaluations, two configuration
+digests and one restart.
+
+`readiness-today` mirrors the code, and each `-reverted` check turns one fix
+off. Two constants hold the fixes:
+
+- `RustIsReadinessRecord`: Electron publishes readiness only to the app
+  server. Startup restores ready only from the app server's own row.
+- `RustRejectsOlderGeneration`: the app server rejects a generation lower
+  than one it accepted for that harness in the same process.
+
+`RequestCanOutliveClient` lets a readiness request reach the app server after
+its client saw an error. Without it, the publication chain alone keeps
+results in order.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `readiness-restart-restore` | Fixed; now passes | Before the fix (R1): readiness was written to Rust first, then to the JSON catalog. At startup Electron restored ready from the JSON, and Rust rebuilt its row from that JSON without reading its own. A crash or failed write between the two writes restored a ready that Rust had withdrawn, and Send was admitted. Now the JSON carries only whether the runtime files validate. `initialize_model_catalog` restores ready only from its own previous row for the same digest (PROV-006). Regressions: the desktop-shell test "hands startup readiness to the app server record instead of the previous catalog file" fails on the old code; `restart_keeps_the_app_server_record_of_an_unavailable_route` guards the new rule. |
+| `readiness-restart-restore-reverted` | violated: shows why the fix is needed | With the JSON catalog as a second record, a crash between the two writes restores the withdrawn ready, and Send is admitted on it. |
+| `readiness-single-record` | Fixed; now passes | Before the fix (R2): a failed JSON write left the two records split, with nothing to reconcile them. The JSON readiness write is gone, so there is one record. |
+| `readiness-single-record-reverted` | violated: shows why the fix is needed | With two records, a JSON write that fails after the Rust commit splits them. |
+| `readiness-never-backwards` | Fixed; now passes | Before the fix (R3): Rust checked only that a generation was positive. The app server now rejects an older generation than one it accepted in the process (PROV-005). Regression: `readiness_rejects_an_older_generation_within_a_process`. A superseded result can still publish until the newer one does. PROV-005 allows that, because it never replaces a newer result. |
+| `readiness-never-backwards-reverted` | Plausible: needs a request that outlives its client | Without the guard, a request that reaches Rust after its client gave up replaces a newer result. |
+| `readiness-liveness` | passes | The latest evaluation always reaches the app server. |
+
+With the fix on, `PROV006_RestoreOnlyFromRecord` restates the `Restart`
+action and `ReadinessRecordsAgree` compares Rust with itself. They guard
+against a regression in the model, not in the code. With the fixes on,
+`PROV006_AdmitOnlyLatestReady` and `PROV005_NeverOverNewer` also hold almost by
+construction; their discriminating power is in the `-reverted` checks. The
+model starts with no ready row, so it does not cover the JSON field that
+marks a coordinated harness. A row made ready before this fix is cleared once
+by migration 0034, which `first_launch_after_upgrade_reverifies_a_route_an_older_build_left_ready`
+covers.
+
+The generation guard lives in app-server memory. Electron restarts its
+counter with each process, and the desktop quits when the app server stops.
+If the app server alone restarted, its restored row would stay the record.
+It would accept the coordinator's next generation, and the coordinator's
+counter only grows.
 
 ## Limits
 
@@ -335,7 +388,6 @@ modeled.
 - **Not modeled:**
   - the parent retrying a failed stop;
   - label uniqueness and ids;
-  - harness readiness generations;
   - thread permission pinning;
   - Ladybug index crash recovery;
   - remint races in the graph server;
