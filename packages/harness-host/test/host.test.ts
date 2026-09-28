@@ -1,5 +1,6 @@
 import { NativeExecutionCancelled } from "../src/completion-execution.js";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { Server } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -3478,6 +3479,149 @@ describe("HarnessHost", () => {
     } finally {
       releaseDispose?.();
       await running?.forceClose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("ends never-used and in-flight connections when it closes gracefully", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-graceful-connections-"));
+    let running: Awaited<ReturnType<typeof startHarnessHost>> | undefined;
+    let completionStarted!: () => void;
+    const started = new Promise<void>((resolveStarted) => { completionStarted = resolveStarted; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : graphReadResponse(url)));
+    try {
+      running = await startHarnessHost({
+        stateFile: join(directory, "sessions.json"),
+        controlToken: "control",
+        implementations: { test: () => ({
+          complete(_interaction, signal) {
+            completionStarted();
+            return new Promise<never>((_resolve, reject) => signal?.addEventListener("abort", () => reject(signal.reason), { once: true }));
+          },
+          state: emptyState,
+        }) },
+      });
+      await running.host.createSession({
+        threadId: 1,
+        permissionProfileId: "auto",
+        configuration: testConfiguration,
+        workingDirectory: directory,
+      });
+      const address = new URL(running.url);
+      const openConnection = async () => {
+        const socket = connect(Number(address.port), address.hostname);
+        await new Promise<void>((resolveConnect, reject) => {
+          socket.once("connect", resolveConnect);
+          socket.once("error", reject);
+        });
+        let received = "";
+        socket.on("data", (chunk) => { received += String(chunk); });
+        const closed = new Promise<string>((resolveClose) => socket.once("close", () => resolveClose(received)));
+        return { socket, closed };
+      };
+      // The graph server's pooled HTTP client can hold a connection that never sends a request;
+      // Node does not count it as idle, so it would hold server.close() open.
+      const unused = await openConnection();
+      const busy = await openConnection();
+      const request = JSON.stringify({ interactionId: 1, graph: graph() });
+      busy.socket.write([
+        "POST /sessions/1/complete HTTP/1.1",
+        "Host: localhost",
+        "Authorization: Bearer control",
+        "Content-Type: application/json",
+        `Content-Length: ${Buffer.byteLength(request)}`,
+        "",
+        request,
+      ].join("\r\n"));
+      await started;
+
+      await running.close();
+      expect(await unused.closed).toBe("");
+      // The in-flight response is still delivered, then the connection closes instead of idling
+      // for Node's keep-alive timeout.
+      const reply = await busy.closed;
+      expect(reply).toMatch(/^HTTP\/1\.1 \d{3} /);
+      expect(reply).toMatch(/\r\nConnection: close\r\n/i);
+    } finally {
+      vi.unstubAllGlobals();
+      await running?.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a request pipelined after close begins without routing it", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-closing-pipeline-"));
+    let running: Awaited<ReturnType<typeof startHarnessHost>> | undefined;
+    let completionStarted!: () => void;
+    const started = new Promise<void>((resolveStarted) => { completionStarted = resolveStarted; });
+    let releaseCompletion!: () => void;
+    const completionGate = new Promise<void>((resolveGate) => { releaseCompletion = resolveGate; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : graphReadResponse(url)));
+    const serverEvents = vi.spyOn(Server.prototype, "emit");
+    const requestsParsed = () => serverEvents.mock.calls.filter(([event]) => (event as string) === "request").length;
+    try {
+      running = await startHarnessHost({
+        stateFile: join(directory, "sessions.json"),
+        controlToken: "control",
+        implementations: { test: () => ({
+          async complete() {
+            completionStarted();
+            await completionGate;
+          },
+          state: emptyState,
+        }) },
+      });
+      await running.host.createSession({
+        threadId: 1,
+        permissionProfileId: "auto",
+        configuration: testConfiguration,
+        workingDirectory: directory,
+      });
+      const approvalEvents = vi.spyOn(running.host, "approvalEvents");
+      const address = new URL(running.url);
+      const socket = connect(Number(address.port), address.hostname);
+      await new Promise<void>((resolveConnect, reject) => {
+        socket.once("connect", resolveConnect);
+        socket.once("error", reject);
+      });
+      let received = "";
+      socket.on("data", (chunk) => { received += String(chunk); });
+      const socketClosed = new Promise<string>((resolveClose) => socket.once("close", () => resolveClose(received)));
+      const request = JSON.stringify({ interactionId: 1, graph: graph() });
+      socket.write([
+        "POST /sessions/1/complete HTTP/1.1",
+        "Host: localhost",
+        "Authorization: Bearer control",
+        "Content-Type: application/json",
+        `Content-Length: ${Buffer.byteLength(request)}`,
+        "",
+        request,
+      ].join("\r\n"));
+      await started;
+
+      const closing = running.close();
+      socket.write("GET /sessions/1/approval-events HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer control\r\n\r\n");
+      await vi.waitFor(() => expect(requestsParsed()).toBe(2));
+      releaseCompletion();
+      await closing;
+
+      // The late request never ran, and its refusal, not the earlier reply, closes the connection.
+      expect(approvalEvents).not.toHaveBeenCalled();
+      const replies = (await socketClosed).split(/(?=HTTP\/1\.1 )/);
+      expect(replies).toHaveLength(2);
+      expect(replies[0]).not.toMatch(/\r\nConnection: close\r\n/i);
+      expect(replies[1]).toMatch(/^HTTP\/1\.1 503 /);
+      expect(replies[1]).toMatch(/\r\nConnection: close\r\n/i);
+      expect(replies[1]).toContain("harness_host_closing");
+    } finally {
+      releaseCompletion();
+      serverEvents.mockRestore();
+      vi.unstubAllGlobals();
+      await running?.close();
       await rm(directory, { recursive: true, force: true });
     }
   });

@@ -614,7 +614,19 @@ describe("Relayer Eval application service", () => {
         members: [{ providerId: "codex", modelId: "fixture-model" }],
       }),
     });
+    // Lantern's fixture awaits child.result before returning its final root.
+    // All native work is real; only the subsequent idle observation window
+    // advances virtually. The fire-and-forget Complete pair below retains
+    // the production clock and observes genuinely pending child execution.
+    let discoveryTime = 0;
     const evalService = await new EvalService({
+      semanticChildDiscoveryClock: {
+        now: () => discoveryTime,
+        async sleep(ms) {
+          await new Promise((yieldToIo) => setImmediate(yieldToIo));
+          discoveryTime += ms;
+        },
+      },
       stateFile: join(dataDirectory, "eval-data", "test-runs.json"),
       productSession,
       configurationPaths,
@@ -1678,10 +1690,8 @@ describe("Relayer Eval application service", () => {
     expect(authoredNode.authoredDetail).toMatchObject({
       version: 1,
       assets: [
-        expect.objectContaining({
-          mediaType: "image/svg+xml",
-          representation: "image",
-        }),
+        expect.objectContaining({ mediaType: "image/svg+xml", representation: "image" }),
+        expect.objectContaining({ mediaType: "image/svg+xml", representation: "image" }),
       ],
     });
     expect(authoredNode.authoredDetail.assets[0].digestSha256).toMatch(

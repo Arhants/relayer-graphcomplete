@@ -17,6 +17,9 @@ use thiserror::Error;
 pub const EXPORT_VERSION_V1: u32 = 1;
 pub const EXPORT_VERSION_V2: u32 = 2;
 pub const MAX_EXPORT_BYTES: usize = 256 * 1024 * 1024;
+/// Public share snapshots use the transport-sized boundary, while ordinary
+/// local exports retain the larger desktop file limit above.
+pub const MAX_SHARE_SNAPSHOT_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_JSONL_LINE_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_TURNS: usize = 10_000;
 pub const MAX_LAYERS_PER_TURN: usize = 10_000;
@@ -417,6 +420,9 @@ pub enum ExportAuthoredDetailOmission {
     /// A configured private project path was detected in the package, in raw
     /// or decoded form, and the integrity-bound package cannot be rewritten.
     PrivatePath,
+    /// An integrity-bound detail package contained a credential or other
+    /// sensitive token and therefore could not be rewritten safely.
+    SensitiveData,
     /// A reason this build does not know; newer producers may add reasons.
     #[serde(other)]
     Unknown,

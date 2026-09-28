@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
+import { runCommand } from "./run-command.mjs";
 import {
   appendFileSync,
   copyFileSync,
@@ -52,10 +52,7 @@ function harvestCargoTimingReport() {
 
 function run(label, command, args, environment = {}, options = {}) {
   const startedAt = Date.now();
-  const result = spawnSync(command, args, {
-    stdio: "inherit",
-    env: { ...process.env, ...environment },
-  });
+  const result = runCommand(label, command, args, { ...process.env, ...environment });
   if (options.harvestCargoTiming) harvestCargoTimingReport();
   const elapsedSeconds = ((Date.now() - startedAt) / 1000).toFixed(1);
   const outcome = result.status === 0 ? "passed" : "failed";
@@ -202,6 +199,12 @@ if (chapter === "quick") {
       "--noEmit",
     ]);
 } else if (chapter === "vitest-prerequisites") {
+  runPrerequisite(
+    "renderer-prepare",
+    "Prepare generated renderer vendors",
+    "npm",
+    ["run", "prepare:renderer"],
+  );
   for (const workspace of npmBuildOrder.filter((name) =>
     plan.npmBuildWorkspaces.includes(name),
   )) {

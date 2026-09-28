@@ -4,7 +4,7 @@ import { PrimeVisualAuthoring } from "../src/implementations/prime-visual-author
 const capability = { url: "http://graph.test", token: "run-one", nodeId: 1 };
 const request = () => ({ version: 1, objectId: "object-one", token: "run-one", nodeId: 1, operation: "submit",
   node: { clientKey: "answer", icon: "box", title: "Answer", detail: "Fallback", kind: "concept" },
-  detail: { clear: false, components: [{ id: "main", markup: { strings: ["<h2>Answer</h2>"], values: [] }, styles: "h2 { color: blue; }" }] },
+  detail: { clear: false, components: [{ id: "main", markup: { strings: ["<h2>Answer</h2>"], values: [] }, styles: '[data-relayer-theme="light"] h2 { color: #182c34; } [data-relayer-theme="dark"] h2 { color: #edf2f3; }' }] },
 });
 const signal = () => new AbortController().signal;
 afterEach(() => vi.unstubAllGlobals());
@@ -27,6 +27,7 @@ describe("Prime declarative visual authoring", () => {
     expect(results[0].ok).toBe(true);
     const checkpoint = await bridge.execute({ ...request(), operation: "checkpoint" }, capability, () => {}, signal());
     expect(checkpoint.value).toEqual(bodies[0]!.authoredDetail);
+    expect(JSON.stringify(checkpoint.value)).toContain("data-relayer-theme");
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(bodies[0]).toMatchObject({ authoredDetail: { version: 1, components: [{ id: "main", html: "<h2>Answer</h2>" }] } });
     const edited = request(); edited.node.title = "Changed";
