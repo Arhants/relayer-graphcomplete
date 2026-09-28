@@ -94,6 +94,9 @@ replays against the real app-server code:
 - **Product:** the real SQLite product store.
 - **Harness:** a fake whose start is refused, or runs while acknowledging
   another identity (a lost acknowledgement).
+- **Graph faults:** a layer in front of the graph server can fail the next
+  capability activation with a 503, or garble control preparations, so a
+  replay or a direct test reaches those failures on the real server.
 - **Launch steps:** each step calls the function `complete_prepared_child`
   calls for it (reserve, claim, activate, start).
 - **Cleanup:** the start-failure cleanup is the real background task. The fake
@@ -245,7 +248,8 @@ This model covers one recursive child from `complete()` to settlement:
 | --- | --- | --- |
 | `completion-safety-holds` | passes | There is at most one launch per reservation. Stop reports what the graph holds. Terminal states are absorbing. |
 | `completion-observe-timeout` | Fixed; now passes | Before the fix: `observe_invoked_completion` had a 5 s control timeout, but the harness answers only when the run ends. A child still running after 5 s was failed with `provider_exited_without_return`, and its capability was revoked while the provider kept running. A live Prime delegation run hit this at about 5.1 s. The observation is now a long poll that the exit observer repeats on a timeout. `provider_end_waits_through_observation_timeouts` proves the repeat with a 100 ms poll against a run that is still going. |
-| `completion-activation-failure` | Confirmed | A lost or failed activation settles the execution row only. The graph current stays active, the product status is never finalized, and a broker retry gets 200 with no launch. Restart skips settled rows. |
+| `completion-activation-failure` | Fixed; now passes | Before the fix: a failed activation settled the execution row only and restored the child to `submitted`. The graph current stayed active, a broker retry got 200 with no launch, and restart skipped the settled row. Now the launch owns the child from its claim on: any activation failure, retryable or not, starts the launch-failure cleanup (`LaunchFailure::ActivationFailed`). It fails the current with `capability_activation_failed`, a canonical reason, and settles both product rows with it, without cancelling. A retry reports the failed child. Scenario: `completion-activation-failure`. Regression test: `a_failed_activation_fails_the_child_in_both_stores_and_an_exact_retry_reports_it`. |
+| `completion-activation-failure-reverted` | violated: shows why the fix is needed | Without the fix, a failed activation settles the execution row while the current stays active. |
 | `completion-clean-exit` | Fixed; now passes | Before the fix: for an invoked child, the harness resolves a clean native end without checking for Return (`host.ts`). The exit observer failed only on an error, so the child stayed active until its parent stopped it or the app restarted. With child admission, its attempt and leases were then held that whole time. The exit observer now fails an active child once its provider run ends, however it ended: a run that ends without Return is a failure. Scenario: `completion-admitted-exits-without-return`. |
 | `completion-clean-exit-reverted` | violated: shows why the fix is needed | Without the clean-exit check, a child whose provider exits cleanly without Return never settles. |
 | `completion-start-failure-reason` | Fixed; now passes | Before the fix: start-failure cleanup retried `fail_graph_completion("provider_start_failed")` every 250 ms, and the graph rejected that reason forever. `provider_start_failed`, `provider_attachment_persist_failed` and `graph_observation_failed` are now canonical failure reasons in `validate_terminal_reason`, so the graph and product rows share one reason. Scenario: `completion-start-failure`. `app_server_failure_reasons_are_canonical` in graph-core covers all three reasons. |
@@ -259,7 +263,7 @@ The candidate fixes are:
 
 1. Long-poll or re-poll the observation instead of timing out.
 2. Fail the child when a clean exit leaves its current active.
-3. Fail both stores when activation fails.
+3. Fail both stores when activation fails. Landed.
 4. Use valid failure reasons. Landed.
 5. Let cleanup settle a current another actor already terminated, with that
    current's own outcome. Landed.
@@ -269,6 +273,36 @@ A landed fix is on in `completion-today` as well.
 The committed scenarios do not step `HostAccessRelease`, since the adapter
 has no such step. In their traces the access stays held until
 `LeaseReconcile`, which the model also allows.
+
+### `CompletionLaunchWindows.tla`
+
+This model covers the launch windows `CompletionCurrent` abstracts, for one
+child from the parent's `prepareComplete` to settlement:
+
+- the broker's product preparation and binding, and a preparation that ends
+  ambiguously;
+- the execution row before `launching`, and capability activation;
+- the thread's one active human turn and the product's Stop;
+- a user's re-invoke of the delegate action, which resumes the child on the
+  product path;
+- a crash, and startup reconciliation of each window.
+
+There is one parent, one child, two broker calls and at most two restarts.
+Admission, start, attach and the observers are one step each, and each
+cleanup is one atomic step, though the code fails the graph current first.
+Startup graph and store errors are not modeled. `launch-today` mirrors the
+code, with every fix on; each `-reverted` check turns one fix off.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `launch-safety` | passes | A settled execution row has a terminal current and product row. Startup leaves no interrupted child active. A child never holds the next human turn. |
+| `launch-liveness` | passes | Without a restart, every child the parent launched ends in the graph, and its product row ends once its parent is done. |
+| `launch-restart-liveness` | passes | Across two restarts, every child the product recorded ends in both stores. |
+| `launch-activation-reverted`, `launch-activation-liveness-reverted` | Fixed; the reverted checks show the old traces | A failed or lost activation restored the child to `submitted` and settled only the execution row. An exact retry got 200 and launched nothing, product Stop answered 500, and the next human turn got 422. Now the activation failure fails both stores (`ActivationFailsGraph`). Regression test: `a_failed_activation_fails_the_child_in_both_stores_and_an_exact_retry_reports_it`. |
+| `launch-restart-reverted` | Fixed; the reverted check shows the old trace | A restart after the child row existed but before `launching` re-bound the child and left its current active. A second restart then quarantined it as a provenance mismatch, because the expected occurrence was read only while the parent was accepted or running. Startup now reads the child's own occurrence whatever its parent's status, and fails the child in both stores with `application_restart`; a reserved row settles (`StartupFailsUnlaunched`). Startup also marks results an older build left unmarked when only an agent could have created them, and retries a child it kept after a transient graph failure in the background. Neither is modeled: the model has no startup errors or schema versions. Regression tests: `a_restart_before_launch_fails_the_bound_child_in_both_stores`, `a_restart_fails_a_bound_child_whose_parent_already_failed`, `a_restart_fails_an_unbound_child_whose_parent_already_failed`, `a_restart_fails_a_stuck_child_an_older_build_left_unmarked`, `a_restart_that_cannot_reach_the_graph_fails_the_child_once_it_can`. |
+| `launch-refused-prepare-reverted`, `launch-child-row-reverted` | Fixed; the reverted checks show the old traces | An ambiguous preparation left the claimed child `submitted` and unbound, and the broker answered 422 "already in progress". Once the parent stopped, nothing recovered it, even across restarts. The refused-launch cleanup now fails it in both stores with `preparation_failed` and binds it to the parent's graph interaction (`RefusedLaunchFailsChild`). It fails the product row first, so a later launch cannot reserve or claim the child; `RefusedCleanup` is one atomic step, so the model does not show that ordering. Regression test: `an_ambiguous_preparation_fails_the_claimed_child_in_both_stores`. |
+| `launch-child-gate-reverted` | Decision; the reverted check shows the old trace | A child still running after its parent was accepted refused the thread's next human turn with 422, and the product's Stop of it answered 500. By product decision, only human root turns hold the thread, the product refuses to stop an agent's child with a client error, and a user's invoke of the delegate action no longer resumes the child on the product path (`ChildrenOutsideRootGate`, which also disables `UserStopsChild` and `UserReinvokes`). `SendNeverWaitsOnChild` holds by construction with the decision on; its power is in the reverted check. Regression tests: `only_human_turns_hold_the_thread`, `a_running_child_does_not_hold_the_next_human_turn_and_product_stop_refuses_it`, `a_users_invoke_does_not_run_an_agents_child`, and the recursive end-to-end test "lets the next human turn run while a launched child still runs". |
+| `launch-graph-orphan` | Known open | A crash after the parent's `prepareComplete` but before the broker's first product write leaves a graph-only child. No product row names it, so startup cannot fail it, and its current stays active. |
 
 ### `ExecutionLeases.tla`
 

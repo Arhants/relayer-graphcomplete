@@ -17,7 +17,10 @@
 use super::*;
 use crate::{
     api::auth::DesktopSessionAuthenticator,
-    completion_broker::{CompletionBrokerRegistry, CompletionObservations},
+    completion_broker::{
+        CompletionBrokerGrant, CompletionBrokerLease, CompletionBrokerRegistry,
+        CompletionObservations,
+    },
     conversation_export::{ConversationExportRecord, ExportAttemptOutcome, ExportProducer},
     product::{CreateThreadCommand, NodeContextDraftConfirmationService, ProductService},
     runtime::RuntimeClient,
@@ -99,6 +102,18 @@ struct HarnessControl {
     cancel_gate: tokio::sync::Semaphore,
 }
 
+/// Faults the graph server injects, set by a test.
+#[derive(Default)]
+struct GraphFaults {
+    /// The next capability activation answers 503, as a busy graph would.
+    fail_activation: AtomicBool,
+    /// While set, every control preparation answers 200 with a body the client cannot
+    /// decode, so the product cannot tell whether the graph committed it.
+    garble_preparation: AtomicBool,
+    /// This many control reads of a completion's current answer 503 first.
+    fail_current_reads: std::sync::atomic::AtomicUsize,
+}
+
 struct World {
     state: ApiState,
     product: ProductService,
@@ -113,6 +128,7 @@ struct World {
     stop_report: &'static str,
     graph: GraphDatabase,
     harness: Arc<HarnessControl>,
+    faults: Arc<GraphFaults>,
     selected: bool,
     admission: Option<RecursiveChildAdmission>,
     attachment: Option<Value>,
@@ -154,6 +170,16 @@ impl World {
     /// and the recursive child prepared and bound for it, before any launch. A
     /// selected world gives the root a model selection the child inherits.
     async fn new(label: &str, selected: bool) -> Self {
+        Self::build(label, selected, true).await
+    }
+
+    /// The parent has prepared the child's graph interaction (its `prepareComplete`), and the
+    /// product has recorded the invocation, but the broker has not yet prepared or bound it.
+    async fn unprepared(label: &str) -> Self {
+        Self::build(label, false, false).await
+    }
+
+    async fn build(label: &str, selected: bool, bound: bool) -> Self {
         let root = tempfile::Builder::new()
             .prefix(&format!("relayer-completion-trace-{label}-"))
             .tempdir()
@@ -251,10 +277,57 @@ impl World {
             .await
             .unwrap();
         let graph_reader = graph.clone();
+        let faults = Arc::new(GraphFaults::default());
+        let injected = faults.clone();
         let graph_app = relayer_graph_server::router(
             relayer_graph_server::ServerState::new(graph, "graph-control")
                 .with_temporal_features(features),
-        );
+        )
+        .layer(axum::middleware::from_fn(
+            move |request: axum::extract::Request, next: axum::middleware::Next| {
+                let faults = injected.clone();
+                async move {
+                    use axum::response::IntoResponse;
+                    if request.method() == axum::http::Method::GET
+                        && request.uri().path().ends_with("/current")
+                        && faults
+                            .fail_current_reads
+                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                                left.checked_sub(1)
+                            })
+                            .is_ok()
+                    {
+                        return (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            axum::Json(serde_json::json!({
+                                "error":{"code":"unavailable","message":"graph busy"}
+                            })),
+                        )
+                            .into_response();
+                    }
+                    if request.method() == axum::http::Method::POST {
+                        let path = request.uri().path();
+                        if path == "/api/control/capabilities"
+                            && faults.fail_activation.swap(false, Ordering::SeqCst)
+                        {
+                            return (
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                axum::Json(serde_json::json!({
+                                    "error":{"code":"unavailable","message":"graph busy"}
+                                })),
+                            )
+                                .into_response();
+                        }
+                        if path == "/api/control/interactions"
+                            && faults.garble_preparation.load(Ordering::SeqCst)
+                        {
+                            return (StatusCode::OK, "{not json").into_response();
+                        }
+                    }
+                    next.run(request).await
+                }
+            },
+        ));
 
         let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", database.display()))
             .await
@@ -544,11 +617,43 @@ impl World {
             completion_brokers: CompletionBrokerRegistry::new(Some("http://broker".into())),
             completion_observations: CompletionObservations::default(),
         };
-        // Prepared and bound exactly as complete_prepared_child prepares it.
-        let seeded = prepare_and_claim_interaction(&state, &thread, &child, false, true)
-            .await
-            .unwrap_or_else(|error| panic!("prepare: {}", error.message()))
-            .expect("prepared child");
+        let seeded = if bound {
+            // Prepared and bound exactly as complete_prepared_child prepares it.
+            prepare_and_claim_interaction(&state, &thread, &child, false, true)
+                .await
+                .unwrap_or_else(|error| panic!("prepare: {}", error.message()))
+                .expect("prepared child")
+        } else {
+            // Only the graph interaction exists, as the parent's prepareComplete leaves it:
+            // the same leased node the product's own preparation recovers for this occurrence.
+            let working_directory = root.path().to_string_lossy().into_owned();
+            let prepared = runtime
+                .prepare(&CompleteInteraction {
+                    project_id: None,
+                    product_interaction_id: child.id.value(),
+                    thread_id: thread.id.value(),
+                    interaction_id: child.id.value(),
+                    text: &child.text,
+                    working_directory: &working_directory,
+                    harness_configuration_name: HARNESS,
+                    permission_profile: state.permission_catalog.profile("auto").unwrap(),
+                    model_selection: None,
+                    model_plan: None,
+                    attempt_admission_id: None,
+                    execution_lease_id: None,
+                    harness_policy: None,
+                    invocation: Some(invocation),
+                    input_identity: None,
+                    input_digest: None,
+                    personal_presentation: None,
+                    contexts: &[],
+                    submitted_inputs: &[],
+                })
+                .await
+                .unwrap();
+            runtime.discard_prepared(prepared.clone()).await.unwrap();
+            prepared
+        };
         let origin_digest =
             completion_permission_origin_digest(&seeded.effective_permission_receipt, invocation)
                 .unwrap_or_else(|error| panic!("origin digest: {}", error.message()));
@@ -569,6 +674,7 @@ impl World {
             stop_report: "none",
             graph: graph_reader,
             harness: harness_control,
+            faults,
             selected,
             admission: None,
             observed: false,
@@ -578,6 +684,99 @@ impl World {
             tasks: ServerTasks(vec![graph_task, harness_task]),
             root,
         }
+    }
+
+    /// The parent execution's broker authority, as the root turn holds it while it runs.
+    fn broker(&self) -> (HeaderMap, CompletionBrokerLease) {
+        let parent = self
+            .graph_source()
+            .expect("the child records its invoke occurrence");
+        let lease = self.state.completion_brokers.issue(CompletionBrokerGrant {
+            thread_id: self.thread.id,
+            source_interaction_id: self.thread.root_interaction_id,
+            source_completion_id: parent,
+        });
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            format!("Bearer {}", lease.token()).parse().unwrap(),
+        );
+        (headers, lease)
+    }
+
+    fn graph_source(&self) -> Option<i64> {
+        Some(self.invocation.source_interaction_node_id)
+    }
+
+    /// The parent agent's broker launch of its prepared child.
+    async fn launch(
+        &self,
+        headers: &HeaderMap,
+    ) -> Result<(StatusCode, Json<CompletePreparedChildResponse>), ApiError> {
+        complete_prepared_child(
+            State(self.state.clone()),
+            headers.clone(),
+            Json(CompletePreparedChildRequest {
+                interaction_node: self.completion_id,
+            }),
+        )
+        .await
+    }
+
+    /// What the parent's `result` observation of the child answers.
+    async fn observed_result(&self, headers: &HeaderMap) -> (StatusCode, Value) {
+        let (status, Json(body)) = completion_result(
+            State(self.state.clone()),
+            headers.clone(),
+            Path(self.completion_id),
+            Query(CompletionResultQuery {
+                after_revision: None,
+            }),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("result observation: {}", error.message()));
+        (status, body)
+    }
+
+    /// Restarts the product server over the same database: the startup reconciliation
+    /// `RelayerAppServer::open` runs, against the graph and harness that outlived it.
+    async fn restart(&self) {
+        let restarted = SqliteProductStore::open(&self.root.path().join("product.sqlite3"))
+            .await
+            .unwrap();
+        crate::app_server::reconcile_interrupted_work(
+            &restarted,
+            Some(&self.runtime),
+            &self.state.permission_catalog,
+        )
+        .await
+        .unwrap();
+    }
+
+    /// Sets the parent's product status, as its own run or a restart left it.
+    async fn set_parent_status(&self, status: &str) {
+        sqlx::query("UPDATE interactions SET completion_status=?1 WHERE id=?2")
+            .bind(status)
+            .bind(self.thread.root_interaction_id.value())
+            .execute(&self.pool)
+            .await
+            .unwrap();
+    }
+
+    /// Waits for background work to reach a state, then returns the state it last saw.
+    async fn await_state(&self, reached: impl Fn(&Value) -> bool) -> Value {
+        let deadline = Instant::now() + CLEANUP_QUIESCENCE;
+        loop {
+            let state = self.observe().await;
+            if reached(&state) || Instant::now() >= deadline {
+                return state;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    }
+
+    async fn child_row(&self) -> Interaction {
+        self.product.get_interaction(self.child.id).await.unwrap()
     }
 
     fn binding(&self) -> CompletionExecutionBinding<'_> {
@@ -620,24 +819,30 @@ impl World {
                     .await
                     .unwrap()
             ),
+            // Claimed and activated as complete_prepared_child does it (THR launch owner).
             "LaunchActivate" => {
-                assert_eq!(
-                    argument(2),
-                    "ok",
-                    "the adapter drives successful activation only"
-                );
+                let ok = argument(2) == "ok";
+                self.faults.fail_activation.store(!ok, Ordering::SeqCst);
                 let activated = claim_and_activate_prepared_interaction(
                     &self.state,
                     &self.thread,
                     &self.child,
                     self.seeded.clone(),
-                    true,
+                    false,
                     false,
                 )
-                .await
-                .unwrap_or_else(|error| panic!("activation: {}", error.message()))
-                .expect("activation ownership");
-                self.activated = Some(activated);
+                .await;
+                if ok {
+                    let activated = activated
+                        .unwrap_or_else(|error| panic!("activation: {}", error.message()))
+                        .expect("activation ownership");
+                    self.activated = Some(activated);
+                    return;
+                }
+                assert!(activated.is_err(), "a failed activation is an error");
+                // Nothing was admitted or started, so its cleanup never cancels.
+                self.pending_cleanup =
+                    Some((self.seeded.clone(), LaunchFailure::ActivationFailed, None));
             }
             "LaunchAdmit" => {
                 let ok = argument(2) == "ok";
@@ -1961,5 +2166,309 @@ async fn a_failed_start_settles_while_its_cancel_cannot_reach_the_harness() {
         state["attempt"], "running",
         "its attempt stays held until the run is confirmed ended: {state}"
     );
+    world.finish().await;
+}
+
+/// A child whose capability activation fails is failed in both stores, so the thread and an
+/// awaiting parent see it end. The parent's exact retry of the same launch starts nothing and
+/// reports that terminal child rather than an active one nothing runs.
+#[tokio::test]
+async fn a_failed_activation_fails_the_child_in_both_stores_and_an_exact_retry_reports_it() {
+    let world = World::new("activation-fails", false).await;
+    let (broker, _lease) = world.broker();
+    world.faults.fail_activation.store(true, Ordering::SeqCst);
+    let refused = world.launch(&broker).await;
+    assert!(
+        refused.is_err(),
+        "a launch whose activation failed is refused"
+    );
+
+    let state = world
+        .await_state(|state| state["life"] != "active" && state["status"] == "failed")
+        .await;
+    assert_eq!(state["life"], "failed", "the graph current ends: {state}");
+    assert_eq!(state["why"], "capability_activation_failed", "{state}");
+    assert_eq!(state["status"], "failed", "the product child ends: {state}");
+    assert_eq!(state["phase"], "settled", "{state}");
+    assert_eq!(state["execWhy"], "capability_activation_failed", "{state}");
+
+    let (status, _) = world
+        .launch(&broker)
+        .await
+        .unwrap_or_else(|error| panic!("exact retry: {}", error.message()));
+    assert_eq!(status, StatusCode::OK, "an exact retry reports the child");
+    let (status, body) = world.observed_result(&broker).await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "the awaiting parent sees the end"
+    );
+    assert_eq!(body["lifecycle"], "failed");
+    assert_eq!(body["reason"], "capability_activation_failed");
+    assert_eq!(world.observe().await["prov"], "none", "nothing was started");
+    world.finish().await;
+}
+
+/// The broker's own preparation of a claimed child can end ambiguously: the graph answer is
+/// lost or garbled. The child is failed in both stores in the background, bound to the graph
+/// interaction the parent prepared, so neither the parent nor the thread waits on it forever.
+#[tokio::test]
+async fn an_ambiguous_preparation_fails_the_claimed_child_in_both_stores() {
+    let world = World::unprepared("preparation-ambiguous").await;
+    let (broker, _lease) = world.broker();
+    world
+        .faults
+        .garble_preparation
+        .store(true, Ordering::SeqCst);
+    let refused = world.launch(&broker).await;
+    world
+        .faults
+        .garble_preparation
+        .store(false, Ordering::SeqCst);
+    assert!(
+        refused.is_err(),
+        "an ambiguous preparation refuses the launch"
+    );
+
+    let state = world
+        .await_state(|state| state["life"] != "active" && state["status"] == "failed")
+        .await;
+    assert_eq!(state["life"], "failed", "the graph current ends: {state}");
+    assert_eq!(state["why"], "preparation_failed", "{state}");
+    assert_eq!(state["status"], "failed", "the product child ends: {state}");
+    let child = world.child_row().await;
+    assert_eq!(child.graph_node_id, Some(world.completion_id));
+    assert_eq!(
+        child.completion_error.as_deref(),
+        Some("preparation_failed")
+    );
+
+    let (status, _) = world
+        .launch(&broker)
+        .await
+        .unwrap_or_else(|error| panic!("exact retry: {}", error.message()));
+    assert_eq!(status, StatusCode::OK, "an exact retry reports the child");
+    let (status, body) = world.observed_result(&broker).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["reason"], "preparation_failed");
+    world.finish().await;
+}
+
+/// A restart after the child row is bound but before its execution reaches `launching`
+/// fails the child in both stores with `application_restart`: restart never reattaches.
+#[tokio::test]
+async fn a_restart_before_launch_fails_the_bound_child_in_both_stores() {
+    let mut world = World::new("restart-before-launch", false).await;
+    for step in [
+        serde_json::json!(["LaunchCheck", 1]),
+        serde_json::json!(["LaunchReserve", 1]),
+    ] {
+        world.apply(step.as_array().unwrap(), false).await;
+    }
+    world.set_parent_status("running").await;
+    world.restart().await;
+
+    let state = world.observe().await;
+    assert_eq!(state["life"], "failed", "{state}");
+    assert_eq!(state["why"], "application_restart", "{state}");
+    assert_eq!(state["status"], "failed", "{state}");
+    assert_eq!(
+        state["phase"], "settled",
+        "the reserved row settles: {state}"
+    );
+    assert_eq!(state["execWhy"], "application_restart", "{state}");
+    let child = world.child_row().await;
+    assert_eq!(
+        child.completion_error.as_deref(),
+        Some("application_restart")
+    );
+
+    // A second restart finds nothing left to reconcile.
+    world.restart().await;
+    assert_eq!(world.observe().await, state);
+    world.finish().await;
+}
+
+/// The provenance check reads the child's invoke occurrence whatever its parent's status.
+/// A bound child whose parent already failed is failed with `application_restart`, not
+/// quarantined as a provenance mismatch with its current left active.
+#[tokio::test]
+async fn a_restart_fails_a_bound_child_whose_parent_already_failed() {
+    let world = World::new("restart-parent-failed", false).await;
+    world.set_parent_status("failed").await;
+    world.restart().await;
+
+    let state = world.observe().await;
+    assert_eq!(state["life"], "failed", "{state}");
+    assert_eq!(state["why"], "application_restart", "{state}");
+    assert_eq!(state["status"], "failed", "{state}");
+    let child = world.child_row().await;
+    assert_eq!(
+        child.completion_error.as_deref(),
+        Some("application_restart")
+    );
+    world.finish().await;
+}
+
+/// A claimed child the broker never bound, whose parent then failed, is recovered from its
+/// graph lease at the next start and failed in both stores.
+#[tokio::test]
+async fn a_restart_fails_an_unbound_child_whose_parent_already_failed() {
+    let world = World::unprepared("restart-unbound").await;
+    assert!(
+        world
+            .product
+            .claim_interaction_preparing(world.child.id)
+            .await
+            .unwrap()
+    );
+    world.set_parent_status("failed").await;
+    world.restart().await;
+
+    let state = world.observe().await;
+    assert_eq!(state["life"], "failed", "{state}");
+    assert_eq!(state["why"], "application_restart", "{state}");
+    assert_eq!(state["status"], "failed", "{state}");
+    assert_eq!(
+        world.child_row().await.graph_node_id,
+        Some(world.completion_id)
+    );
+    world.finish().await;
+}
+
+/// Only human root turns hold a thread. A running child does not refuse the next human
+/// turn, and the product's Stop refuses it with a client error: only its parent may stop it.
+/// The child keeps its own current and settles on it while the new turn exists.
+#[tokio::test]
+async fn a_running_child_does_not_hold_the_next_human_turn_and_product_stop_refuses_it() {
+    let world = World::new("child-outside-gate", false).await;
+    let (broker, _lease) = world.broker();
+    *world.harness.start.lock().unwrap() = "ok";
+    let (status, _) = world
+        .launch(&broker)
+        .await
+        .unwrap_or_else(|error| panic!("launch: {}", error.message()));
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(world.child_row().await.completion_status, "running");
+
+    let mut control = HeaderMap::new();
+    control.insert(
+        header::COOKIE,
+        format!("{}=control", crate::api::CONTROL_COOKIE)
+            .parse()
+            .unwrap(),
+    );
+    let refusal = match stop_interaction(
+        State(world.state.clone()),
+        control,
+        Path((world.thread.id.value(), world.child.id.value())),
+    )
+    .await
+    {
+        Ok(_) => panic!("the product cannot stop an agent's child"),
+        Err(refused) => axum::response::IntoResponse::into_response(refused).status(),
+    };
+    assert!(refusal.is_client_error(), "refused with {refusal}");
+
+    let next = world
+        .product
+        .create_interaction(world.thread.id, "Next question", None, true)
+        .await
+        .unwrap_or_else(|error| panic!("the next human turn was refused: {error}"));
+    assert_eq!(next.completion_status, "not_started");
+
+    // The child still owns its own current and settles on it.
+    let mut world = world;
+    world
+        .apply(&[serde_json::json!("ChildReturn")], false)
+        .await;
+    let state = world.await_state(|state| state["phase"] == "settled").await;
+    assert_eq!(state["status"], "accepted", "{state}");
+    assert_eq!(
+        world
+            .product
+            .get_interaction(next.id)
+            .await
+            .unwrap()
+            .completion_status,
+        "not_started",
+        "the child's settlement leaves the new turn alone"
+    );
+    world.finish().await;
+}
+
+/// An older build left a stuck child without the agent marker. A child whose parent is not
+/// accepted cannot be a user's invoke, so startup marks it and fails it in both stores.
+#[tokio::test]
+async fn a_restart_fails_a_stuck_child_an_older_build_left_unmarked() {
+    let world = World::unprepared("restart-unmarked").await;
+    assert!(
+        world
+            .product
+            .claim_interaction_preparing(world.child.id)
+            .await
+            .unwrap()
+    );
+    sqlx::query("UPDATE action_invocations SET agent_invoked=0")
+        .execute(&world.pool)
+        .await
+        .unwrap();
+    world.set_parent_status("failed").await;
+    world.restart().await;
+
+    let state = world.observe().await;
+    assert_eq!(state["life"], "failed", "{state}");
+    assert_eq!(state["why"], "application_restart", "{state}");
+    assert_eq!(state["status"], "failed", "{state}");
+    world.finish().await;
+}
+
+/// A restart that cannot read the child's graph current keeps it for a moment, then fails it
+/// in both stores in the background once the graph answers, without another restart.
+#[tokio::test]
+async fn a_restart_that_cannot_reach_the_graph_fails_the_child_once_it_can() {
+    let world = World::new("restart-graph-busy", false).await;
+    world.set_parent_status("running").await;
+    world.faults.fail_current_reads.store(1, Ordering::SeqCst);
+    world.restart().await;
+    assert_eq!(
+        world.child_row().await.completion_status,
+        "submitted",
+        "startup kept the child while the graph was unreachable"
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let state = loop {
+        let state = world.observe().await;
+        if state["status"] == "failed" || Instant::now() >= deadline {
+            break state;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_eq!(state["life"], "failed", "{state}");
+    assert_eq!(state["why"], "application_restart", "{state}");
+    assert_eq!(state["status"], "failed", "{state}");
+    world.finish().await;
+}
+
+/// A user's invoke of the parent's delegate action does not run an agent's child on the
+/// product path, where neither the user nor the parent could stop it.
+#[tokio::test]
+async fn a_users_invoke_does_not_run_an_agents_child() {
+    let world = World::new("user-invoke-child", false).await;
+    let (status, Json(response)) = invoke_action_with_authority(
+        &world.state,
+        world.thread.id.value(),
+        world.thread.root_interaction_id.value(),
+        world.invocation.source_action_id,
+    )
+    .await
+    .unwrap_or_else(|error| panic!("invoke: {}", error.message()));
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        serde_json::to_value(&response.interaction).unwrap()["completionStatus"],
+        "submitted"
+    );
+    assert_eq!(world.child_row().await.completion_status, "submitted");
     world.finish().await;
 }

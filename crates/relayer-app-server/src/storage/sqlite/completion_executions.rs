@@ -501,6 +501,71 @@ impl SqliteProductStore {
         Ok(ended.rows_affected() == 1)
     }
 
+    /// Fails an agent's child that no launch owns, in the product, with its graph current's
+    /// terminal reason: a launch refused after the child was claimed, or a child a restart
+    /// interrupted before its launch. The row is bound to the child's graph interaction if it
+    /// was not yet, and a reserved execution settles with the same reason so no later launch
+    /// can take it. A launch past its claim owns the child and settles it itself, so nothing
+    /// changes then. With `interrupted`, the previous process is gone: nothing runs the child
+    /// any more, so a running child fails too, and so does one whose execution row settled
+    /// without its product row (an older build settled only the row when activation failed).
+    /// Returns whether this call failed the child.
+    pub(crate) async fn fail_unlaunched_recursive_child(
+        &self,
+        interaction_id: InteractionId,
+        graph_completion_id: i64,
+        harness_configuration_name: &str,
+        safe_reason: &str,
+        interrupted: bool,
+        timestamp: &str,
+    ) -> Result<bool, StorageError> {
+        if safe_reason.is_empty() {
+            return Err(conflict("failed settlement requires a safe reason"));
+        }
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        if let Some(existing) = fetch_execution(&mut *transaction, interaction_id).await?
+            && !(existing.phase == CompletionExecutionPhase::Reserved
+                || (interrupted && existing.phase == CompletionExecutionPhase::Settled))
+        {
+            transaction.commit().await?;
+            return Ok(false);
+        }
+        let failed = sqlx::query(
+            "UPDATE interactions
+             SET completion_status='failed',graph_node_id=COALESCE(graph_node_id,?2),
+                 harness_configuration_name=COALESCE(harness_configuration_name,?3),
+                 completion_output_json=NULL,completion_error=?4
+             WHERE id=?1 AND (graph_node_id IS NULL OR graph_node_id=?2)
+               AND (completion_status IN ('not_started','submitted')
+                    OR (?5=1 AND completion_status IN ('running','waiting_for_approval')))
+               AND EXISTS(SELECT 1 FROM action_invocations
+                          WHERE result_interaction_id=?1 AND authoritative=1 AND agent_invoked=1)",
+        )
+        .bind(interaction_id.value())
+        .bind(graph_completion_id)
+        .bind(harness_configuration_name)
+        .bind(safe_reason)
+        .bind(interrupted)
+        .execute(&mut *transaction)
+        .await?;
+        if failed.rows_affected() != 1 {
+            transaction.commit().await?;
+            return Ok(false);
+        }
+        sqlx::query(
+            "UPDATE completion_executions
+             SET settlement_json=NULL,safe_reason=?1,phase='settled',updated_at=?2
+             WHERE interaction_id=?3 AND phase='reserved'",
+        )
+        .bind(safe_reason)
+        .bind(timestamp)
+        .bind(interaction_id.value())
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok(true)
+    }
+
     /// Atomically makes an interrupted recursive execution non-launchable and projects the
     /// canonical graph terminal state into the product interaction.
     pub(crate) async fn reconcile_completion_execution_on_restart(

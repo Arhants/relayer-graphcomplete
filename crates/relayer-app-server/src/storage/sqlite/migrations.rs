@@ -533,6 +533,11 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
+        // The recreated action_invocations table also lacks 0037's agent_invoked column.
+        sqlx::query("DELETE FROM _sqlx_migrations WHERE version=37")
+            .execute(&pool)
+            .await
+            .unwrap();
         pool.execute("PRAGMA foreign_keys=ON").await.unwrap();
         pool.close().await;
 

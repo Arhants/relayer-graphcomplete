@@ -344,4 +344,46 @@ describe("recursive complete end to end", () => {
     expect(childMetadata.invocation.sourceInteractionNodeId).toBeTruthy();
     expect(proxy.requests.filter((request) => request.endsWith("/stop"))).toHaveLength(1);
   }, 60_000);
+
+  it("lets the next human turn run while a launched child still runs, and refuses the product's Stop of that child", async () => {
+    const observed = { fireAndForget: true, childBlocks: true };
+    const { session, runtimeSession, selection } = await startRecursiveStack(observed);
+
+    const thread = await productRequest(session, "/api/threads", {
+      method: "POST",
+      body: JSON.stringify({
+        title: "Child outside the turn gate",
+        initialMessage: "Delegate the hard half",
+        harnessId: "fixture-recursive",
+        permissionProfileId: "auto",
+        modelSelection: selection,
+      }),
+    });
+    await waitForStatus(session, thread.id, 0, "accepted", observed);
+    const detail = await waitForStatus(session, thread.id, 1, "running", observed);
+    const child = detail.interactions[1];
+    expect(child.graphNodeId).toBe(observed.preparedChild);
+
+    // Only its parent may stop an agent's child; the product refuses with a client error.
+    const stop = await fetch(new URL(`/api/threads/${thread.id}/interactions/${child.id}/stop`, session.origin), {
+      method: "POST",
+      headers: { Cookie: `${session.cookie.name}=${session.cookie.value}` },
+    });
+    expect(stop.status).toBeGreaterThanOrEqual(400);
+    expect(stop.status).toBeLessThan(500);
+
+    // The running child does not hold the thread: the next human turn runs to acceptance.
+    const next = await productRequest(session, `/api/threads/${thread.id}/interactions`, {
+      method: "POST",
+      body: JSON.stringify({ text: "Next question" }),
+    });
+    const after = await waitForStatus(session, thread.id, 2, "accepted", observed);
+    expect(after.interactions[2].id).toBe(next.id);
+    // The first child keeps its own current and is still running.
+    expect(after.interactions[1].completionStatus).toBe("running");
+    const current = await fetch(new URL(`api/control/interactions/${child.graphNodeId}/current`, `${runtimeSession.graphUrl}/`), {
+      headers: { authorization: `Bearer ${runtimeSession.graphControlToken}` },
+    }).then((response) => response.json());
+    expect(current.lifecycle).toBe("active");
+  }, 60_000);
 });

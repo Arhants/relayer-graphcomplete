@@ -37,6 +37,87 @@ impl SqliteProductStore {
         .map_err(Into::into)
     }
 
+    /// The graph invoke occurrence one result interaction was created from, whatever its
+    /// source's status. This is the result's provenance; `invocation_graph_source` answers
+    /// only while the occurrence can still authorize a new preparation.
+    pub(crate) async fn invocation_graph_occurrence(
+        &self,
+        result_interaction_id: InteractionId,
+    ) -> Result<Option<(i64, i64)>, StorageError> {
+        sqlx::query_as(
+            "SELECT source.graph_node_id,ai.action_id FROM action_invocations ai JOIN interactions source ON source.id=ai.source_interaction_id WHERE ai.result_interaction_id=?1 AND ai.authoritative=1 AND source.graph_node_id IS NOT NULL",
+        )
+        .bind(result_interaction_id.value())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(Into::into)
+    }
+
+    /// Whether an agent launched this result as a semantic child through its broker.
+    pub(crate) async fn is_agent_invoked_child(
+        &self,
+        result_interaction_id: InteractionId,
+    ) -> Result<bool, StorageError> {
+        sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM action_invocations WHERE result_interaction_id=?1 AND authoritative=1 AND agent_invoked=1)",
+        )
+        .bind(result_interaction_id.value())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(Into::into)
+    }
+
+    /// Marks the interrupted results an older build left without the agent marker, when only
+    /// an agent could have created them. A user invokes only from an accepted source, and
+    /// accepted is terminal, so a result whose source is not accepted, or was accepted only
+    /// after the result was created, is an agent's child. The acceptance time is read from the
+    /// source's accepted attempt only for a source that is not itself a launched child: a
+    /// child's attempt finishes after its provider unwinds, which can be after acceptance.
+    /// Returns how many were marked.
+    pub(crate) async fn mark_unrecorded_agent_children(&self) -> Result<u64, StorageError> {
+        let marked = sqlx::query(
+            "UPDATE action_invocations SET agent_invoked=1
+             WHERE agent_invoked=0 AND authoritative=1 AND graph_lease_required=1
+               AND result_interaction_id IN (SELECT id FROM interactions
+                   WHERE completion_status IN ('not_started','submitted','running','waiting_for_approval'))
+               AND (EXISTS(SELECT 1 FROM interactions source
+                           WHERE source.id=action_invocations.source_interaction_id
+                             AND source.completion_status!='accepted')
+                    OR EXISTS(SELECT 1 FROM interaction_attempts attempt
+                              WHERE attempt.interaction_id=action_invocations.source_interaction_id
+                                AND NOT EXISTS(SELECT 1 FROM completion_executions launched
+                                               WHERE launched.interaction_id=attempt.interaction_id)
+                                AND attempt.outcome='accepted' AND attempt.finished_at IS NOT NULL
+                                AND CAST(attempt.finished_at AS INTEGER)
+                                    > CAST(action_invocations.created_at AS INTEGER)))",
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(marked.rows_affected())
+    }
+
+    /// Agent children the refused-launch cleanup failed in the product before it could fail
+    /// their graph current: the product row fences out later launches first. Startup finishes
+    /// the graph half.
+    pub(crate) async fn refused_children_awaiting_graph_failure(
+        &self,
+    ) -> Result<Vec<(InteractionId, i64)>, StorageError> {
+        let rows: Vec<(i64, i64)> = sqlx::query_as(
+            "SELECT result.id,result.graph_node_id FROM interactions result
+             JOIN action_invocations ai ON ai.result_interaction_id=result.id
+             WHERE ai.authoritative=1 AND ai.agent_invoked=1
+               AND result.completion_status='failed' AND result.completion_error='preparation_failed'
+               AND result.graph_node_id IS NOT NULL
+             ORDER BY result.id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, node)| (InteractionId::from_database(id), node))
+            .collect())
+    }
+
     pub(crate) async fn invocation_requires_graph_lease(
         &self,
         result_interaction_id: InteractionId,
@@ -212,12 +293,10 @@ impl SqliteProductStore {
         let model_provider_id: Option<String> = source.try_get("model_provider_id")?;
         let provider_model_id: Option<String> = source.try_get("provider_model_id")?;
         let model_family_id: Option<i64> = source.try_get("model_family_id")?;
-        let interaction_in_progress: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM interactions WHERE thread_id=?1 AND completion_status IN ('not_started','running','submitted'))",
-        )
-        .bind(thread_id.value())
-        .fetch_one(&mut *transaction)
-        .await?;
+        let interaction_in_progress: bool = sqlx::query_scalar(super::HUMAN_TURN_IN_PROGRESS)
+            .bind(thread_id.value())
+            .fetch_one(&mut *transaction)
+            .await?;
         if interaction_in_progress && !recursive {
             return Err(StorageError::Catalog(CatalogError::invalid(
                 "interaction_in_progress",
@@ -336,12 +415,13 @@ impl SqliteProductStore {
             .await?;
         }
         sqlx::query(
-            "INSERT INTO action_invocations(source_interaction_id,action_id,result_interaction_id,created_at,graph_lease_required,authoritative) VALUES (?1,?2,?3,?4,1,1)",
+            "INSERT INTO action_invocations(source_interaction_id,action_id,result_interaction_id,created_at,graph_lease_required,authoritative,agent_invoked) VALUES (?1,?2,?3,?4,1,1,?5)",
         )
         .bind(source_interaction_id.value())
         .bind(action_id)
         .bind(interaction.id.value())
         .bind(&timestamp)
+        .bind(recursive)
         .execute(&mut *transaction)
         .await?;
         sqlx::query("UPDATE threads SET updated_at=?1 WHERE id=?2")
@@ -1366,6 +1446,87 @@ mod tests {
             other => panic!("unexpected error: {other}"),
         }
 
+        store.pool.close().await;
+    }
+
+    /// Startup marks an older build's unmarked result as an agent's child only when a user
+    /// could not have created it: its source was not accepted, or was a root accepted after
+    /// the result existed. A launched child's attempt finishes after its provider unwinds, so
+    /// its late finish never marks a user's invoke made from its output.
+    #[tokio::test]
+    async fn only_results_a_user_could_not_have_created_are_marked_as_agent_children() {
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-mark-agent-children-")
+            .tempdir()
+            .unwrap();
+        let store = SqliteProductStore::open(temporary.path().join("product.sqlite3"))
+            .await
+            .unwrap();
+        seed_test_model_selection(&store).await;
+        let thread = store
+            .insert_thread_with_initial_interaction(NewThreadRecord {
+                title: "Marking",
+                project_id: None,
+                initial_message: "Root",
+                harness_configuration_name: "codex-basic",
+                permission_profile_id: "auto",
+                model_selection: None,
+                timestamp: "1",
+            })
+            .await
+            .unwrap();
+        let root = thread.root_interaction_id.value();
+        let thread_id = thread.id.value();
+        for statement in [
+            // 10: an accepted launched child, whose attempt finished late, at 900.
+            "INSERT INTO interactions(id,thread_id,sequence,text,created_at,graph_node_id,completion_status,harness_configuration_name,harness_configuration_digest,effective_execution_digest,effective_permission_receipt_json) VALUES (10,?1,2,'Child','2',210,'accepted','codex-basic','sha256:h','sha256:e','{}')",
+            "INSERT INTO completion_executions(interaction_id,graph_completion_id,harness_configuration_name,harness_configuration_digest,model_execution_digest,permission_origin_digest,phase,safe_reason,created_at,updated_at) VALUES (10,210,'codex-basic','sha256:h','sha256:e','sha256:o','settled','done','2','3')",
+            "INSERT INTO interaction_attempts(interaction_id,attempt_number,started_at,finished_at,family_id,family_revision,harness_configuration_name,harness_configuration_revision,harness_configuration_digest,provider_id,adapter_id,adapter_implementation_version,model_id,access_contract,outcome,effect_boundary) VALUES (10,1,'2','900',1,1,'codex-basic',1,'sha256:h','codex','codex-subscription',1,'test-model','managed-runtime@1','accepted','graph_write')",
+            // 11: a user's invoke from the child's output at 500, interrupted.
+            "INSERT INTO interactions(id,thread_id,sequence,text,created_at,completion_status) VALUES (11,?1,3,'User action','500','submitted')",
+            "INSERT INTO action_invocations(source_interaction_id,action_id,result_interaction_id,created_at,graph_lease_required,authoritative,agent_invoked) VALUES (10,41,11,'500',1,1,0)",
+            // 12: a root accepted at 900 whose result was created at 500: an agent's child.
+            "INSERT INTO interactions(id,thread_id,sequence,text,created_at,graph_node_id,completion_status) VALUES (12,?1,4,'Later root','400',212,'accepted')",
+            "INSERT INTO interaction_attempts(interaction_id,attempt_number,started_at,finished_at,family_id,family_revision,harness_configuration_name,harness_configuration_revision,harness_configuration_digest,provider_id,adapter_id,adapter_implementation_version,model_id,access_contract,outcome,effect_boundary) VALUES (12,1,'400','900',1,1,'codex-basic',1,'sha256:h','codex','codex-subscription',1,'test-model','managed-runtime@1','accepted','graph_write')",
+            "INSERT INTO interactions(id,thread_id,sequence,text,created_at,completion_status) VALUES (13,?1,5,'Early child','500','submitted')",
+            "INSERT INTO action_invocations(source_interaction_id,action_id,result_interaction_id,created_at,graph_lease_required,authoritative,agent_invoked) VALUES (12,42,13,'500',1,1,0)",
+        ] {
+            sqlx::query(statement)
+                .bind(thread_id)
+                .execute(&store.pool)
+                .await
+                .unwrap_or_else(|error| panic!("{statement}: {error}"));
+        }
+        // 14: an interrupted result of the root, which is still running: an agent's child.
+        sqlx::query("INSERT INTO interactions(id,thread_id,sequence,text,created_at,completion_status) VALUES (14,?1,6,'Running root child','600','submitted')")
+            .bind(thread_id)
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE interactions SET completion_status='running',graph_node_id=201 WHERE id=?1",
+        )
+        .bind(root)
+        .execute(&store.pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO action_invocations(source_interaction_id,action_id,result_interaction_id,created_at,graph_lease_required,authoritative,agent_invoked) VALUES (?1,43,14,'600',1,1,0)")
+            .bind(root)
+            .execute(&store.pool)
+            .await
+            .unwrap();
+
+        assert_eq!(store.mark_unrecorded_agent_children().await.unwrap(), 2);
+        for (result, agent) in [(11, false), (13, true), (14, true)] {
+            assert_eq!(
+                store
+                    .is_agent_invoked_child(InteractionId::from_database(result))
+                    .await
+                    .unwrap(),
+                agent,
+                "result {result}"
+            );
+        }
         store.pool.close().await;
     }
 

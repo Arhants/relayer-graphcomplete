@@ -164,8 +164,10 @@ impl SqliteProductStore {
         }
 
         if enforce_single_active_interaction {
-            let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM interactions WHERE thread_id=?1 AND completion_status IN ('not_started','running','submitted'))")
-                .bind(thread_id.value()).fetch_one(&mut *tx).await?;
+            let active: bool = sqlx::query_scalar(super::HUMAN_TURN_IN_PROGRESS)
+                .bind(thread_id.value())
+                .fetch_one(&mut *tx)
+                .await?;
             if active {
                 return Err(StorageError::Catalog(
                     crate::product::CatalogError::invalid(

@@ -162,6 +162,14 @@ const EXECUTION_ADMISSION_TIMEOUT_MS = 30_000;
 const EXECUTION_RELEASE_RETRY_MS = 30_000;
 /** How long access released without an owner waits for the owner's acknowledgement. */
 const UNACKNOWLEDGED_RELEASE_TTL_MS = 10 * 60_000;
+/**
+ * How long a settled invoked completion still answers observations and exact start retries.
+ * The product observes a child's end at once; after this the host forgets the run, and an
+ * observation is refused as a restarted host refuses it, which the product also reads as ended.
+ * An exact start retry after that would start a new run; the product never sends one, since its
+ * launch claim allows one start per child.
+ */
+const SETTLED_INVOKED_COMPLETION_TTL_MS = 10 * 60_000;
 const HARNESS_CLOSE_SESSION_TIMEOUT_MS = 5_000;
 /** A cancelled turn that has not settled after this long is force-stopped (PROV-004). */
 export const CANCELLED_TURN_FORCE_STOP_MS = 2 * 60_000;
@@ -749,6 +757,15 @@ export class HarnessHost {
     );
     const entry = { invocationDigest, run, started };
     session.invokedCompletionRuns.set(capability.nodeId, entry);
+    const forget = () => {
+      const timer = setTimeout(() => {
+        if (session.invokedCompletionRuns.get(capability.nodeId) === entry) {
+          session.invokedCompletionRuns.delete(capability.nodeId);
+        }
+      }, SETTLED_INVOKED_COMPLETION_TTL_MS);
+      timer.unref?.();
+    };
+    void run.then(forget, forget);
     return entry;
   }
 

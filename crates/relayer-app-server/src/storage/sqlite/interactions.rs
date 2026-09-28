@@ -265,12 +265,10 @@ impl SqliteProductStore {
                 .fetch_one(&mut *transaction)
                 .await?;
         if enforce_single_active_interaction {
-            let interaction_in_progress: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM interactions WHERE thread_id=?1 AND completion_status IN ('not_started','running','submitted'))",
-            )
-            .bind(thread_id.value())
-            .fetch_one(&mut *transaction)
-            .await?;
+            let interaction_in_progress: bool = sqlx::query_scalar(super::HUMAN_TURN_IN_PROGRESS)
+                .bind(thread_id.value())
+                .fetch_one(&mut *transaction)
+                .await?;
             if interaction_in_progress {
                 return Err(StorageError::Catalog(
                     crate::product::CatalogError::invalid(
@@ -1371,6 +1369,105 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(preserved, statuses);
+        store.pool.close().await;
+    }
+
+    /// Only human root turns count toward a thread's one active turn: a user's message and
+    /// a user's invoke action do; a child an agent launched does not.
+    #[tokio::test]
+    async fn only_human_turns_hold_the_thread() {
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-human-turn-gate-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
+        let store = SqliteProductStore::open(&path).await.unwrap();
+        seed_test_models(&store).await;
+        let model = selection("first-model");
+        let thread = store
+            .insert_thread_with_initial_interaction(NewThreadRecord {
+                title: "Human turn gate",
+                project_id: None,
+                initial_message: "Delegate",
+                harness_configuration_name: "codex-basic",
+                permission_profile_id: "auto",
+                model_selection: Some(&model),
+                timestamp: "1",
+            })
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE interactions SET completion_status='accepted',graph_node_id=701 WHERE id=?1",
+        )
+        .bind(thread.root_interaction_id.value())
+        .execute(&store.pool)
+        .await
+        .unwrap();
+        let child = match store
+            .insert_recursive_action_invocation(thread.root_interaction_id, 41, "Child work")
+            .await
+            .unwrap()
+        {
+            crate::storage::ActionInvocationInsertOutcome::Created { interaction, .. } => {
+                interaction
+            }
+            _ => panic!("the child is new"),
+        };
+        sqlx::query("UPDATE interactions SET completion_status='running' WHERE id=?1")
+            .bind(child.id.value())
+            .execute(&store.pool)
+            .await
+            .unwrap();
+
+        // Only its parent agent may stop the child, even before it has an execution row.
+        match store.request_interaction_stop(thread.id, child.id).await {
+            Err(StorageError::Catalog(error)) => assert_eq!(error.code(), "agent_child_stop"),
+            other => panic!("the product stopped an agent's child: {other:?}"),
+        }
+        let next = store
+            .insert_interaction(thread.id, "Next question", None, true, true)
+            .await
+            .unwrap_or_else(|error| panic!("a running child held the thread: {error}"));
+        let held = store
+            .insert_interaction(thread.id, "Queued", None, true, true)
+            .await
+            .err()
+            .unwrap();
+        match held {
+            StorageError::Catalog(error) => assert_eq!(error.code(), "interaction_in_progress"),
+            other => panic!("unexpected error: {other}"),
+        }
+        mark_interaction_accepted(&store, next.id).await;
+
+        let invoked = match store
+            .insert_action_invocation(thread.root_interaction_id, 42, "User action")
+            .await
+            .unwrap_or_else(|error| panic!("a running child held a user's action: {error}"))
+        {
+            crate::storage::ActionInvocationInsertOutcome::Created { interaction, .. } => {
+                interaction
+            }
+            _ => panic!("the user's action result is new"),
+        };
+        sqlx::query("UPDATE interactions SET completion_status='running' WHERE id=?1")
+            .bind(invoked.id.value())
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        let held = store
+            .insert_interaction(thread.id, "After the action", None, true, true)
+            .await
+            .err()
+            .unwrap();
+        match held {
+            StorageError::Catalog(error) => assert_eq!(error.code(), "interaction_in_progress"),
+            other => panic!("unexpected error: {other}"),
+        }
+        // The user's own action result stays stoppable by the product.
+        store
+            .request_interaction_stop(thread.id, invoked.id)
+            .await
+            .unwrap();
         store.pool.close().await;
     }
 

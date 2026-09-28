@@ -25,6 +25,11 @@ use tokio::sync::Mutex;
 
 pub(crate) use personal_presentation::PersonalPresentationPin;
 
+/// Whether thread ?1 has a human turn in progress: a user's message or a user's invoke action.
+/// A child an agent launched runs beside human turns and never holds the thread; only its
+/// parent agent controls it.
+const HUMAN_TURN_IN_PROGRESS: &str = "SELECT EXISTS(SELECT 1 FROM interactions turn WHERE turn.thread_id=?1 AND turn.completion_status IN ('not_started','running','submitted') AND NOT EXISTS(SELECT 1 FROM action_invocations child WHERE child.result_interaction_id=turn.id AND child.agent_invoked=1))";
+
 #[derive(Clone)]
 pub(crate) struct SqliteProductStore {
     pool: SqlitePool,

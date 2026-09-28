@@ -187,6 +187,47 @@
       ]
     },
     {
+      "id": "completion-activation-failure",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "init": "selected = FALSE",
+      "promises": [
+        "SettledExecutionAgreesWithGraph"
+      ],
+      "finalPromises": [
+        "ChildSettles"
+      ],
+      "summary": "The child's capability activation fails; launch-failure cleanup fails its current and settles both product rows with that reason, without cancelling anything.",
+      "steps": [
+        [
+          "LaunchCheck",
+          1
+        ],
+        [
+          "LaunchReserve",
+          1
+        ],
+        [
+          "LaunchClaim",
+          1
+        ],
+        [
+          "LaunchActivate",
+          1,
+          "fail"
+        ],
+        [
+          "CleanFail"
+        ],
+        [
+          "CleanFinalize"
+        ],
+        [
+          "CleanDiscard"
+        ]
+      ]
+    },
+    {
       "id": "completion-start-failure",
       "module": "CompletionCurrent",
       "preset": "completion-today",
