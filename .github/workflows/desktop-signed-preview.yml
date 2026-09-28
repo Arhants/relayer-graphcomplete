@@ -129,16 +129,12 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      # The pinned Ladybug packaging build runs with --locked --offline so the
-      # candidate is reproducible from reviewed bytes. Seed the exact closure
-      # Cargo.lock pins while the network is still available; the build itself
-      # stays offline.
-      - name: Seed the locked Cargo dependency closure
-        run: node scripts/ci/run-timed.mjs "Preview Cargo fetch" cargo fetch --locked --target "${{ matrix.cargo_target }}"
-
       - name: Build signed and notarized Preview candidate
+        id: signed-build
         shell: bash
         env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELAYER_SIGNED_NATIVE_CACHE: "1"
           RELAYER_DESKTOP_TARGET: ${{ matrix.target }}
           RELAYER_DESKTOP_SIGN_IDENTITY: ${{ secrets.RELAYER_DESKTOP_SIGN_IDENTITY }}
           RELAYER_DESKTOP_APPLE_API_KEY_P8: ${{ secrets.RELAYER_DESKTOP_APPLE_API_KEY }}
@@ -171,6 +167,20 @@ jobs:
           unset RELAYER_DESKTOP_APPLE_API_KEY_P8
           export APPLE_API_KEY="$api_key_path"
           npm run desktop:dist:preview
+
+      # Separate unsigned native output only. No candidate or test acceptance is
+      # reused. Restoration authenticates this workflow's successful main attempt
+      # and the immutable artifact archive digest before inspecting its payload.
+      - name: Preserve verified signed-profile native build output
+        if: ${{ steps.signed-build.outputs.native_artifact != '' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.signed-build.outputs.native_artifact }}
+          path: ${{ steps.signed-build.outputs.native_directory }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload version-matched telemetry artifacts
         shell: bash
