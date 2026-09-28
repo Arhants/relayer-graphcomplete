@@ -1,0 +1,215 @@
+{
+  "scenario": "canvas-drop-round-trip",
+  "module": "CanvasGesture",
+  "summary": "A dropped node stays put when the user leaves the view and returns.",
+  "promises": [
+    "DragFollowsPointer",
+    "DropStays"
+  ],
+  "generatedBy": "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
+  "steps": [
+    {
+      "action": null,
+      "state": {
+        "cache": {
+          "cam": 0,
+          "layout": 0,
+          "pinned": false,
+          "w": 4
+        },
+        "cam": 0,
+        "drag": {
+          "capGen": 0,
+          "gen": 0,
+          "moved": false,
+          "on": false
+        },
+        "dropped": 4,
+        "gen": 1,
+        "layout": 1,
+        "pan": {
+          "on": false,
+          "startCam": 0,
+          "startPtr": 0
+        },
+        "pinned": false,
+        "pressed": "none",
+        "ptr": 0,
+        "sel": false,
+        "view": "home",
+        "w": 0
+      }
+    },
+    {
+      "action": [
+        "Press"
+      ],
+      "state": {
+        "cache": {
+          "cam": 0,
+          "layout": 0,
+          "pinned": false,
+          "w": 4
+        },
+        "cam": 0,
+        "drag": {
+          "capGen": 1,
+          "gen": 1,
+          "moved": false,
+          "on": true
+        },
+        "dropped": 4,
+        "gen": 1,
+        "layout": 1,
+        "pan": {
+          "on": false,
+          "startCam": 0,
+          "startPtr": 0
+        },
+        "pinned": false,
+        "pressed": "node",
+        "ptr": 0,
+        "sel": false,
+        "view": "home",
+        "w": 0
+      }
+    },
+    {
+      "action": [
+        "Move",
+        1
+      ],
+      "state": {
+        "cache": {
+          "cam": 0,
+          "layout": 0,
+          "pinned": false,
+          "w": 4
+        },
+        "cam": 0,
+        "drag": {
+          "capGen": 1,
+          "gen": 1,
+          "moved": true,
+          "on": true
+        },
+        "dropped": 1,
+        "gen": 1,
+        "layout": 1,
+        "pan": {
+          "on": false,
+          "startCam": 0,
+          "startPtr": 0
+        },
+        "pinned": true,
+        "pressed": "node",
+        "ptr": 1,
+        "sel": false,
+        "view": "home",
+        "w": 1
+      }
+    },
+    {
+      "action": [
+        "Release"
+      ],
+      "state": {
+        "cache": {
+          "cam": 0,
+          "layout": 0,
+          "pinned": false,
+          "w": 4
+        },
+        "cam": 0,
+        "drag": {
+          "capGen": 0,
+          "gen": 0,
+          "moved": false,
+          "on": false
+        },
+        "dropped": 1,
+        "gen": 1,
+        "layout": 1,
+        "pan": {
+          "on": false,
+          "startCam": 0,
+          "startPtr": 0
+        },
+        "pinned": true,
+        "pressed": "none",
+        "ptr": 1,
+        "sel": false,
+        "view": "home",
+        "w": 1
+      }
+    },
+    {
+      "action": [
+        "Leave"
+      ],
+      "state": {
+        "cache": {
+          "cam": 0,
+          "layout": 1,
+          "pinned": true,
+          "w": 1
+        },
+        "cam": 0,
+        "drag": {
+          "capGen": 0,
+          "gen": 0,
+          "moved": false,
+          "on": false
+        },
+        "dropped": 1,
+        "gen": 2,
+        "layout": 1,
+        "pan": {
+          "on": false,
+          "startCam": 0,
+          "startPtr": 0
+        },
+        "pinned": true,
+        "pressed": "none",
+        "ptr": 1,
+        "sel": false,
+        "view": "away",
+        "w": 1
+      }
+    },
+    {
+      "action": [
+        "Return"
+      ],
+      "state": {
+        "cache": {
+          "cam": 0,
+          "layout": 1,
+          "pinned": true,
+          "w": 1
+        },
+        "cam": 0,
+        "drag": {
+          "capGen": 0,
+          "gen": 0,
+          "moved": false,
+          "on": false
+        },
+        "dropped": 1,
+        "gen": 3,
+        "layout": 1,
+        "pan": {
+          "on": false,
+          "startCam": 0,
+          "startPtr": 0
+        },
+        "pinned": true,
+        "pressed": "none",
+        "ptr": 1,
+        "sel": false,
+        "view": "home",
+        "w": 1
+      }
+    }
+  ]
+}

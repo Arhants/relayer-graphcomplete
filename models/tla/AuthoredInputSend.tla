@@ -22,11 +22,16 @@ EXTENDS Naturals
 CONSTANTS
   MaxVal,           \* bound on distinct typed values
   MaxRev,           \* bound on the draft revision
-  SendAwaitsAuthoredCommits \* TRUE since #521: Send waits for the thread's
+  SendAwaitsAuthoredCommits, \* TRUE since #521: Send waits for the thread's
                     \* authored input commits before it captures the draft
                     \* revision (WS settleAuthoredInputCommits). Before, Send
                     \* stayed enabled and captured the revision at the click
                     \* while an authored commit was in flight.
+  KeepFailedCommit  \* TRUE since review of #521: an input's failed commit is
+                    \* kept until a Send it stops, or a newer commit of the
+                    \* input, accounts for it (WS failedAuthoredInputs).
+                    \* Before, a commit that failed before the click was
+                    \* forgotten, and the Send went without the answer.
 
 NoVal == 0
 Idle == [st |-> "none", expected |-> 0, val |-> NoVal, tracked |-> FALSE,
@@ -48,15 +53,18 @@ VARIABLES
   running,      \* the renderer shows the new turn as running
   reload,       \* a draft reload is queued behind the commit in flight
                 \* (the controller serializes them, NIC:455-464)
+  kept,         \* the input's failed commit, not yet accounted for
   \* --- ghosts ---
   intended,     \* the answer the user had entered when they clicked Send
   raced,        \* a commit was in flight when they clicked Send
   sentWith,     \* the answer the accepted Send reserved, or NoVal
-  outcome       \* how the last Send ended: none | sent | stopped (its answer did
+  outcome,      \* how the last Send ended: none | sent | stopped (its answer did
                 \* not save) | rejected_by_own_commit | rejected
+  unsaved,      \* the field holds an answer whose commit failed
+  warned        \* a Send was stopped because that answer did not save
 
 vars == <<srvRev, srvVal, srvOther, active, snap, crev, cval, field, put, send,
-          running, reload, intended, raced, sentWith, outcome>>
+          running, reload, kept, intended, raced, sentWith, outcome, unsaved, warned>>
 
 Init ==
   /\ srvRev = 1 /\ srvVal = NoVal /\ srvOther \in BOOLEAN
@@ -64,8 +72,9 @@ Init ==
   /\ crev = 1 /\ cval = NoVal /\ field = NoVal
   /\ put = Idle
   /\ send = [st |-> "idle", expected |-> 0, result |-> "none", reserved |-> NoVal]
-  /\ running = FALSE /\ reload = FALSE
+  /\ running = FALSE /\ reload = FALSE /\ kept = FALSE
   /\ intended = NoVal /\ raced = FALSE /\ sentWith = NoVal /\ outcome = "none"
+  /\ unsaved = FALSE /\ warned = FALSE
 
 -----------------------------------------------------------------------------
 (* The user.                                                              *)
@@ -76,8 +85,9 @@ Init ==
 Type(v) ==
   /\ v # field /\ put.st = "none" /\ send.st = "idle"
   /\ field' = v
+  /\ unsaved' = FALSE /\ warned' = FALSE
   /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, crev, cval, put, send,
-                 running, reload, intended, raced, sentWith, outcome>>
+                 running, reload, kept, intended, raced, sentWith, outcome>>
 
 \* Leaving the field fires change, which commits through onInput
 \* (RT:380-388, 409; WS:4959-4993) at the controller's revision
@@ -86,23 +96,34 @@ Commit ==
   /\ put.st = "none" /\ field # NoVal /\ field # cval /\ send.st = "idle"
   /\ put' = [st |-> "inflight", expected |-> crev, val |-> field,
              tracked |-> FALSE, result |-> "none", rev |-> 0]
+  /\ kept' = FALSE /\ unsaved' = FALSE /\ warned' = FALSE
   /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, crev, cval, field, send,
                  running, reload, intended, raced, sentWith, outcome>>
 
 \* Send is enabled when no send is in flight and the turn is not running
 \* (WS:3113-3123; while it runs, the button is Stop). Its intent is rebuilt with the controller's revision
 \* after the input reconciliation await (WS:710-731); that await resolves
-\* without yielding unless an authored commit is pending and awaited.
+\* without yielding unless an authored commit is pending and awaited. A
+\* changed field is committed by the blur first (Commit), so here the field
+\* is committed, committing, or its commit failed. A kept failure stops the
+\* Send at once and is accounted for. The answer the user entered is the
+\* field's, unless a Send was already stopped for it and they click again.
 ClickSend ==
   /\ send.st = "idle" /\ ~running
-  /\ LET waits == SendAwaitsAuthoredCommits /\ put.st # "none" IN
-     send' = [st |-> IF waits THEN "waiting" ELSE "inflight",
-              expected |-> IF waits THEN 0 ELSE crev, result |-> "none", reserved |-> NoVal]
-  /\ intended' = IF put.st # "none" THEN put.val ELSE cval
+  /\ field = cval \/ put.st # "none" \/ unsaved
+  /\ LET waits == SendAwaitsAuthoredCommits /\ put.st # "none"
+         stops == SendAwaitsAuthoredCommits /\ put.st = "none" /\ kept IN
+     /\ send' = IF stops THEN send
+                ELSE [st |-> IF waits THEN "waiting" ELSE "inflight",
+                      expected |-> IF waits THEN 0 ELSE crev, result |-> "none", reserved |-> NoVal]
+     /\ outcome' = IF stops THEN "stopped" ELSE "none"
+     /\ kept' = (kept /\ ~stops)
+     /\ warned' = (warned \/ stops)
+  /\ intended' = IF put.st # "none" THEN put.val
+                 ELSE IF unsaved /\ warned THEN cval ELSE field
   /\ raced' = (put.st # "none")
-  /\ outcome' = "none"
   /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, crev, cval, field, put,
-                 running, reload, sentWith>>
+                 running, reload, sentWith, unsaved>>
 
 -----------------------------------------------------------------------------
 (* The server.                                                            *)
@@ -122,7 +143,7 @@ ServeCommit ==
         ELSE /\ put' = [put EXCEPT !.st = "answered", !.result = "conflict"]
              /\ UNCHANGED <<srvRev, srvVal>>
   /\ UNCHANGED <<srvOther, active, snap, crev, cval, field, send, running, reload,
-                 intended, raced, sentWith, outcome>>
+                 kept, intended, raced, sentWith, outcome, unsaved, warned>>
 
 \* The commit fails in transport or on the server without applying (a 5xx
 \* or a lost connection).
@@ -130,7 +151,7 @@ CommitFails ==
   /\ put.st = "inflight"
   /\ put' = [put EXCEPT !.st = "answered", !.result = "failed"]
   /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, crev, cval, field, send, running,
-                 reload, intended, raced, sentWith, outcome>>
+                 reload, kept, intended, raced, sentWith, outcome, unsaved, warned>>
 
 \* The follow-up POST reserves the draft in one transaction (IC:166-324):
 \* an active interaction refuses it; a changed revision refuses it; with
@@ -150,7 +171,8 @@ ServeSend ==
           /\ srvRev' = IF inputs THEN srvRev + 1 ELSE srvRev
           /\ active' = TRUE
           /\ send' = [send EXCEPT !.st = "answered", !.result = "ok", !.reserved = srvVal]
-  /\ UNCHANGED <<crev, cval, field, put, running, reload, intended, raced, sentWith, outcome>>
+  /\ UNCHANGED <<crev, cval, field, put, running, reload, kept, intended, raced, sentWith,
+                 outcome, unsaved, warned>>
 
 -----------------------------------------------------------------------------
 (* Replies reaching the renderer.                                         *)
@@ -175,6 +197,10 @@ CommitReturns ==
                    ELSE IF waiting THEN [st |-> "idle", expected |-> 0, result |-> "none", reserved |-> NoVal]
                    ELSE send
         /\ outcome' = IF waiting /\ put.result # "ok" THEN "stopped" ELSE outcome
+        \* A waiting Send accounts for the failure; otherwise it is kept.
+        /\ kept' = (KeepFailedCommit /\ put.result # "ok" /\ ~waiting)
+        /\ unsaved' = (put.result # "ok")
+        /\ warned' = (waiting /\ put.result # "ok")
   /\ put' = Idle
   /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, field, running,
                  intended, raced, sentWith>>
@@ -199,7 +225,9 @@ SendReturns ==
                   [] send.result = "conflict" /\ raced -> "rejected_by_own_commit"
                   [] OTHER -> "rejected"
   /\ send' = [st |-> "idle", expected |-> 0, result |-> "none", reserved |-> NoVal]
-  /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, put, intended, raced>>
+  \* The field now shows the committed value.
+  /\ unsaved' = (unsaved /\ put.st # "none") /\ warned' = (warned /\ put.st # "none")
+  /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, put, kept, intended, raced>>
 
 \* The renderer learns the turn ended and reloads the draft.
 TurnSettles ==
@@ -207,7 +235,7 @@ TurnSettles ==
   /\ running' = FALSE
   /\ Reload
   /\ UNCHANGED <<srvRev, srvVal, srvOther, active, snap, field, put, send,
-                 intended, raced, sentWith, outcome>>
+                 kept, intended, raced, sentWith, outcome, unsaved, warned>>
 
 \* The turn ends. A failure before acceptance restores the snapshot into
 \* the draft unless a newer commit owns the slot, and advances the
@@ -221,7 +249,8 @@ TurnEndsServer(accepted) ==
           /\ srvOther' = (srvOther \/ snap.other)
           /\ srvRev' = srvRev + 1
   /\ snap' = [val |-> NoVal, other |-> FALSE]
-  /\ UNCHANGED <<crev, cval, field, put, send, running, reload, intended, raced, sentWith, outcome>>
+  /\ UNCHANGED <<crev, cval, field, put, send, running, reload, kept, intended, raced, sentWith,
+                 outcome, unsaved, warned>>
 
 -----------------------------------------------------------------------------
 Next ==

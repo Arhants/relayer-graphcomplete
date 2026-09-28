@@ -65,6 +65,7 @@ export class TurnComposerWorld {
     }]));
     this.turns = { A: [{ status: "accepted" }], B: [{ status: "accepted" }] };
     this.pendingTurn = { A: false, B: false };
+    this.recordedText = { A: undefined, B: undefined };
     this.view = "A";
     this.calls = { A: null, B: null };
     this.fresh = 0;
@@ -118,7 +119,7 @@ export class TurnComposerWorld {
       id: interactionId(thread, index + 1),
       threadId: THREAD_ID[thread],
       sequence: index + 1,
-      text: `Turn ${index + 1}`,
+      text: turn.text ?? `Turn ${index + 1}`,
       graphNodeId: interactionId(thread, index + 1) + 5000,
       completionStatus: turn.status,
     })));
@@ -152,8 +153,10 @@ export class TurnComposerWorld {
     })();
   }
 
+  // A turn a send created carries that send's text.
   #turnArrives(thread) {
-    this.turns[thread].push({ status: "running" });
+    this.turns[thread].push({ status: "running", text: this.recordedText[thread] });
+    this.recordedText[thread] = undefined;
     this.pendingTurn[thread] = false;
     if (thread === this.view) this.#render();
     else this.#syncState();
@@ -188,6 +191,7 @@ export class TurnComposerWorld {
       }
       case "PostInserted": {
         this.pendingTurn[arg] = true;
+        this.recordedText[arg] = call.text;
         call.phase = "posted";
         break;
       }
@@ -199,6 +203,11 @@ export class TurnComposerWorld {
       case "PostFails": {
         call.phase = "idle";
         call.post.reject(Object.assign(new Error("interaction_in_progress"), { status: 409 }));
+        break;
+      }
+      case "PostLost": {
+        call.phase = "idle";
+        call.post.reject(Object.assign(new Error("The server could not be reached."), { status: 503 }));
         break;
       }
       case "RefreshReturns": {
@@ -291,6 +300,10 @@ export const PROMISES = {
     return model.unsent[t] === 0 || sending || real.text === model.unsent[t];
   },
   SettlementClearsOnlySentText: (_real, model) => model.cleared === 0 || values(model.sent).includes(model.cleared),
+  // A send that may have been sent leaves its text in the prompt of the
+  // scope it was sent from (SCP-019).
   SentTextIsNotShownAgain: (real, model) => model.pc[real.view] !== "idle"
-    || real.text === 0 || !values(model.sent).includes(real.text),
+    || real.text === 0 || !values(model.sent).includes(real.text)
+    || values(model.uncertainAt).some((held) => held.text === real.text
+      && held.scope["1"] === real.view && held.scope["2"] === model.latest[real.view]),
 };

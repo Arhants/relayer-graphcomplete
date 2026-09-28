@@ -38,7 +38,10 @@
       "MaxRev": "5",
       "BackgroundRenders": "TRUE",
       "CarryUnsentDraft": "TRUE",
-      "StableScopeRevision": "TRUE"
+      "StableScopeRevision": "TRUE",
+      "OtherTurns": "FALSE",
+      "HoldFromClick": "TRUE",
+      "HoldUncertain": "TRUE"
     },
     "composer-fixed": {
       "Threads": "{\"A\", \"B\"}",
@@ -47,7 +50,10 @@
       "MaxRev": "5",
       "BackgroundRenders": "TRUE",
       "CarryUnsentDraft": "TRUE",
-      "StableScopeRevision": "TRUE"
+      "StableScopeRevision": "TRUE",
+      "OtherTurns": "TRUE",
+      "HoldFromClick": "TRUE",
+      "HoldUncertain": "TRUE"
     },
     "composer-replay": {
       "Threads": "{\"A\", \"B\"}",
@@ -56,7 +62,10 @@
       "MaxRev": "12",
       "BackgroundRenders": "TRUE",
       "CarryUnsentDraft": "TRUE",
-      "StableScopeRevision": "TRUE"
+      "StableScopeRevision": "TRUE",
+      "OtherTurns": "TRUE",
+      "HoldFromClick": "TRUE",
+      "HoldUncertain": "TRUE"
     },
     "inspector-today": {
       "Nodes": "{\"n1\", \"n2\"}",
@@ -77,7 +86,13 @@
     "input": {
       "MaxVal": "2",
       "MaxRev": "5",
-      "SendAwaitsAuthoredCommits": "TRUE"
+      "SendAwaitsAuthoredCommits": "TRUE",
+      "KeepFailedCommit": "TRUE"
+    },
+    "canvas": {
+      "L": "3",
+      "MaxGen": "6",
+      "KeepDragAcrossRender": "TRUE"
     }
   },
   "checks": [
@@ -451,6 +466,22 @@
       "finding": "Without the wait, a Send served before the commit goes without the answer (#521)."
     },
     {
+      "id": "input-send-forgets-early-failure",
+      "module": "AuthoredInputSend",
+      "preset": "input",
+      "constants": {
+        "KeepFailedCommit": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SendCarriesEnteredAnswer"
+      ],
+      "expect": {
+        "violated": "SendCarriesEnteredAnswer"
+      },
+      "finding": "Without keeping a failed commit, one that fails before the click is forgotten, and the Send goes without the answer (review of #521)."
+    },
+    {
       "id": "composer-without-carry",
       "module": "TurnComposer",
       "preset": "composer-today",
@@ -465,6 +496,60 @@
         "violated": "UnsentDraftSurvives"
       },
       "finding": "Without moving unsent text into the newest turn's scope, text typed during a send is stranded (#512)."
+    },
+    {
+      "id": "composer-invoked-turns",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "Threads": "{\"A\"}",
+        "MaxTurns": "3",
+        "OtherTurns": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain",
+        "OneSendPerThread"
+      ],
+      "expect": "pass",
+      "finding": "With turns created elsewhere in the thread (an authored invoke) arriving while Send waits for an input commit, the composer keeps its promises (fixed in review of #512: the text was carried into the newer turn and stayed after it was sent)."
+    },
+    {
+      "id": "composer-without-click-hold",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "Threads": "{\"A\"}",
+        "MaxTurns": "3",
+        "HoldFromClick": "FALSE",
+        "OtherTurns": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SentTextIsNotShownAgain"
+      ],
+      "expect": {
+        "violated": "SentTextIsNotShownAgain"
+      },
+      "finding": "Without holding the submission from the click, a newer turn that arrives while Send waits for an input commit carries the text it then sends, and the text stays after the send (review of #512)."
+    },
+    {
+      "id": "composer-without-uncertain-hold",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "HoldUncertain": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SentTextIsNotShownAgain"
+      ],
+      "expect": {
+        "violated": "SentTextIsNotShownAgain"
+      },
+      "finding": "Without holding a send that may have been sent, its text is carried into the turn it created and can be sent again (review of #512; SCP-019)."
     },
     {
       "id": "inspector-without-queue",
@@ -497,6 +582,37 @@
         "violated": "InspectorShowsSelection"
       },
       "finding": "Without the refresh, a refused switch can leave the kept node's detail disposed (#515)."
+    },
+    {
+      "id": "canvas-promises",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "invariants": [
+        "TypeOK",
+        "DragFollowsPointer",
+        "DropStays"
+      ],
+      "expect": "pass",
+      "finding": "A dragged node follows the pointer and stays where it is left across renders and view round trips, and only a pan or a new layout moves the camera (fixed; #531: a render during a drag froze the node).",
+      "properties": [
+        "CameraMovesOnlyByPanOrFit"
+      ]
+    },
+    {
+      "id": "canvas-without-rebind",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "constants": {
+        "KeepDragAcrossRender": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "DragFollowsPointer"
+      ],
+      "expect": {
+        "violated": "DragFollowsPointer"
+      },
+      "finding": "Without re-binding, a render during a drag leaves the drag on the replaced node, which stops following the pointer (#531)."
     }
   ]
 }

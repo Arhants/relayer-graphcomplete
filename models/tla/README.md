@@ -242,10 +242,17 @@ This model covers the follow-up composer across two threads:
 - thread switches, which load the thread's state, and `renderThread()` for
   unrelated reasons (the environment refresh every 5 s and on window focus,
   which does not fetch `/api/state`);
-- the new turn arriving by polling, and finishing.
+- the new turn arriving by polling, and finishing;
+- a Send that waits for an authored input commit before it posts, and ends
+  there without posting when the answer does not save or the thread changes;
+- a turn created elsewhere in the thread, such as by an authored invoke;
+- a POST that fails with a network or server error, before or after the
+  server recorded the turn.
 
-Context annotations, input attachments, restored retry drafts, the model
-picker, and the unconfirmed-draft warning are not modeled.
+Context annotations, restored retry drafts, the model picker, and the
+unconfirmed-draft warning are not modeled. `composer-today` leaves out turns
+created elsewhere to keep the per-promise checks fast; `composer-fixed` and
+`composer-invoked-turns` include them.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
@@ -255,7 +262,10 @@ picker, and the unconfirmed-draft warning are not modeled.
 | `composer-settlement-erases-edit` | Fixed; now passes | Before the fix (#513): re-entering a scope with persisted text assigned `currentPromptRevision + 1`, which could repeat a revision the scope already had. An edit after Send could then reach the submitted revision, and settlement cleared the prompt and deleted the persisted draft. A scope's revision now only moves forward. Scenario: `composer-settlement-erases-edit`. |
 | `composer-sent-text-lingers` | Fixed; now passes | Before the fix (#513): re-entering a scope during a send bumped its revision though the text was unchanged, so settlement no longer recognized the sent text and left it in an enabled composer. Unchanged text now keeps its revision. Scenario: `composer-sent-text-lingers`. |
 | `composer-one-send-per-thread` | passes | One follow-up per thread is in flight at a time, and every send releases its thread's Send button. |
-| `composer-fixed` | passes | With both candidate fixes, every composer promise holds. |
+| `composer-invoked-turns` | Fixed; now passes | Before the fix (review of #512): the submission was held only once `submitInteraction` began, after Send had waited for authored input commits. A turn created elsewhere that arrived during the wait carried the text into its scope, and the Send then posted it and cleared only the older scope, so the sent text stayed. The submission is now held from the click. A Send that ends without posting hands back text a newer turn left in its scope, as a rejected POST does, ahead of any text typed since. One thread, three turns. Regression tests: the "newer turn arriving while Send waits" cases in `test/authored-input-send-traces.test.mjs`, since only that world holds a Send on an authored commit. The draft-send warning, which the model leaves out, also holds the text while open and hands it back when cancelled; a test in the same file covers it. |
+| `composer-without-click-hold` | Records the bug | With `HoldFromClick` off, the text is carried away while Send waits. |
+| `composer-without-uncertain-hold` | Records the bug | With `HoldUncertain` off, the text of a POST that failed after the server recorded it is carried into the turn it created, and could be sent again (SCP-019). The renderer recognizes that turn by the submission's text, so an unrelated turn, or a POST that never reached the server, still carries the text forward. A retry refused after the turn arrived does not hand the text back. Scenarios: `composer-uncertain-send-stays-put`, `composer-retry-of-landed-send`. |
+| `composer-fixed` | passes | With every candidate fix, every composer promise holds. |
 
 The candidate fixes are:
 
@@ -266,11 +276,24 @@ The candidate fixes are:
 2. `StableScopeRevision`: re-entering a scope keeps its revision when its
    text is unchanged, and otherwise takes a revision above any it had.
    Landed (#513).
+3. `HoldFromClick`: holding the submission from the click on Send, and
+   handing back stranded text when that Send ends without posting. Landed
+   in review of #512.
+4. `HoldUncertain`: after a network or server error, holding the
+   submission once a turn with its text arrives, so its text is neither
+   carried into that turn nor handed back. Landed in review of #512.
+
+`SentTextIsNotShownAgain` allows the text of a send that may have been sent
+to stay in the prompt of the scope it was sent from, where the user sees it
+until its turn arrives. `UnsentDraftSurvives` drops its promise for such text
+only when a newer turn already arrived before the error; SCP-019 then does
+not restore it. The model restores stranded text only into an empty prompt;
+the code also restores it ahead of text typed since, which a test covers.
 
 `CarryUnsentDraft` recognizes the in-flight submission by its revision, so
 it is sound only together with `StableScopeRevision`.
 
-Both fixes have landed, so `composer-today` and `composer-fixed` now agree.
+Every fix has landed, so `composer-today` and `composer-fixed` now agree.
 Keeping per-turn draft scopes and carrying unsent text forward is the recorded
 product decision (PRD SCP-018 to SCP-020).
 
@@ -311,6 +334,14 @@ The candidate fixes are:
    re-rendering the selection once a draft resolves unless a waiting request
    or the switch will. Landed (#515).
 
+The replay reads which state revision the inspector shows: each refresh
+delivers a new state object whose node kinds name the revision, and the
+header's kind is compared with the model's `title.rev` at every step, so
+`InspectorIsCurrent` is checked on the real inspector. The desktop host
+mutates one `appState` in place, so a stale state would not show there
+today; the replay would still catch code that continues from a stale state.
+Scenario: `inspector-switch-sees-refresh`.
+
 The replay also showed the dock keeps the previous node's locked editor
 until the new node's Node Detail mount finishes. The replay compares the
 dock only once the renderer is quiet.
@@ -340,16 +371,65 @@ follow-up Send:
 | --- | --- | --- |
 | `input-send-carries-answer` | Fixed; now passes | Before the fix (#521): legacy input controls registered each commit with `inputPending`, which kept Send disabled; an authored input's commit did not. Mousedown on Send blurs the input, whose `change` commits it, so the commit and the Send went out together at the same revision. A Send served first went without the answer, which then landed in the next turn's draft; a commit served first got the Send refused with `input_draft_revision_conflict`. Send now waits for the thread's authored commits before it captures the draft revision, and stops if one fails, since the answer did not save; a commit still in flight counts toward Send being ready. Authored inputs are locked while a Send is in flight; a commit during a run still goes to the next turn's draft (ADR 0008). Scenarios: `input-send-waits-for-commit`, `input-failed-answer-stops-send`. |
 | `input-send-without-waiting` | Records the bug | With `SendAwaitsAuthoredCommits` off, a Send served before the commit goes without the answer. |
+| `input-send-forgets-early-failure` | Records the bug | With `KeepFailedCommit` off, a commit that fails before the click is forgotten, and the Send goes without the answer. Before the fix (review of #521), a failed commit left the set Send waits on as soon as it settled. Now an input's latest failed commit is kept until a Send it stops, a newer commit of that input, or detaching it accounts for it. It stops a Send only if its Node Detail was open when Send was clicked, so an answer the user can no longer see does not stop a later message. Scenario: `input-early-failure-stops-send`; the closed-inspector case is a test in `test/authored-input-send-traces.test.mjs`. |
 
 Send waits rather than being disabled during the commit, because disabling it
 would swallow the click that caused the blur.
+
+The ghost `intended` is the answer in the field when Send is clicked. The
+model first recorded the committed value when no commit was in flight, which
+hid the early failure. A Send stopped for an answer that did not save is
+told so; if the user clicks Send again without editing it, the message goes
+without that answer.
+
+### `CanvasGesture.tla`
+
+This model covers pointer gestures on the graph canvas while the workspace
+re-renders underneath:
+
+- pressing, moving, and releasing on a node, with the pointer capture that
+  routes the node's events;
+- panning the stage;
+- renders that keep the layout, change it, or switch to another view and
+  back, with the view cache that restores pinned positions and the camera.
+
+Positions are locations on a ring of `L` points; a node's screen location is
+its world location plus the camera offset. There is one draggable node, and
+the other view does not contain it. Pinch and wheel zoom, keyboard
+navigation, the inspector's camera fit, and the click that selects a node
+are not checked. A gesture never spans a return to the home view. The canvas
+has no force simulation: layouts are authored and normalized, and the camera
+is the only transform (`docs/architecture.md`).
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `canvas-promises` | Fixed; now passes | Before the fix (#531): `renderGraph` replaced `graphNodes` and the node elements on every render, but `dragging` kept the replaced object and the capture on the removed element. After a render mid-drag, moves went to the old object and the node stopped following the pointer (`DragFollowsPointer`, Press → Move → RenderLayout). The next render rebuilt positions from the new objects, so the drop was lost (`DropStays`, Press → RenderSame → Move → Release). A render now re-binds the drag to the node's new object and captures the pointer on its new element. A node that has moved stays under the pointer, pinned, and the camera is not refit while it is dragged. Entering another view, the node disappearing, a failed re-capture, or a move with no button pressed ends the drag. `CameraMovesOnlyByPanOrFit` is a property of steps: in the home view, only a pan or a new layout moves the camera. Scenarios: `canvas-drag-across-render`, `canvas-drag-across-layout`, `canvas-drop-round-trip`, `canvas-pan-across-render`, `canvas-drag-into-view-change`. |
+| `canvas-without-rebind` | Records the bug | With `KeepDragAcrossRender` off, a render during a drag leaves the drag on the replaced node. |
+
+The replay dispatches pointer events the way a browser routes them. An event
+goes to the element holding capture while that element is still in the
+document, and otherwise to the element under the pointer. Each refresh
+delivers a new state object. `RenderLayout` is replayed only while a moved
+drag holds the node, because a new placement does not otherwise map onto
+evenly spaced locations. Tests outside the model cover a graph that
+empties mid-drag (the node elements are removed with the graph, so the
+release cannot click a node that is gone) and each way a drag ends: a move
+with no button pressed, a failed re-capture, and entering another view that
+also shows the node. The camera and layout functions
+have their own tests (`test/graph-camera.test.mjs`,
+`test/graph-layout.test.mjs`).
+
+A layout that changes mid-drag is not refit after the drop, so new nodes can
+stay off-screen until the user fits the view. That is a product choice not
+yet recorded in the PRD.
 
 ## Limits
 
 - **Bounds:** one provider plus one new connection, one renderer, one lease,
   and a single child at depth 1 with head revision at most 3. The composer
   has two threads, two turns each, and two typed values; the inspector has
-  two nodes, three state revisions, and three editors. A bug that needs more
+  two nodes, three state revisions, and three editors; the canvas has three locations,
+  one draggable node, and six renders. A bug that needs more
   actors is out of reach. `composer-fixed` also passes with three turns and
   three values (2.7 million states), which is not part of the suite.
 - **Queue order:** the provider queue is FIFO for queued cancels, but requests

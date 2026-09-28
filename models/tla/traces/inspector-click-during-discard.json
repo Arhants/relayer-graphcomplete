@@ -5,7 +5,8 @@
   "promises": [
     "InspectorShowsSelection",
     "LastRequestWins",
-    "DraftedSelectionHasEditor"
+    "DraftedSelectionHasEditor",
+    "InspectorIsCurrent"
   ],
   "generatedBy": "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
   "steps": [

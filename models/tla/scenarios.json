@@ -1060,13 +1060,85 @@
       ]
     },
     {
+      "id": "composer-uncertain-send-stays-put",
+      "module": "TurnComposer",
+      "preset": "composer-replay",
+      "init": "view = \"A\"",
+      "promises": [
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain"
+      ],
+      "summary": "A follow-up's POST fails with a server error after the server recorded it; when that turn arrives, the text is not carried into it, so it cannot be sent twice.",
+      "steps": [
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "PostInserted",
+          "A"
+        ],
+        [
+          "PostLost",
+          "A"
+        ],
+        [
+          "TurnArrives",
+          "A"
+        ]
+      ]
+    },
+    {
+      "id": "composer-retry-of-landed-send",
+      "module": "TurnComposer",
+      "preset": "composer-replay",
+      "init": "view = \"A\"",
+      "promises": [
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain"
+      ],
+      "summary": "A POST fails with a server error after the server recorded it; the user sends again, the first send's turn arrives, and the retry is refused. The sent text is not handed back.",
+      "steps": [
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "PostInserted",
+          "A"
+        ],
+        [
+          "PostLost",
+          "A"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "TurnArrives",
+          "A"
+        ],
+        [
+          "PostFails",
+          "A"
+        ]
+      ]
+    },
+    {
       "id": "inspector-annotate-and-switch",
       "module": "NodeInspector",
       "preset": "inspector-replay",
       "promises": [
         "InspectorShowsSelection",
         "LastRequestWins",
-        "DraftedSelectionHasEditor"
+        "DraftedSelectionHasEditor",
+        "InspectorIsCurrent"
       ],
       "summary": "A node is annotated, the user switches to another node and back, and the draft's editor returns.",
       "steps": [
@@ -1117,7 +1189,8 @@
       "promises": [
         "InspectorShowsSelection",
         "LastRequestWins",
-        "DraftedSelectionHasEditor"
+        "DraftedSelectionHasEditor",
+        "InspectorIsCurrent"
       ],
       "summary": "A click on another node while a draft discard is in flight waits for it and then opens that node.",
       "steps": [
@@ -1160,7 +1233,8 @@
       "promises": [
         "InspectorShowsSelection",
         "LastRequestWins",
-        "DraftedSelectionHasEditor"
+        "DraftedSelectionHasEditor",
+        "InspectorIsCurrent"
       ],
       "summary": "Close pressed while a switch flushes the draft supersedes the switch and closes the inspector once the draft is saved.",
       "steps": [
@@ -1199,7 +1273,8 @@
       "promises": [
         "InspectorShowsSelection",
         "LastRequestWins",
-        "DraftedSelectionHasEditor"
+        "DraftedSelectionHasEditor",
+        "InspectorIsCurrent"
       ],
       "summary": "A second Close while the first flushes the draft closes the inspector once the draft is saved.",
       "steps": [
@@ -1236,7 +1311,8 @@
       "promises": [
         "InspectorShowsSelection",
         "LastRequestWins",
-        "DraftedSelectionHasEditor"
+        "DraftedSelectionHasEditor",
+        "InspectorIsCurrent"
       ],
       "summary": "A failed draft save refuses a switch and re-renders the kept node's Node Detail.",
       "steps": [
@@ -1278,6 +1354,51 @@
       ]
     },
     {
+      "id": "inspector-switch-sees-refresh",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor",
+        "InspectorIsCurrent"
+      ],
+      "summary": "A refresh arrives while a draft save holds a node switch; once the save succeeds, the switched-to node shows the refreshed state.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "EditDraft"
+        ],
+        [
+          "Click",
+          "n2"
+        ],
+        [
+          "StatePush",
+          "same"
+        ],
+        [
+          "SaveReturns",
+          1,
+          "ok"
+        ],
+        [
+          "MountReturns",
+          1
+        ]
+      ]
+    },
+    {
       "id": "input-failed-answer-stops-send",
       "module": "AuthoredInputSend",
       "preset": "input",
@@ -1307,13 +1428,43 @@
       ]
     },
     {
+      "id": "input-early-failure-stops-send",
+      "module": "AuthoredInputSend",
+      "preset": "input",
+      "init": "srvOther = FALSE",
+      "promises": [
+        "SendCarriesEnteredAnswer",
+        "SendNotRefusedByOwnAnswer"
+      ],
+      "summary": "The authored answer's commit fails before Send is clicked; the click stops the Send instead of sending without the answer.",
+      "steps": [
+        [
+          "Type",
+          1
+        ],
+        [
+          "Commit"
+        ],
+        [
+          "CommitFails"
+        ],
+        [
+          "CommitReturns"
+        ],
+        [
+          "ClickSend"
+        ]
+      ]
+    },
+    {
       "id": "inspector-view-change-during-discard",
       "module": "NodeInspector",
       "preset": "inspector-replay",
       "promises": [
         "InspectorShowsSelection",
         "LastRequestWins",
-        "DraftedSelectionHasEditor"
+        "DraftedSelectionHasEditor",
+        "InspectorIsCurrent"
       ],
       "summary": "A new view that keeps the selected node arrives while a draft discard is in flight; the inspector reopens on it once the discard resolves.",
       "steps": [
@@ -1348,6 +1499,159 @@
         [
           "MountReturns",
           1
+        ]
+      ]
+    },
+    {
+      "id": "canvas-drag-across-render",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "init": "ptr = 0",
+      "promises": [
+        "DragFollowsPointer",
+        "DropStays"
+      ],
+      "summary": "A render while a node is dragged; the node keeps following the pointer and stays where it is dropped.",
+      "steps": [
+        [
+          "Press"
+        ],
+        [
+          "Move",
+          1
+        ],
+        [
+          "RenderSame"
+        ],
+        [
+          "Move",
+          2
+        ],
+        [
+          "Release"
+        ],
+        [
+          "RenderSame"
+        ]
+      ]
+    },
+    {
+      "id": "canvas-drag-across-layout",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "init": "ptr = 0",
+      "promises": [
+        "DragFollowsPointer",
+        "DropStays"
+      ],
+      "summary": "The accepted layout changes while a node is dragged; the node stays with the pointer, the camera does not refit, and the drop holds.",
+      "steps": [
+        [
+          "Press"
+        ],
+        [
+          "Move",
+          1
+        ],
+        [
+          "RenderLayout"
+        ],
+        [
+          "Move",
+          2
+        ],
+        [
+          "Release"
+        ],
+        [
+          "RenderSame"
+        ]
+      ]
+    },
+    {
+      "id": "canvas-drop-round-trip",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "init": "ptr = 0",
+      "promises": [
+        "DragFollowsPointer",
+        "DropStays"
+      ],
+      "summary": "A dropped node stays put when the user leaves the view and returns.",
+      "steps": [
+        [
+          "Press"
+        ],
+        [
+          "Move",
+          1
+        ],
+        [
+          "Release"
+        ],
+        [
+          "Leave"
+        ],
+        [
+          "Return"
+        ]
+      ]
+    },
+    {
+      "id": "canvas-pan-across-render",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "init": "ptr = 1",
+      "promises": [
+        "DragFollowsPointer",
+        "DropStays"
+      ],
+      "summary": "A render while the stage is panned; the camera keeps following the pointer.",
+      "steps": [
+        [
+          "Press"
+        ],
+        [
+          "Move",
+          2
+        ],
+        [
+          "RenderSame"
+        ],
+        [
+          "Release"
+        ],
+        [
+          "RenderSame"
+        ]
+      ]
+    },
+    {
+      "id": "canvas-drag-into-view-change",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "init": "ptr = 0",
+      "promises": [
+        "DragFollowsPointer",
+        "DropStays"
+      ],
+      "summary": "The view changes during a drag; returning shows the node where it was dragged.",
+      "steps": [
+        [
+          "Press"
+        ],
+        [
+          "Move",
+          1
+        ],
+        [
+          "Leave"
+        ],
+        [
+          "Release"
+        ],
+        [
+          "Return"
         ]
       ]
     }

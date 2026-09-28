@@ -16,6 +16,7 @@
         "cval": 0,
         "field": 0,
         "intended": 0,
+        "kept": false,
         "outcome": "none",
         "put": {
           "expected": 0,
@@ -41,7 +42,9 @@
         },
         "srvOther": false,
         "srvRev": 1,
-        "srvVal": 0
+        "srvVal": 0,
+        "unsaved": false,
+        "warned": false
       }
     },
     {
@@ -55,6 +58,7 @@
         "cval": 0,
         "field": 1,
         "intended": 0,
+        "kept": false,
         "outcome": "none",
         "put": {
           "expected": 0,
@@ -80,7 +84,9 @@
         },
         "srvOther": false,
         "srvRev": 1,
-        "srvVal": 0
+        "srvVal": 0,
+        "unsaved": false,
+        "warned": false
       }
     },
     {
@@ -93,6 +99,7 @@
         "cval": 0,
         "field": 1,
         "intended": 0,
+        "kept": false,
         "outcome": "none",
         "put": {
           "expected": 1,
@@ -118,7 +125,9 @@
         },
         "srvOther": false,
         "srvRev": 1,
-        "srvVal": 0
+        "srvVal": 0,
+        "unsaved": false,
+        "warned": false
       }
     },
     {
@@ -131,6 +140,7 @@
         "cval": 0,
         "field": 1,
         "intended": 1,
+        "kept": false,
         "outcome": "none",
         "put": {
           "expected": 1,
@@ -156,7 +166,9 @@
         },
         "srvOther": false,
         "srvRev": 1,
-        "srvVal": 0
+        "srvVal": 0,
+        "unsaved": false,
+        "warned": false
       }
     },
     {
@@ -169,6 +181,7 @@
         "cval": 0,
         "field": 1,
         "intended": 1,
+        "kept": false,
         "outcome": "none",
         "put": {
           "expected": 1,
@@ -194,7 +207,9 @@
         },
         "srvOther": false,
         "srvRev": 1,
-        "srvVal": 0
+        "srvVal": 0,
+        "unsaved": false,
+        "warned": false
       }
     },
     {
@@ -207,6 +222,7 @@
         "cval": 0,
         "field": 1,
         "intended": 1,
+        "kept": false,
         "outcome": "stopped",
         "put": {
           "expected": 0,
@@ -232,7 +248,9 @@
         },
         "srvOther": false,
         "srvRev": 1,
-        "srvVal": 0
+        "srvVal": 0,
+        "unsaved": true,
+        "warned": true
       }
     }
   ]

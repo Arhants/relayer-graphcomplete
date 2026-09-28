@@ -6,8 +6,9 @@
 // Click clicks a graph node, Annotate clicks #attachNodeContext, EditDraft
 // types in the annotation editor, Discard clicks ×, Close clicks
 // #closeInspector, and StatePush replaces the state's node objects with
-// equal ones, as a refresh of the same accepted layer does, and calls
-// render(). The awaits the spec splits at are held
+// new ones for the same nodes, as a refresh of the same accepted layer does,
+// and calls render(). Each node's kind names the state revision it came
+// from, so the header shows which state the inspector rendered. The awaits the spec splits at are held
 // on deferreds: every draft save and discard request, and every Node Detail
 // asset, so a step resumes exactly one of them. Autosave fires the
 // controller's 350 ms save timer and lets that save land.
@@ -18,8 +19,8 @@
 // A slot that reuses the mounted runtime completes without an asset.
 //
 // observe() reads the inspector back as the spec's observable variables:
-// the selection, whether the inspector is open, the node the header names,
-// the Node Detail
+// the selection, whether the inspector is open, the node and state revision
+// the header shows, the Node Detail
 // host and whether its page is shown, and the annotation dock. The editor's
 // identity, the slots, and the controller's draft set are internal state,
 // so the replay compares what they produce.
@@ -155,12 +156,12 @@ export class NodeInspectorWorld {
     return this;
   }
 
-    // A refresh brings new node objects with the same accepted content; a new
-  // view brings another layer with the given nodes.
+  // A refresh brings new node objects for the same nodes, whose kind names
+  // the state revision; a new view brings another layer with the given nodes.
   #loadState() {
     const nodes = Object.entries(NODE_ID).filter(([key]) => this.visible.includes(key)).map(([key, id]) => ({
       id,
-      kind: "concept",
+      kind: `revision-${this.srev}`,
       icon: "box",
       title: `Node ${key}`,
       detail: `Legacy ${key}`,
@@ -175,12 +176,18 @@ export class NodeInspectorWorld {
       edges: [],
       actions: [],
     };
-    this.state.interactions = [{
-      id: 5, threadId: 3, sequence: 1, text: "Question", graphNodeId: 50,
-      completionStatus: "accepted", completionOutput: { rootLayer: layer },
-    }];
-    this.state.visibleLayer = layer;
-    this.state.nodes = [...nodes];
+    // A refresh delivers a new state object, so code holding an older state
+    // keeps seeing the older content. The desktop host mutates one appState
+    // in place instead; this is stricter, and catches stale-state code.
+    this.state = {
+      ...this.state,
+      interactions: [{
+        id: 5, threadId: 3, sequence: 1, text: "Question", graphNodeId: 50,
+        completionStatus: "accepted", completionOutput: { rootLayer: layer },
+      }],
+      visibleLayer: layer,
+      nodes: [...nodes],
+    };
   }
 
   #respond(queue, what, ok, value) {
@@ -303,7 +310,10 @@ export class NodeInspectorWorld {
     return {
       sel,
       open: !$("#inspector").classList.contains("hidden"),
-      title: heading?.[1] ?? "none",
+      title: {
+        node: heading?.[1] ?? "none",
+        rev: Number(/^revision-(\d+)$/.exec($("#detailKind").textContent)?.[1] ?? 0),
+      },
       detail: {
         node: hostNode ?? "none",
         live: Boolean(host?.isConnected && host.shadowRoot?.childNodes.length),
@@ -348,7 +358,7 @@ export function projectModelState(state) {
   return {
     sel,
     open: state.open,
-    title: state.title.node,
+    title: { node: state.title.node, rev: state.title.rev },
     detail: { node: state.detail.node, live: state.detail.live },
     dock: docked ? { node: sel, resolving: editor.resolving } : { node: "none", resolving: false },
     srev: state.srev,
@@ -357,13 +367,13 @@ export function projectModelState(state) {
 
 // Promises over the real observation and the trace's ghost (what the user
 // last asked for) and draft set, checked once the renderer is quiet.
-// InspectorIsCurrent has no user-visible observable within one accepted
-// layer, so it is checked only in the model.
 export const PROMISES = {
   InspectorShowsSelection: (real, model) => !quiet(model) || (
     real.open === (real.sel !== "none")
-    && (!real.open || (real.title === real.sel && real.detail.node === real.sel && real.detail.live))
+    && (!real.open || (real.title.node === real.sel && real.detail.node === real.sel && real.detail.live))
   ),
+  // The header shows the latest state the workspace rendered.
+  InspectorIsCurrent: (real, model) => !quiet(model) || !real.open || real.title.rev === real.srev,
   LastRequestWins: (real, model) => !quiet(model) || real.sel === model.want,
   DraftedSelectionHasEditor: (real, model) => !quiet(model) || real.sel === "none"
     || !hasDraftHere(model, real.sel) || real.dock.node === real.sel,

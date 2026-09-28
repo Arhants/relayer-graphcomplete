@@ -1147,19 +1147,20 @@ export function createComposerDraftScopeState() {
 
 /**
  * The newest unsent follow-up text written this session in an older turn's
- * scope of the same thread, unless it is still the submission in flight,
- * unchanged since Send. Settlement deletes a sent draft, so what remains in
- * memory is unsent; persisted text from earlier sessions is not moved.
- * `olderScopeKeys` lists the thread's older scopes, newest first.
+ * scope of the same thread, unless it is held, unchanged since Send: the
+ * submission in flight, or one whose failure left it unknown whether it was
+ * sent. Settlement deletes a sent draft, so what remains in memory is unsent;
+ * persisted text from earlier sessions is not moved. `olderScopeKeys` lists
+ * the thread's older scopes, newest first.
  */
-function unsentOlderDraft(drafts, olderScopeKeys, inFlightSubmission) {
+function unsentOlderDraft(drafts, olderScopeKeys, heldSubmissions) {
   for (const scopeKey of olderScopeKeys) {
     const stored = drafts.get(scopeKey);
     const text = stored?.promptValue || "";
     if (!text) continue;
-    const submitting = inFlightSubmission?.scopeKey === scopeKey
-      && Object.is(stored?.promptRevision, inFlightSubmission.promptRevision);
-    return submitting ? null : { scopeKey, text };
+    const held = heldSubmissions.some((submission) => submission?.scopeKey === scopeKey
+      && Object.is(stored?.promptRevision, submission.promptRevision));
+    return held ? null : { scopeKey, text };
   }
   return null;
 }
@@ -1173,6 +1174,7 @@ export function transitionComposerDraftScope(state, {
   persistedDraftText = null,
   olderScopeKeys = [],
   inFlightSubmission = null,
+  uncertainSubmissions = [],
 }) {
   const nextScopeKey = composerDraftScopeKey(threadId, interactionId);
   if (state.activeScopeKey === nextScopeKey) {
@@ -1222,7 +1224,7 @@ export function transitionComposerDraftScope(state, {
   // A newer turn's scope starts empty; unsent text typed while the previous
   // turn's scope was active moves into it, so it is not stranded there.
   const carried = !restoredDraft && persistedDraftText === null && !stored?.promptValue
-    ? unsentOlderDraft(drafts, olderScopeKeys, inFlightSubmission)
+    ? unsentOlderDraft(drafts, olderScopeKeys, [inFlightSubmission, ...uncertainSubmissions])
     : null;
   if (carried) {
     drafts.set(nextScopeKey, {
@@ -1620,12 +1622,32 @@ export function createProductWorkspace({
   // it first. Send waits for these commits instead of being disabled by
   // them, so that click is not lost and it carries the committed answer.
   const authoredInputCommits = new Map();
-  const trackAuthoredInputCommit = (threadId, commit) => {
+  // A commit can fail before the click that blurred its input arrives, so an
+  // input's latest failed commit is kept, with the Node Detail showing the
+  // unsaved answer, until a Send it stops, a newer commit of that input, or
+  // detaching that input accounts for it.
+  const latestAuthoredInputCommits = new Map();
+  const failedAuthoredInputs = new Map();
+  const authoredInputKey = (occurrence) => [
+    occurrence.presentingInteractionNodeId,
+    occurrence.presentingLayerId,
+    occurrence.actionId,
+  ].join("\u0000");
+  const trackAuthoredInputCommit = (threadId, inputKey, runtime, commit) => {
     const key = String(threadId);
+    const inputSlot = `${key}\u0000${inputKey}`;
     const commits = authoredInputCommits.get(key) ?? new Set();
     authoredInputCommits.set(key, commits);
     commits.add(commit);
-    void commit.catch(() => {}).finally(() => {
+    latestAuthoredInputCommits.set(inputSlot, commit);
+    failedAuthoredInputs.get(key)?.delete(inputKey);
+    void commit.then(() => {}, () => {
+      if (latestAuthoredInputCommits.get(inputSlot) !== commit) return;
+      const failed = failedAuthoredInputs.get(key) ?? new Map();
+      failedAuthoredInputs.set(key, failed);
+      failed.set(inputKey, runtime);
+    }).finally(() => {
+      if (latestAuthoredInputCommits.get(inputSlot) === commit) latestAuthoredInputCommits.delete(inputSlot);
       commits.delete(commit);
       if (!commits.size && authoredInputCommits.get(key) === commits) authoredInputCommits.delete(key);
       syncComposer();
@@ -1634,15 +1656,18 @@ export function createProductWorkspace({
     return commit;
   };
   const pendingAuthoredInputCommits = (threadId) => authoredInputCommits.get(String(threadId))?.size ?? 0;
-  // Whether every awaited commit succeeded.
-  const settleAuthoredInputCommits = async (threadId) => {
-    let committed = true;
+  // Whether the answers on screen when Send was clicked saved. A failure
+  // stops this Send only if its Node Detail was the one open then; the input
+  // shows why, and a later Send is the user's choice.
+  const settleAuthoredInputCommits = async (threadId, detailOnScreen) => {
+    const key = String(threadId);
     let commits;
-    while ((commits = authoredInputCommits.get(String(threadId)))?.size) {
-      const results = await Promise.allSettled([...commits]);
-      committed &&= results.every((result) => result.status === "fulfilled");
+    while ((commits = authoredInputCommits.get(key))?.size) {
+      await Promise.allSettled([...commits]);
     }
-    return committed;
+    const failed = failedAuthoredInputs.get(key);
+    failedAuthoredInputs.delete(key);
+    return ![...(failed?.values() ?? [])].some((runtime) => runtime === detailOnScreen);
   };
   const inputRailScroll = new Map();
   let inputFocusRequest = null;
@@ -2552,8 +2577,23 @@ export function createProductWorkspace({
   const confirmContextDraftSend = $("#confirmContextDraftSend");
   let sendAttempt = null;
   const inFlightSendThreads = new Map();
-  // thread -> the scope and prompt revision of its submission in flight.
+  // thread -> the scope and prompt revision of its submission in flight,
+  // from the click on Send.
   const inFlightSubmissions = new Map();
+  // thread -> scope -> a submission whose failure left it unknown whether it
+  // was sent (SCP-019). Once a later turn with its text arrives, it was sent:
+  // its text is neither carried into a newer turn nor handed back.
+  const uncertainSubmissions = new Map();
+  const landedUncertainSubmission = (threadId, scopeKey, promptRevision) => {
+    const submission = uncertainSubmissions.get(String(threadId))?.get(scopeKey);
+    if (!submission || !Object.is(submission.promptRevision, promptRevision)) return null;
+    const turns = (getState().interactions || [])
+      .filter((turn) => String(turn.threadId) === String(threadId));
+    const from = turns.findIndex((turn) => composerDraftScopeKey(threadId, turn.id) === scopeKey);
+    const landed = from >= 0 && turns.slice(from + 1)
+      .some((turn) => String(turn.text ?? "").trim() === submission.text);
+    return landed ? submission : null;
+  };
   let sendWarningIntent = null;
   let failedConfirmationSends = new Map();
   const establishConfirmationReplayContextRevision = (threadId) => {
@@ -3205,6 +3245,7 @@ export function createProductWorkspace({
           });
           try {
             await inputDraftController.detach(thread.id, attachment.occurrence);
+            failedAuthoredInputs.get(String(thread.id))?.delete(authoredInputKey(attachment.occurrence));
             markInputCompositionChanged(thread.id);
             inputStages.delete(stageKey);
             inputErrors.delete(stageKey);
@@ -3311,8 +3352,11 @@ export function createProductWorkspace({
     releaseSendAttempt();
   };
   const closeContextDraftSendWarning = ({ focusSend = true, cancelAttempt = true } = {}) => {
+    const cancelled = cancelAttempt ? sendWarningIntent : null;
     sendWarningIntent = null;
     if (cancelAttempt) cancelSendAttempt();
+    // A cancelled Send hands back text a newer turn left in its scope.
+    if (cancelled?.submission) restoreStrandedSubmission(cancelled.submission);
     if (contextDraftSendWarning.open) contextDraftSendWarning.close();
     if (focusSend) send.focus({ preventScroll: true });
   };
@@ -3369,14 +3413,19 @@ export function createProductWorkspace({
   cancelContextDraftSend.onclick = () => closeContextDraftSendWarning();
 
   // A send that fails after its thread's newer turn arrived leaves its text
-  // in the older turn's scope; bring it back into the empty prompt.
+  // in the older turn's scope; bring it back into the prompt, ahead of any
+  // text typed there since, so neither is lost.
   const restoreStrandedSubmission = (submission) => {
     const { activeScopeKey } = composerDraftScopeState;
     if (String(getThread()?.id) !== String(submission.threadId)
-      || activeScopeKey === submission.scopeKey
-      || prompt.value) return;
-    const text = composerDraftScopeState.drafts.get(submission.scopeKey)?.promptValue;
-    if (!text) return;
+      || activeScopeKey === submission.scopeKey) return;
+    const stored = composerDraftScopeState.drafts.get(submission.scopeKey);
+    const stranded = stored?.promptValue;
+    if (!stranded) return;
+    // Text of a send that may have gone through, and whose turn arrived, is
+    // not handed back (SCP-019).
+    if (landedUncertainSubmission(submission.threadId, submission.scopeKey, stored.promptRevision)) return;
+    const text = prompt.value ? `${stranded}\n\n${prompt.value}` : stranded;
     const drafts = new Map(composerDraftScopeState.drafts);
     drafts.delete(submission.scopeKey);
     composerDraftScopeState = { activeScopeKey, drafts };
@@ -3527,6 +3576,11 @@ export function createProductWorkspace({
       // Only a definite rejection: after a network or server error the send
       // may have committed, and the newer turn may be this very submission.
       if (!confirmationSendFailureMayHaveCommitted(error)) restoreStrandedSubmission(submission);
+      else {
+        const held = uncertainSubmissions.get(String(submittedThreadId)) ?? new Map();
+        uncertainSubmissions.set(String(submittedThreadId), held);
+        held.set(inFlightSubmission.scopeKey, { ...inFlightSubmission, text: intent.text });
+      }
       toast(error.message);
     } finally {
       if (inFlightSubmissions.get(String(submittedThreadId)) === inFlightSubmission) {
@@ -3575,9 +3629,17 @@ export function createProductWorkspace({
     };
     let intent = draftOverride ? sendWarningIntent : null;
     let unconfirmedContextDrafts = [];
+    const detailOnScreen = $("#inspector").classList.contains("hidden") ? null : mountedAuthoredDetail;
     const attempt = { threadId: String(threadId) };
     inFlightSendThreads.set(attempt.threadId, attempt);
     sendAttempt = attempt;
+    // The text is held from the click, so a newer turn that loads while Send
+    // reconciles inputs does not carry it into its scope before it is sent.
+    const clickSubmission = draftOverride ? null : Object.freeze({
+      scopeKey: sendRequest.draftScopeKey,
+      promptRevision: sendRequest.promptRevision,
+    });
+    if (clickSubmission) inFlightSubmissions.set(attempt.threadId, clickSubmission);
     send.setAttribute("aria-busy", "true");
     for (const control of $("#nodeInputActions").querySelectorAll("button, textarea")) {
       control.disabled = true;
@@ -3604,7 +3666,7 @@ export function createProductWorkspace({
         });
         intent = await selectInteractionSendIntentAfterInputReconciliation({
           awaitInputDraft: async () => {
-            if (!await settleAuthoredInputCommits(threadId)) {
+            if (!await settleAuthoredInputCommits(threadId, detailOnScreen)) {
               // The answer the user entered did not save; the input shows why.
               throw new Error("An answer in Node Details could not be saved, so the message was not sent.");
             }
@@ -3658,6 +3720,14 @@ export function createProductWorkspace({
     } catch (error) {
       toast(error.message);
     } finally {
+      if (clickSubmission && inFlightSubmissions.get(attempt.threadId) === clickSubmission) {
+        inFlightSubmissions.delete(attempt.threadId);
+        // The Send ended without posting. Unless the draft-send warning now
+        // holds it, text a newer turn left in its scope comes back.
+        if (String(sendWarningIntent?.threadId) !== attempt.threadId) {
+          restoreStrandedSubmission({ threadId: attempt.threadId, scopeKey: clickSubmission.scopeKey });
+        }
+      }
       releaseInFlightSend(inFlightSendThreads, attempt);
       if (sendAttempt === attempt) releaseSendAttempt();
       else syncComposer();
@@ -4133,7 +4203,16 @@ export function createProductWorkspace({
       ),
       olderScopeKeys: turns.slice(0, -1).reverse()
         .map((turn) => composerDraftScopeKey(threadId, turn.id)),
-      inFlightSubmission: inFlightSubmissions.get(threadId) ?? null,
+      // A Send waiting on the draft-send warning still holds its text.
+      inFlightSubmission: inFlightSubmissions.get(threadId)
+        ?? (String(sendWarningIntent?.threadId) === threadId
+          ? {
+            scopeKey: sendWarningIntent.submission?.scopeKey,
+            promptRevision: sendWarningIntent.submission?.prompt?.revision,
+          }
+          : null),
+      uncertainSubmissions: [...(uncertainSubmissions.get(threadId)?.values() ?? [])]
+        .filter((held) => landedUncertainSubmission(threadId, held.scopeKey, held.promptRevision)),
     });
     composerDraftScopeState = draftTransition.state;
     prompt.value = draftTransition.promptValue;
@@ -4452,11 +4531,17 @@ export function createProductWorkspace({
       cancelInspectorFit();
       if (!preserveHistoricalSelection) $("#inspector").classList.add("hidden");
       saveGraphView();
+      // A drag cannot follow its node into another view.
+      dragging = null;
     }
     $("#graphEmpty").classList.toggle("hidden", responseNodes.length > 0);
     $("#graphStage").classList.toggle("hidden", responseNodes.length === 0);
     if (!responseNodes.length) {
       graphViewKey = nextViewKey;
+      dragging = null;
+      // Removing the node elements also releases a drag's pointer capture,
+      // so its release cannot click a node that is gone.
+      $("#nodeLayer").replaceChildren();
       graphNodes = [];
       graphEdges = [];
       graphSignature = "";
@@ -4502,6 +4587,16 @@ export function createProductWorkspace({
       pinned: false,
       index,
     }));
+    // A drag in progress continues on its node's new object and element, so
+    // a render while the user drags does not strand the drag on the old ones.
+    const draggedFrom = dragging?.node ?? null;
+    if (dragging) {
+      dragging.node = graphNodes.find((node) => String(node.id) === String(draggedFrom.id));
+      if (!dragging.node) dragging = null;
+    }
+    const dragMoved = Boolean(dragging?.moved);
+    // Kept where the user moved it even if the drag ends in this render.
+    const draggedNode = dragMoved ? dragging.node : null;
     const ids = graphNodeIdentitySet(graphNodes);
     graphEdges = (state.edges || []).filter((edge) => {
       const [source, target] = edge.endpoints || [edge.source, edge.target];
@@ -4552,6 +4647,7 @@ export function createProductWorkspace({
         const node = graphNodes.find((candidate) => String(candidate.id) === element.dataset.node);
         dragging = node ? {
           node,
+          pointerId: event.pointerId,
           startClientX: event.clientX,
           startClientY: event.clientY,
           moved: false,
@@ -4560,6 +4656,11 @@ export function createProductWorkspace({
       };
       element.onpointermove = (event) => {
         if (!dragging || String(dragging.node.id) !== element.dataset.node) return;
+        // No button is pressed: the release was missed, so the drag is over.
+        if (!event.buttons) {
+          dragging = null;
+          return;
+        }
         const rect = $("#graphStage").getBoundingClientRect();
         const distance = Math.hypot(
           event.clientX - dragging.startClientX,
@@ -4584,6 +4685,15 @@ export function createProductWorkspace({
       };
       element.onpointercancel = () => { dragging = null; };
     });
+    if (dragging) {
+      const element = $$('[data-node]').find((item) => item.dataset.node === String(dragging.node.id));
+      try {
+        element?.setPointerCapture(dragging.pointerId);
+      } catch {
+        // The pointer is no longer active, so no pointerup will end the drag.
+        dragging = null;
+      }
+    }
     const projected = projectLayerNodePositions(state.visibleLayer, graphNodes);
     for (const node of graphNodes) {
       const canonical = projected.positions.get(String(node.id));
@@ -4592,7 +4702,12 @@ export function createProductWorkspace({
       node.canonicalY = canonical.y;
       node.layoutSource = projected.source;
       const prior = previous.get(String(node.id));
-      if (cachedLayoutMatches && prior?.pinned) {
+      if (node === draggedNode) {
+        // The dragged node stays under the pointer, even in a changed layout.
+        node.x = draggedFrom.x;
+        node.y = draggedFrom.y;
+        node.pinned = true;
+      } else if (cachedLayoutMatches && prior?.pinned) {
         node.x = prior.x;
         node.y = prior.y;
         node.pinned = true;
@@ -4615,7 +4730,7 @@ export function createProductWorkspace({
     if (cachedView && cachedLayoutMatches) {
       camera = { ...cachedView.camera };
       cameraRevision = cachedView.cameraRevision;
-    } else if (enteringView || !cachedLayoutMatches) {
+    } else if (enteringView || (!cachedLayoutMatches && !dragMoved)) {
       camera = fitGraphCamera(graphNodes, graphStage.getBoundingClientRect());
     }
     drawGraph();
@@ -5239,6 +5354,8 @@ export function createProductWorkspace({
         try {
           const draft = await trackAuthoredInputCommit(
             thread.id,
+            authoredInputKey(occurrence),
+            authoredDetailRuntime,
             inputDraftController.commit(thread.id, occurrence, action, value),
           );
           const attachment = committedInputAttachment(draft, occurrence);

@@ -72,7 +72,9 @@ const AUTHORED_DETAIL = compiledPackage({
 });
 
 export class AuthoredInputSendWorld {
-  constructor() {
+  // contextDrafts: unconfirmed annotation drafts, which open the draft-send
+  // warning on Send.
+  constructor({ contextDrafts = [] } = {}) {
     this.window = new Window({ url: "http://127.0.0.1:3000" });
     vi.stubGlobal("document", this.window.document);
     vi.stubGlobal("window", this.window);
@@ -113,7 +115,7 @@ export class AuthoredInputSendWorld {
       selection: this.selection,
       showThread: () => {},
       showEmpty: () => {},
-      contextDraftApi: { list: async () => ({ drafts: [], confirmations: [] }) },
+      contextDraftApi: { list: async () => ({ drafts: contextDrafts, confirmations: [] }) },
       inputDraftApi: {
         get: async () => world.#draft(),
         commit: (_threadId, occurrence, value, expectedRevision) => {
@@ -177,7 +179,10 @@ export class AuthoredInputSendWorld {
         const send = this.window.document.querySelector("#sendInteraction");
         if (send.disabled) throw new Error("ClickSend: Send is disabled");
         send.click();
-        this.clicked = true;
+        await settle();
+        // With no commit to wait for, the Send has posted, or it stopped at
+        // the click because an answer did not save.
+        this.clicked = Boolean(this.put || this.post);
         break;
       }
       case "ServeCommit": {
@@ -242,6 +247,37 @@ export class AuthoredInputSendWorld {
       default:
         throw new Error(`Unreplayed AuthoredInputSend action ${name}`);
     }
+    await settle();
+  }
+
+  // A turn created elsewhere in the thread, such as by an authored invoke,
+  // arrives and becomes the latest.
+  async newerTurnArrives() {
+    const [first] = this.state.interactions;
+    this.state.interactions = [...this.state.interactions, { ...first, id: 6, sequence: 2, text: "Invoked" }];
+    this.state.currentInteractionId = 6;
+    this.selection.currentInteractionId = 6;
+    this.workspace.render();
+    await settle();
+  }
+
+  get promptText() {
+    return this.window.document.querySelector("#threadPrompt").value;
+  }
+
+  async typePrompt(text) {
+    const prompt = this.window.document.querySelector("#threadPrompt");
+    prompt.value = text;
+    prompt.dispatchEvent(new this.window.Event("input"));
+    await settle();
+  }
+
+  async settled() {
+    await settle();
+  }
+
+  async click(selector) {
+    this.window.document.querySelector(selector).click();
     await settle();
   }
 

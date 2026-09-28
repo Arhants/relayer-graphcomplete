@@ -37,6 +37,7 @@
           }
         },
         "fresh": 0,
+        "held": {},
         "intent": {
           "A": {
             "rev": 0,
@@ -81,6 +82,7 @@
         },
         "sent": {},
         "text": 0,
+        "uncertainAt": {},
         "unsent": {
           "A": 0,
           "B": 0
@@ -118,6 +120,7 @@
           }
         },
         "fresh": 1,
+        "held": {},
         "intent": {
           "A": {
             "rev": 0,
@@ -162,6 +165,7 @@
         },
         "sent": {},
         "text": 1,
+        "uncertainAt": {},
         "unsent": {
           "A": 1,
           "B": 0
@@ -199,6 +203,7 @@
           }
         },
         "fresh": 1,
+        "held": {},
         "intent": {
           "A": {
             "rev": 2,
@@ -243,6 +248,7 @@
         },
         "sent": {},
         "text": 1,
+        "uncertainAt": {},
         "unsent": {
           "A": 1,
           "B": 0
@@ -281,6 +287,7 @@
           }
         },
         "fresh": 1,
+        "held": {},
         "intent": {
           "A": {
             "rev": 2,
@@ -325,6 +332,7 @@
         },
         "sent": {},
         "text": 1,
+        "uncertainAt": {},
         "unsent": {
           "A": 1,
           "B": 0
@@ -363,6 +371,7 @@
           }
         },
         "fresh": 1,
+        "held": {},
         "intent": {
           "A": {
             "rev": 2,
@@ -407,6 +416,7 @@
         },
         "sent": {},
         "text": 0,
+        "uncertainAt": {},
         "unsent": {
           "A": 1,
           "B": 0
@@ -445,6 +455,7 @@
           }
         },
         "fresh": 1,
+        "held": {},
         "intent": {
           "A": {
             "rev": 2,
@@ -489,6 +500,7 @@
         },
         "sent": {},
         "text": 1,
+        "uncertainAt": {},
         "unsent": {
           "A": 1,
           "B": 0

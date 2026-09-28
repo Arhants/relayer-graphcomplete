@@ -33,18 +33,28 @@ CONSTANTS
                     \* thread, unless it is the submission in flight; a
                     \* failed send restores its stranded text. Before, the
                     \* new scope started empty and the text was stranded
-  StableScopeRevision \* TRUE since #513: re-entering a scope keeps its
+  StableScopeRevision, \* TRUE since #513: re-entering a scope keeps its
                     \* revision when its text is unchanged and otherwise
                     \* takes one above any it had. Before, it took
                     \* currentPromptRevision + 1, which could repeat or
                     \* change without the text changing
+  OtherTurns,       \* a turn created elsewhere in the thread (an authored
+                    \* invoke, another window) can arrive
+  HoldFromClick,    \* TRUE since review of #512: the submission is held from
+                    \* the click, through Send's input reconciliation, and a
+                    \* Send that ends without posting hands back stranded
+                    \* text. Before, it was held only once the POST began
+  HoldUncertain     \* TRUE since review of #512: a send whose failure leaves
+                    \* it unknown whether it was sent is held once its turn
+                    \* arrives (SCP-019). Before, its text could be carried
+                    \* into the turn it created
 
 None == "none"
 Null == MaxText + 1   \* composer-drafts has no value for the key
 NoDraft == [text |-> Null, rev |-> 0]
 Scopes == Threads \X (1..MaxTurns)
 Texts == 0..MaxText
-Phases == {"idle", "post", "posted", "refresh", "settle"}
+Phases == {"idle", "reconcile", "post", "posted", "refresh", "settle"}
 
 VARIABLES
   \* --- Product state as the renderer sees it (appState) ---
@@ -64,17 +74,22 @@ VARIABLES
   pc,           \* thread -> phase of its in-flight send (inFlightSendThreads)
   owner,        \* sendAttempt?.threadId, or None
   intent,       \* thread -> [text, rev, scope] captured when Send was clicked
+  held,         \* uncertainSubmissions: [scope, rev, landedAt] of sends that
+                \* may have been sent; landedAt is the turn the send created
+                \* (the renderer recognizes it by its text), or 0
   \* --- ghosts ---
   fresh,        \* last text identity handed out
   sent,         \* texts a successful follow-up POST carried
   unsent,       \* thread -> the user's latest text there, until it is sent
-  cleared       \* the text the last settlement removed from the prompt, or 0
+  cleared,      \* the text the last settlement removed from the prompt, or 0
+  uncertainAt   \* [text, scope] of sends that may have been sent
 
 vars == <<view, latest, running, pendingTurn, active, drafts, text, rev, disabled,
-          persisted, pc, owner, intent, fresh, sent, unsent, cleared>>
+          persisted, pc, owner, intent, fresh, sent, unsent, cleared, held, uncertainAt>>
 productVars == <<latest, running, pendingTurn>>
 composerVars == <<active, drafts, text, rev, disabled, persisted>>
 ghostVars == <<fresh, sent, unsent, cleared>>
+holdVars == <<held, uncertainAt>>
 
 Max(a, b) == IF a >= b THEN a ELSE b
 Scope(t) == <<t, latest[t]>>
@@ -99,9 +114,15 @@ EnterScope(next) ==
         prior == IF older = {} THEN next
                  ELSE <<next[1], CHOOSE k \in older : \A j \in older : j <= k>>
         \* The prior turn's draft is still the in-flight submission,
-        \* unchanged since Send; its settlement will clear it.
-        submitting == pc[next[1]] # "idle" /\ intent[next[1]].scope = prior
-                      /\ saved[prior].rev = intent[next[1]].rev
+        \* unchanged since Send; its settlement will clear it. Or it is a
+        \* send that may have been sent.
+        inFlight == IF HoldFromClick THEN pc[next[1]] # "idle"
+                    ELSE pc[next[1]] \notin {"idle", "reconcile"}
+        submitting == \/ inFlight /\ intent[next[1]].scope = prior
+                         /\ saved[prior].rev = intent[next[1]].rev
+                      \/ HoldUncertain /\ saved[prior] # NoDraft
+                         /\ \E h \in held : h.scope = prior /\ h.rev = saved[prior].rev
+                                          /\ h.landedAt # 0 /\ next[2] >= h.landedAt
         carried == CarryUnsentDraft /\ older # {} /\ ~submitting
         base == IF StableScopeRevision /\ saved[next] # NoDraft
                 THEN Max(saved[next].rev, rev) ELSE rev
@@ -138,6 +159,13 @@ EnterScopeEffect(next, isRunning) ==
 
 Render(t, isRunning) == EnterScopeEffect(Scope(t), isRunning)
 
+\* The scope's draft is a send that may have been sent; it is not handed
+\* back (SCP-019).
+Uncertain(scope) ==
+  HoldUncertain /\ drafts[scope] # NoDraft
+  /\ \E h \in held : h.scope = scope /\ h.rev = drafts[scope].rev
+                   /\ h.landedAt # 0 /\ latest[scope[1]] >= h.landedAt
+
 Init ==
   /\ view \in Threads
   /\ latest = [t \in Threads |-> 1]
@@ -152,6 +180,7 @@ Init ==
   /\ owner = None
   /\ intent = [t \in Threads |-> [text |-> 0, rev |-> 0, scope |-> <<t, 1>>]]
   /\ fresh = 0 /\ sent = {} /\ unsent = [t \in Threads |-> 0] /\ cleared = 0
+  /\ held = {} /\ uncertainAt = {}
 
 -----------------------------------------------------------------------------
 (* User actions.                                                          *)
@@ -167,6 +196,7 @@ Type ==
   /\ unsent' = [unsent EXCEPT ![view] = fresh + 1]
   /\ cleared' = 0
   /\ UNCHANGED <<view, productVars, active, drafts, disabled, pc, owner, intent, sent>>
+  /\ UNCHANGED holdVars
 
 Erase ==
   /\ ~disabled /\ text # 0 /\ rev < MaxRev
@@ -177,6 +207,7 @@ Erase ==
   /\ cleared' = 0
   /\ UNCHANGED <<view, productVars, active, drafts, disabled, pc, owner, intent,
                  fresh, sent>>
+  /\ UNCHANGED holdVars
 
 \* Selecting another thread loads its state and renders it (loadThread,
 \* TH:650-661; WS:3787-3815), so a turn the server holds becomes the latest.
@@ -194,6 +225,7 @@ SwitchThread(u) ==
           /\ UNCHANGED productVars
   /\ cleared' = 0
   /\ UNCHANGED <<pc, intent, fresh, sent, unsent>>
+  /\ UNCHANGED holdVars
 
 \* requestInteractionSend (WS:3347-3491) through submitInteraction up to its
 \* await (WS:3199-3218). Send is enabled only with text, an enabled prompt,
@@ -213,6 +245,53 @@ ClickSend ==
   /\ cleared' = 0
   /\ UNCHANGED <<view, productVars, active, drafts, text, rev, persisted, fresh,
                  sent, unsent>>
+  /\ UNCHANGED holdVars
+
+\* Send waits before posting: an authored input commit is pending, so
+\* requestInteractionSend awaits it (WS settleAuthoredInputCommits). The
+\* prompt stays editable; the intent is still the one captured at the click.
+ClickSendWaits ==
+  /\ ~disabled /\ text # 0
+  /\ pc[view] = "idle"
+  /\ owner # view
+  /\ pc' = [pc EXCEPT ![view] = "reconcile"]
+  /\ owner' = view
+  /\ intent' = [intent EXCEPT ![view] = [text |-> text, rev |-> rev, scope |-> active]]
+  /\ cleared' = 0
+  /\ UNCHANGED <<view, productVars, composerVars, fresh, sent, unsent>>
+  /\ UNCHANGED holdVars
+
+\* The wait ends on the same thread and attempt: submitInteraction begins
+\* and disables the prompt.
+Reconciled(t) ==
+  /\ pc[t] = "reconcile" /\ view = t /\ owner = t
+  /\ pc' = [pc EXCEPT ![t] = "post"]
+  /\ disabled' = TRUE
+  /\ cleared' = 0
+  /\ UNCHANGED <<view, productVars, active, drafts, text, rev, persisted, owner,
+                 intent, fresh, sent, unsent>>
+  /\ UNCHANGED holdVars
+
+\* The Send ends without posting: the thread or attempt changed, or an
+\* answer did not save. Under HoldFromClick, text stranded in its scope
+\* because a newer turn arrived is handed back, as a rejected POST does.
+ReconcileEnds(t) ==
+  /\ pc[t] = "reconcile"
+  /\ LET i == intent[t]
+         stranded == IF drafts[i.scope] # NoDraft THEN drafts[i.scope].text ELSE 0
+         restore == HoldFromClick /\ view = t /\ active # i.scope
+                    /\ text = 0 /\ stranded # 0 /\ ~Uncertain(i.scope)
+     IN /\ text' = IF restore THEN stranded ELSE text
+        /\ rev' = IF restore THEN rev + 1 ELSE rev
+        /\ drafts' = IF restore THEN [drafts EXCEPT ![i.scope] = NoDraft] ELSE drafts
+        /\ persisted' = IF restore
+                        THEN [persisted EXCEPT ![active] = stranded, ![i.scope] = Null]
+                        ELSE persisted
+  /\ pc' = [pc EXCEPT ![t] = "idle"]
+  /\ owner' = IF owner = t THEN None ELSE owner
+  /\ cleared' = 0
+  /\ UNCHANGED <<view, productVars, active, disabled, intent, fresh, sent, unsent>>
+  /\ UNCHANGED holdVars
 
 -----------------------------------------------------------------------------
 (* The follow-up POST and its continuations (TH:733-812).                 *)
@@ -236,7 +315,7 @@ PostFails(t) ==
   /\ LET i == intent[t]
          stranded == IF drafts[i.scope] # NoDraft THEN drafts[i.scope].text ELSE 0
          restore == CarryUnsentDraft /\ view = t /\ active # i.scope
-                    /\ text = 0 /\ stranded # 0
+                    /\ text = 0 /\ stranded # 0 /\ ~Uncertain(i.scope)
      IN /\ text' = IF restore THEN stranded ELSE text
         /\ rev' = IF restore THEN rev + 1 ELSE rev
         /\ drafts' = IF restore THEN [drafts EXCEPT ![i.scope] = NoDraft] ELSE drafts
@@ -246,6 +325,34 @@ PostFails(t) ==
   /\ FinallyEffect(t)
   /\ cleared' = 0
   /\ UNCHANGED <<view, productVars, active, intent, fresh, sent, unsent>>
+  /\ UNCHANGED holdVars
+
+\* The POST fails with a network or server error, before or after the
+\* server recorded the turn (WS confirmationSendFailureMayHaveCommitted).
+\* Nothing is restored (SCP-019), and the prompt keeps its value. Under
+\* HoldUncertain the submission is held once the turn it created arrives;
+\* a POST the server never recorded creates no turn, so text still in the
+\* prompt keeps following the user. Text a newer turn already left in the
+\* submitted scope is not restored (SCP-019), so it is no longer promised.
+PostLost(t) ==
+  /\ pc[t] \in {"post", "posted"}
+  /\ LET i == intent[t]
+         created == IF pc[t] # "posted" THEN 0
+                    ELSE IF pendingTurn[t] THEN latest[t] + 1 ELSE latest[t]
+         \* The renderer matches the turn by the submission's text, so an
+         \* earlier failed send of the same draft that created one counts.
+         earlier == {h \in held : h.scope = i.scope /\ h.rev = i.rev /\ h.landedAt # 0}
+         landedAt == IF created = 0 /\ earlier # {}
+                     THEN (CHOOSE h \in earlier : TRUE).landedAt ELSE created IN
+     /\ held' = IF HoldUncertain
+                THEN {h \in held : h.scope # i.scope}
+                     \cup {[scope |-> i.scope, rev |-> i.rev, landedAt |-> landedAt]}
+                ELSE held
+     /\ uncertainAt' = uncertainAt \cup {[text |-> i.text, scope |-> i.scope]}
+     /\ unsent' = [unsent EXCEPT ![t] = IF @ = i.text /\ Scope(t) # i.scope THEN 0 ELSE @]
+  /\ FinallyEffect(t)
+  /\ cleared' = 0
+  /\ UNCHANGED <<view, productVars, active, drafts, text, rev, persisted, intent, fresh, sent>>
 
 \* The server records the follow-up turn before it starts the run and
 \* answers (crates/relayer-app-server/src/api/threads.rs:600-666). It does so
@@ -262,12 +369,14 @@ PostInserted(t) ==
   /\ unsent' = [unsent EXCEPT ![t] = IF @ = intent[t].text THEN 0 ELSE @]
   /\ cleared' = 0
   /\ UNCHANGED <<view, latest, running, composerVars, owner, intent, fresh>>
+  /\ UNCHANGED holdVars
 
 PostSucceeds(t) ==
   /\ pc[t] = "posted"
   /\ pc' = [pc EXCEPT ![t] = "refresh"]
   /\ cleared' = 0
   /\ UNCHANGED <<view, productVars, composerVars, owner, intent, fresh, sent, unsent>>
+  /\ UNCHANGED holdVars
 
 \* A newer turn becomes the thread's latest; if the thread is on screen,
 \* renderThread() moves the composer to the new turn's scope.
@@ -303,6 +412,7 @@ Settle(t) ==
         /\ cleared' = IF clearPrompt /\ text # 0 THEN text ELSE 0
   /\ FinallyEffect(t)
   /\ UNCHANGED <<view, productVars, active, intent, fresh, sent, unsent>>
+  /\ UNCHANGED holdVars
 
 -----------------------------------------------------------------------------
 (* The product advancing on its own.                                      *)
@@ -313,6 +423,15 @@ TurnArrives(t) ==
   /\ TurnArrivesEffect(t)
   /\ cleared' = 0
   /\ UNCHANGED <<view, pc, owner, intent, fresh, sent, unsent>>
+  /\ UNCHANGED holdVars
+
+\* A turn created elsewhere in the thread arrives and becomes the latest.
+InvokeTurn(t) ==
+  /\ OtherTurns /\ ~pendingTurn[t] /\ ~running[t] /\ latest[t] < MaxTurns /\ rev < MaxRev
+  /\ TurnArrivesEffect(t)
+  /\ cleared' = 0
+  /\ UNCHANGED <<view, pc, owner, intent, fresh, sent, unsent>>
+  /\ UNCHANGED holdVars
 
 TurnFinishes(t) ==
   /\ running[t] /\ ~pendingTurn[t]
@@ -321,6 +440,7 @@ TurnFinishes(t) ==
   /\ cleared' = 0
   /\ UNCHANGED <<view, latest, pendingTurn, active, drafts, text, rev, persisted,
                  pc, owner, intent, fresh, sent, unsent>>
+  /\ UNCHANGED holdVars
 
 \* renderThread() for an unrelated reason re-renders the thread on screen.
 BackgroundRender ==
@@ -328,6 +448,7 @@ BackgroundRender ==
   /\ Render(view, running[view])
   /\ cleared' = 0
   /\ UNCHANGED <<view, productVars, pc, owner, intent, fresh, sent, unsent>>
+  /\ UNCHANGED holdVars
 
 \* After the POST, submitInteraction refreshes the thread only if the
 \* navigation entry [thread, turn, layer path] is unchanged (TH:797-808;
@@ -345,25 +466,28 @@ RefreshReturnsAction(t) ==
      ELSE UNCHANGED <<productVars, composerVars>>
   /\ cleared' = 0
   /\ UNCHANGED <<view, owner, intent, fresh, sent, unsent>>
+  /\ UNCHANGED holdVars
 
 RefreshSkipped(t) ==
   /\ pc[t] = "refresh"
   /\ pc' = [pc EXCEPT ![t] = "settle"]
   /\ cleared' = 0
   /\ UNCHANGED <<view, productVars, composerVars, owner, intent, fresh, sent, unsent>>
+  /\ UNCHANGED holdVars
 
 -----------------------------------------------------------------------------
 SystemStep ==
   \E t \in Threads :
-    \/ PostInserted(t) \/ PostSucceeds(t) \/ PostFails(t)
+    \/ PostInserted(t) \/ PostSucceeds(t) \/ PostFails(t) \/ PostLost(t)
+    \/ Reconciled(t) \/ ReconcileEnds(t)
     \/ RefreshReturnsAction(t) \/ RefreshSkipped(t)
     \/ Settle(t)
 
 Next ==
-  \/ Type \/ Erase \/ ClickSend
+  \/ Type \/ Erase \/ ClickSend \/ ClickSendWaits
   \/ \E u \in Threads : SwitchThread(u)
   \/ SystemStep
-  \/ \E t \in Threads : TurnArrives(t) \/ TurnFinishes(t)
+  \/ \E t \in Threads : TurnArrives(t) \/ TurnFinishes(t) \/ InvokeTurn(t)
   \/ BackgroundRender
 
 \* Every send continuation runs once the POST answers.
@@ -373,6 +497,7 @@ Fairness ==
        /\ WF_vars(PostSucceeds(t))
        /\ WF_vars(RefreshReturnsAction(t) \/ RefreshSkipped(t))
        /\ WF_vars(Settle(t))
+       /\ WF_vars(Reconciled(t) \/ ReconcileEnds(t))
 
 Spec == Init /\ [][Next]_vars
 FairSpec == Spec /\ Fairness
@@ -382,6 +507,11 @@ Act(s) ==
   CASE n = "Type" -> Type
     [] n = "Erase" -> Erase
     [] n = "ClickSend" -> ClickSend
+    [] n = "ClickSendWaits" -> ClickSendWaits
+    [] n = "Reconciled" -> Reconciled(s[2])
+    [] n = "ReconcileEnds" -> ReconcileEnds(s[2])
+    [] n = "PostLost" -> PostLost(s[2])
+    [] n = "InvokeTurn" -> InvokeTurn(s[2])
     [] n = "SwitchThread" -> SwitchThread(s[2])
     [] n = "PostInserted" -> PostInserted(s[2])
     [] n = "PostSucceeds" -> PostSucceeds(s[2])
@@ -421,8 +551,12 @@ SettlementClearsOnlySentText == cleared = 0 \/ cleared \in sent
 
 \* "Send ... removes ... the applicable draft" (SCP-016): once a thread's
 \* send has settled, its composer does not offer the sent text again.
+\* A send that may have been sent leaves its text where it was: in the prompt
+\* of the scope it was sent from, not carried into a newer turn (SCP-019).
 SentTextIsNotShownAgain ==
-  \A t \in Threads : pc[t] = "idle" /\ Shown(t) # 0 => Shown(t) \notin sent
+  \A t \in Threads : pc[t] = "idle" /\ Shown(t) # 0 =>
+    \/ Shown(t) \notin sent
+    \/ [text |-> Shown(t), scope |-> Scope(t)] \in uncertainAt
 
 \* One follow-up POST per thread at a time (WS:3354-3356).
 OneSendPerThread == \A t \in Threads : pc[t] = "post" => intent[t].scope[1] = t
