@@ -15,6 +15,7 @@
           "cam": 0,
           "layout": 0,
           "pinned": false,
+          "unfitted": false,
           "w": 4
         },
         "cam": 0,
@@ -37,6 +38,7 @@
         "pressed": "none",
         "ptr": 0,
         "sel": false,
+        "unfitted": false,
         "view": "home",
         "w": 0
       }
@@ -50,6 +52,7 @@
           "cam": 0,
           "layout": 0,
           "pinned": false,
+          "unfitted": false,
           "w": 4
         },
         "cam": 0,
@@ -72,6 +75,7 @@
         "pressed": "node",
         "ptr": 0,
         "sel": false,
+        "unfitted": false,
         "view": "home",
         "w": 0
       }
@@ -86,6 +90,7 @@
           "cam": 0,
           "layout": 0,
           "pinned": false,
+          "unfitted": false,
           "w": 4
         },
         "cam": 0,
@@ -108,6 +113,7 @@
         "pressed": "node",
         "ptr": 1,
         "sel": false,
+        "unfitted": false,
         "view": "home",
         "w": 1
       }
@@ -121,6 +127,7 @@
           "cam": 0,
           "layout": 1,
           "pinned": true,
+          "unfitted": false,
           "w": 1
         },
         "cam": 0,
@@ -143,6 +150,7 @@
         "pressed": "node",
         "ptr": 1,
         "sel": false,
+        "unfitted": false,
         "view": "away",
         "w": 1
       }
@@ -156,6 +164,7 @@
           "cam": 0,
           "layout": 1,
           "pinned": true,
+          "unfitted": false,
           "w": 1
         },
         "cam": 0,
@@ -178,6 +187,7 @@
         "pressed": "none",
         "ptr": 1,
         "sel": false,
+        "unfitted": false,
         "view": "away",
         "w": 1
       }
@@ -191,6 +201,7 @@
           "cam": 0,
           "layout": 1,
           "pinned": true,
+          "unfitted": false,
           "w": 1
         },
         "cam": 0,
@@ -213,6 +224,7 @@
         "pressed": "none",
         "ptr": 1,
         "sel": false,
+        "unfitted": false,
         "view": "home",
         "w": 1
       }

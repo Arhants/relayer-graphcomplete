@@ -115,6 +115,18 @@ describe("Send after an answer did not save", () => {
   });
 });
 
+describe("An answer that failed while its Node Detail was replaced", () => {
+  it("shows the failure again when the input is shown", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    for (const step of [["Type", 1], ["Commit"]]) await world.apply(step);
+    await world.newerTurnArrives();
+    for (const step of [["CommitFails"], ["CommitReturns"]]) await world.apply(step);
+    await world.click('[data-node="7"]');
+    await world.settled();
+    expect(world.input?.getAttribute("aria-invalid")).toBe("true");
+  });
+});
+
 describe("A follow-up whose POST fails with a server error", () => {
   it("keeps its text in the composer when an unrelated newer turn arrives", async () => {
     world = await new AuthoredInputSendWorld().ready();

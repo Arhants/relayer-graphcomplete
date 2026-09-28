@@ -1148,8 +1148,7 @@ export function createComposerDraftScopeState() {
 /**
  * The newest unsent follow-up text written this session in an older turn's
  * scope of the same thread, unless it is held, unchanged since Send: the
- * submission in flight, or one whose failure left it unknown whether it was
- * sent. Settlement deletes a sent draft, so what remains in memory is unsent;
+ * submission in flight, or text a later turn shows was sent. Settlement deletes a sent draft, so what remains in memory is unsent;
  * persisted text from earlier sessions is not moved. `olderScopeKeys` lists
  * the thread's older scopes, newest first.
  */
@@ -1174,7 +1173,7 @@ export function transitionComposerDraftScope(state, {
   persistedDraftText = null,
   olderScopeKeys = [],
   inFlightSubmission = null,
-  uncertainSubmissions = [],
+  sentDrafts = [],
 }) {
   const nextScopeKey = composerDraftScopeKey(threadId, interactionId);
   if (state.activeScopeKey === nextScopeKey) {
@@ -1224,7 +1223,7 @@ export function transitionComposerDraftScope(state, {
   // A newer turn's scope starts empty; unsent text typed while the previous
   // turn's scope was active moves into it, so it is not stranded there.
   const carried = !restoredDraft && persistedDraftText === null && !stored?.promptValue
-    ? unsentOlderDraft(drafts, olderScopeKeys, [inFlightSubmission, ...uncertainSubmissions])
+    ? unsentOlderDraft(drafts, olderScopeKeys, [inFlightSubmission, ...sentDrafts])
     : null;
   if (carried) {
     drafts.set(nextScopeKey, {
@@ -1629,6 +1628,9 @@ export function createProductWorkspace({
   // commit of that input, or detaching that input accounts for it.
   const latestAuthoredInputCommits = new Map();
   const failedAuthoredInputs = new Map();
+  // thread and input -> why its latest commit failed, shown again when its
+  // Node Detail remounts, until a later commit or detaching it clears it.
+  const authoredInputErrors = new Map();
   const authoredInputKey = (occurrence) => [
     occurrence.presentingInteractionNodeId,
     occurrence.presentingLayerId,
@@ -1642,8 +1644,11 @@ export function createProductWorkspace({
     commits.add(commit);
     latestAuthoredInputCommits.set(inputSlot, commit);
     failedAuthoredInputs.get(key)?.delete(inputKey);
-    void commit.then(() => {}, () => {
+    void commit.then(() => {
+      if (latestAuthoredInputCommits.get(inputSlot) === commit) authoredInputErrors.delete(inputSlot);
+    }, (error) => {
       if (latestAuthoredInputCommits.get(inputSlot) !== commit) return;
+      authoredInputErrors.set(inputSlot, error?.message || "Input could not be committed.");
       const failed = failedAuthoredInputs.get(key) ?? new Set();
       failedAuthoredInputs.set(key, failed);
       failed.add(inputKey);
@@ -2590,19 +2595,16 @@ export function createProductWorkspace({
   // thread -> the scope and prompt revision of its submission in flight,
   // from the click on Send.
   const inFlightSubmissions = new Map();
-  // thread -> scope -> a submission whose failure left it unknown whether it
-  // was sent (SCP-019). Once a later turn with its text arrives, it was sent:
-  // its text is neither carried into a newer turn nor handed back.
-  const uncertainSubmissions = new Map();
-  const landedUncertainSubmission = (threadId, scopeKey, promptRevision) => {
-    const submission = uncertainSubmissions.get(String(threadId))?.get(scopeKey);
-    if (!submission || !Object.is(submission.promptRevision, promptRevision)) return null;
+  // Text left in a turn's scope was sent once a later turn of the thread
+  // carries it, as after a send that failed with a network or server error
+  // (SCP-019) or one interrupted by a restart. It is neither carried into a
+  // newer turn nor handed back.
+  const sentByLaterTurn = (threadId, scopeKey, text) => {
     const turns = (getState().interactions || [])
       .filter((turn) => String(turn.threadId) === String(threadId));
     const from = turns.findIndex((turn) => composerDraftScopeKey(threadId, turn.id) === scopeKey);
-    const landed = from >= 0 && turns.slice(from + 1)
-      .some((turn) => String(turn.text ?? "").trim() === submission.text);
-    return landed ? submission : null;
+    return from >= 0 && Boolean(String(text ?? "").trim()) && turns.slice(from + 1)
+      .some((turn) => String(turn.text ?? "").trim() === String(text).trim());
   };
   let sendWarningIntent = null;
   let failedConfirmationSends = new Map();
@@ -3256,6 +3258,7 @@ export function createProductWorkspace({
           try {
             await inputDraftController.detach(thread.id, attachment.occurrence);
             failedAuthoredInputs.get(String(thread.id))?.delete(authoredInputKey(attachment.occurrence));
+            authoredInputErrors.delete(`${thread.id}\u0000${authoredInputKey(attachment.occurrence)}`);
             markInputCompositionChanged(thread.id);
             inputStages.delete(stageKey);
             inputErrors.delete(stageKey);
@@ -3436,9 +3439,7 @@ export function createProductWorkspace({
     const stored = composerDraftScopeState.drafts.get(submission.scopeKey);
     const stranded = stored?.promptValue;
     if (!stranded) return;
-    // Text of a send that may have gone through, and whose turn arrived, is
-    // not handed back (SCP-019).
-    if (landedUncertainSubmission(submission.threadId, submission.scopeKey, stored.promptRevision)) return;
+    if (sentByLaterTurn(submission.threadId, submission.scopeKey, stranded)) return;
     const text = stranded;
     const drafts = new Map(composerDraftScopeState.drafts);
     drafts.delete(submission.scopeKey);
@@ -3590,11 +3591,6 @@ export function createProductWorkspace({
       // Only a definite rejection: after a network or server error the send
       // may have committed, and the newer turn may be this very submission.
       if (!confirmationSendFailureMayHaveCommitted(error)) restoreStrandedSubmission(submission);
-      else {
-        const held = uncertainSubmissions.get(String(submittedThreadId)) ?? new Map();
-        uncertainSubmissions.set(String(submittedThreadId), held);
-        held.set(inFlightSubmission.scopeKey, { ...inFlightSubmission, text: intent.text });
-      }
       toast(error.message);
     } finally {
       if (inFlightSubmissions.get(String(submittedThreadId)) === inFlightSubmission) {
@@ -4215,7 +4211,7 @@ export function createProductWorkspace({
       turns.slice(0, -1).forEach((turn, index) => {
         const scopeKey = composerDraftScopeKey(threadId, turn.id);
         const text = drafts.has(scopeKey) ? null : threadFollowupDraft(scopeKey);
-        if (!text || turns.slice(index + 1).some((later) => String(later.text ?? "").trim() === text.trim())) return;
+        if (!text || sentByLaterTurn(threadId, scopeKey, text)) return;
         drafts.set(scopeKey, { promptValue: text, promptRevision: -1, restoredDraftInteractionId: null });
       });
       composerDraftScopeState = { ...composerDraftScopeState, drafts };
@@ -4239,8 +4235,15 @@ export function createProductWorkspace({
             promptRevision: sendWarningIntent.submission?.prompt?.revision,
           }
           : null),
-      uncertainSubmissions: [...(uncertainSubmissions.get(threadId)?.values() ?? [])]
-        .filter((held) => landedUncertainSubmission(threadId, held.scopeKey, held.promptRevision)),
+      sentDrafts: turns.slice(0, -1).flatMap((turn) => {
+        const scopeKey = composerDraftScopeKey(threadId, turn.id);
+        const draft = scopeKey === composerDraftScopeState.activeScopeKey
+          ? { promptValue: prompt.value, promptRevision: composerPromptRevision }
+          : composerDraftScopeState.drafts.get(scopeKey);
+        return draft && sentByLaterTurn(threadId, scopeKey, draft.promptValue)
+          ? [{ scopeKey, promptRevision: draft.promptRevision }]
+          : [];
+      }),
     });
     composerDraftScopeState = draftTransition.state;
     prompt.value = draftTransition.promptValue;
@@ -4558,6 +4561,9 @@ export function createProductWorkspace({
       nodeSelectionSequence += 1;
       cancelInspectorFit();
       if (!preserveHistoricalSelection) $("#inspector").classList.add("hidden");
+      // A layout that changed mid-drag is fitted before its view is cached,
+      // so returning shows it fitted.
+      if (fitGraphAfterDrop) camera = fitGraphCamera(graphNodes, graphStage.getBoundingClientRect());
       saveGraphView();
       // A drag cannot follow its node into another view, which is fitted.
       dragging = null;
@@ -5314,8 +5320,12 @@ export function createProductWorkspace({
         const attachment = occurrence && inputDraftController
           ? committedInputAttachment(inputDraftController.current(getThread()?.id), occurrence)
           : null;
+        const failure = occurrence
+          ? authoredInputErrors.get(`${getThread()?.id}\u0000${authoredInputKey(occurrence)}`)
+          : null;
         authoredCapabilityState[mount.id] = {
           value: initialInputStageValue(action, attachment),
+          ...(failure ? { error: failure } : {}),
           // Locked while a Send is in flight, so no commit races its
           // reservation. A commit during a run goes to the next draft (ADR 0008).
           disabled: mode === "review"

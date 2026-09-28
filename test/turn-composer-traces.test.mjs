@@ -69,6 +69,14 @@ describe("After a restart, text an earlier session left in an older turn", () =>
     expect(world.persistedDraft(1)).toBeNull();
   });
 
+  it("is not carried into the turn a send made before the restart", async () => {
+    // The send's POST may have committed; its turn appears only after the restart.
+    world = await new TurnComposerWorld({ maxText: 2, maxTurns: 2, persisted: { 1: "sent before" } }).ready();
+    expect(world.prompt.value).toBe("sent before");
+    await world.turnArrivesWithText("sent before");
+    expect(world.prompt.value).toBe("");
+  });
+
   it("is not carried when a later turn shows it was sent", async () => {
     world = await new TurnComposerWorld({
       maxText: 2, maxTurns: 2,

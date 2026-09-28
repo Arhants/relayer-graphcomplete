@@ -95,7 +95,8 @@
       "L": "3",
       "MaxGen": "6",
       "KeepDragAcrossRender": "TRUE",
-      "FitLayoutAfterDrop": "TRUE"
+      "FitLayoutAfterDrop": "TRUE",
+      "FitBeforeLeaving": "TRUE"
     }
   },
   "checks": [
@@ -650,6 +651,22 @@
         "violated": "DropFitsNewLayout"
       },
       "finding": "Without the fit after the drop, a layout that changed mid-drag is never fitted, and new nodes can stay off-screen (review of #531)."
+    },
+    {
+      "id": "canvas-without-fit-before-leaving",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "constants": {
+        "FitBeforeLeaving": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "DropFitsNewLayout"
+      ],
+      "expect": {
+        "violated": "DropFitsNewLayout"
+      },
+      "finding": "Without fitting before the view is cached, leaving mid-drag after a layout change caches the unfitted camera, and returning restores it (review of #531)."
     }
   ]
 }

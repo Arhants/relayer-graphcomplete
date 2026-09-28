@@ -276,7 +276,7 @@ export const PROMISES = {
   DragFollowsPointer: (real, model) => !(model.pressed === "node" && model.drag.on && model.drag.moved
     && model.view === "home") || real.node === model.ptr,
   // The fit after the drop is observed as the camera the model says.
-  DropFitsNewLayout: (_real, model) => !(model.pressed === "none" && model.view === "home" && model.fitDue),
+  DropFitsNewLayout: (_real, model) => !(model.pressed === "none" && model.view === "home" && model.unfitted),
   DropStays: (real, model, L) => model.dropped === L + 1 || model.view !== "home"
     || model.pressed !== "none" || real.node === (model.dropped + model.cam) % L,
 };

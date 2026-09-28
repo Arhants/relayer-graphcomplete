@@ -117,6 +117,15 @@ export class TurnComposerWorld {
     return this;
   }
 
+  // Not in the model: a turn with the given text, created elsewhere or by a
+  // send this renderer did not see finish, arrives in thread A.
+  async turnArrivesWithText(text) {
+    this.turns.A.push({ status: "accepted", text });
+    if (this.view === "A") this.#render();
+    else this.#syncState();
+    await settle();
+  }
+
   // Not in the model: the draft an earlier session persisted for A's turn.
   persistedDraft(turn) {
     const state = JSON.parse(this.window.localStorage.getItem("relayerComposerDraftsV1") || "{}");

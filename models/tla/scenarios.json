@@ -1673,6 +1673,39 @@
       ]
     },
     {
+      "id": "canvas-leave-after-layout-change",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "init": "ptr = 0",
+      "promises": [
+        "DragFollowsPointer",
+        "DropStays",
+        "DropFitsNewLayout"
+      ],
+      "summary": "The layout changes while a node is dragged, and the user leaves the view before dropping it; returning shows the new layout fitted.",
+      "steps": [
+        [
+          "Press"
+        ],
+        [
+          "Move",
+          1
+        ],
+        [
+          "RenderLayout"
+        ],
+        [
+          "Leave"
+        ],
+        [
+          "Release"
+        ],
+        [
+          "Return"
+        ]
+      ]
+    },
+    {
       "id": "canvas-drop-round-trip",
       "module": "CanvasGesture",
       "preset": "canvas",
