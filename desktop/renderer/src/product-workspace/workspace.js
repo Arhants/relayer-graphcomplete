@@ -1761,13 +1761,21 @@ export function createProductWorkspace({
   // the answer counts toward Send being ready while its Node Detail shows.
   const authoredInputEdits = new Map();
   // The change that leaves the field starts its commit after an await; until
-  // onInput tracks that commit, the submission counts as the commit.
-  const trackAuthoredInputSubmit = (threadId, submitted) => {
+  // onInput tracks that commit, the submission counts as the commit. One the
+  // input refused (a blank answer, or one it cannot commit here) failed, and
+  // stops a Send as a failed commit does, until that input is edited again.
+  const refusedInputKey = (mountId) => `refused\u0000${mountId}`;
+  const trackAuthoredInputSubmit = (threadId, submitted, mountId) => {
     const key = String(threadId);
     const commits = authoredInputCommits.get(key) ?? new Set();
     authoredInputCommits.set(key, commits);
     commits.add(submitted);
-    void submitted.finally(() => {
+    void submitted.then((committed) => {
+      if (committed !== false) return;
+      const failed = failedAuthoredInputs.get(key) ?? new Set();
+      failedAuthoredInputs.set(key, failed);
+      failed.add(refusedInputKey(mountId));
+    }).finally(() => {
       commits.delete(submitted);
       if (!commits.size && authoredInputCommits.get(key) === commits) authoredInputCommits.delete(key);
       syncComposer();
@@ -3935,25 +3943,12 @@ export function createProductWorkspace({
             inputDraftRevision: reconciledInputDraftRevision(),
             inputCompositionRevision: sendRequest.inputCompositionRevision,
           }),
-          rebuildIntent: () => {
-            const rebuilt = rebuildInteractionSendIntentAfterInputReconciliation({
-              clickedIntent: clickTimeIntentWithoutDraftAuthority(),
-              currentIntent: sendRequest.freshIntent,
-              inputDraftRevision: reconciledInputDraftRevision(),
-              inputCompositionRevision: currentInputCompositionRevision(threadId),
-            });
-            // An uncommitted answer made this Send ready; if leaving the field
-            // committed nothing, there is nothing to send.
-            if (!composerSubmissionReady(
-              rebuilt.promptValue,
-              false,
-              true,
-              rebuilt.contexts,
-              false,
-              inputDraftController?.current(threadId)?.attachments || [],
-            )) throw new Error("The answer in Node Details was not saved, so there was nothing to send.");
-            return rebuilt;
-          },
+          rebuildIntent: () => rebuildInteractionSendIntentAfterInputReconciliation({
+            clickedIntent: clickTimeIntentWithoutDraftAuthority(),
+            currentIntent: sendRequest.freshIntent,
+            inputDraftRevision: reconciledInputDraftRevision(),
+            inputCompositionRevision: currentInputCompositionRevision(threadId),
+          }),
         });
         if (!intent || !sendIntentIsCurrentThread(threadId, intent.threadId)) return;
         if (unconfirmedContextDrafts.length > 0) {
@@ -5777,26 +5772,22 @@ export function createProductWorkspace({
       onInputEdit: (context, value, submitted) => {
         const threadId = String(getThread()?.id);
         const editKey = `${authoredDetailMountKey}\u0000${context.mountId}`;
+        if (typeof value === "string") failedAuthoredInputs.get(threadId)?.delete(refusedInputKey(context.mountId));
         if (typeof value === "string" && value.trim()) authoredInputEdits.set(editKey, threadId);
         else authoredInputEdits.delete(editKey);
-        if (submitted) trackAuthoredInputSubmit(threadId, submitted);
+        if (submitted) trackAuthoredInputSubmit(threadId, submitted, context.mountId);
         syncComposer();
       },
       onInput: async (action, value, context) => {
         const thread = getThread();
         const interactionNodeId = currentInteraction(state, thread)?.graphNodeId;
         const layerId = currentLayerId(state, thread);
+        // A refused answer throws, so the runtime shows why and reports it.
         const issue = validateInputStage(action, value);
-        if (issue) {
-          authoredDetailRuntime?.updateCapability(context.mountId, { error: issue.message });
-          return;
-        }
+        if (issue) throw new Error(issue.message);
         if (!inputDraftController || interactionNodeId == null || layerId == null) {
-          authoredDetailRuntime?.updateCapability(context.mountId, {
-            disabled: true,
-            error: "Input editing is unavailable in this view.",
-          });
-          return;
+          authoredDetailRuntime?.updateCapability(context.mountId, { disabled: true });
+          throw new Error("Input editing is unavailable in this view.");
         }
         const occurrence = createInputOccurrence(interactionNodeId, layerId, action.id);
         authoredDetailRuntime?.updateCapability(context.mountId, { busy: true, error: null });
@@ -5828,9 +5819,13 @@ export function createProductWorkspace({
       if (authoredDetail !== mountedAuthoredDetail) authoredDetail.dispose?.();
       return false;
     }
-    // A new mount starts with no edits; one an unmounted field left behind
-    // was never committed.
-    if (authoredDetail !== mountedAuthoredDetail) authoredInputEdits.clear();
+    // Edits another mount's fields left behind were never committed. This
+    // mount's fields can be edited while its assets load, so theirs are kept.
+    if (authoredDetail !== mountedAuthoredDetail) {
+      for (const editKey of [...authoredInputEdits.keys()]) {
+        if (!editKey.startsWith(`${authoredDetailMountKey}\u0000`)) authoredInputEdits.delete(editKey);
+      }
+    }
     mountedAuthoredDetail = authoredDetail.authored ? authoredDetail : null;
     if (authoredDetail.authored) {
       $("#nodeInputActions").replaceChildren();

@@ -102,6 +102,29 @@ describe("A newer turn arriving while Send waits for an authored commit", () => 
 });
 
 describe("Send after an answer did not save", () => {
+  it("is stopped once when leaving the field refuses a blank answer", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    for (const step of [["Type", 1], ["Commit"], ["ServeCommit"], ["CommitReturns"], ["Type", 0]]) await world.apply(step);
+    // Pressing Send leaves the field, which refuses the blank answer.
+    world.input.dispatchEvent(new world.window.Event("change", { bubbles: true }));
+    await world.click("#sendInteraction");
+    expect(world.post).toBeNull();
+    await world.click("#sendInteraction");
+    expect(world.post).not.toBeNull();
+  });
+
+  it("is not stopped by a refused answer the user has since corrected and committed", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    await world.apply(["Type", 1]);
+    world.input.value = " ";
+    world.input.dispatchEvent(new world.window.Event("input", { bubbles: true }));
+    world.input.dispatchEvent(new world.window.Event("change", { bubbles: true }));
+    await world.settled();
+    for (const step of [["Type", 2], ["Commit"], ["ServeCommit"], ["CommitReturns"]]) await world.apply(step);
+    await world.click("#sendInteraction");
+    expect(world.post).not.toBeNull();
+  });
+
   it("is stopped once even after that Node Detail was closed, then sends", async () => {
     world = await new AuthoredInputSendWorld().ready();
     for (const step of [["Type", 1], ["Commit"], ["CommitFails"], ["CommitReturns"]]) await world.apply(step);
@@ -186,6 +209,14 @@ describe("An authored answer typed but not committed, with an empty composer", (
     await world.apply(["Type", 2]);
     await world.click("#closeInspector");
     expect(sendDisabled()).toBe(true);
+  });
+
+  it("counts an answer typed while its Node Detail's assets load", async () => {
+    world = await new AuthoredInputSendWorld({ slowAsset: true }).ready();
+    await world.typePrompt("");
+    await world.apply(["Type", 1]);
+    await world.loadAsset();
+    expect(sendDisabled()).toBe(false);
   });
 
   it("stops the Send when leaving the field commits nothing", async () => {

@@ -71,12 +71,26 @@ const AUTHORED_DETAIL = compiledPackage({
   assets: [],
 });
 
+// The same input beside an image whose asset loads until the world lets it.
+const SLOW_ASSET_DETAIL = compiledPackage({
+  version: 1,
+  components: [{ id: "form", order: 0, html: '<label>Answer <textarea aria-label="Your answer" data-gc-mount="input"></textarea></label><img alt="Illustration" data-asset-mount="picture">', css: "" }],
+  mounts: [{
+    id: "input", componentId: "form", kind: "capability", host: "textarea",
+    capability: { kind: "input", action: { clientKey: "input-action", sourceNode: { clientKey: "question" }, sourceLayer: { clientKey: "layer" } } },
+  }, { id: "picture", componentId: "form", kind: "asset", host: "img", assetId: "picture" }],
+  assets: [{ id: "picture", digestSha256: "c".repeat(64), mediaType: "image/png", representation: "image" }],
+});
+
 export class AuthoredInputSendWorld {
   // contextDrafts: unconfirmed annotation drafts, which open the draft-send
   // warning on Send. authored: false shows the ordinary Node Details input,
   // committed by its ✓ button, instead of the authored detail.
-  constructor({ contextDrafts = [], authored = true } = {}) {
+  // slowAsset: the authored detail also shows an image whose asset loads
+  // until loadAsset() is called.
+  constructor({ contextDrafts = [], authored = true, slowAsset = false } = {}) {
     this.authored = authored;
+    this.assetGate = deferred();
     this.window = new Window({ url: "http://127.0.0.1:3000" });
     vi.stubGlobal("document", this.window.document);
     vi.stubGlobal("window", this.window);
@@ -94,7 +108,7 @@ export class AuthoredInputSendWorld {
     this.refused = false;
     const node = {
       id: 7, clientKey: "question", kind: "question", icon: "box", title: "Question",
-      ...(authored ? { authoredDetail: AUTHORED_DETAIL } : {}),
+      ...(authored ? { authoredDetail: slowAsset ? SLOW_ASSET_DETAIL : AUTHORED_DETAIL } : {}),
     };
     const actions = [{ id: 13, clientKey: "input-action", sourceNodeId: 7, sourceLayerId: 10, sourceLayerClientKey: "layer", kind: "input", ...ACTION }];
     const layer = {
@@ -121,6 +135,10 @@ export class AuthoredInputSendWorld {
       showThread: () => {},
       showEmpty: () => {},
       contextDraftApi: { list: async () => ({ drafts: contextDrafts, confirmations: [] }) },
+      resolveNodeDetailAsset: async (asset) => {
+        await world.assetGate.promise;
+        return { ...asset, url: `blob:http://127.0.0.1:3000/${asset.id}` };
+      },
       inputDraftApi: {
         get: async () => world.#draft(),
         commit: (_threadId, occurrence, value, expectedRevision) => {
@@ -271,6 +289,11 @@ export class AuthoredInputSendWorld {
     this.state.currentInteractionId = 6;
     this.selection.currentInteractionId = 6;
     this.workspace.render();
+    await settle();
+  }
+
+  async loadAsset() {
+    this.assetGate.resolve();
     await settle();
   }
 

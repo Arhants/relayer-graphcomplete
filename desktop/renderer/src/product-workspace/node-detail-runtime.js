@@ -394,6 +394,7 @@ function configureInput(host, action, resolveCurrentAction, onInput, onInputEdit
       const currentAction = await resolveCurrentAction();
       assertResolvedAction(context.capability, currentAction);
       await onInput(currentAction, value, context);
+      return true;
     } catch (error) {
       const failedState = {
         ...(capabilityStates.get(context.mountId) ?? {}),
@@ -401,6 +402,8 @@ function configureInput(host, action, resolveCurrentAction, onInput, onInputEdit
       };
       capabilityStates.set(context.mountId, failedState);
       applyCapabilityState(host, failedState);
+      // Resolves false: the answer was refused before it could commit.
+      return false;
     }
   };
   // Text commits on change, which leaving the field fires. Until then its
