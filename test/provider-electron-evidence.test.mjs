@@ -1,7 +1,7 @@
 import { execFile, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -104,9 +104,42 @@ describe("provider browser evidence", () => {
         .filter((name) => name.endsWith(".png"))
         .sort();
       expect(variants).toEqual([
-        "authorization.png", "error.png", "invalid.png", "light.png", "loading.png", "long-label.png",
-        "narrow.png", "no-compatible.png", "refresh-models.png", "removed.png", "repair-execution.png",
-        "stale.png", "unavailable.png",
+        "authorization.png",
+        "error.png",
+        "invalid.png",
+        "light.png",
+        "loading.png",
+        "long-label.png",
+        "narrow.png",
+        "no-compatible.png",
+        "refresh-models.png",
+        "removed.png",
+        "repair-execution.png",
+        "sidebar-new-thread-375-expanded-menu.png",
+        "sidebar-new-thread-375-expanded.png",
+        "sidebar-new-thread-421-expanded.png",
+        "sidebar-new-thread-450-expanded.png",
+        "sidebar-new-thread-480-expanded.png",
+        "sidebar-new-thread-483-expanded-model-menu.png",
+        "sidebar-new-thread-483-expanded-permission-menu.png",
+        "sidebar-new-thread-483-expanded-scope-menu.png",
+        "sidebar-new-thread-expanded.png",
+        "sidebar-new-thread-light.png",
+        "sidebar-new-thread.png",
+        "sidebar-thread-375-expanded.png",
+        "sidebar-thread-375.png",
+        "sidebar-thread-421-expanded.png",
+        "sidebar-thread-450-expanded.png",
+        "sidebar-thread-480-expanded.png",
+        "sidebar-thread-760.png",
+        "sidebar-thread-761.png",
+        "sidebar-thread-collapsed.png",
+        "sidebar-thread-expanded.png",
+        "sidebar-thread-journey.png",
+        "sidebar-thread-light-expanded.png",
+        "sidebar-thread-wide.png",
+        "stale.png",
+        "unavailable.png",
       ]);
       expect(existsSync(join(output, "manifest.json"))).toBe(true);
       expect(existsSync(join(output, "provider-ux-poster.png"))).toBe(true);
@@ -136,6 +169,36 @@ describe("provider browser evidence", () => {
     } finally {
       await rm(output, { recursive: true, force: true });
     }
+  }, 120_000);
+
+  it.skipIf(!mediaToolsAvailable)("captures focused main scenes and excludes omitted files from reused sidebar-only output", async () => {
+    const output = await mkdtemp(join(tmpdir(), "relayer-focused-evidence-"));
+    const capture = async (...args) => run(process.execPath, ["scripts/capture-provider-ux-video.mjs", "--output-dir", output, ...args], {
+      cwd: new URL("..", import.meta.url), timeout: 120_000, maxBuffer: 1024 * 1024 * 8,
+    });
+    try {
+      await capture("--scene=onboarding");
+      expect(await readFile(join(output, "onboarding.png"))).toEqual(await readFile(join(output, "frames/onboarding.png")));
+      await mkdir(join(output, "variants"), { recursive: true });
+      await writeFile(join(output, "variants/light.png"), "stale omitted evidence");
+      await writeFile(join(output, "manifest.json"), JSON.stringify({ video: { file: "stale.mp4" } }));
+      await capture("--only-sidebar");
+      const manifest = JSON.parse(await readFile(join(output, "manifest.json"), "utf8"));
+      expect(manifest.scenes).toEqual({});
+      expect(manifest.video).toBeUndefined();
+      expect(Object.keys(manifest.variants).length).toBeGreaterThan(0);
+      expect(Object.keys(manifest.variants).every((name) => name.startsWith("sidebar-"))).toBe(true);
+      expect(await readdir(join(output, "frames"))).toEqual([]);
+      expect(await readdir(join(output, "variants"))).not.toContain("light.png");
+      for (const entry of Object.values(manifest.variants)) {
+        const bytes = await readFile(join(output, entry.file));
+        expect(createHash("sha256").update(bytes).digest("hex")).toBe(entry.sha256);
+      }
+      const gesture = JSON.parse(await readFile(join(output, "gesture-resize.json"), "utf8"));
+      expect(gesture.map(({ ending, passed }) => ({ ending, passed }))).toEqual([
+        { ending: "release", passed: true }, { ending: "cancel", passed: true },
+      ]);
+    } finally { await rm(output, { recursive: true, force: true }); }
   }, 120_000);
 
   // The capture flow above needs macOS media tools and skips elsewhere, but

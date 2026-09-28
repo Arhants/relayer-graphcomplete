@@ -98,3 +98,38 @@ describe("Eval review sidebar", () => {
     expect(chatList.innerHTML).not.toContain("Thread 1");
   });
 });
+
+it("keeps quoted chat, project, and Eval destination names on the actual buttons", async () => {
+  const { Window } = await import("happy-dom");
+  const browser = new Window({ url: "http://127.0.0.1:43123/" });
+  Object.assign(globalThis, { window: browser, document: browser.document, location: browser.location });
+  document.body.innerHTML = `<div class="sidebar-title"><strong>Relayer</strong></div><button id="newThread"></button>
+    <section class="side-section"><div class="section-label"></div><div id="chatList"></div></section>
+    <section class="side-section"><div class="section-label"></div><div id="projectList"></div></section><button id="settingsButton"></button>`;
+  const { renderSidebar } = await import("../desktop/renderer/src/navigation.js");
+  const { appState, viewState } = await import("../desktop/renderer/src/state.js");
+  const previous = { threads: appState.threads, projects: appState.projects, evalContext: viewState.evalContext };
+  const name = 'Review "quotes" & names';
+  try {
+    viewState.evalContext = null;
+    appState.threads = [{ id: 10, title: name }, { id: 11, title: `Project ${name}`, projectId: 1 }];
+    appState.projects = [{ id: 1, name }];
+    renderSidebar();
+    for (const [selector, expected] of [['[data-thread="10"]', name], ['[data-thread="11"]', `Project ${name}`], ['.project-button', name]]) {
+      const button = document.querySelector(selector);
+      expect(button.getAttribute("aria-label")).toBe(expected);
+      expect(button.getAttribute("title")).toBe(expected);
+      expect(button.querySelector(".entry-icon,i").getAttribute("aria-hidden")).toBe("true");
+    }
+    viewState.evalContext = { harnessConfigurationName: "fixture", cases: [{ name: "Case", status: "passed", threads: [{ id: 12, name }] }] };
+    renderSidebar();
+    expect(document.querySelector('[data-thread="12"]').getAttribute("aria-label")).toBe(name);
+    expect(document.querySelector('[data-thread="12"] .entry-icon').getAttribute("aria-hidden")).toBe("true");
+    expect(document.querySelector("markup")).toBeNull();
+  } finally {
+    appState.threads = previous.threads;
+    appState.projects = previous.projects;
+    viewState.evalContext = previous.evalContext;
+    browser.happyDOM.abort();
+  }
+});

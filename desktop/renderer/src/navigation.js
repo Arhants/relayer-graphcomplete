@@ -28,8 +28,17 @@ export function setMainView(view, { moveFocus = false } = {}) {
   $("#settingsSidebarContent").classList.toggle("hidden", view !== "settings");
   if (view === "settings") setSettingsTab(viewState.settingsTab);
   if (moveFocus) {
-    if (view === "settings") $(`[data-settings-tab="${viewState.settingsTab}"]`)?.focus();
-    else $("#settingsButton").focus();
+    const narrow = window.matchMedia?.("(max-width: 760px)").matches;
+    if (view === "settings") {
+      if (narrow) $("#settingsCompactSelect")?.focus();
+      else $(`[data-settings-tab="${viewState.settingsTab}"]`)?.focus();
+    } else {
+      if (narrow || document.body?.classList.contains("sidebar-collapsed")) {
+        $("#collapseSidebar")?.focus();
+      } else {
+        $("#settingsButton")?.focus();
+      }
+    }
   }
   onboardingTutorialController()?.presentationChanged();
 }
@@ -60,7 +69,7 @@ export async function returnFromSettings(refreshThread) {
 }
 
 function threadEntry(thread) {
-  return `<button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}" data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread"><span class="entry-icon">◌</span><span>${escapeHtml(thread.title)}</span></button>`;
+  return `<button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}" data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(thread.title)}" title="${escapeHtmlAttribute(thread.title)}"><span class="entry-icon" aria-hidden="true">◌</span><span>${escapeHtml(thread.title)}</span></button>`;
 }
 
 export function renderSidebar() {
@@ -77,7 +86,7 @@ export function renderSidebar() {
     chatList.innerHTML = viewState.evalContext.cases.map((testCase) => {
       const threads = testCase.threads || [];
       const entries = threads.length
-        ? threads.map((thread, index) => `<button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}" data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread"><span class="entry-icon">${index + 1}</span><span>${escapeHtml(thread.name)}</span></button>`).join("")
+        ? threads.map((thread, index) => `<button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}" data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(thread.name)}" title="${escapeHtmlAttribute(thread.name)}"><span class="entry-icon" aria-hidden="true">${index + 1}</span><span>${escapeHtml(thread.name)}</span></button>`).join("")
         : `<div class="entry"><span class="entry-icon">—</span><span>No thread</span></div>`;
       return `<div class="eval-case"><div class="section-label">${escapeHtml(testCase.name)} · ${escapeHtml(testCase.status)}</div>${entries}</div>`;
     }).join("");
@@ -92,7 +101,7 @@ export function renderSidebar() {
     const projectId = escapeHtmlAttribute(project.id);
     const projectName = escapeHtml(project.name);
     const projectNameAttribute = escapeHtmlAttribute(project.name);
-    return `<div><div class="project-row" data-project-row="${projectId}"><button class="project-button" type="button"><i></i><span>${projectName}</span></button><button class="project-new-thread" type="button" data-project-new-thread="${projectId}" aria-label="New thread in ${projectNameAttribute}" title="New thread in ${projectNameAttribute}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.69 4.05 19.95 9.31M4 20l3.75-.75L19.2 7.8a1.75 1.75 0 0 0 0-2.48l-.52-.52a1.75 1.75 0 0 0-2.48 0L4.75 16.25 4 20Z"/><path d="M13 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-7"/></svg></button></div><div class="project-threads">${threads.map(threadEntry).join("")}</div></div>`;
+    return `<div><div class="project-row" data-project-row="${projectId}"><button class="project-button" type="button" aria-label="${projectNameAttribute}" title="${projectNameAttribute}"><i aria-hidden="true"></i><span>${projectName}</span></button><button class="project-new-thread" type="button" data-project-new-thread="${projectId}" aria-label="New thread in ${projectNameAttribute}" title="New thread in ${projectNameAttribute}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.69 4.05 19.95 9.31M4 20l3.75-.75L19.2 7.8a1.75 1.75 0 0 0 0-2.48l-.52-.52a1.75 1.75 0 0 0-2.48 0L4.75 16.25 4 20Z"/><path d="M13 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-7"/></svg></button></div><div class="project-threads">${threads.map(threadEntry).join("")}</div></div>`;
   }).join("");
 }
 
