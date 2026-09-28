@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 
 import { compareNumericVersions, isNumericVersion } from "./numeric-version.mjs";
 import { DESKTOP_UPDATE_BASE_URL } from "../shared/release-metadata.mjs";
+import { PRODUCTION_SHARE_SERVICE_ENDPOINT } from "../main/services/share-service-endpoint.mjs";
 import {
   desktopTargetByKey,
   desktopTargetFromEnvironment,
@@ -188,18 +189,6 @@ export function resolveDesktopReleaseContract({
   ) {
     throw new Error("Desktop candidate provenance requires positive workflow run and attempt IDs together.");
   }
-  const shareServiceEndpoint = channelName === "preview"
-    ? value(environment, "RELAYER_SHARE_SERVICE_ENDPOINT")
-    : "https://share.relayerlabs.ai";
-  let shareServiceUrl;
-  try {
-    shareServiceUrl = new URL(shareServiceEndpoint);
-  } catch {
-    throw new Error("Preview desktop release requires RELAYER_SHARE_SERVICE_ENDPOINT as an HTTPS origin.");
-  }
-  if (shareServiceUrl.protocol !== "https:" || shareServiceUrl.origin !== shareServiceUrl.href.replace(/\/$/u, "")) {
-    throw new Error("Preview desktop release requires RELAYER_SHARE_SERVICE_ENDPOINT as an HTTPS origin.");
-  }
 
   let signingIdentity = null;
   let signingMode;
@@ -267,7 +256,7 @@ export function resolveDesktopReleaseContract({
     providerChannel: channel.providerChannel,
     manifestName: channel.manifestName,
     updateBaseUrl,
-    shareServiceEndpoint: shareServiceUrl.origin,
+    shareServiceEndpoint: PRODUCTION_SHARE_SERVICE_ENDPOINT,
     sourceCommit: normalizedCommit,
     candidateWorkflowRunId: candidateWorkflowRunId || null,
     candidateWorkflowRunAttempt: candidateWorkflowRunAttempt || null,

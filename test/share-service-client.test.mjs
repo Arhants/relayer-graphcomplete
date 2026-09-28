@@ -23,6 +23,31 @@ function response(body, status = 200) {
 }
 
 describe("main-only share service client", () => {
+  it("uses a separate upload deadline and freshly asserted bearer for finalization", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const bearer = [];
+    let authorization = "Bearer initial";
+    const client = createShareServiceClient({
+      endpoint: "https://share.example.test", timeoutMs: 15_000, uploadTimeoutMs: 600_000,
+      fetchImpl: async (url, init) => {
+        bearer.push(init.headers.authorization);
+        return response(url.endsWith("/finalize") ? { url: "https://share.example.test/t/published" } : {
+          status: "reserved", shareId: "test", upload: { method: "POST", url: "https://objects.example.test", key: "test", fields: {} },
+        });
+      },
+      uploadFetchImpl: async () => {
+        authorization = "Bearer refreshed";
+        return response({}, 204);
+      },
+    });
+    try {
+      await client.publish({ authorization, assertAuthority: async () => ({ authorization }), attempt, snapshotBytes: snapshot });
+      expect(timeout.mock.calls.map(([duration]) => duration)).toEqual([15_000, 600_000, 15_000]);
+      expect(bearer).toEqual(["Bearer initial", "Bearer refreshed"]);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
   it("reports an already exhausted UTC-day quota before title collection", async () => {
     const client = createShareServiceClient({
       endpoint: "https://share.example.test",

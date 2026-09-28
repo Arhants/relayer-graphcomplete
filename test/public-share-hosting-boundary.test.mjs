@@ -35,4 +35,16 @@ describe("public shared-thread hosting ownership", () => {
       expect(await exists(path), path).toBe(true);
     }
   });
+
+  it("admits V2 asset lines in addition to the complete turn inventory", async () => {
+    const { snapshot } = JSON.parse(await readFile(resolve(repositoryRoot, "contracts/share-service-v1/contract.json"), "utf8"));
+    // Every admitted JSONL record is an object plus a newline, at least 3 bytes.
+    // The byte ceiling therefore bounds all V1/V2 lines without inventing an
+    // asset-count restriction or spending the 10,000-turn budget on assets.
+    // A canonical visualAssetContent record has a 64-byte digest plus its
+    // typed envelope, so 110k admits every valid asset-heavy 16 MiB V2 stream
+    // while rejecting millions of tiny JSON objects before browser parsing.
+    expect(snapshot.maxLines).toBe(110_000);
+    expect(snapshot.maxLines).toBeGreaterThanOrEqual(1 + 10_000 + 1);
+  });
 });

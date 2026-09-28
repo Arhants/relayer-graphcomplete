@@ -2729,11 +2729,11 @@ describe("desktop skeleton", () => {
       APPLE_API_ISSUER: "00000000-0000-0000-0000-000000000000",
     };
     const sourceCommit = "a".repeat(40);
-    expect(() => resolveDesktopReleaseContract({
+    expect(resolveDesktopReleaseContract({
       environment: { ...releaseEnvironment, RELAYER_SHARE_SERVICE_ENDPOINT: "" },
       version: "0.2.0",
       sourceCommit,
-    })).toThrow("RELAYER_SHARE_SERVICE_ENDPOINT as an HTTPS origin");
+    }).shareServiceEndpoint).toBe("https://share.relayerlabs.ai");
     const contract = resolveDesktopReleaseContract({
       environment: releaseEnvironment,
       version: "0.2.0",
@@ -2751,12 +2751,14 @@ describe("desktop skeleton", () => {
       providerChannel: "beta",
       manifestName: "beta-mac.yml",
       sourceCommit,
-      shareServiceEndpoint: "https://share-preview.relayerlabs.ai",
+      shareServiceEndpoint: "https://share.relayerlabs.ai",
       candidateWorkflowRunId: "12345",
       candidateWorkflowRunAttempt: "2",
       appleTeamId: "NZ253AL7U6",
     });
     const builder = createDesktopBuilderConfig(contract);
+    expect(builder.extraMetadata.relayerUpdateChannel).toBe("preview");
+    expect(builder.extraMetadata.relayerShareServiceEndpoint).toBe("https://share.relayerlabs.ai");
     expect(builder.dmg).toEqual({ sign: true });
     expect(builder).toMatchObject({
       appId: "ai.relayer.desktop",

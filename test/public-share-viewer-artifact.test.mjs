@@ -12,8 +12,8 @@ const repositoryRoot = resolve(import.meta.dirname, "..");
 describe("public share viewer artifact", () => {
   it("builds an immutable source-bound artifact for private hosting", async () => {
     const output = await mkdtemp(join(tmpdir(), "relayer-share-viewer-"));
-    await execFileAsync(process.execPath, [
-      "scripts/build-public-share-viewer-artifact.mjs",
+    await execFileAsync("npm", [
+      "run", "build:public-share-viewer-artifact", "--",
       "--output",
       output,
     ], { cwd: repositoryRoot });

@@ -235,6 +235,61 @@ describe.sequential("desktop direct Auth0 account authority", () => {
     await service.close();
   });
 
+  it("refreshes expiring share authority once for concurrent requests without changing account generation", async () => {
+    let clock = 1_900_000_000_000;
+    const auth0 = await fakeAuth0({ tokenHandler: ({ issuer, privateKey }) => ({ json: {
+      token_type: "Bearer", expires_in: 120, refresh_token: "rotated-refresh-token",
+      id_token: idToken({ privateKey, issuer, clientId: "desktop-client", expiresAt: Math.floor(clock / 1000) + 120 }),
+    } }) });
+    let launchUrl;
+    const { service } = await fixture({ auth0, now: () => clock, openExternal: async (value) => { launchUrl = value; } });
+    await service.start();
+    await service.login();
+    await callbackFromLauncher(launchUrl);
+    await service.waitForIdle();
+    const original = await service.shareSession();
+    clock += 121_000;
+    const [first, second] = await Promise.all([service.shareSession(), service.shareSession()]);
+    expect(first.generation).toBe(original.generation);
+    expect(first.authorization).not.toBe(original.authorization);
+    expect(second).toEqual(first);
+    expect(auth0.requests.filter(({ body }) => body.get("grant_type") === "refresh_token")).toHaveLength(1);
+    await service.close();
+  });
+
+  it("does not restore signed-in state when logout supersedes a share refresh", async () => {
+    let clock = 1_900_000_000_000;
+    let releaseProjection;
+    let projectionStarted;
+    const projecting = new Promise((resolve) => { projectionStarted = resolve; });
+    const projection = new Promise((resolve) => { releaseProjection = resolve; });
+    let blockProjection = false;
+    const auth0 = await fakeAuth0({ tokenHandler: ({ issuer, privateKey }) => ({ json: {
+      token_type: "Bearer", expires_in: 120, refresh_token: "rotated-refresh-token",
+      id_token: idToken({ privateKey, issuer, clientId: "desktop-client", expiresAt: Math.floor(clock / 1000) + 120 }),
+    } }) });
+    let launchUrl;
+    const { service } = await fixture({ auth0, now: () => clock,
+      openExternal: async (value) => { launchUrl = value; },
+      telemetry: { retireIdentity: async () => {}, transitionIdentity: async (identity) => {
+        if (identity && blockProjection) { projectionStarted(); await projection; }
+      } },
+    });
+    await service.start();
+    await service.login();
+    await callbackFromLauncher(launchUrl);
+    await service.waitForIdle();
+    clock += 121_000;
+    blockProjection = true;
+    const pending = service.shareSession();
+    await projecting;
+    await service.logout();
+    releaseProjection();
+    await expect(pending).resolves.toBeNull();
+    expect(await service.account()).toMatchObject({ status: "signed-out" });
+    await service.close();
+  });
+
   it("brings Relayer back for every settled callback and leaves a superseded one in the browser", async () => {
     const auth0 = await fakeAuth0();
     let launchUrl;

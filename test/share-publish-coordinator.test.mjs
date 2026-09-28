@@ -9,6 +9,57 @@ const snapshot = new TextEncoder().encode(`${JSON.stringify({
 })}\n${JSON.stringify({ recordType: "turn" })}\n`);
 
 describe("share publication coordinator", () => {
+  it("hydrates only the retried durable attempt and bounds concurrent recovery", async () => {
+    const values = [1, 2].map((index) => ({
+      reference: `SHR-LAZY000${index}`, attemptId: "00112233445566778899aabbccddeeff",
+      ownerKey: "owner-a", threadId: index, sourceThreadId: `thread:${index}`,
+      title: "Public", snapshotBytes: snapshot, createdAt: index,
+      lastFailure: null, reportedFailures: [], publishedUrl: null,
+    }));
+    let finish;
+    const read = vi.fn(async (reference) => values.find((value) => value.reference === reference));
+    const publish = vi.fn(() => new Promise((resolve) => { finish = resolve; }));
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot: vi.fn(), sourceThreadIdentity: vi.fn(), publish,
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer a", generation: 1 }),
+      attemptStore: {
+        load: async ({ visit }) => { for (const value of values) await visit(value); return []; },
+        read, save: vi.fn(), delete: vi.fn(),
+      },
+    });
+    await expect(coordinator.pending({ threadId: 1 })).resolves.toMatchObject({ attemptReferenceId: values[0].reference });
+    expect(read).not.toHaveBeenCalled();
+    const running = coordinator.retry(values[0].reference);
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledOnce());
+    await expect(coordinator.retry(values[1].reference)).resolves.toMatchObject({ code: "share_attempt_unavailable", retryable: true });
+    expect(read).toHaveBeenCalledExactlyOnceWith(values[0].reference);
+    finish({ url: "https://share.example.test/t/lazy" });
+    await expect(running).resolves.toMatchObject({ status: "created" });
+  });
+  it("retries a transient initial load and revokes each operation reporter", async () => {
+    const load = vi.fn().mockRejectedValueOnce(new Error("EMFILE")).mockResolvedValue([]);
+    const reporters = [];
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot: async () => snapshot,
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer a", generation: 1 }),
+      sourceThreadIdentity: async () => "thread:42",
+      publish: async () => { throw Object.assign(new Error("offline"), { code: "share_upload_failed" }); },
+      attemptStore: { load, save: vi.fn(), delete: vi.fn() },
+      issueHandledShareFailureReporter: () => {
+        const reporter = { report: vi.fn(), revoke: vi.fn() };
+        reporters.push(reporter);
+        return reporter;
+      },
+      createReferenceId: () => "SHR-RECOVER1",
+    });
+    await expect(coordinator.pending({ threadId: 42 })).resolves.toBeNull();
+    await expect(coordinator.create({ threadId: 42, title: "Public" })).resolves.toMatchObject({ code: "share_upload_failed" });
+    await coordinator.preflight({ threadId: 42 });
+    await coordinator.retry("SHR-RECOVER1");
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(reporters).toHaveLength(3);
+    for (const reporter of reporters) expect(reporter.revoke).toHaveBeenCalledOnce();
+  });
   it("persists frozen bytes before publishing and reopens the same owner-bound attempt", async () => {
     const records = new Map();
     const attemptStore = {
@@ -39,7 +90,7 @@ describe("share publication coordinator", () => {
       attemptReferenceId: "SHR-DURABLE1",
       retryable: true,
     });
-    expect(records.get("SHR-DURABLE1").snapshotBytes).toEqual([...snapshot]);
+    expect(records.get("SHR-DURABLE1").snapshotBytes).toEqual(snapshot);
 
     const exportAfterRestart = vi.fn();
     const secondPublish = vi.fn(async ({ attempt, snapshotBytes }) => {
@@ -162,6 +213,7 @@ describe("share publication coordinator", () => {
     await expect(coordinator.create({ threadId: 42, title: "Public title" })).resolves.toMatchObject({
       status: "failed",
       code: "share_service_failed",
+      retryable: false,
     });
     expect(publish).not.toHaveBeenCalled();
   });
@@ -437,7 +489,7 @@ describe("share publication coordinator", () => {
     expect(publish).toHaveBeenCalledOnce();
   });
 
-  it("reports only the closed privacy-safe failure record", async () => {
+  it("suppresses oversize export reporting without durable deduplication state", async () => {
     const report = vi.fn(async () => ({ accepted: true }));
     const error = Object.assign(new Error("private raw service response"), {
       code: "share_snapshot_too_large",
@@ -452,12 +504,7 @@ describe("share publication coordinator", () => {
       createReferenceId: () => "SHR-ABCDEF12",
     });
     await coordinator.create({ threadId: 42, title: "Public title" });
-    expect(report).toHaveBeenCalledWith({
-      code: "share.snapshot_too_large",
-      failureStage: "export",
-      attemptReferenceId: "SHR-ABCDEF12",
-      snapshotBytes: 16_777_217,
-    });
+    expect(report).not.toHaveBeenCalled();
     expect(JSON.stringify(report.mock.calls)).not.toContain("private raw service response");
     expect(JSON.stringify(report.mock.calls)).not.toContain("Bearer secret");
   });
@@ -576,7 +623,7 @@ describe("share publication coordinator", () => {
     await expect(coordinator.retry("SHR-ABCDEF12")).resolves.toMatchObject({ code: "share_upload_failed" });
   });
 
-  it("classifies the real exporter error at the export stage", async () => {
+  it("suppresses real exporter errors without durable deduplication state", async () => {
     const report = vi.fn();
     const coordinator = createSharePublishCoordinator({
       exportSnapshot: async () => { throw new ShareSnapshotExportError("share_export_failed"); },
@@ -587,12 +634,7 @@ describe("share publication coordinator", () => {
       createReferenceId: () => "SHR-ABCDEF12",
     });
     await coordinator.create({ threadId: 42, title: "Public title" });
-    expect(report).toHaveBeenCalledWith({
-      code: "share.export_failed",
-      failureStage: "export",
-      attemptReferenceId: "SHR-ABCDEF12",
-      snapshotBytes: null,
-    });
+    expect(report).not.toHaveBeenCalled();
   });
 
   it("does not admit a handled failure unless its durable deduplication key is saved", async () => {

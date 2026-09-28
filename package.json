@@ -58,6 +58,7 @@
     "evidence:human-eval-annotations": "npm run build && RELAYER_CAPTURE_HUMAN_ANNOTATION_EVIDENCE=1 electron scripts/capture-human-eval-annotation-evidence.mjs",
     "evidence:public-share-viewer": "RELAYER_CAPTURE_PUBLIC_SHARE_VIEWER_EVIDENCE=1 electron scripts/capture-public-share-viewer-evidence.mjs",
     "evidence:share-publish-restart": "node scripts/test-share-publish-restart.mjs",
+    "prebuild:public-share-viewer-artifact": "npm run prepare:renderer",
     "build:public-share-viewer-artifact": "node scripts/build-public-share-viewer-artifact.mjs",
     "evidence:telemetry": "node scripts/run-telemetry-evidence.mjs",
     "test:desktop:approval": "npm run build && electron scripts/test-desktop-approval.mjs",

@@ -5,6 +5,7 @@ import { createHash, webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { createPublicViewerAdapter } from "../desktop/renderer/src/public-share-viewer/adapter.js";
+import { compiledNodeDetailCoversActions } from "../desktop/renderer/src/product-workspace/workspace.js";
 import {
   bootPublicViewer,
   fitPublicTurnPopover,
@@ -136,6 +137,34 @@ function canonicalJson(value) {
   return JSON.stringify(value);
 }
 
+function recordsJsonl(records) {
+  return `${records.map((record) => JSON.stringify(record)).join("\n")}\n`;
+}
+
+function invokeFixtureRecords() {
+  const records = fixtureJsonl().trimEnd().split("\n").map(JSON.parse);
+  const source = records[1];
+  source.acceptedView.layers[0].actions.push({
+    id: "action:invoke", sourceNodeId: "node:root", sourceLayerId: "layer:root",
+    kind: "invoke", interactionText: "Continue", label: "Open accepted result", variant: "pill", state: "accepted",
+  }, {
+    id: "action:input", sourceNodeId: "node:root", sourceLayerId: "layer:root",
+    kind: "input", label: "Choose a path", variant: "pill", state: "accepted",
+    input: { control: "single_select", prompt: "Which path?", options: [{ key: "a", label: "Path A" }, { key: "b", label: "Path B" }] },
+  });
+  records[0].turns.push({ id: "turn:2", sequence: 2 });
+  records.push({
+    ...source, id: "turn:2", sequence: 2, interactionNodeId: "node:child-interaction",
+    origin: { kind: "action", source_turn_id: "turn:1", source_action_id: "action:invoke" },
+    acceptedView: {
+      interactionNodeId: "node:child-interaction", rootLayerId: "layer:child",
+      rootAction: action("action:child-root", "node:child-interaction", "layer:child", "expand"),
+      layers: [layer("layer:child", "node:child")],
+    },
+  });
+  return records;
+}
+
 function assetFixtureJsonl(bytes = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><circle cx="1" cy="1" r="1"/></svg>')) {
   const records = fixtureJsonl().trimEnd().split("\n").map((line) => JSON.parse(line));
   const digestSha256 = createHash("sha256").update(bytes).digest("hex");
@@ -244,8 +273,93 @@ describe("public share V1 reader", () => {
       sourceNode: adapter.state.nodes[0],
     })).resolves.toBe(true);
     expect(adapter.state.visibleLayer.layer.id).toBe("layer:related");
+    for (let index = 0; index < 20; index += 1) {
+      await adapter.navigateLayer("layer:related", { action: adapter.state.actions[0], sourceNode: adapter.state.nodes[0] });
+    }
+    expect(adapter.selection.layerPath.map(({ layerId }) => layerId)).toEqual(["layer:root", "layer:nested", "layer:related"]);
     await expect(adapter.onInvokeAction({ kind: "invoke" })).resolves.toBe(false);
     await expect(adapter.onSubmitInteraction("mutate")).resolves.toBe(false);
+  });
+
+  it("collapses a two-layer reference cycle to its existing breadcrumb", async () => {
+    const records = fixtureJsonl().trimEnd().split("\n").map(JSON.parse);
+    records[1].acceptedView.layers[2].actions = [action("action:cycle", "node:related", "layer:other", "reference", "layer:related")];
+    records[1].acceptedView.layers.push(layer("layer:other", "node:other", [action("action:back", "node:other", "layer:related", "reference", "layer:other")]));
+    const adapter = createPublicViewerAdapter(parsePublicSnapshot(recordsJsonl(records)));
+    for (let index = 0; index < 20; index += 1) {
+      await adapter.navigateLayer(adapter.state.actions[0].targetLayerId, { action: adapter.state.actions[0], sourceNode: adapter.state.nodes[0] });
+      expect(adapter.selection.layerPath.length).toBeLessThanOrEqual(4);
+    }
+    expect(adapter.selection.layerPath.map(({ layerId }) => layerId)).toEqual(["layer:root", "layer:nested", "layer:related"]);
+  });
+
+  it("reads the declared 10,000-layer expansion depth and rejects a closing expand cycle", () => {
+    const records = fixtureJsonl().trimEnd().split("\n").map(JSON.parse);
+    const view = records[1].acceptedView;
+    view.rootLayerId = "layer:0";
+    view.rootAction.targetLayerId = "layer:0";
+    view.layers = Array.from({ length: 10_000 }, (_, index) => layer(`layer:${index}`, `node:${index}`, index < 9_999 ? [
+      action(`action:${index}`, `node:${index}`, `layer:${index + 1}`, "expand", `layer:${index}`),
+    ] : []));
+    expect(parsePublicSnapshot(recordsJsonl(records)).layersByTurn.get("turn:1").size).toBe(10_000);
+    view.layers.at(-1).actions.push(action("action:last", "node:9999", "layer:0", "expand", "layer:9999"));
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "expand_cycle" }));
+  });
+
+  it.each(["draft", "stopped", undefined])("rejects %s root and layer action state", (state) => {
+    for (const root of [true, false]) {
+      const records = fixtureJsonl().trimEnd().split("\n").map(JSON.parse);
+      const view = records[1].acceptedView;
+      (root ? view.rootAction : view.layers[0].actions[0]).state = state;
+      expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(PublicSnapshotError);
+    }
+  });
+
+  it.each(["snake", "camel"])("rehydrates %s accepted invoke origins without changing the exported authored shape", async (naming) => {
+    const records = invokeFixtureRecords();
+    if (naming === "camel") records[2].origin = { kind: "action", sourceTurnId: "turn:1", sourceActionId: "action:invoke" };
+    const snapshot = parsePublicSnapshot(recordsJsonl(records));
+    const adapter = createPublicViewerAdapter(snapshot);
+    const invoke = adapter.state.actions.find((item) => item.kind === "invoke");
+    expect(invoke.targetLayerId).toBe("layer:child");
+    expect(snapshot.turns[0].acceptedView.layers[0].actions.find((item) => item.kind === "invoke").targetLayerId).toBeUndefined();
+    expect(snapshot.layerFor("turn:1", "layer:root").actions.find((item) => item.kind === "invoke")).toBe(invoke);
+    await expect(adapter.navigateResolvedInvoke(invoke)).resolves.toBe(true);
+    expect(adapter.state.visibleLayer.layer.id).toBe("layer:child");
+    expect(adapter.selection.currentInteractionId).toBe("turn:2");
+    records[2].origin = { kind: "action", sourceTurnId: "turn:1", sourceActionId: "action:expand" };
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+  });
+
+  it("leaves failed invoke results inert and rejects conflicting accepted resolutions", () => {
+    const records = invokeFixtureRecords();
+    const acceptedChild = structuredClone(records[2]);
+    records[2].completion = { status: "failed", permissionProfileId: "auto" };
+    records[2].acceptedView = null;
+    const snapshot = parsePublicSnapshot(recordsJsonl(records));
+    expect(snapshot.interactions).toHaveLength(1);
+    expect(snapshot.state.actions.find((item) => item.kind === "invoke").targetLayerId).toBeUndefined();
+    records[2] = acceptedChild;
+    records[0].turns.push({ id: "turn:3", sequence: 3 });
+    records.push({ ...acceptedChild, id: "turn:3", sequence: 3 });
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+  });
+
+  it("joins existing source-layer keys for compiled actions without inventing omitted keys", () => {
+    const records = fixtureJsonl().trimEnd().split("\n").map(JSON.parse);
+    const root = records[1].acceptedView.layers[0];
+    root.layer.clientKey = "root-layer";
+    root.nodes[0].clientKey = "root-node";
+    root.actions[0].clientKey = "expand-action";
+    const detail = { mounts: [{ kind: "capability", capability: { kind: "expand", action: {
+      clientKey: "expand-action", sourceLayer: { clientKey: "root-layer" }, sourceNode: { clientKey: "root-node" },
+    } } }] };
+    const projected = parsePublicSnapshot(recordsJsonl(records)).interactions[0].completionOutput.rootLayer;
+    expect(compiledNodeDetailCoversActions(detail, projected.actions, projected.nodes[0])).toBe(true);
+    delete root.layer.clientKey;
+    const stripped = parsePublicSnapshot(recordsJsonl(records)).interactions[0].completionOutput.rootLayer;
+    expect(stripped.actions[0].sourceLayerClientKey).toBeUndefined();
+    expect(compiledNodeDetailCoversActions(detail, stripped.actions, stripped.nodes[0])).toBe(false);
   });
 
   it.each([
@@ -393,7 +507,7 @@ describe("public share HTML boundary", () => {
 
   it("boots the real ProductWorkspace at the first turn without changing the page URL", async () => {
     const windowRef = new Window({ url: `https://share.example.test/t/${"a".repeat(32)}` });
-    windowRef.document.write(renderPublicViewerTemplate({ snapshot: fixtureJsonl() }));
+    windowRef.document.write(renderPublicViewerTemplate({ snapshot: recordsJsonl(invokeFixtureRecords()) }));
     const previous = {
       DOMParser: globalThis.DOMParser,
       document: globalThis.document,
@@ -412,7 +526,7 @@ describe("public share HTML boundary", () => {
         return svg;
       },
     };
-    globalThis.marked = { parse: (value) => `<p><a href="https://example.test/docs">${value}</a></p>` };
+    globalThis.marked = { parse: (value) => `<p><a href="HTTPS://example.test/docs">${value}</a></p>` };
     try {
       const originalUrl = windowRef.location.href;
       const onRenderError = vi.fn();
@@ -427,9 +541,19 @@ describe("public share HTML boundary", () => {
       expect(downloadCard?.textContent).toContain("Download");
       expect(windowRef.document.querySelector("#environmentPanel")).toBeNull();
       windowRef.document.querySelector(".graph-node")?.click();
-      await vi.waitFor(() => expect(windowRef.document.querySelector('a[href="https://example.test/docs"]')).toMatchObject({
+      await vi.waitFor(() => expect(windowRef.document.querySelector('a[href="HTTPS://example.test/docs"]')).toMatchObject({
         target: "_blank",
       }));
+      expect(windowRef.document.querySelector('a[href="HTTPS://example.test/docs"]').rel).toBe("noreferrer noopener");
+      expect(windowRef.document.querySelector("#nodeInputActions").textContent).toContain("Path A");
+      expect(windowRef.document.querySelector("#nodeInputActions").textContent).toContain("Path B");
+      expect([...windowRef.document.querySelectorAll("#nodeInputActions button")].every((button) => button.disabled)).toBe(true);
+      const invokeButton = windowRef.document.querySelector('[data-action-id="action:invoke"]');
+      expect(invokeButton.disabled).toBe(false);
+      invokeButton.click();
+      await vi.waitFor(() => expect(viewer.adapter.selection.currentInteractionId).toBe("turn:2"));
+      expect(viewer.adapter.state.visibleLayer.layer.id).toBe("layer:child");
+      viewer.adapter.selectTurnById("turn:1");
       await viewer.adapter.navigateLayer("layer:nested", {
         action: viewer.adapter.state.actions[0],
         sourceNode: viewer.adapter.state.nodes[0],

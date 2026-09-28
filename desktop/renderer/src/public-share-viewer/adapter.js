@@ -79,9 +79,12 @@ export function createPublicViewerAdapter(snapshot) {
     ));
     const layer = snapshot.layerFor(interaction?.id, layerId);
     if (!interaction || !layer) return false;
+    const existingIndex = selection.layerPath.findIndex((entry) => sameId(entry.layerId, layerId));
     const layerPath = navigation.restore
       ? selection.layerPath.slice(0, Number(navigation.pathIndex) + 1)
-      : appendLayerPath(selection.layerPath, navigation.action, navigation.sourceNode);
+      : existingIndex >= 0
+        ? selection.layerPath.slice(0, existingIndex + 1)
+        : appendLayerPath(selection.layerPath, navigation.action, navigation.sourceNode);
     selection.selectedNodeId = null;
     hydrate(interaction, layer, layerPath);
     navigation.beforeCommit?.();

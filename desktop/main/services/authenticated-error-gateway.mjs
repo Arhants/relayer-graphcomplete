@@ -479,6 +479,14 @@ export function createAuthenticatedErrorGateway({
           && latestGenerationUserId !== nextUserId)) {
         return;
       }
+      // Token refresh may re-project the same verified account generation.
+      // That is not an authority transition: keep already-issued operation
+      // reporters valid and leave the authenticated transport in place.
+      if (identity !== null
+        && identity.generation === next.generation
+        && identity.userId === nextUserId) {
+        return;
+      }
       const previous = identity;
       latestGeneration = Math.max(latestGeneration, next.generation);
       latestGenerationUserId = nextUserId;

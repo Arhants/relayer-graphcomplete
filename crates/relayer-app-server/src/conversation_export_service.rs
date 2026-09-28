@@ -318,16 +318,12 @@ pub(crate) async fn build_share_conversation_export(
     if detail.thread.imported {
         return Err(ConversationExportBuildError::ShareImportedConversation);
     }
-    let selected = detail
-        .interactions
-        .iter()
-        .filter(|interaction| interaction.completion_status == "accepted")
-        .collect::<Vec<_>>();
+    let export_invocations = product.action_invocations_for_export(thread_id).await?;
+    let selected = share_accepted_interactions(&detail.interactions, &export_invocations);
     if selected.is_empty() {
         return Err(ConversationExportBuildError::ShareNoAcceptedCompletion);
     }
 
-    let export_invocations = product.action_invocations_for_export(thread_id).await?;
     let project_path = detail.project.as_ref().map(|project| project.path.as_str());
     let redactor = ProjectPathRedactor::for_share(project_path);
     let selected_indexes = selected
@@ -517,6 +513,34 @@ pub(crate) async fn build_share_conversation_export(
     Ok(body)
 }
 
+/// Only publish invoked work when its source ancestry is also in the accepted
+/// snapshot. Otherwise export_turn would lose the invocation and call it a user turn.
+fn share_accepted_interactions<'a>(
+    interactions: &'a [Interaction],
+    invocations: &[ActionInvocation],
+) -> Vec<&'a Interaction> {
+    let sources = invocations
+        .iter()
+        .map(|invocation| {
+            (
+                invocation.result_interaction_id,
+                invocation.source_interaction_id,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let mut included = HashSet::new();
+    interactions
+        .iter()
+        .filter(|interaction| {
+            interaction.completion_status == "accepted"
+                && sources
+                    .get(&interaction.id)
+                    .is_none_or(|source| included.contains(source))
+                && included.insert(interaction.id)
+        })
+        .collect()
+}
+
 async fn collect_visual_assets<'a>(
     runtime: &RuntimeClient,
     closures: impl IntoIterator<Item = &'a AcceptedGraphClosure>,
@@ -532,6 +556,7 @@ async fn collect_visual_assets<'a>(
     let mut visited_nodes = HashSet::new();
     let mut contents = BTreeMap::<String, ExportVisualAssetContent>::new();
     let mut referenced_contents = HashSet::new();
+    let mut projected_content_bytes = 0usize;
     for node in closures
         .into_iter()
         .flat_map(|closure| &closure.layers)
@@ -572,6 +597,11 @@ async fn collect_visual_assets<'a>(
             {
                 Ok(value) => value,
                 Err(RuntimeError::Remote { status: 404, .. }) => {
+                    if redactor.is_share() {
+                        return Err(ConversationExportBuildError::Invalid(
+                            "public visual asset metadata is unavailable".into(),
+                        ));
+                    }
                     legacy_metadata_only = true;
                     break;
                 }
@@ -639,6 +669,29 @@ async fn collect_visual_assets<'a>(
             };
             if let std::collections::btree_map::Entry::Vacant(entry) = contents.entry(digest.into())
             {
+                if redactor.is_share() {
+                    // Account for canonical base64 plus the serialized record envelope
+                    // before asking the runtime to materialize the content body.
+                    let envelope = ConversationExportRecord::VisualAssetContent(Box::new(
+                        ExportVisualAssetContent {
+                            digest_sha256: digest.into(),
+                            media_type: media.into(),
+                            byte_length: length,
+                            content_base64: String::new(),
+                        },
+                    ));
+                    projected_content_bytes = projected_content_bytes
+                        .saturating_add(serde_json::to_vec(&envelope)?.len())
+                        .saturating_add(
+                            length.saturating_add(2).saturating_div(3).saturating_mul(4),
+                        )
+                        .saturating_add(1);
+                    if projected_content_bytes > MAX_SHARE_SNAPSHOT_BYTES {
+                        return Err(ConversationExportBuildError::ShareSnapshotTooLarge {
+                            bytes: projected_content_bytes,
+                        });
+                    }
+                }
                 let payload = runtime.get_detail_asset(node.id.value(), asset_id).await?;
                 if payload
                     .get("digestSha256")
@@ -1613,7 +1666,20 @@ fn authored_detail_omission(
     };
     if contains_private_path {
         Some(ExportAuthoredDetailOmission::PrivatePath)
-    } else if redactor.is_share() && redactor.contains_sensitive_json(authored_detail) {
+    } else if redactor.is_share()
+        && (redactor.contains_sensitive_json(authored_detail)
+            || authored_detail
+                .get("mounts")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|mounts| {
+                    mounts
+                        .iter()
+                        .any(|mount| mount.pointer("/capability/action").is_some())
+                }))
+    {
+        // Capability action identities are author-chosen private client keys.
+        // The public records omit those keys, so the integrity-bound package
+        // cannot be kept with dangling mounts or rewritten in place.
         Some(ExportAuthoredDetailOmission::SensitiveData)
     } else {
         None
@@ -2053,9 +2119,92 @@ fn redact_share_secrets(value: &str) -> String {
     redacted = jwt_secret_regex()
         .replace_all(&redacted, "$1[redacted-secret]")
         .into_owned();
-    provider_secret_regex()
+    let redacted = provider_secret_regex()
         .replace_all(&redacted, "$1[redacted-secret]")
-        .into_owned()
+        .into_owned();
+    if contains_raw_share_secret(&markdown_rendered_text(&redacted)) {
+        return "[redacted-secret]".into();
+    }
+    // Ordinary Markdown is decoded again by the renderer. Detect credentials
+    // exposed by each bounded normalization step without rewriting safe Markdown.
+    let mut candidate = redacted.clone();
+    for _ in 0..NORMALIZATION_ROUNDS {
+        let mut changed = false;
+        for step in DECODING_STEPS {
+            let (next, step_changed) = step(&candidate);
+            if step_changed
+                && (contains_raw_share_secret(&next)
+                    || contains_raw_share_secret(&markdown_rendered_text(&next)))
+            {
+                return "[redacted-secret]".into();
+            }
+            changed |= step_changed;
+            candidate = next;
+        }
+        if !changed {
+            return redacted;
+        }
+    }
+    "[redacted-secret]".into()
+}
+
+/// Approximate the security-relevant text projection produced by the Markdown
+/// renderer. Inline HTML tags and Markdown emphasis delimiters are not visible
+/// to a reader and therefore must not be allowed to split a credential. This is
+/// intentionally conservative: false positives redact one public field, while
+/// a false negative would disclose the reconstructed secret.
+fn markdown_rendered_text(value: &str) -> String {
+    let characters: Vec<char> = value.chars().collect();
+    let mut rendered = String::with_capacity(value.len());
+    let mut index = 0;
+    while index < characters.len() {
+        match characters[index] {
+            '<' => {
+                index += 1;
+                let mut quote = None;
+                while index < characters.len() {
+                    let character = characters[index];
+                    if let Some(active) = quote {
+                        if character == active {
+                            quote = None;
+                        }
+                    } else if matches!(character, '\'' | '"') {
+                        quote = Some(character);
+                    } else if character == '>' {
+                        index += 1;
+                        break;
+                    }
+                    index += 1;
+                }
+            }
+            ']' if characters.get(index + 1) == Some(&'(') => {
+                index += 2;
+                let mut depth = 1usize;
+                while index < characters.len() && depth > 0 {
+                    match characters[index] {
+                        '(' => depth = depth.saturating_add(1),
+                        ')' => depth = depth.saturating_sub(1),
+                        '\\' => index = index.saturating_add(1),
+                        _ => {}
+                    }
+                    index += 1;
+                }
+            }
+            '*' | '`' | '~' | '[' | ']' | '!' => index += 1,
+            character => {
+                rendered.push(character);
+                index += 1;
+            }
+        }
+    }
+    rendered
+}
+
+fn contains_raw_share_secret(value: &str) -> bool {
+    pem_secret_regex().is_match(value)
+        || bearer_secret_regex().is_match(value)
+        || jwt_secret_regex().is_match(value)
+        || provider_secret_regex().is_match(value)
 }
 
 fn has_share_secret(value: &str) -> bool {
@@ -2066,7 +2215,7 @@ fn share_home_path_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
     REGEX.get_or_init(|| {
         Regex::new(
-            r#"(?i)(?:/(?:Users|home)/[^/\s]+(?:/[^\s<>"']*)?|[A-Z]:\\Users\\[^\\\s]+(?:\\[^\s<>"']*)?)"#,
+            r#"(?i)(?:/(?:Users|home)/[^/\r\n<>"'`]+(?:/[^\r\n<>"'`]*)?|[A-Z]:\\Users\\[^\\\r\n<>"'`]+(?:\\[^\r\n<>"'`]*)?)"#,
         )
         .expect("valid home-path redaction regex")
     })
@@ -2542,6 +2691,26 @@ mod tests {
 
         assert!(view.layers[0].nodes[0].authored_detail.is_some());
         assert!(view.layers[0].nodes[0].authored_detail_assets.is_empty());
+
+        let mut private_keys = closure.clone();
+        let key = "sk-proj-12345678901234567890 /Users/alice/private";
+        private_keys.root_action.client_key = Some(key.into());
+        private_keys.layers[0].layer.client_key = Some(key.into());
+        private_keys.layers[0].nodes[0].client_key = Some(key.into());
+        let public = super::export_view(
+            &private_keys,
+            &mut PortableIds::default(),
+            &ProjectPathRedactor::for_share(None),
+        )
+        .unwrap();
+        assert!(public.root_action.client_key.is_none());
+        assert!(public.layers[0].layer.client_key.is_none());
+        assert!(public.layers[0].nodes[0].client_key.is_none());
+        assert!(
+            !serde_json::to_string(&public)
+                .unwrap()
+                .contains("clientKey")
+        );
     }
     use crate::{
         conversation_export::{
@@ -2573,11 +2742,20 @@ mod tests {
         let deny = denied.clone();
         let metadata_requests = Arc::new(AtomicUsize::new(0));
         let metadata_counted = metadata_requests.clone();
+        let missing = Arc::new(AtomicBool::new(false));
+        let missing_metadata = missing.clone();
+        let large = Arc::new(AtomicBool::new(false));
+        let large_metadata = large.clone();
         let app = axum::Router::new().route("/api/control/temporal-features", axum::routing::get(|| async { axum::Json(json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true})) })).fallback(move |request: axum::extract::Request| {
             let counted = counted.clone();
             let deny = deny.clone();
             let metadata_counted = metadata_counted.clone();
+            let missing_metadata = missing_metadata.clone();
+            let large_metadata = large_metadata.clone();
             async move {
+                if missing_metadata.load(Ordering::SeqCst) {
+                    return (axum::http::StatusCode::NOT_FOUND, axum::Json(json!({"error":"missing"})));
+                }
                 if deny.load(Ordering::SeqCst) && request.uri().path().contains("/3/") {
                     return (axum::http::StatusCode::FORBIDDEN, axum::Json(json!({"error":"denied"})));
                 }
@@ -2586,6 +2764,11 @@ mod tests {
                 let name = if request.uri().path().contains("/3/") { "   " } else { "a.png" };
                 let mut value = json!({"digestSha256":"ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb","mediaType":"image/png","byteLength":1,"provenance":{"source":"user","fileName":name}});
                 if !metadata_only { value["contentBase64"] = json!("YQ=="); }
+                if large_metadata.load(Ordering::SeqCst) {
+                    value["byteLength"] = json!(8 * 1024 * 1024);
+                    if request.uri().path().contains("/3/") { value["digestSha256"] = json!("d".repeat(64)); }
+                    if !metadata_only { value["contentBase64"] = json!("A".repeat(11_184_810) + "A="); }
+                }
                 (axum::http::StatusCode::OK, axum::Json(value))
             }
         });
@@ -2675,6 +2858,44 @@ mod tests {
             Some(ExportAuthoredDetailOmission::SensitiveData)
         );
         assert!(sensitive_node.authored_detail_assets.is_empty());
+
+        missing.store(true, Ordering::SeqCst);
+        let (legacy_associations, legacy_contents) = super::collect_visual_assets(
+            &runtime,
+            closures.iter().flatten(),
+            &ProjectPathRedactor::new(None),
+        )
+        .await
+        .unwrap();
+        assert!(legacy_associations.is_empty());
+        assert!(legacy_contents.is_empty());
+        assert!(matches!(super::collect_visual_assets(
+            &runtime, closures.iter().flatten(), &ProjectPathRedactor::for_share(None),
+        ).await, Err(super::ConversationExportBuildError::Invalid(message))
+            if message == "public visual asset metadata is unavailable"));
+
+        missing.store(false, Ordering::SeqCst);
+        large.store(true, Ordering::SeqCst);
+        requests.store(0, Ordering::SeqCst);
+        let mut large_closures = closures.clone();
+        large_closures[2].as_mut().unwrap().layers[0].nodes[0]
+            .authored_detail
+            .as_mut()
+            .unwrap()["assets"][0]["digestSha256"] = json!("d".repeat(64));
+        assert!(matches!(
+            super::collect_visual_assets(
+                &runtime,
+                large_closures.iter().flatten(),
+                &ProjectPathRedactor::for_share(None),
+            )
+            .await,
+            Err(super::ConversationExportBuildError::ShareSnapshotTooLarge { .. })
+        ));
+        assert_eq!(
+            requests.load(Ordering::SeqCst),
+            1,
+            "reject the second 8 MiB asset from metadata before fetching its body"
+        );
         server.abort();
     }
 
@@ -2922,7 +3143,9 @@ mod tests {
         assert!(!redacted.contains("sk-proj-12345678901234567890"));
         assert!(!redacted.contains(jwt));
         assert!(!redacted.contains("secret bytes"));
-        assert!(redacted.matches("[redacted-secret]").count() >= 3);
+        // The renderer-aware safety pass may conservatively collapse the whole
+        // public field once several secret syntaxes are interleaved.
+        assert!(redacted.contains("[redacted-secret]"));
         let adjacent = redactor.text("sk-proj-12345678901234567890 sk-proj-09876543210987654321");
         assert_eq!(adjacent.matches("[redacted-secret]").count(), 2);
         assert!(!adjacent.contains("sk-proj-"));
@@ -2939,14 +3162,75 @@ mod tests {
             "/home/alice/.config/relayer",
             r"C:\Users\alice\AppData\Local\Relayer",
             "%2FUsers%2Falice%2Fsecret.txt",
+            "/Users/alice/My Secret/password.txt",
+            "/home/alice/My Secret/password.txt",
+            r"C:\Users\Alice Smith\My Secret\password.txt",
         ] {
             let redacted = redactor.text(value);
             assert!(!redacted.contains("alice"), "{value} -> {redacted}");
+            assert!(!redacted.contains("Secret"), "{value} -> {redacted}");
+            assert!(!redacted.contains("password.txt"), "{value} -> {redacted}");
         }
         assert!(redactor.contains_private_path_json(&serde_json::json!({
             "a": "/Users/ali",
             "b": "ce/.ssh/config"
         })));
+    }
+
+    #[test]
+    fn share_markdown_redaction_detects_credentials_exposed_by_rendering() {
+        let redactor = ProjectPathRedactor::for_share(None);
+        for secret in [
+            "sk-proj-12345&#54;78901234567890",
+            "sk-proj-12345&amp;#54;78901234567890",
+            "sk-proj-12345%3678901234567890",
+            "sk-proj-12345\u{200b}678901234567890",
+            "sk-proj-12345**6**78901234567890",
+            "sk-proj-12345<em>6</em>78901234567890",
+            "sk-proj-12345[6](https://example.test)78901234567890",
+            "sk-proj-12345<span title=\"&gt;\">6</span>78901234567890",
+            "sk-proj-12345<span title=\">\">6</span>78901234567890",
+        ] {
+            let mut node = authored_node(serde_json::json!({}));
+            node.authored_detail = None;
+            node.detail = format!("Credential: {secret}");
+            let exported = export_node(&node, &mut PortableIds::default(), &redactor).unwrap();
+            assert!(!exported.detail.contains("sk-proj-"), "{secret}");
+            assert!(exported.detail.contains("[redacted-secret]"));
+        }
+        let safe = "Q&amp;A [docs](https://example.test/?q=a%20b)";
+        assert_eq!(redactor.text(safe), safe);
+    }
+
+    #[test]
+    fn share_omits_compiled_action_mounts_without_rewriting_private_identity() {
+        let detail = serde_json::json!({
+            "version": 1,
+            "components": [{"id":"summary","order":0,"html":"<button data-gc-capability=\"open\">Open</button>","css":""}],
+            "mounts": [{"id":"open","componentId":"summary","kind":"capability","host":"button",
+                "capability":{"kind":"expand","action":{"clientKey":"expand","sourceNode":{"clientKey":"node"},"sourceLayer":{"clientKey":"layer"}}}}],
+            "assets": [], "integritySha256": "a".repeat(64)
+        });
+        let node = authored_node(detail.clone());
+        let ordinary = export_node(
+            &node,
+            &mut PortableIds::default(),
+            &ProjectPathRedactor::new(None),
+        )
+        .unwrap();
+        assert_eq!(ordinary.authored_detail, Some(detail));
+        let public = export_node(
+            &node,
+            &mut PortableIds::default(),
+            &ProjectPathRedactor::for_share(None),
+        )
+        .unwrap();
+        assert!(public.authored_detail.is_none());
+        assert_eq!(
+            public.authored_detail_omitted,
+            Some(ExportAuthoredDetailOmission::SensitiveData)
+        );
+        assert_eq!(public.detail, "Portable fallback");
     }
 
     #[test]
@@ -3005,6 +3289,62 @@ mod tests {
             Some(ExportAuthoredDetailOmission::PrivatePath)
         );
         assert_eq!(exported.detail, "Portable fallback");
+    }
+
+    #[test]
+    fn share_selection_preserves_invocation_ancestry_while_parent_is_pending() {
+        let interaction = |id, status: &str| Interaction {
+            id: InteractionId::from_database(id),
+            thread_id: ThreadId::from_database(1),
+            sequence: id,
+            text: format!("Turn {id}"),
+            created_at: "2026-01-01T00:00:00Z".into(),
+            graph_node_id: Some(id),
+            completion_status: status.into(),
+            harness_configuration_name: None,
+            harness_configuration_digest: None,
+            permission_profile_id: "auto".into(),
+            model_selection: None,
+            effective_execution_digest: None,
+            effective_permission_receipt: None,
+            completion_output: None,
+            completion_error: None,
+            stop_requested: false,
+            stop_error: None,
+            latest_attempt: None,
+        };
+        let invoke = |source, result| ActionInvocation {
+            source_interaction_id: InteractionId::from_database(source),
+            action_id: result,
+            result_interaction_id: InteractionId::from_database(result),
+            result_completion_status: "accepted".into(),
+            created_at: "2026-01-01T00:00:00Z".into(),
+        };
+        let mut interactions = vec![
+            interaction(1, "accepted"),
+            interaction(2, "running"),
+            interaction(3, "accepted"),
+            interaction(4, "accepted"),
+            interaction(5, "accepted"),
+        ];
+        let invocations = vec![invoke(2, 3), invoke(3, 4), invoke(1, 5)];
+        let selected = super::share_accepted_interactions(&interactions, &invocations);
+        assert_eq!(
+            selected
+                .iter()
+                .map(|turn| turn.sequence)
+                .collect::<Vec<_>>(),
+            vec![1, 5]
+        );
+        interactions[1].completion_status = "accepted".into();
+        let selected = super::share_accepted_interactions(&interactions, &invocations);
+        assert_eq!(
+            selected
+                .iter()
+                .map(|turn| turn.sequence)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3, 4, 5]
+        );
     }
 
     #[test]

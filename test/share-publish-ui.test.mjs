@@ -50,6 +50,30 @@ function fixture({ accountStatus = "signed-in", preflightResult, result } = {}) 
 }
 
 describe("share publish renderer boundary", () => {
+  it("preserves an active sign-in when opening and receiving account events", async () => {
+    const test = fixture({ accountStatus: "signing-in" });
+    await test.window.document.querySelector("#shareConversation").onclick();
+    expect(test.window.document.querySelector('[data-share-action="sign-in"]').disabled).toBe(true);
+    test.changed({ status: "signing-in" });
+    expect(test.window.document.querySelector('[data-share-action="sign-in"]').disabled).toBe(true);
+    expect(test.account.login).not.toHaveBeenCalled();
+  });
+
+  it("discloses create-time acceptance and dismisses a completed receipt when navigating", async () => {
+    const test = fixture();
+    await test.window.document.querySelector("#shareConversation").onclick();
+    expect(test.window.document.querySelector("#shareDialog").textContent).toContain("including any response that finishes while this dialog is open");
+    test.interactions[1].completionStatus = "accepted";
+    test.controller.render();
+    const input = test.window.document.querySelector("#shareTitle");
+    input.value = "Public";
+    input.oninput();
+    await test.window.document.querySelector('[data-share-action="create"]').onclick();
+    test.thread.id = 8;
+    test.controller.render();
+    expect(test.share.dismiss).toHaveBeenCalledWith("SHR-ABC123");
+    expect(test.window.document.querySelector("#shareDialog").classList.contains("hidden")).toBe(true);
+  });
   it("allows accepted history while a later response runs and closes imported/no-accepted eligibility", () => {
     expect(shareEligibility({
       thread: { id: 7, imported: false },

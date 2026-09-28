@@ -40,6 +40,22 @@ afterEach(async () => {
 });
 
 describe("durable share publish attempt store", () => {
+  it("preserves valid records across transient filesystem failures and visits sequentially", async () => {
+    const root = await temporaryRoot();
+    await createSharePublishAttemptStore({ directory: root }).save(record());
+    let unavailable = true;
+    const store = createSharePublishAttemptStore({ directory: root, readFileImpl: async (...args) => {
+      if (unavailable) throw Object.assign(new Error("temporary"), { code: "EMFILE" });
+      return readFile(...args);
+    } });
+    await expect(store.load()).rejects.toMatchObject({ code: "EMFILE" });
+    expect(await readdir(root)).toHaveLength(1);
+    unavailable = false;
+    const visited = [];
+    await expect(store.load({ visit: (value) => { visited.push(value.reference); } })).resolves.toEqual([]);
+    expect(visited).toEqual(["SHR-DURABLE1"]);
+    expect((await store.read("SHR-DURABLE1")).snapshotBytes).toEqual(Uint8Array.from(record().snapshotBytes));
+  });
   it("atomically reopens the exact owner, identity, bytes, failure, and reporting keys", async () => {
     const root = await temporaryRoot();
     const first = createSharePublishAttemptStore({ directory: root });
@@ -99,6 +115,17 @@ describe("durable share publish attempt store", () => {
 
     await expect(store.save(oversized)).rejects.toThrow("invalid");
     await expect(readdir(root)).resolves.toEqual([]);
+  });
+
+  it("reopens a full 16 MiB snapshot without treating base64 validation limits as corruption", async () => {
+    const root = await temporaryRoot();
+    const store = createSharePublishAttemptStore({ directory: root });
+    const bytes = Buffer.alloc(16 * 1024 * 1024, 42);
+    await store.save({ ...record(), snapshotBytes: bytes });
+    const [loaded] = await store.load();
+    expect(loaded.snapshotBytes.byteLength).toBe(bytes.byteLength);
+    expect(Buffer.from(loaded.snapshotBytes).equals(bytes)).toBe(true);
+    expect(await readdir(root)).toHaveLength(1);
   });
 
   it("rejects a concurrent thirty-third attempt without evicting or freezing updates", async () => {

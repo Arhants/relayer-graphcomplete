@@ -171,6 +171,7 @@ export function createSharePublishCoordinator({
   }
   const attempts = new Map();
   let loading = null;
+  let activeDurablePublication = null;
 
   function persistedRecord(record) {
     return Object.freeze({
@@ -180,7 +181,7 @@ export function createSharePublishCoordinator({
       threadId: record.threadId,
       sourceThreadId: record.sourceThreadId,
       title: record.completed ? "" : record.title,
-      snapshotBytes: record.completed ? [] : [...record.snapshotBytes],
+      snapshotBytes: record.completed ? [] : new Uint8Array(record.snapshotBytes),
       createdAt: record.createdAt,
       lastFailure: record.lastFailure ? { ...record.lastFailure } : null,
       reportedFailures: [...record.reportedFailures],
@@ -247,14 +248,27 @@ export function createSharePublishCoordinator({
 
   async function ensureLoaded() {
     if (!loading) loading = (async () => {
-      const saved = await attemptStore.load();
-      if (!Array.isArray(saved)) throw new Error("Share attempt store returned invalid records.");
-      for (const value of saved) {
+      const staged = new Map();
+      const restore = async (value, lazy = false) => {
         const record = restoredRecord(value);
-        if (record) remember(record);
+        if (record) {
+          if (lazy && !record.completed) {
+            record.snapshotBytes = null;
+            record.lazy = true;
+          }
+          staged.set(record.reference, record);
+        }
         else if (typeof value?.reference === "string") await attemptStore.delete(value.reference).catch(() => undefined);
-      }
-    })();
+      };
+      const saved = await attemptStore.load(typeof attemptStore.read === "function"
+        ? { visit: (value) => restore(value, true) } : undefined);
+      if (!Array.isArray(saved)) throw new Error("Share attempt store returned invalid records.");
+      for (const value of saved) await restore(value);
+      for (const record of staged.values()) remember(record);
+    })().catch((error) => {
+      loading = null;
+      throw error;
+    });
     await loading;
   }
 
@@ -268,7 +282,9 @@ export function createSharePublishCoordinator({
 
   async function report(error, reference, reporter, attempt = null) {
     const record = telemetryRecord(error, reference);
-    if (!record || !reporter) return;
+    // No frozen record means no durable deduplication authority. Suppress the
+    // event rather than sending a preflight/export failure without its key.
+    if (!record || !reporter || !attempt) return;
     const key = `${record.failureStage}:${record.code}`;
     if (attempt?.reportedFailures.has(key)) return;
     if (attempt) {
@@ -287,8 +303,18 @@ export function createSharePublishCoordinator({
     if (record.running || record.dismissing) {
       return Object.freeze({ status: "failed", attemptReferenceId: record.reference, code: "share_attempt_unavailable", retryable: false });
     }
+    if (record.lazy && activeDurablePublication !== null) {
+      record.snapshotBytes = null;
+      return Object.freeze({ status: "failed", attemptReferenceId: record.reference, code: "share_attempt_unavailable", retryable: true });
+    }
+    if (record.lazy) activeDurablePublication = record.reference;
     record.running = true;
     try {
+      if (record.lazy && record.snapshotBytes === null) {
+        const saved = await attemptStore.read(record.reference);
+        if (!saved) throw new Error("share_attempt_unavailable");
+        record.snapshotBytes = new Uint8Array(saved.snapshotBytes);
+      }
       const assertAuthority = async () => {
         const current = exactAccount(await accountSession());
         if (current.ownerKey !== record.ownerKey || current.generation !== authority.generation) {
@@ -335,6 +361,8 @@ export function createSharePublishCoordinator({
       return result;
     } finally {
       record.running = false;
+      if (record.lazy || record.completed) record.snapshotBytes = null;
+      if (activeDurablePublication === record.reference) activeDurablePublication = null;
     }
   }
 
@@ -368,6 +396,8 @@ export function createSharePublishCoordinator({
       } catch (error) {
         await report(error, reference, failureReporter);
         return closedFailure(error, reference);
+      } finally {
+        failureReporter?.revoke?.();
       }
     },
 
@@ -413,15 +443,19 @@ export function createSharePublishCoordinator({
         };
         attempt = record;
         await save(record);
+        record.lazy = typeof attemptStore.read === "function";
         remember(record);
-        return run(record, { generation: account.generation, failureReporter });
+        return await run(record, { generation: account.generation, failureReporter });
       } catch (error) {
         if (attempt === null) await report(error, reference, failureReporter);
-        return closedFailure(error, reference);
+        return Object.freeze({ ...closedFailure(error, reference), retryable: false });
+      } finally {
+        failureReporter?.revoke?.();
       }
     },
 
     async retry(reference) {
+      let failureReporter = null;
       try {
         await ensureLoaded();
         const record = attempts.get(reference);
@@ -437,13 +471,16 @@ export function createSharePublishCoordinator({
         if (record.completed && record.publishedUrl) {
           return Object.freeze({ status: "created", attemptReferenceId: reference, url: record.publishedUrl });
         }
-        return run(record, {
+        failureReporter = issueHandledShareFailureReporter({ generation: account.generation });
+        return await run(record, {
           generation: account.generation,
-          failureReporter: issueHandledShareFailureReporter({ generation: account.generation }),
+          failureReporter,
         });
       } catch (error) {
         await report(error, reference, null);
         return closedFailure(error, reference);
+      } finally {
+        failureReporter?.revoke?.();
       }
     },
 

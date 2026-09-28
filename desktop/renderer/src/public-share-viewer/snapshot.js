@@ -318,6 +318,9 @@ function validateCompletion(completion, path) {
 
 function validateAction(action, path, { sourceLayerRequired = false } = {}) {
   const value = requireRecord(action, path);
+  if (own(value, "state", `${path}.state`) !== "accepted") {
+    fail("action_state_invalid", `${path}.state`, "Public snapshots may contain accepted actions only.");
+  }
   requirePortableId(own(value, "id", `${path}.id`), "action", `${path}.id`);
   requirePortableId(own(value, "sourceNodeId", `${path}.sourceNodeId`), "node", `${path}.sourceNodeId`);
   if (value.sourceLayerId != null) requirePortableId(value.sourceLayerId, "layer", `${path}.sourceLayerId`);
@@ -462,7 +465,7 @@ function validateAcceptedView(view, path) {
   const targetRelations = new Map([[rootLayerId, "expand"]]);
   const expandEdges = new Map();
   while (pending.length) {
-    const layerId = pending.shift();
+    const layerId = pending.pop();
     if (visited.has(layerId)) continue;
     visited.add(layerId);
     const resolved = layerMap.get(layerId);
@@ -483,34 +486,51 @@ function validateAcceptedView(view, path) {
     }
   }
   if (visited.size !== layerMap.size) fail("incomplete_navigation_closure", `${path}.layers`, "Every resolved layer must be reachable from the root.");
-  const cycleCheck = (layerId, visiting = new Set(), visitedLayers = new Set()) => {
-    if (visiting.has(layerId)) return true;
-    if (visitedLayers.has(layerId)) return false;
-    visiting.add(layerId);
-    for (const target of expandEdges.get(layerId) ?? []) {
-      if (cycleCheck(target, visiting, visitedLayers)) return true;
+  const visiting = new Set();
+  const checked = new Set();
+  for (const start of layerMap.keys()) {
+    const stack = [{ layerId: start, exit: false }];
+    while (stack.length) {
+      const { layerId, exit } = stack.pop();
+      if (exit) {
+        visiting.delete(layerId);
+        checked.add(layerId);
+        continue;
+      }
+      if (checked.has(layerId)) continue;
+      if (visiting.has(layerId)) fail("expand_cycle", `${path}.layers`, "Expand navigation must be acyclic.");
+      visiting.add(layerId);
+      stack.push({ layerId, exit: true });
+      for (const target of expandEdges.get(layerId) ?? []) stack.push({ layerId: target, exit: false });
     }
-    visiting.delete(layerId);
-    visitedLayers.add(layerId);
-    return false;
-  };
-  if (cycleCheck(rootLayerId)) fail("expand_cycle", `${path}.layers`, "Expand navigation must be acyclic.");
+  }
   return value;
 }
 
-function normalizeLayer(resolved) {
+function normalizeLayer(resolved, layerKeys, invokeTargets) {
   const layer = cloneJson(resolved.layer);
   return {
     layer,
     nodes: cloneJson(resolved.nodes),
     edges: cloneJson(resolved.edges),
-    actions: cloneJson(resolved.actions),
+    actions: resolved.actions.map((action) => ({
+      ...cloneJson(action),
+      sourceLayerClientKey: layerKeys.get(action.sourceLayerId),
+      ...(action.kind === "input" ? {
+        control: action.input.control,
+        prompt: action.input.prompt,
+        options: cloneJson(action.input.options ?? []),
+        minimumSelections: action.input.minimumSelections ?? null,
+      } : {}),
+      ...(action.kind === "invoke" && invokeTargets.has(action.id)
+        ? { targetLayerId: invokeTargets.get(action.id) } : {}),
+    })),
   };
 }
 
-function interactionFromTurn(turn, threadId) {
+function interactionFromTurn(turn, threadId, layers) {
   const view = turn.acceptedView;
-  const rootLayer = view.layers.find(({ layer }) => layer.id === view.rootLayerId);
+  const rootLayer = layers.get(view.rootLayerId);
   const contexts = (turn.contexts ?? []).map((context) => ({
     id: context.id,
     target: {
@@ -538,7 +558,7 @@ function interactionFromTurn(turn, threadId) {
     completionOutput: {
       nodeId: view.interactionNodeId,
       rootAction: cloneJson(view.rootAction),
-      rootLayer: normalizeLayer(rootLayer),
+      rootLayer,
     },
   };
 }
@@ -672,16 +692,29 @@ export function parseConversationExportSnapshot(input) {
   const threadId = `export:${conversation.id}`;
   const acceptedTurns = turns.filter((turn) => turn.completion.status === "accepted");
   if (!acceptedTurns.length) fail("accepted_turn_required", "turns", "A public snapshot must contain at least one accepted turn.");
-  const interactions = acceptedTurns.map((turn) => interactionFromTurn(turn, threadId));
-  const layersByTurn = new Map(interactions.map((interaction) => [
-    String(interaction.id),
-    new Map([[String(interaction.completionOutput.rootLayer.layer.id), interaction.completionOutput.rootLayer]]),
-  ]));
-  for (const interaction of interactions) {
-    const sourceTurn = acceptedTurns.find((turn) => String(turn.id) === String(interaction.id));
-    const layers = sourceTurn.acceptedView.layers.map(normalizeLayer);
-    layersByTurn.set(String(interaction.id), new Map(layers.map((layer) => [String(layer.layer.id), layer])));
+  const acceptedById = new Map(acceptedTurns.map((turn) => [turn.id, turn]));
+  const layerKeys = new Map(acceptedTurns.flatMap((turn) => turn.acceptedView.layers.map(({ layer }) => [
+    layer.id, layer.clientKey,
+  ])));
+  const invokeTargets = new Map();
+  for (const turn of acceptedTurns) {
+    const origin = validateOrigin(turn.origin, `turn[${turn.sequence - 1}].origin`);
+    if (origin.kind !== "action") continue;
+    const source = acceptedById.get(origin.sourceTurnId);
+    const action = source?.acceptedView.layers.flatMap((layer) => layer.actions)
+      .find((candidate) => candidate.id === origin.sourceActionId);
+    if (!source || source.sequence >= turn.sequence || action?.kind !== "invoke"
+      || invokeTargets.has(action.id)) {
+      fail("invoke_origin_invalid", `turn[${turn.sequence - 1}].origin`, "Accepted invoke results require one earlier accepted source action.");
+    }
+    invokeTargets.set(action.id, turn.acceptedView.rootLayerId);
   }
+  const layersByTurn = new Map(acceptedTurns.map((turn) => [turn.id, new Map(
+    turn.acceptedView.layers.map((resolved) => [
+      resolved.layer.id, normalizeLayer(resolved, layerKeys, invokeTargets),
+    ]),
+  )]));
+  const interactions = acceptedTurns.map((turn) => interactionFromTurn(turn, threadId, layersByTurn.get(turn.id)));
   const projectName = conversation.projectName ?? null;
   const projectId = projectName ? "export:project" : null;
   const thread = {

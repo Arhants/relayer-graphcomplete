@@ -6,6 +6,7 @@
  */
 
 const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_UPLOAD_TIMEOUT_MS = 10 * 60_000;
 
 const KNOWN_SERVICE_CODES = new Set([
   "daily_quota_exhausted",
@@ -105,13 +106,15 @@ export function createShareServiceClient({
   fetchImpl = globalThis.fetch,
   uploadFetchImpl = fetchImpl,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  uploadTimeoutMs = DEFAULT_UPLOAD_TIMEOUT_MS,
 } = {}) {
   const origin = exactUrl(endpoint ?? baseUrl, "Share service endpoint");
   if (typeof fetchImpl !== "function" || typeof uploadFetchImpl !== "function") throw new TypeError("Share service fetch implementations are required.");
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new TypeError("Share service timeout must be positive.");
-  const boundedSignal = (signal) => signal
-    ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
-    : AbortSignal.timeout(timeoutMs);
+  if (!Number.isSafeInteger(uploadTimeoutMs) || uploadTimeoutMs <= 0) throw new TypeError("Share upload timeout must be positive.");
+  const boundedSignal = (signal, duration = timeoutMs) => signal
+    ? AbortSignal.any([signal, AbortSignal.timeout(duration)])
+    : AbortSignal.timeout(duration);
 
   async function request(path, { authorization, method = "GET", body, signal, headers = {} } = {}) {
     exactBearer(authorization);
@@ -141,7 +144,7 @@ export function createShareServiceClient({
     const exact = exactUploadPolicy(policy);
     const form = new FormData();
     appendUpload(form, exact, bytes);
-    const uploadSignal = boundedSignal(signal);
+    const uploadSignal = boundedSignal(signal, uploadTimeoutMs);
     let response;
     try {
       response = await uploadFetchImpl(exact.url, {
@@ -163,7 +166,8 @@ export function createShareServiceClient({
     if (typeof assertAuthority !== "function") throw new TypeError("Share authority assertion is required.");
     if (!attempt || typeof attempt !== "object") throw new TypeError("Share attempt metadata is required.");
     const bytes = new Uint8Array(snapshotBytes ?? []);
-    await assertAuthority();
+    const initialAuthority = await assertAuthority();
+    authorization = initialAuthority?.authorization ?? authorization;
     let reservation;
     try {
       reservation = await request("/shares", {
@@ -179,7 +183,8 @@ export function createShareServiceClient({
       await assertAuthority();
       if (reservation.status === "reserved") {
         await upload(reservation.upload, bytes, signal);
-        await assertAuthority();
+        const currentAuthority = await assertAuthority();
+        authorization = currentAuthority?.authorization ?? authorization;
         return await request(`/shares/${encodeURIComponent(reservation.shareId)}/finalize`, {
           authorization,
           method: "POST",

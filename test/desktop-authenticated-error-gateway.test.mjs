@@ -93,6 +93,27 @@ describe("authenticated desktop error gateway", () => {
     await gateway.close();
   });
 
+  it("preserves active reporters when token refresh re-projects the same verified identity", async () => {
+    const { gateway, send, enable, disable } = await fixture();
+    const identity = { generation: 4, subject: "auth0|person" };
+
+    await gateway.transitionIdentity(identity);
+    const reporter = gateway.issueHandledShareFailureReporter({ generation: 4 });
+    await gateway.transitionIdentity(identity);
+
+    await expect(reporter.report({
+      attemptReferenceId: "SHR-REFRESH1",
+      failureStage: "upload",
+      code: "share.upload_failed",
+      snapshotBytes: null,
+    })).resolves.toEqual({ accepted: true, delivery: "sent" });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(enable).toHaveBeenCalledTimes(1);
+    expect(disable).toHaveBeenCalledTimes(1);
+
+    await gateway.close();
+  });
+
   it("rejects frames whose positions exceed the accepted source range", async () => {
     const { gateway, send } = await fixture();
     await gateway.transitionIdentity({ generation: 1, subject: "auth0|person" });

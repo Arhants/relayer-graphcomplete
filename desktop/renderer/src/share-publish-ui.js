@@ -151,17 +151,13 @@ export function createSharePublishController({
       return;
     }
     if (phase === "title") {
-      const acceptedTurnCount = shareEligibility({
-        thread: getThread(),
-        interactions: getInteractions(),
-      }).acceptedTurnCount;
       const blank = !title.trim();
       host.innerHTML = `<section class="share-dialog-card" role="dialog" aria-modal="true" aria-labelledby="shareDialogTitle" tabindex="-1">
         <h2 id="shareDialogTitle">Share this thread</h2>
         <p>Choose the title people will see. Your local thread title will not change.</p>
         <label>Share title<input class="share-title-input" id="shareTitle" type="text" autocomplete="off" value="${escapeHtml(title)}" /></label>
         <div class="share-title-meta"><span data-share-title-message>Required</span><span data-share-title-count>${[...title].length}/${TITLE_LIMIT}</span></div>
-        <p class="share-dialog-note">Create link freezes the ${acceptedTurnCount} accepted ${acceptedTurnCount === 1 ? "turn" : "turns"} available now. Known secrets and private paths are removed; review other sensitive content yourself.</p>
+        <p class="share-dialog-note">Create link freezes all turns accepted when you click it, including any response that finishes while this dialog is open. Known secrets and private paths are removed; review other sensitive content yourself.</p>
         <div class="share-dialog-actions"><button data-share-action="cancel" type="button">Cancel</button><button class="primary" data-share-action="create" type="button" ${blank ? "disabled" : ""}>Create link</button></div>
       </section>`;
       const input = host.querySelector("#shareTitle");
@@ -180,6 +176,7 @@ export function createSharePublishController({
       host.querySelector('[data-share-action="cancel"]').onclick = close;
       createButton.onclick = async () => {
         if (!title.trim()) return;
+        if (String(getThread()?.id) !== dialogThreadKey) return close();
         const operation = ++operationVersion;
         const threadId = dialogThreadId;
         phase = "creating";
@@ -279,7 +276,7 @@ export function createSharePublishController({
       accountSubject = typeof currentAccount?.subject === "string" ? currentAccount.subject : null;
       return runPreflight();
     }
-    phase = "signin";
+    phase = normalizedAccount(currentAccount) === "signing-in" ? "signing-in" : "signin";
     renderDialog();
   }
 
@@ -375,7 +372,7 @@ export function createSharePublishController({
       failureOrigin = null;
       attemptResult = false;
       accountSubject = null;
-      phase = "signin";
+      phase = status === "signing-in" ? "signing-in" : "signin";
     }
     renderDialog();
   });
@@ -383,7 +380,12 @@ export function createSharePublishController({
   return Object.freeze({
     render() {
       const threadKey = getThread()?.id == null ? null : String(getThread().id);
-      if (dialogThreadKey !== null && dialogThreadKey !== threadKey) close();
+      if (dialogThreadKey !== null && dialogThreadKey !== threadKey) {
+        if (phase === "ready" && attemptResult && typeof share.dismiss === "function") {
+          void share.dismiss(result.attemptReferenceId).catch(() => undefined);
+        }
+        close();
+      }
       const eligibility = shareEligibility({ thread: getThread(), interactions: getInteractions() });
       headerButton.disabled = !getThread();
       menuButton.disabled = !getThread();

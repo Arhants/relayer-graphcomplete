@@ -41,9 +41,17 @@ function showRenderFailure(documentRef, reload) {
 }
 
 function securePublicLinks(host) {
-  for (const link of host.querySelectorAll('a[href^="https://"], a[href^="http://"]')) {
+  for (const link of host.querySelectorAll("a[href]")) securePublicLink(link);
+}
+
+function securePublicLink(link) {
+  try {
+    const protocol = new URL(link.getAttribute("href")).protocol;
+    if (protocol !== "http:" && protocol !== "https:") return;
     link.setAttribute("target", "_blank");
     link.setAttribute("rel", "noreferrer noopener");
+  } catch {
+    // Relative and non-URL references keep their existing navigation behavior.
   }
 }
 
@@ -85,10 +93,9 @@ export function bootPublicViewer({
     host = documentRef.querySelector("#publicViewerHost");
     if (!host) throw new Error("Public viewer host is missing.");
     onLinkClick = (event) => {
-      const link = event.target?.closest?.('a[href^="https://"], a[href^="http://"]');
+      const link = event.target?.closest?.("a[href]");
       if (!link || !host.contains(link)) return;
-      link.setAttribute("target", "_blank");
-      link.setAttribute("rel", "noreferrer noopener");
+      securePublicLink(link);
     };
     host.addEventListener("click", onLinkClick, true);
     if (typeof windowRef?.MutationObserver === "function") {

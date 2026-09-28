@@ -563,7 +563,7 @@ if (primaryInstance) {
       exportConversation: (threadId) => productServer.exportConversation(threadId),
     });
     const shareServiceClient = createShareServiceClient({
-      endpoint: resolveShareServiceEndpoint({ packagedRelease, metadata, environment: process.env }),
+      endpoint: resolveShareServiceEndpoint({ isPackaged: app.isPackaged, packagedRelease, metadata, environment: process.env }),
     });
     const shareCoordinator = createSharePublishCoordinator({
       exportSnapshot: (threadId, title, options) => productServer.exportShareSnapshot(threadId, title, options),

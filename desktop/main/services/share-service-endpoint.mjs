@@ -20,16 +20,14 @@ function parseOrigin(value, { allowLoopbackHttp = false } = {}) {
 }
 
 export function resolveShareServiceEndpoint({
+  isPackaged = true,
   packagedRelease,
-  metadata,
   environment = process.env,
 } = {}) {
-  if (packagedRelease?.channel === "stable") return PRODUCTION_SHARE_SERVICE_ENDPOINT;
-  if (packagedRelease?.channel === "preview") {
-    const sealed = metadata?.relayerShareServiceEndpoint;
-    if (!sealed) throw new TypeError("Preview desktop artifact must contain a build-sealed HTTPS origin.");
-    return parseOrigin(sealed);
-  }
+  // Stable promotion reuses the signed Preview bytes, including their channel
+  // metadata. Both distributions must therefore carry the same service origin.
+  if (["stable", "preview"].includes(packagedRelease?.channel)) return PRODUCTION_SHARE_SERVICE_ENDPOINT;
+  if (isPackaged) throw new TypeError("Packaged desktop release metadata is invalid.");
   const developmentOverride = environment.RELAYER_SHARE_SERVICE_ENDPOINT;
   return developmentOverride
     ? parseOrigin(developmentOverride, { allowLoopbackHttp: true })

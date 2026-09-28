@@ -109,10 +109,12 @@ function decodeRecord(envelope) {
     "title", "snapshot", "createdAt", "lastFailure", "reportedFailures", "publishedUrl",
   ]) || envelope.version !== VERSION || typeof envelope.snapshot !== "string"
     || envelope.snapshot.length > Math.ceil(MAX_SNAPSHOT_BYTES / 3) * 4
-    || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(envelope.snapshot)) {
+    || envelope.snapshot.length % 4 !== 0) {
     throw new TypeError("Share publish attempt envelope is invalid.");
   }
   const snapshotBytes = new Uint8Array(Buffer.from(envelope.snapshot, "base64"));
+  // Canonical round-trip validation also checks alphabet and padding without a
+  // grouped-repeat regexp that can exhaust V8's stack on supported snapshots.
   if (Buffer.from(snapshotBytes).toString("base64") !== envelope.snapshot) {
     throw new TypeError("Share publish attempt envelope is invalid.");
   }
@@ -131,7 +133,7 @@ function decodeRecord(envelope) {
   });
 }
 
-export function createSharePublishAttemptStore({ directory } = {}) {
+export function createSharePublishAttemptStore({ directory, readFileImpl = readFile, statImpl = stat } = {}) {
   if (typeof directory !== "string" || !directory) {
     throw new TypeError("Share publish attempt directory is invalid.");
   }
@@ -156,9 +158,20 @@ export function createSharePublishAttemptStore({ directory } = {}) {
 
   async function loadRecord(name) {
     const path = join(directory, name);
+    // Filesystem failures are not evidence of corrupt bytes. Keep the durable
+    // record intact so the next operation can retry a transient read failure.
+    let size;
+    let text;
     try {
-      if ((await stat(path)).size > MAX_RECORD_BYTES) throw new Error("Share publish attempt record is oversized.");
-      const record = decodeRecord(JSON.parse(await readFile(path, "utf8")));
+      size = (await statImpl(path)).size;
+      if (size <= MAX_RECORD_BYTES) text = await readFileImpl(path, "utf8");
+    } catch (error) {
+      if (error?.code === "ENOENT") return null;
+      throw error;
+    }
+    try {
+      if (size > MAX_RECORD_BYTES) throw new Error("Share publish attempt record is oversized.");
+      const record = decodeRecord(JSON.parse(text));
       if (filename(record.reference) !== name) throw new Error("Share publish attempt identity does not match its path.");
       return record;
     } catch {
@@ -168,10 +181,22 @@ export function createSharePublishAttemptStore({ directory } = {}) {
   }
 
   return Object.freeze({
-    async load() {
+    async load({ visit } = {}) {
       await queue;
-      const records = (await Promise.all((await recordNames()).map(loadRecord))).filter(Boolean);
+      const records = [];
+      for (const name of await recordNames()) {
+        const record = await loadRecord(name);
+        if (record) {
+          if (visit) await visit(record);
+          else records.push(record);
+        }
+      }
       return records.sort((left, right) => left.createdAt - right.createdAt);
+    },
+
+    async read(reference) {
+      await queue;
+      return loadRecord(filename(reference));
     },
 
     save(record) {

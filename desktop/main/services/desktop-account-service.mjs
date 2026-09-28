@@ -141,6 +141,8 @@ export function createDesktopAccountService({
   // Retained only for main-process share requests. This bearer is never
   // persisted or projected through the renderer-facing account state.
   let idToken = null;
+  let idTokenExpiresAt = 0;
+  let shareRefresh = null;
   let attempt = null;
   let startupPromise;
   let jwksPromise;
@@ -270,7 +272,7 @@ export function createDesktopAccountService({
         typeof claims.sub !== "string" || !claims.sub) {
       throw new UnverifiableTokenError("ID token claims are invalid.");
     }
-    return claims.sub;
+    return { subject: claims.sub, expiresAt: claims.exp * 1000 };
   }
 
   async function tokenRequest(parameters) {
@@ -280,11 +282,11 @@ export function createDesktopAccountService({
       body: new URLSearchParams(parameters),
     });
     const tokens = exactTokenResponse(body);
-    return { tokens, subject: await verifyIdToken(tokens.id_token) };
+    return { tokens, ...await verifyIdToken(tokens.id_token) };
   }
 
   async function refresh(saved, atGeneration) {
-    const { tokens, subject } = await tokenRequest({
+    const { tokens, subject, expiresAt } = await tokenRequest({
       grant_type: "refresh_token",
       client_id: auth0.clientId,
       refresh_token: saved.refreshToken,
@@ -295,7 +297,9 @@ export function createDesktopAccountService({
     if (!await writeCredential(nextCredential, atGeneration)) return state;
     credential = nextCredential;
     idToken = tokens.id_token;
+    idTokenExpiresAt = expiresAt;
     await projectTelemetryIdentity({ generation: atGeneration, subject });
+    if (generation !== atGeneration) return state;
     return transition(publicState(currentChannel, "signed-in", { subject }));
   }
 
@@ -396,7 +400,7 @@ export function createDesktopAccountService({
       returnToRelayer();
       await closeServer(current.server, { wait: false });
       try {
-        const { tokens, subject } = await tokenRequest({
+        const { tokens, subject, expiresAt } = await tokenRequest({
           grant_type: "authorization_code",
           client_id: auth0.clientId,
           code,
@@ -410,6 +414,7 @@ export function createDesktopAccountService({
             attempt !== current || generation !== current.generation) return;
         credential = nextCredential;
         idToken = tokens.id_token;
+        idTokenExpiresAt = expiresAt;
         await projectTelemetryIdentity({ generation: current.generation, subject });
         await finishAttempt(current, publicState(current.channel, "signed-in", { subject }));
       } catch {
@@ -421,6 +426,19 @@ export function createDesktopAccountService({
   async function shareSession() {
     await startupPromise;
     if (state.status !== "signed-in" || !credential || typeof idToken !== "string" || !idToken) return null;
+    const atGeneration = generation;
+    if (idTokenExpiresAt <= now() + 60_000) {
+      if (!shareRefresh || shareRefresh.generation !== atGeneration) {
+        const operation = { generation: atGeneration, promise: null };
+        operation.promise = refresh(credential, atGeneration).finally(() => {
+          if (shareRefresh === operation) shareRefresh = null;
+        });
+        shareRefresh = operation;
+      }
+      try { await shareRefresh.promise; } catch { return null; }
+    }
+    if (generation !== atGeneration || state.status !== "signed-in" || !credential
+      || !idToken || idTokenExpiresAt <= now()) return null;
     return Object.freeze({
       // The subject is an opaque owner key for in-process attempt binding. The
       // service derives its own domain-separated owner identity from the

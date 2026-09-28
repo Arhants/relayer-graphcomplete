@@ -5,7 +5,7 @@
     "mediaType": "application/x-ndjson",
     "maxBytes": 16777216,
     "maxLineBytes": 16777216,
-    "maxLines": 10001
+    "maxLines": 110000
   },
   "metadata": {
     "titleMaxUnicodeScalars": 120,
