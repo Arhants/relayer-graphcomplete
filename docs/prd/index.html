@@ -844,6 +844,11 @@ interface CompletionTerminalError extends Error {
 <li>The force-stop ends that turn's process or session. Its access is released within ten seconds.</li>
 <li>A force-stopped turn ends as a settled cancellation. A turn the user stopped is recorded as stopped, and the force-stop appears in its diagnostics.</li>
 <li>A root turn force-stopped while its native conversation ran is not resumed. The next root turn starts a fresh one and still receives the graph context.</li>
+<li>Prompts carry only the current turn, so a native conversation is kept whenever the selected provider can resume it (<a href="https://github.com/vishaltandale00/relayer-graphcomplete/issues/584">#584</a>).</li>
+<li>Providers that share a native home keep resuming the same conversation. A provider in another home cannot resume it.</li>
+<li>When the native conversation cannot be resumed, the turn still runs in a fresh native session. The turn's diagnostics record that native history was unavailable, and why.</li>
+<li>A reset notice makes the reset visible. It does not restore the lost context.</li>
+<li>These rules decide only resumption for the provider the product selected. The legacy compatibility policy decides which providers an existing conversation may select.</li>
 <li>Force-stopping is best effort. If it fails to end the turn, Remove can proceed while that turn still runs.</li>
 <li>A harness that cannot force-stop keeps a cancelled turn's access until the turn ends.</li>
 <li>Remove's waiting state for running turns and an explicit <strong>Stop turns and remove</strong> action are planned.</li>
@@ -2106,6 +2111,7 @@ interface NativeExecutionHandle {
 </code></pre>
 <p>The thread stores a copy of its selected named harness configuration. The configuration's <code>implementation</code> field selects a factory from the map. The host does not interpret the implementation-specific <code>settings</code> object. The host may keep the same JavaScript harness object and provider session alive across turns when the adapter can safely reuse them. Factories may initialize asynchronously.</p>
 <p>If the Node process or provider session expires, the host recreates the object from stored configuration and opaque provider resume state when available. The next Complete call supplies its own graph scope and remains semantically valid even when the provider starts a fresh session. Session reuse should be used when obvious and behavior preserving, but continuous GraphComplete context must not depend on it.</p>
+<p>Today prompts carry only the current turn, so the native session holds the prior conversation (<a href="https://github.com/vishaltandale00/relayer-graphcomplete/issues/584">#584</a>). The host keeps a native session whenever it can be resumed. A reset starts a fresh session and is recorded in the turn's diagnostics, never silently.</p>
 <p>The Relayer app server owns one-active-human-root-completion coordination for a thread. The Node host owns the live JavaScript object and a completion registry keyed by canonical completion identity. It serializes construction and durable provider-session state mutation where required, but it does not place recursive provider work behind a thread-global Complete queue. Cancellation, approval, trace, capability, and settlement state are completion scoped. Parent terminality never waits for, cancels, settles, or incorporates an active child. Codex and Prime Agent each retain their native execution behavior; the host owns no recursive child-agent scheduler.</p>
 <h3>12.3 Minimal harness configuration</h3>
 <p>Each YAML file has a unique machine-readable <code>name</code>, selects an implementation type and version, and carries implementation-owned settings. The host validates only the common envelope. Each implementation validates its own settings. Prime Agent can add recursive model policy, review, and budget settings without changing host or product types.</p>

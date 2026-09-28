@@ -107,7 +107,7 @@ export async function stopRunFixture() {
             createAgentRunModelScope: (value) => value,
             SessionManager: { create: () => "fixture-session", open: () => "fixture-session" },
             createHostRequestHandler: (handler) => handler,
-            createAgentSessionServices: async () => ({}),
+            createAgentSessionServices: async () => ({ resourceLoader: { getAppendSystemPrompt: () => [] } }),
             createAgentSessionFromServices: async () => ({ session: {
               agent: { state: { thinkingLevel: "off" } },
               sessionManager: { appendThinkingLevelChange() {} },

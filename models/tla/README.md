@@ -723,6 +723,154 @@ If the app server alone restarted, its restored row would stay the record.
 It would accept the coordinator's next generation, and the coordinator's
 counter only grows.
 
+### `HarnessCodexThread.tla`
+
+This model covers `codex.basic`'s persistent root thread across serialized
+root turns. Prompts carry only the current turn, so the native thread is the
+only holder of prior conversation ([#584](https://github.com/vishaltandale00/relayer-graphcomplete/issues/584)).
+It must be kept whenever it can be resumed, and a reset must be visible.
+
+- **Harness:** the saved thread, the Codex home it is bound to, the step that
+  saves it, and the pending reset notice.
+- **App server:** `thread/start`, `thread/resume` and `turn/start`. A thread
+  has a rollout only in the `CODEX_HOME` whose `turn/start` was accepted on it.
+  `thread/resume` without one fails with "no rollout found", as the pinned
+  Codex 0.147.0 binary does.
+- **Providers and homes:** the subscription `s` has its own home `S`. Two
+  API-key providers, `k1` and `k2`, share Codex's default home `D`, as they do
+  in production today.
+- **Interruptions:** Stop, the per-turn force-stop and force shutdown, and a
+  thread saved by an earlier release, whose home is unknown and whose rollout
+  may be missing. A force marks the turn, and the kill lands later (`Kill`), so
+  a `turn/start` answer already in flight can still arrive. A Stop while
+  `turn/start` is pending kills the app-server.
+
+The model decides only resumption for the provider each turn uses. Which
+providers an existing conversation may select belongs to the legacy
+compatibility policy, so the model lets every turn pick any provider.
+
+`codex-thread-today` mirrors the code, and each `-reverted` check turns one fix
+off. Nine constants hold the fixes:
+
+- `CommitAtTurnStart`: the thread is saved when `turn/start` is accepted
+  (`onTurnId`), not when `thread/start` answers.
+- `ThreadRecordsHome`: the saved thread records a binding, and a turn that
+  does not match it starts a fresh thread.
+- `BindToHome`: that binding is the Codex home, not the provider definition, so
+  providers that share a home keep resuming the thread.
+- `RecoverMissingRollout`: a `thread/resume` that finds no rollout forgets the
+  saved thread and starts a fresh one in the same turn.
+- `ForceForgets`: a force-stop or force shutdown of a root turn that sent
+  `turn/start` forgets the saved thread.
+- `CommitChecksForce`: a `turn/start` answer that arrives after the force is not
+  saved (`onTurnId` checks the force signal).
+- `ForgetOnlyAfterTurnStart`: a turn forced before it sent `turn/start` wrote
+  nothing, so the saved thread is kept.
+- `StopForgetsPendingStart`: a Stop that kills the app-server while
+  `turn/start` is pending forgets the thread, as a force does.
+- `ResetsVisible`: every forget leaves a reset notice, which the next fresh
+  root thread reports.
+
+The properties are:
+
+- `NoDeadResume`: a root turn never fails on a thread Codex cannot resume.
+- `ResumeOnlyMaterialized`: only a thread with a rollout in the turn's home is
+  offered for resume, except one saved by an earlier release.
+- `NoKilledResume`: a conversation killed mid-write, by a force or by a Stop
+  while `turn/start` was pending, is never resumed (PRD, Provider execution
+  access).
+- `NoNeedlessForget`: after a root turn in a home finishes, or is stopped once
+  running, the next root turn in that home resumes its thread, whichever
+  provider it uses. Only a later killed conversation lifts this.
+- `NoSilentReset`: a root turn that starts a fresh thread after a root
+  conversation was lost reports it. Each loss is reported once.
+- `NeverResumes`: a witness, expected to be violated, that a real resume is
+  reachable.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `codex-thread-resumable` | Fixed; now passes | Before the fix (H1): the thread was saved as soon as `thread/start` answered, and reset only when the presentation version changed. A follow-up in another Codex home resumed it without its rollout, and a Stop between `thread/start` and `turn/start` pinned a thread that never got one. Every later root turn failed with "no rollout found", also after a restart. Regressions: `codex-root-thread.test.ts` drives the real app-server transport against an emulated app-server with Codex's rollout rules. |
+| `codex-thread-home-reverted` | violated: shows why the fix is needed | Without a recorded binding, a follow-up in another home resumes a thread with no rollout there. |
+| `codex-thread-commit-reverted` | violated: shows why the fix is needed | A Stop before `turn/start` leaves a saved thread with no rollout. |
+| `codex-thread-recovery-reverted` | violated: shows why the fix is needed | A thread saved by an earlier release, with no rollout in the turn's home, fails the turn. It is still offered for resume, so that existing conversations keep their thread. |
+| `codex-thread-force-reverted` | violated: shows why the fix is needed | A force that keeps the saved thread lets the next root turn resume the killed conversation. |
+| `codex-thread-late-commit-reverted` | violated: shows why the fix is needed | A `turn/start` answer that arrives after the force saves the forced thread again. |
+| `codex-thread-forget-unwritten-reverted` | violated: shows why the fix is needed | Found in review: a force during `thread/resume`, before `turn/start`, forgot a thread nothing wrote. Now kept. Regressions: the two "before its turn/start" cases in `codex-root-thread.test.ts`. |
+| `codex-thread-home-binding-reverted` | violated: shows why the fix is needed | #584: binding the thread to its provider definition dropped native history when a follow-up moved between API-key providers sharing Codex's default home. Regression: "keeps resuming across providers that share a Codex home". |
+| `codex-thread-stop-kill-reverted` | violated: shows why the fix is needed | Found in review: a Stop while `turn/start` was pending killed the app-server but kept the thread. Regression: "forgets, visibly, a root thread whose turn a Stop killed while turn/start was pending". |
+| `codex-thread-silent-reset-reverted` | violated: shows why the fix is needed | #584: without the notice, a root turn silently starts over after its native conversation was lost. Regressions: the reset assertions in `codex-root-thread.test.ts`. |
+| `codex-thread-resume-witness` | violated: witness | A real resume is reachable. |
+
+In review, three mutants of this model and `HarnessPrimeRoot` passed every
+property then shipped: `Commit` always clearing the saved thread, `Force`
+keeping it, and force close forgetting an idle Prime session. They now violate
+`NoNeedlessForget`, `NoKilledResume` and Prime's `NoNeedlessForget`.
+
+`ResumeOnlyMaterialized` exempts the earlier release's thread by design: its
+home is unknown, so the harness tries it once and binds it on success.
+`NoNeedlessForget` gives up continuity only when a turn runs in another home,
+where the thread cannot be resumed.
+
+### `HarnessPrimeRoot.tla`
+
+This model covers the harness host and Prime Agent's persistent root session:
+
+- **Host:** the per-thread session lock, capture and persist after a run,
+  graceful close, force close, a crash and one restart.
+- **Prime:** pinning, rotation, reload, the force-stop generation, and the
+  presentation instructions each session was built with.
+- **Turns:** two root turns and one invoked child, which only captures state.
+
+`prime-root-today` mirrors the code, and each `-reverted` check turns one fix
+off. Five constants hold the fixes:
+
+- `ForcePersists`: the host records the harness state as soon as a per-turn
+  force-stop fires, not when the host run ends up to ten seconds later.
+- `ForceShutdownForgets`: force shutdown forgets the root session while a root
+  conversation runs on it, as a per-turn force-stop does.
+- `ForgetOnlyRunning`: only when an unforced root turn is bound to that
+  session. A turn still acquiring its session wrote nothing, and a turn
+  already force-stopped dropped its session then.
+- `ForceClosePersists`: force close captures and persists that state, although
+  it skips close's final persist.
+- `SessionScopedInstructions`: each session reads its own presentation
+  instructions. Before, every session read the shared resource loader's cache,
+  which only a session's `reload()` refreshed.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `prime-root-serialized` | passes | Root turns stay serialized, and two root natives never share a session. |
+| `prime-root-memory` | passes | While the harness is live, it never pins a force-stopped root conversation. |
+| `prime-root-capture` | Fixed; now passes | Before the fix: a graceful close captured the state, a force-stop then fired, and the close persisted the stale capture. |
+| `prime-root-capture-reverted` | violated: shows why the fix is needed | Without recording at the force-stop, the close persists the stopped session. |
+| `prime-root-restart-close` | Fixed; now passes | Before the fix: a turn force-stopped after close had persisted was restored after the restart. |
+| `prime-root-restart-close-reverted` | violated: shows why the fix is needed | Same trace with the force-stop recorded only at the end of the host run. |
+| `prime-root-force-close` | Fixed; now passes | Before the fix (H2): quitting while a root turn ran ended in force close. Force shutdown kept the root session (Codex kept its thread), and nothing persisted, so the restart resumed the killed conversation. The check also holds `NoNeedlessForget`: an idle session, or one a turn is still acquiring, is kept. Regressions: `host-root-session-force.test.ts` (Codex through the real host, restarted) and the Prime force-shutdown test in `prime-agent.test.ts`. |
+| `prime-root-force-close-forget-reverted` | violated: shows why the fix is needed | Force close persists the killed conversation it did not forget. |
+| `prime-root-force-close-persist-reverted` | violated: shows why the fix is needed | The previously saved killed conversation survives. |
+| `prime-root-forget-running-reverted` | violated: shows why the fix is needed | Found in review: forgetting whenever a root turn is in flight forgets a session a turn was still acquiring. `NoNeedlessForget` now also covers an idle session. Regression: "keeps the root session when force shutdown ends a root turn still acquiring it". |
+| `prime-root-keep-witness` | violated: witness | An idle session survives a force close and the restart. |
+| `prime-root-crash` | Open, narrowed | A crash after a per-turn force-stop but before its state write lands restores the stopped conversation. The write now starts when the force fires. Before, it waited for the host run to end. Regression for the new timing: "records a force-stopped root turn's forgotten session before its host run ends". |
+| `prime-root-instructions` | Fixed; now passes | Before the fix (H3): a rotated root session was built from the loader's cache, which held the previous version's instructions, because `createAgentSessionFromServices` does not reload it (PPG-003). Regression: `prime-agent-native-instructions.test.ts` with the real Prime SDK 0.8.1 and no inference; it also covers invoked children, which the model leaves out. |
+| `prime-root-instructions-reverted` | violated: shows why the fix is needed | With the shared cache, a rotated root session runs with stale instructions. |
+| `prime-root-liveness` | passes | A force-stopped turn's host run always ends and frees the lock. |
+
+`Restart` after a close or force close waits for the writes they await. A
+crash may restart at any point.
+
+### `HarnessCodexAuth.tla`
+
+This model covers the per-`CODEX_HOME` `auth.json` refcount and its serialized
+write and remove queue in `codex-basic.ts`. It has three concurrent turns,
+roots and children, on one provider home. It includes the per-turn
+force-stop and a host that stops waiting before a turn's cleanup ends. It found
+no bug, and its checks guard the queue against regressions.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `codex-auth-safety` | passes | A running turn always finds its key file, the user count is exact, and no key file remains once every turn ends. |
+| `codex-auth-liveness` | passes | The key file is eventually removed for good. |
+
 ## Limits
 
 - **Bounds:** one provider plus one new connection, one renderer, one lease,

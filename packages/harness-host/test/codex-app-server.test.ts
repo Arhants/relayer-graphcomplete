@@ -134,6 +134,34 @@ describe("Codex app-server transport", () => {
     expect(fake.killed).toBe(true);
   });
 
+  it.each([
+    ["no rollout found for thread id saved-thread", ["thread/resume", "thread/start", "turn/start"], ["saved-thread"]],
+    ["thread is busy", ["thread/resume"], []],
+  ] as const)("starts a fresh thread only when the saved one has no rollout (%s)", async (resumeError, methods, unavailable) => {
+    const fake = new FakeCodexProcess((message) => {
+      if (message.method === "initialize") fake.respond(message.id, {});
+      if (message.method === "thread/resume") {
+        queueMicrotask(() => fake.stdout.write(`${JSON.stringify({ id: message.id, error: { code: -32600, message: resumeError } })}\n`));
+      }
+      if (message.method === "thread/start") fake.respond(message.id, { thread: { id: "thread-new" } });
+      if (message.method === "turn/start") {
+        fake.respond(message.id, { turn: { id: "turn-1" } });
+        queueMicrotask(() => fake.notify("turn/completed", {
+          threadId: "thread-new",
+          turn: { id: "turn-1", status: "completed", error: null },
+        }));
+      }
+    });
+    const onSavedThreadUnavailable = vi.fn();
+
+    const outcome = await runCodexAppServerTurn(options(fake, { savedThreadId: "saved-thread", onSavedThreadUnavailable }))
+      .then((result) => result.threadId, (error: Error) => error.message);
+
+    expect(outcome).toBe(methods.length === 1 ? `Codex thread/resume failed: ${resumeError}` : "thread-new");
+    expect(fake.messages.map(({ method }) => method).filter((method) => method?.includes("/"))).toEqual(methods);
+    expect(onSavedThreadUnavailable.mock.calls.map(([threadId]) => threadId)).toEqual(unavailable);
+  });
+
   it("waits for native thread attachment before starting the turn", async () => {
     let releaseAttachment: (() => void) | undefined;
     const attachment = new Promise<void>((resolve) => { releaseAttachment = resolve; });
