@@ -18,7 +18,10 @@ import {
   checkNodeNavigation,
   checkBasicOutput,
   GRAPH_PRESENTATION_RUBRIC_V11,
+  expandCapabilitySuiteRun,
   expandTestRun,
+  projectCapabilitySuiteCatalog,
+  resolveCapabilitySuite,
   gradeH3Workspace,
   gradeFrontierProjectWorkspace,
   H3_AUTONOMOUS_FIX_CASE_ID,
@@ -48,6 +51,7 @@ import {
   RECURSIVE_GRAPH_MEMORY_CASE_ID,
   RECURSIVE_GRAPH_MEMORY_HARNESS_QUARTET,
   selectEvalPermissionProfile,
+  validateEvalChecksV1,
 } from "@relayer/eval-runner";
 import { loadHarnessConfigurations } from "@relayer/harness-host";
 import { firstAvailableSelection, harnessUsesConfigurationModel } from "../renderer/src/model-picker-model.js";
@@ -238,7 +242,7 @@ export function evalModelSelectionRequest(selectedModel, productModelSelection =
   };
 }
 
-function outcomeGradeFromChecks(checks, caseSnapshot = null) {
+function outcomeGradeFromChecks(checks, caseSnapshot = null, evaluateMandatoryGate = null) {
   const criteria = caseSnapshot?.artifacts?.outcomeRubric?.criteria || [];
   const criterionGrades = criteria.map((criterion) => ({
       criterionId: criterion.id,
@@ -252,7 +256,9 @@ function outcomeGradeFromChecks(checks, caseSnapshot = null) {
     const grade = projectDeterministicChecksToOutcome(checks);
     return { ...grade, criteria: criterionGrades };
   }
-  const mandatoryGates = declarations.map((gate) => mandatoryGateReceipt(gate, checks));
+  const mandatoryGates = declarations.map((gate) => evaluateMandatoryGate
+    ? externalMandatoryGateReceipt(gate, checks, evaluateMandatoryGate)
+    : mandatoryGateReceipt(gate, checks));
   return {
     ...buildTaskOutcomeGrade({
     status: criterionGrades.length > 0 ? "partial" : "completed",
@@ -541,6 +547,21 @@ export async function validateCandidateTrace(directory, descriptor, interaction,
     throw new Error(`Candidate trace ${interaction.id} did not record exactly one valid broker-scope marker.`);
   }
   return marker;
+}
+
+function externalMandatoryGateReceipt(gate, checks, evaluate) {
+  const result = evaluate(gate, checks);
+  const supplied = Array.isArray(result?.matched) ? result.matched : [];
+  const matched = supplied.filter((check) => checks.includes(check));
+  const complete = result?.complete === true && typeof result?.passed === "boolean"
+    && matched.length > 0 && matched.length === supplied.length;
+  return {
+    schemaVersion: 1, gateId: gate.id, name: gate.label, mandatory: true,
+    status: complete ? "completed" : "failed", passed: complete ? result.passed : null,
+    detail: complete ? matched.map((check) => `${check.name}: ${check.detail}`).join("\n")
+      : `Verifier ${gate.id} did not emit every required check.`,
+    evidenceRefs: matched.map((check) => `deterministic-check:${check.name}`),
+  };
 }
 
 function mandatoryGateReceipt(gate, checks) {
@@ -909,6 +930,7 @@ export class EvalService {
     frontierWorkspaceGrader = gradeFrontierProjectWorkspace,
     calibrationFixtureMaterializer = materializeCalibrationFixture,
     calibrationWorkspaceGrader = gradeCalibrationWorkspace,
+    externalCatalog = null,
     acceptedTopologyBuilder = buildAcceptedReviewTopology,
     acceptedTopologyGrader = gradeAcceptedReviewTopology,
     candidateTraceExporter = null,
@@ -935,6 +957,16 @@ export class EvalService {
     this.frontierWorkspaceGrader = frontierWorkspaceGrader;
     this.calibrationFixtureMaterializer = calibrationFixtureMaterializer;
     this.calibrationWorkspaceGrader = calibrationWorkspaceGrader;
+    this.externalCatalog = externalCatalog;
+    this.externalCases = new Map((externalCatalog?.cases ?? []).map((entry) => [entry.definition.id, entry]));
+    if (this.externalCases.size !== (externalCatalog?.cases ?? []).length
+      || evalCases.some((entry) => this.externalCases.has(entry.id))) {
+      throw new Error("External Eval catalog contains duplicate or built-in case IDs.");
+    }
+    this.cases = Object.freeze([...evalCases, ...[...this.externalCases.values()].map((entry) => entry.definition)]);
+    this.projectCaseIds = new Set([...projectCaseIds, ...this.externalCases.keys()]);
+    this.unavailableCaseIds = new Set([...this.externalCases.values()]
+      .filter((entry) => !entry.available).map((entry) => entry.definition.id));
     this.acceptedTopologyBuilder = acceptedTopologyBuilder;
     this.acceptedTopologyGrader = acceptedTopologyGrader;
     this.candidateTraceExporter = candidateTraceExporter;
@@ -974,6 +1006,10 @@ export class EvalService {
       await this.#reconcilePendingImportDirectories(publishedImports.imports || []);
     }
     for (const run of this.runs) {
+      const runWasInFlight = run.status === "running" || run.status === "queued";
+      const inFlightExecutionIds = new Set((run.executions || [])
+        .filter((execution) => execution.status === "running" || execution.status === "queued")
+        .map((execution) => execution.id));
       if (run.status === "running" || run.status === "queued") {
         run.status = "interrupted";
         for (const execution of run.executions) {
@@ -984,16 +1020,21 @@ export class EvalService {
         }
       }
       for (const execution of run.executions || []) {
+        const executionWasInFlight = runWasInFlight && inFlightExecutionIds.has(execution.id);
+        let normalizedInFlightJudge = false;
         for (const turn of execution.turns || []) {
           for (const judgeResult of turn.judgeResults || []) {
             if (judgeResult.status === "running" || judgeResult.status === "queued") {
               judgeResult.status = "partial";
               judgeResult.completedAt = new Date().toISOString();
               judgeResult.error ||= "Simulated-user review was interrupted before finalization.";
+              normalizedInFlightJudge = true;
             }
           }
         }
-        if ((execution.turns || []).some((turn) => (turn.judgeResults || []).length > 0)) {
+        const hasJudgeEvidence = (execution.turns || []).some((turn) => (turn.judgeResults || []).length > 0);
+        if (hasJudgeEvidence && ((execution.presentationGrade === undefined && executionWasInFlight)
+          || (execution.presentationGrade?.status === "pending" && normalizedInFlightJudge))) {
           execution.presentationGrade = presentationGradeFromTurns(execution.turns, true);
         }
       }
@@ -1008,7 +1049,17 @@ export class EvalService {
   catalog() {
     const availableConfigurations = new Set(this.configurations.keys());
     return {
-      cases: copy(evalCases.map(({ promptsForRun: _promptsForRun, gradeExecution: _gradeExecution, ...definition }) => definition)),
+      cases: copy(this.cases
+        .filter(({ id }) => !this.unavailableCaseIds.has(id))
+        .map(({ promptsForRun: _promptsForRun, gradeExecution: _gradeExecution, ...definition }) => definition)),
+      suites: copy((this.externalCatalog?.suites ?? []).map((manifest) => projectCapabilitySuiteCatalog(manifest, [...this.externalCases.values()].map((entry) => entry.boundCase))).map((suite) => {
+        const unavailableMember = suite.members.find(({ caseId }) => this.unavailableCaseIds.has(caseId));
+        return unavailableMember === undefined ? suite : {
+          ...suite,
+          available: false,
+          unavailableReason: `Capability suite ${suite.suiteId} member is unavailable: ${unavailableMember.caseId}`,
+        };
+      })),
       harnessConfigurations: [...this.configurations.values()].map((configuration) => ({
         name: configuration.name,
         implementation: configuration.implementation,
@@ -1198,17 +1249,33 @@ export class EvalService {
   }
 
   async createRun(selection) {
-    const testCaseIds = selection?.testCaseIds;
+    const suiteId = selection?.suiteId ?? null;
+    let resolvedSuite = null;
+    let testCaseIds = selection?.testCaseIds;
+    if (suiteId !== null) {
+      const manifest = this.externalCatalog?.suites.find((suite) => suite.id === suiteId);
+      if (!manifest) throw new Error(`Unknown Eval suite: ${String(suiteId)}`);
+      if (Array.isArray(testCaseIds) && testCaseIds.length > 0) {
+        throw new Error("A capability suite run cannot override its ordered member cases.");
+      }
+      resolvedSuite = resolveCapabilitySuite(manifest, [...this.externalCases.values()].map((entry) => entry.boundCase));
+      testCaseIds = resolvedSuite.members.map(({ caseId }) => caseId);
+      const unavailableMember = testCaseIds.find((id) => this.unavailableCaseIds.has(id));
+      if (unavailableMember) throw new Error(`Capability suite ${suiteId} member is unavailable: ${unavailableMember}`);
+    }
     const harnessConfigurationNames = selection?.harnessConfigurationNames;
     const judgeConfigurationName = selection?.judgeConfigurationName;
     if (Array.isArray(harnessConfigurationNames) && harnessConfigurationNames.some((name) => (
       this.configurations.get(name)?.implementation === "prime.agent"
       && (this.selectPrimeModel === null || this.primeModelAvailability?.(name)?.available === false)
     ))) throw new Error("Prime Eval requires a connected provider and a pinned model family.");
-    if (!Array.isArray(testCaseIds) || testCaseIds.some((id) => !evalCases.some((item) => item.id === id))) {
+    if (!Array.isArray(testCaseIds) || testCaseIds.some((id) => (
+      this.unavailableCaseIds.has(id) || !this.cases.some((item) => item.id === id)
+    ))) {
       throw new Error("Test run contains an unknown test case.");
     }
-    const incompatibleJudgeCase = evalCases.find((item) => (
+    if (testCaseIds.some((id) => this.externalCases.has(id))) await this.externalCatalog.assertUnchanged();
+    const incompatibleJudgeCase = this.cases.find((item) => (
       testCaseIds.includes(item.id)
       && Array.isArray(item.requiredJudgeConfigurationIds)
       && !item.requiredJudgeConfigurationIds.includes(judgeConfigurationName)
@@ -1231,7 +1298,7 @@ export class EvalService {
       throw new Error(`The deterministic visual Node Detail fixture must run alone with ${nodeDetailEvalCase.requiredHarnessConfigurationNames.join(", ")}.`);
     }
     if (testCaseIds.includes(RECURSIVE_COMPLETE_EVAL_CASE_ID)) {
-      const comparison = evalCases.find((item) => item.id === RECURSIVE_COMPLETE_EVAL_CASE_ID);
+      const comparison = this.cases.find((item) => item.id === RECURSIVE_COMPLETE_EVAL_CASE_ID);
       if (!sameJson(testCaseIds, [RECURSIVE_COMPLETE_EVAL_CASE_ID])
         || !sameJson(harnessConfigurationNames, comparison.requiredHarnessConfigurationNames)) {
         throw new Error(`The agent-authored Complete comparison must run alone with its exact ordered Codex pair: ${comparison.requiredHarnessConfigurationNames.join(", ")}.`);
@@ -1258,7 +1325,7 @@ export class EvalService {
       }
     }
     if (testCaseIds.includes(RECURSIVE_GRAPH_MEMORY_CASE_ID)) {
-      const definition = evalCases.find((item) => item.id === RECURSIVE_GRAPH_MEMORY_CASE_ID);
+      const definition = this.cases.find((item) => item.id === RECURSIVE_GRAPH_MEMORY_CASE_ID);
       if (!sameJson(testCaseIds, [RECURSIVE_GRAPH_MEMORY_CASE_ID])
         || !sameJson(harnessConfigurationNames, RECURSIVE_GRAPH_MEMORY_HARNESS_QUARTET)) {
         throw new Error(`The recursive graph-memory experiment must run alone with its exact ordered Codex quartet: ${RECURSIVE_GRAPH_MEMORY_HARNESS_QUARTET.join(", ")}.`);
@@ -1302,13 +1369,20 @@ export class EvalService {
       throw new Error("Unknown judge configuration.");
     }
     const id = `run-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;
-    const plans = expandTestRun({
-      testRunId: id,
-      testCaseIds,
-      harnessConfigurationNames,
-      judgeConfiguration: { name: judgeConfigurationName },
-    }, this.configurations);
-    for (const plan of plans) validateEvalPermissionProfiles(plan);
+    const plans = resolvedSuite === null
+      ? expandTestRun({
+        testRunId: id,
+        testCaseIds,
+        harnessConfigurationNames,
+        judgeConfiguration: { name: judgeConfigurationName },
+      }, this.configurations)
+      : expandCapabilitySuiteRun({
+        testRunId: id,
+        suite: resolvedSuite,
+        harnessConfigurationNames,
+        judgeConfiguration: { name: judgeConfigurationName },
+      }, this.configurations);
+    for (const plan of plans) validateEvalPermissionProfiles(plan, this.cases);
     const run = {
       schemaVersion: 1,
       id,
@@ -1316,6 +1390,8 @@ export class EvalService {
       completedAt: null,
       bundleRef: null,
       status: "queued",
+      suiteIdentity: resolvedSuite === null ? null : copy(resolvedSuite.identity),
+      catalogIdentity: testCaseIds.some((id) => this.externalCases.has(id)) ? copy(this.externalCatalog.identity) : null,
       testCaseIds: [...testCaseIds],
       harnessConfigurationNames: [...harnessConfigurationNames],
       judgeConfigurationName,
@@ -1351,7 +1427,7 @@ export class EvalService {
         passed: null,
       } : null,
       executions: plans.map((plan) => {
-        const definition = evalCases.find((candidate) => candidate.id === plan.testCaseId);
+        const definition = this.cases.find((candidate) => candidate.id === plan.testCaseId);
         return {
         id: randomUUID(),
         testRunId: id,
@@ -1361,6 +1437,8 @@ export class EvalService {
         harnessConfigurationDigest: plan.harnessConfigurationDigest,
         caseSnapshot: copy(definition?.caseSnapshot || null),
         caseSnapshotDigest: definition?.caseSnapshotDigest || null,
+        suiteIdentity: plan.suiteIdentity ? copy(plan.suiteIdentity) : null,
+        catalogIdentity: this.externalCases.has(plan.testCaseId) ? copy(this.externalCatalog.identity) : null,
         judgeConfiguration: plan.judgeConfiguration,
         status: "queued",
         lifecycle: {
@@ -1548,7 +1626,7 @@ export class EvalService {
         ? ["external-conversation"]
         : run.testCaseIds;
       const cases = caseIds.map((caseId) => {
-        const definition = evalCases.find((candidate) => candidate.id === caseId);
+        const definition = this.cases.find((candidate) => candidate.id === caseId);
         const execution = run.kind === "imported-conversation"
           ? selected
           : run.executions.find((candidate) => (
@@ -1952,10 +2030,10 @@ export class EvalService {
     };
     execution.error = null;
     await this.#changed();
-    const definition = evalCases.find((candidate) => candidate.id === execution.testCaseId);
+    const definition = this.cases.find((candidate) => candidate.id === execution.testCaseId);
     try {
       if (!definition) throw new Error(`Unknown test case: ${execution.testCaseId}`);
-      const executedThreads = projectCaseIds.has(definition.id)
+      const executedThreads = this.projectCaseIds.has(definition.id)
         ? await this.#executeProjectCase(execution, definition)
         : [await this.#executeStandaloneCase(execution, definition)];
       execution.threadIds = executedThreads.map(({ thread }) => thread.id);
@@ -2082,7 +2160,7 @@ export class EvalService {
               });
             }
           }
-          if (projectCaseIds.has(definition.id)) {
+          if (this.projectCaseIds.has(definition.id)) {
             try {
               const topology = await this.acceptedTopologyBuilder({
                 turnId: interaction.id,
@@ -2107,7 +2185,7 @@ export class EvalService {
             }
           }
         }
-        if (projectCaseIds.has(definition.id)) {
+        if (this.projectCaseIds.has(definition.id)) {
           const permissionResolution = executedTurn.permissionResolution;
           const expectedProfileId = permissionResolution.effectiveProfileId;
           turnChecks.push({
@@ -2194,14 +2272,22 @@ export class EvalService {
       const outcomeChecks = execution.caseSnapshot
         ? execution.checks.filter((check) => check.name.includes(":workspace:"))
         : execution.checks;
+      const externalCase = this.externalCases.get(definition.id);
       execution.outcomeGrade = definition.id === RECURSIVE_GRAPH_MEMORY_CASE_ID
         ? recursiveGraphMemoryOutcomeGrade()
-        : outcomeGradeFromChecks(outcomeChecks, execution.caseSnapshot);
+        : externalCase
+          ? await this.#runExternalCatalogCallback(() => outcomeGradeFromChecks(outcomeChecks, execution.caseSnapshot, externalCase.evaluateMandatoryGate))
+          : outcomeGradeFromChecks(outcomeChecks, execution.caseSnapshot);
       execution.presentationGrade = presentationGradeFromTurns(
         execution.turns,
         simulatedUserJudgeIds.has(execution.judgeConfiguration.name),
       );
-      execution.passed = deterministicPassed && simulatedUserCompleted && inputRoundTripCompleted;
+      const mandatoryOutcomePassed = !Array.isArray(execution.outcomeGrade?.mandatoryGates)
+        || execution.outcomeGrade.mandatoryGates.every((gate) => gate.status === "completed" && gate.passed === true);
+      execution.passed = deterministicPassed
+        && mandatoryOutcomePassed
+        && simulatedUserCompleted
+        && inputRoundTripCompleted;
       execution.status = execution.passed ? "passed" : "failed";
       completeExecutionLifecycle(execution);
     } catch (error) {
@@ -2233,9 +2319,24 @@ export class EvalService {
       encodeURIComponent(execution.id),
     );
     const workspaceDirectory = join(executionDirectory, "workspace");
+    const external = this.externalCases.get(definition.id);
+    if (external) {
+      await this.externalCatalog.assertUnchanged();
+      if (canonicalJson(execution.catalogIdentity) !== canonicalJson(this.externalCatalog.identity)) {
+        throw new Error("External Eval catalog identity changed after run creation.");
+      }
+      if (!external.available) throw new Error(external.unavailableReason || "External Eval case unavailable.");
+    }
     const isH3 = h3CaseIds.has(definition.id);
     const isCalibration = calibrationAutonomousCaseIds.has(definition.id);
-    const fixture = isH3
+    const fixture = external
+      ? await this.#runExternalCatalogCallback(() => external.materialize({
+        caseId: definition.id,
+        workspaceDirectory,
+        cacheDirectory: join(dirname(this.stateFile), "fixtures", encodeURIComponent(definition.id)),
+        platform: this.platform,
+      }))
+      : isH3
       ? await this.projectFixtureMaterializer({
         cacheDirectory: join(dirname(this.stateFile), "fixtures", `h3-${H3_UPSTREAM_COMMIT}`),
         workspaceDirectory,
@@ -2283,7 +2384,9 @@ export class EvalService {
             interactionId,
           ));
           if (threadDefinition.mutationPolicy === "read-only" || promptIndex === threadDefinition.prompts.length - 1) {
-            workspaceChecks.set(String(interactionId), isH3
+            workspaceChecks.set(String(interactionId), external
+              ? await this.#runExternalCatalogCallback(async () => validateEvalChecksV1(await external.grade({ caseId: definition.id, workspaceDirectory, fixture, threadDefinition })))
+              : isH3
               ? await this.workspaceGrader({ workspaceDirectory, grade: threadDefinition.workspaceGrade })
               : isCalibration
                 ? await this.calibrationWorkspaceGrader({ caseId: definition.id, workspaceDirectory, baseRevision: fixture.seededCommit })
@@ -2294,6 +2397,15 @@ export class EvalService {
       executedThreads.push({ ...executed, threadDefinition, permissionResolution, workspaceChecks, workspaceArtifacts });
     }
     return executedThreads;
+  }
+
+  async #runExternalCatalogCallback(callback) {
+    await this.externalCatalog.assertUnchanged();
+    try {
+      return await callback();
+    } finally {
+      await this.externalCatalog.assertUnchanged();
+    }
   }
 
   async #createAndRunThread({ execution, title, prompts, projectId = null, permissionProfileId = "auto", afterTurn = async () => {} }) {
@@ -2582,7 +2694,7 @@ export class EvalService {
   }
 
   async #observeCurrentProjections(execution, detail) {
-    const definition = evalCases.find((candidate) => candidate.id === execution.testCaseId);
+    const definition = this.cases.find((candidate) => candidate.id === execution.testCaseId);
     if (!definition?.requiredChecks?.includes("agent-authored-complete")) return;
     const evidence = execution.currentProjectionEvidence ||= { cursor: 0, observations: [] };
     const completionIds = new Set((detail.interactions || [])
@@ -3027,12 +3139,12 @@ function candidateModel(configuration) {
   return undefined;
 }
 
-function validateEvalPermissionProfiles(execution) {
-  if (!projectCaseIds.has(execution.testCaseId)) {
+function validateEvalPermissionProfiles(execution, cases = evalCases) {
+  const definition = cases.find((candidate) => candidate.id === execution.testCaseId);
+  if (!Array.isArray(definition?.threads)) {
     selectEvalPermissionProfile(execution.harnessConfiguration);
     return;
   }
-  const definition = evalCases.find((candidate) => candidate.id === execution.testCaseId);
   for (const thread of definition.threads) {
     resolveH3PermissionProfile(execution.harnessConfiguration, thread.permissionProfileId);
   }

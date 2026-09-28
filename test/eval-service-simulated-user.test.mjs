@@ -22,6 +22,8 @@ import {
   resolveH3PermissionProfile,
 } from "../desktop/eval-main/eval-service.mjs";
 
+import { createSyntheticExternalCatalog } from "../packages/eval-runner/test/fixtures/external-catalog.ts";
+
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const directories = [];
 const originalFetch = globalThis.fetch;
@@ -608,6 +610,12 @@ describe("EvalService simulated-user result persistence", () => {
               error: null,
             }],
           }],
+        }, {
+          id: "execution-already-interrupted",
+          testCaseId: "empty-project.task-system.single-turn",
+          harnessConfigurationName: "fixture-task-system",
+          status: "interrupted",
+          turns: [{ judgeResults: [{ id: "judge-already-completed", status: "completed" }] }],
         }],
       }],
     }, null, 2)}\n`);
@@ -625,10 +633,103 @@ describe("EvalService simulated-user result persistence", () => {
       status: "partial",
       error: "Simulated-user review was interrupted before finalization.",
     });
+    expect(restored.executions[1]).not.toHaveProperty("presentationGrade");
     expect(restored.bundleRef).toMatch(/^runs\/.*\/bundle\.json$/);
     expect(JSON.parse(await readFile(join(dirname(stateFile), restored.bundleRef), "utf8"))).toMatchObject({
       run: { status: "interrupted" },
     });
+  });
+
+  it("preserves a persisted finalized presentation grade when historical judge aggregation differs", async () => {
+    const { directory, stateFile, configurationPath } = await testPaths();
+    await mkdir(join(directory, "eval-data"), { recursive: true });
+    const historicalGrade = {
+      schemaVersion: 1,
+      kind: "graph_presentation_grade",
+      status: "completed",
+      score: 0.875,
+      scoreScaleMaximum: 1,
+      summary: "Finalized under the historical presentation contract.",
+      contractId: "historical-presentation-contract-v1",
+    };
+    await writeFile(stateFile, `${JSON.stringify({
+      schemaVersion: 1,
+      runs: [{
+        schemaVersion: 1,
+        id: "run-historical-grade",
+        createdAt: "2026-08-19T12:00:00.000Z",
+        completedAt: "2026-08-19T12:01:00.000Z",
+        status: "passed",
+        testCaseIds: ["empty-project.task-system.single-turn"],
+        harnessConfigurationNames: ["fixture-task-system"],
+        judgeConfigurationName: "simulated-user",
+        executions: [{
+          id: "execution-historical-grade",
+          testCaseId: "empty-project.task-system.single-turn",
+          harnessConfigurationName: "fixture-task-system",
+          status: "passed",
+          presentationGrade: historicalGrade,
+          turns: [{
+            judgeResults: [{
+              schemaVersion: 1,
+              id: "judge-historical-grade",
+              judge: "simulated-user",
+              status: "completed",
+              review: {
+                schemaVersion: 6,
+                contractId: "recursive-presentation-judge-v6",
+                turn: { criterionJudgments: {} },
+              },
+            }],
+          }],
+        }],
+      }],
+    }, null, 2)}\n`);
+
+    const service = await new EvalService({
+      stateFile,
+      productSession: productSession(),
+      configurationPaths: [configurationPath],
+    }).open();
+
+    expect(service.getRun("run-historical-grade").executions[0].presentationGrade).toEqual(historicalGrade);
+    const persisted = JSON.parse(await readFile(stateFile, "utf8"));
+    expect(persisted.runs[0].executions[0].presentationGrade).toEqual(historicalGrade);
+  });
+
+  it("does not synthesize a presentation grade for a terminal legacy execution", async () => {
+    const { directory, stateFile, configurationPath } = await testPaths();
+    await mkdir(join(directory, "eval-data"), { recursive: true });
+    await writeFile(stateFile, `${JSON.stringify({
+      schemaVersion: 1,
+      runs: [{
+        schemaVersion: 1,
+        id: "run-terminal-legacy-grade",
+        createdAt: "2026-08-19T12:00:00.000Z",
+        completedAt: "2026-08-19T12:01:00.000Z",
+        status: "passed",
+        testCaseIds: ["empty-project.task-system.single-turn"],
+        harnessConfigurationNames: ["fixture-task-system"],
+        judgeConfigurationName: "simulated-user",
+        executions: [{
+          id: "execution-terminal-legacy-grade",
+          testCaseId: "empty-project.task-system.single-turn",
+          harnessConfigurationName: "fixture-task-system",
+          status: "passed",
+          turns: [{ judgeResults: [{ id: "judge-terminal", status: "completed" }] }],
+        }],
+      }],
+    }, null, 2)}\n`);
+
+    const service = await new EvalService({
+      stateFile,
+      productSession: productSession(),
+      configurationPaths: [configurationPath],
+    }).open();
+
+    expect(service.getRun("run-terminal-legacy-grade").executions[0]).not.toHaveProperty("presentationGrade");
+    const persisted = JSON.parse(await readFile(stateFile, "utf8"));
+    expect(persisted.runs[0].executions[0]).not.toHaveProperty("presentationGrade");
   });
 
   it("disables Prime without a provider and pins the exact admitted model on both product turns", async () => {
@@ -660,6 +761,167 @@ describe("EvalService simulated-user result persistence", () => {
     expect(bodies).toHaveLength(2);
     expect(bodies.map(({ modelSelection }) => modelSelection)).toEqual([pinned, pinned]);
     expect(selectPrimeModel).toHaveBeenCalledTimes(2);
+  });
+
+
+  it("runs generic external cases and suites through materialize, grade, and durable catalog provenance", async () => {
+    const { stateFile, configurationPath } = await testPaths();
+    const product = fakeExternalAcceptedProduct();
+    globalThis.fetch = product.fetch;
+    const fixtureCatalog = createSyntheticExternalCatalog();
+    const materialize = vi.fn(fixtureCatalog.cases[0].materialize);
+    const grade = vi.fn(fixtureCatalog.cases[0].grade);
+    const catalog = withExternalIdentity({
+      ...fixtureCatalog,
+      cases: fixtureCatalog.cases.map((entry, index) => index === 0 ? { ...entry, materialize, grade } : entry),
+    });
+    const service = await new EvalService({ stateFile, productSession: productSession(), configurationPaths: [configurationPath], platform: "darwin", externalCatalog: catalog }).open();
+    const catalogEntry = service.catalog();
+    expect(catalogEntry.cases.map(({ id }) => id)).toContain("fixture.external-a");
+    expect(catalogEntry.suites.map(({ suiteId }) => suiteId)).toEqual(["synthetic-external-suite"]);
+
+    const single = await service.createRun({ testCaseIds: ["fixture.external-a"], harnessConfigurationNames: ["fixture-task-system"], judgeConfigurationName: "deterministic-graph-contract" });
+    const singleResult = await waitForCompletedRun(service, single.id);
+    expect(singleResult.executions[0]).toMatchObject({ status: "passed" });
+    expect(materialize).toHaveBeenCalledWith(expect.objectContaining({ caseId: "fixture.external-a", platform: "darwin" }));
+    expect(grade).toHaveBeenCalledWith(expect.objectContaining({ caseId: "fixture.external-a", fixture: expect.objectContaining({ sourceRevision: expect.stringMatching(/^git-tree:/) }) }));
+    expect(singleResult.catalogIdentity).toEqual(catalog.identity);
+    expect(singleResult.executions[0].catalogIdentity).toEqual(catalog.identity);
+
+    const suiteRun = await service.createRun({ suiteId: "synthetic-external-suite", harnessConfigurationNames: ["fixture-task-system"], judgeConfigurationName: "deterministic-graph-contract" });
+    const suiteResult = await waitForCompletedRun(service, suiteRun.id);
+    expect(suiteResult.status).toBe("passed");
+    expect(suiteResult.testCaseIds).toEqual(["fixture.external-a", "fixture.external-b"]);
+    expect(suiteResult.executions.map(({ testCaseId }) => testCaseId)).toEqual(["fixture.external-a", "fixture.external-b"]);
+    expect(suiteResult.suiteIdentity.members.map(({ caseId }) => caseId)).toEqual(["fixture.external-a", "fixture.external-b"]);
+    expect(suiteResult.catalogIdentity).toEqual(catalog.identity);
+    expect(suiteResult.executions.every(({ catalogIdentity, suiteIdentity }) => catalogIdentity?.commit === catalog.identity.commit && suiteIdentity?.suiteId === "synthetic-external-suite")).toBe(true);
+    expect(product.projects).toHaveLength(3);
+
+    const reopened = await new EvalService({ stateFile, productSession: productSession(), configurationPaths: [configurationPath], platform: "darwin" }).open();
+    expect(reopened.getRun(single.id)).toMatchObject({ catalogIdentity: catalog.identity, executions: [{ catalogIdentity: catalog.identity }] });
+    expect(reopened.getRun(suiteRun.id)).toMatchObject({
+      catalogIdentity: catalog.identity,
+      suiteIdentity: { suiteId: "synthetic-external-suite", members: [{ caseId: "fixture.external-a" }, { caseId: "fixture.external-b" }] },
+    });
+  });
+
+  it("keeps external mandatory gates failed for missing or failing verifier checks", async () => {
+    for (const mode of ["missing", "failing", "malformed-truthy", "sparse-gate"]) {
+      const { stateFile, configurationPath } = await testPaths();
+      globalThis.fetch = fakeExternalAcceptedProduct().fetch;
+      const fixtureCatalog = createSyntheticExternalCatalog();
+      const first = fixtureCatalog.cases[0];
+      const grade = mode === "missing"
+        ? async () => []
+        : mode === "failing"
+          ? async () => [{ name: "workspace:contract", passed: false, detail: "Verifier rejected the fixture result." }]
+          : mode === "sparse-gate" ? first.grade
+            : async () => [{ name: "workspace:contract", passed: "false", detail: "Malformed verifier result." }];
+      const evaluateMandatoryGate = mode === "sparse-gate"
+        ? () => ({ complete: true, passed: true, matched: new Array(1) })
+        : first.evaluateMandatoryGate;
+      const service = await new EvalService({
+        stateFile, productSession: productSession(), configurationPaths: [configurationPath], platform: "darwin",
+        externalCatalog: withExternalIdentity({ ...fixtureCatalog, cases: [{ ...first, grade, evaluateMandatoryGate }] }),
+      }).open();
+      const created = await service.createRun({ testCaseIds: ["fixture.external-a"], harnessConfigurationNames: ["fixture-task-system"], judgeConfigurationName: "deterministic-graph-contract" });
+      const result = await waitForCompletedRun(service, created.id);
+      expect(result.status).toBe(mode === "malformed-truthy" ? "error" : "failed");
+      expect(result.executions[0].passed).toBe(false);
+      if (mode === "missing" || mode === "sparse-gate") expect(result.executions[0].outcomeGrade.mandatoryGates.every(({ status }) => status === "failed")).toBe(true);
+      else if (mode === "failing") expect(result.executions[0].outcomeGrade.mandatoryGates.every(({ status, passed }) => status === "completed" && passed === false)).toBe(true);
+      else expect(result.executions[0].error).toContain("boolean passed");
+    }
+  });
+
+  it("rejects unavailable suite members and case overrides before enqueueing", async () => {
+    const { stateFile, configurationPath } = await testPaths();
+    const fixtureCatalog = createSyntheticExternalCatalog();
+    const [first, second] = fixtureCatalog.cases;
+    const service = await new EvalService({
+      stateFile, productSession: productSession(), configurationPaths: [configurationPath], platform: "darwin",
+      externalCatalog: withExternalIdentity({ ...fixtureCatalog, cases: [first, { ...second, available: false, unavailableReason: "Fixture not provisioned." }] }),
+    }).open();
+    await expect(service.createRun({ suiteId: "synthetic-external-suite", harnessConfigurationNames: ["fixture-task-system"], judgeConfigurationName: "deterministic-graph-contract" })).rejects.toThrow("member is unavailable: fixture.external-b");
+    await expect(service.createRun({ suiteId: "synthetic-external-suite", testCaseIds: ["fixture.external-a"], harnessConfigurationNames: ["fixture-task-system"], judgeConfigurationName: "deterministic-graph-contract" })).rejects.toThrow("cannot override its ordered member cases");
+    await expect(service.createRun({ testCaseIds: ["fixture.external-b"], harnessConfigurationNames: ["fixture-task-system"], judgeConfigurationName: "deterministic-graph-contract" })).rejects.toThrow("unknown test case");
+    expect(service.listRuns()).toEqual([]);
+  });
+
+  it("runs built-in cases without consulting a changed external catalog", async () => {
+    const { stateFile, configurationPath } = await testPaths();
+    globalThis.fetch = fakeAcceptedProduct();
+    const assertUnchanged = vi.fn(async () => { throw new Error("external catalog changed"); });
+    const service = await new EvalService({
+      stateFile, productSession: productSession(), configurationPaths: [configurationPath], platform: "darwin",
+      externalCatalog: withExternalIdentity(createSyntheticExternalCatalog(), { assertUnchanged }),
+    }).open();
+    const created = await service.createRun({ testCaseIds: ["empty-project.task-system.single-turn"], harnessConfigurationNames: ["fixture-task-system"], judgeConfigurationName: "deterministic-graph-contract" });
+    const result = await waitForCompletedRun(service, created.id);
+    expect(result.status).toBe("passed");
+    expect(result.catalogIdentity).toBeNull();
+    expect(assertUnchanged).not.toHaveBeenCalled();
+  });
+
+  it("checks the catalog pin before enqueue and again before materializing execution", async () => {
+    const beforeQueuePaths = await testPaths();
+    const fixtureCatalog = createSyntheticExternalCatalog();
+    const materialize = vi.fn(fixtureCatalog.cases[0].materialize);
+    const rejectImmediately = withExternalIdentity(fixtureCatalog, { assertUnchanged: vi.fn(async () => { throw new Error("catalog pin changed"); }) });
+    const beforeQueue = await new EvalService({ stateFile: beforeQueuePaths.stateFile, productSession: productSession(), configurationPaths: [beforeQueuePaths.configurationPath], platform: "darwin", externalCatalog: rejectImmediately }).open();
+    await expect(beforeQueue.createRun({ testCaseIds: ["fixture.external-a"], harnessConfigurationNames: ["fixture-task-system"], judgeConfigurationName: "deterministic-graph-contract" })).rejects.toThrow("catalog pin changed");
+    expect(beforeQueue.listRuns()).toEqual([]);
+    expect(materialize).not.toHaveBeenCalled();
+
+    const driftPaths = await testPaths();
+    globalThis.fetch = fakeExternalAcceptedProduct().fetch;
+    let checks = 0;
+    const driftCatalog = withExternalIdentity({ ...fixtureCatalog, cases: [{ ...fixtureCatalog.cases[0], materialize }] }, {
+      assertUnchanged: vi.fn(async () => { checks += 1; if (checks > 1) throw new Error("catalog execution drift"); }),
+    });
+    const driftService = await new EvalService({ stateFile: driftPaths.stateFile, productSession: productSession(), configurationPaths: [driftPaths.configurationPath], platform: "darwin", externalCatalog: driftCatalog }).open();
+    const created = await driftService.createRun({ testCaseIds: ["fixture.external-a"], harnessConfigurationNames: ["fixture-task-system"], judgeConfigurationName: "deterministic-graph-contract" });
+    const result = await waitForCompletedRun(driftService, created.id);
+    expect(result.status).toBe("error");
+    expect(result.executions[0].error).toContain("catalog execution drift");
+    expect(materialize).not.toHaveBeenCalled();
+  });
+
+  it.each(["materialize", "grade", "mandatory gate"])("rejects catalog drift during the external %s callback", async (callbackName) => {
+    const { stateFile, configurationPath } = await testPaths();
+    globalThis.fetch = fakeExternalAcceptedProduct().fetch;
+    const fixtureCatalog = createSyntheticExternalCatalog();
+    const first = fixtureCatalog.cases[0];
+    let changed = false;
+    const materialize = vi.fn(async (context) => {
+      const fixture = await first.materialize(context);
+      if (callbackName === "materialize") changed = true;
+      return fixture;
+    });
+    const grade = vi.fn(async (context) => {
+      const checks = await first.grade(context);
+      if (callbackName === "grade") changed = true;
+      return checks;
+    });
+    const evaluateMandatoryGate = (gate, checks) => {
+      const result = first.evaluateMandatoryGate(gate, checks);
+      if (callbackName === "mandatory gate") changed = true;
+      return result;
+    };
+    const assertUnchanged = vi.fn(async () => {
+      if (changed) throw new Error(`catalog drift during ${callbackName}`);
+    });
+    const service = await new EvalService({
+      stateFile, productSession: productSession(), configurationPaths: [configurationPath], platform: "darwin",
+      externalCatalog: withExternalIdentity({ ...fixtureCatalog, cases: [{ ...first, materialize, grade, evaluateMandatoryGate }] }, { assertUnchanged }),
+    }).open();
+    const created = await service.createRun({ testCaseIds: ["fixture.external-a"], harnessConfigurationNames: ["fixture-task-system"], judgeConfigurationName: "deterministic-graph-contract" });
+    const result = await waitForCompletedRun(service, created.id);
+    expect(result.status).toBe("error");
+    expect(result.executions[0]).toMatchObject({ passed: false, error: `catalog drift during ${callbackName}` });
+    expect(materialize).toHaveBeenCalledOnce();
+    expect(grade).toHaveBeenCalledTimes(callbackName === "materialize" ? 0 : 1);
   });
 
   it("preserves Prime's requested bounded profile while retaining the explicit sole-Full exception", { timeout: 30_000 }, async () => {
@@ -703,6 +965,48 @@ describe("EvalService simulated-user result persistence", () => {
     }, "auto")).toThrow("evaluator-owned verifier cases require confined authority");
   });
 });
+
+
+function withExternalIdentity(catalog, overrides = {}) {
+  return {
+    ...catalog,
+    identity: { schemaVersion: 1, repositoryUrl: "https://example.invalid/eval-catalog.git", commit: "a".repeat(40), tree: "b".repeat(40), entrypoint: "src/index.mjs", entrypointSha256: "c".repeat(64) },
+    assertUnchanged: async () => {},
+    ...overrides,
+  };
+}
+
+function fakeExternalAcceptedProduct() {
+  const base = fakeAcceptedProduct();
+  const projects = [];
+  let nextProject = 0;
+  const output = acceptedOutput();
+  const interaction = {
+    id: "interaction-1", sequence: 1, graphNodeId: 1, completionStatus: "accepted",
+    completionOutput: output, completionError: null, text: "Synthetic project task.",
+    permissionProfileId: "auto", effectiveExecutionDigest: `sha256:${"d".repeat(64)}`,
+    effectivePermissionReceipt: { permissionProfileId: "auto" },
+  };
+  const fetch = vi.fn(async (url, options = {}) => {
+    const parsed = new URL(url);
+    const path = parsed.pathname;
+    if (path === "/api/projects" && options.method === "POST") {
+      const body = JSON.parse(options.body);
+      projects.push(body);
+      return jsonResponse({ id: `external-project-${++nextProject}` });
+    }
+    const layerRoute = /^\/api\/threads\/thread-1\/interactions\/interaction-1\/layers\/(\d+)$/.exec(path);
+    if (layerRoute) {
+      const layer = output.rootLayer.layer;
+      return jsonResponse({ layer, nodes: output.rootLayer.nodes, edges: output.rootLayer.edges, actions: output.rootLayer.actions });
+    }
+    if (path === "/api/threads/thread-1" && (options.method === undefined || options.method === "GET")) {
+      return jsonResponse({ id: "thread-1", interactions: [interaction] });
+    }
+    return base(url, options);
+  });
+  return { fetch, projects, base };
+}
 
 async function testPaths() {
   const directory = await mkdtemp(join(tmpdir(), "relayer-eval-simulated-user-"));

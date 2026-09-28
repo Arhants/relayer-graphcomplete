@@ -21,6 +21,7 @@ import {
 } from "@relayer/eval-runner";
 import { evalHarnessConfigurationPaths, evalRuntimeTarget } from "./configuration-paths.mjs";
 import { EvalService } from "./eval-service.mjs";
+import { loadExternalEvalCatalog } from "./external-catalog.mjs";
 import { loadAtomicAnnotationSnapshots } from "./annotation-snapshot-loader.mjs";
 import { loadJudgeScreenshotArtifact } from "./judge-screenshot-loader.mjs";
 import {
@@ -64,6 +65,13 @@ const permissionCatalogPath = join(repositoryRoot, "permissions", "desktop.json"
 const productRendererDirectory = join(desktopDirectory, "renderer");
 const evalRendererDirectory = join(desktopDirectory, "eval-renderer");
 const configurationPaths = evalHarnessConfigurationPaths({ harnessDirectory, targetKey: evalTarget.key });
+// Only explicitly selected, commit-pinned developer catalogs execute here.
+const externalCatalog = process.env.RELAYER_EVAL_CATALOG_ROOT
+  ? await loadExternalEvalCatalog({
+    repositoryDirectory: resolve(process.env.RELAYER_EVAL_CATALOG_ROOT),
+    lock: JSON.parse(await readFile(join(repositoryRoot, "eval-catalog.lock.json"), "utf8")),
+  })
+  : null;
 process.env.PYTHONPATH = [join(repositoryRoot, "python", "relayer-graph", "src"), process.env.PYTHONPATH].filter(Boolean).join(delimiter);
 const codexBrowserMcpInspection = await inspectCodexBrowserMcpRuntime({ executable: process.execPath, packageRoot: join(repositoryRoot, "node_modules", "chrome-devtools-mcp") });
 const managedCodexRuntime = createEvalManagedCodexRuntime({
@@ -219,6 +227,7 @@ async function start() {
     stateFile: evalStateFile,
     productSession,
     configurationPaths,
+    externalCatalog,
     simulatedUserJudgeRunner,
     candidateTraceExporter: (productInteractionId, targetDirectory, correlation) => (
       graphRuntime.exportCandidateTrace(productInteractionId, targetDirectory, correlation)

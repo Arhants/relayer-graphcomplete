@@ -75,7 +75,22 @@ async function configure() {
     }
   };
   document.querySelectorAll('input[name="cases"]').forEach((input) => {
-    input.addEventListener("change", syncJudgeCompatibility);
+    input.addEventListener("change", () => {
+      document.querySelectorAll('input[name="suites"]').forEach((suiteInput) => { suiteInput.checked = false; });
+      syncJudgeCompatibility();
+    });
+  });
+  $("#suiteOptions").innerHTML = (catalog.suites || []).map((suite) => `
+    <label class="option"><input type="radio" name="suites" value="${escapeHtml(suite.suiteId)}" ${suite.available ? "" : "disabled"}/><div><b>${escapeHtml(suite.name)}</b><small>${escapeHtml(suite.available ? `${suite.suiteId} · ${suite.members.length} pinned cases · ${suite.status}` : suite.unavailableReason)}</small></div></label>`).join("");
+  document.querySelectorAll('input[name="suites"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      const suite = catalog.suites.find(({ suiteId }) => suiteId === input.value);
+      const memberIds = new Set(suite?.members.map(({ caseId }) => caseId) || []);
+      document.querySelectorAll('input[name="cases"]').forEach((caseInput) => {
+        caseInput.checked = memberIds.has(caseInput.value);
+      });
+      syncJudgeCompatibility();
+    });
   });
   $("#ablationOptions").innerHTML = (catalog.ablations || []).map((item) => `
     <button type="button" class="ablation-preset" data-ablation="${escapeHtml(item.id)}">
@@ -109,7 +124,7 @@ async function configure() {
 
 async function startRun() {
   let selection = selectionFromControls(document);
-  if (!selection.testCaseIds.length || !selection.harnessConfigurationNames.length) return toast("Select at least one case and one harness.");
+  if ((!selection.suiteId && !selection.testCaseIds.length) || !selection.harnessConfigurationNames.length) return toast("Select at least one case or suite and one harness.");
   selection = authorizeRecursiveCompleteSelection(selection, (message) => window.confirm(message));
   if (selection === null) return;
   $("#startRun").disabled = true;
