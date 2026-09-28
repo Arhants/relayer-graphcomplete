@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "reviewer": {
+    "identity": "ownership_review",
+    "agentTask": "/root/ownership_review",
+    "role": "Adversarial implementation and contract-mapping reviewer"
+  },
+  "reviewedAtUtc": "2026-09-28T14:56:59.952172+00:00",
+  "baseCommit": "f764dd44d350f4e01827dfd69722af1309c6a3ca",
+  "scope": [
+    "TypeScript and Python HTML template ownership, permanent claims, copied and forged templates, scope binding, stable-key replacement repair, prior-draft preservation, submission caching and snapshot compatibility",
+    "Public and packaged authoring exports, generation guidance and distinct-content shared-style recipes",
+    "Python runtime package identity pins, PRD section 6.2 issue 557 checkpoint mapping, and changed deterministic tests including migrated constructor, malformed-template and Prime integration expectations"
+  ],
+  "verdict": "pass",
+  "unresolvedFindings": [],
+  "resolvedFindings": [
+    "Python ownership records are registry-backed rather than mutable builder attributes; template ownership is checked again during serialization.",
+    "Python validation methods return None rather than leaking mutable owner records; missing owner references are rejected.",
+    "Cached submit/checkpoint paths validate interaction scope before returning existing results.",
+    "Shared asset references and same-scope repair are covered; PRD explicitly maps package pins and Prime visual integration."
+  ],
+  "reviewedFiles": [
+    {
+      "path": "desktop/main/managed-runtimes/recipes.mjs",
+      "sha256": "813e290c268b045a0a92c3f833cba96a93e50374751e1d2e4b79ea71694daa76"
+    },
+    {
+      "path": "desktop/main/services/prime-agent-runtime.mjs",
+      "sha256": "bdf70f8d447f85c819542b74459a8c0fec3f83f61118dc4572cbe539d54e2acd"
+    },
+    {
+      "path": "docs/prd/index.html",
+      "sha256": "c33a62aecc3c75eded299f818ce20c3a4746e902f895016f48afeff49b734e9c"
+    },
+    {
+      "path": "packages/graph-client/src/agent-resource-entry.ts",
+      "sha256": "fe16aaa20adbad1413a5cc88a961287d2007021b1f54b89bec7bda5a2a317fb3"
+    },
+    {
+      "path": "packages/graph-client/src/client.ts",
+      "sha256": "67a4212f2a790f3d427f292a1c3a094058fd686efdb51f0b9209f327e215011e"
+    },
+    {
+      "path": "packages/graph-client/src/detail.ts",
+      "sha256": "9a0074b3abe77d5d09dc902f41065dd55b80f73f5a52ab0b5ee8aadaac333cbc"
+    },
+    {
+      "path": "packages/graph-client/src/index.ts",
+      "sha256": "6bf0d3fac40c99dd7f2445d9e27870bc43f3f0164bddbfc38e92ef4f8d7b76e7"
+    },
+    {
+      "path": "packages/graph-client/test/detail-ownership.test.ts",
+      "sha256": "d297be39ca7197735f3ecc7d58f4544c33d9ae85fcc3a206c877e8b9b56d18dc"
+    },
+    {
+      "path": "packages/graph-client/test/detail.test.ts",
+      "sha256": "0dfe3ff110c4c63a7153c09b1f63031ee41d3b02ceaf635356948f0b70190b03"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/codex-basic.ts",
+      "sha256": "f2d8fcd045a3d9d077f942ea576e0a470f9cb49e3612c2b20596878ff1e97fe1"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/prime-agent.ts",
+      "sha256": "7850aa7fe61f24a1a2a6eaccfa77b680a794ffcab1bcb25de382d5a679b6f4c1"
+    },
+    {
+      "path": "packages/harness-host/test/codex-basic.test.ts",
+      "sha256": "aa08d15cf11cbcffeb400754cdd353475e81de005ce23f398736df287ba6c1fd"
+    },
+    {
+      "path": "packages/harness-host/test/prime-agent.test.ts",
+      "sha256": "338fd3fa5e8fd1b8d949c247550176f8113d3da99f7cd266ce222b3f8784a5c4"
+    },
+    {
+      "path": "python/relayer-graph/src/relayer_graph/authoring.py",
+      "sha256": "a3ddd53326a1e936eef2d9ffed14ec8bc8ce1459de2949d27fc921ed4a66b1cf"
+    },
+    {
+      "path": "python/relayer-graph/src/relayer_graph/detail.py",
+      "sha256": "780b6fe0057bb6f06e5492aff301c018ca72d6ba52958cdba96cacf74c08a056"
+    },
+    {
+      "path": "python/relayer-graph/src/relayer_graph/session.py",
+      "sha256": "fa7259818be1ea4a75939d8f2963c2a5bffcb79a1824e070e79833de20b2cd0a"
+    },
+    {
+      "path": "python/relayer-graph/tests/test_detail_ownership.py",
+      "sha256": "7c90349d15fbecb2cfd9f0654ead31892e542b594a2df170175d51ca9648a871"
+    },
+    {
+      "path": "python/relayer-graph/tests/test_visual_authoring.py",
+      "sha256": "6e1be8b1ee878e03a4fdeac725c53b444251a7b3007ed69988500f17d6e3eea4"
+    },
+    {
+      "path": "test/graph-client-packaged-detail.test.mjs",
+      "sha256": "3a073daa0c4ef6afc93f434b295547f4551ee96098667b4f5d85d3c515605811"
+    },
+    {
+      "path": "test/node-detail-runtime.test.mjs",
+      "sha256": "f64cc3d1c941a22fdfbeae1e30d1df1e0f08f516a502245937cff851d98ff6e9"
+    },
+    {
+      "path": "test/prime-visual-integration.test.mjs",
+      "sha256": "30d358112b4b63b032d646a774a12cddc743e7233781dc5e1ab88bab6002b948"
+    },
+    {
+      "path": "vendor/prime-agent/manifest.json",
+      "sha256": "ac9a5762cbfb8d1cbdacdd638582c3e70afce78dd8510153c68741046b7b0e6c"
+    }
+  ],
+  "inventoryDigest": {
+    "algorithm": "SHA-256",
+    "value": "f118ff3f32073336a569db5ddf04a119c63ab2c7a5e27aed546c30d5d33f4350",
+    "encoding": "UTF-8",
+    "canonicalization": "SHA-256 of json.dumps(reviewedFiles, sort_keys=True, separators=(\",\",\":\")).encode(\"utf-8\"); reviewedFiles sorted lexicographically by repository-relative path; each file hash covers exact raw bytes."
+  },
+  "checksObserved": [
+    {
+      "command": "npx vitest run packages/graph-client/test/detail-ownership.test.ts packages/graph-client/test/detail.test.ts packages/graph-client/test/objects.test.ts",
+      "result": "93 tests passed",
+      "sourceNote": "Observed during earlier review iteration; final ownership tests were rerun below."
+    },
+    {
+      "command": "npx vitest run packages/graph-client/test/detail-ownership.test.ts test/prime-agent-packaging.test.mjs test/prime-managed-runtime.test.mjs",
+      "result": "27 tests passed",
+      "sourceNote": "Final executable implementation source; later changes only documentation and the Prime integration expectation."
+    },
+    {
+      "command": "PYTHONPATH=python/relayer-graph/src python3 -m unittest discover -s python/relayer-graph/tests",
+      "result": "52 tests passed",
+      "sourceNote": "Final Python source including None-owner guard."
+    },
+    {
+      "command": "npx vitest run test/prime-visual-integration.test.mjs",
+      "result": "2 tests passed; Basic and Deep Prime scenarios; 10.29 seconds",
+      "sourceNote": "Final updated supporting-evidence recipe expectation."
+    },
+    {
+      "command": "digestFilesystemTree(python/relayer-graph/src/relayer_graph, path => path.endsWith(.py)) using desktop/shared/prime-runtime-integrity.mjs",
+      "result": "54395f9309aeec67dac5b4dac572f8b98d6a4950b1ddd42495a72f7e4700aa31 matches vendor manifest, runtime inspector and managed recipe"
+    }
+  ],
+  "testMigrationAssessment": "Standalone compiler tests now obtain node-owned builders. Standalone-constructor misuse and forged-template cases reject earlier at the authoring boundary, retaining their former rejection boundaries. Prime integration still reads the persisted expansion child and asserts the executable recipe output; only expected content changed to distinct supporting evidence.",
+  "limits": [
+    "This assertion applies only to the exact reviewed file inventory. Any change to those files invalidates the assertion until refreshed.",
+    "Capture script, rendered screenshots/video, recording provenance and visual-evidence claims are excluded from this implementation review.",
+    "This reviewer did not independently run or certify the full npm run check, npm run build, desktop visual-detail runner or clean-root Prime runtime proof; their results require separate evidence.",
+    "No paid inference, signed application, publication or release-candidate proof was run or claimed.",
+    "Ownership is an API authoring guardrail, not a hostile Python interpreter security boundary or semantic duplicate detector."
+  ]
+}

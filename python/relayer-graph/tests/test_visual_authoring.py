@@ -91,7 +91,9 @@ class VisualAuthoringTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, 'exact owning'):
             await GraphSession('http://unused', 'run', 1).submit_node(owner)
         owner.detail_authoring.clear()
-        owner.detail_authoring = type(owner.detail_authoring)()
+        with self.assertRaisesRegex(TypeError, "owning node"):
+            type(owner.detail_authoring)()
+        owner = NodeObject('box', 'Answer', 'Fallback', client_key='answer')
 
         self.assertEqual(owner.detail_authoring.to_wire(owner), {'clear': False, 'components': []})
         owner.detail_authoring.clear()

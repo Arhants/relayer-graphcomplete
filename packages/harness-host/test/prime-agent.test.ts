@@ -1759,6 +1759,9 @@ describe("PrimeAgentHarness", () => {
       expect(prompt).toContain("not a recommended response design");
       expect(prompt).not.toContain("Start from this runnable");
       expect(prompt).toContain("await graph.checkpoint_node_detail(node)");
+      expect(prompt).toContain("graph.bind_node");
+      expect(prompt).toContain("do not copy a whole explanation across siblings");
+      expect(prompt).toContain("shared_styles");
       expect(prompt).toContain("await graph.submit(11)");
       expect(prompt).not.toMatch(/detailAuthoring|checkpointNodeDetail|detailCapability|html`/);
       const tool = trace.events.find((event) => event.type === "tool.call.started");

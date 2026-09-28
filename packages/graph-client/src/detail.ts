@@ -295,6 +295,7 @@ export class DetailCompilationError extends Error {
   constructor(readonly issues: readonly DetailCompilationIssue[]) {
     super(`Node Detail checkpoint failed with ${issues.length} validation issue${issues.length === 1 ? "" : "s"}`);
     this.name = "DetailCompilationError";
+    if (issues.length === 1 && issues[0]?.code.startsWith("detail_")) this.message = `${issues[0].code}: ${issues[0].message}`;
   }
 }
 
@@ -329,7 +330,15 @@ export function css(strings: TemplateStringsArray, ...values: readonly unknown[]
   return template("css", strings, values);
 }
 
+interface DetailOwner {
+  readonly clientKey: string;
+  scope?: string;
+}
+const TEMPLATE_STATE = new WeakMap<DetailTemplate, { readonly kind: TemplateKind; owner?: DetailOwner }>();
+const AUTHORING_CONSTRUCTOR = Symbol("node-owned-authoring");
+
 interface AuthoringComponent {
+  readonly identity: symbol;
   readonly markup: DetailTemplate;
   readonly styles: DetailTemplate;
   readonly order: number;
@@ -337,7 +346,8 @@ interface AuthoringComponent {
 
 interface AuthoringState {
   readonly components: Map<string, AuthoringComponent>;
-  readonly owner: NodeObject | undefined;
+  readonly owner: NodeObject;
+  readonly identity: DetailOwner;
   frozen: boolean;
   finalization: symbol | undefined;
   finalizedDetail: CompiledNodeDetail | undefined;
@@ -353,22 +363,33 @@ interface DomIdentityRecord {
 const AUTHORING_STATE = new WeakMap<NodeDetailAuthoring, AuthoringState>();
 
 export class NodeDetailAuthoring {
-  constructor() {
+  /** @internal Use NodeObject.detailAuthoring. */
+  constructor(owner: NodeObject, authority: symbol) {
+    if (authority !== AUTHORING_CONSTRUCTOR) throw new TypeError("Use node.detailAuthoring; components require an owning node");
     AUTHORING_STATE.set(this, {
-      components: new Map(),
-      owner: undefined,
-      frozen: false,
-      finalization: undefined,
-      finalizedDetail: undefined,
-      cleared: false,
+      components: new Map(), owner, identity: { clientKey: owner.clientKey },
+      frozen: false, finalization: undefined, finalizedDetail: undefined, cleared: false,
     });
   }
 
   setComponent(id: string, markup: DetailTemplate, styles: DetailTemplate = emptyCssTemplate()): this {
     const state = authoringState(this);
     assertNodeDetailAuthoringMutable(state);
+    assertOwnerKey(state);
+    const templateState = TEMPLATE_STATE.get(markup);
+    if (templateState?.kind !== "html") {
+      return invalidNodeDetailProgram("detail_template_unrecognized", id, "markup", "Use html(...) to create fresh node-specific markup; copied or hand-built template objects are unsupported");
+    }
+    const original = templateState.owner;
+    if (original !== undefined && original !== state.identity
+      && !(original.scope !== undefined && original.scope === state.identity.scope && original.clientKey === state.identity.clientKey)) {
+      return invalidNodeDetailProgram("detail_template_owner_mismatch", id, "markup",
+        `HTML belongs to node ${JSON.stringify(original.clientKey)} (${original.scope ?? "unbound"}), not ${JSON.stringify(state.identity.clientKey)} (${state.identity.scope ?? "unbound"}). Create fresh html(...) for this node; share CSS, assets, or helpers. For same-node repair, graph.bindNode both objects first.`);
+    }
     const existing = state.components.get(id);
-    state.components.set(id, { markup, styles, order: existing?.order ?? state.components.size });
+    // Claim only after validation, and never release on replacement or clear.
+    templateState.owner ??= state.identity;
+    state.components.set(id, { identity: existing?.identity ?? Symbol("component"), markup, styles, order: existing?.order ?? state.components.size });
     state.cleared = false;
     return this;
   }
@@ -396,16 +417,25 @@ export class NodeDetailAuthoring {
 
 /** @internal */
 export function createOwnedNodeDetailAuthoring(owner: NodeObject): NodeDetailAuthoring {
-  const authoring = new NodeDetailAuthoring();
-  AUTHORING_STATE.set(authoring, {
-    components: new Map(),
-    owner,
-    frozen: false,
-    finalization: undefined,
-    finalizedDetail: undefined,
-    cleared: false,
-  });
-  return authoring;
+  return new NodeDetailAuthoring(owner, AUTHORING_CONSTRUCTOR);
+}
+
+function assertOwnerKey(state: AuthoringState, capturedKey?: string): void {
+  if ((capturedKey ?? safeMaterializeOwner(state.owner)?.clientKey) !== state.identity.clientKey) {
+    invalidNodeDetailProgram("detail_owner_identity_changed", "", "node.clientKey", "Node ownership is immutable; create a fresh NodeObject for a different client key");
+  }
+}
+
+/** @internal Establish scope before cache lookup or sharing a template with a repair object. */
+export function bindNodeDetailOwner(authoring: NodeDetailAuthoring, owner: NodeObject, url: string, interactionId: number, capturedKey?: string): void {
+  const state = authoringState(authoring);
+  if (state.owner !== owner) invalidNodeDetailProgram("node_envelope_invalid", "", "node", "Node Detail authoring must be owned by the submitted node");
+  assertOwnerKey(state, capturedKey);
+  const scope = JSON.stringify([url.replace(/\/$/, ""), interactionId]);
+  if (state.identity.scope !== undefined && state.identity.scope !== scope) {
+    invalidNodeDetailProgram("detail_owner_scope_mismatch", "", "node", `Node ${JSON.stringify(state.identity.clientKey)} belongs to ${state.identity.scope}, not ${scope}; create a fresh node and fresh html(...) for a different interaction`);
+  }
+  state.identity.scope = scope;
 }
 
 /** @internal */
@@ -427,6 +457,7 @@ export function snapshotAuthoredNodeDetailProgram(
   if (owner !== undefined && state.owner !== owner.object) {
     return invalidNodeDetailProgram("node_envelope_invalid", "", "node", "Node Detail authoring must be owned by the submitted node");
   }
+  assertOwnerKey(state);
   const ids = new Set<string>();
   const referencesByObject = new Map<object, MaterializedAssetRef>();
   const invalidReferences = new Set<object>();
@@ -794,11 +825,16 @@ function compiledPackageByteLimitError(): DetailCompilationError {
 }
 
 function template(kind: TemplateKind, strings: TemplateStringsArray, values: readonly unknown[]): DetailTemplate {
-  return Object.freeze({
+  if (kind === "html" && values.some((value) => typeof value === "object" && value !== null && TEMPLATE_STATE.get(value as DetailTemplate)?.kind === "html")) {
+    throw new TypeError("detail_template_nested: HTML templates cannot wrap other HTML templates; use a helper that constructs fresh node-specific markup");
+  }
+  const result = Object.freeze({
     [DETAIL_TEMPLATE]: kind,
     strings: Object.freeze([...(kind === "css" ? strings.raw : strings)]),
     values: Object.freeze([...values]),
   });
+  TEMPLATE_STATE.set(result, { kind });
+  return result;
 }
 
 function emptyCssTemplate(): DetailTemplate {

@@ -1,0 +1,305 @@
+{
+  "sourceSnapshot": {
+    "baseCommit": "f764dd44d350f4e01827dfd69722af1309c6a3ca",
+    "files": [
+      {
+        "path": "desktop/main/managed-runtimes/recipes.mjs",
+        "sha256": "813e290c268b045a0a92c3f833cba96a93e50374751e1d2e4b79ea71694daa76"
+      },
+      {
+        "path": "desktop/main/services/prime-agent-runtime.mjs",
+        "sha256": "bdf70f8d447f85c819542b74459a8c0fec3f83f61118dc4572cbe539d54e2acd"
+      },
+      {
+        "path": "packages/graph-client/src/agent-resource-entry.ts",
+        "sha256": "fe16aaa20adbad1413a5cc88a961287d2007021b1f54b89bec7bda5a2a317fb3"
+      },
+      {
+        "path": "packages/graph-client/src/client.ts",
+        "sha256": "67a4212f2a790f3d427f292a1c3a094058fd686efdb51f0b9209f327e215011e"
+      },
+      {
+        "path": "packages/graph-client/src/detail.ts",
+        "sha256": "9a0074b3abe77d5d09dc902f41065dd55b80f73f5a52ab0b5ee8aadaac333cbc"
+      },
+      {
+        "path": "packages/graph-client/src/index.ts",
+        "sha256": "6bf0d3fac40c99dd7f2445d9e27870bc43f3f0164bddbfc38e92ef4f8d7b76e7"
+      },
+      {
+        "path": "packages/graph-client/test/detail-ownership.test.ts",
+        "sha256": "d297be39ca7197735f3ecc7d58f4544c33d9ae85fcc3a206c877e8b9b56d18dc"
+      },
+      {
+        "path": "packages/graph-client/test/detail.test.ts",
+        "sha256": "0dfe3ff110c4c63a7153c09b1f63031ee41d3b02ceaf635356948f0b70190b03"
+      },
+      {
+        "path": "packages/harness-host/src/implementations/codex-basic.ts",
+        "sha256": "f2d8fcd045a3d9d077f942ea576e0a470f9cb49e3612c2b20596878ff1e97fe1"
+      },
+      {
+        "path": "packages/harness-host/src/implementations/prime-agent.ts",
+        "sha256": "7850aa7fe61f24a1a2a6eaccfa77b680a794ffcab1bcb25de382d5a679b6f4c1"
+      },
+      {
+        "path": "packages/harness-host/test/codex-basic.test.ts",
+        "sha256": "aa08d15cf11cbcffeb400754cdd353475e81de005ce23f398736df287ba6c1fd"
+      },
+      {
+        "path": "packages/harness-host/test/prime-agent.test.ts",
+        "sha256": "338fd3fa5e8fd1b8d949c247550176f8113d3da99f7cd266ce222b3f8784a5c4"
+      },
+      {
+        "path": "python/relayer-graph/src/relayer_graph/authoring.py",
+        "sha256": "a3ddd53326a1e936eef2d9ffed14ec8bc8ce1459de2949d27fc921ed4a66b1cf"
+      },
+      {
+        "path": "python/relayer-graph/src/relayer_graph/detail.py",
+        "sha256": "780b6fe0057bb6f06e5492aff301c018ca72d6ba52958cdba96cacf74c08a056"
+      },
+      {
+        "path": "python/relayer-graph/src/relayer_graph/session.py",
+        "sha256": "fa7259818be1ea4a75939d8f2963c2a5bffcb79a1824e070e79833de20b2cd0a"
+      },
+      {
+        "path": "python/relayer-graph/tests/test_detail_ownership.py",
+        "sha256": "7c90349d15fbecb2cfd9f0654ead31892e542b594a2df170175d51ca9648a871"
+      },
+      {
+        "path": "python/relayer-graph/tests/test_visual_authoring.py",
+        "sha256": "6e1be8b1ee878e03a4fdeac725c53b444251a7b3007ed69988500f17d6e3eea4"
+      },
+      {
+        "path": "scripts/capture-detail-ownership-evidence.mjs",
+        "sha256": "389bca18073d7a6269ed491c8c598c12d26caeb6f1d00b8505c9d7b9f76b951b"
+      },
+      {
+        "path": "test/graph-client-packaged-detail.test.mjs",
+        "sha256": "3a073daa0c4ef6afc93f434b295547f4551ee96098667b4f5d85d3c515605811"
+      },
+      {
+        "path": "test/node-detail-runtime.test.mjs",
+        "sha256": "f64cc3d1c941a22fdfbeae1e30d1df1e0f08f516a502245937cff851d98ff6e9"
+      },
+      {
+        "path": "test/prime-visual-integration.test.mjs",
+        "sha256": "30d358112b4b63b032d646a774a12cddc743e7233781dc5e1ab88bab6002b948"
+      },
+      {
+        "path": "vendor/prime-agent/manifest.json",
+        "sha256": "ac9a5762cbfb8d1cbdacdd638582c3e70afce78dd8510153c68741046b7b0e6c"
+      }
+    ],
+    "sha256": "f7ca2ab1b11a1854fcf17ce49650b8f2140735b6782e99e15cfc4c18b47ca48d"
+  },
+  "baselineReceipt": {
+    "sourceCommit": "f764dd44d350f4e01827dfd69722af1309c6a3ca",
+    "sha256": "f10aac8c89fbf8973af44110bb7eea334248b057951167f62d90d34ab1d7ae0b",
+    "buildCommand": "npm run build -w @relayer/graph-client",
+    "note": "Built before implementation edits; self-contained agent-resource/index.js retained for A/B comparison."
+  },
+  "rendered": [
+    {
+      "phase": "before",
+      "title": "The short answer",
+      "heading": "The sky is blue",
+      "text": "The sky is blueBLUE LIGHT REACHES YOUR EYESAir scatters short wavelengths of sunlight more strongly, filling the daytime sky with blue light."
+    },
+    {
+      "phase": "before",
+      "title": "What the air does",
+      "heading": "The sky is blue",
+      "text": "The sky is blueBLUE LIGHT REACHES YOUR EYESAir scatters short wavelengths of sunlight more strongly, filling the daytime sky with blue light."
+    },
+    {
+      "phase": "before",
+      "title": "Why sunsets turn red",
+      "heading": "The sky is blue",
+      "text": "The sky is blueBLUE LIGHT REACHES YOUR EYESAir scatters short wavelengths of sunlight more strongly, filling the daytime sky with blue light."
+    },
+    {
+      "phase": "after",
+      "title": "The short answer",
+      "heading": "The sky is blue",
+      "text": "The sky is blueBLUE LIGHT REACHES YOUR EYESAir scatters short wavelengths of sunlight more strongly, filling the daytime sky with blue light."
+    },
+    {
+      "phase": "after",
+      "title": "What the air does",
+      "heading": "Air redirects sunlight",
+      "text": "Air redirects sunlightSmall molecules scatter short wavelengths much more strongly.BLUE · MORE SCATTERINGRED · LESS SCATTERINGLight is redirected in many directions, including toward your eyes."
+    },
+    {
+      "phase": "after",
+      "title": "Why sunsets turn red",
+      "heading": "A longer path at sunset",
+      "text": "A longer path at sunsetSUN → LONG PATH THROUGH AIR → YOUMuch of the blue light scatters out of the direct beam. More red and orange light remains along the sunset path."
+    }
+  ],
+  "scenario": "issue-557",
+  "paidInferenceCalls": 0,
+  "sourceCommit": "f764dd44d350f4e01827dfd69722af1309c6a3ca",
+  "baselineResourceSha256": "f10aac8c89fbf8973af44110bb7eea334248b057951167f62d90d34ab1d7ae0b",
+  "fixedResourceSha256": "e5b90a9be81ffeaf322b812ce832afbf52d714c6910a295bf323b48876c645f5",
+  "videoSha256": "199c770ef39acbf50d25f5b66e27ce1cf4584ae8a5639afa40f005b3039e8936",
+  "frames": [
+    {
+      "file": "before-1.png",
+      "duration": 3,
+      "sha256": "36329392fc4da1ec41c2f04f38aa00077201cb8ab79ffa3ee2a99bc58c657815"
+    },
+    {
+      "file": "before-2.png",
+      "duration": 3,
+      "sha256": "f7c207a43905807e0d760074e0ee09f4c10343f87f835ad10a8c789fb98fcfc1"
+    },
+    {
+      "file": "before-3.png",
+      "duration": 3,
+      "sha256": "a61809af300590704f4d08f59f36ef0360c14ce610318328a7aaca6224e3a551"
+    },
+    {
+      "file": "rejection.png",
+      "duration": 6,
+      "sha256": "1aa9a4ad8bc21495f3c26dafd3fff03af48ec6a37655563309289237e1ff4c83"
+    },
+    {
+      "file": "after-1.png",
+      "duration": 3,
+      "sha256": "e75758e99c8feabfba550985327e2a571067775c9ba9568f1694cb7e4da9ada1"
+    },
+    {
+      "file": "after-2.png",
+      "duration": 3,
+      "sha256": "b664ee266382e3a67bdbac43db57c95e7c4ed7ad4d3d92932001e270c05a9b94"
+    },
+    {
+      "file": "after-3.png",
+      "duration": 3,
+      "sha256": "531f448603118aa681f8f87a43d0beac308e438fe6abf641134c53463d87cb66"
+    }
+  ],
+  "artifacts": [
+    {
+      "phase": "before",
+      "distinctPackages": 1,
+      "accepted": true,
+      "interactionId": 21,
+      "rootLayerId": 6,
+      "packages": [
+        {
+          "assets": [],
+          "components": [
+            {
+              "css": "section{display:grid;gap:20px;padding:24px;color:#eef5ff}h2{font-size:26px}p{font-size:18px;line-height:1.6}.sky{padding:48px 20px;background-color:#1459aa;border-radius:14px}.blue{padding:20px;background-color:#1459aa;width:90%}.red{padding:20px;background-color:#973630;width:55%}.sunset{padding:48px 20px;background-color:#8f391e;border-radius:14px}",
+              "html": "<section><h2>The sky is blue</h2><div class=\"sky\">BLUE LIGHT REACHES YOUR EYES</div><p>Air scatters short wavelengths of sunlight more strongly, filling the daytime sky with blue light.</p></section>",
+              "id": "main",
+              "order": 0
+            }
+          ],
+          "integritySha256": "0a7b992b7dff10b4a50bc33738761968b7aa142e3bd54de5d7d0f85833f6f0be",
+          "mounts": [],
+          "version": 1
+        },
+        {
+          "assets": [],
+          "components": [
+            {
+              "css": "section{display:grid;gap:20px;padding:24px;color:#eef5ff}h2{font-size:26px}p{font-size:18px;line-height:1.6}.sky{padding:48px 20px;background-color:#1459aa;border-radius:14px}.blue{padding:20px;background-color:#1459aa;width:90%}.red{padding:20px;background-color:#973630;width:55%}.sunset{padding:48px 20px;background-color:#8f391e;border-radius:14px}",
+              "html": "<section><h2>The sky is blue</h2><div class=\"sky\">BLUE LIGHT REACHES YOUR EYES</div><p>Air scatters short wavelengths of sunlight more strongly, filling the daytime sky with blue light.</p></section>",
+              "id": "main",
+              "order": 0
+            }
+          ],
+          "integritySha256": "0a7b992b7dff10b4a50bc33738761968b7aa142e3bd54de5d7d0f85833f6f0be",
+          "mounts": [],
+          "version": 1
+        },
+        {
+          "assets": [],
+          "components": [
+            {
+              "css": "section{display:grid;gap:20px;padding:24px;color:#eef5ff}h2{font-size:26px}p{font-size:18px;line-height:1.6}.sky{padding:48px 20px;background-color:#1459aa;border-radius:14px}.blue{padding:20px;background-color:#1459aa;width:90%}.red{padding:20px;background-color:#973630;width:55%}.sunset{padding:48px 20px;background-color:#8f391e;border-radius:14px}",
+              "html": "<section><h2>The sky is blue</h2><div class=\"sky\">BLUE LIGHT REACHES YOUR EYES</div><p>Air scatters short wavelengths of sunlight more strongly, filling the daytime sky with blue light.</p></section>",
+              "id": "main",
+              "order": 0
+            }
+          ],
+          "integritySha256": "0a7b992b7dff10b4a50bc33738761968b7aa142e3bd54de5d7d0f85833f6f0be",
+          "mounts": [],
+          "version": 1
+        }
+      ],
+      "persistedPackagesVerified": true
+    },
+    {
+      "phase": "after",
+      "rejection": {
+        "message": "detail_template_owner_mismatch: HTML belongs to node \"answer\" ([\"http://127.0.0.1:49507\",25]), not \"mechanism\" (unbound). Create fresh html(...) for this node; share CSS, assets, or helpers. For same-node repair, graph.bindNode both objects first.",
+        "issues": [
+          {
+            "code": "detail_template_owner_mismatch",
+            "componentId": "main",
+            "path": "markup",
+            "line": 1,
+            "column": 1,
+            "message": "HTML belongs to node \"answer\" ([\"http://127.0.0.1:49507\",25]), not \"mechanism\" (unbound). Create fresh html(...) for this node; share CSS, assets, or helpers. For same-node repair, graph.bindNode both objects first."
+          }
+        ]
+      },
+      "distinctPackages": 3,
+      "accepted": true,
+      "interactionId": 25,
+      "rootLayerId": 7,
+      "packages": [
+        {
+          "assets": [],
+          "components": [
+            {
+              "css": "section{display:grid;gap:20px;padding:24px;color:#eef5ff}h2{font-size:26px}p{font-size:18px;line-height:1.6}.sky{padding:48px 20px;background-color:#1459aa;border-radius:14px}.blue{padding:20px;background-color:#1459aa;width:90%}.red{padding:20px;background-color:#973630;width:55%}.sunset{padding:48px 20px;background-color:#8f391e;border-radius:14px}",
+              "html": "<section><h2>The sky is blue</h2><div class=\"sky\">BLUE LIGHT REACHES YOUR EYES</div><p>Air scatters short wavelengths of sunlight more strongly, filling the daytime sky with blue light.</p></section>",
+              "id": "main",
+              "order": 0
+            }
+          ],
+          "integritySha256": "0a7b992b7dff10b4a50bc33738761968b7aa142e3bd54de5d7d0f85833f6f0be",
+          "mounts": [],
+          "version": 1
+        },
+        {
+          "assets": [],
+          "components": [
+            {
+              "css": "section{display:grid;gap:20px;padding:24px;color:#eef5ff}h2{font-size:26px}p{font-size:18px;line-height:1.6}.sky{padding:48px 20px;background-color:#1459aa;border-radius:14px}.blue{padding:20px;background-color:#1459aa;width:90%}.red{padding:20px;background-color:#973630;width:55%}.sunset{padding:48px 20px;background-color:#8f391e;border-radius:14px}",
+              "html": "<section><h2>Air redirects sunlight</h2><p>Small molecules scatter short wavelengths much more strongly.</p><div class=\"blue\">BLUE · MORE SCATTERING</div><div class=\"red\">RED · LESS SCATTERING</div><p>Light is redirected in many directions, including toward your eyes.</p></section>",
+              "id": "main",
+              "order": 0
+            }
+          ],
+          "integritySha256": "f6ad3ba5619b95f02468ef01d99ce911b96d15d20321022ff1a6088e8ccd06ec",
+          "mounts": [],
+          "version": 1
+        },
+        {
+          "assets": [],
+          "components": [
+            {
+              "css": "section{display:grid;gap:20px;padding:24px;color:#eef5ff}h2{font-size:26px}p{font-size:18px;line-height:1.6}.sky{padding:48px 20px;background-color:#1459aa;border-radius:14px}.blue{padding:20px;background-color:#1459aa;width:90%}.red{padding:20px;background-color:#973630;width:55%}.sunset{padding:48px 20px;background-color:#8f391e;border-radius:14px}",
+              "html": "<section><h2>A longer path at sunset</h2><div class=\"sunset\">SUN → LONG PATH THROUGH AIR → YOU</div><p>Much of the blue light scatters out of the direct beam. More red and orange light remains along the sunset path.</p></section>",
+              "id": "main",
+              "order": 0
+            }
+          ],
+          "integritySha256": "1f20430ba3a13371a45e60406a086218a8578b27ddf2c6a17578f23035f17634",
+          "mounts": [],
+          "version": 1
+        }
+      ],
+      "persistedPackagesVerified": true
+    }
+  ],
+  "capture": "A-to-B walkthrough video assembled from verified Electron captures of six production ProductWorkspace selections plus actual tool error in a labelled recording annotation; deterministic fixture, not continuous screen recording or live model behavior",
+  "status": "passed",
+  "cleanupCompleted": true
+}

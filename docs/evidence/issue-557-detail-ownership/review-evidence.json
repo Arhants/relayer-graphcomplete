@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "reviewer": "Codex adversarial subagent /root/evidence_review",
+  "reviewedSourceBaseCommit": "f764dd44d350f4e01827dfd69722af1309c6a3ca",
+  "reviewedExecutableSourceDeltaSha256": "f7ca2ab1b11a1854fcf17ce49650b8f2140735b6782e99e15cfc4c18b47ca48d",
+  "reviewedFiles": [
+    {
+      "path": "scripts/capture-detail-ownership-evidence.mjs",
+      "sha256": "389bca18073d7a6269ed491c8c598c12d26caeb6f1d00b8505c9d7b9f76b951b"
+    },
+    {
+      "path": "docs/prd/index.html",
+      "sha256": "c33a62aecc3c75eded299f818ce20c3a4746e902f895016f48afeff49b734e9c"
+    },
+    {
+      "path": "docs/evidence/issue-557-detail-ownership/video/after-1.png",
+      "sha256": "e75758e99c8feabfba550985327e2a571067775c9ba9568f1694cb7e4da9ada1"
+    },
+    {
+      "path": "docs/evidence/issue-557-detail-ownership/video/after-2.png",
+      "sha256": "b664ee266382e3a67bdbac43db57c95e7c4ed7ad4d3d92932001e270c05a9b94"
+    },
+    {
+      "path": "docs/evidence/issue-557-detail-ownership/video/after-3.png",
+      "sha256": "531f448603118aa681f8f87a43d0beac308e438fe6abf641134c53463d87cb66"
+    },
+    {
+      "path": "docs/evidence/issue-557-detail-ownership/video/before-1.png",
+      "sha256": "36329392fc4da1ec41c2f04f38aa00077201cb8ab79ffa3ee2a99bc58c657815"
+    },
+    {
+      "path": "docs/evidence/issue-557-detail-ownership/video/before-2.png",
+      "sha256": "f7c207a43905807e0d760074e0ee09f4c10343f87f835ad10a8c789fb98fcfc1"
+    },
+    {
+      "path": "docs/evidence/issue-557-detail-ownership/video/before-3.png",
+      "sha256": "a61809af300590704f4d08f59f36ef0360c14ce610318328a7aaca6224e3a551"
+    },
+    {
+      "path": "docs/evidence/issue-557-detail-ownership/video/manifest.json",
+      "sha256": "eff71357fc073175bef3e962a006b449ead73259c1bc2346e3bf17c7a0a646e8"
+    },
+    {
+      "path": "docs/evidence/issue-557-detail-ownership/video/ownership-a-to-b.mp4",
+      "sha256": "199c770ef39acbf50d25f5b66e27ce1cf4584ae8a5639afa40f005b3039e8936"
+    },
+    {
+      "path": "docs/evidence/issue-557-detail-ownership/video/rejection.png",
+      "sha256": "1aa9a4ad8bc21495f3c26dafd3fff03af48ec6a37655563309289237e1ff4c83"
+    },
+    {
+      "path": "docs/evidence/issue-557-detail-ownership/video/timeline.txt",
+      "sha256": "2e16b8f484e6231877ad38fcfc58fa1e4f863b43f520bd976eca6453000db29a"
+    }
+  ],
+  "reviewedFilesDigestAlgorithm": "SHA-256 of UTF-8 JSON reviewedFiles array with compact separators, listed order",
+  "reviewedFilesSha256": "00b430e2f585e8e23ea4489b8508affc59d250415fcd8346a323deb0a6aa4990",
+  "scope": [
+    "A/B evidence fidelity and baseline/fixed artifact provenance",
+    "Accepted checkpoint, submit result, and persisted output comparisons",
+    "Six ProductWorkspace selections, all seven screenshot frames, actual API rejection annotation",
+    "Video timeline, duration, artifact hashes, failure retention, and PRD checkpoint map"
+  ],
+  "verdict": "pass within stated deterministic fixture scope",
+  "unresolvedFindings": [],
+  "verifiedAssertions": {
+    "baselineResourceHashMatches": true,
+    "fixedExecutedResourceHashMatches": true,
+    "executableSourceDeltaMatchesCurrentFiles": true,
+    "videoAndSevenScreenshotHashesMatch": true,
+    "videoDurationSeconds": 26.966667,
+    "renderedViews": 6,
+    "acceptedPackagesPerPhase": 3,
+    "beforeDistinctPackages": 1,
+    "afterDistinctPackages": 3,
+    "persistedPackageComparisons": true,
+    "rejectionCode": "detail_template_owner_mismatch",
+    "visualReview": "All seven PNGs inspected. Before sibling selections repeat the same explanation; after mechanism and sunset selections show distinct relevant explanations. Error annotation is readable and explicitly labelled."
+  },
+  "limitations": [
+    "Walkthrough assembled from still Electron captures; not continuous screen recording or timing/interaction-latency proof.",
+    "Fixture prescribes fresh node-specific markup after rejection; does not prove autonomous model repair or live paid inference behavior.",
+    "Baseline build receipt provenance is retained and its resource hash verified; reviewer did not independently rebuild the baseline.",
+    "Executable-source delta identity excludes docs; reviewed documentation is instead covered by this receipt file inventory.",
+    "Video container duration and hash checked; all source frames visually inspected. No separate full-motion playback claim.",
+    "This evidence review is not a replacement for deterministic tests or broader desktop heavy-proof receipts."
+  ],
+  "invalidation": "Invalidate this review if any reviewed file or captured executable-source file changes; refresh receipt against the new snapshot."
+}

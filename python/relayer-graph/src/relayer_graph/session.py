@@ -44,6 +44,7 @@ class GraphSession(RelayerGraphClient):
         return cls(url, token, node_id, timeout=timeout)
 
     def _visual_payload(self, operation: str, node: NodeObject) -> Any:
+        self.bind_node(node)
         # Serialize now: nested Python mutations cannot change an in-flight program.
         import json
         payload = json.loads(json.dumps({
@@ -73,9 +74,11 @@ class GraphSession(RelayerGraphClient):
         return result["value"]
 
     async def checkpoint_node_detail(self, node: NodeObject) -> Any:
+        self.bind_node(node)
         return await self._visual_authoring("checkpoint", node)
 
     async def submit_node(self, node: NodeObject) -> GraphNode:
+        self.bind_node(node)
         key = node.detail_authoring._object_id
         existing = self._visual_submissions.get(key)
         if existing is not None:
