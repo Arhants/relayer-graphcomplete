@@ -5,12 +5,12 @@ use crate::product::{
     HarnessModelCompatibility, HarnessModelRule, HarnessModelRules,
     HarnessRuntimeAvailabilityUpdate, ManagedFamilyPolicy, ModelFamily, ModelFamilyId,
     ModelFamilyKind, ModelFamilyMember, ModelSettings, ModelSettingsDefaults, ProductHarness,
-    Provider, ProviderCatalogSnapshot, ProviderDefinition, ProviderId, ProviderModel,
-    ProviderOnboardingCompletion, ProviderOnboardingFamily, ProviderOnboardingFamilyIntent,
-    ProviderOnboardingHarness, ProviderOnboardingManagedFamily, ProviderOnboardingModel,
-    ProviderOnboardingProjection, ProviderOnboardingProvider, ProviderOnboardingResolution,
-    ProviderOnboardingStatus, ReorderModelFamiliesCommand, RuntimeProductHarness,
-    SystemFamilySnapshot, UnavailableReason, UpdateHarnessModelRulesCommand,
+    Provider, ProviderCatalogSnapshot, ProviderConnectionStamp, ProviderDefinition, ProviderId,
+    ProviderModel, ProviderOnboardingCompletion, ProviderOnboardingFamily,
+    ProviderOnboardingFamilyIntent, ProviderOnboardingHarness, ProviderOnboardingManagedFamily,
+    ProviderOnboardingModel, ProviderOnboardingProjection, ProviderOnboardingProvider,
+    ProviderOnboardingResolution, ProviderOnboardingStatus, ReorderModelFamiliesCommand,
+    RuntimeProductHarness, SystemFamilySnapshot, UnavailableReason, UpdateHarnessModelRulesCommand,
     UpdateModelFamilyCommand, UpdateModelSettingsDefaultsCommand, ValidateModelSelectionCommand,
     validate_family,
 };
@@ -155,11 +155,12 @@ impl SqliteProductStore {
     pub(crate) async fn load_provider_definitions(
         &self,
     ) -> Result<Vec<ProviderDefinition>, StorageError> {
-        sqlx::query("SELECT id,adapter_id,label,endpoint,access_contract,credential_reference,lifecycle_state,removed_at FROM model_providers ORDER BY label,id")
+        sqlx::query("SELECT id,adapter_id,label,endpoint,access_contract,credential_reference,lifecycle_state,removed_at,connection_generation FROM model_providers ORDER BY label,id")
             .fetch_all(&self.pool).await?.into_iter().map(|row| Ok(ProviderDefinition {
                 id: ProviderId::from_database(row.try_get(0)?), adapter_id: row.try_get(1)?,
                 label: row.try_get(2)?, endpoint: row.try_get(3)?, access_contract: row.try_get(4)?,
                 credential_reference: row.try_get(5)?, lifecycle_state: row.try_get(6)?, removed_at: row.try_get(7)?,
+                connection_generation: row.try_get(8)?,
             })).collect()
     }
 
@@ -212,10 +213,14 @@ impl SqliteProductStore {
                         )));
                     }
                 }
-                sqlx::query("UPDATE model_providers SET adapter_id=?1,label=?2,endpoint=?3,access_contract=?4,credential_reference=?5,lifecycle_state=?6,removed_at=?7 WHERE id=?8")
+                // Removal supersedes every result still in flight for this provider (PROV-002).
+                // The store owns the generation, so a written definition never sets it.
+                let removal_step = old_state != definition.lifecycle_state;
+                sqlx::query("UPDATE model_providers SET adapter_id=?1,label=?2,endpoint=?3,access_contract=?4,credential_reference=?5,lifecycle_state=?6,removed_at=?7,connection_generation=connection_generation+?9 WHERE id=?8")
                     .bind(&definition.adapter_id).bind(&definition.label).bind(&definition.endpoint)
                     .bind(&definition.access_contract).bind(&definition.credential_reference)
                     .bind(&definition.lifecycle_state).bind(&definition.removed_at).bind(definition.id.as_str())
+                    .bind(i64::from(removal_step))
                     .execute(&mut *transaction).await?;
             } else {
                 if definition.lifecycle_state != "active" {
@@ -721,12 +726,13 @@ impl SqliteProductStore {
     pub(crate) async fn publish_provider_catalog(
         &self,
         snapshot: &ProviderCatalogSnapshot,
+        stamp: ProviderConnectionStamp,
         managed_policy: Option<&FamilyPolicyReference>,
         timestamp: &str,
     ) -> Result<(), StorageError> {
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
-        let lifecycle = sqlx::query_scalar::<_, String>(
-            "SELECT lifecycle_state FROM model_providers WHERE id=?1",
+        let (lifecycle, generation) = sqlx::query_as::<_, (String, i64)>(
+            "SELECT lifecycle_state,connection_generation FROM model_providers WHERE id=?1",
         )
         .bind(snapshot.provider_id.as_str())
         .fetch_optional(&mut *transaction)
@@ -742,6 +748,23 @@ impl SqliteProductStore {
                 "provider_not_active",
                 "Only active provider definitions can publish model catalogs.",
             )));
+        }
+        // PROV-002: a result started under an older connection generation has no effect. The
+        // check sits inside the write transaction, so no lifecycle write can land between it
+        // and this publish.
+        if generation != stamp.generation {
+            return Err(StorageError::Catalog(CatalogError::invalid(
+                "provider_connection_superseded",
+                "The provider connection changed after this catalog result started.",
+            )));
+        }
+        if stamp.event.is_some() {
+            sqlx::query(
+                "UPDATE model_providers SET connection_generation=connection_generation+1 WHERE id=?1",
+            )
+            .bind(snapshot.provider_id.as_str())
+            .execute(&mut *transaction)
+            .await?;
         }
         sqlx::query(
             "UPDATE model_providers SET connected=?2,unavailable_reason_code=?3,unavailable_reason_message=?4,refreshed_at=?5 WHERE id=?1 AND lifecycle_state='active'",
@@ -2923,6 +2946,7 @@ mod provider_definition_tests {
             credential_reference: Some(format!("provider:{id}")),
             lifecycle_state: "active".into(),
             removed_at: None,
+            connection_generation: 1,
         }
     }
 
@@ -3569,17 +3593,16 @@ mod provider_definition_tests {
             .sync_provider_definitions(&[work.clone()])
             .await
             .unwrap();
-        assert_eq!(
-            store
-                .load_provider_definitions()
-                .await
-                .unwrap()
-                .into_iter()
-                .find(|value| value.id.as_str() == "work-openai")
-                .unwrap()
-                .lifecycle_state,
-            "removal_pending"
-        );
+        let removing = store
+            .load_provider_definitions()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|value| value.id.as_str() == "work-openai")
+            .unwrap();
+        assert_eq!(removing.lifecycle_state, "removal_pending");
+        // Removal supersedes every result still in flight (PROV-002).
+        assert_eq!(removing.connection_generation, 2);
 
         let mut changed = work.clone();
         changed.endpoint = Some("https://proxy.example.test/v1".into());
@@ -3630,12 +3653,22 @@ mod provider_definition_tests {
             1
         );
         staged.label = "Renamed Atomic Provider".into();
+        // The store owns the generation: a written definition cannot set it.
+        staged.connection_generation = 7;
         store
             .sync_provider_definitions(&[staged.clone()])
             .await
             .unwrap();
+        let stale = store
+            .publish_provider_catalog(&snapshot, ProviderConnectionStamp::refresh(7), None, "2")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&stale, StorageError::Catalog(error) if error.code() == "provider_connection_superseded"),
+            "{stale}"
+        );
         store
-            .publish_provider_catalog(&snapshot, None, "2")
+            .publish_provider_catalog(&snapshot, ProviderConnectionStamp::refresh(1), None, "2")
             .await
             .unwrap();
         assert_eq!(
@@ -3844,6 +3877,7 @@ mod provider_definition_tests {
         store
             .publish_provider_catalog(
                 &snapshot,
+                ProviderConnectionStamp::refresh(1),
                 Some(&FamilyPolicyReference {
                     id: "codex-default-family".into(),
                     version: 1,
@@ -4523,6 +4557,7 @@ mod provider_definition_tests {
             credential_reference: Some("provider:work-openai".into()),
             lifecycle_state: "active".into(),
             removed_at: None,
+            connection_generation: 1,
         };
         let snapshot = ProviderCatalogSnapshot {
             provider_id: provider_id.clone(),

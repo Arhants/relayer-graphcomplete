@@ -6,10 +6,11 @@ use super::{
 use crate::product::{
     CompleteProviderOnboardingCommand, CreateModelFamilyCommand, HarnessModelRule,
     HarnessModelRules, ModelFamily, ModelFamilyId, ModelFamilyMember, ModelSelection,
-    ModelSettings, ModelSettingsDefaults, ProviderCatalogSnapshot, ProviderDefinition, ProviderId,
-    ProviderOnboardingCompletion, ProviderOnboardingFamilyIntent, ProviderOnboardingProjection,
-    ProviderOnboardingStatus, ReorderModelFamiliesCommand, UpdateHarnessModelRulesCommand,
-    UpdateModelFamilyCommand, UpdateModelSettingsDefaultsCommand, ValidateModelSelectionCommand,
+    ModelSettings, ModelSettingsDefaults, ProviderCatalogSnapshot, ProviderConnectionEvent,
+    ProviderConnectionStamp, ProviderDefinition, ProviderId, ProviderOnboardingCompletion,
+    ProviderOnboardingFamilyIntent, ProviderOnboardingProjection, ProviderOnboardingStatus,
+    ReorderModelFamiliesCommand, UpdateHarnessModelRulesCommand, UpdateModelFamilyCommand,
+    UpdateModelSettingsDefaultsCommand, ValidateModelSelectionCommand,
 };
 use axum::{
     Json,
@@ -70,6 +71,17 @@ pub(super) struct ValidateSelectionRequest {
 #[serde(rename_all = "camelCase")]
 pub(super) struct DefaultSelectionQuery {
     harness_id: String,
+}
+
+/// Every catalog publish names the connection generation its result started with (PROV-002).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PublishProviderCatalogRequest {
+    #[serde(flatten)]
+    snapshot: ProviderCatalogSnapshot,
+    connection_generation: i64,
+    #[serde(default)]
+    connection_event: Option<ProviderConnectionEvent>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -381,10 +393,19 @@ pub(super) async fn default_selection(
 pub(super) async fn publish_provider_catalog(
     State(state): State<ApiState>,
     headers: HeaderMap,
-    Json(snapshot): Json<ProviderCatalogSnapshot>,
+    Json(request): Json<PublishProviderCatalogRequest>,
 ) -> Result<StatusCode, ApiError> {
     authorize_provider_publish(&state, &headers)?;
-    state.product.publish_provider_catalog(snapshot).await?;
+    state
+        .product
+        .publish_provider_catalog(
+            request.snapshot,
+            ProviderConnectionStamp {
+                generation: request.connection_generation,
+                event: request.connection_event,
+            },
+        )
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

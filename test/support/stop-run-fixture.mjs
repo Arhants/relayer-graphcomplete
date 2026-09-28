@@ -175,7 +175,7 @@ export async function stopRunFixture() {
   const definitionStore = product.providerDefinitionStore();
   const definitions = await definitionStore.load();
   await definitionStore.save([...definitions.filter((item) => item.id !== "fixture-openai"), { id: "fixture-openai", adapterId: "openai-api", label: "Deterministic provider", endpoint: "https://api.openai.com/v1", accessContract: "secret@1", credentialReference: "fixture-only", lifecycleState: "active", removedAt: null }]);
-  await product.publishProviderCatalog({ providerId: "fixture-openai", adapterId: "openai-api", adapterImplementationVersion: "2", accessContract: "secret@1", label: "Deterministic provider", connected: true,
+  await product.seedProviderCatalog({ providerId: "fixture-openai", adapterId: "openai-api", adapterImplementationVersion: "2", accessContract: "secret@1", label: "Deterministic provider", connected: true,
     models: [{ id: "gpt-fixture", label: "Fixture", order: 0, visible: true, available: true, providerDefault: true, metadata: {} }],
   });
   const family = await request("/api/model-families", { method: "POST", body: JSON.stringify({ name: "Deterministic models", enabled: true, members: [{ providerId: "fixture-openai", modelId: "gpt-fixture" }] }) });

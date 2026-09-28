@@ -127,7 +127,7 @@ async function waitForTurn(threadId, index, status) {
 }
 
 async function createOrdinaryExport() {
-  await productServer.publishProviderCatalog({
+  await productServer.seedProviderCatalog({
     providerId: "codex",
     label: "Codex fixture",
     connected: true,

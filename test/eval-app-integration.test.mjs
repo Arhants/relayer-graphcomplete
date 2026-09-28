@@ -591,7 +591,7 @@ describe("Relayer Eval application service", () => {
     });
     services.push(product);
     const productSession = await product.start();
-    await product.publishProviderCatalog({
+    await product.seedProviderCatalog({
       providerId: "codex",
       label: "Fixture provider",
       connected: true,
@@ -784,7 +784,7 @@ describe("Relayer Eval application service", () => {
     });
     services.push(product);
     const productSession = await product.start();
-    await product.publishProviderCatalog({
+    await product.seedProviderCatalog({
       providerId: "codex",
       label: "Fixture provider",
       connected: true,

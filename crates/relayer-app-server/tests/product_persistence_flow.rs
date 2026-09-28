@@ -6575,7 +6575,22 @@ async fn persists_project_thread_and_interaction_across_restart() {
             .fetch_one(&migration_pool)
             .await
             .unwrap();
-    assert_eq!(applied_migrations, 34);
+    // Every shipped migration applied; counted from the source so stacked migrations merge cleanly.
+    let shipped_migrations = std::fs::read_dir(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/storage/sqlite/migrations"),
+    )
+    .unwrap()
+    .filter(|entry| {
+        entry
+            .as_ref()
+            .unwrap()
+            .path()
+            .extension()
+            .is_some_and(|extension| extension == "sql")
+    })
+    .count() as i64;
+    assert!(shipped_migrations >= 33);
+    assert_eq!(applied_migrations, shipped_migrations);
     migration_pool.close().await;
 
     let incompatible_database = root.join("incompatible.sqlite3");
@@ -8735,6 +8750,7 @@ fn test_provider_snapshot() -> Value {
         "providerId": "codex",
         "label": "Codex",
         "connected": true,
+        "connectionGeneration": 1,
         "models": [
             {
                 "id": "test-model",
