@@ -6,11 +6,28 @@ let desktopInitialized = false;
 
 // Beside each follow-up draft: threadFollowupRestorations names the retry
 // restoration a draft grew from, so a restart can tell restored text from
-// a user's draft with the same text (SCP-020); settledThreadFollowups holds,
-// per thread, a send that settled before its turn loaded, so text retyped
-// after that Send is not taken for the sent text after a restart (SCP-018).
+// a user's draft with the same text (SCP-020); sentThreadFollowups holds,
+// per thread, a send whose turn has not loaded yet (written when its POST
+// starts), so text retyped after that Send is not taken for the sent text
+// after a restart (SCP-018). A record keeps a digest of the sent text, not
+// the text, so it stays small beside the drafts it protects.
 function emptyState() {
-  return { pendingNewThread: null, threadFollowups: {}, threadFollowupRestorations: {}, settledThreadFollowups: {} };
+  return { pendingNewThread: null, threadFollowups: {}, threadFollowupRestorations: {}, sentThreadFollowups: {} };
+}
+
+// A short, stable digest of a follow-up's trimmed text (cyrb53).
+export function followupTextDigest(text) {
+  const value = String(text ?? "").trim();
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    h1 = Math.imul(h1 ^ code, 2654435761);
+    h2 = Math.imul(h2 ^ code, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return `${value.length}:${(4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16)}`;
 }
 
 function stringEntries(value) {
@@ -19,10 +36,11 @@ function stringEntries(value) {
     : {};
 }
 
-function settledEntries(value) {
+function sentEntries(value) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? Object.fromEntries(Object.entries(value).filter(([, record]) => typeof record?.scopeKey === "string"
-      && typeof record.originScopeKey === "string" && typeof record.text === "string"))
+      && typeof record.originScopeKey === "string" && typeof record.textDigest === "string"
+      && typeof record.edited === "boolean"))
     : {};
 }
 
@@ -49,7 +67,7 @@ function readState() {
         ? value.threadFollowups
         : {},
       threadFollowupRestorations: stringEntries(value.threadFollowupRestorations),
-      settledThreadFollowups: settledEntries(value.settledThreadFollowups),
+      sentThreadFollowups: sentEntries(value.sentThreadFollowups),
     };
   } catch {
     return emptyState();
@@ -79,9 +97,9 @@ function boundedState(value) {
   for (const staleKey of followupKeys.slice(0, -MAX_THREAD_FOLLOWUP_DRAFTS)) {
     delete bounded.threadFollowups[staleKey];
   }
-  const settledKeys = Object.keys(bounded.settledThreadFollowups ?? {});
-  for (const staleKey of settledKeys.slice(0, -MAX_THREAD_FOLLOWUP_DRAFTS)) {
-    delete bounded.settledThreadFollowups[staleKey];
+  const sentKeys = Object.keys(bounded.sentThreadFollowups ?? {});
+  for (const staleKey of sentKeys.slice(0, -MAX_THREAD_FOLLOWUP_DRAFTS)) {
+    delete bounded.sentThreadFollowups[staleKey];
   }
   const dropOrphanRestorations = () => {
     for (const scopeKey of Object.keys(bounded.threadFollowupRestorations ?? {})) {
@@ -106,7 +124,7 @@ export async function initializeComposerDrafts() {
       pendingNewThread: value?.pendingNewThread ?? null,
       threadFollowups: value?.threadFollowups ?? {},
       threadFollowupRestorations: stringEntries(value?.threadFollowupRestorations),
-      settledThreadFollowups: settledEntries(value?.settledThreadFollowups),
+      sentThreadFollowups: sentEntries(value?.sentThreadFollowups),
     };
   } finally {
     desktopInitialized = true;
@@ -169,21 +187,23 @@ export function clearThreadFollowupDraft(scopeKey) {
   writeState(state);
 }
 
-export function settledThreadFollowup(threadId) {
+export function sentThreadFollowup(threadId) {
   if (threadId == null) return null;
-  return readState().settledThreadFollowups[String(threadId)] ?? null;
+  return readState().sentThreadFollowups[String(threadId)] ?? null;
 }
 
-// record: { scopeKey, originScopeKey, text }, or null once the turn loaded.
-export function persistSettledThreadFollowup(threadId, record) {
+// record: { scopeKey (where its text is now), originScopeKey, textDigest,
+// edited (the scope's draft was typed after Send) }, or null.
+export function persistSentThreadFollowup(threadId, record) {
   if (threadId == null) return;
   const state = readState();
-  delete state.settledThreadFollowups[String(threadId)];
+  delete state.sentThreadFollowups[String(threadId)];
   if (record) {
-    state.settledThreadFollowups[String(threadId)] = {
+    state.sentThreadFollowups[String(threadId)] = {
       scopeKey: record.scopeKey,
       originScopeKey: record.originScopeKey,
-      text: record.text,
+      textDigest: record.textDigest,
+      edited: Boolean(record.edited),
     };
   }
   writeState(state);

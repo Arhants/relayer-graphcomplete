@@ -71,9 +71,10 @@ import {
 } from "../approval-model.js";
 import {
   clearThreadFollowupDraft,
-  persistSettledThreadFollowup,
+  followupTextDigest,
+  persistSentThreadFollowup,
   persistThreadFollowupDraft,
-  settledThreadFollowup,
+  sentThreadFollowup,
   threadFollowupDraft,
   threadFollowupRestoration,
 } from "../composer-drafts.js";
@@ -1770,8 +1771,10 @@ export function createProductWorkspace({
   // input refused (a blank answer, or one it cannot commit here) failed, and
   // stops a Send as a failed commit does, until that input is edited again
   // or a later submission of it commits.
-  const refusedInputKey = (mountId) => `refused\u0000${mountId}`;
-  const trackAuthoredInputSubmit = (threadId, submitted, mountId) => {
+  // Keyed by the Node Detail's mount key as well, since mount IDs repeat
+  // across Node Details.
+  const refusedInputKey = (mountKey, mountId) => `refused\u0000${mountKey}\u0000${mountId}`;
+  const trackAuthoredInputSubmit = (threadId, submitted, refusalKey) => {
     const key = String(threadId);
     const commits = authoredInputCommits.get(key) ?? new Set();
     authoredInputCommits.set(key, commits);
@@ -1780,12 +1783,12 @@ export function createProductWorkspace({
       // A later submission that commits (a select reports no edit between
       // them) accounts for the refusal too.
       if (committed !== false) {
-        failedAuthoredInputs.get(key)?.delete(refusedInputKey(mountId));
+        failedAuthoredInputs.get(key)?.delete(refusalKey);
         return;
       }
       const failed = failedAuthoredInputs.get(key) ?? new Set();
       failedAuthoredInputs.set(key, failed);
-      failed.add(refusedInputKey(mountId));
+      failed.add(refusalKey);
     }).finally(() => {
       commits.delete(submitted);
       if (!commits.size && authoredInputCommits.get(key) === commits) authoredInputCommits.delete(key);
@@ -2813,24 +2816,35 @@ export function createProductWorkspace({
   // thread -> the scope and prompt revision of its submission in flight,
   // from the click on Send.
   const inFlightSubmissions = new Map();
-  // A thread's send that settled before its turn loaded (persisted, so it
-  // outlives a restart): the scope its text is in now, the scope it was sent
-  // from, and the sent text. What is left in that scope was typed after
-  // Send, so it is kept until the turn arrives, even when it repeats the
-  // sent text (SCP-018).
   // Text left in a turn's scope was sent once a later turn of the thread
   // carries it, as after a send that failed with a network or server error
   // (SCP-019) or one interrupted by a restart. It is neither carried into a
   // newer turn nor handed back.
-  const sentByLaterTurn = (threadId, scopeKey, text) => {
+  const laterUserTurnMatches = (threadId, scopeKey, matches) => {
     // A turn an invoke action created is not the user's follow-up.
     const invoked = new Set((getState().actionInvocations || [])
       .map((invocation) => String(invocation.resultInteractionId)));
     const turns = (getState().interactions || [])
       .filter((turn) => String(turn.threadId) === String(threadId));
     const from = turns.findIndex((turn) => composerDraftScopeKey(threadId, turn.id) === scopeKey);
-    return from >= 0 && Boolean(String(text ?? "").trim()) && turns.slice(from + 1)
-      .some((turn) => !invoked.has(String(turn.id)) && String(turn.text ?? "").trim() === String(text).trim());
+    return from >= 0 && turns.slice(from + 1)
+      .some((turn) => !invoked.has(String(turn.id)) && matches(String(turn.text ?? "")));
+  };
+  const sentByLaterTurn = (threadId, scopeKey, text) => Boolean(String(text ?? "").trim())
+    && laterUserTurnMatches(threadId, scopeKey, (turnText) => turnText.trim() === String(text).trim());
+  // A thread's send whose turn has not loaded is persisted from when its POST
+  // starts, so it outlives a restart: the scope its text is in now, the scope
+  // it was sent from, a digest of the sent text, and whether that scope's
+  // draft was typed after Send. Such a draft is kept until the turn loads,
+  // even when it repeats the sent text (SCP-018).
+  const sentTurnLoaded = (threadId, record) => laterUserTurnMatches(
+    threadId,
+    record.originScopeKey,
+    (turnText) => followupTextDigest(turnText) === record.textDigest,
+  );
+  const editedAfterSendScopeKey = (threadId) => {
+    const record = sentThreadFollowup(threadId);
+    return record?.edited ? record.scopeKey : null;
   };
   let sendWarningIntent = null;
   let failedConfirmationSends = new Map();
@@ -3705,6 +3719,28 @@ export function createProductWorkspace({
       promptRevision: submission.prompt.revision,
     });
     inFlightSubmissions.set(String(submittedThreadId), inFlightSubmission);
+    const sentRecord = String(submission.prompt.value).trim()
+      ? {
+        scopeKey: submission.scopeKey,
+        originScopeKey: submission.scopeKey,
+        textDigest: followupTextDigest(submission.prompt.value),
+      }
+      : null;
+    if (sentRecord) {
+      // An edit made while Send waited for input commits already counts.
+      const scopeRevision = composerDraftScopeState.activeScopeKey === submission.scopeKey
+        ? composerPromptRevision
+        : composerDraftScopeState.drafts.get(submission.scopeKey)?.promptRevision;
+      persistSentThreadFollowup(submittedThreadId, {
+        ...sentRecord,
+        edited: scopeRevision !== undefined && scopeRevision !== submission.prompt.revision,
+      });
+    }
+    const ownsSentRecord = () => {
+      const record = sentThreadFollowup(submittedThreadId);
+      return Boolean(sentRecord) && record?.originScopeKey === sentRecord.originScopeKey
+        && record.textDigest === sentRecord.textDigest;
+    };
     // The prompt stays editable while the send is pending (SCP-019); Send
     // stays disabled, so one follow-up is in flight per thread.
     send.disabled = true;
@@ -3768,15 +3804,6 @@ export function createProductWorkspace({
         clearThreadFollowupDraft(settlement.submittedScopeKey);
       }
       composerDraftScopeState = clearedDraftScopeState;
-      // Blank text cannot be retyped, and would never show as sent.
-      if (String(submission.prompt.value).trim()
-        && !sentByLaterTurn(submittedThreadId, settlement.submittedScopeKey, submission.prompt.value)) {
-        persistSettledThreadFollowup(submittedThreadId, {
-          scopeKey: settlement.submittedScopeKey,
-          originScopeKey: settlement.submittedScopeKey,
-          text: submission.prompt.value,
-        });
-      }
       if (settlement.current.prompt !== currentComposer.prompt) {
         prompt.value = settlement.current.prompt.value;
         composerPromptRevision = settlement.current.prompt.revision;
@@ -3849,6 +3876,10 @@ export function createProductWorkspace({
       // newer turn carries its text forward, and its own turn, once it
       // arrives, shows it was sent (SCP-019).
       restoreStrandedSubmission(submission);
+      // A definite rejection creates no turn to wait for.
+      if (!confirmationSendFailureMayHaveCommitted(error) && ownsSentRecord()) {
+        persistSentThreadFollowup(submittedThreadId, null);
+      }
       toast(error.message);
     } finally {
       if (inFlightSubmissions.get(String(submittedThreadId)) === inFlightSubmission) {
@@ -4042,6 +4073,12 @@ export function createProductWorkspace({
     // retry text that was shown. Clearing a draft that kept a restoration
     // out leaves no draft, so the retry text returns, after a restart too
     // (SCP-020).
+    // Typing in the scope of a Send whose turn has not loaded is an edit after
+    // that Send (SCP-018).
+    const sentRecord = sentThreadFollowup(getThread()?.id);
+    if (sentRecord && !sentRecord.edited && sentRecord.scopeKey === composerDraftScopeState.activeScopeKey) {
+      persistSentThreadFollowup(getThread()?.id, { ...sentRecord, edited: true });
+    }
     const shownRestorationId = composerDraftScopeState.drafts
       .get(composerDraftScopeState.activeScopeKey)?.restoredDraftInteractionId ?? null;
     const restorationShown = shownRestorationId != null;
@@ -4506,7 +4543,7 @@ export function createProductWorkspace({
     // a later turn with that text shows it was sent.
     if (composerDraftScopeState.activeScopeKey !== composerDraftScopeKey(threadId, latestInteraction?.id)) {
       const drafts = new Map(composerDraftScopeState.drafts);
-      const settledScopeKey = settledThreadFollowup(threadId)?.scopeKey;
+      const editedScopeKey = editedAfterSendScopeKey(threadId);
       turns.slice(0, -1).forEach((turn, index) => {
         const scopeKey = composerDraftScopeKey(threadId, turn.id);
         const text = drafts.has(scopeKey) ? null : threadFollowupDraft(scopeKey);
@@ -4517,9 +4554,9 @@ export function createProductWorkspace({
           const laterKey = composerDraftScopeKey(threadId, later.id);
           return Boolean(threadFollowupDraft(laterKey) || drafts.get(laterKey)?.promptValue);
         });
-        // What a send that settled before its turn loaded left behind was
-        // typed after it, and is kept like any unsent text.
-        if ((scopeKey !== settledScopeKey && sentByLaterTurn(threadId, scopeKey, text)) || superseded) {
+        // What was typed after a Send whose turn had not loaded is kept like
+        // any unsent text.
+        if ((scopeKey !== editedScopeKey && sentByLaterTurn(threadId, scopeKey, text)) || superseded) {
           clearThreadFollowupDraft(scopeKey);
           return;
         }
@@ -4530,12 +4567,12 @@ export function createProductWorkspace({
     // Drafts in older scopes that a later turn shows were sent. The scope of
     // a send still in flight is left to its revision (settlement and the
     // carry's hold), so an edit after Send that repeats the text is kept, as
-    // is what a send that settled before its turn loaded left behind.
+    // is text typed after a Send whose turn had not loaded when it settled.
     const inFlightScopeKey = inFlightSubmissions.get(threadId)?.scopeKey;
-    const settledScopeKey = settledThreadFollowup(threadId)?.scopeKey;
+    const editedScopeKey = editedAfterSendScopeKey(threadId);
     const sentDrafts = turns.slice(0, -1).flatMap((turn) => {
       const scopeKey = composerDraftScopeKey(threadId, turn.id);
-      if (scopeKey === inFlightScopeKey || scopeKey === settledScopeKey) return [];
+      if (scopeKey === inFlightScopeKey || scopeKey === editedScopeKey) return [];
       const draft = scopeKey === composerDraftScopeState.activeScopeKey
         ? { promptValue: prompt.value, promptRevision: composerPromptRevision }
         : composerDraftScopeState.drafts.get(scopeKey);
@@ -4588,15 +4625,15 @@ export function createProductWorkspace({
       persistThreadFollowupDraft(composerDraftScopeState.activeScopeKey, prompt.value);
       clearThreadFollowupDraft(draftTransition.carriedFromScopeKey);
     }
-    const settledSubmission = settledThreadFollowup(threadId);
-    if (settledSubmission) {
+    const sentRecord = sentThreadFollowup(threadId);
+    if (sentRecord) {
       // The edit moves with its text; once the sent turn has loaded, it has
       // been carried past that turn and needs no more protection.
-      if (sentByLaterTurn(threadId, settledSubmission.originScopeKey, settledSubmission.text)) {
-        persistSettledThreadFollowup(threadId, null);
-      } else if (draftTransition.carriedFromScopeKey === settledSubmission.scopeKey) {
-        persistSettledThreadFollowup(threadId, {
-          ...settledSubmission,
+      if (sentTurnLoaded(threadId, sentRecord)) {
+        persistSentThreadFollowup(threadId, null);
+      } else if (draftTransition.carriedFromScopeKey === sentRecord.scopeKey) {
+        persistSentThreadFollowup(threadId, {
+          ...sentRecord,
           scopeKey: composerDraftScopeState.activeScopeKey,
         });
       }
@@ -5793,10 +5830,11 @@ export function createProductWorkspace({
       onInputEdit: (context, value, submitted) => {
         const threadId = String(getThread()?.id);
         const editKey = `${authoredDetailMountKey}\u0000${context.mountId}`;
-        if (typeof value === "string") failedAuthoredInputs.get(threadId)?.delete(refusedInputKey(context.mountId));
+        const refusalKey = refusedInputKey(authoredDetailMountKey, context.mountId);
+        if (typeof value === "string") failedAuthoredInputs.get(threadId)?.delete(refusalKey);
         if (typeof value === "string" && value.trim()) authoredInputEdits.set(editKey, threadId);
         else authoredInputEdits.delete(editKey);
-        if (submitted) trackAuthoredInputSubmit(threadId, submitted, context.mountId);
+        if (submitted) trackAuthoredInputSubmit(threadId, submitted, refusalKey);
         syncComposer();
       },
       onInput: async (action, value, context) => {

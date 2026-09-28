@@ -128,6 +128,12 @@ export class TurnComposerWorld {
     await settle();
   }
 
+  // The persisted record of thread A's send whose turn has not loaded.
+  sentRecord() {
+    const state = JSON.parse(this.window.localStorage.getItem("relayerComposerDraftsV1") || "{}");
+    return state.sentThreadFollowups?.[String(THREAD_ID.A)] ?? null;
+  }
+
   // Everything the composer persisted, for a restarted world.
   storageSnapshot() {
     return this.window.localStorage.getItem("relayerComposerDraftsV1");

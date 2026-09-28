@@ -71,6 +71,17 @@ const AUTHORED_DETAIL = compiledPackage({
   assets: [],
 });
 
+// Another node's Node Detail whose input has the same mount ID.
+const OTHER_DETAIL = compiledPackage({
+  version: 1,
+  components: [{ id: "form", order: 0, html: '<label>Other <textarea aria-label="Other answer" data-gc-mount="input"></textarea></label>', css: "" }],
+  mounts: [{
+    id: "input", componentId: "form", kind: "capability", host: "textarea",
+    capability: { kind: "input", action: { clientKey: "other-input", sourceNode: { clientKey: "other" }, sourceLayer: { clientKey: "layer" } } },
+  }],
+  assets: [],
+});
+
 // The same input beside an image whose asset loads until the world lets it.
 const SLOW_ASSET_DETAIL = compiledPackage({
   version: 1,
@@ -87,8 +98,9 @@ export class AuthoredInputSendWorld {
   // warning on Send. authored: false shows the ordinary Node Details input,
   // committed by its ✓ button, instead of the authored detail.
   // slowAsset: the authored detail also shows an image whose asset loads
-  // until loadAsset() is called.
-  constructor({ contextDrafts = [], authored = true, slowAsset = false } = {}) {
+  // until loadAsset() is called. otherNode: node 8 shows another authored
+  // input with the same mount ID.
+  constructor({ contextDrafts = [], authored = true, slowAsset = false, otherNode = false } = {}) {
     this.authored = authored;
     this.assetGate = deferred();
     this.window = new Window({ url: "http://127.0.0.1:3000" });
@@ -110,17 +122,22 @@ export class AuthoredInputSendWorld {
       id: 7, clientKey: "question", kind: "question", icon: "box", title: "Question",
       ...(authored ? { authoredDetail: slowAsset ? SLOW_ASSET_DETAIL : AUTHORED_DETAIL } : {}),
     };
-    const actions = [{ id: 13, clientKey: "input-action", sourceNodeId: 7, sourceLayerId: 10, sourceLayerClientKey: "layer", kind: "input", ...ACTION }];
+    const other = { id: 8, clientKey: "other", kind: "question", icon: "box", title: "Other", authoredDetail: OTHER_DETAIL };
+    const nodes = otherNode ? [node, other] : [node];
+    const actions = [
+      { id: 13, clientKey: "input-action", sourceNodeId: 7, sourceLayerId: 10, sourceLayerClientKey: "layer", kind: "input", ...ACTION },
+      ...(otherNode ? [{ id: 14, clientKey: "other-input", sourceNodeId: 8, sourceLayerId: 10, sourceLayerClientKey: "layer", kind: "input", control: "text", prompt: "Other answer" }] : []),
+    ];
     const layer = {
-      layer: { id: 99, clientKey: "layer", layout: { version: 1, placements: [{ nodeId: 7, x: 0.5, y: 0.5 }] } },
-      nodes: [node], edges: [], actions,
+      layer: { id: 99, clientKey: "layer", layout: { version: 1, placements: nodes.map((item, index) => ({ nodeId: item.id, x: 0.3 + 0.4 * index, y: 0.5 })) } },
+      nodes, edges: [], actions,
     };
     this.thread = { id: THREAD, title: "Thread", harnessId: "fixture", projectId: null, permissionProfileId: null };
     this.state = {
       status: "accepted",
       currentInteractionId: 5,
       interactions: [{ id: 5, threadId: THREAD, sequence: 1, text: "Question", graphNodeId: 50, completionStatus: "accepted", completionOutput: { rootLayer: layer } }],
-      visibleLayer: layer, nodes: [node], edges: [], actions,
+      visibleLayer: layer, nodes, edges: [], actions,
       projects: [], permissionProfiles: [],
       modelSettings: { defaults: { harnessId: "fixture" }, harnesses: [{ id: "fixture", label: "Fixture", available: true }], providers: [], families: [] },
       modelCatalog: [], actionInvocations: [], pendingActionInvocations: [],
@@ -295,6 +312,12 @@ export class AuthoredInputSendWorld {
   async loadAsset() {
     this.assetGate.resolve();
     await settle();
+  }
+
+  // The persisted record of the thread's send whose turn has not loaded.
+  sentRecord() {
+    const state = JSON.parse(this.window.localStorage.getItem("relayerComposerDraftsV1") || "{}");
+    return state.sentThreadFollowups?.[String(THREAD)] ?? null;
   }
 
   get promptText() {

@@ -230,6 +230,31 @@ describe("An edit after Send that retypes the same text", () => {
     });
   }
 
+  for (const retyped of [true, false]) {
+    it(`${retyped ? "is kept" : "is not shown again"} after a restart before the send settled${retyped ? "" : " when it was not edited"}`, async () => {
+      world = await new TurnComposerWorld({ maxText: 2, maxTurns: 2 }).ready();
+      await world.apply(["Type"]);
+      const sentText = world.prompt.value;
+      await world.apply(["ClickSend"]);
+      if (retyped) {
+        world.prompt.value = "";
+        world.prompt.dispatchEvent(new world.window.Event("input"));
+        world.prompt.value = sentText;
+        world.prompt.dispatchEvent(new world.window.Event("input"));
+      }
+      // The server commits the turn; the renderer closes before the response.
+      await world.apply(["PostInserted", "A"]);
+      const storage = world.storageSnapshot();
+      world.dispose();
+      world = await new TurnComposerWorld({
+        maxText: 2, maxTurns: 2, storage, turnsA: [{ status: "accepted" }, { status: "running", text: sentText }],
+      }).ready();
+      expect(world.prompt.value).toBe(retyped ? sentText : "");
+      await world.apply(["BackgroundRender"]);
+      expect(world.prompt.value).toBe(retyped ? sentText : "");
+    });
+  }
+
   it("is kept when the send settles before its turn loads", async () => {
     world = await new TurnComposerWorld({ maxText: 2, maxTurns: 2 }).ready();
     await world.apply(["Type"]);
@@ -239,11 +264,24 @@ describe("An edit after Send that retypes the same text", () => {
     world.prompt.dispatchEvent(new world.window.Event("input"));
     world.prompt.value = sentText;
     world.prompt.dispatchEvent(new world.window.Event("input"));
-    for (const step of [["PostInserted", "A"], ["PostSucceeds", "A"], ["RefreshSkipped", "A"], ["Settle", "A"], ["TurnArrives", "A"]]) {
+    for (const step of [["PostInserted", "A"], ["PostSucceeds", "A"], ["RefreshSkipped", "A"], ["Settle", "A"]]) {
       await world.apply(step);
     }
+    expect(world.sentRecord()).toMatchObject({ edited: true });
+    await world.apply(["TurnArrives", "A"]);
     expect(world.prompt.value).toBe(sentText);
+    // Carried past its turn, the edit needs no record.
+    expect(world.sentRecord()).toBeNull();
     await world.apply(["BackgroundRender"]);
     expect(world.prompt.value).toBe(sentText);
+  });
+
+  it("leaves no record once the server rejects the send outright", async () => {
+    world = await new TurnComposerWorld({ maxText: 2, maxTurns: 2 }).ready();
+    await world.apply(["Type"]);
+    await world.apply(["ClickSend"]);
+    expect(world.sentRecord()).toMatchObject({ edited: false });
+    await world.apply(["PostFails", "A"]);
+    expect(world.sentRecord()).toBeNull();
   });
 });

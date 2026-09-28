@@ -91,6 +91,16 @@ describe("A newer turn arriving while Send waits for an authored commit", () => 
     expect(world.promptText).toBe("");
   });
 
+  it("counts text retyped while the Send waited as an edit after that Send", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    for (const step of [["Type", 1], ["Commit"], ["ClickSend"]]) await world.apply(step);
+    await world.typePrompt("");
+    await world.typePrompt(COMPOSED);
+    for (const step of [["ServeCommit"], ["CommitReturns"]]) await world.apply(step);
+    expect(world.post).not.toBeNull();
+    expect(world.sentRecord()).toMatchObject({ edited: true });
+  });
+
   it("hands the text back when that Send stops", async () => {
     world = await new AuthoredInputSendWorld().ready();
     for (const step of [["Type", 1], ["Commit"], ["ClickSend"]]) await world.apply(step);
@@ -111,6 +121,21 @@ describe("Send after an answer did not save", () => {
     expect(world.post).toBeNull();
     await world.click("#sendInteraction");
     expect(world.post).not.toBeNull();
+  });
+
+  it("is stopped by a refused answer even after another Node Detail's input with its mount ID is edited", async () => {
+    world = await new AuthoredInputSendWorld({ otherNode: true }).ready();
+    world.input.value = " ";
+    world.input.dispatchEvent(new world.window.Event("change", { bubbles: true }));
+    await world.settled();
+    await world.click('[data-node="8"]');
+    await world.settled();
+    expect(world.input.getAttribute("aria-label")).toBe("Other answer");
+    world.input.value = "unrelated";
+    world.input.dispatchEvent(new world.window.Event("input", { bubbles: true }));
+    await world.settled();
+    await world.click("#sendInteraction");
+    expect(world.post).toBeNull();
   });
 
   it("is not stopped by a refused answer the user has since corrected and committed", async () => {

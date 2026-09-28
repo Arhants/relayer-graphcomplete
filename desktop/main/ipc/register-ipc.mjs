@@ -55,18 +55,22 @@ export function normalizeComposerDrafts(value) {
     threadFollowups: followups && typeof followups === "object" && !Array.isArray(followups)
       ? Object.fromEntries(Object.entries(followups).filter(([, text]) => typeof text === "string"))
       : {},
-    // The retry restoration each draft grew from, and per thread a send that
-    // settled before its turn loaded (renderer composer-drafts.js).
+    // The retry restoration each draft grew from, and per thread a send whose
+    // turn has not loaded (renderer composer-drafts.js).
     threadFollowupRestorations: plainObject(value?.threadFollowupRestorations)
       ? Object.fromEntries(Object.entries(value.threadFollowupRestorations)
         .filter(([, restorationId]) => typeof restorationId === "string"))
       : {},
-    settledThreadFollowups: plainObject(value?.settledThreadFollowups)
-      ? Object.fromEntries(Object.entries(value.settledThreadFollowups)
+    sentThreadFollowups: plainObject(value?.sentThreadFollowups)
+      ? Object.fromEntries(Object.entries(value.sentThreadFollowups)
         .filter(([, record]) => typeof record?.scopeKey === "string"
-          && typeof record.originScopeKey === "string" && typeof record.text === "string")
+          && typeof record.originScopeKey === "string" && typeof record.textDigest === "string"
+          && typeof record.edited === "boolean")
         .map(([threadId, record]) => [threadId, {
-          scopeKey: record.scopeKey, originScopeKey: record.originScopeKey, text: record.text,
+          scopeKey: record.scopeKey,
+          originScopeKey: record.originScopeKey,
+          textDigest: record.textDigest,
+          edited: record.edited,
         }]))
       : {},
   };
@@ -74,8 +78,8 @@ export function normalizeComposerDrafts(value) {
   for (const staleKey of followupKeys.slice(0, -MAX_FOLLOWUP_DRAFTS)) {
     delete normalized.threadFollowups[staleKey];
   }
-  for (const staleKey of Object.keys(normalized.settledThreadFollowups).slice(0, -MAX_FOLLOWUP_DRAFTS)) {
-    delete normalized.settledThreadFollowups[staleKey];
+  for (const staleKey of Object.keys(normalized.sentThreadFollowups).slice(0, -MAX_FOLLOWUP_DRAFTS)) {
+    delete normalized.sentThreadFollowups[staleKey];
   }
   const dropOrphanRestorations = () => {
     for (const scopeKey of Object.keys(normalized.threadFollowupRestorations)) {
