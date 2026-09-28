@@ -71,6 +71,41 @@ export function fitPublicTurnPopover(host, windowRef) {
   popover.style.maxHeight = `${visibleRows * rowHeight + borderHeight}px`;
 }
 
+// Embed-only layout lifecycle. The browser supplies observation and frame scheduling;
+// production graph fitting remains owned by ProductWorkspace's Fit control.
+export function observeEmbedInspectorLayout(host, windowRef) {
+  if (typeof windowRef?.MutationObserver !== "function") return () => {};
+  const inspector = host.querySelector("#inspector");
+  let wasOpen = !inspector.classList.contains("hidden");
+  let fitFrame = null;
+  const cancelFit = () => {
+    windowRef.cancelAnimationFrame?.(fitFrame);
+    fitFrame = null;
+  };
+  const observer = new windowRef.MutationObserver(() => {
+    const isOpen = !inspector.classList.contains("hidden");
+    if (isOpen === wasOpen) return;
+    wasOpen = isOpen;
+    cancelFit();
+    if (windowRef.innerWidth > 1100) {
+      fitFrame = windowRef.requestAnimationFrame(() => {
+        fitFrame = null;
+        if (windowRef.innerWidth > 1100 && isOpen === !inspector.classList.contains("hidden")) {
+          host.querySelector("#fitGraph")?.click();
+        }
+      });
+    }
+  });
+  observer.observe(inspector, { attributes: true, attributeFilter: ["class"] });
+  const gestures = ["pointerdown", "wheel", "keydown"];
+  for (const type of gestures) host.addEventListener(type, cancelFit, true);
+  return () => {
+    observer.disconnect();
+    cancelFit();
+    for (const type of gestures) host.removeEventListener(type, cancelFit, true);
+  };
+}
+
 /**
  * Mount the production public viewer into the server-rendered shell. This is
  * exported for the deterministic fixture harness; the browser entry point
@@ -88,6 +123,7 @@ export function bootPublicViewer({
   let onLinkClick;
   let onResize;
   let workspace;
+  let stopEmbedLayout = () => {};
   try {
     const snapshot = parsePublicSnapshot(snapshotLiteral(documentRef));
     const adapter = createPublicViewerAdapter(snapshot);
@@ -152,11 +188,14 @@ export function bootPublicViewer({
     });
     const workspaceLayout = host.querySelector(".workspace-layout");
     const downloadCard = documentRef.querySelector(".public-share-download-card");
-    if (!workspaceLayout || !downloadCard) {
-      throw new Error("Public viewer download card host is missing.");
+    const embedded = documentRef.body.classList.contains("public-share-embed");
+    const branding = documentRef.querySelector(".public-share-embed-branding");
+    if (!workspaceLayout || (embedded ? !branding : !downloadCard)) {
+      throw new Error("Public viewer branding host is missing.");
     }
     workspaceLayout.querySelector(".environment-panel")?.remove();
-    workspaceLayout.append(downloadCard);
+    if (!embedded) workspaceLayout.append(downloadCard);
+    if (embedded) stopEmbedLayout = observeEmbedInspectorLayout(host, windowRef);
     onResize = () => {
       fitPublicTurnPopover(host, windowRef);
     };
@@ -168,6 +207,7 @@ export function bootPublicViewer({
       render,
       dispose() {
         linkObserver?.disconnect();
+        stopEmbedLayout();
         host.removeEventListener("click", onLinkClick, true);
         windowRef?.removeEventListener?.("resize", onResize);
         workspace.dispose();
@@ -176,6 +216,7 @@ export function bootPublicViewer({
     });
   } catch (error) {
     workspace?.dispose();
+    stopEmbedLayout();
     linkObserver?.disconnect();
     host?.removeEventListener("click", onLinkClick, true);
     windowRef?.removeEventListener?.("resize", onResize);

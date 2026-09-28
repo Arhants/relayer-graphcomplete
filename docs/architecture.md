@@ -494,6 +494,14 @@ These are planned service boundaries, not implemented product capabilities. See
 [ADR 0011](decisions/0011-shared-thread-snapshot-service.md),
 [ADR 0012](decisions/0012-immutable-shared-thread-snapshots.md), and PRD section 8.4.
 
+The public viewer also has an explicit embed presentation for the website and
+online white paper (PRD 8.4.1). It shares the snapshot reader, adapter, and
+ProductWorkspace. Only chrome and wide layout differ: compact attribution,
+canonical standalone-share link, and equal graph/details columns. The default
+standalone template and hosted CSP contract remain unchanged. A loopback-only
+fixture host exercises the iframe seam locally; hosted routing/framing policy
+belongs to the private service and a later delivery slice.
+
 ## Developer Eval host
 
 Relayer Eval starts from the checkout under Node and serves its dashboard on

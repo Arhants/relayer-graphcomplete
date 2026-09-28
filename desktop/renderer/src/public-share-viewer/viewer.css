@@ -224,3 +224,64 @@ html[data-theme="light"] .public-share-error {
     grid-row: 4;
   }
 }
+
+
+/* Embed presentation uses the same ProductWorkspace and authority boundary.
+   Narrow-screen replacement details are the next delivery slice. */
+.public-share-embed .public-share-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.public-share-embed-branding {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  background: var(--panel);
+}
+
+.public-share-attribution {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.public-share-embed-branding a {
+  color: var(--text);
+  text-underline-offset: 3px;
+}
+
+.public-share-embed .public-share-workspace-host {
+  flex: 1;
+  height: auto;
+}
+
+@media (min-width: 1101px) {
+  .public-share-embed .workspace-layout {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+  }
+
+  .public-share-embed .thread-header,
+  .public-share-embed .interaction-banner {
+    grid-column: 1;
+  }
+
+  .public-share-embed .thread-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .public-share-embed .thread-workspace:has(.inspector:not(.hidden)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .public-share-embed .inspector {
+    width: 100%;
+  }
+}

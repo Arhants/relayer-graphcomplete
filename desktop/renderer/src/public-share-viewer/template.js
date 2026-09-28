@@ -88,7 +88,16 @@ export function renderPublicViewerTemplate({
   assetBase = DEFAULT_ASSET_BASE,
   assetManifest = null,
   installUrl = DEFAULT_INSTALL_URL,
+  presentation = "standalone",
+  sharePath = null,
 } = {}) {
+  if (presentation !== "standalone" && presentation !== "embed") {
+    throw new TypeError("Public viewer presentation must be standalone or embed.");
+  }
+  // Host-owned canonical share route, never a snapshot field or arbitrary URL.
+  if (presentation === "embed" && (typeof sharePath !== "string" || !/^\/t\/[a-f0-9]{32}$/u.test(sharePath))) {
+    throw new TypeError("An embedded viewer requires its canonical sharePath.");
+  }
   const base = safeAssetBase(assetBase);
   const install = safeInstallUrl(installUrl);
   const safeTitle = Array.from(String(title || "Shared conversation")).slice(0, 120).join("");
@@ -119,9 +128,12 @@ export function renderPublicViewerTemplate({
   <link rel="stylesheet" href="${workspaceStyles}">
   <link rel="stylesheet" href="${viewerStyles}">
 </head>
-<body class="public-share-shell">
+<body class="public-share-shell${presentation === "embed" ? " public-share-embed" : ""}">
   <main class="public-share-main">
-    <aside class="public-share-download-card" aria-labelledby="publicShareDownloadTitle">
+    ${presentation === "embed" ? `<nav class="public-share-embed-branding" aria-label="Shared graph links">
+      <span class="public-share-attribution"><img src="${logo}" alt="" width="18" height="18">Relayer</span>
+      <a href="${escapeHtml(sharePath)}" target="_blank" rel="noopener noreferrer" aria-label="Open full graph (opens in a new tab)">Open full graph <span aria-hidden="true">↗</span></a>
+    </nav>` : `<aside class="public-share-download-card" aria-labelledby="publicShareDownloadTitle">
       <div class="public-share-download-copy">
         <img src="${logo}" alt="" width="28" height="28">
         <div>
@@ -132,7 +144,7 @@ export function renderPublicViewerTemplate({
       <div class="public-share-download-actions">
         <a class="public-share-primary-action" href="${install}" target="_blank" rel="noopener noreferrer">Download</a>
       </div>
-    </aside>
+    </aside>`}
     <section id="publicViewerHost" class="public-share-workspace-host" aria-label="Shared conversation workspace">
       <section class="thread-view" id="threadView"></section>
     </section>
