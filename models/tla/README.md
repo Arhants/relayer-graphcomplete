@@ -752,9 +752,12 @@ get no answer, whether or not it committed. Reading the generation, at the
 reconnect's start or back after that publish, can fail too. Sign-out is also
 accepted while a reconnect is pending: Settings does not offer it then, but
 the service does not refuse it. A sign-out's publish can fail before it
-commits, or commit and lose its answer.
+commits, commit and lose its answer, or lose its answer and commit later
+(`LateCommit`), when the app server applies it only at the generation it
+carried. A settling reconnect's signed-out publish can fail too
+(`CancelPublishCanFail`).
 
-`lifecycle-today` mirrors the code. It has every fault on and eight fix
+`lifecycle-today` mirrors the code. It has every fault on and nine fix
 constants, all landed. The refresh runs in three steps: it resolves its
 generation, reads the account, then publishes.
 
@@ -784,6 +787,11 @@ generation, reads the account, then publishes.
   the cancel keeps the login and the reconnect's runtime instead of wiping
   them, as an unknown reconnect outcome does. The app server may still read
   `P` connected, so a wipe would leave it admitting turns with no login.
+- `AdoptTracksLostWrites`: a lifecycle write whose answer was lost, even one
+  sent before the reconnect started, may still commit. While one is
+  outstanding, an advance in the generation proves nothing, so the reconnect
+  is not adopted. A later answered write that advances the generation ends
+  the doubt, because the app server refuses every older write.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
@@ -799,6 +807,7 @@ generation, reads the account, then publishes.
 | `lifecycle-lost-reconnect-answer-reverted` | violated: shows why the fix is needed | With `LostReconnectAdopted` and `CancelSignsOut` off, as before these fixes, the committed reconnect's cancel wipes its login while Rust reads connected. With `CancelSignsOut` on, that cancel would record signed out instead, so `lifecycle-committed-reconnect-keeps-login-reverted` shows the login lost. |
 | `lifecycle-lost-answer-adopts-only-commit` | Fixed; now passes | Checks `AdoptsOnlyCommittedReconnect`: an unanswered reconnect is adopted only when the app server committed it. An independent review found that an earlier draft of this fix adopted any advance past the baseline. Regression tests: `settles a reconnect whose unanswered publish did not commit`, which also covers a publish or discovery that failed before any commit; `neither adopts nor wipes a reconnect whose unanswered publish cannot be proven`; and `settles a reconnect the app server refused with a code it could not have committed`. |
 | `lifecycle-lost-answer-adopts-only-commit-reverted` | violated: shows why the fix is needed | With `AdoptChecksBaseline` off: a sign-out commits but loses its answer, and the reconnect cannot read its baseline. Its publish at the older generation never commits, yet the read shows an advance, and the reconnect is adopted. Before the baseline and sign-out checks, a sign-out during the reconnect led to the same adoption. |
+| `lifecycle-late-sign-out-reverted` | violated: shows why the fix is needed | Found by a Codex review of #572. With `AdoptTracksLostWrites` off: a sign-out's answer is lost while its request is still in flight, a reconnect reads its baseline, the sign-out commits, and the reconnect's refused publish loses its answer too. The read shows one step past the baseline, and the refused reconnect is adopted. Regression tests: `does not adopt a reconnect when an earlier unanswered sign-out may have moved the generation`, and `adopts a reconnect again once an answered sign-out supersedes an unanswered one` for the doubt's end. |
 | `lifecycle-committed-reconnect-keeps-login` | Fixed; now passes | Checks `CommittedReconnectKeepsLogin` with every fault on: a reconnect the app server committed is never settled and wiped. The review found that marking every sign-out as superseding, answered or not, broke this through a failed sign-out publish during the reconnect; this check catches that version. Regression test: `neither adopts nor wipes a reconnect whose unanswered publish cannot be proven`. |
 | `lifecycle-committed-reconnect-keeps-login-reverted` | violated: shows why the fix is needed | With `LostReconnectAdopted` off, the committed reconnect whose answer was lost is settled and its login wiped. |
 | `lifecycle-cancel-records-signed-out` | Fixed; now passes | Checks `CancelRecordsSignedOut` with every fault on: no settled reconnect wipes the login while Rust reads ready. Before the fix (the known limit): a sign-out whose publish failed left Rust reading ready. A reconnect started and was cancelled; the cancel wiped the login and recorded nothing, so Rust kept admitting turns until some later refresh. Regression test: `records signed out in the app server when a reconnect is cancelled after a failed sign-out`. |
@@ -806,6 +815,8 @@ generation, reads the account, then publishes.
 | `lifecycle-cancel-keeps-unrecorded-login-reverted` | violated: shows why the fix is needed | Found by a Codex review of #572. With `CancelKeepsUnrecordedLogin` off: a sign-out whose publish fails, a reconnect, and a cancel whose own publish fails and still wipes the login. Regression test: `keeps the login when a cancelled reconnect cannot record signed out`. |
 | `lifecycle-straddling-refresh` | Fixed; now passes | Checks `ReadyMeansSignedIn` with the sign-out fault off. Before the fix: a refresh resolved its generation before a reconnect, read the account after the browser sign-in, and reached its publish after the cancel. The cancel had not moved the generation, so both checks passed and Rust read ready over the wiped login. The cancel now advances it, so the result is stale. Regression test: `drops a refresh that straddles a cancelled reconnect`. |
 | `lifecycle-straddling-refresh-reverted` | violated: shows why the fix is needed | With `CancelSignsOut` off: sign out, refresh starts, reconnect, sign in, refresh reads, cancel, refresh publishes. |
+| `lifecycle-overlapping-refresh` | passes | Checks `OverlappingRefreshNeverReadiesWipedLogin`, with every fault but the sign-out's on. A Codex review of #572 asked for a refresh epoch across the reconnect, since `refreshGeneration` is only a level check. This check shows the epoch is not needed: every path that ends a reconnect and wipes the login first advances the generation, and a cancel that cannot keeps the login, so a straddling refresh is either stale or truthful. A refresh straddling a failed sign-out is the sign-out's known limit and is excluded. |
+| `lifecycle-overlapping-refresh-reverted` | violated: shows why the fix is needed | With `CancelKeepsUnrecordedLogin` off, a cancel whose publish fails wipes the login without advancing the generation, and the straddling refresh publishes ready over it. |
 | `lifecycle-removal-completes` | passes | PROV-003: a removal that waited on the turn finishes once the turn releases, with every fault on. |
 
 `ReadyMeansSignedIn` is checked with the sign-out fault off. A failed

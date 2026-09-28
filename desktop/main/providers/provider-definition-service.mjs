@@ -121,6 +121,11 @@ export class ProviderDefinitionService {
     // Generations learned after load. Kept apart from this.definitions, which queued
     // operations replace wholesale, so a resync outside the queue is never lost.
     this.connectionGenerations = new Map();
+    // Providers with a lifecycle write whose answer was lost. It may still commit on the app
+    // server, so an advance in their generation proves nothing about a later write. A later
+    // answered write that advances the generation clears it: every lost write carried an older
+    // or equal generation, which the app server now refuses.
+    this.unansweredLifecycleWrites = new Set();
     this.queue = Promise.resolve();
     this.nextPreparationOrder = 1;
     this.lifecycleTasks = new Set();
@@ -560,6 +565,7 @@ export class ProviderDefinitionService {
             connectionEvent: "reconnected",
           });
           this.#recordGeneration(connectionId, pending.generation + 1);
+          this.unansweredLifecycleWrites.delete(connectionId);
         } else {
           await this.#persistNewProvider(pending.candidate, catalog, signal);
         }
@@ -583,9 +589,9 @@ export class ProviderDefinitionService {
         // A publish with no answer may have committed before its response was lost, the
         // reconnect's counterpart of F2. Cancelling would wipe the login the app server just
         // recorded, so read the generation back first.
-        const outcome = pending.reconnect === true && publishing && typeof error?.code !== "string"
-          ? await this.#reconnectOutcome(connectionId, pending)
-          : "refused";
+        const unanswered = pending.reconnect === true && publishing && typeof error?.code !== "string";
+        const outcome = unanswered ? await this.#reconnectOutcome(connectionId, pending) : "refused";
+        if (unanswered) this.unansweredLifecycleWrites.add(connectionId);
         if (outcome === "unknown") {
           // The app server may have committed the login, so nothing is wiped: the reconnect's
           // runtime stays the provider's own, and Settings follows the app server. The next
@@ -609,8 +615,9 @@ export class ProviderDefinitionService {
   // generation by one when it commits the reconnect, and refuses it once anything else has
   // advanced it. So the reconnect committed exactly when the generation now reads one past the
   // baseline it started from, provided that baseline was read from the app server and no
-  // sign-out ran meanwhile; completeConnection holds the provider queue, so nothing else here
-  // can advance it. A sign-out the app server answered makes the reconnect's refusal certain.
+  // lifecycle write is unanswered: none before the reconnect whose request may still land,
+  // and no sign-out during it. completeConnection holds the provider queue, so nothing else
+  // here can advance it. A sign-out the app server answered makes the reconnect's refusal certain.
   // A generation that did not move means the publish never committed. Any other advance, an
   // unanswered sign-out, or a failed read is "unknown": the login may be committed and is kept.
   // (In this process only a removal could advance the generation by more than one, and a
@@ -816,8 +823,10 @@ export class ProviderDefinitionService {
         if (!await this.#relearnAfterRefusal(definition.id, error)) throw error;
         await signOut();
       }
+      this.unansweredLifecycleWrites.delete(definition.id);
       return true;
     } catch (error) {
+      if (typeof error?.code !== "string") this.unansweredLifecycleWrites.add(definition.id);
       await onFailure(error);
       return false;
     }
@@ -883,8 +892,9 @@ export class ProviderDefinitionService {
         baselineRead,
         // A sign-out the app server answered while this reconnect is pending: it refuses it.
         superseded: false,
-        // A sign-out whose publish got no answer while this reconnect is pending.
-        doubtful: false,
+        // A lifecycle write whose answer was lost, before or during this reconnect: it may
+        // still commit, so an advance does not prove this reconnect's publish committed.
+        doubtful: this.unansweredLifecycleWrites.has(id),
       });
       this.statusOverrides.set(id, {
         connected: false,

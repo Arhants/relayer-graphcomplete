@@ -157,6 +157,7 @@
       "MaxRt": "3",
       "MaxGen": "4",
       "SignOutPublishCanFail": "TRUE",
+      "CancelPublishCanFail": "TRUE",
       "ReconnectAnswerCanBeLost": "TRUE",
       "LeaseWaitsForReconnect": "TRUE",
       "CancelSparesLease": "TRUE",
@@ -165,7 +166,8 @@
       "LostReconnectAdopted": "TRUE",
       "AdoptChecksBaseline": "TRUE",
       "CancelSignsOut": "TRUE",
-      "CancelKeepsUnrecordedLogin": "TRUE"
+      "CancelKeepsUnrecordedLogin": "TRUE",
+      "AdoptTracksLostWrites": "TRUE"
     }
   },
   "checks": [
@@ -1932,7 +1934,7 @@
         "AdoptsOnlyCommittedReconnect"
       ],
       "expect": "pass",
-      "finding": "An unanswered reconnect is adopted only when the app server committed it, including after a sign-out during the reconnect and a baseline read that failed."
+      "finding": "An unanswered reconnect is adopted only when the app server committed it, including after a sign-out during the reconnect, a baseline read that failed, and an earlier sign-out request that commits late."
     },
     {
       "id": "lifecycle-lost-answer-adopts-only-commit-reverted",
@@ -1949,6 +1951,22 @@
         "violated": "AdoptsOnlyCommittedReconnect"
       },
       "finding": "With AdoptChecksBaseline off, any advance past the reconnect's baseline is adopted: a sign-out during the reconnect supersedes it, the refusal's answer is lost, and the refused reconnect is adopted."
+    },
+    {
+      "id": "lifecycle-late-sign-out-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "AdoptTracksLostWrites": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "AdoptsOnlyCommittedReconnect"
+      ],
+      "expect": {
+        "violated": "AdoptsOnlyCommittedReconnect"
+      },
+      "finding": "With AdoptTracksLostWrites off, a sign-out whose answer was lost commits only after the next reconnect read its baseline; the reconnect's refused publish loses its answer too, reads one step past the baseline, and is adopted."
     },
     {
       "id": "lifecycle-committed-reconnect-keeps-login",
@@ -2052,6 +2070,37 @@
         "violated": "ReadyMeansSignedIn"
       },
       "finding": "With CancelSignsOut off, a refresh straddling a cancelled reconnect passes both generation checks and publishes ready over the wiped login."
+    },
+    {
+      "id": "lifecycle-overlapping-refresh",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "OverlappingRefreshNeverReadiesWipedLogin"
+      ],
+      "expect": "pass",
+      "finding": "A refresh that overlapped a reconnect never readies the app server over a wiped login, including when the cancel's own publish fails: every path that wipes first advances the generation, and a cancel that cannot keeps the login. The sign-out fault is off; its own straddle is the known limit.",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE"
+      }
+    },
+    {
+      "id": "lifecycle-overlapping-refresh-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "CancelKeepsUnrecordedLogin": "FALSE",
+        "SignOutPublishCanFail": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "OverlappingRefreshNeverReadiesWipedLogin"
+      ],
+      "expect": {
+        "violated": "OverlappingRefreshNeverReadiesWipedLogin"
+      },
+      "finding": "With CancelKeepsUnrecordedLogin off, a cancel whose signed-out publish fails wipes the login without advancing the generation, and a refresh that straddled the reconnect publishes ready over it."
     },
     {
       "id": "lifecycle-removal-completes",

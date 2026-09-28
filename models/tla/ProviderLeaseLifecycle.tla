@@ -25,6 +25,7 @@ EXTENDS Naturals, FiniteSets
 CONSTANTS MaxRt,          \* runtime objects that may be created
           MaxGen,         \* bound on the app server's connection generation
           SignOutPublishCanFail,    \* fault: sign-out's publish fails and is only logged
+          CancelPublishCanFail,     \* fault: a settling reconnect's signed-out publish fails
           ReconnectAnswerCanBeLost, \* fault: a reconnect's publish gets no answer, whether or
                                     \* not it committed, and reading the generation (at the
                                     \* reconnect's start or back after the publish) may fail
@@ -40,8 +41,11 @@ CONSTANTS MaxRt,          \* runtime objects that may be created
                                     \* never after a sign-out superseded it
           CancelSignsOut,           \* a cancelled or failed reconnect commits signed-out with
                                     \* the next generation, as sign-out does
-          CancelKeepsUnrecordedLogin \* when that publish fails, or during shutdown, it keeps
+          CancelKeepsUnrecordedLogin, \* when that publish fails, or during shutdown, it keeps
                                     \* the login and runtime instead of wiping them
+          AdoptTracksLostWrites     \* a lifecycle write whose answer was lost, even before
+                                    \* the reconnect, makes any advance unproven until an
+                                    \* answered write advances the generation
 
 VARIABLES
   life,     \* active | removal_pending | tombstoned        (app server row)
@@ -59,22 +63,30 @@ VARIABLES
   badAdopt,  \* ghost: a reconnect the app server did not commit was adopted
   wipedCommit, \* ghost: a reconnect the app server committed was settled and wiped
   cancelLeftReady, \* ghost: a settled reconnect wiped the login while Rust read P ready
-  rq        \* the catalog refresh in flight: [on, g, res]
+  rq,       \* the catalog refresh in flight: [on, g, res]
+  late,     \* a sign-out request whose answer was lost, still in flight: [on, g]
+  uncertain, \* PDS unansweredLifecycleWrites has P
+  nrecon,   \* ghost: reconnects started so far (bounded by MaxGen)
+  overlapReadyNoLogin \* ghost: a refresh that overlapped a reconnect published ready
+                      \* while the home held no login
 
 vars == <<life, gen, jsGen, ready, auth, rmap, rtState, pend, turn, leaseRt,
-          underLease, closing, closed, badAdopt, wipedCommit, cancelLeftReady, rq>>
+          underLease, closing, closed, badAdopt, wipedCommit, cancelLeftReady, rq,
+          late, uncertain, nrecon, overlapReadyNoLogin>>
 
 Rts == 1..MaxRt
 NoPend == [on |-> FALSE, rt |-> 0, g |-> 0, created |-> FALSE, known |-> FALSE,
            superseded |-> FALSE, doubtful |-> FALSE]
-NoRq == [on |-> FALSE, g |-> 0, res |-> "none"]
+NoRq == [on |-> FALSE, g |-> 0, res |-> "none", n |-> 0]
+NoLate == [on |-> FALSE, g |-> 0]
 
 Init ==
   /\ life = "active" /\ gen = 1 /\ jsGen = 1 /\ ready = TRUE /\ auth = TRUE
   /\ rmap = 1 /\ rtState = [r \in Rts |-> IF r = 1 THEN "open" ELSE "unused"]
   /\ pend = NoPend /\ turn = "none" /\ leaseRt = 0 /\ underLease = FALSE
   /\ closing = FALSE /\ closed = FALSE /\ badAdopt = FALSE /\ wipedCommit = FALSE
-  /\ cancelLeftReady = FALSE /\ rq = NoRq
+  /\ cancelLeftReady = FALSE /\ rq = NoRq /\ late = NoLate /\ uncertain = FALSE
+  /\ nrecon = 0 /\ overlapReadyNoLogin = FALSE
 
 FreshRt == CHOOSE r \in Rts : rtState[r] = "unused"
 CanCreate == \E r \in Rts : rtState[r] = "unused"
@@ -91,7 +103,8 @@ RustAdmit ==
   /\ turn' = "admitted"
   /\ UNCHANGED <<life, gen, jsGen, ready, auth, rmap, rtState, pend, leaseRt,
                  underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq, late, uncertain>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 \* --- The harness asks the broker (RTB acquire) -> PDS acquireExecution. With
 \* a registered runtime the lease is granted at once, and the broker then asks
@@ -113,7 +126,8 @@ Acquire ==
            ELSE turn' = "none" /\ leaseRt' = 0
         /\ UNCHANGED <<rmap, rtState>>
   /\ UNCHANGED <<life, gen, jsGen, ready, auth, pend, underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq, late, uncertain>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 \* --- #runtimeFor registers the runtime after onRuntimeReady. With the fix, a
 \* runtime that finishes starting after close() began is closed instead.
@@ -127,7 +141,8 @@ AcquireRegistered ==
           /\ IF auth THEN turn' = "held" /\ UNCHANGED leaseRt
              ELSE turn' = "none" /\ leaseRt' = 0
   /\ UNCHANGED <<life, gen, jsGen, ready, auth, pend, underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq, late, uncertain>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 \* --- PDS #finalizeRemoval (the store accepts: the attempt is terminal).
 Finalize ==
@@ -142,7 +157,8 @@ Release ==
   /\ IF life = "removal_pending" THEN Finalize
      ELSE UNCHANGED <<life, gen, ready, auth, rmap, rtState>>
   /\ UNCHANGED <<jsGen, pend, underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq, late, uncertain>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 \* --- PDS logout. Refused while a lease is held. Publishes signed-out with the
 \* next generation; a failed publish is only logged. Settings offers Sign out
@@ -156,16 +172,37 @@ Logout ==
   /\ auth' = FALSE
   /\ \/ /\ gen' = gen + 1 /\ jsGen' = gen + 1 /\ ready' = FALSE
         /\ pend' = IF pend.on THEN [pend EXCEPT !.superseded = TRUE] ELSE pend
+        /\ uncertain' = FALSE /\ UNCHANGED late
      \/ /\ SignOutPublishCanFail                 \* fails before it commits
-        /\ UNCHANGED <<gen, jsGen, ready>>
+        /\ UNCHANGED <<gen, jsGen, ready, late>>
         /\ pend' = IF pend.on THEN [pend EXCEPT !.doubtful = TRUE] ELSE pend
+        /\ uncertain' = TRUE
      \/ /\ SignOutPublishCanFail                 \* commits, but its answer is lost
-        /\ gen' = gen + 1 /\ ready' = FALSE /\ UNCHANGED jsGen
+        /\ gen' = gen + 1 /\ ready' = FALSE /\ UNCHANGED <<jsGen, late>>
         /\ pend' = IF pend.on THEN [pend EXCEPT !.doubtful = TRUE] ELSE pend
+        /\ uncertain' = TRUE
+     \/ /\ SignOutPublishCanFail /\ ~late.on     \* answer lost; commits later (LateCommit)
+        /\ UNCHANGED <<gen, jsGen, ready>>
+        /\ late' = [on |-> TRUE, g |-> jsGen]
+        /\ pend' = IF pend.on THEN [pend EXCEPT !.doubtful = TRUE] ELSE pend
+        /\ uncertain' = TRUE
   /\ IF rmap = 0 THEN LET r == FreshRt IN rmap' = r /\ rtState' = [rtState EXCEPT ![r] = "open"]
      ELSE UNCHANGED <<rmap, rtState>>
   /\ UNCHANGED <<life, turn, leaseRt, underLease, closing, closed>>
   /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
+
+\* The lost sign-out request reaches the app server's write. CAT applies it only
+\* at the current generation; otherwise it is refused, and nobody hears.
+LateCommit ==
+  /\ late.on
+  /\ late' = NoLate
+  /\ IF late.g = gen /\ life = "active"
+     THEN gen' = gen + 1 /\ ready' = FALSE
+     ELSE UNCHANGED <<gen, ready>>
+  /\ UNCHANGED <<life, jsGen, auth, rmap, rtState, pend, turn, leaseRt, underLease,
+                 closing, closed, badAdopt, wipedCommit, cancelLeftReady, rq, uncertain>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 \* --- PDS #reconnect, second serialized step. Refused while a lease is held.
 \* Offered only while P reads signed out (provider-ui.js), so auth = FALSE.
@@ -180,9 +217,11 @@ Reconnect ==
         /\ \E known \in IF ReconnectAnswerCanBeLost THEN BOOLEAN ELSE {TRUE} :
              /\ jsGen' = IF known THEN gen ELSE jsGen
              /\ pend' = [on |-> TRUE, rt |-> r, g |-> jsGen', created |-> created,
-                         known |-> known, superseded |-> FALSE, doubtful |-> FALSE]
+                         known |-> known, superseded |-> FALSE,
+                         doubtful |-> AdoptTracksLostWrites /\ uncertain]
   /\ UNCHANGED <<life, gen, ready, auth, turn, leaseRt, underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq, late, uncertain>>
+  /\ nrecon < MaxGen /\ nrecon' = nrecon + 1 /\ UNCHANGED overlapReadyNoLogin
 
 \* --- The user finishes the browser sign-in.
 SignIn ==
@@ -190,7 +229,8 @@ SignIn ==
   /\ auth' = TRUE
   /\ UNCHANGED <<life, gen, jsGen, ready, rmap, rtState, pend, turn, leaseRt,
                  underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq, late, uncertain>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 \* --- PDS #cancelPendingConnection, reconnect branch. g0, j0 and r0 are the
 \* generation, the known generation and readiness after the calling action's
@@ -198,11 +238,12 @@ SignIn ==
 \* that reused the live runtime starts a fresh one in its place (F4). With
 \* the fix, a runtime a lease holds is never closed or wiped; only the entry
 \* goes. With CancelSignsOut, it first commits signed-out with the next
-\* generation, relearning a stale one once, as sign-out does. That publish
+\* generation, relearning a stale one once, as sign-out does. u0 is whether a
+\* lifecycle write is unanswered before that publish; an answered one clears it. That publish
 \* can fail like sign-out's, and it is skipped once close() began. With
 \* CancelKeepsUnrecordedLogin, an unrecorded cancel then keeps the login and
 \* the reconnect's runtime, as an unknown reconnect outcome does.
-CancelEffect(g0, j0, r0) ==
+CancelEffect(g0, j0, r0, u0) ==
   /\ pend' = NoPend
   /\ LET Wipe ==
          /\ auth' = FALSE
@@ -220,29 +261,36 @@ CancelEffect(g0, j0, r0) ==
        Keep == /\ rmap' = pend.rt /\ UNCHANGED <<auth, rtState, underLease, cancelLeftReady>>
      IN IF CancelSparesLease /\ turn = "held"
         THEN /\ gen' = g0 /\ jsGen' = j0 /\ ready' = r0
+             /\ uncertain' = u0
              /\ UNCHANGED <<auth, rmap, rtState, underLease, cancelLeftReady>>
         ELSE
           \/ /\ CancelSignsOut /\ ~closing          \* signed-out recorded
              /\ gen' = g0 + 1 /\ jsGen' = g0 + 1 /\ ready' = FALSE
+             /\ uncertain' = FALSE
              /\ Wipe
-          \/ /\ ~CancelSignsOut \/ closing \/ SignOutPublishCanFail   \* not recorded
+          \/ /\ ~CancelSignsOut \/ closing \/ CancelPublishCanFail   \* not recorded
              /\ gen' = g0 /\ jsGen' = j0 /\ ready' = r0
+             \* A publish attempted without an answer leaves a write in doubt; this model
+             \* makes that failure happen before the commit.
+             /\ uncertain' = (u0 \/ (CancelSignsOut /\ ~closing))
              /\ IF CancelSignsOut /\ CancelKeepsUnrecordedLogin THEN Keep ELSE Wipe
 
 \* The user cancels, the window is destroyed (BRW-005), or the poll gives up.
 Cancel ==
   /\ QueueFree /\ pend.on
-  /\ CancelEffect(gen, jsGen, ready)
-  /\ UNCHANGED <<life, turn, leaseRt, closing, closed, badAdopt, wipedCommit, rq>>
+  /\ CancelEffect(gen, jsGen, ready, uncertain)
+  /\ UNCHANGED <<life, turn, leaseRt, closing, closed, badAdopt, wipedCommit, rq, late>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 \* --- PDS completeConnection for a reconnect: the publish commits the catalog
 \* and the next generation together.
 CompleteOk ==
   /\ QueueFree /\ pend.on /\ auth /\ pend.g = gen /\ gen < MaxGen
   /\ gen' = gen + 1 /\ jsGen' = gen + 1 /\ ready' = TRUE
-  /\ pend' = NoPend /\ rmap' = pend.rt
+  /\ pend' = NoPend /\ rmap' = pend.rt /\ uncertain' = FALSE
   /\ UNCHANGED <<life, auth, rtState, turn, leaseRt, underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq, late>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 \* The reconnect's publish gets no answer. The app server committed it only if
 \* its generation was current. Without the fix the uncoded error settles and
@@ -265,9 +313,11 @@ CompleteNoAnswer ==
          adopt == IF AdoptChecksBaseline
                   THEN ~pend.superseded /\ ~pend.doubtful /\ pend.known /\ g2 = pend.g + 1
                   ELSE g2 > pend.g
-         settle == /\ CancelEffect(g2, jsGen, r2) /\ UNCHANGED badAdopt
+         \* The reconnect's own publish went unanswered (PDS unansweredLifecycleWrites).
+         settle == /\ CancelEffect(g2, jsGen, r2, TRUE) /\ UNCHANGED badAdopt
                    /\ wipedCommit' = (wipedCommit \/ committed)
          keep(j) == /\ KeepReconnect /\ gen' = g2 /\ ready' = r2 /\ jsGen' = j
+                    /\ uncertain' = TRUE
      IN IF ~LostReconnectAdopted \/ (AdoptChecksBaseline /\ pend.superseded)
         THEN settle
         ELSE \/ keep(jsGen) /\ UNCHANGED <<badAdopt, wipedCommit>>   \* the read fails
@@ -275,13 +325,15 @@ CompleteNoAnswer ==
                 THEN settle
                 ELSE /\ keep(g2) /\ UNCHANGED wipedCommit
                      /\ badAdopt' = (badAdopt \/ (adopt /\ ~committed))
-  /\ UNCHANGED <<life, turn, leaseRt, closing, closed, rq>>
+  /\ UNCHANGED <<life, turn, leaseRt, closing, closed, rq, late>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 \* A refused (superseded) reconnect relearns the generation, then settles.
 CompleteRefused ==
   /\ QueueFree /\ pend.on /\ auth /\ pend.g /= gen
-  /\ CancelEffect(gen, gen, ready)
-  /\ UNCHANGED <<life, turn, leaseRt, closing, closed, badAdopt, wipedCommit, rq>>
+  /\ CancelEffect(gen, gen, ready, uncertain)
+  /\ UNCHANGED <<life, turn, leaseRt, closing, closed, badAdopt, wipedCommit, rq, late>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 \* --- MCS refresh (not serialized), in three steps. It resolves the
 \* generation when it starts; with the fix, none while a reconnect is pending
@@ -295,15 +347,19 @@ CompleteRefused ==
 RefreshStart ==
   /\ ~rq.on /\ life = "active" /\ rmap /= 0 /\ rtState[rmap] = "open" /\ ~closing
   /\ RefreshSkipsPendingReconnect => ~pend.on
-  /\ rq' = [on |-> TRUE, g |-> jsGen, res |-> "none"]
+  /\ rq' = [on |-> TRUE, g |-> jsGen, res |-> "none", n |-> nrecon]
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
   /\ UNCHANGED <<life, gen, jsGen, ready, auth, rmap, rtState, pend, turn, leaseRt,
-                 underLease, closing, closed, badAdopt, wipedCommit, cancelLeftReady>>
+                 underLease, closing, closed, badAdopt, wipedCommit, cancelLeftReady,
+                 late, uncertain>>
 
 RefreshRead ==
   /\ rq.on /\ rq.res = "none"
   /\ rq' = [rq EXCEPT !.res = IF auth /\ ~(pend.on /\ pend.created) THEN "ready" ELSE "notready"]
   /\ UNCHANGED <<life, gen, jsGen, ready, auth, rmap, rtState, pend, turn, leaseRt,
-                 underLease, closing, closed, badAdopt, wipedCommit, cancelLeftReady>>
+                 underLease, closing, closed, badAdopt, wipedCommit, cancelLeftReady,
+                 late, uncertain>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 RefreshPublish ==
   /\ rq.on /\ rq.res /= "none"
@@ -314,7 +370,9 @@ RefreshPublish ==
      ELSE IF rq.g = gen THEN ready' = (rq.res = "ready") /\ UNCHANGED jsGen
      ELSE jsGen' = gen /\ UNCHANGED ready
   /\ UNCHANGED <<life, gen, auth, rmap, rtState, pend, turn, leaseRt, underLease,
-                 closing, closed, badAdopt, wipedCommit, cancelLeftReady>>
+                 closing, closed, badAdopt, wipedCommit, cancelLeftReady, late, uncertain>>
+  /\ UNCHANGED nrecon
+  /\ overlapReadyNoLogin' = (overlapReadyNoLogin \/ (ready' /\ ~ready /\ ~auth /\ rq.n /= nrecon))
 
 \* --- PDS remove. removal_pending drops the pending reconnect's entry only.
 Remove ==
@@ -325,7 +383,8 @@ Remove ==
        ELSE /\ life' = "removal_pending" /\ gen' = gen + 1
             /\ UNCHANGED <<ready, auth, rmap, rtState, jsGen>>
   /\ UNCHANGED <<turn, leaseRt, underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq, late, uncertain>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 \* --- PDS close(): waits for lifecycle tasks, not for the queue. It closes the
 \* runtimes in this.runtimes and pendingConnections, not one still starting.
@@ -334,7 +393,8 @@ Close ==
   /\ closing' = TRUE
   /\ UNCHANGED <<life, gen, jsGen, ready, auth, rmap, rtState, pend, turn, leaseRt,
                  underLease, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq, late, uncertain>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 CloseRuntimes ==
   /\ closing /\ ~closed
@@ -343,13 +403,14 @@ CloseRuntimes ==
   /\ rmap' = 0 /\ pend' = NoPend
   /\ underLease' = (underLease \/ turn = "held")   \* shutdown: the host is closing too
   /\ UNCHANGED <<life, gen, jsGen, ready, auth, turn, leaseRt, closing>>
-  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq, late, uncertain>>
+  /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>
 
 Next ==
   \/ RustAdmit \/ Acquire \/ AcquireRegistered \/ Release \/ Logout
   \/ Reconnect \/ SignIn \/ Cancel \/ CompleteOk \/ CompleteNoAnswer
   \/ CompleteRefused \/ RefreshStart \/ RefreshRead \/ RefreshPublish
-  \/ Remove \/ Close \/ CloseRuntimes
+  \/ Remove \/ Close \/ CloseRuntimes \/ LateCommit
 
 Spec == Init /\ [][Next]_vars
 \* The host releases access when the native turn ends.
@@ -393,6 +454,12 @@ CancelRecordsSignedOut == ~cancelLeftReady
 \* stands for the sign-in of a pending reconnect. Checked with the sign-out
 \* fault off, since a failed sign-out leaves P ready by itself.
 PendingReconnectNotReady == pend.on => ~ready
+
+\* PROV-002: a refresh that overlapped a reconnect never makes the app server
+\* read P ready while the home holds no login, with every fault on. (A refresh
+\* not overlapping one can, after a sign-out whose publish failed: the known
+\* limit.)
+OverlappingRefreshNeverReadiesWipedLogin == ~overlapReadyNoLogin
 
 \* PROV-003: removal finishes without a restart once nothing runs.
 RemovalCompletes == (life = "removal_pending") ~> (life = "tombstoned")

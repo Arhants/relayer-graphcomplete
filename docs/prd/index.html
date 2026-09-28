@@ -803,6 +803,7 @@ interface CompletionTerminalError extends Error {
 <li>The app server may save a new provider but lose its answer. Relayer then reads the provider back and keeps it. If that read fails too, the next launch keeps the credential only for a saved provider.</li>
 <li>The app server may commit a reconnect but lose its answer. Relayer then rereads the generation. Relayer keeps the reconnect and its sign-in when the reconnect provably advanced it.</li>
 <li>That proof needs the generation one step past the one the reconnect read at its start, with no sign-out since. An unmoved generation means the reconnect failed.</li>
+<li>A lifecycle write whose answer was lost may still commit later. Until a later answered write advances the generation, no reconnect is adopted on that proof.</li>
 <li>Without that proof, the reconnect's outcome is unknown. Relayer keeps its sign-in and reports the reconnect as failed. The next refresh settles the provider's state.</li>
 </ul>
 <h3>2.2 Login methods</h3>

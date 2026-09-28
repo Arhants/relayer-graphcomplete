@@ -52,6 +52,12 @@ function productServer(definitions = []) {
     publishFails: false,
     // Fails only the next n publishes, as when one request is lost.
     failNextPublishes: 0,
+    // The next publish of this lifecycle event loses its answer at once, but commits only when
+    // the test calls commitDelayed(): a request still in flight on the app server.
+    delayNextCommit: null,
+    commitDelayed: null,
+    // The next refusal's answer is lost: the client sees a transport error.
+    loseNextRefusal: false,
     failedPublishes: 0,
     // Stalls the next definition save after it is reached, holding the provider queue.
     holdNextSave: null,
@@ -102,8 +108,17 @@ function productServer(definitions = []) {
       const row = rows.get(snapshot.providerId);
       if (!row) throw coded("provider_unknown");
       if (row.definition.lifecycleState !== "active") throw coded("provider_not_active");
+      if (server.delayNextCommit && server.delayNextCommit === connectionEvent) {
+        server.delayNextCommit = null;
+        server.commitDelayed = () => server.publishCatalog(snapshot, { connectionGeneration, connectionEvent });
+        throw new Error("socket hang up");
+      }
       if (connectionGeneration !== row.generation) {
         server.refused += 1;
+        if (server.loseNextRefusal) {
+          server.loseNextRefusal = false;
+          throw new Error("socket hang up");
+        }
         throw coded("provider_connection_superseded");
       }
       if (connectionEvent) row.generation += 1;
@@ -717,6 +732,58 @@ describe("PROV-002: a superseded provider result is inert", () => {
       } finally {
         await composition.close();
       }
+    }
+  });
+
+  // A sign-out's request lost its answer but was still in flight, and committed only after the
+  // next reconnect read its baseline. The reconnect's publish was then refused, and that answer
+  // was lost too. The generation reads one past the baseline, but the sign-out moved it, not
+  // the reconnect. An unanswered lifecycle write makes any advance unproven.
+  it("does not adopt a reconnect when an earlier unanswered sign-out may have moved the generation", async () => {
+    const world = managedWorld();
+    const server = productServer([managedDefinition]);
+    const composition = compose({ registry: world.registry, server, removeRuntimeState: world.removeRuntimeState });
+    try {
+      await composition.start();
+      server.delayNextCommit = "signed-out";
+      await composition.providerDefinitions.logout(managedDefinition.id);
+      // Logout's follow-up refresh publishes the signed-out account at the unchanged generation.
+      await vi.waitFor(() => expect(server.connected(managedDefinition.id)).toBe(false), { timeout: 5_000 });
+      const pending = await composition.providerDefinitions.reconnect(managedDefinition.id);
+      await server.commitDelayed();
+      expect(server.rows.get(managedDefinition.id).generation).toBe(2);
+
+      world.account = "connected";
+      server.loseNextRefusal = true;
+      await expect(composition.providerDefinitions.completeConnection(pending.connectionId))
+        .rejects.toMatchObject({ name: "TerminalConnectionFailure" });
+      expect(server.connected(managedDefinition.id)).toBe(false);
+      expect(world.homeWipes).toBe(0);
+    } finally {
+      await composition.close();
+    }
+  });
+
+  // An answered sign-out ends that doubt: the lost write carried an older generation, which the
+  // app server now refuses. A later reconnect whose answer is lost is adopted again.
+  it("adopts a reconnect again once an answered sign-out supersedes an unanswered one", async () => {
+    const world = managedWorld();
+    const server = productServer([managedDefinition]);
+    const composition = compose({ registry: world.registry, server, removeRuntimeState: world.removeRuntimeState });
+    try {
+      await composition.start();
+      server.loseNextResponse = "signed-out";
+      await composition.providerDefinitions.logout(managedDefinition.id);
+      await composition.providerDefinitions.logout(managedDefinition.id);
+      expect(server.rows.get(managedDefinition.id).generation).toBe(3);
+      const pending = await composition.providerDefinitions.reconnect(managedDefinition.id);
+      world.account = "connected";
+      server.loseNextResponse = "reconnected";
+      await expect(composition.providerDefinitions.completeConnection(pending.connectionId))
+        .resolves.toMatchObject({ status: "connected" });
+      expect(server.connected(managedDefinition.id)).toBe(true);
+    } finally {
+      await composition.close();
     }
   });
 
