@@ -74,6 +74,7 @@ async function main() {
   const output = outputArgument(process.argv.slice(2));
   const productCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot, encoding: "utf8" }).trim();
   const dirty = Boolean(execFileSync("git", ["status", "--porcelain"], { cwd: repositoryRoot, encoding: "utf8" }).trim());
+  if (dirty) throw new Error("Viewer artifacts require a clean committed source tree.");
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
   const prefix = `assets/${productCommit}`;
   const files = {};

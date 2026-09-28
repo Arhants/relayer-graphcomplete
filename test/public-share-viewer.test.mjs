@@ -362,6 +362,16 @@ describe("public share V1 reader", () => {
     expect(compiledNodeDetailCoversActions(detail, stripped.actions, stripped.nodes[0])).toBe(false);
   });
 
+  it("preserves reused action provenance while requiring its node in the displayed layer", () => {
+    const records = fixtureJsonl().trim().split("\n").map((line) => JSON.parse(line));
+    const reused = records[1].acceptedView.layers[0].actions[0];
+    reused.sourceLayerId = "layer:earlier-authoring-layer";
+    const parsed = parsePublicSnapshot(recordsJsonl(records));
+    expect(parsed.interactions[0].completionOutput.rootLayer.actions[0].sourceLayerId).toBe(reused.sourceLayerId);
+    reused.sourceNodeId = "node:not-in-displayed-layer";
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow("An action source must be a member of its layer.");
+  });
+
   it.each([
     ["unknown record type", () => `${JSON.stringify({ recordType: "metadata" })}\n`],
     ["manifest mismatch", () => fixtureJsonl().replace('"sequence":1,"createdAt"', '"sequence":2,"createdAt"')],

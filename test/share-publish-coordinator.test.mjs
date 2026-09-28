@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createSharePublishCoordinator } from "../desktop/main/services/share-publish-coordinator.mjs";
 import { ShareSnapshotExportError } from "../desktop/main/services/relayer-app-server.mjs";
+import { createShareServiceClient } from "../desktop/main/services/share-service-client.mjs";
 
 const snapshot = new TextEncoder().encode(`${JSON.stringify({
   recordType: "header",
@@ -9,6 +10,46 @@ const snapshot = new TextEncoder().encode(`${JSON.stringify({
 })}\n${JSON.stringify({ recordType: "turn" })}\n`);
 
 describe("share publication coordinator", () => {
+  it("maps service oversize rejection to a terminal desktop failure across recovery", async () => {
+    const client = createShareServiceClient({
+      endpoint: "https://share.example.test",
+      fetchImpl: async () => ({ ok: false, status: 413, json: async () => ({ error: "snapshot_too_large" }) }),
+    });
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot: async () => snapshot,
+      sourceThreadIdentity: async () => "thread:1",
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer a", generation: 1 }),
+      publish: client.publish,
+    });
+    await expect(coordinator.create({ threadId: 1, title: "Public" })).resolves.toMatchObject({ code: "share_snapshot_too_large", retryable: false });
+    await expect(coordinator.pending({ threadId: 1 })).resolves.toMatchObject({ code: "share_snapshot_too_large", retryable: false });
+  });
+
+  it("retires a restored attempt whose frozen bytes disappeared without exporting or publishing", async () => {
+    const value = {
+      reference: "SHR-MISSING1", attemptId: "00112233445566778899aabbccddeeff",
+      ownerKey: "owner-a", threadId: 1, sourceThreadId: "thread:1",
+      title: "Public", snapshotBytes: snapshot, createdAt: 1,
+      lastFailure: null, reportedFailures: [], publishedUrl: null,
+    };
+    const publish = vi.fn();
+    const exportSnapshot = vi.fn();
+    const save = vi.fn();
+    const remove = vi.fn();
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot, sourceThreadIdentity: vi.fn(), publish,
+      accountSession: async () => ({ ownerKey: "owner-a", authorization: "Bearer a", generation: 1 }),
+      attemptStore: { load: async ({ visit }) => { await visit(value); return []; }, read: async () => null, save, delete: remove },
+    });
+    await expect(coordinator.pending({ threadId: 1 })).resolves.toMatchObject({ retryable: true });
+    await expect(coordinator.retry(value.reference)).resolves.toMatchObject({ code: "share_attempt_unavailable", retryable: false });
+    await expect(coordinator.pending({ threadId: 1 })).resolves.toBeNull();
+    await expect(coordinator.retry(value.reference)).resolves.toMatchObject({ code: "share_attempt_unavailable", retryable: false });
+    expect(remove).toHaveBeenCalledExactlyOnceWith(value.reference);
+    expect(save).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+    expect(exportSnapshot).not.toHaveBeenCalled();
+  });
   it("hydrates only the retried durable attempt and bounds concurrent recovery", async () => {
     const values = [1, 2].map((index) => ({
       reference: `SHR-LAZY000${index}`, attemptId: "00112233445566778899aabbccddeeff",

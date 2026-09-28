@@ -93,6 +93,7 @@ function snapshotMetadata(bytes) {
 
 function failureCode(error) {
   if (error?.name === "AbortError") return "share_cancelled";
+  if (error?.code === "snapshot_too_large") return "share_snapshot_too_large";
   return CLOSED_FAILURE_CODES.has(error?.code) ? error.code : "share_service_failed";
 }
 
@@ -112,6 +113,7 @@ function closedFailure(error, reference) {
       "daily_quota_exhausted",
       "reservation_limit_exhausted",
       "share_sign_in_required",
+      "share_attempt_unavailable",
     ].includes(code),
   };
   if (code === "daily_quota_exhausted" && typeof error?.resetAt === "string" && error.resetAt) {
@@ -326,7 +328,11 @@ export function createSharePublishCoordinator({
     try {
       if (record.lazy && record.snapshotBytes === null) {
         const saved = await attemptStore.read(record.reference);
-        if (!saved) throw new Error("share_attempt_unavailable");
+        if (!saved) {
+          await Promise.resolve().then(() => attemptStore.delete(record.reference)).catch(() => undefined);
+          attempts.delete(record.reference);
+          return Object.freeze({ status: "failed", attemptReferenceId: record.reference, code: "share_attempt_unavailable", retryable: false });
+        }
         record.snapshotBytes = new Uint8Array(saved.snapshotBytes);
       }
       const assertAuthority = async () => {
@@ -590,6 +596,7 @@ export function createSharePublishCoordinator({
           const recoverable = ![
             "daily_quota_exhausted",
             "reservation_limit_exhausted",
+            "share_snapshot_too_large",
           ].includes(record.lastFailure.code);
           return Object.freeze({
             ...record.lastFailure,
