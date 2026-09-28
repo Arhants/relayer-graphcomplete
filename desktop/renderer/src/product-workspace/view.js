@@ -17,7 +17,7 @@ export function productWorkspaceMarkup() {
             <button class="conversation-export" id="exportConversation" type="button" role="menuitem" data-review-ref="export-conversation" data-review-kind="conversation-export">Export conversation…</button>
           </div>
         </div>
-        <button id="environmentToggle" class="environment-toggle" type="button" aria-expanded="false" aria-controls="environmentPanel">Environment</button>
+        <button id="environmentToggle" class="environment-toggle" type="button" aria-expanded="false" aria-controls="environmentPanel" aria-label="Environment" title="Environment"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="6" r="3"></circle><path d="M13 6h7"></path><circle cx="6" cy="18" r="3"></circle><path d="M13 18h7"></path></svg></button>
         <button class="share-conversation-button hidden" id="shareConversation" type="button" data-review-ref="share-conversation" data-review-kind="conversation-share" aria-label="Share thread">Share</button>
       </div>
     </header>

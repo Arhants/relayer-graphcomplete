@@ -1,5 +1,8 @@
 # Verification ledger
 
+Latest icon follow-up: `npm run check` and `npm run build` passed. The initial
+implementation run and its intermittent failure remain recorded below as history.
+
 Date: 2026-09-28. macOS arm64, local deterministic fixtures; zero paid inference.
 Product source is identified by `source.sha256`; reviewer scopes by their separate
 manifests. Public capture inputs have their own adjacent manifest. Source files
@@ -46,7 +49,7 @@ changed in this PR. The isolated case passed (1 test); this is diagnostic only.
 A possible concurrent reconciliation/completion release is unconfirmed and remains
 an open full-check blocker. An earlier full check passed native coverage then
 failed renderer expectations; those expectations were repaired and the complete
-serial renderer suite above passed. There is no aggregate `npm run check` pass.
+serial renderer suite above passed. That initial snapshot had no aggregate pass; the later icon follow-up passed the full check without changing Rust source. The earlier failure remains diagnostic history.
 
 A renderer run performed concurrently with a clean-dist build failed imports and
 is invalid evidence. An initial native context run timed out during startup; its
@@ -74,3 +77,31 @@ Follow-up layout review found an unresolved product-contract mismatch: narrow
 stacking is preserved from the baseline, but the issue assumes an existing
 single-pane / Back to graph flow. This is an unmet acceptance item, not a new
 layout regression. Human scope clarification is pending.
+
+## Human-gate icon follow-up
+
+The user approved the wide layout on the existing development graph and requested
+an icon-only Environment control matching their two-row reference. The control
+now uses a decorative SVG with an accessible Environment name and tooltip,
+transparent styling, theme colors and a visible keyboard focus ring.
+
+Changed seams: shared workspace button markup and its CSS only. READ-002's
+existing overlay/controller coverage applies; no authority or navigation changed.
+Focused Environment/layout/node-detail tests passed (70 tests). The real desktop
+was restarted on the existing transformer-attention graph; screenshot inspection
+confirmed the icon, opening the overlay and Escape dismissal. The user's graph
+content was not added to repository artifacts. Earlier screenshots retain their
+original source identity and show the prior text control.
+
+The layout review was refreshed for this change: reviewer /root/layout_proof,
+manifest aggregate 7704d3a5770ccc454a430d828a975ee2852afe0e2cb2ce340bda0afe13128487.
+Accessibility/style review passed; narrow scope clarification remains open.
+
+The icon follow-up full check passed: native workspace/crash coverage, TypeScript,
+220 Vitest files / 2,883 tests (3 skipped), two secret-boundary tests, 47 Python
+tests, receipts, and PRD readability. The subsequent build also passed. No Rust
+source was changed to address the earlier intermittent duplicate-release failure.
+
+The final node-input Electron proof also passed with zero paid inference calls.
+`environment-icon.png` captures the current icon and open overlay on the synthetic
+fixture at the source hashes in `source.sha256`; earlier PNGs are historical.

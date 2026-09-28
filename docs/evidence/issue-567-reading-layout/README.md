@@ -35,7 +35,8 @@ not human acceptance. Eval authority and persistence are tested; a dedicated hum
 Eval visual review remains separate from the desktop human gate.
 
 Verification outcomes and reviewed source inventories are recorded alongside this
-file. The aggregate `npm run check` is **not certified**: its final run failed in
+file. The later icon follow-up passed the full check and build; prior failure
+evidence remains below. The initial aggregate `npm run check` failed in
 unchanged Rust persistence code at
 `opening_a_quarantined_thread_accepts_its_attempt_without_releasing_again`,
 `product_persistence_flow.rs:9604`, observing two provider DELETE requests instead
