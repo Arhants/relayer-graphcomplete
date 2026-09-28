@@ -573,7 +573,7 @@ describe("product workspace keyboard behavior", () => {
       .toBe("Not saved: disk full");
   });
 
-  it("reserves a stable annotation region at the bottom of Node Details", async () => {
+  it("overlays the annotation editor without reserving detail space", async () => {
     const markup = productWorkspaceMarkup();
     const detailContent = markup.indexOf('id="inspectorContent"');
     const dock = markup.indexOf('id="nodeContextDock"');
@@ -592,8 +592,8 @@ describe("product workspace keyboard behavior", () => {
     expect(composerTray).not.toContain("contextAnnotationEditor");
 
     const styles = await readFile(new URL("../desktop/renderer/styles.css", import.meta.url), "utf8");
-    expect(styles).toContain(".node-context-dock{height:33.333%;min-height:0");
-    expect(styles).toContain(".inspector-content{min-height:0}.inspector>.node-context-dock.hidden{display:flex!important;visibility:hidden;pointer-events:none;border-top-color:transparent}");
+    expect(styles).toContain(".node-context-dock{position:absolute;z-index:2;inset:auto 12px 12px;height:33.333%;min-height:0");
+    expect(styles).toContain(".inspector{position:relative}.inspector-content{min-height:0}.inspector>.node-context-dock.hidden{display:none!important}");
     // The account control moved into the sidebar footer, so the dock no longer
     // reserves a lane for a floating pill that overlapped it.
     expect(styles).not.toContain("desktop-account-corner-control");

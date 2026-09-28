@@ -1,6 +1,8 @@
+import { createSettingsStore } from "../desktop/main/services/settings-store.mjs";
+import { registerComposerDraftIpc, registerLayerSelectionIpc } from "../desktop/main/ipc/register-ipc.mjs";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { mkdtempSync } from "node:fs";
-import { rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -112,6 +114,7 @@ function nodeInputFixtureFactory() {
           new NodePlacementObject(navigationNode, 0.5, 0.5),
         ]),
         `navigation-layer-${completionCount}`,
+        navigationNode,
       );
       await graph.submitLayer(navigationLayer);
       const layer = new LayerObject(
@@ -122,6 +125,7 @@ function nodeInputFixtureFactory() {
           new NodePlacementObject(selectionGuardNode, 0.65, 0.5),
         ]),
         `input-layer-${completionCount}`,
+        selectionGuardNode,
       );
       await graph.submitLayer(layer);
       await graph.addAction(node, {
@@ -191,6 +195,9 @@ const driver = createElectronWorkspaceDriver({
 const { click, clickNode, evaluate, productRequest, setValue, waitFor, waitForAcceptedInteractions, waitForPaint } = driver;
 
 function registerIpc() {
+  const settings = createSettingsStore(dataDirectory);
+  registerComposerDraftIpc({ ipcMain, settings });
+  registerLayerSelectionIpc({ ipcMain, settings });
   ipcMain.handle("relayer:account-read", () => ({ status: "signed-in", channel: "stable", subject: "fixture|node-input" }));
   ipcMain.handle("relayer:appearance-read", () => ({ appearance: "dark" }));
   ipcMain.handle("relayer:update-status", () => ({ phase: "development", channel: "stable", version: "test" }));
@@ -287,6 +294,10 @@ async function run() {
     !document.body.classList.contains('desktop-account-pending')
       && document.querySelectorAll('.graph-node').length === 2
   ))()`));
+  await waitFor("agent-chosen second node opens automatically", () => evaluate(`(
+    document.querySelector('#detailTitle')?.textContent === 'Selection guard'
+      && !document.querySelector('#inspector')?.classList.contains('hidden')
+  )`));
   await clickNode("Input grammar");
   await waitFor("initial input-draft GET and five retries exhaust", () => (
     initialDraftLoadRequests === 6
@@ -346,6 +357,12 @@ async function run() {
     throw new Error("Node Details fixture did not provide a nonzero pre-annotation scroll position.");
   }
 
+  if (process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR) {
+    await mkdir(process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR, { recursive: true });
+    window.showInactive();
+    await waitForPaint();
+    await writeFile(join(process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR, "node-detail-full-pane.png"), (await window.webContents.capturePage()).toPNG());
+  }
   await click("#attachNodeContext");
   await waitFor("annotation editor alongside node inputs", () => evaluate(`(() => (
     !document.querySelector('#nodeContextDock')?.classList.contains('hidden')
@@ -365,6 +382,74 @@ async function run() {
     || Math.abs(detailViewportWithAnnotation.inputAnchorTop - detailViewportBeforeAnnotation.inputAnchorTop) > 1) {
     throw new Error(`Opening an annotation shifted the Node Details viewport: ${JSON.stringify({ detailViewportBeforeAnnotation, detailViewportWithAnnotation })}`);
   }
+  if (process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR) {
+    await waitForPaint();
+    await writeFile(join(process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR, "node-detail-annotation-overlay.png"), (await window.webContents.capturePage()).toPNG());
+  }
+  const readSidebarGeometry = () => evaluate(`(() => {
+    const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+    const sidebar = box('.sidebar');
+    const inspector = box('#inspector');
+    const graph = box('#graphStage');
+    const dock = box('#nodeContextDock');
+    const environment = box('.environment-panel');
+    const turn = box('.interaction-banner');
+    const heading = box('.thread-header');
+    const workspace = box('.workspace-layout');
+    const logo = box('.sidebar-title .logo');
+    const newThread = box('#newThread');
+    const plus = box('#newThread span');
+    return { sidebarWidth: sidebar.width, detailWidth: inspector.width, graphWidth: graph.width,
+      environmentWidth: environment.width, turnWidth: turn.width,
+      sidebarIconsCentered: Math.abs(logo.left + logo.width / 2 - sidebar.left - sidebar.width / 2) <= 1
+        && Math.abs(plus.left + plus.width / 2 - newThread.left - newThread.width / 2) <= 1,
+      headingWidth: heading.width, detailTop: inspector.top, detailBottom: inspector.bottom,
+      collapsedStructure: environment.width === 0 && environment.height === 0
+        && Math.abs(turn.left - graph.left) <= 1 && Math.abs(turn.right - graph.right) <= 1
+        && Math.abs(heading.left - graph.left) <= 1 && Math.abs(heading.right - inspector.right) <= 1
+        && Math.abs(inspector.top - turn.top) <= 1 && inspector.top >= heading.bottom
+        && Math.abs(inspector.bottom - workspace.bottom) <= 1,
+      overlayContained: dock.left >= inspector.left && dock.right <= inspector.right,
+      pageFits: document.documentElement.scrollWidth <= innerWidth };
+  })()`);
+  const expandedSidebarGeometry = await readSidebarGeometry();
+  await click('#collapseSidebar');
+  await waitForPaint();
+  const collapsedSidebarGeometry = await readSidebarGeometry();
+  const freedSidebarWidth = expandedSidebarGeometry.sidebarWidth - collapsedSidebarGeometry.sidebarWidth;
+  if (freedSidebarWidth <= 0
+    || Math.abs(collapsedSidebarGeometry.detailWidth - collapsedSidebarGeometry.graphWidth) > 1
+    || !collapsedSidebarGeometry.collapsedStructure || !collapsedSidebarGeometry.sidebarIconsCentered
+    || !collapsedSidebarGeometry.overlayContained || !collapsedSidebarGeometry.pageFits) {
+    throw new Error(`Sidebar collapse did not create the full-height detail layout: ${JSON.stringify({ expandedSidebarGeometry, collapsedSidebarGeometry })}`);
+  }
+  await evaluate("document.querySelector('#newThread').focus()");
+  if (!(await readSidebarGeometry()).sidebarIconsCentered) throw new Error('Collapsed sidebar icons shift on keyboard focus.');
+  await evaluate("document.querySelector('#newThread').blur()");
+  if (process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR) {
+    await writeFile(join(process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR, "node-detail-sidebar-collapsed.png"), (await window.webContents.capturePage()).toPNG());
+  }
+  // Exercise the shared narrow layout below the native window's 960px minimum.
+  window.setMinimumSize(640, 640);
+  window.setSize(720, 820);
+  await waitFor("Environment remains reachable without the sidebar toggle", () => evaluate(`(() => {
+    const environment = document.querySelector('.environment-panel').getBoundingClientRect();
+    return window.innerWidth <= 760 && environment.width > 0 && environment.height > 0;
+  })()`));
+  window.setSize(1280, 820);
+  window.setMinimumSize(960, 640);
+  await waitFor("collapsed desktop layout returns after resizing", async () => (await readSidebarGeometry()).collapsedStructure);
+  await click('#collapseSidebar');
+  await waitForPaint();
+  const restoredSidebarGeometry = await readSidebarGeometry();
+  if (Math.abs(restoredSidebarGeometry.detailWidth - expandedSidebarGeometry.detailWidth) > 1
+    || Math.abs(restoredSidebarGeometry.graphWidth - expandedSidebarGeometry.graphWidth) > 1
+    || Math.abs(restoredSidebarGeometry.environmentWidth - expandedSidebarGeometry.environmentWidth) > 1
+    || Math.abs(restoredSidebarGeometry.turnWidth - expandedSidebarGeometry.turnWidth) > 1
+    || Math.abs(restoredSidebarGeometry.headingWidth - expandedSidebarGeometry.headingWidth) > 1
+    || Math.abs(restoredSidebarGeometry.detailTop - expandedSidebarGeometry.detailTop) > 1) {
+    throw new Error(`Expanding the sidebar did not restore pane widths: ${JSON.stringify({ expandedSidebarGeometry, restoredSidebarGeometry })}`);
+  }
   const annotationScrollReach = await evaluate(`(() => {
     const detail = document.querySelector('#inspectorContent');
     const dock = document.querySelector('#nodeContextDock');
@@ -381,7 +466,7 @@ async function run() {
       scrolledToBottom: maximumScroll > 1 && detail.scrollTop > 1
         && Math.abs(detail.scrollTop - maximumScroll) <= 1,
       lastInputContained: lastInputBounds.top >= detailBounds.top - 1
-        && lastInputBounds.bottom <= detailBounds.bottom + 1,
+        && lastInputBounds.bottom <= dockBoundsAfter.top - 1,
       annotationContained: !dock.classList.contains('hidden')
         && dockBoundsAfter.height > 0
         && dockBoundsAfter.top >= inspectorBounds.top - 1
@@ -491,11 +576,31 @@ async function run() {
       .find((button) => button.textContent.includes('Open navigation destination'));
     action?.click();
   })()`);
-  await waitFor("navigation closes the input inspector", () => evaluate(`(() => (
+  await waitFor("navigation opens the destination detail and clears source inputs", () => evaluate(`(() => (
     document.querySelectorAll('.graph-node').length === 1
       && document.querySelector('.graph-node b')?.textContent === 'Navigation destination'
-      && document.querySelector('#inspector')?.classList.contains('hidden')
+      && !document.querySelector('#inspector')?.classList.contains('hidden')
+      && document.querySelector('#detailTitle')?.textContent === 'Navigation destination'
+      && document.querySelector('#nodeInputActions')?.classList.contains('hidden')
   ))()`));
+  const breadcrumbLegibility = await evaluate(`(() => {
+    const path = document.querySelector('#workspaceBreadcrumb');
+    const segments = [...path.querySelectorAll('.breadcrumb-segment')];
+    const buttons = [...path.querySelectorAll('button.breadcrumb-segment')];
+    return !path.classList.contains('hidden') && segments.length > 0 && buttons.length > 0
+      && segments.every((item) => parseFloat(getComputedStyle(item).fontSize) >= 13)
+      && buttons.every((item) => item.getBoundingClientRect().height >= 34)
+      && [...path.querySelectorAll('.breadcrumb-icon')].every((item) => item.getBoundingClientRect().width >= 16)
+      && getComputedStyle(path).overflowX === 'auto';
+  })()`);
+  if (!breadcrumbLegibility) throw new Error('Breadcrumb labels or navigation controls are too small.');
+  if (process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR) {
+    await click('#collapseSidebar');
+    await waitForPaint();
+    await writeFile(join(process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR, "breadcrumb-readable.png"), (await window.webContents.capturePage()).toPNG());
+    await click('#collapseSidebar');
+    await waitForPaint();
+  }
   await click("[aria-label='Go to Response']");
   await waitFor("root input layer restored after navigation", () => evaluate(`document.querySelectorAll('.graph-node').length === 2`));
   await clickNode("Input grammar");
@@ -584,7 +689,6 @@ async function run() {
       && document.querySelectorAll('.graph-node').length === 2
       && document.querySelectorAll('.composer-input-pill').length === 3
   ))()`));
-  await clickNode("Input grammar");
   await waitFor("Node Details restores committed values", () => evaluate(`(() => (
     document.querySelector('.node-input-text')?.value === ${JSON.stringify(submittedTextValue)}
       && document.querySelectorAll('.node-input-option[aria-checked="true"]').length === 3
@@ -931,6 +1035,10 @@ async function run() {
       ? draft
       : false;
   });
+  await waitFor("UI detach settles before editing the reconciled value", () => evaluate(`(
+    !document.querySelector("[aria-label='Detach Name the governing constraint']")
+      && document.querySelector("[aria-label='Input action: Name the governing constraint']")?.getAttribute('aria-busy') === 'false'
+  )`));
   await setValue(".node-input-text", submittedTextValue);
   await waitFor("UI commit ready after response-loss reconciliation", () => evaluate(`(
     document.querySelector("[aria-label='Commit Name the governing constraint']")?.disabled === false
@@ -948,6 +1056,9 @@ async function run() {
       : false;
   });
 
+  // The lost response still created an interaction. Finish that fixture turn
+  // before exercising a new input identity with the reconciled draft.
+  await waitForAcceptedInteractions(thread.id, 2);
   await click("#sendInteraction");
   await waitFor("retry request dispatched", () => evaluate(`window.__nodeInputInteractionAttempts.length === 2`));
   const [originalAttempt, retryAttempt] = await evaluate(`window.__nodeInputInteractionAttempts`);

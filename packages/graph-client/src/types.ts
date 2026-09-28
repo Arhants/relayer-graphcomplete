@@ -39,6 +39,8 @@ export interface LayerLayout {
 }
 
 export interface GraphLayer {
+  /** Agent-chosen member to open when no user selection is remembered. */
+  readonly defaultNodeId?: GraphId;
   readonly id: GraphId;
   /** Stable author-assigned identity; absent only in projections written before client keys were exposed. */
   readonly clientKey?: string;

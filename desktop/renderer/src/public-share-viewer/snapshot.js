@@ -387,6 +387,10 @@ function validateLayer(resolved, path, allDefinitions) {
   if (!Array.isArray(layer.nodes) || layer.nodes.length !== memberNodeIds.length || layer.nodes.some((id, index) => id !== memberNodeIds[index])) {
     fail("layer_membership_mismatch", `${path}.layer.nodes`, "Layer node membership must match resolved node order.");
   }
+  if (layer.defaultNodeId != null) {
+    requirePortableId(layer.defaultNodeId, "node", `${path}.layer.defaultNodeId`);
+    if (!memberNodeSet.has(layer.defaultNodeId)) fail("default_node_outside_layer", `${path}.layer.defaultNodeId`, "The default node must belong to its layer.");
+  }
   const memberEdgeIds = edges.map((edge, index) => {
     const edgePath = `${path}.edges[${index}]`;
     const item = requireRecord(edge, edgePath);

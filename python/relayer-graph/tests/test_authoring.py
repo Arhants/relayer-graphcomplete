@@ -9,17 +9,21 @@ import threading
 import types
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.request import HTTPRedirectHandler, Request
 
-from relayer_graph import (APIError, CompletionCurrentSnapshot, CompletionInputGraph, CompletionWatch, ConfigurationError, EdgeObject, GraphNode, GraphSession,
+from relayer_graph import (APIError, CompletionCurrentSnapshot, CompletionInputGraph, CompletionTerminalError, CompletionWatch, ConfigurationError, EdgeObject, GraphNode, GraphSession,
                            LayerLayoutObject, LayerObject, NodeObject,
                            NodePlacementObject,
                            RELAYER_ICON_NAMES, RelayerGraphClient, TransportError, ValidationError,
                            complete, is_supported_relayer_icon, resolve_relayer_icon_name)
+from relayer_graph.completion import _OPENER
 
 
 class Handler(BaseHTTPRequestHandler):
     requests = []
     next_id = 10
+    # The port of a second server with this handler: the same host, another origin.
+    other_port = 0
     # interactionNode -> (status, error) the broker answers when asked to start that child.
     # Bytes are sent as a raw non-JSON body.
     refused_starts = {
@@ -56,6 +60,8 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(error if isinstance(error, bytes) else {"error": error}, status)
         elif self.path == "/api/completions":
             self._reply({"completionId": body["interactionNode"]}, 201)
+        elif self.path == "/api/completions/80/stop":
+            self._reply({"cancelled": True, "completionId": 80, "lifecycle": "stopped"}, 201)
         elif self.path == "/api/completions/91/stop":
             self._reply({
                 "cancelled": True, "completionId": 91, "lifecycle": "stopped",
@@ -73,7 +79,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path.endswith("/edges"):
             self._reply({"edge": {"id": Handler.next_id, "endpoints": body["endpoints"], "state": "draft"}})
         elif self.path.endswith("/layers"):
-            self._reply({"layer": {"id": Handler.next_id, "nodes": body["nodes"], "edges": body["edges"], "layout": body["layout"], "state": "draft"}})
+            self._reply({"layer": {"id": Handler.next_id, "nodes": body["nodes"], "edges": body["edges"], "layout": body["layout"], "defaultNodeId": body.get("defaultNodeId"), "state": "draft"}})
         elif self.path.endswith("/discard"):
             layer_id = int(self.path.split("/")[-2])
             self._reply({"layer": {"id": layer_id, "nodes": [1], "edges": [], "state": "stopped"}})
@@ -101,7 +107,34 @@ class Handler(BaseHTTPRequestHandler):
             "completionId": 92, "lifecycle": lifecycle, "headRevision": revision,
             "currentLayerId": 5, "finalLayerId": None,
         }
-        if self.path.startswith("/api/completions/96/result"):
+        child = lambda completion_id, lifecycle: {
+            "completionId": completion_id, "lifecycle": lifecycle, "headRevision": 2,
+            "currentLayerId": 5, "finalLayerId": None,
+        }
+        # Each redirect lands on child 77's current: on another host, on another port, or in the same origin.
+        redirects = {
+            "/api/completions/79/current": f"localhost:{self.server.server_port}",
+            "/api/completions/76/current": f"127.0.0.1:{Handler.other_port}",
+            "/api/completions/78/current": f"127.0.0.1:{self.server.server_port}",
+        }
+        if self.path in redirects:
+            self.send_response(307)
+            self.send_header("location", f"http://{redirects[self.path]}/api/completions/77/current")
+            self.send_header("content-length", "0")
+            self.end_headers()
+        elif self.path == "/api/completions/80/current":
+            self._reply(child(80, "active"), 201)
+        elif self.path == "/api/completions/81/result":
+            self._reply({"current": child(81, "failed"), "reason": "execution"}, 409)
+        elif self.path == "/api/completions/75/result":
+            self._reply({"current": child(75, "failed"), "reason": ""}, 409)
+        elif self.path == "/api/completions/82/result":
+            self._reply({"current": child(82, "stopped"), "reason": 42}, 409)
+        elif self.path == "/api/completions/83/result":
+            self._reply({"current": child(83, "active"), "reason": "execution"}, 409)
+        elif self.path.startswith("/api/completions/85/result"):
+            self._reply(b"<html><body>502 Bad Gateway: /private/runtime/provider-secret</body></html>", 502)
+        elif self.path.startswith("/api/completions/96/result"):
             self._reply({"error": "completion does not belong to this execution"}, 400)
         elif self.path.startswith("/api/completions/89/result"):
             # A graph runtime conflict passes through without a current.
@@ -163,10 +196,15 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.url = f"http://127.0.0.1:{cls.server.server_port}"
+        cls.other_server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        cls.other_thread = threading.Thread(target=cls.other_server.serve_forever, daemon=True)
+        cls.other_thread.start()
+        Handler.other_port = cls.other_server.server_port
 
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown(); cls.server.server_close(); cls.thread.join()
+        cls.other_server.shutdown(); cls.other_server.server_close(); cls.other_thread.join()
 
     def setUp(self):
         Handler.requests.clear()
@@ -182,7 +220,7 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
             NodePlacementObject(queue, 0.25, 0.5),
             NodePlacementObject(worker, 0.75, 0.5),
         ))
-        layer = LayerObject((queue, worker), (edge,), layout, client_key="root")
+        layer = LayerObject((queue, worker), (edge,), layout, client_key="root", default_node=worker)
         await self.client.submit_layer(layer)
         self.assertIsNotNone(queue.ref); self.assertIsNotNone(edge.ref); self.assertIsNotNone(layer.ref)
         self.assertEqual(Handler.requests[-1][2]["nodes"], [queue.ref.id, worker.ref.id])
@@ -194,6 +232,8 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
             ],
         })
         self.assertEqual(layer.ref.layout.version, 1)
+        self.assertEqual(Handler.requests[-1][2]["defaultNodeId"], worker.ref.id)
+        self.assertEqual(layer.ref.default_node_id, worker.ref.id)
         self.assertEqual(Handler.requests[0][1]["Authorization"], "Bearer secret")
 
     async def test_submit_and_completion_output_use_the_active_interaction(self):
@@ -522,6 +562,8 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
                 (96, "HTTP 400: completion does not belong to this execution"),
                 # A refusal whose error is not a string names only its status.
                 (89, "HTTP 409"),
+                # So does a refusal without a JSON body, such as a proxy's error page.
+                (85, "HTTP 502"),
             ):
                 handle = complete(CompletionInputGraph(node))
                 for name, observe in (("result", lambda: handle.result), ("next", handle.current.next)):
@@ -532,6 +574,79 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
         finally:
             os.environ.clear()
             os.environ.update(previous)
+
+    async def test_result_rejects_with_a_terminal_error_only_for_a_stopped_or_failed_child(self):
+        previous = os.environ.copy()
+        try:
+            os.environ["RELAYER_COMPLETE_URL"] = self.url + "/api/completions"
+            os.environ["RELAYER_COMPLETE_TOKEN"] = "broker-token"
+            for node, lifecycle, reason in (
+                (81, "failed", "execution"),
+                (75, "failed", ""),
+                # A reason that is not a string is not repeated.
+                (82, "stopped", "completion_failed"),
+            ):
+                with self.subTest(node=node):
+                    with self.assertRaises(CompletionTerminalError) as raised:
+                        await complete(CompletionInputGraph(node)).result
+                    self.assertEqual(
+                        (raised.exception.completion_id, raised.exception.lifecycle, raised.exception.reason),
+                        (node, lifecycle, reason),
+                    )
+            # A conflict whose current is still active is a broker refusal, not a terminal state.
+            with self.assertRaises(TransportError) as raised:
+                await complete(CompletionInputGraph(83)).result
+            self.assertEqual(str(raised.exception), "completion broker returned HTTP 409")
+        finally:
+            os.environ.clear()
+            os.environ.update(previous)
+
+    async def test_current_and_stop_accept_only_the_status_the_broker_answers_them_with(self):
+        previous = os.environ.copy()
+        try:
+            os.environ["RELAYER_COMPLETE_URL"] = self.url + "/api/completions"
+            os.environ["RELAYER_COMPLETE_TOKEN"] = "broker-token"
+            handle = complete(CompletionInputGraph(80))
+            for name, call in (("snapshot", handle.current.snapshot), ("stop", lambda: handle.stop("done"))):
+                with self.subTest(call=name):
+                    with self.assertRaises(TransportError) as raised:
+                        await call()
+                    self.assertEqual(str(raised.exception), "completion broker returned HTTP 201")
+        finally:
+            os.environ.clear()
+            os.environ.update(previous)
+
+    async def test_a_redirect_carries_the_broker_token_only_within_the_brokers_origin(self):
+        previous = os.environ.copy()
+        try:
+            os.environ["RELAYER_COMPLETE_URL"] = self.url + "/api/completions"
+            os.environ["RELAYER_COMPLETE_TOKEN"] = "broker-token"
+            port, other_port = self.server.server_port, self.other_server.server_port
+            for node, host, authorization in (
+                (79, f"localhost:{port}", None),
+                (76, f"127.0.0.1:{other_port}", None),
+                (78, f"127.0.0.1:{port}", "Bearer broker-token"),
+            ):
+                with self.subTest(node=node):
+                    Handler.requests.clear()
+                    await complete(CompletionInputGraph(node)).current.snapshot()
+                    [(_, headers, _)] = [r for r in Handler.requests if r[0] == "/api/completions/77/current"]
+                    self.assertEqual(headers["Host"], host)
+                    self.assertEqual(headers.get("Authorization"), authorization)
+        finally:
+            os.environ.clear()
+            os.environ.update(previous)
+
+    def test_a_redirect_to_another_scheme_does_not_carry_the_broker_token(self):
+        # The client's own redirect handler decides before the redirected request is sent, so no TLS broker is needed.
+        [redirects] = [handler for handler in _OPENER.handlers if isinstance(handler, HTTPRedirectHandler)]
+        port = self.server.server_port
+        request = Request(f"http://127.0.0.1:{port}/api/completions/79/current", headers={"authorization": "Bearer broker-token"})
+        redirected = redirects.redirect_request(
+            request, None, 307, "Temporary Redirect", {}, f"https://127.0.0.1:{port}/api/completions/77/current"
+        )
+        self.assertEqual(redirected.full_url, f"https://127.0.0.1:{port}/api/completions/77/current")
+        self.assertFalse(redirected.has_header("Authorization"))
 
     @staticmethod
     def _held_children():
