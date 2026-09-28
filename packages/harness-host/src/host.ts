@@ -1522,12 +1522,19 @@ export class HarnessHost {
       }
       try { session.lifecycle.forceShutdown(); } catch (error) { errors.push(error); }
       // A harness forgets a root conversation its force shutdown killed. Capture that now: the
-      // killed turn may never settle before the process exits.
-      try { this.captureSessionState(threadId, session); } catch (error) { errors.push(error); }
+      // killed turn may never settle before the process exits. Recording is best effort: a
+      // failure keeps that thread's previous state and never fails the shutdown.
+      try {
+        this.captureSessionState(threadId, session);
+      } catch (error) {
+        console.warn(`Could not capture harness state for thread ${threadId} during force close`, errorMessage(error));
+      }
     }
     // Force close skips close()'s final persist, so it writes the captured state itself.
-    const persistFailure = (this.initialized && this.sessions.size > 0 ? this.persist() : Promise.resolve())
-      .then(() => undefined, (error: unknown) => ({ error }));
+    const persisted = (this.initialized && this.sessions.size > 0 ? this.persist() : Promise.resolve())
+      .catch((error: unknown) => {
+        console.warn("Could not persist harness state during force close", errorMessage(error));
+      });
     for (const lifecycle of this.lateClosingHarnesses) {
       try { lifecycle.forceShutdown(); } catch (error) { errors.push(error); }
     }
@@ -1541,8 +1548,7 @@ export class HarnessHost {
       } catch (error) {
         if (!(error instanceof Error && error.message === "Harness host is closed")) errors.push(error);
       }
-      const persistOutcome = await persistFailure;
-      if (persistOutcome !== undefined) errors.push(persistOutcome.error);
+      await persisted;
       await this.persistTail;
       try { await this.traceStore?.forceClose(); } catch (error) { errors.push(error); }
       if (errors.length > 0) throw new AggregateError(errors, "Harness host did not force-close cleanly");

@@ -309,6 +309,7 @@ describe("CodexBasicHarness", () => {
         submissions.push(options);
         const threadId = options.savedThreadId ?? `fresh-thread-${submissions.length}`;
         await options.onThreadId(threadId);
+        options.onTurnStarting?.(threadId);
         await options.onTurnId?.(threadId, `turn-${submissions.length}`);
         if (submissions.length === 1) {
           // The first root turn is wedged until its process is killed.
@@ -351,6 +352,7 @@ describe("CodexBasicHarness", () => {
         submissions.push(options);
         const threadId = options.savedThreadId ?? `fresh-thread-${submissions.length}`;
         await options.onThreadId(threadId);
+        options.onTurnStarting?.(threadId);
         await options.onTurnId?.(threadId, `turn-${submissions.length}`);
         if (submissions.length === 1) {
           // The killed process takes longer than the host's wait to exit.

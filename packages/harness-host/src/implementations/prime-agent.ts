@@ -98,6 +98,12 @@ interface PrimeAgentSessionManagerFactory {
   open(path: string): unknown;
 }
 
+interface PrimeRootTurn {
+  readonly forceSignal: AbortSignal | undefined;
+  /** Set once the turn is bound to the session its conversation runs on. */
+  session: PrimeAgentSession | undefined;
+}
+
 /** One native session's own presentation instructions, appended to its system prompt. */
 interface PrimeSessionInstructions {
   current: string;
@@ -473,11 +479,12 @@ export class PrimeAgentHarness implements Harness {
    */
   private rootSessionGeneration = 0;
   /**
-   * Root turns whose native conversation may be running, by their force signal; force
-   * shutdown kills them. A turn already force-stopped has dropped its session and no longer
-   * counts, even while its native work has not settled.
+   * Root turns in flight, with the session each one's conversation runs on once bound. Force
+   * shutdown forgets the root session only when a bound turn's conversation runs on it. A turn
+   * still acquiring its session wrote nothing, and a turn already force-stopped dropped its
+   * session then, even while its native work has not settled.
    */
-  private readonly activeRootTurns = new Set<{ readonly forceSignal: AbortSignal | undefined }>();
+  private readonly activeRootTurns = new Set<PrimeRootTurn>();
 
   private constructor(
     private readonly context: HarnessFactoryContext,
@@ -671,16 +678,21 @@ export class PrimeAgentHarness implements Harness {
   }
 
   private async executeRoot(context: HarnessRunContext, signal: AbortSignal, forceStop: PrimeTurnForceStop): Promise<void> {
-    const turn = { forceSignal: context.forceSignal };
+    const turn: PrimeRootTurn = { forceSignal: context.forceSignal, session: undefined };
     this.activeRootTurns.add(turn);
     try {
-      await this.executeRootTurn(context, signal, forceStop);
+      await this.executeRootTurn(context, signal, forceStop, turn);
     } finally {
       this.activeRootTurns.delete(turn);
     }
   }
 
-  private async executeRootTurn(context: HarnessRunContext, signal: AbortSignal, forceStop: PrimeTurnForceStop): Promise<void> {
+  private async executeRootTurn(
+    context: HarnessRunContext,
+    signal: AbortSignal,
+    forceStop: PrimeTurnForceStop,
+    turn: PrimeRootTurn,
+  ): Promise<void> {
     // Until this turn binds a session, a force-stop abandons its acquisition, which may hang in
     // reload(), disposeAsync() or session creation. A turn already force-stopped starts none.
     const generation = this.rootSessionGeneration;
@@ -698,6 +710,7 @@ export class PrimeAgentHarness implements Harness {
     }
     const session = candidate instanceof Promise ? await candidate : candidate;
     const handle = this.sessionHandle?.session === session ? this.sessionHandle : undefined;
+    turn.session = session;
     forceStop.bind(() => {
       if (handle !== undefined) this.forceStopRootSession(handle);
       else void session.abort().catch(() => undefined);
@@ -870,7 +883,9 @@ export class PrimeAgentHarness implements Harness {
       void pending.then((lifecycle) => lifecycle.forceShutdown(), () => undefined);
     }
     const handle = this.sessionHandle;
-    if ([...this.activeRootTurns].some(({ forceSignal }) => forceSignal?.aborted !== true)) {
+    if (handle !== undefined && [...this.activeRootTurns].some((turn) => (
+      turn.session === handle.session && turn.forceSignal?.aborted !== true
+    ))) {
       // A root turn's conversation is killed mid-run, as by a per-turn force-stop: the host
       // records that the next root turn, after a restart, starts a fresh session.
       this.sessionHandle = undefined;

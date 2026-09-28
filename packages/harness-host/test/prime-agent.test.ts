@@ -279,6 +279,28 @@ describe("PrimeAgentHarness", () => {
     expect(harness.state()).toEqual({ primeAgentSessionFile: "/tmp/next.jsonl", primeAgentSessionPersonalPresentationVersionId: null });
   });
 
+  it("keeps the root session when force shutdown ends a root turn still acquiring it", async () => {
+    // The reload for a new pin never settles: no conversation ran on the restored session.
+    const session = primeSession("/tmp/restored.jsonl", { reload: vi.fn(() => new Promise<void>(() => {})) });
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7, workingDirectory: "/tmp/project", ...fullPermission, configuration,
+      savedState: { primeAgentSessionFile: "/tmp/restored.jsonl", primeAgentSessionPersonalPresentationVersionId: 90 },
+    }, { loadModule: async () => ({
+      ...runScopeApi(),
+      SessionManager: { create: vi.fn(), open: vi.fn(() => "restored-manager") },
+      createHostRequestHandler: (handler: unknown) => handler,
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
+      createAgentSessionFromServices: vi.fn(async () => ({ session })),
+    }) as never });
+    void harness.complete(presentationRunContext(11, "root", 90)).catch(() => undefined);
+    await vi.waitFor(() => expect(session.reload).toHaveBeenCalledOnce());
+
+    harness.forceShutdown();
+
+    expect(session.promptAndWait).not.toHaveBeenCalled();
+    expect(harness.state()).toEqual({ primeAgentSessionFile: "/tmp/restored.jsonl", primeAgentSessionPersonalPresentationVersionId: 90 });
+  });
+
   it("fails closed when the installed package cannot scope presentation instructions to a session", async () => {
     const session = primeSession("/tmp/unscoped.jsonl", { reload: vi.fn(async () => undefined) });
     const harness = await PrimeAgentHarness.create({

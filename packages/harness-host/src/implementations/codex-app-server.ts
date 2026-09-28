@@ -40,6 +40,8 @@ export interface CodexAppServerTurnOptions {
    * starts a fresh thread instead; the caller should stop offering the saved one.
    */
   readonly onSavedThreadUnavailable?: (threadId: string) => void;
+  /** turn/start is about to be sent: from here on, this turn may write the thread's rollout. */
+  readonly onTurnStarting?: (threadId: string) => void;
   readonly onTurnId?: (threadId: string, turnId: string) => void | Promise<void>;
   readonly onNotification?: (method: string, params: unknown) => void;
   readonly onServerRequest?: (method: string, params: unknown) => void;
@@ -238,6 +240,7 @@ class CodexAppServerConnection {
     await abortableCallback(this.options.onThreadId(threadId), this.options.signal);
 
     this.startingTurn = true;
+    this.options.onTurnStarting?.(threadId);
     let turnResult: unknown;
     try {
       turnResult = await this.request("turn/start", {

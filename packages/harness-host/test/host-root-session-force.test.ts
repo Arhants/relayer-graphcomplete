@@ -45,6 +45,7 @@ describe("root session state when the host force-stops a root turn", () => {
           submissions.push({ nodeId, savedThreadId: options.savedThreadId });
           const threadId = options.savedThreadId ?? `thread-${nodeId}`;
           await options.onThreadId(threadId);
+          options.onTurnStarting?.(threadId);
           await options.onTurnId?.(threadId, `turn-${nodeId}`);
           // Quitting kills this turn's app-server mid-write. Its settlement never reaches the
           // host before the process exits, so only the force close itself can record anything.
@@ -115,6 +116,51 @@ describe("root session state when the host force-stops a root turn", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     await turn;
     await host.close();
+  });
+
+  it("still force-closes, and records the other threads, when one harness cannot report its state", async () => {
+    directory = await mkdtemp(join(tmpdir(), "relayer-force-close-state-"));
+    stubGraph();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let session: string | undefined = "root-session";
+    const host = new HarnessHost({
+      stateFile: join(directory, "sessions.json"),
+      controlToken: "control",
+      implementations: {
+        broken: () => {
+          let forced = false;
+          return {
+            complete: async () => undefined,
+            forceShutdown() { forced = true; },
+            state: (): HarnessSessionState => {
+              if (forced) throw new Error("state unavailable after force shutdown");
+              return {};
+            },
+          };
+        },
+        test: () => ({
+          complete: async () => undefined,
+          forceShutdown() { session = undefined; },
+          state: (): HarnessSessionState => (session === undefined ? {} : { session }),
+        }),
+      },
+    });
+    const configuration = (implementation: string) => ({
+      schemaVersion: 1 as const, name: implementation, implementation, implementationVersion: 1,
+      permissionBindings: { auto: {} }, settings: {},
+    });
+    try {
+      await host.initialize();
+      await host.createSession({ threadId: 1, permissionProfileId: "auto", workingDirectory: directory, configuration: configuration("test") });
+      await host.createSession({ threadId: 2, permissionProfileId: "auto", workingDirectory: directory, configuration: configuration("broken") });
+
+      await expect(host.forceClose()).resolves.toBeUndefined();
+
+      expect(await persistedState()).toEqual({});
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   async function persistedState(): Promise<HarnessSessionState | undefined> {

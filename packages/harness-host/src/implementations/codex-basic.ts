@@ -189,8 +189,8 @@ export class CodexBasicHarness implements Harness {
   private codexThreadId: string | undefined;
   private codexThreadPersonalPresentationVersionId: number | null | undefined;
   /**
-   * The provider definition whose CODEX_HOME holds the thread's rollout; null for a turn run
-   * without a selected provider. Undefined only for a thread saved by an earlier release: it
+   * The provider definition the thread was created under; null for a turn run without a
+   * selected provider. Undefined only for a thread saved by an earlier release: it
    * is still offered for resume, and a missing rollout starts a fresh thread instead.
    */
   private codexThreadProviderDefinitionId: string | null | undefined;
@@ -258,8 +258,10 @@ export class CodexBasicHarness implements Harness {
     const personalPresentationVersionId = context.personalPresentation?.attachment.versionInteractionNodeId ?? null;
     const providerDefinitionId = context.model?.providerId ?? null;
     const persistentRootSession = kind === "root" && this.resolved.settings.rootSessionMode !== "fresh";
-    // Each provider definition has its own CODEX_HOME, so another provider's thread has no
-    // rollout here and cannot be resumed.
+    // A thread resumes only in the CODEX_HOME holding its rollout. The Codex subscription has
+    // its own home; API-key providers share Codex's default home. Binding the thread to its
+    // provider definition is therefore required across that boundary and conservative
+    // between two API-key providers.
     if (persistentRootSession && this.codexThreadId !== undefined
       && (this.codexThreadPersonalPresentationVersionId !== personalPresentationVersionId
         || (this.codexThreadProviderDefinitionId !== undefined
@@ -335,12 +337,14 @@ export class CodexBasicHarness implements Harness {
     };
     // The host's per-turn force-stop kills this turn's app-server process group, exactly as a
     // harness force shutdown does, and no other turn's. A turn force-stopped before it spawns
-    // never spawns. A root turn killed either way also drops its native thread: the killed
-    // process may have left it mid-write, so the next root turn starts a fresh one.
+    // never spawns. A root turn killed either way after it sent turn/start also drops its
+    // native thread: the killed process may have left it mid-write, so the next root turn
+    // starts a fresh one. Killed before turn/start, it wrote nothing, so the thread is kept.
     context.forceSignal?.throwIfAborted();
     const forceShutdown = new AbortController();
+    let conversationStarted = false;
     const forgetForcedRootThread = () => {
-      if (persistentRootSession) this.forgetRootThread();
+      if (persistentRootSession && conversationStarted) this.forgetRootThread();
     };
     const forceTurn = () => {
       forgetForcedRootThread();
@@ -371,6 +375,7 @@ export class CodexBasicHarness implements Harness {
         // A thread gets its rollout only once turn/start is accepted. Until then, a stopped
         // turn leaves nothing that Codex could resume, so the thread is not kept.
         onThreadId: () => undefined,
+        onTurnStarting: () => { conversationStarted = true; },
         onSavedThreadUnavailable: (threadId) => {
           if (persistentRootSession && this.codexThreadId === threadId) this.forgetRootThread();
         },
