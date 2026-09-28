@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { createPackage } from "@electron/asar";
 import { describe, expect, it, vi } from "vitest";
+import { parse as parseYaml } from "yaml";
 
 import {
   assertCredentialAbsentFromTree,
@@ -30,6 +31,30 @@ function contract(overrides = {}) {
 }
 
 describe("desktop telemetry release artifacts", () => {
+  it("installs the pinned upload CLI through the locked development dependency before signing", async () => {
+    const readJson = async (path) => JSON.parse(await readFile(new URL(path, import.meta.url), "utf8"));
+    const root = await readJson("../package.json");
+    const desktop = await readJson("../desktop/package.json");
+    const lock = await readJson("../package-lock.json");
+    expect(root.devDependencies["@sentry/cli"]).toBe("3.7.0");
+    expect(desktop.dependencies["@sentry/cli"]).toBeUndefined();
+    expect(lock.packages[""].devDependencies["@sentry/cli"]).toBe("3.7.0");
+    expect(lock.packages["node_modules/@sentry/cli"]).toMatchObject({ version: "3.7.0", dev: true });
+    const workflow = parseYaml(await readFile(new URL("../.github/workflows/desktop-signed-preview.yml", import.meta.url), "utf8"));
+    for (const name of ["package-macos", "package-windows"]) {
+      const steps = workflow.jobs[name].steps;
+      const install = steps.findIndex((step) => step.run === "npm ci");
+      const build = steps.findIndex((step) => step.run?.includes("npm run desktop:dist:preview"));
+      const upload = steps.findIndex((step) => step.run === "node desktop/release/telemetry-artifacts.mjs");
+      expect(install).toBeGreaterThanOrEqual(0);
+      expect(build).toBeGreaterThan(install);
+      expect(upload).toBeGreaterThan(build);
+      expect(steps.some((step) => /npm install[^\n]*@sentry\/cli/u.test(step.run ?? ""))).toBe(false);
+      expect(steps[install].env?.SENTRY_AUTH_TOKEN).toBeUndefined();
+      expect(steps[upload].env.SENTRY_CLI_BINARY).toContain("node_modules");
+    }
+  });
+
   it("produces deterministic version-matched source maps and Rust debug artifacts", async () => {
     const root = await mkdtemp(join(tmpdir(), "relayer-telemetry-artifacts-"));
     const outputRoot = join(root, "desktop", "dist", "telemetry");
