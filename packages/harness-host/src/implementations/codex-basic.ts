@@ -280,10 +280,19 @@ export class CodexBasicHarness implements Harness {
     };
     // The host's per-turn force-stop kills this turn's app-server process group, exactly as a
     // harness force shutdown does, and no other turn's. A turn force-stopped before it spawns
-    // never spawns.
+    // never spawns. A force-stopped root turn also drops its native thread: the killed process
+    // may have left it mid-write, so the next root turn starts a fresh one.
     context.forceSignal?.throwIfAborted();
     const forceShutdown = new AbortController();
-    const forceTurn = () => forceShutdown.abort(context.forceSignal?.reason);
+    const forgetForcedRootThread = () => {
+      if (!persistentRootSession) return;
+      this.codexThreadId = undefined;
+      this.codexThreadPersonalPresentationVersionId = undefined;
+    };
+    const forceTurn = () => {
+      forgetForcedRootThread();
+      forceShutdown.abort(context.forceSignal?.reason);
+    };
     context.forceSignal?.addEventListener("abort", forceTurn, { once: true });
     this.activeForceShutdowns.add(forceShutdown);
     try {
@@ -307,7 +316,7 @@ export class CodexBasicHarness implements Harness {
         forceSignal: forceShutdown.signal,
         ...(this.dependencies.spawnProcess === undefined ? {} : { spawnProcess: this.dependencies.spawnProcess }),
         onThreadId: (threadId) => {
-          if (persistentRootSession) {
+          if (persistentRootSession && context.forceSignal?.aborted !== true) {
             this.codexThreadId = threadId;
             this.codexThreadPersonalPresentationVersionId = personalPresentationVersionId;
           }
@@ -323,6 +332,7 @@ export class CodexBasicHarness implements Harness {
       });
     } finally {
       context.forceSignal?.removeEventListener("abort", forceTurn);
+      if (context.forceSignal?.aborted === true) forgetForcedRootThread();
       this.activeForceShutdowns.delete(forceShutdown);
       closeIncompleteCollaborationSpans(traceState);
     }

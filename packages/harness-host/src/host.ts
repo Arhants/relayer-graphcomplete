@@ -1182,6 +1182,7 @@ export class HarnessHost {
     let releaseAccessAfterCompletion = false;
     let claimedExecutionLeaseId: string | undefined;
     let harnessStarted = false;
+    let forceStopped = false;
     try {
       const acceptedContracts = session.descriptor.configuration.executionAccessContracts;
       if (executionLeaseId !== undefined) {
@@ -1255,14 +1256,14 @@ export class HarnessHost {
       await settledOrForceStopped(native, forceSignal);
     } catch (error) {
       if (forceSignal.aborted && harnessStarted) {
-        // A force-stopped turn is a failure however its native work ended.
-        const failure = normalizeHarnessFailure(error, harnessStarted, observedTrace.effectBoundary());
-        completionError = new HarnessExecutionFailure(
-          FORCE_STOPPED_TURN_MESSAGE,
-          "execution",
-          failure.effectBoundary,
-          { cause: error },
-        );
+        // A force-stop only follows a cancellation, so the turn settles exactly as that
+        // cancellation does: a user's Stop stays stopped. The force-stop and however the
+        // native work ended are diagnostics only.
+        forceStopped = true;
+        traceSink.emit({
+          type: "warning",
+          data: { message: FORCE_STOPPED_TURN_MESSAGE, forceStopped: true, nativeOutcome: errorMessage(error) },
+        });
       } else if (!signal.aborted || (error !== signal.reason && !(error instanceof NativeExecutionCancelled))) {
         // Adapters may reject with this exact AbortSignal reason before native work
         // starts. Distinct abort, quiescence, or cleanup errors remain failures.
@@ -1320,8 +1321,11 @@ export class HarnessHost {
       throw completionError;
     }
     if (signal.aborted) {
-      traceSink.emit({ type: "cancelled", data: { message: errorMessage(signal.reason) } });
-      await sealTrace(trace, "partial", "Stopped by user");
+      traceSink.emit({
+        type: "cancelled",
+        data: { message: errorMessage(signal.reason), ...(forceStopped ? { forceStopped: true } : {}) },
+      });
+      await sealTrace(trace, "partial", forceStopped ? `Stopped by user. ${FORCE_STOPPED_TURN_MESSAGE}` : "Stopped by user");
       throw new HarnessCancellationSettled(errorMessage(signal.reason));
     }
     if (origin.kind === "invoke") {

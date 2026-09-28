@@ -1929,6 +1929,10 @@ describe("HarnessHost", () => {
     try {
       const host = new HarnessHost({
         stateFile: join(directory, "sessions.json"), controlToken: "control",
+        trace: {
+          directory: join(directory, "traces"),
+          policy: { mode: "required", requiredFeatures: {}, includeNativeArtifacts: false, maxBytesPerTurn: 100_000, maxEventsPerTurn: 100 },
+        },
         accessBroker: { async acquire(selected) {
           return {
             access: {
@@ -1963,7 +1967,7 @@ describe("HarnessHost", () => {
       });
       const rootAdmission = await host.admitModelPlanExecution(1, 9, "attempt-root", plan("root-provider"), new AbortController().signal, policy);
       const rootTurn = host.complete(
-        1, 9, graph(1, "root-token"), route("root-provider"), undefined, undefined,
+        1, 9, graph(1, "root-token"), route("root-provider"), undefined, { productInteractionId: 9 },
         rootAdmission.executionLeaseId, policy, plan("root-provider"), "attempt-root",
       ).then(() => undefined, (error: unknown) => error);
       const startChild = async (nodeId: number, token: string, providerId: string) => {
@@ -1984,7 +1988,7 @@ describe("HarnessHost", () => {
       const stuckObserved = host.observeInvokedCompletion(1, 2).then(() => undefined, (error: unknown) => error);
       const siblingObserved = host.observeInvokedCompletion(1, 3).then(() => undefined, (error: unknown) => error);
 
-      // Remove gives up the stuck child's access, which cancels it; the sibling is cancelled.
+      // The product gives up the stuck child's access, which cancels it; the sibling is cancelled.
       expect(await host.releaseProviderExecution(stuckAdmission.executionLeaseId)).toBe(true);
       expect(host.cancel(1, 3)).toBe(true);
       // The sibling settles within the deadline, so it is never force-stopped.
@@ -2004,9 +2008,12 @@ describe("HarnessHost", () => {
       await vi.advanceTimersByTimeAsync(1);
       await settleMicrotasks();
       expect(releases).toEqual(["sibling-provider", "stuck-provider"]);
-      const stuckFailure = await stuckObserved;
-      expect(stuckFailure).toBeInstanceOf(HarnessExecutionFailure);
-      expect((stuckFailure as Error).message).toContain("force-stopped");
+      // A force-stop settles the turn exactly as its cancellation would have: here, the
+      // owner's release. It is not reported as a provider failure.
+      const stuckOutcome = await stuckObserved;
+      expect(stuckOutcome).not.toBeInstanceOf(HarnessExecutionFailure);
+      expect((stuckOutcome as Error).constructor.name).toBe("HarnessCancellationSettled");
+      expect((stuckOutcome as Error).message).toBe("Provider execution access was released by its owner");
 
       // The running root turn and the settled sibling were never touched.
       await vi.advanceTimersByTimeAsync(5 * 60_000);
@@ -2028,9 +2035,20 @@ describe("HarnessHost", () => {
       expect(forced).toEqual([2]);
       await vi.advanceTimersByTimeAsync(1);
       expect(forced).toEqual([2, 1]);
-      const rootFailure = await rootTurn;
-      expect(rootFailure).toBeInstanceOf(HarnessExecutionFailure);
-      expect((rootFailure as HarnessExecutionFailure).failureCategory).toBe("execution");
+      // The user's Stop stays a stop, so the product records it as stopped; the force-stop
+      // is kept in the turn's diagnostics.
+      const rootOutcome = await rootTurn;
+      expect(rootOutcome).not.toBeInstanceOf(HarnessExecutionFailure);
+      expect((rootOutcome as Error).constructor.name).toBe("HarnessCancellationSettled");
+      expect((rootOutcome as Error).message).toBe("Harness completion cancelled for thread 1");
+      const exported = join(directory, "exported-root-trace");
+      await host.exportCandidateTrace(9, exported, {
+        runId: "run", executionId: "root", interactionId: "9", harnessConfigurationName: "test-complete-enabled",
+      });
+      const rootTrace = await readFile(join(exported, "events.jsonl"), "utf8");
+      expect(rootTrace).toContain("was force-stopped");
+      expect(rootTrace).toContain("native process killed");
+      expect(rootTrace).toContain('"forceStopped":true');
       await settleMicrotasks();
       expect(releases).toEqual(["sibling-provider", "stuck-provider", "root-provider"]);
 

@@ -295,6 +295,44 @@ describe("CodexBasicHarness", () => {
     expect(harness.supportsForceStop).toBe(true);
   });
 
+  it("starts the next root turn in a fresh native thread after a force-stopped root turn", async () => {
+    const submissions: CodexAppServerTurnOptions[] = [];
+    const harness = new CodexBasicHarness({
+      ...context("auto"),
+      savedState: { codexThreadId: "root-thread", codexThreadPersonalPresentationVersionId: null },
+    }, {
+      codexPathOverride: "/managed/codex",
+      runAppServerTurn: async (options) => {
+        submissions.push(options);
+        const threadId = options.savedThreadId ?? `fresh-thread-${submissions.length}`;
+        await options.onThreadId(threadId);
+        if (submissions.length === 1) {
+          // The first root turn is wedged until its process is killed.
+          await new Promise<never>((_resolve, reject) => {
+            options.forceSignal?.addEventListener("abort", () => reject(options.forceSignal?.reason), { once: true });
+          });
+        }
+        return { threadId, turnId: `turn-${submissions.length}`, status: "completed" };
+      },
+    });
+    const force = new AbortController();
+
+    const stuck = harness.complete({ ...runContext(1, "stuck-token"), forceSignal: force.signal });
+    await vi.waitFor(() => expect(submissions).toHaveLength(1));
+    expect(submissions[0]?.savedThreadId).toBe("root-thread");
+    force.abort(new Error("force-stopped after two minutes"));
+    await expect(stuck).rejects.toThrow("force-stopped after two minutes");
+    // The killed process may have left the thread mid-write, so it is neither saved nor resumed.
+    expect(harness.state()).toEqual({});
+
+    await harness.complete({ ...runContext(2, "next-token"), forceSignal: new AbortController().signal });
+    expect(submissions[1]?.savedThreadId).toBeUndefined();
+    expect(harness.state()).toEqual({
+      codexThreadId: "fresh-thread-2",
+      codexThreadPersonalPresentationVersionId: null,
+    });
+  });
+
   it("rejects an unsupported implementation version", () => {
     expect(() => new CodexBasicHarness({
       threadId: 1,
