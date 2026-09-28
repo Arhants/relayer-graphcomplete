@@ -432,6 +432,7 @@ mod tests {
     ) -> ExportResolvedLayer {
         ExportResolvedLayer {
             layer: ExportLayer {
+                default_node_id: None,
                 id: layer_id.into(),
                 client_key: None,
                 nodes: vec![node_id.into()],

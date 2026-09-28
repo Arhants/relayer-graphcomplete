@@ -1628,7 +1628,7 @@ function materializeSourceLayer(value: unknown, owner: NodeObject | undefined): 
     || isProxy(value)
     || Object.getPrototypeOf(value) !== LayerObject.prototype) return undefined;
   const descriptors = Object.getOwnPropertyDescriptors(value) as Record<PropertyKey, PropertyDescriptor>;
-  const allowedFields = new Set<PropertyKey>(["clientKey", "edges", "layout", "nodes", "ref"]);
+  const allowedFields = new Set<PropertyKey>(["clientKey", "defaultNode", "edges", "layout", "nodes", "ref"]);
   for (const field of Reflect.ownKeys(descriptors)) {
     if (!allowedFields.has(field)) return undefined;
     const descriptor = descriptors[field]!;
@@ -1654,14 +1654,14 @@ function materializeLayerTarget(value: unknown): MaterializedLayerTarget | undef
   const prototype = Object.getPrototypeOf(value);
   if (prototype === LayerObject.prototype) {
     const descriptors = Object.getOwnPropertyDescriptors(value) as Record<PropertyKey, PropertyDescriptor>;
-    const allowed = new Set<PropertyKey>(["clientKey", "edges", "layout", "nodes", "ref"]);
+    const allowed = new Set<PropertyKey>(["clientKey", "defaultNode", "edges", "layout", "nodes", "ref"]);
     if (!hasExactDescriptorFields(descriptors, allowed)) return undefined;
     const clientKey = ownCapabilityData(descriptors, "clientKey");
     return typeof clientKey === "string" ? Object.freeze({ kind: "draft", clientKey }) : undefined;
   }
   if (prototype !== Object.prototype && prototype !== null) return undefined;
   const descriptors = Object.getOwnPropertyDescriptors(value) as Record<PropertyKey, PropertyDescriptor>;
-  const allowed = new Set<PropertyKey>(["edges", "id", "layout", "nodes", "state"]);
+  const allowed = new Set<PropertyKey>(["clientKey", "defaultNodeId", "edges", "id", "layout", "nodes", "state"]);
   if (!hasExactDescriptorFields(descriptors, allowed)) return undefined;
   const id = ownCapabilityData(descriptors, "id");
   const nodes = ownCapabilityData(descriptors, "nodes");

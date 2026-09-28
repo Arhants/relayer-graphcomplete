@@ -1,3 +1,4 @@
+import { initializeLayerSelections } from "./product-workspace/layer-selection.js";
 import {
   refreshAccount,
   setProviderOnboardingCompletionHandler,
@@ -378,6 +379,7 @@ async function boot() {
   assertRelayerIconRendererReady();
   if (evalReview) viewState.evalContext = await evalReview.context();
   applyPlatformCopy();
+  await initializeLayerSelections();
   bindEvents();
   await initializeComposerDrafts();
   window.addEventListener("focus", () => {
