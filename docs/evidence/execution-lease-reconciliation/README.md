@@ -12,12 +12,15 @@ Product authority: PRD PROV-003 (removal and recovery without a second release)
 and PROV-004 (execution-access lifetime). No product decision or eligibility
 rule changes. The changed seams are ProductService's shared in-flight guard
 and `reconcile_terminal_execution_lease`'s busy outcome, plus the runtime
-release request's existing five-second control timeout.
+release request's existing five-second control timeout. The harness host also
+keeps one owner-release call per lease active until its work actually settles;
+concurrent owner requests receive retryable HTTP 503.
 
 | Checkpoint | Deterministic production-seam test |
 | --- | --- |
 | Concurrent clones send one DELETE while the first response is held; another attempt progresses independently; acknowledged debt sends no new DELETE | `concurrent_terminal_lease_release_is_coalesced` |
 | Cancelling the cleanup caller releases its guard and preserves retryable debt | `cancelled_terminal_lease_release_can_be_retried` |
+| Disconnected HTTP owners cannot accumulate release or acknowledgement waiters; retries get 503 while the original work remains pending | `rejects duplicate owner releases while %s remains pending after disconnect` (release and acknowledgement cases) |
 | A provider that never responds times out, frees the guard, and permits retry | `stalled_terminal_lease_release_times_out_and_can_be_retried` |
 | Provider failure preserves debt and allows retry; an already-absent provider lease can be acknowledged | `terminal_lease_reconciliation_retries_release_and_accepts_host_absence` |
 | Quarantine/reopen settles accepted output without releasing again | `opening_a_quarantined_thread_accepts_its_attempt_without_releasing_again` |
@@ -73,6 +76,17 @@ new-head CI are recorded on the PR. A separate secret-boundary run also failed
 its five-second Codex feature-probe command under load; the same command then
 succeeded independently. No secret-boundary pass is inferred from that probe.
 
+The second review found that timing out the app-server request does not cancel
+provider work in the host. The host now rejects concurrent owner-release calls
+until the original work settles. Both real-HTTP disconnect regressions failed
+before that guard and passed afterward; all 106 harness-host tests passed in
+4.87 seconds. The preceding head `405b2fb1` passed CI and freshness, but those
+results do not certify this host follow-up. Its local check passed Rust, crash
+recovery, Clippy, and TypeScript, then ended with 3,015 passing and four failing
+Vitest tests: two product-integration timeouts and two browser-evidence failures.
+All 106 host tests passed within that run as well. Its separate build passed.
+These local failures remain recorded; new-head CI is required.
+
 ## Source review
 
 Reviewer `/root/review_mapping` found no unresolved correctness, checkpoint,
@@ -88,6 +102,10 @@ crates/relayer-app-server/src/storage/sqlite/attempts.rs
 31621aaaae09ed650027dace0a9afa27b7cf9eee3f39cd657dd544d0c57ba309
 crates/relayer-app-server/src/runtime.rs
 6fffee96cdff907a1dc07048271ae05247e025d6a730ac22c460cc5e55ca1577
+packages/harness-host/src/host.ts
+b93b2d9941aafdff0b780cc84c18b13a412e8607b3e9e971da201a78645efe05
+packages/harness-host/test/host.test.ts
+fbdc03217fc53b176b4f581dc8a89c573056e45acfe9a683f169a4e421bf3b96
 ```
 
 ## Limits
@@ -95,7 +113,8 @@ crates/relayer-app-server/src/runtime.rs
 This is in-process exclusion among clones of the app server's ProductService.
 It is not cross-process exclusion or exactly-once network delivery. A crash,
 cancelled response, or failed durable acknowledgement can still require an
-idempotent provider retry. This reproduction does not identify which original
+idempotent provider retry. The host guard coalesces owner requests only; it does
+not change internal native-settlement acknowledgement semantics. This reproduction does not identify which original
 caller pair caused the intermittent quarantine-test failure.
 
 No paid-provider, packaged-app, or real Desktop restart proof is claimed. The
