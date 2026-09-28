@@ -726,31 +726,38 @@ counter only grows.
 ### `HarnessCodexThread.tla`
 
 This model covers `codex.basic`'s persistent root thread across serialized
-root turns:
+root turns. Prompts carry only the current turn, so the native thread is the
+only holder of prior conversation ([#584](https://github.com/vishaltandale00/relayer-graphcomplete/issues/584)).
+It must be kept whenever it can be resumed, and a reset must be visible.
 
-- **Harness:** the saved thread, its provider definition, and the step that
-  saves it.
+- **Harness:** the saved thread, the Codex home it is bound to, the step that
+  saves it, and the pending reset notice.
 - **App server:** `thread/start`, `thread/resume` and `turn/start`. A thread
   has a rollout only in the `CODEX_HOME` whose `turn/start` was accepted on it.
   `thread/resume` without one fails with "no rollout found", as the pinned
   Codex 0.147.0 binary does.
-- **Provider definitions:** two, each standing for one Codex home. In
-  production the Codex subscription has its own `CODEX_HOME`. API-key providers
-  get no runtime, so they share Codex's default home. The model does not
-  represent two providers sharing a home; there the provider binding is only
-  conservative.
+- **Providers and homes:** the subscription `s` has its own home `S`. Two
+  API-key providers, `k1` and `k2`, share Codex's default home `D`, as they do
+  in production today.
 - **Interruptions:** Stop, the per-turn force-stop and force shutdown, and a
-  thread saved by an earlier release, whose provider is unknown and whose
-  rollout may be missing. A force marks the turn, and the kill lands later
-  (`Kill`), so a `turn/start` answer already in flight can still arrive.
+  thread saved by an earlier release, whose home is unknown and whose rollout
+  may be missing. A force marks the turn, and the kill lands later (`Kill`), so
+  a `turn/start` answer already in flight can still arrive. A Stop while
+  `turn/start` is pending kills the app-server.
+
+The model decides only resumption for the provider each turn uses. Which
+providers an existing conversation may select belongs to the legacy
+compatibility policy, so the model lets every turn pick any provider.
 
 `codex-thread-today` mirrors the code, and each `-reverted` check turns one fix
-off. Six constants hold the fixes:
+off. Nine constants hold the fixes:
 
 - `CommitAtTurnStart`: the thread is saved when `turn/start` is accepted
   (`onTurnId`), not when `thread/start` answers.
-- `ThreadRecordsProvider`: the saved thread names its provider definition, and
-  a turn on another provider starts a fresh thread.
+- `ThreadRecordsHome`: the saved thread records a binding, and a turn that
+  does not match it starts a fresh thread.
+- `BindToHome`: that binding is the Codex home, not the provider definition, so
+  providers that share a home keep resuming the thread.
 - `RecoverMissingRollout`: a `thread/resume` that finds no rollout forgets the
   saved thread and starts a fresh one in the same turn.
 - `ForceForgets`: a force-stop or force shutdown of a root turn that sent
@@ -759,40 +766,50 @@ off. Six constants hold the fixes:
   saved (`onTurnId` checks the force signal).
 - `ForgetOnlyAfterTurnStart`: a turn forced before it sent `turn/start` wrote
   nothing, so the saved thread is kept.
+- `StopForgetsPendingStart`: a Stop that kills the app-server while
+  `turn/start` is pending forgets the thread, as a force does.
+- `ResetsVisible`: every forget leaves a reset notice, which the next fresh
+  root thread reports.
 
 The properties are:
 
 - `NoDeadResume`: a root turn never fails on a thread Codex cannot resume.
 - `ResumeOnlyMaterialized`: only a thread with a rollout in the turn's home is
   offered for resume, except one saved by an earlier release.
-- `NoForcedResume`: a thread a forced turn may have left mid-write is never
-  resumed (PRD, Provider execution access).
-- `NoNeedlessForget`: after a root turn on a home finishes, or is stopped once
-  running, the next root turn on that home resumes its thread. Only a later
-  forced conversation or a provider switch lifts this.
+- `NoKilledResume`: a conversation killed mid-write, by a force or by a Stop
+  while `turn/start` was pending, is never resumed (PRD, Provider execution
+  access).
+- `NoNeedlessForget`: after a root turn in a home finishes, or is stopped once
+  running, the next root turn in that home resumes its thread, whichever
+  provider it uses. Only a later killed conversation lifts this.
+- `NoSilentReset`: a root turn that starts a fresh thread after a root
+  conversation was lost reports it. Each loss is reported once.
 - `NeverResumes`: a witness, expected to be violated, that a real resume is
   reachable.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `codex-thread-resumable` | Fixed; now passes | Before the fix (H1): the thread was saved as soon as `thread/start` answered, and reset only when the presentation version changed. A follow-up on another Codex provider resumed it in a `CODEX_HOME` without its rollout, and a Stop between `thread/start` and `turn/start` pinned a thread that never got one. Every later root turn failed with "no rollout found", also after a restart. Regressions: `codex-root-thread.test.ts` drives the real app-server transport against an emulated app-server with Codex's rollout rules. |
-| `codex-thread-provider-reverted` | violated: shows why the fix is needed | A follow-up on another provider resumes the first provider's thread. |
+| `codex-thread-resumable` | Fixed; now passes | Before the fix (H1): the thread was saved as soon as `thread/start` answered, and reset only when the presentation version changed. A follow-up in another Codex home resumed it without its rollout, and a Stop between `thread/start` and `turn/start` pinned a thread that never got one. Every later root turn failed with "no rollout found", also after a restart. Regressions: `codex-root-thread.test.ts` drives the real app-server transport against an emulated app-server with Codex's rollout rules. |
+| `codex-thread-home-reverted` | violated: shows why the fix is needed | Without a recorded binding, a follow-up in another home resumes a thread with no rollout there. |
 | `codex-thread-commit-reverted` | violated: shows why the fix is needed | A Stop before `turn/start` leaves a saved thread with no rollout. |
 | `codex-thread-recovery-reverted` | violated: shows why the fix is needed | A thread saved by an earlier release, with no rollout in the turn's home, fails the turn. It is still offered for resume, so that existing conversations keep their thread. |
 | `codex-thread-force-reverted` | violated: shows why the fix is needed | A force that keeps the saved thread lets the next root turn resume the killed conversation. |
 | `codex-thread-late-commit-reverted` | violated: shows why the fix is needed | A `turn/start` answer that arrives after the force saves the forced thread again. |
 | `codex-thread-forget-unwritten-reverted` | violated: shows why the fix is needed | Found in review: a force during `thread/resume`, before `turn/start`, forgot a thread nothing wrote. Now kept. Regressions: the two "before its turn/start" cases in `codex-root-thread.test.ts`. |
+| `codex-thread-home-binding-reverted` | violated: shows why the fix is needed | #584: binding the thread to its provider definition dropped native history when a follow-up moved between API-key providers sharing Codex's default home. Regression: "keeps resuming across providers that share a Codex home". |
+| `codex-thread-stop-kill-reverted` | violated: shows why the fix is needed | Found in review: a Stop while `turn/start` was pending killed the app-server but kept the thread. Regression: "forgets, visibly, a root thread whose turn a Stop killed while turn/start was pending". |
+| `codex-thread-silent-reset-reverted` | violated: shows why the fix is needed | #584: without the notice, a root turn silently starts over after its native conversation was lost. Regressions: the reset assertions in `codex-root-thread.test.ts`. |
 | `codex-thread-resume-witness` | violated: witness | A real resume is reachable. |
 
 In review, three mutants of this model and `HarnessPrimeRoot` passed every
 property then shipped: `Commit` always clearing the saved thread, `Force`
 keeping it, and force close forgetting an idle Prime session. They now violate
-`NoNeedlessForget`, `NoForcedResume` and Prime's `NoNeedlessForget`.
+`NoNeedlessForget`, `NoKilledResume` and Prime's `NoNeedlessForget`.
 
 `ResumeOnlyMaterialized` exempts the earlier release's thread by design: its
-provider is unknown, so the harness tries it once and binds it on success.
-`NoNeedlessForget` gives up continuity on a provider switch, as the product
-does: a follow-up on another provider starts a fresh thread.
+home is unknown, so the harness tries it once and binds it on success.
+`NoNeedlessForget` gives up continuity only when a turn runs in another home,
+where the thread cannot be resumed.
 
 ### `HarnessPrimeRoot.tla`
 

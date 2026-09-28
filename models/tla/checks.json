@@ -156,11 +156,14 @@
       "AllowCancel": "TRUE",
       "LegacyState": "TRUE",
       "CommitAtTurnStart": "TRUE",
-      "ThreadRecordsProvider": "TRUE",
+      "ThreadRecordsHome": "TRUE",
+      "BindToHome": "TRUE",
       "RecoverMissingRollout": "TRUE",
       "ForceForgets": "TRUE",
       "CommitChecksForce": "TRUE",
-      "ForgetOnlyAfterTurnStart": "TRUE"
+      "ForgetOnlyAfterTurnStart": "TRUE",
+      "StopForgetsPendingStart": "TRUE",
+      "ResetsVisible": "TRUE"
     },
     "prime-root-today": {
       "CanForceClose": "TRUE",
@@ -1792,18 +1795,19 @@
         "TypeOK",
         "NoDeadResume",
         "ResumeOnlyMaterialized",
-        "NoForcedResume",
-        "NoNeedlessForget"
+        "NoKilledResume",
+        "NoNeedlessForget",
+        "NoSilentReset"
       ],
       "expect": "pass",
-      "finding": "A root turn never fails on a thread Codex cannot resume, never resumes a thread a forced turn may have left mid-write, and keeps a thread nothing forced (fixed; was: a provider switch or a Stop before turn/start pinned an unresumable thread, and every later root turn failed with \"no rollout found\", even across restart)."
+      "finding": "A root turn never fails on a thread Codex cannot resume, never resumes a killed conversation, keeps resuming across providers that share a Codex home, and reports every reset (fixed; was: a provider switch or a Stop before turn/start pinned an unresumable thread, and every later root turn failed with \"no rollout found\", even across restart)."
     },
     {
-      "id": "codex-thread-provider-reverted",
+      "id": "codex-thread-home-reverted",
       "module": "HarnessCodexThread",
       "preset": "codex-thread-today",
       "constants": {
-        "ThreadRecordsProvider": "FALSE"
+        "ThreadRecordsHome": "FALSE"
       },
       "invariants": [
         "TypeOK",
@@ -1812,7 +1816,7 @@
       "expect": {
         "violated": "ResumeOnlyMaterialized"
       },
-      "finding": "Without the provider definition on the saved thread, a follow-up on another Codex provider resumes the first provider's thread in its own CODEX_HOME, where it has no rollout."
+      "finding": "Without a recorded binding, a follow-up in another Codex home resumes a thread that has no rollout there."
     },
     {
       "id": "codex-thread-commit-reverted",
@@ -1855,10 +1859,10 @@
       },
       "invariants": [
         "TypeOK",
-        "NoForcedResume"
+        "NoKilledResume"
       ],
       "expect": {
-        "violated": "NoForcedResume"
+        "violated": "NoKilledResume"
       },
       "finding": "If a force-stop or force shutdown keeps the saved thread, the next root turn resumes the conversation the killed turn may have left mid-write."
     },
@@ -1871,10 +1875,10 @@
       },
       "invariants": [
         "TypeOK",
-        "NoForcedResume"
+        "NoKilledResume"
       ],
       "expect": {
-        "violated": "NoForcedResume"
+        "violated": "NoKilledResume"
       },
       "finding": "If onTurnId saves a thread whose turn/start answer arrives after the force, the forced conversation is saved again and resumed."
     },
@@ -1893,6 +1897,54 @@
         "violated": "NoNeedlessForget"
       },
       "finding": "If a force before turn/start also forgets the saved thread, the next root turn starts fresh although nothing wrote the thread."
+    },
+    {
+      "id": "codex-thread-home-binding-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "BindToHome": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoNeedlessForget"
+      ],
+      "expect": {
+        "violated": "NoNeedlessForget"
+      },
+      "finding": "Binding the thread to its provider definition instead of its Codex home drops native history when a follow-up moves between API-key providers that share Codex's default home (#584)."
+    },
+    {
+      "id": "codex-thread-stop-kill-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "StopForgetsPendingStart": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoKilledResume"
+      ],
+      "expect": {
+        "violated": "NoKilledResume"
+      },
+      "finding": "If a Stop that kills the app-server while turn/start is pending keeps the saved thread, the next root turn resumes a conversation the kill may have left mid-write."
+    },
+    {
+      "id": "codex-thread-silent-reset-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "ResetsVisible": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoSilentReset"
+      ],
+      "expect": {
+        "violated": "NoSilentReset"
+      },
+      "finding": "Without the reset notice, a root turn silently starts a fresh thread after the previous native conversation was lost (#584)."
     },
     {
       "id": "codex-thread-resume-witness",
