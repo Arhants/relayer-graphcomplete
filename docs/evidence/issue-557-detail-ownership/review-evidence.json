@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "reviewer": "Codex adversarial subagent /root/evidence_review",
-  "reviewedSourceBaseCommit": "43429a04516144707547df52b164ef76aa82c0fa",
-  "reviewedExecutableSourceDeltaSha256": "4fd155e231c3d7d2afc62dbd8a8729432e2e49e8cf978b2352e271d5c7ad3f35",
+  "reviewedSourceBaseCommit": "d56815a78798b7aba3f426a70c1331e5bfa9eedb",
+  "reviewedExecutableSourceDeltaSha256": "816da0eb24d1ee334d4444dfd177df07d0c7c40f7cd81c7224bc85260178660e",
   "reviewedFiles": [
     {
       "path": "scripts/capture-detail-ownership-evidence.mjs",
@@ -18,39 +18,39 @@
     },
     {
       "path": "packages/graph-client/test/detail-ownership.test.ts",
-      "sha256": "3f4b0b96242fd369c9ddaec7b2de9d8d8538d0b4d8c6c1f8059bdae84508f265"
+      "sha256": "dafc05f8be64e1e76dd99cfbd70fcf4455a74a0cca7a3156329df4f05dac9b22"
     },
     {
       "path": "python/relayer-graph/tests/test_detail_ownership.py",
-      "sha256": "844013809e0a6f6867428d82b15ca40c6f86e589ef6d1235ed06b2abe988412e"
+      "sha256": "42fd5cde8c26f56b07685fe76a42ece25052bc1a0e86361c8825f6d7a42ba9cf"
     },
     {
       "path": "docs/evidence/issue-557-detail-ownership/README.md",
-      "sha256": "497f7c554136582a3fd5f3ce0a31062abf5277ce30bdd800e830c0d1766ecef2"
+      "sha256": "731ba8c1ba72db580b8375521815c25ecee504fe67d4f1920465ca9870e8fa20"
     },
     {
       "path": "docs/evidence/issue-557-detail-ownership/verification.json",
-      "sha256": "4d4fa720f747f76d7f65dee147f4c05475ab183dfd243e8c94aff52b2f179028"
+      "sha256": "1f724009d58821e49bc1dd759b316cd915d97ec6496112c7a99593bc347fbc47"
     },
     {
       "path": "docs/evidence/issue-557-detail-ownership/desktop-manifest.json",
-      "sha256": "90d90a9e459c6c7d18bf160cac01f133abf4d01d2b11f210dbb4707b14640bc9"
+      "sha256": "2dfb423d159abe4ef5658d9e74ffbbf17fdfeb32cabb9d54dac50aa36b805b2f"
     },
     {
       "path": "docs/evidence/issue-557-detail-ownership/video/after-1.png",
-      "sha256": "1372d4f3947197799cb4efb5e2c790c0e5c4234b805e7a2331b234878c3517a3"
+      "sha256": "e2004e97c7128cc727bf2d7ddeca40d3b836b4acce723f53728b6dbd6d2185bb"
     },
     {
       "path": "docs/evidence/issue-557-detail-ownership/video/after-2.png",
-      "sha256": "ac4a82a6aaff53dddaebaee659ca25a765825d5dbed614124b52aac10e7cc186"
+      "sha256": "a3640d839d95677cbfb50fc868c7204ec79dcacf3f614c04d2eb52477aac176e"
     },
     {
       "path": "docs/evidence/issue-557-detail-ownership/video/after-3.png",
-      "sha256": "2de977066bf8507f5183842671eb81fc73ed1911f3386f94c4a0ea9d8f0a6b91"
+      "sha256": "531f448603118aa681f8f87a43d0beac308e438fe6abf641134c53463d87cb66"
     },
     {
       "path": "docs/evidence/issue-557-detail-ownership/video/before-1.png",
-      "sha256": "5edc939cbecb1c284615f62688467e27925b2a66e4c9881c4681e8edc5c2fc07"
+      "sha256": "36329392fc4da1ec41c2f04f38aa00077201cb8ab79ffa3ee2a99bc58c657815"
     },
     {
       "path": "docs/evidence/issue-557-detail-ownership/video/before-2.png",
@@ -58,19 +58,19 @@
     },
     {
       "path": "docs/evidence/issue-557-detail-ownership/video/before-3.png",
-      "sha256": "ec1ed719e70dd954b980e9eaa8c0031174281dffb91bff7d03bae10c588420df"
+      "sha256": "a61809af300590704f4d08f59f36ef0360c14ce610318328a7aaca6224e3a551"
     },
     {
       "path": "docs/evidence/issue-557-detail-ownership/video/manifest.json",
-      "sha256": "5c028a6e5a97058539eba72bcc91122175db5084fdb40907d6da54c715c0a4a1"
+      "sha256": "63976cf0001056225ee851fc1339ef50ca6d4d4e22c82e14545464b33174c5a5"
     },
     {
       "path": "docs/evidence/issue-557-detail-ownership/video/ownership-a-to-b.mp4",
-      "sha256": "4c1b845766ca7692d94419229d9057722d4a0157002e695f4ac8bb0e57cee7ac"
+      "sha256": "d5ce7d2c7e8a32f921dc8f389eee834b62a239332b0dfccd1197e1d0e13bd0bf"
     },
     {
       "path": "docs/evidence/issue-557-detail-ownership/video/rejection.png",
-      "sha256": "caae33329382f82700bb29bb9136712b2f9e2322f7ee96c027e6c2bce12c2a91"
+      "sha256": "2ed43b900f9d40cb8e2b0598e00217002c2be49cfba34be212584d0ecd064b4d"
     },
     {
       "path": "docs/evidence/issue-557-detail-ownership/video/timeline.txt",
@@ -78,7 +78,7 @@
     }
   ],
   "reviewedFilesDigestAlgorithm": "SHA-256 of UTF-8 JSON reviewedFiles array with compact separators, listed order",
-  "reviewedFilesSha256": "6be8dbcf8a744b6d315ee7073c022ebc85e696cd42de470ed120e92ec7d3b46b",
+  "reviewedFilesSha256": "e5cd77247b02d341f64301ded67309299313fe34226ced7994a1bf65bf7fcba7",
   "scope": [
     "A/B evidence fidelity and baseline/fixed artifact provenance",
     "Accepted checkpoint, submit result, and persisted output comparisons",
@@ -100,19 +100,20 @@
     "afterDistinctPackages": 3,
     "persistedPackageComparisons": true,
     "rejectionCode": "detail_template_owner_mismatch",
-    "visualReview": "All seven PNGs inspected. Before sibling selections repeat the same explanation; after mechanism and sunset selections show distinct relevant explanations. Error annotation is readable and explicitly labelled.",
+    "visualReview": "Six changed PNGs inspected in this refresh; before-2.png matches the previously visually inspected SHA-256 exactly. All seven frames preserve readable selections and the explicitly labelled error annotation.",
     "verificationLogHashesMatch": true,
     "rustPassed": 825,
     "rustFailed": 0,
     "rustGroups": 42,
-    "defaultVitestPassed": 2788,
+    "defaultVitestPassed": 2789,
     "defaultVitestSkipped": 3,
     "codexSecretBoundaryPassed": 2,
-    "pythonPassed": 55,
+    "pythonPassed": 57,
     "primeBridgeTestsPassed": 7,
     "primeCleanRootReady": true,
     "desktopHeavyRunnerPassed": true,
-    "actionBearingRepairCheckpoint": "Actual Python replacement payload runs through PrimeVisualAuthoring checkpoint and submit; compiled invoke mount and posted package equality asserted. Separate TS/Python regression tests cover all four capability kinds and provenance denial boundaries."
+    "actionBearingRepairCheckpoint": "Actual Python replacement payload runs through PrimeVisualAuthoring checkpoint and submit; compiled invoke mount and posted package equality asserted. Separate TS/Python regression tests cover all four capability kinds and provenance denial boundaries.",
+    "reviewFollowups": "Original-only source provenance, invalid first action attachment, replacement-only source rejection, dead-original unknown action binding denial, and invalid component-key atomicity mapped to current deterministic regression tests."
   },
   "limitations": [
     "Walkthrough assembled from still Electron captures; not continuous screen recording or timing/interaction-latency proof.",
@@ -128,28 +129,24 @@
   "invalidation": "Invalidate this review if any reviewed file or captured executable-source file changes; refresh receipt against the new snapshot.",
   "reviewedExternalLogs": [
     {
-      "path": "/tmp/issue557-repair-check.log",
-      "sha256": "d5b4407acf43a9b55ddfab7794b42e27621b33800bcc80295d73a42e1496e1f4"
+      "path": "/tmp/issue557-final-check.log",
+      "sha256": "7ccbfed9fb480412856861a2ffef9d56a65e2321ffb0818f5f3c961a3f14b8db"
     },
     {
-      "path": "/tmp/issue557-repair-build.log",
-      "sha256": "ddcfdfa4ed418c7e41d341dce3e3928d03f4d4bdfd3f6e7837b604143efceabb"
+      "path": "/tmp/issue557-final-build.log",
+      "sha256": "ee117a328c05a4fe174a4c7a78e378a8648fa3c557e5e3f91be7c16e83a97a7b"
     },
     {
-      "path": "/tmp/issue557-repair-desktop.log",
-      "sha256": "df4bb6281d9eb7c818ac0bc119fe105db22e109ea6b322d8b82d43f8d22abb09"
+      "path": "/tmp/issue557-final-desktop.log",
+      "sha256": "9f4fb93110c61405fe197332ed00a71fbed3f2657375cae84b05fecc139ae06f"
     },
     {
-      "path": "/tmp/issue557-repair-prime-runtime.log",
-      "sha256": "a4401aa0d0a08d2f4aac79863277cd1019d1179569501914ec33fb9c28c1adfc"
+      "path": "/tmp/issue557-final-prime-runtime.log",
+      "sha256": "7ade405046803d3b15fbb7b6b6afaf85f6019f0b5d42806b143de8ac96133a6d"
     },
     {
-      "path": "/tmp/issue557-repair-video.log",
-      "sha256": "97837b8f75e3c24b9dcc63d71e31df99913b07204448358bf83d352e735c3892"
-    },
-    {
-      "path": "/tmp/issue557-repair-bridge.log",
-      "sha256": "d2dbe6cb88d280190ecd1040429d8ff2f5f91ab3a2241063b85cbf0ffd5064e8"
+      "path": "/tmp/issue557-final-video.log",
+      "sha256": "75721275e4cd82b8f597fc49d23fe01b61e33b8f0b914cacf5fd980565a0cff0"
     }
   ],
   "historicalPriorReview": {
@@ -157,8 +154,8 @@
     "receipt": {
       "schemaVersion": 1,
       "reviewer": "Codex adversarial subagent /root/evidence_review",
-      "reviewedSourceBaseCommit": "f764dd44d350f4e01827dfd69722af1309c6a3ca",
-      "reviewedExecutableSourceDeltaSha256": "f7ca2ab1b11a1854fcf17ce49650b8f2140735b6782e99e15cfc4c18b47ca48d",
+      "reviewedSourceBaseCommit": "43429a04516144707547df52b164ef76aa82c0fa",
+      "reviewedExecutableSourceDeltaSha256": "4fd155e231c3d7d2afc62dbd8a8729432e2e49e8cf978b2352e271d5c7ad3f35",
       "reviewedFiles": [
         {
           "path": "scripts/capture-detail-ownership-evidence.mjs",
@@ -166,23 +163,47 @@
         },
         {
           "path": "docs/prd/index.html",
-          "sha256": "c33a62aecc3c75eded299f818ce20c3a4746e902f895016f48afeff49b734e9c"
+          "sha256": "424a0e377db41a561f5254cf77b2d0924793ca616b8c65367eb3f029ef11af9c"
+        },
+        {
+          "path": "packages/harness-host/test/prime-visual-authoring.test.ts",
+          "sha256": "ae38b2a39afe829573c5806bfbe31e3ae83a34f2ce4d4384eb3a26bae42f0d0a"
+        },
+        {
+          "path": "packages/graph-client/test/detail-ownership.test.ts",
+          "sha256": "3f4b0b96242fd369c9ddaec7b2de9d8d8538d0b4d8c6c1f8059bdae84508f265"
+        },
+        {
+          "path": "python/relayer-graph/tests/test_detail_ownership.py",
+          "sha256": "844013809e0a6f6867428d82b15ca40c6f86e589ef6d1235ed06b2abe988412e"
+        },
+        {
+          "path": "docs/evidence/issue-557-detail-ownership/README.md",
+          "sha256": "497f7c554136582a3fd5f3ce0a31062abf5277ce30bdd800e830c0d1766ecef2"
+        },
+        {
+          "path": "docs/evidence/issue-557-detail-ownership/verification.json",
+          "sha256": "4d4fa720f747f76d7f65dee147f4c05475ab183dfd243e8c94aff52b2f179028"
+        },
+        {
+          "path": "docs/evidence/issue-557-detail-ownership/desktop-manifest.json",
+          "sha256": "90d90a9e459c6c7d18bf160cac01f133abf4d01d2b11f210dbb4707b14640bc9"
         },
         {
           "path": "docs/evidence/issue-557-detail-ownership/video/after-1.png",
-          "sha256": "e75758e99c8feabfba550985327e2a571067775c9ba9568f1694cb7e4da9ada1"
+          "sha256": "1372d4f3947197799cb4efb5e2c790c0e5c4234b805e7a2331b234878c3517a3"
         },
         {
           "path": "docs/evidence/issue-557-detail-ownership/video/after-2.png",
-          "sha256": "b664ee266382e3a67bdbac43db57c95e7c4ed7ad4d3d92932001e270c05a9b94"
+          "sha256": "ac4a82a6aaff53dddaebaee659ca25a765825d5dbed614124b52aac10e7cc186"
         },
         {
           "path": "docs/evidence/issue-557-detail-ownership/video/after-3.png",
-          "sha256": "531f448603118aa681f8f87a43d0beac308e438fe6abf641134c53463d87cb66"
+          "sha256": "2de977066bf8507f5183842671eb81fc73ed1911f3386f94c4a0ea9d8f0a6b91"
         },
         {
           "path": "docs/evidence/issue-557-detail-ownership/video/before-1.png",
-          "sha256": "36329392fc4da1ec41c2f04f38aa00077201cb8ab79ffa3ee2a99bc58c657815"
+          "sha256": "5edc939cbecb1c284615f62688467e27925b2a66e4c9881c4681e8edc5c2fc07"
         },
         {
           "path": "docs/evidence/issue-557-detail-ownership/video/before-2.png",
@@ -190,19 +211,19 @@
         },
         {
           "path": "docs/evidence/issue-557-detail-ownership/video/before-3.png",
-          "sha256": "a61809af300590704f4d08f59f36ef0360c14ce610318328a7aaca6224e3a551"
+          "sha256": "ec1ed719e70dd954b980e9eaa8c0031174281dffb91bff7d03bae10c588420df"
         },
         {
           "path": "docs/evidence/issue-557-detail-ownership/video/manifest.json",
-          "sha256": "eff71357fc073175bef3e962a006b449ead73259c1bc2346e3bf17c7a0a646e8"
+          "sha256": "5c028a6e5a97058539eba72bcc91122175db5084fdb40907d6da54c715c0a4a1"
         },
         {
           "path": "docs/evidence/issue-557-detail-ownership/video/ownership-a-to-b.mp4",
-          "sha256": "199c770ef39acbf50d25f5b66e27ce1cf4584ae8a5639afa40f005b3039e8936"
+          "sha256": "4c1b845766ca7692d94419229d9057722d4a0157002e695f4ac8bb0e57cee7ac"
         },
         {
           "path": "docs/evidence/issue-557-detail-ownership/video/rejection.png",
-          "sha256": "1aa9a4ad8bc21495f3c26dafd3fff03af48ec6a37655563309289237e1ff4c83"
+          "sha256": "caae33329382f82700bb29bb9136712b2f9e2322f7ee96c027e6c2bce12c2a91"
         },
         {
           "path": "docs/evidence/issue-557-detail-ownership/video/timeline.txt",
@@ -210,14 +231,15 @@
         }
       ],
       "reviewedFilesDigestAlgorithm": "SHA-256 of UTF-8 JSON reviewedFiles array with compact separators, listed order",
-      "reviewedFilesSha256": "00b430e2f585e8e23ea4489b8508affc59d250415fcd8346a323deb0a6aa4990",
+      "reviewedFilesSha256": "6be8dbcf8a744b6d315ee7073c022ebc85e696cd42de470ed120e92ec7d3b46b",
       "scope": [
         "A/B evidence fidelity and baseline/fixed artifact provenance",
         "Accepted checkpoint, submit result, and persisted output comparisons",
         "Six ProductWorkspace selections, all seven screenshot frames, actual API rejection annotation",
-        "Video timeline, duration, artifact hashes, failure retention, and PRD checkpoint map"
+        "Video timeline, duration, artifact hashes, failure retention, and PRD checkpoint map",
+        "Action-bearing repair checkpoint map, actual Python payload through production Prime bridge/compiler, and refreshed verification logs/receipts"
       ],
-      "verdict": "pass within stated deterministic fixture scope",
+      "verdict": "pass within stated deterministic fixture and checkpoint scope",
       "unresolvedFindings": [],
       "verifiedAssertions": {
         "baselineResourceHashMatches": true,
@@ -231,7 +253,19 @@
         "afterDistinctPackages": 3,
         "persistedPackageComparisons": true,
         "rejectionCode": "detail_template_owner_mismatch",
-        "visualReview": "All seven PNGs inspected. Before sibling selections repeat the same explanation; after mechanism and sunset selections show distinct relevant explanations. Error annotation is readable and explicitly labelled."
+        "visualReview": "All seven PNGs inspected. Before sibling selections repeat the same explanation; after mechanism and sunset selections show distinct relevant explanations. Error annotation is readable and explicitly labelled.",
+        "verificationLogHashesMatch": true,
+        "rustPassed": 825,
+        "rustFailed": 0,
+        "rustGroups": 42,
+        "defaultVitestPassed": 2788,
+        "defaultVitestSkipped": 3,
+        "codexSecretBoundaryPassed": 2,
+        "pythonPassed": 55,
+        "primeBridgeTestsPassed": 7,
+        "primeCleanRootReady": true,
+        "desktopHeavyRunnerPassed": true,
+        "actionBearingRepairCheckpoint": "Actual Python replacement payload runs through PrimeVisualAuthoring checkpoint and submit; compiled invoke mount and posted package equality asserted. Separate TS/Python regression tests cover all four capability kinds and provenance denial boundaries."
       },
       "limitations": [
         "Walkthrough assembled from still Electron captures; not continuous screen recording or timing/interaction-latency proof.",
@@ -239,9 +273,130 @@
         "Baseline build receipt provenance is retained and its resource hash verified; reviewer did not independently rebuild the baseline.",
         "Executable-source delta identity excludes docs; reviewed documentation is instead covered by this receipt file inventory.",
         "Video container duration and hash checked; all source frames visually inspected. No separate full-motion playback claim.",
-        "This evidence review is not a replacement for deterministic tests or broader desktop heavy-proof receipts."
+        "This evidence review is not a replacement for deterministic tests or broader desktop heavy-proof receipts.",
+        "The action-free A/B walkthrough does not prove action activation or action-bearing repair; dedicated client and Prime bridge regression tests own that checkpoint.",
+        "Prime bridge integration uses mocked graph HTTP transport; production payload serialization, bridge validation, and compilation are exercised, not live action execution.",
+        "Desktop heavy-runner success and internal manifest inspected; broader desktop screenshots were not independently re-reviewed in this refresh."
       ],
-      "invalidation": "Invalidate this review if any reviewed file or captured executable-source file changes; refresh receipt against the new snapshot."
+      "invalidation": "Invalidate this review if any reviewed file or captured executable-source file changes; refresh receipt against the new snapshot.",
+      "reviewedExternalLogs": [
+        {
+          "path": "/tmp/issue557-repair-check.log",
+          "sha256": "d5b4407acf43a9b55ddfab7794b42e27621b33800bcc80295d73a42e1496e1f4"
+        },
+        {
+          "path": "/tmp/issue557-repair-build.log",
+          "sha256": "ddcfdfa4ed418c7e41d341dce3e3928d03f4d4bdfd3f6e7837b604143efceabb"
+        },
+        {
+          "path": "/tmp/issue557-repair-desktop.log",
+          "sha256": "df4bb6281d9eb7c818ac0bc119fe105db22e109ea6b322d8b82d43f8d22abb09"
+        },
+        {
+          "path": "/tmp/issue557-repair-prime-runtime.log",
+          "sha256": "a4401aa0d0a08d2f4aac79863277cd1019d1179569501914ec33fb9c28c1adfc"
+        },
+        {
+          "path": "/tmp/issue557-repair-video.log",
+          "sha256": "97837b8f75e3c24b9dcc63d71e31df99913b07204448358bf83d352e735c3892"
+        },
+        {
+          "path": "/tmp/issue557-repair-bridge.log",
+          "sha256": "d2dbe6cb88d280190ecd1040429d8ff2f5f91ab3a2241063b85cbf0ffd5064e8"
+        }
+      ],
+      "historicalPriorReview": {
+        "status": "historical only; invalid for current source and replacement artifacts",
+        "receipt": {
+          "schemaVersion": 1,
+          "reviewer": "Codex adversarial subagent /root/evidence_review",
+          "reviewedSourceBaseCommit": "f764dd44d350f4e01827dfd69722af1309c6a3ca",
+          "reviewedExecutableSourceDeltaSha256": "f7ca2ab1b11a1854fcf17ce49650b8f2140735b6782e99e15cfc4c18b47ca48d",
+          "reviewedFiles": [
+            {
+              "path": "scripts/capture-detail-ownership-evidence.mjs",
+              "sha256": "389bca18073d7a6269ed491c8c598c12d26caeb6f1d00b8505c9d7b9f76b951b"
+            },
+            {
+              "path": "docs/prd/index.html",
+              "sha256": "c33a62aecc3c75eded299f818ce20c3a4746e902f895016f48afeff49b734e9c"
+            },
+            {
+              "path": "docs/evidence/issue-557-detail-ownership/video/after-1.png",
+              "sha256": "e75758e99c8feabfba550985327e2a571067775c9ba9568f1694cb7e4da9ada1"
+            },
+            {
+              "path": "docs/evidence/issue-557-detail-ownership/video/after-2.png",
+              "sha256": "b664ee266382e3a67bdbac43db57c95e7c4ed7ad4d3d92932001e270c05a9b94"
+            },
+            {
+              "path": "docs/evidence/issue-557-detail-ownership/video/after-3.png",
+              "sha256": "531f448603118aa681f8f87a43d0beac308e438fe6abf641134c53463d87cb66"
+            },
+            {
+              "path": "docs/evidence/issue-557-detail-ownership/video/before-1.png",
+              "sha256": "36329392fc4da1ec41c2f04f38aa00077201cb8ab79ffa3ee2a99bc58c657815"
+            },
+            {
+              "path": "docs/evidence/issue-557-detail-ownership/video/before-2.png",
+              "sha256": "f7c207a43905807e0d760074e0ee09f4c10343f87f835ad10a8c789fb98fcfc1"
+            },
+            {
+              "path": "docs/evidence/issue-557-detail-ownership/video/before-3.png",
+              "sha256": "a61809af300590704f4d08f59f36ef0360c14ce610318328a7aaca6224e3a551"
+            },
+            {
+              "path": "docs/evidence/issue-557-detail-ownership/video/manifest.json",
+              "sha256": "eff71357fc073175bef3e962a006b449ead73259c1bc2346e3bf17c7a0a646e8"
+            },
+            {
+              "path": "docs/evidence/issue-557-detail-ownership/video/ownership-a-to-b.mp4",
+              "sha256": "199c770ef39acbf50d25f5b66e27ce1cf4584ae8a5639afa40f005b3039e8936"
+            },
+            {
+              "path": "docs/evidence/issue-557-detail-ownership/video/rejection.png",
+              "sha256": "1aa9a4ad8bc21495f3c26dafd3fff03af48ec6a37655563309289237e1ff4c83"
+            },
+            {
+              "path": "docs/evidence/issue-557-detail-ownership/video/timeline.txt",
+              "sha256": "2e16b8f484e6231877ad38fcfc58fa1e4f863b43f520bd976eca6453000db29a"
+            }
+          ],
+          "reviewedFilesDigestAlgorithm": "SHA-256 of UTF-8 JSON reviewedFiles array with compact separators, listed order",
+          "reviewedFilesSha256": "00b430e2f585e8e23ea4489b8508affc59d250415fcd8346a323deb0a6aa4990",
+          "scope": [
+            "A/B evidence fidelity and baseline/fixed artifact provenance",
+            "Accepted checkpoint, submit result, and persisted output comparisons",
+            "Six ProductWorkspace selections, all seven screenshot frames, actual API rejection annotation",
+            "Video timeline, duration, artifact hashes, failure retention, and PRD checkpoint map"
+          ],
+          "verdict": "pass within stated deterministic fixture scope",
+          "unresolvedFindings": [],
+          "verifiedAssertions": {
+            "baselineResourceHashMatches": true,
+            "fixedExecutedResourceHashMatches": true,
+            "executableSourceDeltaMatchesCurrentFiles": true,
+            "videoAndSevenScreenshotHashesMatch": true,
+            "videoDurationSeconds": 26.966667,
+            "renderedViews": 6,
+            "acceptedPackagesPerPhase": 3,
+            "beforeDistinctPackages": 1,
+            "afterDistinctPackages": 3,
+            "persistedPackageComparisons": true,
+            "rejectionCode": "detail_template_owner_mismatch",
+            "visualReview": "All seven PNGs inspected. Before sibling selections repeat the same explanation; after mechanism and sunset selections show distinct relevant explanations. Error annotation is readable and explicitly labelled."
+          },
+          "limitations": [
+            "Walkthrough assembled from still Electron captures; not continuous screen recording or timing/interaction-latency proof.",
+            "Fixture prescribes fresh node-specific markup after rejection; does not prove autonomous model repair or live paid inference behavior.",
+            "Baseline build receipt provenance is retained and its resource hash verified; reviewer did not independently rebuild the baseline.",
+            "Executable-source delta identity excludes docs; reviewed documentation is instead covered by this receipt file inventory.",
+            "Video container duration and hash checked; all source frames visually inspected. No separate full-motion playback claim.",
+            "This evidence review is not a replacement for deterministic tests or broader desktop heavy-proof receipts."
+          ],
+          "invalidation": "Invalidate this review if any reviewed file or captured executable-source file changes; refresh receipt against the new snapshot."
+        }
+      }
     }
   }
 }

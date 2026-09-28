@@ -32,7 +32,12 @@ exact provenance for the reused template after validating logical ownership.
 They revalidate the original live key and never authorize arbitrary matching-key
 nodes or fresh templates through another component's provenance. Python keeps a
 weak reference and never treats a collected original as permission to skip
-source-layer membership validation.
+source-layer membership validation. Reused templates require the original exact
+owner, not either the original or replacement. A template that was invalid for
+its first owner cannot acquire valid action provenance by being reused.
+
+Python validates component keys before claiming ownership, so a failed attachment
+with an invalid key leaves both the draft and template ownership unchanged.
 
 The focused regression first reproduced the failure in both clients. Ownership
 tests now cover all four capability kinds, checkpoint, submit, repeated repair,
@@ -104,9 +109,9 @@ those real frames in the video; it is not a continuous screen recording. Failed 
 
 [Verification receipt](verification.json) records successful `npm run check`,
 `npm run build`, the existing Electron visual-detail proof, Prime clean-root
-runtime proof, and the final A/B capture. The full check passed 2,788 default
+runtime proof, and the final A/B capture. The full check passed 2,789 default
 Vitest tests (three intentionally skipped), two separate Codex secret-boundary
-tests, and all 55 Python tests, plus Rust and repository contract checks.
+tests, and all 57 Python tests, plus Rust and repository contract checks.
 
 [Watch the A-to-B video](video/ownership-a-to-b.mp4). The [video manifest](video/manifest.json)
 records the accepted packages and six selected views. The [desktop manifest](desktop-manifest.json)

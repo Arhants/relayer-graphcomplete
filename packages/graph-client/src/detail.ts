@@ -1741,7 +1741,7 @@ function materializeLayerOwnerMembership(value: unknown, owner: NodeObject | und
     expected.add(field);
     const descriptor = descriptors[field];
     if (descriptor === undefined || !("value" in descriptor) || descriptor.enumerable !== true) return undefined;
-    if (descriptor.value === owner || (repairSource !== undefined && descriptor.value === repairSource)) containsOwner = true;
+    if (descriptor.value === (repairSource ?? owner)) containsOwner = true;
   }
   if (Reflect.ownKeys(descriptors).some((field) => !expected.has(field))) return undefined;
   return containsOwner;

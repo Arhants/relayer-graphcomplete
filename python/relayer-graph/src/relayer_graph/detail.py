@@ -119,6 +119,8 @@ class NodeDetailAuthoring:
             raise ValueError("detail_finalization_in_progress")
         if self._frozen:
             raise ValueError("detail_finalized: create a fresh NodeObject to replace a draft")
+        if type(key) is not str:
+            raise TypeError("Component key must be a string")
         self._check_template(markup, attachment=True)
         identity = _authoring[self][1]
         if _templates[markup] is None:
@@ -148,6 +150,8 @@ class NodeDetailAuthoring:
             # _check_template authenticated the scope/key match. Preserve only this
             # template's first owner's exact provenance; never grant a key-wide alias.
             repair_source = None if original is None else original.node()
+            if repair_source is None and any(binding.kind not in ("asset", "link") for binding in markup.values):
+                raise ValueError("The source layer must contain the exact owning NodeObject; original template owner is unavailable")
             if repair_source is not None and repair_source.client_key != original.client_key:
                 raise ValueError("detail_owner_identity_changed: the original template owner changed identity; create fresh node-specific HTML")
             components.append({"id": key, "markup": markup.to_wire(owner, _repair_source=repair_source), "styles": styles})

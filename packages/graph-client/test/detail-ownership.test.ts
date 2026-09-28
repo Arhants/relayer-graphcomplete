@@ -74,6 +74,18 @@ describe("interaction-scoped replacement repair", () => {
     expect(await client.checkpointNodeDetail(secondRepair)).toEqual(expected);
   });
 
+  it("cannot acquire action provenance by reusing an invalid first attachment", () => {
+    const client = graph();
+    const original = client.bindNode(node("answer")), repair = client.bindNode(node("answer"));
+    const sourceLayer = new LayerObject([repair], [], new LayerLayoutObject([]), "source");
+    const page = html`<button gc=${detailCapability.invoke("run", { kind: "invoke", label: "Run", interactionText: "Run", sourceLayer, clientKey: "run" })}>Run</button>`;
+    original.detailAuthoring.setComponent("main", page);
+    repair.detailAuthoring.setComponent("main", page);
+    for (const owner of [original, repair]) {
+      expect(() => owner.detailAuthoring.checkpoint()).toThrow(expect.objectContaining({ issues: expect.arrayContaining([expect.objectContaining({ code: "capability_source_layer_mismatch" })]) }));
+    }
+  });
+
   it("does not grant provenance to fresh components, matching-key strangers, or mutated originals", () => {
     const client = graph();
     const original = client.bindNode(node("answer")), repair = client.bindNode(node("answer"));
@@ -87,6 +99,8 @@ describe("interaction-scoped replacement repair", () => {
     expect(() => repair.detailAuthoring.checkpoint()).toThrow(expect.objectContaining({ issues: expect.arrayContaining([expect.objectContaining({ code: "capability_source_layer_mismatch" })]) }));
     repair.detailAuthoring.clear();
     repair.detailAuthoring.setComponent("main", page);
+    sourceLayer.nodes = [repair];
+    expect(() => repair.detailAuthoring.checkpoint()).toThrow(expect.objectContaining({ issues: expect.arrayContaining([expect.objectContaining({ code: "capability_source_layer_mismatch" })]) }));
     sourceLayer.nodes = [stranger];
     expect(() => repair.detailAuthoring.checkpoint()).toThrow(expect.objectContaining({ issues: expect.arrayContaining([expect.objectContaining({ code: "capability_source_layer_mismatch" })]) }));
     sourceLayer.nodes = [original];

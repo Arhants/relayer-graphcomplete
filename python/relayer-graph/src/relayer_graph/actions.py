@@ -10,7 +10,7 @@ def _layer_declaration(layer: LayerReference, owner: NodeObject | None = None, *
         if owner is not None:
             raise ValueError("A visual action needs its exact authored source LayerObject")
         return layer if isinstance(layer, int) else layer.id
-    if owner is not None and not any(node is owner or (_repair_source is not None and node is _repair_source) for node in layer.nodes):
+    if owner is not None and not any(node is (_repair_source if _repair_source is not None else owner) for node in layer.nodes):
         raise ValueError("The source layer must contain the exact owning NodeObject")
     return {"clientKey": layer.client_key, "nodes": [
         node.client_key for node in layer.nodes if isinstance(node, NodeObject)

@@ -6,7 +6,7 @@ import sys
 import types
 from unittest.mock import patch
 from relayer_graph import NodeObject, GraphSession, html, asset_ref, LayerObject, LayerLayoutObject, ActionObject, action_capability
-from relayer_graph.detail import DetailTemplate, NodeDetailAuthoring
+from relayer_graph.detail import DetailTemplate, NodeDetailAuthoring, DetailBinding
 
 
 def node(key):
@@ -63,6 +63,17 @@ class DetailOwnershipTests(unittest.IsolatedAsyncioTestCase):
         second_repair.detail_authoring.set_component("main", page)
         self.assertEqual(second_repair.detail_authoring.to_wire(second_repair), expected)
 
+    def test_invalid_first_action_attachment_cannot_acquire_provenance_on_repair(self):
+        graph = GraphSession("http://localhost", "token", 1)
+        original, repair = [graph.bind_node(node("answer")) for _ in range(2)]
+        layer = LayerObject([repair], [], LayerLayoutObject([]), client_key="source")
+        page = html(["<button gc=", ">Run</button>"], action_capability("run", ActionObject("invoke", "Run", layer, "run", interaction_text="Run")))
+        original.detail_authoring.set_component("main", page)
+        repair.detail_authoring.set_component("main", page)
+        for owner in [original, repair]:
+            with self.assertRaisesRegex(ValueError, "exact owning"):
+                owner.detail_authoring.to_wire(owner)
+
     def test_repair_provenance_is_per_template_and_requires_exact_unchanged_original(self):
         graph = GraphSession("http://localhost", "token", 1)
         original, repair, stranger = [graph.bind_node(node("answer")) for _ in range(3)]
@@ -76,6 +87,9 @@ class DetailOwnershipTests(unittest.IsolatedAsyncioTestCase):
             repair.detail_authoring.to_wire(repair)
         repair.detail_authoring.clear()
         repair.detail_authoring.set_component("main", page)
+        layer.nodes[:] = [repair]
+        with self.assertRaisesRegex(ValueError, "exact owning"):
+            repair.detail_authoring.to_wire(repair)
         layer.nodes[:] = [stranger]
         with self.assertRaisesRegex(ValueError, "exact owning"):
             repair.detail_authoring.to_wire(repair)
@@ -85,28 +99,40 @@ class DetailOwnershipTests(unittest.IsolatedAsyncioTestCase):
             repair.detail_authoring.to_wire(repair)
 
     def test_collected_original_never_disables_action_membership(self):
-        graph = GraphSession("http://localhost", "token", 1)
-        original, repair = graph.bind_node(node("answer")), graph.bind_node(node("answer"))
-        layer = LayerObject([original], [], LayerLayoutObject([]), client_key="source")
-        page = html(["<button gc=", ">Run</button>"], action_capability("run", ActionObject("invoke", "Run", layer, "run", interaction_text="Run")))
-        plain = html("<p>Answer</p>")
-        original.detail_authoring.set_component("main", page)
-        original.detail_authoring.set_component("plain", plain)
-        repair.detail_authoring.set_component("main", page)
-        repair.detail_authoring.set_component("plain", plain)
-        reference = weakref.ref(original)
-        del original
-        gc.collect()
-        self.assertIsNotNone(reference())  # The action still has exact provenance.
-        repair.detail_authoring.to_wire(repair)
-        layer.nodes.clear()
-        gc.collect()
-        self.assertIsNone(reference())
-        with self.assertRaisesRegex(ValueError, "exact owning"):
+        for binding_kind in ("action", "unknown"):
+            graph = GraphSession("http://localhost", "token", 1)
+            original, repair = graph.bind_node(node("answer")), graph.bind_node(node("answer"))
+            layer = LayerObject([original], [], LayerLayoutObject([]), client_key="source")
+            page = html(["<button gc=", ">Run</button>"], DetailBinding(binding_kind, ActionObject("invoke", "Run", layer, "run", interaction_text="Run"), "run"))
+            plain = html("<p>Answer</p>")
+            original.detail_authoring.set_component("main", page)
+            original.detail_authoring.set_component("plain", plain)
+            repair.detail_authoring.set_component("main", page)
+            repair.detail_authoring.set_component("plain", plain)
+            reference = weakref.ref(original)
+            del original
+            gc.collect()
+            self.assertIsNotNone(reference())  # The action still has exact provenance.
             repair.detail_authoring.to_wire(repair)
-        repair.detail_authoring.clear()
-        repair.detail_authoring.set_component("plain", plain)
-        self.assertEqual(repair.detail_authoring.to_wire(repair)["components"][0]["markup"]["strings"], ["<p>Answer</p>"])
+            layer.nodes[:] = [repair]
+            gc.collect()
+            self.assertIsNone(reference())
+            with self.assertRaisesRegex(ValueError, "exact owning"):
+                repair.detail_authoring.to_wire(repair)
+            repair.detail_authoring.clear()
+            repair.detail_authoring.set_component("plain", plain)
+            self.assertEqual(repair.detail_authoring.to_wire(repair)["components"][0]["markup"]["strings"], ["<p>Answer</p>"])
+
+    def test_failed_component_key_does_not_claim_template_or_change_draft(self):
+        original, other = node("original"), node("other")
+        original.detail_authoring.set_component("valid", html("<p>Previous</p>"))
+        before = original.detail_authoring.to_wire(original)
+        page = html("<p>Unclaimed</p>")
+        with self.assertRaises(TypeError):
+            original.detail_authoring.set_component([], page)
+        self.assertEqual(original.detail_authoring.to_wire(original), before)
+        other.detail_authoring.set_component("valid", page)
+        self.assertEqual(other.detail_authoring.to_wire(other)["components"][0]["markup"]["strings"], ["<p>Unclaimed</p>"])
 
     async def test_bound_repair_and_scope_fences_before_transport(self):
         graph = GraphSession("http://localhost:1234", "token", 1)
