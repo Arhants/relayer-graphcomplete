@@ -144,6 +144,7 @@ pub(crate) struct RuntimeClient {
     unavailable_configurations: HashMap<String, UnavailableCatalogEntry>,
     temporal_features: relayer_graph_core::TemporalFeatureConfig,
     interaction_graph_enabled: bool,
+    legacy_interaction_features: bool,
     /// How long one invoked-completion observation waits before the caller asks again.
     observation_poll: std::time::Duration,
 }
@@ -490,6 +491,7 @@ impl RuntimeClient {
             }
             Ok(response) => serde_json::from_value(response_json(response, StatusCode::OK).await?)?,
         };
+        let mut legacy_interaction_features = false;
         let interaction_graph_enabled = match client
             .get(graph_url.join("api/control/interaction-features")?)
             .bearer_auth(&graph_control_token)
@@ -503,10 +505,15 @@ impl RuntimeClient {
                 .ok()
                 .and_then(|v| v["interactionGraph"].as_bool())
                 .unwrap_or(false),
+            Ok(response) if response.status() == StatusCode::NOT_FOUND => {
+                legacy_interaction_features = true;
+                false
+            }
             _ => false,
         };
         Ok(Self {
             interaction_graph_enabled,
+            legacy_interaction_features,
             client,
             graph_url,
             harness_url,
@@ -1390,6 +1397,14 @@ impl RuntimeClient {
                     .json(&serde_json::json!({"completionIds":chunk}))
                     .send()
                     .await?;
+                // Older runtimes lack both feature discovery and attached mutation lookup.
+                // A supported gate-off runtime may still hold historical mutations.
+                if path == "api/control/attached-navigation-roots"
+                    && self.legacy_interaction_features
+                    && response.status() == StatusCode::NOT_FOUND
+                {
+                    continue;
+                }
                 let selected: Vec<i64> =
                     serde_json::from_value(response_json(response, StatusCode::OK).await?)?;
                 roots.extend(selected.into_iter().filter(|id| chunk.contains(id)));

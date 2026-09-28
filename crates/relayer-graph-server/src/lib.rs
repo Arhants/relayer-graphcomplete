@@ -6787,8 +6787,49 @@ mod attached_navigation_route_tests {
         action.target_layer_id = Some(response.id);
         action.relation = Some(NavigateRelation::Reference);
         writer.add_action(&action).await.unwrap();
+        let unrelated = database
+            .create_interaction(ProjectId::new(1), ThreadId::new(3).unwrap(), "Unattached")
+            .await
+            .unwrap();
+        let unrelated_writer = database.writer_for_subgraph(unrelated.id).await.unwrap();
+        assert!(
+            unrelated_writer.get_node(node.id).await.is_ok(),
+            "ordinary project reads remain allowed"
+        );
+        database
+            .set_interaction_permissions_enabled(false)
+            .await
+            .unwrap();
+        let (disabled, _) = database
+            .create_interaction_with_context(
+                ProjectId::new(1),
+                ThreadId::new(4).unwrap(),
+                "Disabled",
+                &[InteractionContextDraft {
+                    target: InteractionContextTarget {
+                        node_id: node.id,
+                        source_interaction_node_id: source.id,
+                        source_layer_id: layer.id,
+                    },
+                    annotations: vec![],
+                }],
+            )
+            .await
+            .unwrap();
+        database
+            .set_interaction_permissions_enabled(true)
+            .await
+            .unwrap();
         let state = ServerState::new(database, "control");
         let token = mint_capability(&state, edit.id, None).await.ok().unwrap();
+        let unrelated_token = mint_capability(&state, unrelated.id, None)
+            .await
+            .ok()
+            .unwrap();
+        let disabled_token = mint_capability(&state, disabled.id, None)
+            .await
+            .ok()
+            .unwrap();
         let app = router(state);
         let path = format!("/api/graph/nodes/{}/presentation", node.id);
         let request = |method: &str, body: Option<Value>, authorized: bool| {
@@ -6807,6 +6848,20 @@ mod attached_navigation_route_tests {
                 .body(Body::from(body.map(|v| v.to_string()).unwrap_or_default()))
                 .unwrap()
         };
+        for denied in [&unrelated_token, &disabled_token] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(&path)
+                        .header("authorization", format!("Bearer {denied}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
         let read = app
             .clone()
             .oneshot(request("GET", None, true))
@@ -6856,6 +6911,15 @@ mod attached_navigation_route_tests {
                 .is_none()
         );
         writer.complete(edit.id).await.unwrap();
+        assert_eq!(
+            app.clone()
+                .oneshot(request("GET", None, true))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+
         let accepted = sw.get_node(node.id).await.unwrap();
         assert_eq!(accepted.title, "Meaning");
         assert_eq!(accepted.authored_detail, Some(package));

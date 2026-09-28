@@ -7373,6 +7373,35 @@ async fn attached_navigation_without_replacement_preserves_plain_detail_and_refe
     backlink.target_layer_id = Some(response.id);
     writer.add_action(&backlink).await.unwrap();
     writer.complete(interaction.id).await.unwrap();
+    // Preserve the post-acceptance revision check through a fresh authorized
+    // editor: terminal authoring capabilities no longer expose presentations.
+    let (inspector, _) = database
+        .create_interaction_with_context(
+            Some(project(1)),
+            thread(4),
+            "Inspect",
+            &[InteractionContextDraft {
+                target: InteractionContextTarget {
+                    node_id: persistent.id,
+                    source_interaction_node_id: source.id,
+                    source_layer_id: source_layer.id,
+                },
+                annotations: vec![],
+            }],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        database
+            .writer_for_subgraph(inspector.id)
+            .await
+            .unwrap()
+            .get_node_presentation(persistent.id)
+            .await
+            .unwrap()["revision"],
+        0
+    );
+
     let mut affected = database
         .attached_navigation_roots(&candidates)
         .await
@@ -7416,9 +7445,9 @@ async fn attached_navigation_without_replacement_preserves_plain_detail_and_refe
     assert_eq!(updated.actions[0].id, action.id);
     assert_eq!(updated.nodes[0].authored_detail, None);
     assert_eq!(updated.nodes[0].title, persistent.title);
-    assert_eq!(
-        writer.get_node_presentation(persistent.id).await.unwrap()["revision"],
-        0
+    assert!(
+        writer.get_node_presentation(persistent.id).await.is_err(),
+        "terminal authoring capabilities cannot reread mutation presentations"
     );
 }
 
@@ -8506,5 +8535,222 @@ async fn required_attached_navigation_preserves_old_and_disabled_preparations() 
                 .actions
                 .is_empty()
         );
+    }
+}
+
+#[tokio::test]
+async fn attached_navigation_review_cycles_follow_exposed_and_prospective_actions() {
+    for route in ["unexposed", "exposed", "prospective"] {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let database = GraphDatabase::open(file.path()).await.unwrap();
+        database
+            .set_interaction_permissions_enabled(true)
+            .await
+            .unwrap();
+        let source = database
+            .create_interaction(Some(project(1)), thread(1), "Source")
+            .await
+            .unwrap();
+        let sw = database.writer_for_subgraph(source.id).await.unwrap();
+        let a = node(&sw, "a").await;
+        let b = node(&sw, "b").await;
+        let al = single_node_layer(&sw, "a-layer", &a).await;
+        let bl = single_node_layer(&sw, "b-layer", &b).await;
+        root_expand(&sw, &source, &bl).await;
+        let mut edge = ActionDraft {
+            client_key: "old-b-to-a".into(),
+            source_node_id: b.id,
+            source_layer_id: Some(bl.id),
+            kind: ActionKind::Navigate,
+            relation: Some(NavigateRelation::Expand),
+            label: "Open A".into(),
+            variant: ActionVariant::default(),
+            icon: None,
+            description: None,
+            target_layer_id: Some(al.id),
+            interaction_text: None,
+            input: None,
+        };
+        sw.add_action(&edge).await.unwrap();
+        sw.complete(source.id).await.unwrap();
+        let reuse = database
+            .create_interaction(Some(project(1)), thread(2), "Reuse B")
+            .await
+            .unwrap();
+        let rw = database.writer_for_subgraph(reuse.id).await.unwrap();
+        let reused = single_node_layer(&rw, "reuse-b", &b).await;
+        root_expand(&rw, &reuse, &reused).await;
+        rw.complete(reuse.id).await.unwrap();
+        // Historical accepted occurrences retain their own published action inventory.
+        let fixture = sqlx::SqlitePool::connect(&format!("sqlite:{}", file.path().display()))
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM layer_actions WHERE layer_id=?1")
+            .bind(reused.id.value())
+            .execute(&fixture)
+            .await
+            .unwrap();
+        fixture.close().await;
+        assert!(rw.get_layer(reused.id).await.unwrap().actions.is_empty());
+        let contexts = [(&a, &al), (&b, &bl)].map(|(n, l)| InteractionContextDraft {
+            target: InteractionContextTarget {
+                node_id: n.id,
+                source_interaction_node_id: source.id,
+                source_layer_id: l.id,
+            },
+            annotations: vec![],
+        });
+        let (edit, _) = database
+            .create_interaction_with_context(Some(project(1)), thread(3), "Extend", &contexts)
+            .await
+            .unwrap();
+        let writer = database.writer_for_subgraph(edit.id).await.unwrap();
+        let answer = node(&writer, "answer").await;
+        let response = single_node_layer(&writer, "response", &answer).await;
+        root_expand(&writer, &edit, &response).await;
+        for n in [&a, &b] {
+            edge.client_key = "response".into();
+            edge.source_node_id = n.id;
+            edge.source_layer_id = None;
+            edge.relation = Some(NavigateRelation::Reference);
+            edge.target_layer_id = Some(response.id);
+            writer.add_action(&edge).await.unwrap();
+        }
+        edge.client_key = "a-to-b".into();
+        edge.source_node_id = a.id;
+        edge.relation = Some(NavigateRelation::Expand);
+        edge.target_layer_id = Some(if route == "exposed" { bl.id } else { reused.id });
+        writer.add_action(&edge).await.unwrap();
+        if route == "prospective" {
+            edge.client_key = "new-b-to-a".into();
+            edge.source_node_id = b.id;
+            edge.target_layer_id = Some(al.id);
+            writer.add_action(&edge).await.unwrap();
+        }
+        let result = writer.complete(edit.id).await;
+        if route == "unexposed" {
+            result.unwrap();
+        } else {
+            assert!(
+                matches!(
+                    result,
+                    Err(GraphError::Validation {
+                        code: "expand_cycle",
+                        ..
+                    })
+                ),
+                "{route}: {result:?}"
+            );
+            assert!(rw.get_layer(reused.id).await.unwrap().actions.is_empty());
+            assert_eq!(
+                writer.get_layer(response.id).await.unwrap().layer.state,
+                RecordState::Draft
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn attached_navigation_review_identity_releases_only_terminal_unpublished_drafts() {
+    for terminal in ["stop", "fail", "accept"] {
+        let database = GraphDatabase::in_memory().await.unwrap();
+        database
+            .set_temporal_features(TemporalFeatureConfig {
+                schema_read: true,
+                root_current_write: true,
+                ..TemporalFeatureConfig::default()
+            })
+            .await
+            .unwrap();
+        database
+            .set_interaction_permissions_enabled(true)
+            .await
+            .unwrap();
+        let source = database
+            .create_interaction(Some(project(1)), thread(1), "Source")
+            .await
+            .unwrap();
+        let sw = database.writer_for_subgraph(source.id).await.unwrap();
+        let persistent = node(&sw, "persistent").await;
+        let original = single_node_layer(&sw, "original", &persistent).await;
+        root_expand(&sw, &source, &original).await;
+        sw.complete(source.id).await.unwrap();
+        let mut edits = Vec::new();
+        for index in 2..=3 {
+            let (edit, _) = database
+                .create_interaction_with_context(
+                    Some(project(1)),
+                    thread(index),
+                    "Extend",
+                    &[InteractionContextDraft {
+                        target: InteractionContextTarget {
+                            node_id: persistent.id,
+                            source_interaction_node_id: source.id,
+                            source_layer_id: original.id,
+                        },
+                        annotations: vec![],
+                    }],
+                )
+                .await
+                .unwrap();
+            let writer = database.writer_for_subgraph(edit.id).await.unwrap();
+            let answer = node(&writer, "answer").await;
+            let response = single_node_layer(&writer, "response", &answer).await;
+            root_expand(&writer, &edit, &response).await;
+            let action = ActionDraft {
+                client_key: "stable".into(),
+                source_node_id: persistent.id,
+                source_layer_id: None,
+                kind: ActionKind::Navigate,
+                relation: Some(NavigateRelation::Reference),
+                label: "Response".into(),
+                variant: ActionVariant::default(),
+                icon: None,
+                description: None,
+                target_layer_id: Some(response.id),
+                interaction_text: None,
+                input: None,
+            };
+            edits.push((edit, writer, action));
+        }
+        edits[0].1.add_action(&edits[0].2).await.unwrap();
+        assert!(matches!(
+            edits[1].1.add_action(&edits[1].2).await,
+            Err(GraphError::Validation {
+                code: "action_identity_conflict",
+                ..
+            })
+        ));
+        if terminal == "accept" {
+            edits[0].1.complete(edits[0].0.id).await.unwrap();
+        } else {
+            let transition = if terminal == "stop" {
+                CurrentTransition::Stop {
+                    reason: "cancelled_by_user".into(),
+                }
+            } else {
+                CurrentTransition::Fail {
+                    reason: "provider_start_failed".into(),
+                }
+            };
+            edits[0]
+                .1
+                .transition_current(0, "terminal", transition)
+                .await
+                .unwrap();
+        }
+        let result = edits[1].1.add_action(&edits[1].2).await;
+        if terminal == "accept" {
+            assert!(matches!(
+                result,
+                Err(GraphError::Validation {
+                    code: "action_identity_conflict",
+                    ..
+                })
+            ));
+        } else {
+            result.unwrap();
+            edits[1].1.complete(edits[1].0.id).await.unwrap();
+        }
     }
 }

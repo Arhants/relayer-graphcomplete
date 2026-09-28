@@ -21,7 +21,7 @@ def _layer_declaration(layer: LayerReference, owner: NodeObject | None = None, *
 class ActionObject:
     kind: str
     label: str
-    source_layer: LayerObject
+    source_layer: LayerObject | None
     client_key: str
     target: LayerReference | None = None
     relation: str | None = None
@@ -37,8 +37,12 @@ class ActionObject:
     def to_detail_wire(self, owner: NodeObject, *, _repair_source: NodeObject | None = None) -> dict[str, Any]:
         value: dict[str, Any] = {
             "kind": self.kind, "label": self.label, "clientKey": self.client_key,
-            "sourceLayer": _layer_declaration(self.source_layer, owner, _repair_source=_repair_source), "variant": self.variant,
+            "variant": self.variant,
         }
+        if self.source_layer is not None:
+            value["sourceLayer"] = _layer_declaration(self.source_layer, owner, _repair_source=_repair_source)
+        elif self.kind != "navigate":
+            raise ValueError("Invoke and input visual actions require a source layer")
         if self.icon is not None:
             value["icon"] = self.icon
         if self.description is not None:

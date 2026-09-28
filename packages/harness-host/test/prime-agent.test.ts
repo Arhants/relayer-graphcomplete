@@ -3086,6 +3086,9 @@ function expectGraphAuthoringRules(prompt: string): void {
   expect(prompt).not.toContain("Reused accepted nodes cannot take new actions.");
   expect(prompt).not.toContain("Published records are immutable.");
   expect(prompt).not.toContain("graph.replaceNodePresentation");
+  expect(prompt).toContain("graph.get_node_presentation");
+  expect(prompt).toContain("graph.replace_node_presentation");
+  expect(prompt).toContain("interaction_permissions");
   expect(prompt).toContain("The first current layer may contain visible accepted nodes");
   expect(prompt).toContain("when no prior current exists, it needs no new draft carrier");
   expect(prompt).toContain("Reuse an existing valid path when one already exists");

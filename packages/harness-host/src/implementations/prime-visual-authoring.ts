@@ -6,7 +6,7 @@ const layer = z.object({ clientKey: identity, nodes: z.array(identity).max(8) })
 const presentation = { variant: z.enum(["chip", "pill", "wide", "card"]).optional(), icon: z.string().optional(), description: z.string().optional() };
 const common = { clientKey: identity, label: z.string(), sourceLayer: layer, ...presentation };
 const action = z.discriminatedUnion("kind", [
-  z.object({ ...common, kind: z.literal("navigate"), relation: z.enum(["expand", "reference"]), target: z.union([z.number().int().positive(), layer]) }).strict(),
+  z.object({ ...common, kind: z.literal("navigate"), sourceLayer: layer.optional(), relation: z.enum(["expand", "reference"]), target: z.union([z.number().int().positive(), layer]) }).strict(),
   z.object({ ...common, kind: z.literal("invoke"), interactionText: z.string() }).strict(),
   z.object({ ...common, kind: z.literal("input"), control: z.enum(["text", "single_select", "multi_select"]), prompt: z.string(), options: z.array(z.object({ key: z.string(), label: z.string() }).strict()).max(50).optional(), minimumSelections: z.number().int().optional() }).strict(),
 ]);
@@ -66,7 +66,7 @@ export class PrimeVisualAuthoring {
       if (value.kind === "asset") return assetRef(value.logicalId);
       if (value.kind === "link") return detailCapability.externalLink(value.key, value.href);
       const declaration = value.action;
-      const native = { ...declaration, sourceLayer: makeLayer(declaration.sourceLayer),
+      const native = { ...declaration, ...(declaration.sourceLayer === undefined ? {} : { sourceLayer: makeLayer(declaration.sourceLayer) }),
         ...(declaration.kind === "navigate" ? { target: typeof declaration.target === "number" ? declaration.target : makeLayer(declaration.target) } : {}),
       } as ActionObject;
       if (native.kind === "invoke") return detailCapability.invoke(value.key, native);

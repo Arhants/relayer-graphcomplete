@@ -5,7 +5,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from .authoring import GraphNode, NodeObject, RelayerGraphClient
+from .authoring import GraphNode, NodeObject, NodeReference, RelayerGraphClient, _node_id
 from .exceptions import ConfigurationError, ValidationError
 from .detail import NodeDetailAuthoring
 
@@ -85,6 +85,14 @@ class GraphSession(RelayerGraphClient):
     async def checkpoint_node_detail(self, node: NodeObject) -> Any:
         self.bind_node(node)
         return await self._visual_authoring("checkpoint", node)
+
+    async def replace_node_presentation(self, node: NodeReference, expected_revision: int,
+                                        presentation: NodeObject) -> None:
+        """Stage a compiled full replacement; never submit the semantic node envelope."""
+        authored_detail = await self.checkpoint_node_detail(presentation)
+        await self._request("POST", f"/api/graph/nodes/{_node_id(node)}/presentation", {
+            "expectedRevision": expected_revision, "authoredDetail": authored_detail,
+        })
 
     async def submit_node(self, node: NodeObject) -> GraphNode:
         key = node.detail_authoring

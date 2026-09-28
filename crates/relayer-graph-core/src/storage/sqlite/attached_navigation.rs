@@ -60,7 +60,7 @@ pub(crate) async fn identity_collision(
     node: NodeId,
     key: &str,
 ) -> Result<bool, GraphError> {
-    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM actions WHERE source_node_id=?1 AND client_key=?2 AND owner_interaction_id!=?3 AND type_id!='interaction.context')").bind(node.value()).bind(key).bind(scope.root_node_id.value()).fetch_one(connection).await?)
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM actions a WHERE source_node_id=?1 AND client_key=?2 AND owner_interaction_id!=?3 AND type_id!='interaction.context' AND (a.state='accepted' OR (a.state='draft' AND EXISTS(SELECT 1 FROM completion_states s WHERE s.interaction_node_id=a.owner_interaction_id AND s.lifecycle='active'))))").bind(node.value()).bind(key).bind(scope.root_node_id.value()).fetch_one(connection).await?)
 }
 pub(crate) async fn mark_action(
     connection: &mut GraphConnection,
@@ -84,6 +84,8 @@ pub(crate) async fn expand_cycle(
     let cyclic:bool=sqlx::query_scalar(r#"WITH RECURSIVE paths(source,target) AS (
         SELECT m.node_id,a.target_layer_id FROM attached_navigation_actions m JOIN actions a ON a.id=m.action_id WHERE m.interaction_node_id=?1 AND a.state='accepted' AND a.relation='expand'
         UNION SELECT p.source,a.target_layer_id FROM paths p JOIN layer_nodes n ON n.layer_id=p.target JOIN actions a ON a.source_node_id=n.node_id WHERE a.state='accepted' AND a.kind='navigate' AND a.relation='expand'
+        AND (EXISTS(SELECT 1 FROM layer_actions la WHERE la.layer_id=p.target AND la.action_id=a.id)
+          OR EXISTS(SELECT 1 FROM attached_navigation_actions m JOIN layers l ON l.id=p.target WHERE m.action_id=a.id AND m.interaction_node_id=?1 AND l.state='accepted' AND NOT EXISTS(SELECT 1 FROM graph_imports i WHERE i.thread_id=l.thread_id)))
     ) SELECT EXISTS(SELECT 1 FROM paths p JOIN layer_nodes n ON n.layer_id=p.target AND n.node_id=p.source)"#)
         .bind(scope.root_node_id.value()).fetch_one(&mut *connection).await?;
     Ok(cyclic)

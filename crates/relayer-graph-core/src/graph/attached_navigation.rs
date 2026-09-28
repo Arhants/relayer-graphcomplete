@@ -14,6 +14,12 @@ pub(crate) async fn presentation(
     scope: &InteractionScope,
     node: NodeId,
 ) -> Result<Value, GraphError> {
+    permissions::authorize(
+        connection,
+        scope,
+        &InteractionPermission::NavigateAdd { node_id: node },
+    )
+    .await?;
     let value = NodeTable::new(&mut *connection)
         .visible(scope, node)
         .await?;

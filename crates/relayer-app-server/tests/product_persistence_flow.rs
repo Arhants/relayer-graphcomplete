@@ -2417,9 +2417,16 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
     let read_mode = output_mode.clone();
     let lookup_mode = output_mode.clone();
     let attached_mode = output_mode.clone();
+    let feature_mode = output_mode.clone();
     let unrelated_reads = Arc::new(AtomicUsize::new(0));
     let read_unrelated = unrelated_reads.clone();
     let graph = axum::Router::new()
+        .route("/api/control/interaction-features", axum::routing::get(move || {
+            let mode = feature_mode.load(Ordering::SeqCst); async move {
+                if mode == 8 { StatusCode::NOT_FOUND.into_response() }
+                else { axum::Json(json!({"interactionGraph":false})).into_response() }
+            }
+        }))
         .route("/api/control/interactions/93/output", axum::routing::get(move || {
             let count = read_unrelated.clone(); async move {count.fetch_add(1,Ordering::SeqCst); StatusCode::INTERNAL_SERVER_ERROR}
         }))
@@ -2427,12 +2434,13 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
             "/api/control/resolved-invoke-roots",
             axum::routing::post(move || {let mode = lookup_mode.load(Ordering::SeqCst); async move {
                 if mode == 3 { StatusCode::INTERNAL_SERVER_ERROR.into_response() }
-                else { axum::Json(if mode >= 4 {json!([])} else {json!([90])}).into_response() }
+                else { axum::Json(if (4..8).contains(&mode) {json!([])} else {json!([90])}).into_response() }
             }}),
         )
         .route("/api/control/attached-navigation-roots", axum::routing::post(move || {
             let mode = attached_mode.load(Ordering::SeqCst); async move {
-                if mode == 7 { StatusCode::INTERNAL_SERVER_ERROR.into_response() }
+                if mode == 8 || mode == 9 { StatusCode::NOT_FOUND.into_response() }
+                else if mode == 7 { StatusCode::INTERNAL_SERVER_ERROR.into_response() }
                 else { axum::Json(if mode >= 4 {json!([90])} else {json!([])}).into_response() }
             }
         }))
@@ -2606,7 +2614,7 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
             assert_eq!(view["interactions"][0]["projectionFresh"], true);
         }
     }
-    for mode in [5, 6, 7] {
+    for mode in [5, 6, 7, 9] {
         output_mode.store(mode, Ordering::SeqCst);
         let view = response_json(
             app.clone()
@@ -2621,8 +2629,31 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
         )
         .await;
         assert_eq!(view["interactions"][0]["projectionFresh"], false);
-        assert_eq!(view["interactions"][1]["projectionFresh"], mode != 7);
+        assert_eq!(
+            view["interactions"][1]["projectionFresh"],
+            mode != 7 && mode != 9
+        );
     }
+    // Switch to an older runtime lacking interaction-features. A missing
+    // attached lookup is compatible, while the resolved-invoke refresh stays live.
+    output_mode.store(8, Ordering::SeqCst);
+    let legacy_app =
+        open_app_with_runtime(&database, &root, &catalog, &graph_url, &harness_url).await;
+    let legacy = response_json(
+        legacy_app
+            .clone()
+            .oneshot(api_request_with_token(
+                "GET",
+                &format!("/api/state?threadId={source_thread_id}"),
+                None,
+                "review",
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(legacy["interactions"][0]["projectionFresh"], true);
+    assert_eq!(legacy["interactions"][1]["projectionFresh"], true);
     assert_eq!(unrelated_reads.load(Ordering::SeqCst), 0);
     graph_task.abort();
     harness_task.abort();
