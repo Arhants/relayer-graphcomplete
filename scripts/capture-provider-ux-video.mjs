@@ -5,6 +5,10 @@ import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import {
+  providerSidebarSnapshotFunctionSource,
+  providerSidebarAuditFunctionSource,
+} from "./provider-ux-layout-audit.mjs";
 
 const run = promisify(execFile);
 const repositoryRoot = resolve(import.meta.dirname, "..");
@@ -18,6 +22,8 @@ const ffmpeg = process.env.RELAYER_EVIDENCE_FFMPEG ?? "/opt/homebrew/bin/ffmpeg"
 const framesDirectory = join(outputDirectory, "frames");
 const variantsDirectory = join(outputDirectory, "variants");
 const motionDirectory = join(outputDirectory, "motion");
+const auditMutationsRequested = process.argv.includes("--audit-mutations");
+let sidebarMutationAuditComplete = false;
 const browserProfile = await mkdtemp(join(tmpdir(), "relayer-provider-evidence-"));
 const scenes = [
   ["onboarding", "Choose a provider"],
@@ -283,13 +289,11 @@ async function captureBrowserScene(url, frame, profile, width = 1280, { forcedCo
           const box = (element) => {
             if (!element) return null;
             const rect = element.getBoundingClientRect();
-            return { left: rect.left, right: rect.right, width: rect.width, height: rect.height };
+            return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
           };
           const graphStage = document.querySelector("#graphStage");
           const graphStageRect = graphStage?.getBoundingClientRect();
-          const graphNodes = [...document.querySelectorAll(".graph-node")];
           const sidebar = document.querySelector(".sidebar");
-          const sidebarRect = sidebar?.getBoundingClientRect();
           const sidebarToggle = document.querySelector("#collapseSidebar");
           const accountButton = document.querySelector("#desktopAccountButton");
           const settingsButton = document.querySelector("#settingsButton");
@@ -298,12 +302,7 @@ async function captureBrowserScene(url, frame, profile, width = 1280, { forcedCo
           const activeComposer = newThreadView && !newThreadView.classList.contains("hidden")
             ? newThreadView.querySelector(".new-composer")
             : document.querySelector("#threadComposer");
-          const activeComposerRect = activeComposer?.getBoundingClientRect();
           const graphToolbar = document.querySelector(".graph-controls");
-          const graphToolbarRect = graphToolbar?.getBoundingClientRect();
-          const within = (rect, bounds) => Boolean(rect && bounds)
-            && rect.left >= bounds.left - 0.5 && rect.top >= bounds.top - 0.5
-            && rect.right <= bounds.right + 0.5 && rect.bottom <= bounds.bottom + 0.5;
           const newThreadButton = document.querySelector("#newThread");
           const newThreadIcon = newThreadButton?.querySelector("span");
           const iconOffset = () => {
@@ -330,6 +329,9 @@ async function captureBrowserScene(url, frame, profile, width = 1280, { forcedCo
             sidebarLayout: (() => {
               const scene = new URLSearchParams(location.search).get("scene");
               if (!scene.startsWith("sidebar-")) return null;
+              const collectSidebarSnapshot = ${providerSidebarSnapshotFunctionSource};
+              const snapshot = collectSidebarSnapshot(document, window, scene);
+              const audit = ${providerSidebarAuditFunctionSource}(snapshot);
               return {
                 viewportWidth: innerWidth,
                 newThreadIconCentering,
@@ -339,36 +341,23 @@ async function captureBrowserScene(url, frame, profile, width = 1280, { forcedCo
                 sidebarToggle: box(sidebarToggle),
                 footerAccount: box(accountButton),
                 footerSettings: box(settingsButton),
-                toggleWithinSidebar: within(sidebarToggle?.getBoundingClientRect(), sidebarRect),
-                footerControlsWithinSidebar: within(accountButton?.getBoundingClientRect(), sidebarRect)
-                  && within(settingsButton?.getBoundingClientRect(), sidebarRect),
+                toggleWithinSidebar: audit.toggleWithinSidebar,
+                footerControlsWithinSidebar: audit.footerControlsWithinSidebar,
                 graphStage: box(graphStage),
                 graphZoom: document.querySelector("#graphZoomLevel")?.textContent ?? null,
                 resizeObserverAvailable: typeof ResizeObserver === "function",
-                graphNodes: graphNodes.map((node) => box(node)),
+                graphNodes: snapshot.graphNodes.map((node) => node.rect),
+                graphNodesPresentOnce: audit.graphNodesPresentOnce,
+                graphNodesHavePositiveArea: audit.graphNodesHavePositiveArea,
                 graphToolbar: box(graphToolbar),
-                graphToolbarWithinCanvas: !visible("#graphStage") || within(graphToolbarRect, graphStageRect),
-                allGraphNodesWithinCanvas: Boolean(graphStageRect) && graphNodes.every((node) => {
-                  const rect = node.getBoundingClientRect();
-                  return rect.left >= graphStageRect.left && rect.right <= graphStageRect.right;
-                }),
+                graphToolbarWithinCanvas: audit.graphToolbarWithinCanvas,
+                allGraphNodesWithinCanvas: audit.allGraphNodesWithinCanvas,
                 activeComposer: box(activeComposer),
-                activeComposerWithinViewport: !activeComposerRect || activeComposerRect.left >= -0.5
-                  && activeComposerRect.right <= innerWidth + 0.5,
-                composerControlRects: activeComposerRect ? [...activeComposer.querySelectorAll("button,textarea")]
-                  .filter((control) => control.getClientRects().length > 0 && !control.closest(".scope-menu,.permission-menu,.model-picker-popover"))
-                  .map((control) => ({
-                    label: control.getAttribute("aria-label") || control.textContent.trim().slice(0, 24) || control.tagName,
-                    rect: box(control),
-                    withinComposer: within(control.getBoundingClientRect(), activeComposerRect),
-                  })) : [],
-                composerControlsWithinComposer: !activeComposerRect || [...activeComposer.querySelectorAll("button,textarea")]
-                  .filter((control) => control.getClientRects().length > 0 && !control.closest(".scope-menu,.permission-menu,.model-picker-popover"))
-                  .every((control) => within(control.getBoundingClientRect(), activeComposerRect)),
-                openMenus: [...document.querySelectorAll(".scope-menu:not(.hidden),.permission-menu:not(.hidden),.model-picker-popover:not(.hidden)")]
-                  .map((menu) => box(menu)),
-                menusWithinViewport: [...document.querySelectorAll(".scope-menu:not(.hidden),.permission-menu:not(.hidden),.model-picker-popover:not(.hidden)")]
-                  .every((menu) => within(menu.getBoundingClientRect(), { left: 0, top: 0, right: innerWidth, bottom: innerHeight })),
+                activeComposerWithinViewport: audit.activeComposerWithinViewport,
+                composerControlRects: snapshot.expectedControls.map((control) => ({ rect: control.rect, visible: control.visible })),
+                composerControlsWithinComposer: audit.composerControlsWithinComposer,
+                openMenus: audit.openMenus,
+                menusWithinViewport: audit.menusWithinViewport,
                 documentScrollWidth: document.documentElement.scrollWidth,
               };
             })(),
@@ -422,6 +411,97 @@ async function captureBrowserScene(url, frame, profile, width = 1280, { forcedCo
         returnByValue: true,
       });
       await writeFile(frame.replace(/\.png$/, ".audit.json"), JSON.stringify(audit.result.value, null, 2));
+      if (auditMutationsRequested && !sidebarMutationAuditComplete && scene.startsWith("sidebar-thread-")) {
+        const mutationProof = await cdp.call("Runtime.evaluate", {
+          expression: `(() => {
+            const collect = ${providerSidebarSnapshotFunctionSource};
+            const audit = ${providerSidebarAuditFunctionSource};
+            const results = [];
+            const assert = (name, condition) => {
+              results.push({ name, passed: Boolean(condition) });
+              if (!condition) throw new Error('Provider UX mutation audit failed: ' + name);
+            };
+            const run = (forScene = ${JSON.stringify(scene)}) => audit(collect(document, window, forScene));
+            const baseline = run();
+            assert('unmutated graph/control baseline', baseline.graphNodesPresentOnce && baseline.graphNodesHavePositiveArea
+              && baseline.toggleWithinSidebar && baseline.footerControlsWithinSidebar
+              && baseline.activeComposerWithinViewport && baseline.composerControlsWithinComposer
+              && baseline.graphToolbarWithinCanvas && baseline.allGraphNodesWithinCanvas);
+            const layer = document.querySelector('#graphStage #nodeLayer');
+            const originalNodes = [...layer.querySelectorAll('.graph-node')];
+            const target = originalNodes.find((node) => node.getAttribute('data-node') === '911');
+            for (const [name, omitted] of [['zero graph nodes', originalNodes], ['one graph node', originalNodes.slice(1)]]) {
+              for (const node of omitted) node.remove();
+              assert(name, !run().graphNodesPresentOnce);
+              for (const node of originalNodes) layer.append(node);
+            }
+            const duplicate = originalNodes[0].cloneNode(true);
+            layer.append(duplicate);
+            assert('duplicate graph node', !run().graphNodesPresentOnce);
+            duplicate.remove();
+            const priorTransform = target.style.transform;
+            target.style.transform = 'translateY(2000px)';
+            assert('vertical graph clipping', !run().allGraphNodesWithinCanvas);
+            target.style.transform = 'translateY(-2000px)';
+            assert('graph clipping above canvas', !run().allGraphNodesWithinCanvas);
+            target.style.transform = priorTransform;
+            const toggleParent = document.querySelector('#collapseSidebar').parentElement;
+            const toggleVisibility = toggleParent.style.visibility;
+            toggleParent.style.visibility = 'hidden';
+            assert('hidden toggle ancestor', !run().toggleWithinSidebar);
+            toggleParent.style.visibility = toggleVisibility;
+            const footerParent = document.querySelector('#settingsButton').parentElement;
+            const footerVisibility = footerParent.style.visibility;
+            footerParent.style.visibility = 'hidden';
+            assert('hidden footer ancestor', !run().footerControlsWithinSidebar);
+            footerParent.style.visibility = footerVisibility;
+            const graphToolbar = document.querySelector('.graph-controls');
+            const toolbarVisibility = graphToolbar.style.visibility;
+            graphToolbar.style.visibility = 'hidden';
+            assert('hidden graph toolbar', !run().graphToolbarWithinCanvas);
+            graphToolbar.style.visibility = toolbarVisibility;
+            const composerControlParent = document.querySelector('#sendInteraction').parentElement;
+            const controlVisibility = composerControlParent.style.visibility;
+            composerControlParent.style.visibility = 'hidden';
+            assert('hidden composer controls', !run().composerControlsWithinComposer);
+            composerControlParent.style.visibility = controlVisibility;
+            const composerParent = document.querySelector('#threadComposer').parentElement;
+            const composerDisplay = composerParent.style.display;
+            composerParent.style.display = 'none';
+            assert('hidden composer', !run().activeComposerWithinViewport);
+            composerParent.style.display = composerDisplay;
+            const newThreadView = document.querySelector('#newThreadView');
+            const menu = document.querySelector('#scopeMenu');
+            const menuParent = menu.parentElement;
+            const menuNextSibling = menu.nextSibling;
+            const viewWasHidden = newThreadView.classList.contains('hidden');
+            const menuWasHidden = menu.classList.contains('hidden');
+            const menuStyle = menu.getAttribute('style');
+            newThreadView.classList.remove('hidden');
+            menu.classList.remove('hidden');
+            Object.assign(menu.style, { position: 'fixed', left: '12px', top: '120px', width: '180px', height: '100px', display: 'block', visibility: 'visible', opacity: '1' });
+            const menuScene = 'sidebar-new-thread-483-expanded-scope-menu';
+            assert('rendered expected menu baseline', run(menuScene).menusWithinViewport);
+            for(const [property,value] of [['display','none'],['visibility','hidden'],['opacity','0']]) {
+              const previous=menu.style[property];menu.style[property]=value;
+              assert('hidden expected menu '+property,!run(menuScene).menusWithinViewport);
+              menu.style[property]=previous;
+            }
+            menu.remove();
+            assert('missing expected menu', !run(menuScene).menusWithinViewport);
+            menuParent.insertBefore(menu, menuNextSibling);
+            if (viewWasHidden) newThreadView.classList.add('hidden');
+            if (menuWasHidden) menu.classList.add('hidden');
+            if (menuStyle === null) menu.removeAttribute('style'); else menu.setAttribute('style', menuStyle);
+            assert('restored baseline', JSON.stringify(run())===JSON.stringify(baseline));
+            return { results };
+          })()`,
+          returnByValue: true,
+        });
+        if(mutationProof.exceptionDetails) throw new Error(mutationProof.exceptionDetails.exception?.description || 'Browser mutation proof failed');
+        await writeFile(frame.replace(/\.png$/, ".mutations.json"), JSON.stringify(mutationProof.result.value, null, 2));
+        sidebarMutationAuditComplete = true;
+      }
       return { dom: dom.result.value, audit: audit.result.value };
     } finally {
       cdp.close();
@@ -1154,6 +1234,10 @@ try {
     for (const text of required) {
       if (!dom.includes(text)) throw new Error(`Evidence variant ${scene} is missing ${text}.`);
     }
+    if (scene.startsWith("sidebar-thread-")
+      && (!audit.sidebarLayout?.graphNodesPresentOnce || !audit.sidebarLayout?.graphNodesHavePositiveArea)) {
+      throw new Error(`Saved graph is missing expected visible nodes at ${scene}: ${JSON.stringify(audit.sidebarLayout)}`);
+    }
     if (scene.startsWith("sidebar-thread-") && !audit.sidebarLayout?.allGraphNodesWithinCanvas
       && !(width <= 450 && scene.endsWith("expanded"))) {
       throw new Error(`Saved graph nodes are clipped by the canvas at ${scene}: ${JSON.stringify(audit.sidebarLayout)}`);
@@ -1209,6 +1293,10 @@ try {
         throw new Error(`Evidence variant ${scene} recovery control is ${JSON.stringify(rendered)}.`);
       }
     }
+  }
+
+  if (auditMutationsRequested && !sidebarMutationAuditComplete) {
+    throw new Error("--audit-mutations requires a selected saved-thread sidebar scene to exercise the production audit.");
   }
 
   let motionFrameCount = 0;

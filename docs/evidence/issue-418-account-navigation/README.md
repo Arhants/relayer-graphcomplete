@@ -102,3 +102,76 @@ omitted provider video. The process-bound evidence test exercises a focused
 onboarding capture, then reuses its output directory with stale sentinel files
 for a sidebar-only run and verifies every declared artifact hash. These checks
 cover capture provenance separately from product layout.
+
+## Native minimum and remaining-pane review repair
+
+Five later findings invalidate earlier PASS assertions as merge clearance. The
+native window still had a 960px minimum, Settings could overflow the expanded
+375px layout, collapsed destination buttons lost their names, and capture checks
+could accept absent graph nodes or invisible controls. Earlier receipts prove
+only the scenarios they actually sampled.
+
+Changed seams are the production BrowserWindow minimum, remaining-pane Settings
+CSS, production sidebar destination names (including Eval), and evidence
+presence/visibility/geometry predicates. ACC-008's approved narrow behavior
+requires a reachable native width; its current minimum is 375px, with the existing
+640px minimum height. No smaller-width or cross-platform visual claim is made.
+
+`test/window-factory.test.mjs` checks the production constructor contract and
+security options. `test/eval-sidebar-navigation.test.mjs` renders real destination
+buttons with quoted names. `npm run test:desktop:narrow-sidebar` is the declared
+native proof: it uses `createWindowFactory`, the production preload and renderer,
+and native `setSize`, without device-metrics emulation. It records outer/content
+sizes and actual viewport dimensions; exercises breakpoint entry, expansion,
+preservation and re-entry; inspects the collapsed accessibility tree; and opens
+all seven populated Settings panels through their real navigation controls at
+375px expanded and 620px collapsed. It checks horizontal containment, scrolls
+controls into view, changes theme, and exercises Back focus and the Account path.
+It uses a temporary product profile and deterministic local account/updater and
+provider fixtures, with no paid inference. Screenshots and result JSON are written
+to `RELAYER_NARROW_EVIDENCE_DIR` (default `.relayer/evidence/issue-418-native`).
+
+The Chrome capture portfolio separately covers saved graph identity, visible
+controls and open menus. Native reachability does not replace that portfolio or
+the canonical check/build, compiled Eval, web Eval, and desktop Stop gates.
+Final results and independent source-bound assertions are recorded in PR #477;
+this plan is not a proof claim.
+
+The native portfolio also samples 375px collapsed, 483px expanded (just outside
+the composer's compact threshold), 620px expanded, and 1280px expanded. Every
+system/custom family card is selected and audited, including explicit Enabled,
+Move, Copy/Edit/Delete controls. The custom family editor is opened and cancelled.
+Native text fields/selects may scroll their values internally; their control boxes
+must fit. The existing family carousel may scroll between cards; each selected
+card must fit. At the 640px minimum height, workspace vertical scrolling is allowed,
+and textarea, model selector and Send must each be reachable inside the viewport.
+
+Run the actual-DOM negative proof with
+`node scripts/capture-provider-ux-video.mjs --scene=sidebar-thread-collapsed --audit-mutations --output-dir <directory>`.
+Its fresh `.mutations.json` must include passing baseline and restored-baseline
+checks, plus rejection of missing/duplicate nodes, both vertical clipping
+directions, hidden ancestors/toolbar/composer, and absent/invisible expected menus.
+The same snapshot collector and predicate drive ordinary capture acceptance.
+
+Iterative native attempts are preserved under the external
+`factory-418-native/diagnostic-*` evidence folder. Earlier attempts caught the
+real provider-card overflow, then runner defects (unsupported preload-option
+introspection, a missing embedded variable, inactive carousel cards counted as
+visible, stale test attributes, a nonexistent harness button selector, smooth
+carousel settling, wide sidebar controls checked against the Settings pane, and
+input value scroll widths mistaken for control overflow). They are not passing
+proof. Native diagnostics 9 and 10 passed 56 sampled scenarios before further
+editor coverage was added. The separate `chrome-inspection/` screenshots and
+pointer transcript show actual native collapsed/expanded toggle activation at
+375px on this Mac; this is a limited native hit-target observation, not a
+cross-platform titlebar geometry claim. Final frozen-source results supersede
+diagnostics only when their own receipts and inner scenario results pass.
+
+The first frozen-source gate run (tree `6ff5f5f82cc942860cbf463b06a507dc4eacdd13`)
+was stopped during `npm run check`, before final gate completion. A runner-lifecycle
+defect let Electron exit on last-window close before async cleanup delivered its
+failure exit code. The native runner now handles `window-all-closed` and owns its
+final exit status. A deliberate wrong-minimum assertion is retained externally in
+`factory-418-native/exit-status-proof/` to compare the old and repaired behavior.
+The superseded check log remains under `factory-418-native/gates/`; only a fresh
+frozen-source gate run can certify this repair.

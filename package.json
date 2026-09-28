@@ -79,7 +79,8 @@
     "desktop:release:publish-preview": "node desktop/release/publish-preview.mjs",
     "desktop:release:promote-stable": "node desktop/release/promote-stable.mjs",
     "test:eval-web": "node scripts/test-eval-web.mjs",
-    "test:eval-compiled-runtime": "vitest run --config scripts/eval-compiled.vitest.config.mjs"
+    "test:eval-compiled-runtime": "vitest run --config scripts/eval-compiled.vitest.config.mjs",
+    "test:desktop:narrow-sidebar": "npm run build && electron scripts/test-desktop-narrow-sidebar.mjs"
   },
   "devDependencies": {
     "@actions/cache": "6.2.0",
