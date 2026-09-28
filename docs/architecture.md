@@ -520,6 +520,15 @@ These are planned service boundaries, not implemented product capabilities. See
 [ADR 0011](decisions/0011-shared-thread-snapshot-service.md),
 [ADR 0012](decisions/0012-immutable-shared-thread-snapshots.md), and PRD section 8.4.
 
+The public viewer also has an explicit embed presentation for the website and
+online white paper (PRD 8.4.1). It shares the snapshot reader, adapter, and
+ProductWorkspace. Embed-specific chrome and reading behavior include compact attribution, a
+canonical standalone-share link, equal wide graph/details columns, full-width
+narrow details, explicit wheel zoom, and host-selected theme. The default
+standalone template and hosted CSP contract remain unchanged. A loopback-only
+fixture host exercises the iframe seam locally; hosted routing/framing policy
+belongs to the private service and a later delivery slice.
+
 ## Developer Eval host
 
 Relayer Eval starts from the checkout under Node and serves its dashboard on
@@ -552,3 +561,14 @@ parents are instructed to pass the pinned preference and applicable recipes to
 graph-authoring children. That instruction is not automatic child injection.
 Acceptance establishes graph integrity; rendered-result review establishes
 whether the chosen representation communicates the task effectively.
+
+## Typed interaction permissions (gated Slice 1)
+
+Graph preparation freezes a closed permission description after validating origin
+and context, before execution. One graph-owned authorization seam checks the exact
+operation and active lifecycle. Atomic Return may consume `invoke.resolve` by
+converting that action to node-owned expansion; a durable graph-only receipt admits
+the exact old compiled binding. Search updates preserve each publication's scope.
+The graph-server `--interaction-permissions` qualification flag defaults off.
+Persistent attached-node mutation and portable conversion export remain unavailable;
+see [ADR 0010](decisions/0010-typed-interaction-permissions.md).

@@ -50,6 +50,7 @@ function workspace() {
     showThread: () => setMainView("thread"),
     showEmpty: () => setMainView("new"),
     getNavigationHistory,
+    onOpenReadyResult: () => import("./threads.js").then(({ openReadyResult }) => openReadyResult()),
     onNavigateHistory: async (direction, navigation) => {
       try {
         await navigateHistory(direction, navigation);
@@ -65,8 +66,9 @@ function workspace() {
       projectComposerGate.invalidate();
       return selectTurnById(turnId);
     },
-    onSelectionChange: (nodeId) => {
-      replaceCurrentSelection(nodeId);
+    onSelectionChange: (nodeId, options) => {
+      if (options) replaceCurrentSelection(nodeId, options);
+      else replaceCurrentSelection(nodeId);
       onboardingTutorialController()?.nodeSelected({
         threadId: viewState.currentThreadId,
         interactionId: viewState.currentInteractionId,

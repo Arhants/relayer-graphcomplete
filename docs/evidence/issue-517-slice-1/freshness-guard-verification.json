@@ -1,0 +1,85 @@
+{
+  "parentCommit": "4f2bb250c13dc84a49171013964b27bd1a602d30",
+  "scope": "CI recorder only; all53 feature-manifest file hashes remain unchanged and were reverified",
+  "sourceDigest": "7809d3e9ca7fbf47836857bb9b1cc7daef9606128879662315f7f4fa93c776de",
+  "hashMethod": "sorted relative path + NUL + bytes + NUL",
+  "files": {
+    "docs/agents/ci.md": "8a87f8defb5cf430b66a65e3985049fc45a1b2ade21df1e99e34e182e2667c5a",
+    "scripts/ci/merge-freshness.mjs": "49c3f88aa22eb501ae9d7aea3516c061912a26de57f8d0e1802647ed1d1106c7",
+    "test/ci-merge-freshness.test.mjs": "b104e2e69b733a7ae9e25c0e8f02957c1e2210a2985fdf55189b8d511bac06d2"
+  },
+  "checkpoints": [
+    {
+      "seam": "recordEvidence exact Git checkout authority",
+      "requirement": "Actual2-parent merge, exact GITHUB_SHA and PRhead; firstparent equals observedorigin/main despite stale event base",
+      "test": "Real temporary Git fixture current/stale event variants plus main/head/merge mismatches"
+    },
+    {
+      "seam": "Existing evaluator/sweep trust boundaries unchanged",
+      "requirement": "Expiry, run/attempt, workflow/repo/PR/receipt identity and trusted-main write authority remain enforced",
+      "test": "Full ci-merge-freshness35-case portfolio"
+    }
+  ],
+  "actual": {
+    "red": {
+      "failed": 2,
+      "passed": 33,
+      "log": "/tmp/pr536-freshness-red.log",
+      "reason": "Stale event base rejected valid merge; recorder did not itself reject observed-main mismatch",
+      "logSha256": "70e77646c783311e3fe56a07a4c2ca0c96f738f7c422e75d9e09feb3707b58b4"
+    },
+    "focused": {
+      "status": "passed",
+      "tests": 35,
+      "log": "/tmp/pr536-freshness-green.log",
+      "logSha256": "d3419410295b1627cbe5ce0b0c394165e1cff9eff4d128cba7e45ffc92e299ba"
+    },
+    "fullCheck": {
+      "status": "passed",
+      "exitCode": 0,
+      "mainVitestFilesPassed": 205,
+      "mainVitestTestsPassed": 2674,
+      "mainVitestTestsSkipped": 3,
+      "secretBoundaryTestsPassed": 2,
+      "pythonTestsPassed": 43,
+      "rustAndCrashReconciliation": "passed",
+      "receiptLint": "passed",
+      "prdReadability": "passed",
+      "log": "/tmp/pr536-freshness-check.log",
+      "logSha256": "a984dd62bb774d6b85d0c5eb76edeccd80c8b9868e363ccc1d4b563da618a251"
+    },
+    "build": {
+      "status": "passed",
+      "exitCode": 0,
+      "log": "/tmp/pr536-freshness-build.log",
+      "logSha256": "ddcfdfa4ed418c7e41d341dce3e3928d03f4d4bdfd3f6e7837b604143efceabb"
+    }
+  },
+  "required": [
+    "npm run check",
+    "npm run build",
+    "independent authority review",
+    "fresh remote CI and merge-freshness"
+  ],
+  "desktopProof": "Not rerun: no product/runtime/renderer behavior changes; prior exact feature proof retained",
+  "workflowPermissionsChanged": false,
+  "paidInference": false,
+  "review": [
+    {
+      "reviewer": "pr536_spec",
+      "sourceDigest": "7809d3e9ca7fbf47836857bb9b1cc7daef9606128879662315f7f4fa93c776de",
+      "scope": "Three files listed in this manifest; recorder actual merge authority, stale event handling and fail-closed mismatch protections",
+      "verdict": "PASS; no unresolved findings",
+      "independentTests": "35/35 freshness tests passed",
+      "unresolved": []
+    },
+    {
+      "reviewer": "pr536_standards",
+      "sourceDigest": "7809d3e9ca7fbf47836857bb9b1cc7daef9606128879662315f7f4fa93c776de",
+      "scope": "Same three-file narrow CI delta against4f2bb250; repository standards and documentation",
+      "verdict": "PASS; no unresolved findings",
+      "independentTests": "Static review only",
+      "unresolved": []
+    }
+  ]
+}

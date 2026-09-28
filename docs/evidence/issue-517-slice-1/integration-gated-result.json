@@ -1,0 +1,105 @@
+{
+  "typedPermissions": true,
+  "nativeKeyboardVerified": false,
+  "passed": true,
+  "typedPermissionJourneyPassed": true,
+  "ancillaryFailures": [],
+  "harness": "fixture-task-system",
+  "inferenceCalls": 0,
+  "shiftEnterValue": null,
+  "threadCount": 1,
+  "completionStatus": "accepted",
+  "renderedNodes": [
+    "Incoming queue",
+    "Two-worker pool",
+    "Results store"
+  ],
+  "screenshotPath": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/.relayer/evidence/first-message-enter-smoke.png",
+  "evalScreenshotPath": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/.relayer/evidence/first-message-enter-smoke-eval.png",
+  "evalNarrowScreenshotPath": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/.relayer/evidence/first-message-enter-smoke-eval-narrow.png",
+  "productNavigationState": {
+    "rows": 4,
+    "scrollable": true,
+    "backEnabled": true,
+    "breadcrumbSegments": 2,
+    "selectedNodeId": "43",
+    "inspectorFit": {
+      "initialContained": true,
+      "restoredContained": true,
+      "openToOpenPreserved": true,
+      "closePreserved": true,
+      "dragSelectionSuppressed": true
+    }
+  },
+  "evalNavigationState": {
+    "rows": 4,
+    "scrollable": true,
+    "backEnabled": true,
+    "breadcrumbSegments": 2,
+    "readOnlyCopy": "Read-only evaluation result\n    \u2726Model\u2304\n    \n      \n        Model\n        Advanced\n      \n      \n      \n      \n    \n  \u2191",
+    "viewportWidth": 1480,
+    "inspectorFit": {
+      "desktopContained": true,
+      "narrowOverlayPreservedStage": true,
+      "narrowOverlayPreservedCamera": true,
+      "redockedContained": true
+    }
+  },
+  "layoutEvidence": {
+    "rootProductEvalParity": true,
+    "childProductEvalParity": true,
+    "narrowViewportPreservedCanonicalLayout": true,
+    "productRootLayout": [
+      [
+        "40",
+        223.8,
+        298,
+        "authored"
+      ],
+      [
+        "41",
+        480,
+        298,
+        "authored"
+      ],
+      [
+        "42",
+        736.1999999999999,
+        298,
+        "authored"
+      ]
+    ],
+    "productChildLayout": [
+      [
+        "42",
+        480,
+        440.8,
+        "authored"
+      ],
+      [
+        "43",
+        297,
+        298,
+        "authored"
+      ],
+      [
+        "44",
+        663,
+        298,
+        "authored"
+      ]
+    ]
+  },
+  "invokeResultInteractionId": 2,
+  "invokeEvidencePaths": {
+    "unresolved": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/integration-gated/01-unresolved.png",
+    "runningDisabled": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/integration-gated/02-running-disabled.png",
+    "resolved": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/integration-gated/03-resolved.png",
+    "crossInteraction": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/integration-gated/04-cross-interaction-destination.png",
+    "revisited": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/integration-gated/05-revisited-source.png",
+    "evalCrossInteraction": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/integration-gated/06-eval-cross-interaction-destination.png",
+    "reopenedSecondOccurrence": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/integration-gated/07-reopened-second-occurrence.png",
+    "reopenedDestination": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/integration-gated/08-reopened-destination.png"
+  },
+  "sourceDigest": "1eae477c40effc19cdeac99fd99f1beb6ca0bd236b1ffdae8b2a259a7f734b38"
+}

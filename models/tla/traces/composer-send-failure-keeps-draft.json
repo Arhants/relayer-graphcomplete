@@ -1,0 +1,518 @@
+{
+  "scenario": "composer-send-failure-keeps-draft",
+  "module": "TurnComposer",
+  "summary": "A rejected follow-up leaves its text in the composer.",
+  "promises": [
+    "UnsentDraftSurvives",
+    "SettlementClearsOnlySentText",
+    "SentTextIsNotShownAgain"
+  ],
+  "generatedBy": "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
+  "steps": [
+    {
+      "action": null,
+      "state": {
+        "active": {
+          "1": "A",
+          "2": 1
+        },
+        "cleared": 0,
+        "disabled": false,
+        "drafts": {
+          "<<\"A\", 1>>": {
+            "rev": 1,
+            "text": 0
+          },
+          "<<\"A\", 2>>": {
+            "rev": 0,
+            "text": 3
+          },
+          "<<\"B\", 1>>": {
+            "rev": 0,
+            "text": 3
+          },
+          "<<\"B\", 2>>": {
+            "rev": 0,
+            "text": 3
+          }
+        },
+        "fresh": 0,
+        "held": {},
+        "intent": {
+          "A": {
+            "rev": 0,
+            "scope": {
+              "1": "A",
+              "2": 1
+            },
+            "text": 0
+          },
+          "B": {
+            "rev": 0,
+            "scope": {
+              "1": "B",
+              "2": 1
+            },
+            "text": 0
+          }
+        },
+        "latest": {
+          "A": 1,
+          "B": 1
+        },
+        "owner": "none",
+        "pc": {
+          "A": "idle",
+          "B": "idle"
+        },
+        "pendingTurn": {
+          "A": false,
+          "B": false
+        },
+        "persisted": {
+          "<<\"A\", 1>>": 3,
+          "<<\"A\", 2>>": 3,
+          "<<\"B\", 1>>": 3,
+          "<<\"B\", 2>>": 3
+        },
+        "rev": 1,
+        "running": {
+          "A": false,
+          "B": false
+        },
+        "sent": {},
+        "superseded": {},
+        "text": 0,
+        "uncertainAt": {},
+        "unsent": {
+          "A": 0,
+          "B": 0
+        },
+        "view": "A"
+      }
+    },
+    {
+      "action": [
+        "Type"
+      ],
+      "state": {
+        "active": {
+          "1": "A",
+          "2": 1
+        },
+        "cleared": 0,
+        "disabled": false,
+        "drafts": {
+          "<<\"A\", 1>>": {
+            "rev": 1,
+            "text": 0
+          },
+          "<<\"A\", 2>>": {
+            "rev": 0,
+            "text": 3
+          },
+          "<<\"B\", 1>>": {
+            "rev": 0,
+            "text": 3
+          },
+          "<<\"B\", 2>>": {
+            "rev": 0,
+            "text": 3
+          }
+        },
+        "fresh": 1,
+        "held": {},
+        "intent": {
+          "A": {
+            "rev": 0,
+            "scope": {
+              "1": "A",
+              "2": 1
+            },
+            "text": 0
+          },
+          "B": {
+            "rev": 0,
+            "scope": {
+              "1": "B",
+              "2": 1
+            },
+            "text": 0
+          }
+        },
+        "latest": {
+          "A": 1,
+          "B": 1
+        },
+        "owner": "none",
+        "pc": {
+          "A": "idle",
+          "B": "idle"
+        },
+        "pendingTurn": {
+          "A": false,
+          "B": false
+        },
+        "persisted": {
+          "<<\"A\", 1>>": 1,
+          "<<\"A\", 2>>": 3,
+          "<<\"B\", 1>>": 3,
+          "<<\"B\", 2>>": 3
+        },
+        "rev": 2,
+        "running": {
+          "A": false,
+          "B": false
+        },
+        "sent": {},
+        "superseded": {},
+        "text": 1,
+        "uncertainAt": {},
+        "unsent": {
+          "A": 1,
+          "B": 0
+        },
+        "view": "A"
+      }
+    },
+    {
+      "action": [
+        "ClickSend"
+      ],
+      "state": {
+        "active": {
+          "1": "A",
+          "2": 1
+        },
+        "cleared": 0,
+        "disabled": false,
+        "drafts": {
+          "<<\"A\", 1>>": {
+            "rev": 1,
+            "text": 0
+          },
+          "<<\"A\", 2>>": {
+            "rev": 0,
+            "text": 3
+          },
+          "<<\"B\", 1>>": {
+            "rev": 0,
+            "text": 3
+          },
+          "<<\"B\", 2>>": {
+            "rev": 0,
+            "text": 3
+          }
+        },
+        "fresh": 1,
+        "held": {},
+        "intent": {
+          "A": {
+            "rev": 2,
+            "scope": {
+              "1": "A",
+              "2": 1
+            },
+            "text": 1
+          },
+          "B": {
+            "rev": 0,
+            "scope": {
+              "1": "B",
+              "2": 1
+            },
+            "text": 0
+          }
+        },
+        "latest": {
+          "A": 1,
+          "B": 1
+        },
+        "owner": "A",
+        "pc": {
+          "A": "post",
+          "B": "idle"
+        },
+        "pendingTurn": {
+          "A": false,
+          "B": false
+        },
+        "persisted": {
+          "<<\"A\", 1>>": 1,
+          "<<\"A\", 2>>": 3,
+          "<<\"B\", 1>>": 3,
+          "<<\"B\", 2>>": 3
+        },
+        "rev": 2,
+        "running": {
+          "A": false,
+          "B": false
+        },
+        "sent": {},
+        "superseded": {},
+        "text": 1,
+        "uncertainAt": {},
+        "unsent": {
+          "A": 1,
+          "B": 0
+        },
+        "view": "A"
+      }
+    },
+    {
+      "action": [
+        "PostFails",
+        "A"
+      ],
+      "state": {
+        "active": {
+          "1": "A",
+          "2": 1
+        },
+        "cleared": 0,
+        "disabled": false,
+        "drafts": {
+          "<<\"A\", 1>>": {
+            "rev": 1,
+            "text": 0
+          },
+          "<<\"A\", 2>>": {
+            "rev": 0,
+            "text": 3
+          },
+          "<<\"B\", 1>>": {
+            "rev": 0,
+            "text": 3
+          },
+          "<<\"B\", 2>>": {
+            "rev": 0,
+            "text": 3
+          }
+        },
+        "fresh": 1,
+        "held": {},
+        "intent": {
+          "A": {
+            "rev": 2,
+            "scope": {
+              "1": "A",
+              "2": 1
+            },
+            "text": 1
+          },
+          "B": {
+            "rev": 0,
+            "scope": {
+              "1": "B",
+              "2": 1
+            },
+            "text": 0
+          }
+        },
+        "latest": {
+          "A": 1,
+          "B": 1
+        },
+        "owner": "none",
+        "pc": {
+          "A": "idle",
+          "B": "idle"
+        },
+        "pendingTurn": {
+          "A": false,
+          "B": false
+        },
+        "persisted": {
+          "<<\"A\", 1>>": 1,
+          "<<\"A\", 2>>": 3,
+          "<<\"B\", 1>>": 3,
+          "<<\"B\", 2>>": 3
+        },
+        "rev": 2,
+        "running": {
+          "A": false,
+          "B": false
+        },
+        "sent": {},
+        "superseded": {},
+        "text": 1,
+        "uncertainAt": {},
+        "unsent": {
+          "A": 1,
+          "B": 0
+        },
+        "view": "A"
+      }
+    },
+    {
+      "action": [
+        "SwitchThread",
+        "B"
+      ],
+      "state": {
+        "active": {
+          "1": "B",
+          "2": 1
+        },
+        "cleared": 0,
+        "disabled": false,
+        "drafts": {
+          "<<\"A\", 1>>": {
+            "rev": 2,
+            "text": 1
+          },
+          "<<\"A\", 2>>": {
+            "rev": 0,
+            "text": 3
+          },
+          "<<\"B\", 1>>": {
+            "rev": 3,
+            "text": 0
+          },
+          "<<\"B\", 2>>": {
+            "rev": 0,
+            "text": 3
+          }
+        },
+        "fresh": 1,
+        "held": {},
+        "intent": {
+          "A": {
+            "rev": 2,
+            "scope": {
+              "1": "A",
+              "2": 1
+            },
+            "text": 1
+          },
+          "B": {
+            "rev": 0,
+            "scope": {
+              "1": "B",
+              "2": 1
+            },
+            "text": 0
+          }
+        },
+        "latest": {
+          "A": 1,
+          "B": 1
+        },
+        "owner": "none",
+        "pc": {
+          "A": "idle",
+          "B": "idle"
+        },
+        "pendingTurn": {
+          "A": false,
+          "B": false
+        },
+        "persisted": {
+          "<<\"A\", 1>>": 1,
+          "<<\"A\", 2>>": 3,
+          "<<\"B\", 1>>": 3,
+          "<<\"B\", 2>>": 3
+        },
+        "rev": 3,
+        "running": {
+          "A": false,
+          "B": false
+        },
+        "sent": {},
+        "superseded": {},
+        "text": 0,
+        "uncertainAt": {},
+        "unsent": {
+          "A": 1,
+          "B": 0
+        },
+        "view": "B"
+      }
+    },
+    {
+      "action": [
+        "SwitchThread",
+        "A"
+      ],
+      "state": {
+        "active": {
+          "1": "A",
+          "2": 1
+        },
+        "cleared": 0,
+        "disabled": false,
+        "drafts": {
+          "<<\"A\", 1>>": {
+            "rev": 2,
+            "text": 1
+          },
+          "<<\"A\", 2>>": {
+            "rev": 0,
+            "text": 3
+          },
+          "<<\"B\", 1>>": {
+            "rev": 3,
+            "text": 0
+          },
+          "<<\"B\", 2>>": {
+            "rev": 0,
+            "text": 3
+          }
+        },
+        "fresh": 1,
+        "held": {},
+        "intent": {
+          "A": {
+            "rev": 2,
+            "scope": {
+              "1": "A",
+              "2": 1
+            },
+            "text": 1
+          },
+          "B": {
+            "rev": 0,
+            "scope": {
+              "1": "B",
+              "2": 1
+            },
+            "text": 0
+          }
+        },
+        "latest": {
+          "A": 1,
+          "B": 1
+        },
+        "owner": "none",
+        "pc": {
+          "A": "idle",
+          "B": "idle"
+        },
+        "pendingTurn": {
+          "A": false,
+          "B": false
+        },
+        "persisted": {
+          "<<\"A\", 1>>": 1,
+          "<<\"A\", 2>>": 3,
+          "<<\"B\", 1>>": 3,
+          "<<\"B\", 2>>": 3
+        },
+        "rev": 2,
+        "running": {
+          "A": false,
+          "B": false
+        },
+        "sent": {},
+        "superseded": {},
+        "text": 1,
+        "uncertainAt": {},
+        "unsent": {
+          "A": 1,
+          "B": 0
+        },
+        "view": "A"
+      }
+    }
+  ]
+}

@@ -7,6 +7,8 @@ mod ids;
 mod input;
 mod layer;
 mod node;
+mod permission;
+pub use permission::{InteractionPermission, InteractionPermissions};
 mod record_state;
 
 pub use action::{

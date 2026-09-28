@@ -63,6 +63,11 @@ atomically fills that accepted `invoke` action's target with the accepted result
 root exactly once. Derived neighbor reads expose the source node without an
 authored edge, and pre-lease invocations are not backfilled.
 
+The default-off [typed-permission slice](docs/decisions/0010-typed-interaction-permissions.md)
+converts newly prepared leased actions to `navigate/expand` at acceptance. It keeps
+persistent attached-node edits disabled and defers portable conversion snapshots
+to Slice 2.
+
 The `prime.agent` adapter uses the exact reviewed Prime Agent build recorded in
 `vendor/prime-agent/manifest.json`. Its four content-addressed package archives,
 runtime API contract, production configurations, and Python graph client are

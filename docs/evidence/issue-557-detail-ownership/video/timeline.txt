@@ -1,0 +1,15 @@
+file 'before-1.png'
+duration 3
+file 'before-2.png'
+duration 3
+file 'before-3.png'
+duration 3
+file 'rejection.png'
+duration 6
+file 'after-1.png'
+duration 3
+file 'after-2.png'
+duration 3
+file 'after-3.png'
+duration 3
+file 'after-3.png'

@@ -459,7 +459,7 @@ describe("desktop environment rail", () => {
     expect(inspectorEscapeShouldClose({ ...base, inspectorOpen: false })).toBe(false);
   });
 
-  it("uses one structural rail and preserves the existing inspector beneath Environment", async () => {
+  it("keeps one review capture boundary and an on-demand Environment surface", async () => {
     const markup = productWorkspaceMarkup();
     const environmentStart = markup.indexOf('id="environmentPanel"');
     const inspectorStart = markup.indexOf('id="inspector"');
@@ -469,22 +469,22 @@ describe("desktop environment rail", () => {
     expect(environmentStart).toBeGreaterThan(markup.indexOf('id="interactionBanner"'));
     expect(inspectorStart).toBeGreaterThan(environmentStart);
     expect(markup).toContain('id="interactionStatus" role="status"');
-    expect(markup).not.toContain("Ready");
+    expect(markup.slice(environmentStart, inspectorStart)).not.toContain(">Ready<");
     expect(markup).not.toContain("Successful checks");
     expect(markup).not.toContain("Codex · Ask");
 
     const styles = await readFile(new URL("../desktop/renderer/styles.css", import.meta.url), "utf8");
-    expect(styles).toContain("--inspector:340px");
-    expect(styles).toContain("grid-template-columns:minmax(0,1fr) var(--inspector)");
+    expect(markup).toContain('aria-controls="environmentPanel"');
+    expect(styles).toContain("--graph-share,50%");
     // The workspace grid clears the window chrome instead of starting flush
     // against it, and the top inset matches the right one.
     expect(styles).toContain("padding:12px 12px 0 0");
     expect(styles).toContain("padding:12px 12px 12px");
     expect(styles).not.toContain("padding:0 12px 0 0");
     expect(styles).toContain('html[data-theme="light"] .workspace-breadcrumb.root-annotation-only{background:transparent}');
-    expect(styles).toContain(".environment-panel{grid-column:2;grid-row:1 / 3");
+    expect(styles).toContain(".workspace-layout .environment-panel{position:fixed;");
     expect(styles).toContain(".interaction-banner{grid-column:1;grid-row:2;margin:8px 0 12px 12px");
-    expect(styles).toContain(".environment-panel{grid-column:2;grid-row:1 / 3;margin:0 0 12px");
+
     expect(styles).toContain(".thread-workspace{grid-column:1 / -1;grid-row:3");
     expect(styles).toContain(".inspector{width:var(--inspector)");
     expect(styles).not.toContain(".inspector{position:absolute");
