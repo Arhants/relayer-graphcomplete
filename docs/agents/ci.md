@@ -61,10 +61,15 @@ Both publication APIs are scoped to the head SHA, while receipts belong to a PR.
 Before success, the guard re-lists open main-targeting PRs and rejects any shared
 head. Use a unique head commit for each open PR. Listing failure fails closed;
 PR changes after this check remain subject to the scheduled refresh limitation.
-Close events explicitly revoke both results for the closed PR's current head,
+Close and retarget-away events revoke both results for the PR's current head,
 before listing open PRs. This prevents indefinite success after closure, including
 when the listing fails. Revocation still depends on asynchronous event delivery;
 a delayed, dropped, or failed close workflow can leave stale success visible.
+PR event triggers therefore allow every base branch; the workflow always checks
+out protected `main`, and only open main-targeting PRs can receive success.
+[GitHub's current `pull_request_target` behavior](https://github.blog/changelog/2025-11-07-actions-pull_request_target-and-environment-branch-protections-changes/)
+uses the default branch workflow and `GITHUB_REF` regardless of the PR base,
+so the job's main-ref restriction remains in place for retarget-away events.
 Previously successful historical heads are not revoked by this current-head
 handler. Reusing those SHAs remains subject to the opening sweep's delay.
 The old `merge-freshness` check remains dual-published during migration. Both
@@ -122,6 +127,7 @@ Checkpoint mapping (no product runtime behavior changes):
 | Shared head SHA does not select another PR's run or an older success | PR-specific run selection scenario |
 | Shared-head publications cannot lend one PR's evidence to another | both PR orderings, newly shared head after evidence IO, and failed re-list journeys |
 | A closed PR's current head does not remain successful after its close handler runs | success/close/reuse journey and closure revocation before failed open-PR listing |
+| Retargeting away from main revokes current-head success | retarget/revoke journey with failed listing; all-base event trigger and protected-main checkout assertions |
 | Migration cannot retain the obsolete required context | authority audit rejects legacy alongside replacement while allowing unrelated checks |
 | Artifact bytes never executed or extracted | real ZIP decoder scenarios |
 | Trusted checkout, permissions, schedule and required contexts | workflow/ruleset contract scenario |

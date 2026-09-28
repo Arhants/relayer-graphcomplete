@@ -177,6 +177,19 @@ describe("scheduled merge freshness", () => {
     expect(fake.outputs.at(-1).conclusion).toBe("failure");
   });
 
+  it("revokes a PR retargeted away from main even when open-main listing fails", async () => {
+    const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
+    await sweep(fake.options);
+    f.pr.base.ref = "integration/train";
+    fake.api.paginate = async (method, args) => {
+      if (method === fake.api.rest.pulls.list) throw new Error("list unavailable");
+      return paginate(method, args);
+    };
+    await expect(sweep({ ...fake.options, pullNumber: 42 })).rejects.toThrow("list unavailable");
+    expect(fake.statuses[0]).toMatchObject({ state: "failure", sha: head });
+    expect(fake.outputs.at(-1).conclusion).toBe("failure");
+  });
+
   it("selects the current PR's latest run even when other PRs share its head SHA", async () => {
     const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
     const ownRun = { ...f.run, pull_requests: [{ number: 42, head: { sha: head } }] };
@@ -376,6 +389,7 @@ describe("scheduled merge freshness", () => {
     expect(workflow.on.schedule).toEqual([{ cron: "7,22,37,52 * * * *" }]);
     expect(workflow.on.workflow_run).toEqual({ workflows: ["CI"], types: ["completed"] });
     expect(workflow.on.pull_request_target.types).toContain("closed");
+    expect(workflow.on.pull_request_target.branches).toBeUndefined();
     expect(workflow.concurrency).toEqual({ group: "merge-freshness-writer", "cancel-in-progress": false });
     expect(workflow.permissions).toEqual({ contents: "read", actions: "read", "pull-requests": "read", checks: "write", statuses: "write" });
     expect(workflow.jobs.refresh.if).toBe("github.ref == 'refs/heads/main'");

@@ -92,7 +92,7 @@ export async function sweep({ github, owner, repo, pullNumber, clock = Date.now,
         description: "Freshness check could not be refreshed; retry the guard" });
     }
   };
-  // A closed PR is absent from open-PR sweeps. Handle its event first, even if
+  // Closed/retargeted PRs are absent from open-main sweeps. Handle events first, even if
   // listing open PRs fails, using a fresh API read rather than event head data.
   const eventNumber = Number.isSafeInteger(pullNumber) && pullNumber > 0 ? pullNumber : undefined;
   if (eventNumber) await refresh({ number: eventNumber });
@@ -103,7 +103,7 @@ export async function sweep({ github, owner, repo, pullNumber, clock = Date.now,
 
 async function refreshPullRequest({ github, owner, repo, repository, listed, clock, decode }) {
   const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: listed.number });
-  if (pr.base.ref !== "main") return null;
+  const eligible = pr.state === "open" && pr.base.ref === "main";
   // Revoke the previous success before doing fallible evidence IO. Global
   // workflow concurrency serializes writers; recheck head before completion.
   const status = (state, description) => github.rest.repos.createCommitStatus({
@@ -121,15 +121,15 @@ async function refreshPullRequest({ github, owner, repo, repository, listed, clo
   ]);
   if (pending.some((result) => result.status === "rejected")) throw new Error("Freshness revocation failed");
   const check = pending[0].value.data;
-  let verdict = { conclusion: "failure", description: pr.state === "open"
+  let verdict = { conclusion: "failure", description: eligible
     ? "Freshness status capacity exhausted; update branch to a new head"
-    : "PR closed; its CI evidence cannot authorize another PR" };
+    : "PR closed or retargeted; its CI evidence cannot authorize another PR" };
   try {
     // Read capacity only AFTER revocation: an API error must not strand success.
-    const statuses = pr.state === "open" ? await github.paginate(github.rest.repos.listCommitStatusesForRef, {
+    const statuses = eligible ? await github.paginate(github.rest.repos.listCommitStatusesForRef, {
       owner, repo, ref: pr.head.sha, per_page: 100,
     }) : [];
-    if (pr.state === "open" && statuses.filter((item) => item.context?.toLowerCase() === STATUS_CONTEXT).length < STATUS_SUCCESS_LIMIT) {
+    if (eligible && statuses.filter((item) => item.context?.toLowerCase() === STATUS_CONTEXT).length < STATUS_SUCCESS_LIMIT) {
       const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
         owner, repo, workflow_id: "ci.yml", event: "pull_request", head_sha: pr.head.sha, per_page: 100,
       });
