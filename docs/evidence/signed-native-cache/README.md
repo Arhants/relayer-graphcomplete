@@ -39,7 +39,7 @@ Base: `f80766648b4ff06b64584c042a7afcd5ccb410f3`, fetched from `origin/main`.
 Local branch: `codex/signed-native-cache` in the dedicated managed worktree.
 Node: 22.23.2. Rust: 1.98.0. No signed workflow or release action was executed.
 
-Original cache executable/workflow/test source digest (unchanged by merge-readiness fixes):
+Original cache executable/workflow/test source digest (superseded by pagination below):
 `7b9b7fa3c99b41e744cbb404b698fab4086651832e11630f9a289edbfaaf29d1`.
 Algorithm: sort the eight paths listed below; hash each UTF-8 path, one NUL, and
 its raw 32-byte file SHA-256 into one SHA-256 stream.
@@ -172,6 +172,40 @@ packages/harness-host/test/codex-secret-provider-process.test.ts
 scripts/ci/merge-freshness.mjs
 test/ci-merge-freshness.test.mjs
 ```
+
+### GitHub review follow-up: artifact pagination
+
+The hosted review identified a compatible-artifact discovery gap after 100 newer
+unrelated repository artifacts. Discovery now reads at most five pages of 100
+artifacts and keeps at most five matching candidates. Every candidate still
+passes the same API provenance, archive digest, inventory and consumer checks.
+Older entries beyond this bounded search remain a fresh-build miss. The restore
+journey now verifies a real fixture on page two after 100 unrelated artifacts;
+the same scenario verifies that an exhausted search stops after five pages.
+
+Reviewer `cache_contract_review` reviewed the updated eight-file scope above:
+`e3f6365fe8c5757af712dc535fe1f729d07e0dabf46599090c2ecbe96dd8d49c`.
+Verdict: no unresolved actionable findings. The reviewer independently passed
+the nine cache cases and two collector cases with Node 22.23.2. Earlier cache
+review assertions remain historical; this assertion covers pagination.
+
+CI run `36425263607` passed on the preceding head, including 2,698 Linux
+JavaScript tests and the 34 freshness cases. GitHub nevertheless showed the
+required freshness result as Expected: repeated guard runs on the same head
+attached custom checks to an older check suite. One original-run retry did not
+clear that discrepancy. The pagination follow-up supplies a new head and fresh
+CI; no required status, protection, or freshness acceptance rule was relaxed.
+
+Final local pagination validation: `npm run check` passed its Rust stages, then
+failed one unchanged graph-search parity case at line 76 with a query wall-time
+budget error (2,687 ordinary JavaScript cases passed, one failed, three skipped).
+An isolated run of that case passed in 6.84 seconds. Contention is plausible,
+not established; the failed broad run remains a failure. No budget was changed.
+The stages skipped by that failure ran explicitly and passed: two native Codex
+cases, 47 Python cases, receipt lint and PRD readability. `npm run build` and
+`npm run evidence:telemetry` also passed; the latter reran five Rust cases and
+115 JavaScript cases against the updated cache scope. Fresh final-head hosted
+CI must include the parity case and full selected portfolio before handoff.
 
 ### Remaining authorized release-context proof
 

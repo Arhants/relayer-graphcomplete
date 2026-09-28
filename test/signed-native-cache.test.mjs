@@ -102,6 +102,21 @@ test("restore authenticates archive before extraction; rechecks provenance and p
   const options = { identity, directory: join(f.root, "restored"), environment, capture, fetchImpl, report: () => {} };
   expect((await restoreSignedNative(options)).payload).toBe(join(options.directory, "payload"));
   expect(requests.filter((url) => url.endsWith("/runs/123"))).toHaveLength(2);
+  const pages = [];
+  const unrelated = Array.from({ length: 100 }, (_, id) => ({ id: id + 1000, name: "unrelated-ci-output" }));
+  const paginatedFetch = async (url) => {
+    if (url.includes("/artifacts?")) {
+      const page = Number(new URL(url).searchParams.get("page"));
+      pages.push(page);
+      return Response.json({ total_count: 101, artifacts: page === 1 ? unrelated : [data.artifact] });
+    }
+    return fetchImpl(url);
+  };
+  expect((await restoreSignedNative({ ...options, fetchImpl: paginatedFetch })).payload).toBe(join(options.directory, "payload"));
+  expect(pages).toEqual([1, 2]);
+  const boundedLookup = vi.fn(async () => Response.json({ total_count: 10000, artifacts: unrelated }));
+  expect(await restoreSignedNative({ ...options, fetchImpl: boundedLookup })).toBeNull();
+  expect(boundedLookup).toHaveBeenCalledTimes(5);
   data.artifact.digest = `sha256:${"d".repeat(64)}`;
   const extract = vi.fn();
   expect(await restoreSignedNative({ ...options, extract })).toBeNull();

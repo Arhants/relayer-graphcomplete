@@ -81,8 +81,13 @@ export async function restoreSignedNative({ identity, directory, environment, ca
       return response.json();
     };
     // Bounded search; an old/evicted entry is an ordinary fresh-build miss.
-    const listed = await json(`${base}/artifacts?per_page=100`);
-    const candidates = (listed.artifacts ?? []).filter((item) => item.name?.startsWith(`relayer-signed-native-v1-${identity}-`) && !item.expired).slice(0, 5);
+    const candidates = [];
+    for (let page = 1; page <= 5 && candidates.length < 5; page += 1) {
+      const listed = await json(`${base}/artifacts?per_page=100&page=${page}`);
+      const artifacts = listed.artifacts ?? [];
+      candidates.push(...artifacts.filter((item) => item.name?.startsWith(`relayer-signed-native-v1-${identity}-`) && !item.expired).slice(0, 5 - candidates.length));
+      if (artifacts.length < 100 || page * 100 >= listed.total_count) break;
+    }
     for (const listedArtifact of candidates) {
       try {
         if (!Number.isSafeInteger(listedArtifact.id) || listedArtifact.id <= 0) throw Error("invalid artifact ID");

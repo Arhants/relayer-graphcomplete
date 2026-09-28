@@ -430,7 +430,7 @@ and signed workflow. Unsupported ambient build settings disable reuse. Native
 content can be reused across commits with identical inputs; the current
 candidate still requires its own exact-source main CI and fresh release metadata.
 
-Restore searches at most 100 recent workflow artifacts and considers up to five
+Restore searches at most five pages of 100 recent workflow artifacts and considers up to five
 matching identities. Each entry requires GitHub API provenance for this repository,
 this manual main signed workflow, a completed successful run and successful
 macOS arm64 package job in the named attempt. Artifact name and receipt bind run,
