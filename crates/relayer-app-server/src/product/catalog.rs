@@ -98,6 +98,10 @@ pub(crate) struct RuntimeProductHarness {
     pub(crate) model_rules: Option<HarnessModelRules>,
     pub(crate) execution_access_contracts: Vec<String>,
     pub(crate) family_policy: Option<FamilyPolicyReference>,
+    /// For a readiness-coordinated harness, `runtime_available` says only that the local
+    /// runtime files validate. Startup then restores ready only from the app server's own
+    /// previous record for the same runtime configuration digest (PROV-006).
+    pub(crate) restore_prior_readiness: bool,
     pub(crate) runtime_available: bool,
     pub(crate) unavailable_reason: Option<UnavailableReason>,
 }
@@ -316,6 +320,42 @@ pub(crate) struct ProviderDefinition {
     pub(crate) credential_reference: Option<String>,
     pub(crate) lifecycle_state: String,
     pub(crate) removed_at: Option<String>,
+    /// Owned by the catalog store (PROV-002): reads report it, writes of a definition ignore it.
+    #[serde(default = "first_connection_generation")]
+    pub(crate) connection_generation: i64,
+}
+
+pub(crate) const fn first_connection_generation() -> i64 {
+    1
+}
+
+/// The provider lifecycle event a catalog publish commits, if any. Each advances the
+/// provider's connection generation in the publish's own transaction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ProviderConnectionEvent {
+    /// A reconnect completed: its discovered catalog becomes current.
+    Reconnected,
+    /// The provider was signed out: it is disconnected from now on.
+    SignedOut,
+}
+
+/// The connection generation a catalog result started with (PROV-002). The store rejects the
+/// publish, inside its write transaction, unless this is still the provider's generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProviderConnectionStamp {
+    pub(crate) generation: i64,
+    pub(crate) event: Option<ProviderConnectionEvent>,
+}
+
+#[cfg(test)]
+impl ProviderConnectionStamp {
+    pub(crate) const fn refresh(generation: i64) -> Self {
+        Self {
+            generation,
+            event: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

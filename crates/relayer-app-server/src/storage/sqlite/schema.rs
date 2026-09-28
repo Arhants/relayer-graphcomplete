@@ -242,6 +242,7 @@ const MODEL_PROVIDER_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("credential_reference", "TEXT", false, 0),
     ("lifecycle_state", "TEXT", true, 0),
     ("removed_at", "TEXT", false, 0),
+    ("connection_generation", "INTEGER", true, 0),
 ];
 const PROVIDER_MODEL_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("provider_id", "TEXT", true, 1),

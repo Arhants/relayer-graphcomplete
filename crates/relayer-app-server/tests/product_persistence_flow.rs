@@ -6575,7 +6575,22 @@ async fn persists_project_thread_and_interaction_across_restart() {
             .fetch_one(&migration_pool)
             .await
             .unwrap();
-    assert_eq!(applied_migrations, 34);
+    // Every shipped migration applied; counted from the source so stacked migrations merge cleanly.
+    let shipped_migrations = std::fs::read_dir(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/storage/sqlite/migrations"),
+    )
+    .unwrap()
+    .filter(|entry| {
+        entry
+            .as_ref()
+            .unwrap()
+            .path()
+            .extension()
+            .is_some_and(|extension| extension == "sql")
+    })
+    .count() as i64;
+    assert!(shipped_migrations >= 33);
+    assert_eq!(applied_migrations, shipped_migrations);
     migration_pool.close().await;
 
     let incompatible_database = root.join("incompatible.sqlite3");
@@ -8283,6 +8298,61 @@ async fn sqlite_pool(database: &Path) -> sqlx::SqlitePool {
         .unwrap()
 }
 
+/// Leaves one terminal attempt whose lease release was never acknowledged, as a crash after
+/// the outcome was persisted would.
+async fn seed_startup_lease_debt(database: &Path, root: &Path) {
+    let offline = open_app(database, root).await;
+    let thread = response_json(
+        offline
+            .oneshot(api_request(
+                "POST",
+                "/api/threads",
+                Some(json!({"initialMessage":"Earlier turn"})),
+                true,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let thread_id = thread["id"].as_i64().unwrap();
+    seed_explicit_test_model_default(database, thread_id).await;
+    let pool = sqlite_pool(database).await;
+    let interaction_id: i64 =
+        sqlx::query_scalar("SELECT id FROM interactions WHERE thread_id=?1 ORDER BY id LIMIT 1")
+            .bind(thread_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let (family_id, family_revision): (i64, i64) =
+        sqlx::query_as("SELECT id,revision FROM model_families ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let finished_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .to_string();
+    sqlx::query(
+        "INSERT INTO interaction_attempts(
+            interaction_id,attempt_number,started_at,finished_at,family_id,family_revision,
+            harness_configuration_name,harness_configuration_revision,harness_configuration_digest,
+            provider_id,adapter_id,adapter_implementation_version,model_id,access_contract,
+            outcome,failure_category,effect_boundary,execution_lease_id
+         ) VALUES (?1,1,?2,?2,?3,?4,'codex-basic',1,'sha256:model-test',
+            'codex','test-adapter',1,'test-model','managed-runtime@1',
+            'execution_failed','execution_failed','unknown','startup-barrier')",
+    )
+    .bind(interaction_id)
+    .bind(&finished_at)
+    .bind(family_id)
+    .bind(family_revision)
+    .execute(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+}
+
 async fn seed_explicit_test_model_default(database: &Path, thread_id: i64) {
     let pool = sqlite_pool(database).await;
     sqlx::query("UPDATE model_providers SET connected=1,unavailable_reason_code=NULL,unavailable_reason_message=NULL,refreshed_at='1',lifecycle_state='active',removed_at=NULL WHERE id='codex'")
@@ -8735,6 +8805,7 @@ fn test_provider_snapshot() -> Value {
         "providerId": "codex",
         "label": "Codex",
         "connected": true,
+        "connectionGeneration": 1,
         "models": [
             {
                 "id": "test-model",
@@ -8841,7 +8912,9 @@ struct QuarantinedTurn {
 async fn attempt_lease_rows(database: &Path) -> Vec<(i64, String, Option<String>, Option<String>)> {
     let pool = sqlite_pool(database).await;
     let rows: Vec<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT id,outcome,execution_lease_id,execution_lease_reconciled_at FROM interaction_attempts ORDER BY id",
+        // The fixture's startup barrier attempt is not part of any scenario under test.
+        "SELECT id,outcome,execution_lease_id,execution_lease_reconciled_at FROM interaction_attempts
+         WHERE execution_lease_id IS NOT 'startup-barrier' ORDER BY id",
     )
     .fetch_all(&pool)
     .await
@@ -9224,8 +9297,30 @@ async fn run_turn_whose_outcome_is_not_persisted(ending: UnpersistedTurnEnding) 
         .to_string(),
     )
     .unwrap();
+    // A terminal attempt from before this start carries lease debt, so the reconciler's
+    // startup scan has something to release. Waiting for that release below is the barrier
+    // that proves the startup wake is spent before the test measures any later wake.
+    seed_startup_lease_debt(&database, &root).await;
     let app =
         open_app_with_runtime_observed(&database, &root, &catalog, &graph_url, &harness_url).await;
+    let barrier = std::time::Instant::now() + Duration::from_secs(5);
+    while (lease_deletes.load(Ordering::SeqCst) == 0
+        || !unreconciled_lease_debts(&database).await.is_empty())
+        && std::time::Instant::now() < barrier
+    {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        lease_deletes.load(Ordering::SeqCst),
+        1,
+        "setup: the startup scan released the seeded debt"
+    );
+    assert!(
+        unreconciled_lease_debts(&database).await.is_empty(),
+        "setup: the startup scan finished"
+    );
+    // Count only the releases the turn under test causes.
+    lease_deletes.store(0, Ordering::SeqCst);
     if ending == UnpersistedTurnEnding::WaitEndRefused {
         let pool = sqlite_pool(&database).await;
         sqlx::query(
@@ -9457,7 +9552,8 @@ async fn opening_a_quarantined_thread_wakes_the_reconciler_for_its_settled_attem
     let deletes_before = turn.lease_deletes.load(Ordering::SeqCst);
     let pool = sqlite_pool(&turn.database).await;
     sqlx::query(
-        "UPDATE interaction_attempts SET native_wait_ended_at=NULL,execution_lease_reconciled_at=NULL",
+        "UPDATE interaction_attempts SET native_wait_ended_at=NULL,execution_lease_reconciled_at=NULL
+         WHERE execution_lease_id IS NOT 'startup-barrier'",
     )
     .execute(&pool)
     .await

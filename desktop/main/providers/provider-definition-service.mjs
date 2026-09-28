@@ -45,6 +45,32 @@ export function isTerminalConnectionFailure(error) {
 // for the retry. Only `disconnected` means the login is genuinely still open.
 export const MAX_TRANSIENT_ACCOUNT_CHECKS = 3;
 
+// The app server owns each provider's connection generation (PROV-002). A new provider
+// starts here; reconnect completion, sign-out and removal advance it.
+export const FIRST_CONNECTION_GENERATION = 1;
+// The app server's refusal of a publish from an older connection generation.
+const CONNECTION_SUPERSEDED = "provider_connection_superseded";
+
+// A staged create whose outcome is unknown: the store gave no answer, and reading it back
+// failed too. Its durable leftovers stay for startup reconciliation, which keeps them only
+// if the definition committed (F2).
+export class ProviderPersistenceUnknown extends Error {
+  constructor(cause) {
+    super(cause instanceof Error ? cause.message : String(cause ?? "Provider creation outcome is unknown."));
+    this.name = "ProviderPersistenceUnknown";
+    this.cause = cause;
+  }
+}
+
+// The disconnected catalog a sign-out commits with the next connection generation.
+function signedOutCatalog(definition) {
+  return {
+    provider: { id: definition.id, label: definition.label, status: "disconnected", unavailableReason: null },
+    models: [],
+    systemFamily: { id: definition.id, label: definition.label, modelIds: [] },
+  };
+}
+
 export class ProviderDefinitionService {
   constructor({
     registry,
@@ -92,6 +118,9 @@ export class ProviderDefinitionService {
     this.preparingConnections = new Map();
     this.activeExecutions = new Map();
     this.statusOverrides = new Map();
+    // Generations learned after load. Kept apart from this.definitions, which queued
+    // operations replace wholesale, so a resync outside the queue is never lost.
+    this.connectionGenerations = new Map();
     this.queue = Promise.resolve();
     this.nextPreparationOrder = 1;
     this.lifecycleTasks = new Set();
@@ -116,6 +145,37 @@ export class ProviderDefinitionService {
   async #initialize() {
     if (this.definitions === null) this.definitions = await this.definitionStore.load();
     return this.definitions;
+  }
+
+  /**
+   * The connection generation a provider result starting now is tied to (PROV-002), or null
+   * when the provider is not active. Its result has an effect only while this is unchanged.
+   */
+  connectionGeneration(id) {
+    const definition = this.definitions?.find((item) => item.id === id);
+    if (!definition || definition.lifecycleState !== "active") return null;
+    return Math.max(
+      definition.connectionGeneration ?? FIRST_CONNECTION_GENERATION,
+      this.connectionGenerations.get(id) ?? FIRST_CONNECTION_GENERATION,
+    );
+  }
+
+  /** Rereads a generation the app server refused as stale. Generations only increase. */
+  async resyncConnectionGeneration(id) {
+    const stored = (await this.definitionStore.load()).find((item) => item.id === id);
+    if (Number.isSafeInteger(stored?.connectionGeneration)) this.#recordGeneration(id, stored.connectionGeneration);
+  }
+
+  #recordGeneration(id, generation) {
+    if (generation > (this.connectionGenerations.get(id) ?? 0)) this.connectionGenerations.set(id, generation);
+  }
+
+  // A lifecycle publish the app server refused because this process held an older
+  // generation, for example after a lost response. Learn the current one.
+  async #relearnAfterRefusal(id, error) {
+    if (error?.code !== CONNECTION_SUPERSEDED) return false;
+    try { await this.resyncConnectionGeneration(id); } catch { return false; }
+    return true;
   }
 
   async list({ includeTombstones = false } = {}) {
@@ -220,7 +280,6 @@ export class ProviderDefinitionService {
     this.preparingConnections.set(id, preparation);
     let runtime;
     let credentialStored = false;
-    let runtimeRegistrationAttempted = false;
     try {
       await this.#serialized(async () => {
         await this.#initialize();
@@ -272,26 +331,19 @@ export class ProviderDefinitionService {
           providerDefinition: publicDefinition(candidate),
           models: catalog.models ?? [],
         });
-        runtimeRegistrationAttempted = true;
-        await this.onRuntimeReady(candidate, runtime);
         signal?.throwIfAborted();
         if (preparation.cancelled) throw new Error("Provider connection was cancelled.");
         // Past this point the provider commit may perform atomic persistence
         // that cannot truthfully be reported to the renderer as cancelled.
         preparation.cancellable = false;
+        // The credential precedes the commit so a committed definition always has it; a
+        // failure below removes it again (PROV-007).
         if (credentialReference) {
           await this.credentialStore.set(credentialReference, fields);
           credentialStored = true;
         }
-        if (typeof this.definitionStore.createWithCatalog === "function") {
-          await this.definitionStore.createWithCatalog(candidate, catalog, { signal });
-          this.definitions.push(candidate);
-        } else {
-          await this.publishCatalog(catalog, { signal });
-          await this.definitionStore.save([...this.definitions, candidate]);
-          this.definitions.push(candidate);
-        }
-        this.runtimes.set(id, runtime);
+        await this.#persistNewProvider(candidate, catalog, signal);
+        await this.#activateCommitted(candidate, runtime);
         return Object.freeze({ status: "connected", providerDefinition: publicDefinition(candidate) });
       });
     } catch (error) {
@@ -301,20 +353,100 @@ export class ProviderDefinitionService {
         providerId: id,
         ...providerDiagnosticDetails(error),
       }).catch(() => undefined);
-      if (runtimeRegistrationAttempted) {
-        try { await this.onRuntimeRemoved(candidate); } catch { /* preserve the connection failure */ }
-      }
+      // An unknown outcome keeps the credential and runtime state for startup to reconcile.
+      const unknown = error instanceof ProviderPersistenceUnknown;
       try { await runtime?.close?.(); } catch { /* preserve the connection failure */ }
-      if (runtime) {
+      if (runtime && !unknown) {
         try { await this.removeRuntimeState(candidate); } catch { /* preserve the connection failure */ }
       }
-      if (credentialStored) {
+      if (credentialStored && !unknown) {
         try { await this.credentialStore.delete(credentialReference); } catch { /* preserve the connection failure */ }
       }
       throw error;
     } finally {
       this.preparingConnections.delete(id);
     }
+  }
+
+  /**
+   * Persists a new provider's definition with its first catalog. Nothing publishes for the
+   * provider before its definition exists (PROV-007). Once this returns, the definition is
+   * durable and the connection stands.
+   */
+  async #persistNewProvider(candidate, catalog, signal) {
+    if (typeof this.definitionStore.createWithCatalog !== "function") {
+      await this.definitionStore.save([...this.definitions, candidate]);
+      this.definitions.push({ ...candidate, connectionGeneration: FIRST_CONNECTION_GENERATION });
+      // The definition exists, so the connection succeeded. A first catalog that fails to
+      // publish is left to the next refresh, as any failed refresh is.
+      await Promise.resolve()
+        .then(() => this.publishCatalog(catalog, { signal, connectionGeneration: FIRST_CONNECTION_GENERATION }))
+        .catch(() => undefined);
+      return;
+    }
+    let generation = FIRST_CONNECTION_GENERATION;
+    try {
+      await this.definitionStore.createWithCatalog(candidate, catalog, { signal });
+    } catch (error) {
+      // A refusal carries the store's code and committed nothing.
+      if (typeof error?.code === "string") throw error;
+      // No answer: the create may have committed before its response was lost (F2). Read
+      // the store back, and adopt the definition if it is there. A create the app server
+      // commits only after this read is not caught here; its definition then activates
+      // without a credential and shows the recovery state until it is removed.
+      let stored;
+      try {
+        stored = await this.definitionStore.load();
+      } catch {
+        throw new ProviderPersistenceUnknown(error);
+      }
+      const committed = stored.find((item) => item.id === candidate.id && item.lifecycleState === "active");
+      if (!committed) throw error;
+      generation = committed.connectionGeneration ?? FIRST_CONNECTION_GENERATION;
+    }
+    this.definitions.push({ ...candidate, connectionGeneration: generation });
+  }
+
+  /**
+   * Registers the runtime and catalog adapter of a committed connection. The adapter exists
+   * only once the definition does (PROV-007). A registration failure cannot undo the commit,
+   * so, as for a failed startup activation, the provider keeps the recovery adapter.
+   */
+  async #activateCommitted(definition, runtime) {
+    this.runtimes.set(definition.id, runtime);
+    try {
+      await this.onRuntimeReady(definition, runtime);
+    } catch (error) {
+      if (this.runtimes.get(definition.id) === runtime) this.runtimes.delete(definition.id);
+      try { await runtime.close?.(); } catch { /* the registration failure is reported */ }
+      await this.#markUnavailable(definition, error);
+    }
+  }
+
+  // The recovery state of a provider whose runtime could not be registered: its status says
+  // so, and its recovery adapter's explicit refresh retries the activation.
+  async #markUnavailable(definition, error) {
+    this.statusOverrides.set(definition.id, {
+      connected: false,
+      unavailableReason: {
+        code: "provider_activation_failed",
+        message: "The provider could not be activated.",
+      },
+    });
+    try { await this.onRuntimeUnavailable(definition, error); } catch (publicationError) {
+      await this.diagnostics?.write({
+        category: "provider_activation_status_publish_failed",
+        adapterId: definition.adapterId,
+        providerId: definition.id,
+        ...providerDiagnosticDetails(publicationError),
+      }).catch(() => undefined);
+    }
+    await this.diagnostics?.write({
+      category: "provider_activation_failed",
+      adapterId: definition.adapterId,
+      providerId: definition.id,
+      ...providerDiagnosticDetails(error),
+    }).catch(() => undefined);
   }
 
   async #discover(runtime, signal) {
@@ -397,7 +529,6 @@ export class ProviderDefinitionService {
           login: Object.freeze({ ...(pending.login ?? {}) }),
         });
       }
-      let runtimeRegistrationAttempted = false;
       try {
         const catalog = await this.#discover(pending.runtime, signal);
         if (catalog.provider?.status === "unavailable") throw new Error(catalog.provider.unavailableReason ?? "Provider is unavailable.");
@@ -406,26 +537,19 @@ export class ProviderDefinitionService {
           providerDefinition: publicDefinition(pending.candidate),
           models: catalog.models ?? [],
         });
-        runtimeRegistrationAttempted = true;
-        await this.onRuntimeReady(pending.candidate, pending.runtime);
         if (pending.reconnect === true) {
-          await this.publishCatalog(catalog, { signal });
-          this.runtimes.set(connectionId, pending.runtime);
-          this.statusOverrides.delete(connectionId);
-          this.pendingConnections.delete(connectionId);
-          return Object.freeze({ status: "connected", providerDefinition: publicDefinition(pending.candidate) });
-        }
-        if (typeof this.definitionStore.createWithCatalog === "function") {
-          await this.definitionStore.createWithCatalog(pending.candidate, catalog, { signal });
-          this.definitions.push(pending.candidate);
+          // The reconnect's catalog and the next connection generation commit together, so
+          // every result still in flight from before it is inert (PROV-002). A reconnect a
+          // later lifecycle action superseded is refused here and changes nothing.
+          await this.publishCatalog(catalog, {
+            signal,
+            connectionGeneration: pending.generation,
+            connectionEvent: "reconnected",
+          });
+          this.#recordGeneration(connectionId, pending.generation + 1);
         } else {
-          await this.publishCatalog(catalog, { signal });
-          await this.definitionStore.save([...this.definitions, pending.candidate]);
-          this.definitions.push(pending.candidate);
+          await this.#persistNewProvider(pending.candidate, catalog, signal);
         }
-        this.runtimes.set(connectionId, pending.runtime);
-        this.pendingConnections.delete(connectionId);
-        return Object.freeze({ status: "connected", providerDefinition: publicDefinition(pending.candidate) });
       } catch (error) {
         await this.diagnostics?.write({
           category: "managed_provider_catalog_failed",
@@ -433,11 +557,23 @@ export class ProviderDefinitionService {
           providerId: pending.candidate.id,
           ...providerDiagnosticDetails(error),
         }).catch(() => undefined);
-        if (runtimeRegistrationAttempted && pending.reconnect !== true) {
-          try { await this.onRuntimeRemoved(pending.candidate); } catch { /* preserve the connection failure */ }
+        // A later lifecycle action superseded this reconnect. It settles as failed, and the
+        // next attempt starts from the app server's generation.
+        if (pending.reconnect === true) await this.#relearnAfterRefusal(connectionId, error);
+        if (error instanceof ProviderPersistenceUnknown) {
+          // Keep the runtime state; startup keeps it only if the definition committed.
+          this.pendingConnections.delete(connectionId);
+          this.runtimes.delete(connectionId);
+          try { await pending.runtime.close?.(); } catch { /* preserve the connection failure */ }
+          throw new TerminalConnectionFailure(error);
         }
         throw await settle(error);
       }
+      this.pendingConnections.delete(connectionId);
+      if (pending.reconnect === true) this.statusOverrides.delete(connectionId);
+      // Only a committed connection registers its catalog adapter (PROV-002, PROV-007).
+      await this.#activateCommitted(pending.candidate, pending.runtime);
+      return Object.freeze({ status: "connected", providerDefinition: publicDefinition(pending.candidate) });
     });
   }
 
@@ -464,7 +600,30 @@ export class ProviderDefinitionService {
     if (!pending) return false;
     this.pendingConnections.delete(connectionId);
     if (pending.reconnect === true) {
-      this.runtimes.delete(connectionId);
+      if (this.runtimes.get(connectionId) === pending.runtime) this.runtimes.delete(connectionId);
+      await Promise.allSettled([
+        pending.runtime.close?.(),
+        this.removeRuntimeState(pending.candidate),
+      ]);
+      // A cancelled or failed reconnect leaves the active provider with a catalog adapter
+      // (F4). A reconnect that created its runtime never replaced the recovery adapter, so
+      // that one stays. A reconnect that reused the live runtime closed it above; a fresh
+      // runtime takes its place, or the recovery adapter if none can start.
+      if (pending.createdRuntime !== true && !this.closing
+        && this.definitions?.some((item) => item.id === connectionId && item.lifecycleState === "active")) {
+        try {
+          const restored = await this.#runtimeFor(pending.candidate);
+          if (this.closing) {
+            // close() does not wait for this queue; it may already have cleared the runtimes.
+            if (this.runtimes.get(connectionId) === restored) this.runtimes.delete(connectionId);
+            await restored.close?.().catch(() => undefined);
+          }
+        } catch (error) {
+          // The recovery adapter now stands in, and the status says so.
+          await this.#markUnavailable(pending.candidate, error);
+          return true;
+        }
+      }
       this.statusOverrides.set(connectionId, {
         connected: false,
         unavailableReason: {
@@ -472,11 +631,6 @@ export class ProviderDefinitionService {
           message: "The provider is signed out.",
         },
       });
-      await Promise.allSettled([
-        pending.runtime.close?.(),
-        this.onRuntimeRemoved(pending.candidate),
-        this.removeRuntimeState(pending.candidate),
-      ]);
       return true;
     }
     this.runtimes.delete(connectionId);
@@ -530,16 +684,39 @@ export class ProviderDefinitionService {
           message: "The provider is signed out.",
         },
       });
+      const logoutFailed = (error) => this.diagnostics?.write({
+        category: "provider_logout_catalog_refresh_failed",
+        adapterId: definition.adapterId,
+        providerId: id,
+        ...providerDiagnosticDetails(error),
+      }).catch(() => undefined);
+      // The disconnected state and the next connection generation commit together, so every
+      // result still in flight from the signed-in account is inert (PROV-002).
+      const signOut = async () => {
+        const generation = this.connectionGeneration(id);
+        await this.publishCatalog(signedOutCatalog(definition), {
+          signal,
+          connectionGeneration: generation,
+          connectionEvent: "signed-out",
+        });
+        this.#recordGeneration(id, generation + 1);
+      };
       try {
-        await this.onRuntimeChanged(definition, runtime);
+        try {
+          await signOut();
+        } catch (error) {
+          // Sign-out is the user's latest action, so it retries once at the current generation.
+          if (!await this.#relearnAfterRefusal(id, error)) throw error;
+          await signOut();
+        }
       } catch (error) {
-        await this.diagnostics?.write({
-          category: "provider_logout_catalog_refresh_failed",
-          adapterId: definition.adapterId,
-          providerId: id,
-          ...providerDiagnosticDetails(error),
-        }).catch(() => undefined);
+        await logoutFailed(error);
       }
+      // The follow-up refresh runs behind this queue, not inside it. Awaiting it here would
+      // deadlock behind an explicit refresh that is waiting for this queue (CR-V7).
+      Promise.resolve()
+        .then(() => this.onRuntimeChanged(definition, runtime))
+        .catch(logoutFailed);
       return Object.freeze({ ...(account ?? { status: "disconnected" }) });
     });
   }
@@ -587,8 +764,18 @@ export class ProviderDefinitionService {
         }
         throw error;
       }
+      // The generation this reconnect starts with, read from the app server; completing the
+      // reconnect advances it.
+      try { await this.resyncConnectionGeneration(id); } catch { /* the known one stands */ }
       this.runtimes.set(id, runtime);
-      this.pendingConnections.set(id, { candidate: definition, runtime, login, reconnect: true });
+      this.pendingConnections.set(id, {
+        candidate: definition,
+        runtime,
+        login,
+        reconnect: true,
+        createdRuntime,
+        generation: this.connectionGeneration(id),
+      });
       this.statusOverrides.set(id, {
         connected: false,
         unavailableReason: {
@@ -684,6 +871,9 @@ export class ProviderDefinitionService {
       signal?.throwIfAborted();
       if (this.closing) throw new Error("Provider setup is shutting down.");
       const definition = this.#activeDefinition(id);
+      // A pending reconnect owns the provider's next runtime. Recovery must not discover
+      // through the runtime that reconnect is signing in (L1).
+      if (this.pendingConnections.has(id)) throw new Error("Provider reconnect is pending.");
       const runtime = await this.#runtimeFor(definition);
       return this.#discover(runtime, signal);
     });
@@ -696,27 +886,7 @@ export class ProviderDefinitionService {
         try {
           await this.#runtimeFor(definition);
         } catch (error) {
-          this.statusOverrides.set(definition.id, {
-            connected: false,
-            unavailableReason: {
-              code: "provider_activation_failed",
-              message: "The provider could not be activated.",
-            },
-          });
-          try { await this.onRuntimeUnavailable(definition, error); } catch (publicationError) {
-            await this.diagnostics?.write({
-              category: "provider_activation_status_publish_failed",
-              adapterId: definition.adapterId,
-              providerId: definition.id,
-              ...providerDiagnosticDetails(publicationError),
-            }).catch(() => undefined);
-          }
-          await this.diagnostics?.write({
-            category: "provider_activation_failed",
-            adapterId: definition.adapterId,
-            providerId: definition.id,
-            ...providerDiagnosticDetails(error),
-          }).catch(() => undefined);
+          await this.#markUnavailable(definition, error);
         }
       }
     });

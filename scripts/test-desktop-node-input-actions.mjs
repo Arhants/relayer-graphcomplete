@@ -220,7 +220,7 @@ async function startServices() {
     }),
   });
   const runtimeSession = await runtime.start();
-  catalogRefreshServer = await startModelCatalogRefreshServer({ refresh: () => product.publishProviderCatalog(catalogSnapshot) });
+  catalogRefreshServer = await startModelCatalogRefreshServer({ refresh: () => product.seedProviderCatalog(catalogSnapshot) });
   product = new RelayerAppServerService({
     userDataDirectory: dataDirectory,
     binaryPath: join(repositoryRoot, "target", "debug", "relayer-app-server"),
@@ -231,7 +231,7 @@ async function startServices() {
     defaultHarnessConfiguration: "fixture-task-system",
   });
   productSession = await product.start();
-  await product.publishProviderCatalog(catalogSnapshot);
+  await product.seedProviderCatalog(catalogSnapshot);
 }
 
 async function run() {

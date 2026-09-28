@@ -157,7 +157,7 @@ renderer.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `provider-leased-runtime` | Plausible: narrow window | Rust admits a turn while `P` still reads connected in SQLite, and the user then signs out and reconnects. When the harness takes its lease, `acquireExecution` hands out the runtime the pending reconnect registered, because it never checks `pendingConnections`. A failed handoff, a cancel or a terminal check then runs `#cancelPendingConnection`, which closes that runtime under the turn. |
+| `provider-leased-runtime` | Plausible: narrow window | Rust admits a turn while `P` still reads connected in SQLite, and the user then signs out and reconnects. When the harness takes its lease, `acquireExecution` hands out the runtime the pending reconnect registered, because it never checks `pendingConnections`. A failed handoff, a cancel or a terminal check then runs `#cancelPendingConnection`, which closes that runtime under the turn. Since PR 4 the cancel registers a fresh runtime in its place (F4), but the leased one still closes. |
 | `provider-remove-during-reconnect` | Fixed; now passes | Before the fix: after sign out, Reconnect, then Remove, the pending reconnect outlived the removal and could still complete. Now `remove()` drops it as the provider enters `removal_pending`, which "immediately blocks new attempts through it" (docs/architecture.md). The runtime stays in `this.runtimes` for turns still draining, and it closes with the tombstone. The PRD is silent here, so this is an architecture-backed decision. Scenario: `provider-remove-during-reconnect`. |
 | `provider-attempt-ownership` | Fixed; now passes | Before the fix: `bindConnection` ran only after `connect()`/`reconnect()` (including `login()`) and `openExternal` resolved. It added a `destroyed` listener to contents already destroyed, and that listener never fired. It now cancels the attempt instead. This restores PRD BRW-005. Scenario: `provider-destroyed-before-bind`. |
 | `provider-close` | Plausible: depends on shutdown order | `close()` waits for lifecycle tasks but not for the queue, and `acquireExecution` ignores `closing`. A turn admitted before shutdown can create and register a runtime after the maps are cleared. |
@@ -168,13 +168,16 @@ renderer.
 This model covers the model catalog and the default provider and family:
 
 - **Desktop main:** the per-provider catalog refresh queue
-  (`model-catalog-service.mjs`), which captures its adapter when a refresh is
-  requested. It also covers the pre-inference join, `close()`, the unavailable
-  stub's explicit recovery, and logout, reconnect, remove and connect at the
-  points where they meet that queue.
+  (`model-catalog-service.mjs`). Before PR 4 a refresh captured its adapter
+  when it was requested; now it resolves the adapter and the connection
+  generation when it runs. The model also covers the pre-inference join,
+  `close()`, the unavailable stub's explicit recovery, and logout, reconnect,
+  remove and connect at the points where they meet that queue.
 - **SQLite catalog:** a publish reactivates or tombstones the provider's
-  managed family and reconciles an unset or managed default. It also covers
-  the user's default provider and family choices and the removal guard.
+  managed family and reconciles an unset or managed default. With the
+  generation, it first refuses a result from an older connection generation.
+  It also covers the user's default provider and family choices and the
+  removal guard.
 
 There are two providers: the existing managed provider `P`, and `Q`, which
 starts absent and may connect. The families are their managed families `mP`
@@ -182,26 +185,43 @@ and `mQ`, and one custom family `C` with members from both. Each check
 shrinks the bounds in `catalog-today`. On an idle machine the two slowest,
 the default-provider checks, take about 10 and 20 seconds.
 
-`catalog-today` has one fix constant:
+`catalog-today` has four fix constants, all landed:
 
 - `DefaultProviderPairsFamily`: choosing a default provider also selects that
   provider's enabled managed family, in the same transaction. A provider
-  without one is refused, and the defaults stay unchanged. Landed (PROV-008).
+  without one is refused, and the defaults stay unchanged (PROV-008).
+- `ConnectionGeneration`: each provider row carries a connection generation.
+  Logout, reconnect completion and removal advance it in their own
+  transaction. A refresh resolves its adapter and generation when it starts.
+  Rust refuses a publish from an older generation inside its write
+  transaction. Logout commits its signed-out state itself and no longer waits
+  for its refresh inside the provider queue (PROV-002).
+- `ReconnectKeepsAdapter`: a cancelled or failed reconnect leaves the active
+  provider a catalog adapter. Recovery refuses while a reconnect is pending,
+  so it never discovers through that reconnect's runtime (F4, L1).
+- `AdapterAfterCommit`: connect registers the catalog adapter only after the
+  definition commits (PROV-007).
 
-The five open bug checks below are fixed together by a later PR, the provider
-connection generation (PR 4). That PR ties each catalog result to the
-provider's connection generation, and it will add its own constant.
+Each `-reverted` check turns one constant off and keeps the others on, so its
+violation comes only from its own mechanism.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
 | `catalog-refresh-keeps-chosen-default` | Fixed; now passes | Before the fix, the Settings default-provider selector saved only `providerId`. Rust stored that provider with the old provider's managed family. The next catalog publish for the old provider matched "the default family is my managed family" and moved the default provider back. The pairing leaves nothing for a refresh to revert. The check also proves `DefaultIsPaired` and `RefreshKeepsOtherDefault`. Regression test: `catalog_refresh_keeps_the_chosen_default_provider_and_its_managed_family` in `model_catalog_flow.rs`. |
 | `catalog-refresh-keeps-default-chosen-from-unset` | passes | Starts with no default family. A refresh may fill it, with its provider, which PROV-008 allows. Once the user chooses a provider and family, no refresh changes them. With the fix off, the same bounds violate `RefreshKeepsUserDefault` through the same trace as `catalog-chosen-default-reverted`. |
 | `catalog-chosen-default-reverted` | violated: shows why the fix is needed | With `DefaultProviderPairsFamily` off, `Q` connects, the user chooses `Q`, and a refresh of `P` moves the default provider back to `P`. |
-| `catalog-stale-refresh-after-reconnect` | Plausible: needs a stalled refresh; open, PR 4 | A refresh discovers "disconnected" after sign-out, then stalls. The user reconnects, which publishes connected directly. The stalled refresh then publishes its disconnected result, and nothing queued behind it corrects that (CR-V1). |
-| `catalog-old-account-repopulates` | Plausible: an old `model/list` outlasts a full login; open, PR 4 | A refresh discovers eligible models. A reconnect to an account with zero eligible models then tombstones the managed family. The older eligible result publishes afterwards and reactivates it (CR-V3). |
-| `catalog-stale-adapter-capture` | Confirmed; open, PR 4 | A refresh captures the unavailable stub when it is requested, and the stub answers "could not be activated". Before that result publishes, a reconnect registers the real runtime and publishes connected. The stub's result then publishes over it (F3/V2). |
-| `catalog-stub-recovery-logout-deadlock` | Latent: the UI hides Sign out while the stub is registered; open, PR 4 | An explicit refresh through the stub waits for the provider queue. Logout holds that queue while it waits for its own refresh, which is queued behind the explicit one. Neither returns (CR-V7). |
-| `catalog-no-restore-after-cancelled-reconnect` | Confirmed, low; open, PR 4 | A cancelled reconnect unregisters the catalog adapter while the provider stays active. A tombstoned default family then never restores, because no refresh can run (V8). |
+| `catalog-stale-refresh-after-reconnect` | Fixed; now passes | Before the fix, a refresh discovered "disconnected" after sign-out, then stalled. The user reconnected, which published connected directly. The stalled refresh then published its disconnected result, and nothing queued behind it corrected that (CR-V1, plausible: needs a stall). Now that result carries the older generation and has no effect. The check also proves `NoStaleEffect`. Regression tests: `drops a refresh that discovered before a reconnect completed` in `provider-connection-generation.test.mjs`, and `a_catalog_result_from_a_superseded_connection_generation_has_no_effect` in `model_catalog_flow.rs`. |
+| `catalog-stale-refresh-after-reconnect-reverted` | violated: shows why the fix is needed | With `ConnectionGeneration` off, the stalled result publishes over the reconnect. |
+| `catalog-old-account-repopulates` | Fixed; now passes | Before the fix, a refresh discovered eligible models. A reconnect to an account with zero eligible models then tombstoned the managed family. The older eligible result published afterwards and reactivated it (CR-V3, plausible: an old `model/list` outlasts a full login). Now it carries the older generation. Regression test: the same Rust flow test. |
+| `catalog-old-account-repopulates-reverted` | violated: shows why the fix is needed | With `ConnectionGeneration` off, the older eligible result reactivates the family. |
+| `catalog-stale-adapter-capture` | Fixed; now passes | Before the fix, a refresh captured the unavailable stub when it was requested, and the stub answered "could not be activated". A reconnect or recovery then registered the real runtime and published connected. The stub's result then published over it (F3/V2, confirmed). A refresh now resolves its adapter when it runs. Regression test: `keeps a recovered provider connected when a refresh requested during recovery runs after it`. |
+| `catalog-stale-adapter-capture-reverted` | violated: shows why the fix is needed | With `ConnectionGeneration` off, the captured stub contradicts the reconnect. |
+| `catalog-stub-recovery-logout-deadlock` | Fixed; now passes | Before the fix, an explicit refresh through the stub waited for the provider queue. Logout held that queue while it waited for its own refresh, queued behind the explicit one. Neither returned (CR-V7, latent: the UI hides Sign out while the stub is registered). Logout now commits its signed-out state with the next generation and does not wait for the refresh. Regression test: `signs out while an explicit recovery is queued behind another refresh`. |
+| `catalog-stub-recovery-logout-deadlock-reverted` | violated: shows why the fix is needed | With `ConnectionGeneration` off, logout never returns. |
+| `catalog-no-restore-after-cancelled-reconnect` | Fixed; now passes | Before the fix, a cancelled reconnect unregistered the catalog adapter while the provider stayed active. A tombstoned default family then never restored, because no refresh could run (V8, F4, confirmed). Recovery could also discover through the pending reconnect's runtime (L1). The check proves `ActiveProviderHasAdapter`, including when the fresh runtime cannot start and the recovery adapter stands in, and `DefaultRestores`. Regression tests: `keeps a catalog adapter for an active provider whose reconnect is cancelled`, `falls back to the recovery adapter when a cancelled reconnect cannot restart the runtime`, and `does not recover through the runtime of a pending reconnect`. |
+| `catalog-no-restore-after-cancelled-reconnect-reverted` | violated: shows why the fix is needed | With `ReconnectKeepsAdapter` off, a cancelled reconnect leaves the active provider with no adapter. |
+| `catalog-connect-adapter-after-commit` | Fixed; now passes | Checks `AdapterOnlyForDefinition`. Before the fix, connect registered the catalog adapter before the definition committed, so a refresh could run for a provider that did not exist (F1). Regression test: `publishes nothing and registers no adapter before the definition exists, and a refused create leaves nothing`. |
+| `catalog-connect-adapter-after-commit-reverted` | violated: shows why the fix is needed | With `AdapterAfterCommit` off, the adapter exists before the definition. |
 | `catalog-own-family` | passes | A catalog publish changes only its own provider's managed family and never the custom family. |
 | `catalog-tombstoned-default-blocks-send` | passes | A default family tombstoned by a zero-eligible publish stays the default and blocks Send. |
 | `catalog-default-restores` | passes | With the real adapter registered, a tombstoned default family restores once its provider is healthy again. |
@@ -289,9 +309,10 @@ turn settles.
 | `leases-view-debt` | Fixed; now passes | Finding D. Before the fix: settling a quarantined attempt (from the thread view or an invoke action's destination) made lease debt but did not wake the reconciler. The debt then waited for a restart. The settle now wakes it (`QuarantineSettleWakesReconciler`). `leases-view-debt-reverted` shows the old trace with C's fix off, because C now releases the lease before the settle. |
 | `leases-persist-lease` | Fixed; now passes | Finding C, lease half. Before the fix: when a turn's terminal state could not be persisted, nothing released its lease. The host now releases it when the native turn ends. `leases-persist-lease-reverted` shows the old trace with C's attempt fix off, because that fix also releases the lease. |
 | `leases-restart-quarantine`, `leases-restart-persist` | Fixed; now pass | Finding E, startup half. A removal waited on a running attempt, and the user quit. At the next start, an interrupted submitted input was quarantined, or a failed persist had left it quarantined, so its attempt stayed `running`. `reconcileStartup`'s refused finalize then failed every start. A refused finalize now leaves `P` `removal_pending`, and the app starts. `leases-restart-quarantine-reverted` shows the old trace with E's removal fix off, because that fix stops the refusal. |
-| `leases-restart-removal` | Fixed in PR 2; now passes | Finding E, removal half. Before the fix: after that restart, `P` stayed `removal_pending` while the quarantined attempt ran. Once the thread view settled it, the reconciler's release found no host entry, because host memory is fresh after the restart, so nothing retried the finalize. Startup now records the end of the wait on the attempts it leaves open for reconciliation, since their process exited with the app (`RestartEndsWaits`). The drain skips them, so startup's finalize succeeds. `leases-restart-removal-reverted` shows the old trace. |
-| `leases-persist-attempt`, `leases-persist-removal` | Fixed in PR 2; now pass | Finding C, attempt half. Before the fix: when a turn's terminal state could not be persisted, its attempt stayed `running`, which blocked the provider tombstone until a restart. A harness approval that is aborted, expired or cancelled reached this with no fault (`Persist` with `q = "decided"`). The execution task now ends its wait on any attempt it leaves running and releases its lease (`PersistFailureEndsWait`). An attempt whose interaction already failed or stopped ends with that outcome; a quarantined one stays undecided. The owner's release acknowledges the access, which retries the finalize. The `-reverted` checks show the old traces. |
-| `leases-startup-isolation` | Fixed in PR 2; now passes | Finding L6. Before the fix: a removal or cleanup failure other than a drain refusal rejected `reconcileStartup`, so Relayer could not start. Startup now records each provider's failure and continues (`StartupIsolatesProviders`). `leases-startup-isolation-reverted` shows the old trace. The model has one provider, so "other providers still activate" is covered by the composition test, not the model. |
+| `leases-restart-drained-removal` | Fixed; now passes | Finding E, retry half. After that restart, once the quarantined attempt becomes terminal, the reconciler's release finds no host entry, because host memory is fresh. A release for a lease the host no longer tracks retries every drained removal (`UnknownReleaseRetriesFinalize`), so the removal finishes without another restart. The same path covers access the host forgot ten minutes after releasing it. The check turns E's restart fix off, because with it startup's own finalize succeeds and the retry is never needed. `leases-forgotten-release-reverted` shows removal waiting for a restart without the retry. |
+| `leases-restart-removal` | Fixed in PR #545; now passes | Finding E, removal half. Before the fix: after that restart, the quarantined attempt stayed `running` until its thread was opened or the app restarted again. Opening the thread is a user action, so the removal could stay pending meanwhile. Startup now records the end of the wait on the attempts it leaves open for reconciliation, since their process exited with the app (`RestartEndsWaits`). The drain skips them, so startup's finalize succeeds. `leases-restart-removal-reverted` shows the old trace. |
+| `leases-persist-attempt`, `leases-persist-removal` | Fixed in PR #545; now pass | Finding C, attempt half. Before the fix: when a turn's terminal state could not be persisted, its attempt stayed `running`, which blocked the provider tombstone until a restart. A harness approval that is aborted, expired or cancelled reached this with no fault (`Persist` with `q = "decided"`). The execution task now ends its wait on any attempt it leaves running and releases its lease (`PersistFailureEndsWait`). An attempt whose interaction already failed or stopped ends with that outcome; a quarantined one stays undecided. The owner's release acknowledges the access, which retries the finalize. The `-reverted` checks show the old traces. |
+| `leases-startup-isolation` | Fixed in PR #545; now passes | Finding L6. Before the fix: a removal or cleanup failure other than a drain refusal rejected `reconcileStartup`, so Relayer could not start. Startup now records each provider's failure and continues (`StartupIsolatesProviders`). `leases-startup-isolation-reverted` shows the old trace. The model has one provider, so "other providers still activate" is covered by the composition test, not the model. |
 | `leases-hang` | Confirmed (missing feature), open | Finding G. A cancelled native turn that ignores the cancellation keeps its provider access forever, so removal waits forever. A per-turn force-stop is planned for a later PR. |
 
 The fixes are:
@@ -304,13 +325,16 @@ The fixes are:
    acknowledgement retries it (`AckRetriesFinalize`). Landed.
 4. Settling a quarantined attempt wakes the reconciler
    (`QuarantineSettleWakesReconciler`). Landed.
-5. An execution task that stops waiting on a native run without persisting
+5. A release for a lease the host no longer tracks retries every drained
+   removal (`UnknownReleaseRetriesFinalize`). Landed.
+6. An execution task that stops waiting on a native run without persisting
    its outcome ends the attempt with a decided interaction outcome, or records
-   the end of the wait, and releases the lease (`PersistFailureEndsWait`). PR 2.
-6. Startup records the end of the wait on attempts it leaves open for
-   reconciliation (`RestartEndsWaits`). PR 2.
-7. Startup isolates each provider's removal and cleanup failure
-   (`StartupIsolatesProviders`). PR 2.
+   the end of the wait, and releases the lease (`PersistFailureEndsWait`).
+   PR #545.
+7. Startup records the end of the wait on attempts it leaves open for
+   reconciliation (`RestartEndsWaits`). PR #545.
+8. Startup isolates each provider's removal and cleanup failure
+   (`StartupIsolatesProviders`). PR #545.
 
 The `*-reverted` checks turn one landed fix off and show its old trace. In
 them the acknowledgement call is attributed to `AckRetriesFinalize`, so a
@@ -321,11 +345,61 @@ Recursive children unwinding across a restart are modeled in
 of those children before Desktop's startup removal; the product persistence
 and completion trace tests cover that ordering.
 A release and its acknowledgement are one step, and acknowledgements do not
-fail in the model. The code retries a failed acknowledgement on the host's
-timer, and forgets access released without an owner after ten minutes. An
-owner release for a lease the host no longer tracks asks the providers to
-retry every drained removal, so no acknowledgement is lost. None of this is
-modeled.
+fail in the model, so the host's retry of a failed acknowledgement is not
+modeled. The ten-minute forget of access released without an owner is
+modeled (`ForgetReleased`).
+
+### `HarnessReadiness.tla`
+
+This model covers harness readiness from evaluation to admission:
+
+- **Desktop main:** the readiness coordinator's generations, its
+  publication chain, and startup's file-only runtime validation.
+- **Stores:** the app server's `product_harnesses` row and, before the fix,
+  the readiness copy in `harness-configurations.json`.
+- **Restart:** a crash at any point, then the whole next startup.
+- **Admission:** Send admits only a route the app server holds ready.
+
+There is one harness configuration, three evaluations, two configuration
+digests and one restart.
+
+`readiness-today` mirrors the code, and each `-reverted` check turns one fix
+off. Two constants hold the fixes:
+
+- `RustIsReadinessRecord`: Electron publishes readiness only to the app
+  server. Startup restores ready only from the app server's own row.
+- `RustRejectsOlderGeneration`: the app server rejects a generation lower
+  than one it accepted for that harness in the same process.
+
+`RequestCanOutliveClient` lets a readiness request reach the app server after
+its client saw an error. Without it, the publication chain alone keeps
+results in order.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `readiness-restart-restore` | Fixed; now passes | Before the fix (R1): readiness was written to Rust first, then to the JSON catalog. At startup Electron restored ready from the JSON, and Rust rebuilt its row from that JSON without reading its own. A crash or failed write between the two writes restored a ready that Rust had withdrawn, and Send was admitted. Now the JSON carries only whether the runtime files validate. `initialize_model_catalog` restores ready only from its own previous row for the same digest (PROV-006). Regressions: the desktop-shell test "hands startup readiness to the app server record instead of the previous catalog file" fails on the old code; `restart_keeps_the_app_server_record_of_an_unavailable_route` guards the new rule. |
+| `readiness-restart-restore-reverted` | violated: shows why the fix is needed | With the JSON catalog as a second record, a crash between the two writes restores the withdrawn ready, and Send is admitted on it. |
+| `readiness-single-record` | Fixed; now passes | Before the fix (R2): a failed JSON write left the two records split, with nothing to reconcile them. The JSON readiness write is gone, so there is one record. |
+| `readiness-single-record-reverted` | violated: shows why the fix is needed | With two records, a JSON write that fails after the Rust commit splits them. |
+| `readiness-never-backwards` | Fixed; now passes | Before the fix (R3): Rust checked only that a generation was positive. The app server now rejects an older generation than one it accepted in the process (PROV-005). Regression: `readiness_rejects_an_older_generation_within_a_process`. A superseded result can still publish until the newer one does. PROV-005 allows that, because it never replaces a newer result. |
+| `readiness-never-backwards-reverted` | Plausible: needs a request that outlives its client | Without the guard, a request that reaches Rust after its client gave up replaces a newer result. |
+| `readiness-liveness` | passes | The latest evaluation always reaches the app server. |
+
+With the fix on, `PROV006_RestoreOnlyFromRecord` restates the `Restart`
+action and `ReadinessRecordsAgree` compares Rust with itself. They guard
+against a regression in the model, not in the code. With the fixes on,
+`PROV006_AdmitOnlyLatestReady` and `PROV005_NeverOverNewer` also hold almost by
+construction; their discriminating power is in the `-reverted` checks. The
+model starts with no ready row, so it does not cover the JSON field that
+marks a coordinated harness. A row made ready before this fix is cleared once
+by migration 0034, which `first_launch_after_upgrade_reverifies_a_route_an_older_build_left_ready`
+covers.
+
+The generation guard lives in app-server memory. Electron restarts its
+counter with each process, and the desktop quits when the app server stops.
+If the app server alone restarted, its restored row would stay the record.
+It would accept the coordinator's next generation, and the coordinator's
+counter only grows.
 
 ## Limits
 
@@ -335,6 +409,21 @@ modeled.
   thread. `CatalogRefresh`
   has two providers, two queued refreshes per provider, and at most two
   lifecycle events. A bug that needs more actors is out of reach.
+- **Connection generation:** removing the generation check from `Publish`
+  makes `catalog-stale-refresh-after-reconnect`, `catalog-old-account-repopulates`
+  and `catalog-stale-adapter-capture` fail, so their passes are not vacuous.
+  A logout whose signed-out publish fails advances nothing and supersedes
+  nothing. A cancelled reconnect whose fresh runtime fails to start swaps the
+  adapter for the stub within one generation; a real result already in
+  flight may still publish, which PROV-002 allows because the account and
+  generation are unchanged. No check covers restoring through the recovery
+  adapter: that needs an explicit refresh, a user action the model does not
+  make fair. `CatalogRefresh` checks the generation once, at publish. The code checks twice: the catalog service before it publishes,
+  and Rust inside the write transaction. The model's single check stands for
+  both. A lifecycle write whose response is lost is not modeled; a JS test
+  covers the refresh that relearns the generation. The ad hoc
+  `ProviderConnect` model, which covers a crash between the create's commit
+  and its reply (F2), is not promoted; a JS test covers F2.
 - **Catalog abstractions:** `CatalogRefresh` has no harness. A family is
   resolvable when it is enabled and has a connected member with available
   models. That stands for "some harness can run it": the model leaves out
@@ -351,7 +440,6 @@ modeled.
 - **Not modeled:**
   - the parent retrying a failed stop;
   - label uniqueness and ids;
-  - harness readiness generations;
   - thread permission pinning;
   - Ladybug index crash recovery;
   - remint races in the graph server;

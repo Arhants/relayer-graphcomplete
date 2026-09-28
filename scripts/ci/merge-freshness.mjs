@@ -15,9 +15,11 @@ export function recordEvidence(event, env, git) {
   const mergeSha = git(["rev-parse", "HEAD"]);
   const parents = git(["show", "-s", "--format=%P", "HEAD"]).split(" ");
   if (!pr || pr.base.ref !== "main" || parents.length !== 2 ||
-      mergeSha !== env.GITHUB_SHA || parents[0] !== pr.base.sha || parents[1] !== pr.head.sha) {
+      mergeSha !== env.GITHUB_SHA || parents[1] !== pr.head.sha) {
     throw new Error("CI checkout is not the event's exact main + PR merge");
   }
+  // PR base metadata can predate the event's generated merge. The actual first
+  // parent is the tested base; the guard compares it to this main observation.
   const observedMain = git(["ls-remote", "origin", "refs/heads/main"]).split(/\s+/)[0];
   if (![mergeSha, ...parents, observedMain].every(sha)) throw new Error("Invalid Git identity");
   return {

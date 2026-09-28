@@ -166,6 +166,9 @@ describe("managed runtime installer", () => {
     const probe = vi.fn(async ({ version }) => ({ version }));
     try {
       const { installer, fetch } = exactClaudeInstaller(root, "local-validation", { probes: { claude: probe } });
+      // Startup validates every coordinated harness; a runtime never installed is not corruption.
+      await expect(installer.validate("claude-fixture@0.3.250"))
+        .rejects.toMatchObject({ code: "managed_runtime_not_installed" });
       const prepared = await installer.prepare("claude-fixture@0.3.250");
       expect(probe).toHaveBeenCalledOnce();
       const networkCallsAfterPreparation = fetch.mock.calls.length;
@@ -176,6 +179,12 @@ describe("managed runtime installer", () => {
       });
       expect(probe).toHaveBeenCalledOnce();
       expect(fetch).toHaveBeenCalledTimes(networkCallsAfterPreparation);
+
+      // A corrupt receipt is corruption, not an absent runtime, so startup reports it.
+      await writeFile(join(root, "claude", "macos-arm64", "active.json"), "{");
+      const corrupt = await installer.validate("claude-fixture@0.3.250").catch((error) => error);
+      expect(corrupt).toBeInstanceOf(Error);
+      expect(corrupt.code).toBeUndefined();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

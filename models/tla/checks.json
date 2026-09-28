@@ -43,6 +43,7 @@
       "ClaimRejectsReleasing": "TRUE",
       "AckRetriesFinalize": "TRUE",
       "QuarantineSettleWakesReconciler": "TRUE",
+      "UnknownReleaseRetriesFinalize": "TRUE",
       "StartupCleanupCanFail": "FALSE",
       "PersistFailureEndsWait": "TRUE",
       "RestartEndsWaits": "TRUE",
@@ -59,7 +60,21 @@
       "InitAdapters": "{\"real\", \"stub\"}",
       "Ops": "{\"logout\", \"reconnect\", \"remove\"}",
       "InitDefFams": "{\"mP\", \"C\", \"none\"}",
-      "DefaultProviderPairsFamily": "TRUE"
+      "DefaultProviderPairsFamily": "TRUE",
+      "ConnectionGeneration": "TRUE",
+      "ReconnectKeepsAdapter": "TRUE",
+      "AdapterAfterCommit": "TRUE"
+    },
+    "readiness-today": {
+      "Evals": "{1, 2, 3}",
+      "Digests": "{\"d1\", \"d2\"}",
+      "InitDigest": "\"d1\"",
+      "MaxRestarts": "1",
+      "JsonWriteCanFail": "TRUE",
+      "ValidationCanFail": "TRUE",
+      "RequestCanOutliveClient": "TRUE",
+      "RustIsReadinessRecord": "TRUE",
+      "RustRejectsOlderGeneration": "TRUE"
     }
   },
   "checks": [
@@ -480,6 +495,22 @@
       "finding": "Without the acknowledgement retry, the finalize refused while the attempt still ran is never retried, and removal waits for a restart."
     },
     {
+      "id": "leases-forgotten-release-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "UnknownReleaseRetriesFinalize": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "RemovalCompletes"
+      ],
+      "expect": {
+        "violated": "RemovalCompletes"
+      },
+      "finding": "Without the unknown-release retry, access released before the owner's release is forgotten after ten minutes; the owner's later release finds nothing to acknowledge, and removal waits for a restart."
+    },
+    {
       "id": "leases-view-debt",
       "module": "ExecutionLeases",
       "preset": "leases-today",
@@ -620,7 +651,23 @@
       "expect": {
         "violated": "RemovalCompletes"
       },
-      "finding": "Without it, the quarantined attempt still counts as running after the restart, and nothing retries the finalize once the thread view settles it: the reconciler's release finds no host entry to acknowledge."
+      "finding": "Without it, the quarantined attempt still counts as running after the restart, so the removal stays pending until its thread is opened (the unknown-release retry then finishes it) or the app restarts again."
+    },
+    {
+      "id": "leases-restart-drained-removal",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "StartupQuarantine": "TRUE",
+        "MaxRestarts": "1",
+        "RestartEndsWaits": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "DrainedRemovalCompletes"
+      ],
+      "expect": "pass",
+      "finding": "After a restart, once the quarantined attempt becomes terminal, the owner's release of a lease the fresh host does not know retries every drained removal, so the removal finishes in-session. E's restart fix is off here: with it, startup's own finalize succeeds and this retry is never needed."
     },
     {
       "id": "leases-persist-attempt",
@@ -810,12 +857,12 @@
         "InitDefFams": "{\"mP\"}"
       },
       "invariants": [
+        "TypeOK",
+        "NoStaleEffect",
         "NoPersistingStaleEffect"
       ],
-      "expect": {
-        "violated": "NoPersistingStaleEffect"
-      },
-      "finding": "A refresh that discovered before a reconnect publishes its stale disconnected result after the reconnect, and nothing queued behind it corrects that."
+      "expect": "pass",
+      "finding": "A refresh that discovered before a reconnect carries the older connection generation, so its stale result has no effect (fixed, PROV-002; was: it published over the reconnect and nothing queued behind it corrected that)."
     },
     {
       "id": "catalog-old-account-repopulates",
@@ -832,12 +879,11 @@
         "Ops": "{\"reconnect\"}"
       },
       "invariants": [
+        "TypeOK",
         "NoUnsafePopulate"
       ],
-      "expect": {
-        "violated": "NoUnsafePopulate"
-      },
-      "finding": "An eligible result discovered before a reconnect that found zero eligible models reactivates the tombstoned managed family."
+      "expect": "pass",
+      "finding": "An eligible result discovered before a zero-eligible reconnect carries the older generation and cannot reactivate the tombstoned family (fixed, PROV-002)."
     },
     {
       "id": "catalog-stale-adapter-capture",
@@ -855,12 +901,11 @@
         "InitDefFams": "{\"mP\"}"
       },
       "invariants": [
+        "TypeOK",
         "NoContradictingReplacedAdapterEffect"
       ],
-      "expect": {
-        "violated": "NoContradictingReplacedAdapterEffect"
-      },
-      "finding": "A refresh captures its adapter when requested; the unavailable stub it captured publishes after a reconnect replaced it and contradicts the reconnect."
+      "expect": "pass",
+      "finding": "A refresh resolves its adapter when it runs, so a refresh queued before a reconnect runs through the reconnect's runtime (fixed, PROV-002; was: it ran through the captured unavailable stub and contradicted the reconnect)."
     },
     {
       "id": "catalog-stub-recovery-logout-deadlock",
@@ -881,10 +926,8 @@
       "properties": [
         "LogoutReturns"
       ],
-      "expect": {
-        "violated": "LogoutReturns"
-      },
-      "finding": "Logout waits inside the provider queue for its own refresh, which is queued behind an explicit stub recovery that waits for the provider queue: neither returns."
+      "expect": "pass",
+      "finding": "Logout commits its signed-out state with the next generation and no longer waits inside the provider queue for its refresh, so it returns (fixed, CR-V7)."
     },
     {
       "id": "catalog-no-restore-after-cancelled-reconnect",
@@ -902,13 +945,15 @@
         "InitDefFams": "{\"mP\"}"
       },
       "fair": true,
-      "properties": [
-        "DefaultRestoresAnyAdapter"
+      "invariants": [
+        "TypeOK",
+        "ActiveProviderHasAdapter"
       ],
-      "expect": {
-        "violated": "DefaultRestoresAnyAdapter"
-      },
-      "finding": "A cancelled reconnect unregisters the catalog adapter of an active provider, so a tombstoned default family never restores."
+      "properties": [
+        "DefaultRestores"
+      ],
+      "expect": "pass",
+      "finding": "A cancelled reconnect leaves the active provider a catalog adapter: a fresh runtime, or the recovery adapter when none can start. With the real adapter, a tombstoned default family restores once the provider is healthy (fixed, F4/V8)."
     },
     {
       "id": "catalog-own-family",
@@ -964,6 +1009,270 @@
       ],
       "expect": "pass",
       "finding": "A tombstoned default family restores once its provider is healthy and its real adapter is registered."
+    },
+    {
+      "id": "readiness-restart-restore",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "invariants": [
+        "TypeOK",
+        "PRD_MatchingDigest",
+        "PROV006_RestoreOnlyFromRecord",
+        "PROV006_AdmitOnlyLatestReady"
+      ],
+      "expect": "pass",
+      "finding": "Startup restores ready only from the app server's own record for the same digest when the runtime files validate, so a withdrawn route stays withdrawn (fixed R1; was: restart restored a ready the JSON catalog still held after Rust recorded unavailable)."
+    },
+    {
+      "id": "readiness-restart-restore-reverted",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "constants": {
+        "RustIsReadinessRecord": "FALSE",
+        "JsonWriteCanFail": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "PROV006_AdmitOnlyLatestReady"
+      ],
+      "expect": {
+        "violated": "PROV006_AdmitOnlyLatestReady"
+      },
+      "finding": "With the JSON catalog as a second record, a crash between the Rust and JSON writes restores a ready that Rust had withdrawn, and Send is admitted on it (R1, the behavior before the fix)."
+    },
+    {
+      "id": "readiness-single-record",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "invariants": [
+        "TypeOK",
+        "ReadinessRecordsAgree"
+      ],
+      "expect": "pass",
+      "finding": "There is one readiness record, so no failed write can split it (fixed R2; was: a failed JSON write left the two stores disagreeing with no reconciliation)."
+    },
+    {
+      "id": "readiness-single-record-reverted",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "constants": {
+        "RustIsReadinessRecord": "FALSE",
+        "MaxRestarts": "0"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadinessRecordsAgree"
+      ],
+      "expect": {
+        "violated": "ReadinessRecordsAgree"
+      },
+      "finding": "With two records, a JSON write that fails after the Rust commit leaves them disagreeing (R2, the behavior before the fix)."
+    },
+    {
+      "id": "readiness-never-backwards",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "invariants": [
+        "TypeOK"
+      ],
+      "properties": [
+        "PROV005_NeverOverNewer"
+      ],
+      "expect": "pass",
+      "finding": "Rust rejects a generation older than one it accepted in the same process, so an older result never replaces a newer one, even when a request outlives its client (fixed R3)."
+    },
+    {
+      "id": "readiness-never-backwards-reverted",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "constants": {
+        "RustRejectsOlderGeneration": "FALSE",
+        "MaxRestarts": "0"
+      },
+      "invariants": [
+        "TypeOK"
+      ],
+      "properties": [
+        "PROV005_NeverOverNewer"
+      ],
+      "expect": {
+        "violated": "PROV005_NeverOverNewer"
+      },
+      "finding": "Without the generation guard, a request that reaches Rust after its client gave up replaces a newer result (R3 mechanism; plausible: needs a request that outlives its client)."
+    },
+    {
+      "id": "readiness-liveness",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "fair": true,
+      "properties": [
+        "LIVE_LatestReachesRust"
+      ],
+      "expect": "pass",
+      "finding": "The latest evaluation always reaches the app server."
+    },
+    {
+      "id": "catalog-stale-refresh-after-reconnect-reverted",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"logout\", \"reconnect\"}",
+        "InitDefFams": "{\"mP\"}",
+        "ConnectionGeneration": "FALSE"
+      },
+      "invariants": [
+        "NoPersistingStaleEffect"
+      ],
+      "expect": {
+        "violated": "NoPersistingStaleEffect"
+      },
+      "finding": "Without the connection generation, a refresh that discovered before a reconnect publishes its stale disconnected result after the reconnect, and nothing queued behind it corrects that."
+    },
+    {
+      "id": "catalog-old-account-repopulates-reverted",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"reconnect\"}",
+        "ConnectionGeneration": "FALSE"
+      },
+      "invariants": [
+        "NoUnsafePopulate"
+      ],
+      "expect": {
+        "violated": "NoUnsafePopulate"
+      },
+      "finding": "Without the connection generation, an eligible result discovered before a reconnect that found zero eligible models reactivates the tombstoned managed family."
+    },
+    {
+      "id": "catalog-stale-adapter-capture-reverted",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"reconnect\"}",
+        "InitDefFams": "{\"mP\"}",
+        "ConnectionGeneration": "FALSE"
+      },
+      "invariants": [
+        "NoContradictingReplacedAdapterEffect"
+      ],
+      "expect": {
+        "violated": "NoContradictingReplacedAdapterEffect"
+      },
+      "finding": "Without run-time resolution, a refresh captures its adapter when requested; the unavailable stub it captured publishes after a reconnect replaced it and contradicts the reconnect."
+    },
+    {
+      "id": "catalog-stub-recovery-logout-deadlock-reverted",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"logout\"}",
+        "InitDefFams": "{\"mP\"}",
+        "ConnectionGeneration": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "LogoutReturns"
+      ],
+      "expect": {
+        "violated": "LogoutReturns"
+      },
+      "finding": "Logout waits inside the provider queue for its own refresh, which is queued behind an explicit stub recovery that waits for the provider queue: neither returns."
+    },
+    {
+      "id": "catalog-no-restore-after-cancelled-reconnect-reverted",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "2",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"reconnect\"}",
+        "InitDefFams": "{\"mP\"}",
+        "ReconnectKeepsAdapter": "FALSE"
+      },
+      "invariants": [
+        "ActiveProviderHasAdapter"
+      ],
+      "expect": {
+        "violated": "ActiveProviderHasAdapter"
+      },
+      "finding": "A cancelled reconnect unregisters the catalog adapter of an active provider, so no refresh can run for it and a tombstoned default family never restores."
+    },
+    {
+      "id": "catalog-connect-adapter-after-commit",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"remove\"}",
+        "InitDefFams": "{\"C\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "AdapterOnlyForDefinition"
+      ],
+      "expect": "pass",
+      "finding": "Connect registers the catalog adapter only after the definition commits, so nothing refreshes or publishes for a provider that does not exist yet (fixed, PROV-007; was: the adapter was registered before the commit)."
+    },
+    {
+      "id": "catalog-connect-adapter-after-commit-reverted",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"remove\"}",
+        "InitDefFams": "{\"C\"}",
+        "AdapterAfterCommit": "FALSE"
+      },
+      "invariants": [
+        "AdapterOnlyForDefinition"
+      ],
+      "expect": {
+        "violated": "AdapterOnlyForDefinition"
+      },
+      "finding": "Registering the catalog adapter before the commit gives a provider an adapter before its definition exists."
     }
   ]
 }

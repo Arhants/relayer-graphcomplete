@@ -355,7 +355,7 @@ async function run() {
     systemFamily: { key: "codex", name: "Codex", modelIds: ["fixture-model"] },
   };
   const catalogRefreshServer = await startModelCatalogRefreshServer({
-    refresh: () => product.publishProviderCatalog(catalogSnapshot),
+    refresh: () => product.seedProviderCatalog(catalogSnapshot),
   });
   services.push(catalogRefreshServer);
   product = new RelayerAppServerService({
@@ -369,7 +369,7 @@ async function run() {
   });
   services.push(product);
   const productSession = await product.start();
-  await product.publishProviderCatalog(catalogSnapshot);
+  await product.seedProviderCatalog(catalogSnapshot);
 
   const modelSettings = await productRequest(productSession, "/api/model-settings");
   const modelSelection = { familyId: modelSettings.families[0].id, providerId: "codex", modelId: "fixture-model" };

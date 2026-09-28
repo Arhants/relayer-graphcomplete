@@ -67,7 +67,7 @@ describe("first-message composer integration", () => {
       });
       services.push(product);
       const session = await product.start();
-      await product.publishProviderCatalog(fixtureCatalogSnapshot());
+      await product.seedProviderCatalog(fixtureCatalogSnapshot());
       return { product, runtime, session };
     };
     const before = await start();
@@ -189,7 +189,7 @@ describe("first-message composer integration", () => {
     });
     services.push(product);
     const productSession = await product.start();
-    await product.publishProviderCatalog(fixtureCatalogSnapshot());
+    await product.seedProviderCatalog(fixtureCatalogSnapshot());
     const fixtureFamily = await productRequest(productSession, "/api/model-families", {
       method: "POST",
       body: JSON.stringify({

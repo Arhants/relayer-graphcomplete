@@ -625,7 +625,25 @@ impl ProductService {
     pub(crate) async fn publish_provider_catalog(
         &self,
         mut snapshot: ProviderCatalogSnapshot,
+        stamp: super::ProviderConnectionStamp,
     ) -> Result<(), ProductError> {
+        match stamp.event {
+            Some(super::ProviderConnectionEvent::Reconnected) if !snapshot.connected => {
+                return Err(super::CatalogError::invalid(
+                    "provider_connection_event_invalid",
+                    "A completed reconnect must publish a connected catalog.",
+                )
+                .into());
+            }
+            Some(super::ProviderConnectionEvent::SignedOut) if snapshot.connected => {
+                return Err(super::CatalogError::invalid(
+                    "provider_connection_event_invalid",
+                    "A sign-out must publish a disconnected catalog.",
+                )
+                .into());
+            }
+            _ => {}
+        }
         if !snapshot.connected && snapshot.unavailable_reason.is_none() {
             snapshot.unavailable_reason = Some(super::UnavailableReason {
                 code: "provider_disconnected".into(),
@@ -654,10 +672,16 @@ impl ProductService {
         validate_provider_snapshot(&snapshot, managed_policy.as_ref())?;
         match self
             .storage
-            .publish_provider_catalog(&snapshot, managed_policy.as_ref(), &now())
+            .publish_provider_catalog(&snapshot, stamp, managed_policy.as_ref(), &now())
             .await
         {
             Ok(()) => Ok(()),
+            // A superseded result is expected and changes nothing (PROV-002).
+            Err(StorageError::Catalog(error))
+                if error.code() == "provider_connection_superseded" =>
+            {
+                Err(StorageError::Catalog(error).into())
+            }
             Err(error) => {
                 eprintln!(
                     "managed catalog reconciliation for provider {} failed; the prior family/default transaction was retained and the next refresh will retry: {error}",
@@ -3257,6 +3281,7 @@ mod tests {
             execution_access_contracts: vec!["secret@1".into()],
             family_policy: None,
             runtime_available: true,
+            restore_prior_readiness: false,
             unavailable_reason: None,
         });
         storage
@@ -3461,7 +3486,10 @@ mod tests {
             model.provider_default = false;
         }
         service
-            .publish_provider_catalog(empty_policy_output)
+            .publish_provider_catalog(
+                empty_policy_output,
+                crate::product::ProviderConnectionStamp::refresh(1),
+            )
             .await
             .unwrap();
         assert_eq!(
@@ -3478,7 +3506,10 @@ mod tests {
                 .all(|family| family.id != first_default)
         );
         service
-            .publish_provider_catalog(snapshot.clone())
+            .publish_provider_catalog(
+                snapshot.clone(),
+                crate::product::ProviderConnectionStamp::refresh(1),
+            )
             .await
             .unwrap();
         assert!(
@@ -3497,7 +3528,10 @@ mod tests {
             .unwrap();
         assert!(
             service
-                .publish_provider_catalog(snapshot.clone())
+                .publish_provider_catalog(
+                    snapshot.clone(),
+                    crate::product::ProviderConnectionStamp::refresh(1)
+                )
                 .await
                 .is_err()
         );
@@ -3537,7 +3571,13 @@ mod tests {
                 metadata: serde_json::json!({}),
             });
         }
-        service.publish_provider_catalog(v2_snapshot).await.unwrap();
+        service
+            .publish_provider_catalog(
+                v2_snapshot,
+                crate::product::ProviderConnectionStamp::refresh(1),
+            )
+            .await
+            .unwrap();
         let migrated = service.model_settings().await.unwrap();
         let migrated_default = migrated.defaults.family_id.unwrap();
         assert_ne!(migrated_default, first_default);
@@ -3623,7 +3663,13 @@ mod tests {
             .initialize_model_catalog("codex-basic", &managed_runtime_harnesses(2))
             .await
             .unwrap();
-        service.publish_provider_catalog(snapshot).await.unwrap();
+        service
+            .publish_provider_catalog(
+                snapshot,
+                crate::product::ProviderConnectionStamp::refresh(1),
+            )
+            .await
+            .unwrap();
         assert_eq!(
             service.model_settings().await.unwrap().defaults.family_id,
             Some(custom.id)
@@ -3694,7 +3740,10 @@ mod tests {
             .await
             .unwrap();
         service
-            .publish_provider_catalog(snapshot.clone())
+            .publish_provider_catalog(
+                snapshot.clone(),
+                crate::product::ProviderConnectionStamp::refresh(1),
+            )
             .await
             .unwrap();
         let migrated = service.model_settings().await.unwrap();
@@ -3719,7 +3768,13 @@ mod tests {
         .await
         .unwrap();
         pool.close().await;
-        service.publish_provider_catalog(snapshot).await.unwrap();
+        service
+            .publish_provider_catalog(
+                snapshot,
+                crate::product::ProviderConnectionStamp::refresh(1),
+            )
+            .await
+            .unwrap();
         let legacy = service.model_settings().await.unwrap();
         assert_eq!(legacy.defaults.provider_id.as_str(), "custom-openai");
         assert_eq!(legacy.defaults.family_id, None);
@@ -3798,7 +3853,10 @@ mod tests {
             .await
             .unwrap();
         service
-            .publish_provider_catalog(claude_snapshot)
+            .publish_provider_catalog(
+                claude_snapshot,
+                crate::product::ProviderConnectionStamp::refresh(1),
+            )
             .await
             .unwrap();
         (codex_family, claude_id)
@@ -3890,7 +3948,13 @@ mod tests {
         let (_, mut signed_out) = settings_claude_catalog();
         signed_out.connected = false;
         signed_out.models.clear();
-        service.publish_provider_catalog(signed_out).await.unwrap();
+        service
+            .publish_provider_catalog(
+                signed_out,
+                crate::product::ProviderConnectionStamp::refresh(1),
+            )
+            .await
+            .unwrap();
         let refused = save_family(claude_family).await.unwrap_err();
         assert_eq!(catalog_error_code(&refused), Some("provider_disconnected"));
         assert_eq!(service.model_settings().await.unwrap().defaults, back);
@@ -4000,7 +4064,10 @@ mod tests {
         // A Codex refresh retires only legacy families Codex owns alone.
         let (_, codex_snapshot) = staged_codex_catalog();
         service
-            .publish_provider_catalog(codex_snapshot)
+            .publish_provider_catalog(
+                codex_snapshot,
+                crate::product::ProviderConnectionStamp::refresh(1),
+            )
             .await
             .unwrap();
         let defaults = service.model_settings().await.unwrap().defaults;
@@ -4048,6 +4115,7 @@ mod tests {
             credential_reference: None,
             lifecycle_state: "active".into(),
             removed_at: None,
+            connection_generation: 1,
         };
         (definition, snapshot)
     }
@@ -4107,7 +4175,13 @@ mod tests {
             assert_eq!(completion.defaults.harness_id, "prime-agent-basic");
             assert_eq!(completion.resolution.resolvable_members[0].model_id, qwen);
             let family_id = completion.resolution.family_id;
-            service.publish_provider_catalog(catalog).await.unwrap();
+            service
+                .publish_provider_catalog(
+                    catalog,
+                    crate::product::ProviderConnectionStamp::refresh(1),
+                )
+                .await
+                .unwrap();
             let settings = service.model_settings().await.unwrap();
             assert_eq!(settings.defaults.family_id, Some(family_id));
             drop(service);
@@ -4210,6 +4284,7 @@ mod tests {
             credential_reference: Some("provider:recovering-openrouter".into()),
             lifecycle_state: "active".into(),
             removed_at: None,
+            connection_generation: 1,
         };
         let unmatched_model = CatalogModelSnapshot {
             id: "other/custom-text-model".into(),
@@ -4262,14 +4337,17 @@ mod tests {
             .unwrap()
             .id;
         service
-            .publish_provider_catalog(ProviderCatalogSnapshot {
-                provider_id: provider_id.clone(),
-                label: "Recovering OpenRouter".into(),
-                connected: true,
-                unavailable_reason: None,
-                models: vec![unmatched_model.clone()],
-                system_family: None,
-            })
+            .publish_provider_catalog(
+                ProviderCatalogSnapshot {
+                    provider_id: provider_id.clone(),
+                    label: "Recovering OpenRouter".into(),
+                    connected: true,
+                    unavailable_reason: None,
+                    models: vec![unmatched_model.clone()],
+                    system_family: None,
+                },
+                crate::product::ProviderConnectionStamp::refresh(1),
+            )
             .await
             .unwrap();
 
@@ -4310,20 +4388,23 @@ mod tests {
         );
 
         service
-            .publish_provider_catalog(ProviderCatalogSnapshot {
-                provider_id: provider_id.clone(),
-                label: "Recovering OpenAI".into(),
-                connected: true,
-                unavailable_reason: None,
-                models: vec![
-                    unmatched_model,
-                    CatalogModelSnapshot {
-                        order: 1,
-                        ..reviewed_model
-                    },
-                ],
-                system_family: None,
-            })
+            .publish_provider_catalog(
+                ProviderCatalogSnapshot {
+                    provider_id: provider_id.clone(),
+                    label: "Recovering OpenAI".into(),
+                    connected: true,
+                    unavailable_reason: None,
+                    models: vec![
+                        unmatched_model,
+                        CatalogModelSnapshot {
+                            order: 1,
+                            ..reviewed_model
+                        },
+                    ],
+                    system_family: None,
+                },
+                crate::product::ProviderConnectionStamp::refresh(1),
+            )
             .await
             .unwrap();
 
@@ -4382,6 +4463,7 @@ mod tests {
                         credential_reference: Some(format!("provider:{}", provider_id.as_str())),
                         lifecycle_state: "active".into(),
                         removed_at: None,
+                        connection_generation: 1,
                     },
                     ProviderCatalogSnapshot {
                         provider_id: provider_id.clone(),
@@ -4468,6 +4550,7 @@ mod tests {
                 credential_reference: None,
                 lifecycle_state: "active".into(),
                 removed_at: None,
+                connection_generation: 1,
             },
             ProviderCatalogSnapshot {
                 provider_id,
@@ -4535,6 +4618,7 @@ mod tests {
                     version,
                 }),
                 runtime_available: true,
+                restore_prior_readiness: false,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4556,6 +4640,7 @@ mod tests {
                     version: 1,
                 }),
                 runtime_available: true,
+                restore_prior_readiness: false,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4577,6 +4662,7 @@ mod tests {
                     version: 1,
                 }),
                 runtime_available: true,
+                restore_prior_readiness: false,
                 unavailable_reason: None,
             },
         ]
@@ -4593,6 +4679,7 @@ mod tests {
                 execution_access_contracts: vec![],
                 family_policy: None,
                 runtime_available: true,
+                restore_prior_readiness: false,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4608,6 +4695,7 @@ mod tests {
                 execution_access_contracts: vec![],
                 family_policy: None,
                 runtime_available: true,
+                restore_prior_readiness: false,
                 unavailable_reason: None,
             },
         ]
