@@ -94,6 +94,18 @@ function layerSelectionEntries(value) {
   )).slice(-512) : [];
 }
 
+export function registerWorkspaceLayoutIpc({ ipcMain, settings }) {
+  const valid = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0.2 && value <= 0.8;
+  ipcMain.handle("relayer:workspace-layout-read", async () => {
+    const value = (await settings.read()).workspaceSplitRatio;
+    return valid(value) ? value : 0.5;
+  });
+  ipcMain.handle("relayer:workspace-layout-set", async (_event, value) => {
+    if (!valid(value)) throw new TypeError("Invalid workspace split ratio.");
+    await settings.update((current) => ({ ...current, workspaceSplitRatio: value }));
+  });
+}
+
 export function registerLayerSelectionIpc({ ipcMain, settings }) {
   ipcMain.handle("relayer:layer-selections-read", async () => (
     layerSelectionEntries((await settings.read()).layerSelections)
@@ -325,6 +337,7 @@ export function registerDesktopIpc({
   });
   registerComposerDraftIpc({ ipcMain, settings });
   registerLayerSelectionIpc({ ipcMain, settings });
+  registerWorkspaceLayoutIpc({ ipcMain, settings });
   ipcMain.handle("relayer:tutorial-read", (_event, context) => tutorial.read(context));
   ipcMain.handle("relayer:tutorial-begin-automatic", (_event, context) => tutorial.beginAutomatic(context));
   ipcMain.handle("relayer:tutorial-begin-manual", () => tutorial.beginManual());

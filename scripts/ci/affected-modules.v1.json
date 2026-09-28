@@ -129,7 +129,12 @@
         "test/share-service-client.test.mjs",
         "test/window-factory.test.mjs",
         "test/workspace-actions.test.mjs",
-        "test/workspace-navigation-integration.test.mjs"
+        "test/workspace-navigation-integration.test.mjs",
+        "test/workspace-reading-context.test.mjs",
+        "test/workspace-reading-layout.test.mjs",
+        "test/node-detail-runtime.test.mjs",
+        "test/environment-rail.test.mjs",
+        "test/public-share-viewer-artifact.test.mjs"
       ]
     }
   ],

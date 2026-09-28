@@ -99,8 +99,11 @@ async function main() {
     await run("new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))");
     await check("closingDetailsRestoresGraphWidth", `(() => {
       const graph=document.querySelector('.graph-column').getBoundingClientRect();
-      const workspace=document.querySelector('.thread-workspace').getBoundingClientRect();
-      return Math.abs(graph.width-workspace.width)<1 && [...document.querySelectorAll('.graph-node')].every(node => {
+      const layout=document.querySelector('.workspace-layout');
+      const workspace=layout.getBoundingClientRect();
+      const style=getComputedStyle(layout);
+      const available=workspace.width-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
+      return Math.abs(graph.width-available)<1 && [...document.querySelectorAll('.graph-node')].every(node => {
         const r=node.getBoundingClientRect();return r.left>=graph.left && r.right<=graph.right && r.top>=graph.top && r.bottom<=graph.bottom;
       });
     })()`);
