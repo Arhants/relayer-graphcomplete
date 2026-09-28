@@ -1,8 +1,10 @@
 import { createServer, type IncomingMessage } from "node:http";
+import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CodexBasicHarness } from "../src/implementations/codex-basic.js";
@@ -28,6 +30,7 @@ describe("Codex secret-provider process boundary", () => {
     const codexBinary = resolvePinnedCodexBinary();
     const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-secret-provider-"));
     temporaryDirectories.push(codexHome);
+    await configureFixture(codexBinary, codexHome);
     const requestReceived = deferred<CapturedRequest>();
     const shellOutputReceived = deferred<string>();
     let requestNumber = 0;
@@ -205,7 +208,7 @@ describe("Codex secret-provider process boundary", () => {
     const providerAddress = providerServer.address();
     if (providerAddress === null || typeof providerAddress === "string") throw new Error("Loopback provider did not expose a TCP port.");
     const endpoint = `http://127.0.0.1:${providerAddress.port}/v1`;
-    await writeFile(join(codexHome, "config.toml"), [
+    await configureFixture(codexBinary, codexHome, [
       'model_provider = "relayer_loopback"',
       "[model_providers.relayer_loopback]",
       'name = "Relayer loopback test provider"',
@@ -214,7 +217,10 @@ describe("Codex secret-provider process boundary", () => {
       "requires_openai_auth = false",
       "supports_websockets = false",
       "",
-    ].join("\n"));
+    ]).catch(async (error: unknown) => {
+      await Promise.all([closeServer(providerServer), closeServer(graphServer)]);
+      throw error;
+    });
     const harness = new CodexBasicHarness({
       threadId: 1,
       permissionProfileId: "full",
@@ -506,6 +512,19 @@ function responseEnvelope(id: string, status: string, output: readonly unknown[]
     user: null,
     metadata: {},
   };
+}
+
+async function configureFixture(codexBinary: string, codexHome: string, configuration: string[] = []): Promise<void> {
+  // These loopback probes exercise credentials and shell graph authority, not
+  // plugin discovery. Default plugin clones can outlive the app-server and race
+  // removal of this synthetic home. Disable that unrelated network work rather
+  // than retrying cleanup or weakening the native-process assertions below.
+  await writeFile(join(codexHome, "config.toml"), ["features.plugins = false", ...configuration].join("\n"));
+  const { stdout } = await promisify(execFile)(codexBinary, ["features", "list"], {
+    env: { ...process.env, CODEX_HOME: codexHome },
+    timeout: 5_000,
+  });
+  expect(stdout).toMatch(/^plugins\s+\S+\s+false$/mu);
 }
 
 function pinnedCodexVersion(): string {

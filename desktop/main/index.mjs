@@ -20,6 +20,11 @@ import {
 } from "./providers/provider-definition-store.mjs";
 import { registerDesktopIpc } from "./ipc/register-ipc.mjs";
 import { createConversationExportService } from "./services/conversation-export.mjs";
+import { createSharePublishCoordinator } from "./services/share-publish-coordinator.mjs";
+import { createSharePublishAttemptStore } from "./services/share-publish-attempt-store.mjs";
+import { createShareServiceClient } from "./services/share-service-client.mjs";
+import { resolveShareServiceEndpoint } from "./services/share-service-endpoint.mjs";
+import { createShareSourceThreadIdentity } from "./services/share-source-thread-identity.mjs";
 import {
   createDesktopAccountTelemetry,
   createDesktopErrorReporterIssuer,
@@ -216,6 +221,7 @@ if (primaryInstance) {
       if (!providerSetup) throw new Error("Provider execution broker is not ready.");
       return providerSetup.acquireExecution(providerId);
     },
+    acknowledgeUnknownProviderRelease: () => providerSetup?.finalizeDrainedRemovals(),
     issueErrorReporter,
     issueErrorCapability,
     onUnexpectedStop: () => {
@@ -557,6 +563,22 @@ if (primaryInstance) {
       getWindow: () => mainWindow,
       exportConversation: (threadId) => productServer.exportConversation(threadId),
     });
+    const shareServiceClient = createShareServiceClient({
+      endpoint: resolveShareServiceEndpoint({ isPackaged: app.isPackaged, packagedRelease, metadata, environment: process.env }),
+    });
+    const shareCoordinator = createSharePublishCoordinator({
+      exportSnapshot: (threadId, title, options) => productServer.exportShareSnapshot(threadId, title, options),
+      accountSession: () => accountService.shareSession(),
+      sourceThreadIdentity: createShareSourceThreadIdentity({ settings }),
+      publish: (request) => shareServiceClient.publish(request),
+      preflightPublication: (request) => shareServiceClient.preflight(request),
+      issueHandledShareFailureReporter: (identity) => (
+        authenticatedErrorReporting?.issueHandledShareFailureReporter(identity) ?? null
+      ),
+      attemptStore: createSharePublishAttemptStore({
+        directory: join(userDataPath, "share-publish-attempts"),
+      }),
+    });
 
     registerDesktopIpc({
       ipcMain,
@@ -577,6 +599,7 @@ if (primaryInstance) {
       providerDefinitions: providerSetup,
       validateProviderOnboarding: () => productServer.validateProviderOnboarding(),
       conversationExporter,
+      shareCoordinator,
       settings,
       tutorial,
       updater,

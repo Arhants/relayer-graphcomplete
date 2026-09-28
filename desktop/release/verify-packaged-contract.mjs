@@ -37,6 +37,7 @@ export async function verifyPackagedDesktopContract({ appPath, contract } = {}) 
     relayerReleasePlatform: contract.distributionPlatform,
     relayerReleaseArchitecture: contract.architecture,
     relayerReleaseSourceCommit: contract.sourceCommit,
+    relayerShareServiceEndpoint: contract.shareServiceEndpoint,
     relayerAppleTeamId: contract.appleTeamId,
     relayerMinimumMacOSVersion: contract.minimumMacOSVersion,
   };

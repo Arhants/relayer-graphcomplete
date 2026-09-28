@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   EdgeObject,
@@ -14,14 +15,24 @@ import {
   html,
 } from "@relayer/graph-client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Window } from "happy-dom";
 
 import { EvalService } from "../desktop/eval-main/eval-service.mjs";
 import { createConversationExportService } from "../desktop/main/services/conversation-export.mjs";
 import { GraphCompleteRuntimeService } from "../desktop/main/services/graphcomplete-runtime.mjs";
 import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 import { restoreLayerPath } from "../desktop/renderer/src/product-workspace/model.js";
+import { createSharePublishCoordinator } from "../desktop/main/services/share-publish-coordinator.mjs";
+import { createShareServiceClient } from "../desktop/main/services/share-service-client.mjs";
+import { parseConversationExportV1 } from "../desktop/renderer/src/public-share-viewer/snapshot.js";
+import { renderPublicViewerTemplate } from "../desktop/renderer/src/public-share-viewer/template.js";
+import { bootPublicViewer } from "../desktop/renderer/src/public-share-viewer/main.js";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
+const privateShareServiceRoot = process.env.RELAYER_PRIVATE_SHARE_SERVICE_ROOT;
+const joinedShareServiceHarness = privateShareServiceRoot
+  ? await import(pathToFileURL(join(privateShareServiceRoot, "share-service", "test-support", "joined-production-journey.ts")).href)
+  : null;
 const services = [];
 const directories = [];
 const PORTABLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#2563eb"/></svg>`;
@@ -33,7 +44,7 @@ afterEach(async () => {
 });
 
 describe("conversation export to Eval end to end", () => {
-  it("exports real ordinary bytes, imports immutable review state, judges accepted turns, and survives restart", async () => {
+  it(`${joinedShareServiceHarness ? "joins private production handlers and viewer; " : ""}exports real ordinary bytes, imports immutable review state, judges accepted turns, and survives restart`, async () => {
     const dataDirectory = await mkdtemp(join(tmpdir(), "relayer-conversation-e2e-"));
     directories.push(dataDirectory);
     const projectDirectory = join(dataDirectory, "private-project-path");
@@ -176,7 +187,7 @@ describe("conversation export to Eval end to end", () => {
       (layer) => layer.layer.id === turnRecords[0].acceptedView.rootLayerId,
     );
     expect(contentRecords).toHaveLength(1);
-    const exportedAssetNode = exportedRoot.nodes.find((node) => node.clientKey === "root");
+    const exportedAssetNode = exportedRoot.nodes.find((node) => node.clientKey === "root-evidence");
     expect(exportedAssetNode.authoredDetailAssets).toHaveLength(1);
     expect(exportedAssetNode.authoredDetailAssets[0]).toMatchObject({
       digestSha256: contentRecords[0].digestSha256,
@@ -191,6 +202,211 @@ describe("conversation export to Eval end to end", () => {
     const exportedText = exactExportBytes.toString("utf8");
     expect(exportedText).not.toContain(canonicalProjectPath);
     expect(exportedText).not.toMatch(/relayer_control|graphControlToken|harnessControlToken|privateRationale|draft/i);
+
+    const shareIdentity = { ownerHash: "owner-e2e" };
+    let shareId = "0123456789abcdef0123456789abcdef";
+    const assetManifest = {
+      version: 1,
+      assets: {
+        logo: "assets/e2e/relayer-logo.svg",
+        ogImage: "assets/e2e/relayer-share-og.svg",
+        viewerScript: "assets/e2e/public-share-viewer.js",
+        viewerStyles: "assets/e2e/public-share-viewer.css",
+        workspaceStyles: "assets/e2e/workspace.css",
+        lucideScript: "assets/e2e/lucide.min.js",
+        markedScript: "assets/e2e/marked.umd.js",
+      },
+    };
+    const publicationCalls = [];
+    let publishedAttempt = null;
+    let publishedSnapshotBytes = null;
+    let loseFirstFinalizeResponse = true;
+    const joinedHarness = joinedShareServiceHarness?.createJoinedProductionJourneyHarness({
+      viewerTemplate: renderPublicViewerTemplate,
+    });
+    let authorization = "Bearer main-only";
+    let publish;
+    if (joinedHarness) {
+      authorization = joinedHarness.authorization;
+      shareId = joinedHarness.shareId;
+      const client = createShareServiceClient({
+        endpoint: "https://share.example.test",
+        fetchImpl: joinedHarness.fetchImpl,
+        uploadFetchImpl: joinedHarness.uploadFetchImpl,
+      });
+      publish = async (input) => {
+        publicationCalls.push({ attempt: structuredClone(input.attempt), snapshotBytes: new Uint8Array(input.snapshotBytes) });
+        publishedAttempt ??= structuredClone(input.attempt);
+        publishedSnapshotBytes ??= new Uint8Array(input.snapshotBytes);
+        return client.publish(input);
+      };
+    } else {
+      publish = async ({ authorization: receivedAuthorization, assertAuthority, attempt, snapshotBytes }) => {
+        expect(receivedAuthorization).toBe("Bearer main-only");
+        publicationCalls.push({ attempt, snapshotBytes: new Uint8Array(snapshotBytes) });
+        await assertAuthority();
+        if (publishedAttempt) {
+          expect(attempt).toEqual(publishedAttempt);
+          expect(new Uint8Array(snapshotBytes)).toEqual(publishedSnapshotBytes);
+        } else {
+          publishedAttempt = structuredClone(attempt);
+          publishedSnapshotBytes = new Uint8Array(snapshotBytes);
+        }
+        if (loseFirstFinalizeResponse) {
+          loseFirstFinalizeResponse = false;
+          const error = new Error("lost response");
+          error.code = "share_service_failed";
+          error.failureStage = "service";
+          throw error;
+        }
+        return { shareId, url: `https://share.example.test/t/${shareId}` };
+      };
+    }
+    const coordinator = createSharePublishCoordinator({
+      exportSnapshot: (threadId, title, options) => product.exportShareSnapshot(threadId, title, options),
+      accountSession: async () => ({ ownerKey: shareIdentity.ownerHash, authorization, generation: 1 }),
+      sourceThreadIdentity: async (threadId) => `installation:e2e:thread:${threadId}`,
+      createAttemptId: () => "11111111111111111111111111111111",
+      createReferenceId: () => "SHR-E2E00001",
+      publish,
+    });
+    const firstShareAttempt = await coordinator.create({ threadId: thread.id, title: "Public fixture title" });
+    expect(firstShareAttempt).toMatchObject({
+      status: "failed",
+      attemptReferenceId: "SHR-E2E00001",
+      code: "share_service_failed",
+      retryable: true,
+    });
+    const retriedShare = await coordinator.retry(firstShareAttempt.attemptReferenceId);
+    expect(retriedShare).toEqual({
+      status: "created",
+      attemptReferenceId: "SHR-E2E00001",
+      url: "https://share.example.test/t/0123456789abcdef0123456789abcdef",
+    });
+    expect(publicationCalls).toHaveLength(2);
+    expect(publicationCalls[1].attempt).toEqual(publicationCalls[0].attempt);
+    expect(publicationCalls[1].snapshotBytes).toEqual(publicationCalls[0].snapshotBytes);
+    const publishedRecords = new TextDecoder().decode(publishedSnapshotBytes).trimEnd().split("\n").map(JSON.parse);
+    expect(publishedRecords[0].exportVersion).toBe(2);
+    expect(publishedRecords.filter(({ recordType }) => recordType === "visualAssetContent")).toHaveLength(1);
+    expect(publishedRecords.filter(({ recordType }) => recordType === "turn")).toHaveLength(2);
+    const publishedViews = publishedRecords
+      .filter(({ recordType }) => recordType === "turn")
+      .map(({ acceptedView }) => acceptedView);
+    expect(publishedViews.flatMap(({ layers }) => layers).every(({ layer }) => layer.clientKey == null)).toBe(true);
+    expect(publishedViews.flatMap(({ layers }) => layers).flatMap(({ nodes }) => nodes)
+      .every((node) => node.clientKey == null)).toBe(true);
+    expect(publishedViews.flatMap(({ layers }) => layers).flatMap(({ actions }) => actions)
+      .every((action) => action.clientKey == null)).toBe(true);
+    expect(new TextDecoder().decode(publishedSnapshotBytes)).not.toContain("sk-proj-share-client-key-secret");
+
+    const publicPage = {
+      shareId,
+      title: "Public fixture title",
+      snapshotBytes: publishedSnapshotBytes,
+      assetManifest,
+    };
+    const publicSnapshot = parseConversationExportV1(publicPage.snapshotBytes);
+    expect(publicSnapshot.thread.title).toBe("Public fixture title");
+    expect(publicSnapshot.interactions).toHaveLength(2);
+    expect(publicSnapshot.interactions.map((turn) => turn.completionStatus)).toEqual(["accepted", "accepted"]);
+    expect(publicSnapshot.state.currentInteractionId).toBe(publicSnapshot.interactions[0].id);
+    expect(publicSnapshot.interactions[0].completionOutput.rootLayer.nodes.some((node) => node.detail)).toBe(true);
+    expect(publicSnapshot.turns.map((turn) => turn.completion.status)).not.toContain("failed");
+    expect(publicSnapshot.turns.map((turn) => turn.completion.status)).not.toContain("running");
+    expect(new TextDecoder().decode(publicPage.snapshotBytes)).not.toContain(canonicalProjectPath);
+    const joinedPublicResponse = joinedHarness ? await joinedHarness.fetchPublicPage(publicPage.shareId) : null;
+    const publicResponse = joinedPublicResponse ? {
+      status: joinedPublicResponse.status,
+      headers: Object.fromEntries(joinedPublicResponse.headers.entries()),
+      body: await joinedPublicResponse.text(),
+    } : {
+      status: 200,
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      },
+      body: renderPublicViewerTemplate({
+        snapshot: publicPage.snapshotBytes,
+        title: publicPage.title,
+        installUrl: `/t/${publicPage.shareId}/install`,
+        assetManifest: publicPage.assetManifest,
+      }),
+    };
+    expect(publicResponse).toMatchObject({
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+    });
+    const publicHtml = publicResponse.body;
+    expect(publicHtml).toContain("connect-src &#39;none&#39;");
+    expect(publicHtml).toContain("id=\"relayerPublicSnapshot\"");
+    expect(publicHtml).toContain(`/t/${publicPage.shareId}/install`);
+    expect(publicHtml).toContain(joinedHarness ? joinedHarness.assetManifest.assets.viewerScript : '/assets/e2e/public-share-viewer.js');
+    expect(publicResponse.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+    expect(publicHtml).not.toContain("Bearer main-only");
+    const servedSnapshotMatch = publicHtml.match(/id="relayerPublicSnapshot">([\s\S]*?)<\/script>/u);
+    expect(servedSnapshotMatch).toBeTruthy();
+    const servedSnapshotText = JSON.parse(servedSnapshotMatch[1]);
+    expect(servedSnapshotText).toBe(new TextDecoder().decode(publishedSnapshotBytes));
+    const servedSnapshot = parseConversationExportV1(servedSnapshotText);
+    expect(servedSnapshot.thread.title).toBe("Public fixture title");
+    expect(servedSnapshot.interactions.map((turn) => turn.completionStatus)).toEqual(["accepted", "accepted"]);
+    expect(servedSnapshot.state.currentInteractionId).toBe(servedSnapshot.interactions[0].id);
+    expect(servedSnapshot.interactions[0].completionOutput.rootLayer.nodes.some((node) => node.detail)).toBe(true);
+    expect(servedSnapshotText).not.toContain(canonicalProjectPath);
+    expect(publicHtml).not.toContain(authorization);
+    const publicWindow = new Window({ url: `https://share.example.test/t/${shareId}` });
+    publicWindow.document.write(publicHtml);
+    const previousBrowserGlobals = {
+      DOMParser: globalThis.DOMParser,
+      document: globalThis.document,
+      lucide: globalThis.lucide,
+      marked: globalThis.marked,
+      window: globalThis.window,
+    };
+    globalThis.window = publicWindow;
+    globalThis.document = publicWindow.document;
+    globalThis.DOMParser = publicWindow.DOMParser;
+    globalThis.lucide = {
+      Circle: {},
+      createElement(_icon, attributes) {
+        const svg = publicWindow.document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        for (const [name, value] of Object.entries(attributes)) svg.setAttribute(name, String(value));
+        return svg;
+      },
+    };
+    globalThis.marked = { parse: (value) => `<p>${value}</p>` };
+    try {
+      const originalPublicUrl = publicWindow.location.href;
+      const onRenderError = vi.fn();
+      const viewer = bootPublicViewer({ documentRef: publicWindow.document, windowRef: publicWindow, onRenderError });
+      expect(onRenderError).not.toHaveBeenCalled();
+      expect(viewer).not.toBeNull();
+      expect(viewer.adapter.selection.currentInteractionId).toBe(servedSnapshot.interactions[0].id);
+      expect(publicWindow.document.querySelector(".workspace-layout")).toBeTruthy();
+      expect(publicWindow.document.querySelector(".public-share-download-card")?.parentElement?.classList.contains("workspace-layout")).toBe(true);
+      expect(publicWindow.document.querySelector("#environmentPanel")).toBeNull();
+      const assetNodeButton = publicWindow.document.querySelector('[aria-label="Open Root evidence"]');
+      expect(assetNodeButton, [...publicWindow.document.querySelectorAll(".graph-node")].map((node) => node.getAttribute("aria-label"))).not.toBeNull();
+      assetNodeButton.click();
+      await vi.waitFor(() => {
+        const runtimeHost = publicWindow.document.querySelector("#detailContent [data-node-detail-runtime]");
+        const image = runtimeHost?.shadowRoot?.querySelector('img[alt="Portable status illustration"]');
+        expect(image, `detail=${publicWindow.document.querySelector("#detailContent")?.innerHTML}; shadow=${runtimeHost?.shadowRoot?.innerHTML}`).toBeTruthy();
+        expect(image?.dataset.assetState, `shadow=${runtimeHost?.shadowRoot?.innerHTML}`).toBe("available");
+        expect(image?.src).toMatch(/^blob:/u);
+      });
+      expect(publicWindow.location.href).toBe(originalPublicUrl);
+      viewer.dispose();
+    } finally {
+      globalThis.DOMParser = previousBrowserGlobals.DOMParser;
+      globalThis.document = previousBrowserGlobals.document;
+      globalThis.lucide = previousBrowserGlobals.lucide;
+      globalThis.marked = previousBrowserGlobals.marked;
+      globalThis.window = previousBrowserGlobals.window;
+      await publicWindow.close();
+    }
 
     const judgeCalls = [];
     const stateFile = join(dataDirectory, "eval-data", "test-runs.json");
@@ -242,7 +458,7 @@ describe("conversation export to Eval end to end", () => {
       ))
     ))).toBe(true);
     const rootLayer = importedFirst.completionOutput.rootLayer;
-    const importedAssetNode = rootLayer.nodes.find((node) => node.clientKey === "root");
+    const importedAssetNode = rootLayer.nodes.find((node) => node.clientKey === "root-evidence");
     const importedAsset = importedAssetNode.authoredDetail.assets[0];
     const importedAssetResponse = await productRequest(
       productSession,
@@ -422,12 +638,12 @@ function complexConversationFactory(projectPath) {
           async read() { return new TextEncoder().encode(PORTABLE_SVG); },
         },
       });
-      rootNode.detailAuthoring.setComponent(
+      const rootEvidenceNode = new NodeObject("link", "Root evidence", "Portable layout keeps this evidence offset from the answer.", "evidence", "root-evidence");
+      rootEvidenceNode.detailAuthoring.setComponent(
         "portable-visual",
         html`<figure><img alt="Portable status illustration" asset=${assetRef(asset.id)}></figure>`,
       );
-      const rootEvidenceNode = new NodeObject("link", "Root evidence", "Portable layout keeps this evidence offset from the answer.", "evidence", "root-evidence");
-      const expandedNode = new NodeObject("info", "Expanded detail", "First expansion.", "detail", "expanded");
+      const expandedNode = new NodeObject("info", "Expanded detail", "First expansion.", "detail", `${projectPath}/node-client-key`);
       const nestedNode = new NodeObject("info", "Nested expansion", "Second expansion.", "detail", "nested");
       const sharedNode = new NodeObject("info", "Shared reference", "Referenced from root and expansion.", "evidence", "shared");
       const cycleNode = new NodeObject("info", "Reference cycle", "References the shared layer again.", "evidence", "cycle");
@@ -443,12 +659,12 @@ function complexConversationFactory(projectPath) {
         ]),
         "root-layer",
       );
-      const expanded = new LayerObject([expandedNode], [], centeredLayout(expandedNode), "expanded-layer");
+      const expanded = new LayerObject([expandedNode], [], centeredLayout(expandedNode), "sk-proj-share-client-key-secret");
       const nested = new LayerObject([nestedNode], [], centeredLayout(nestedNode), "nested-layer");
       const shared = new LayerObject([sharedNode], [], centeredLayout(sharedNode), "shared-layer");
       const cycle = new LayerObject([cycleNode], [], centeredLayout(cycleNode), "cycle-layer");
       for (const layer of [root, expanded, nested, shared, cycle]) await graph.submitLayer(layer);
-      await graph.addAction(rootNode, { kind: "navigate", relation: "expand", sourceLayer: root, label: "Expand", target: expanded, clientKey: "root-expand" });
+      await graph.addAction(rootNode, { kind: "navigate", relation: "expand", sourceLayer: root, label: "Expand", target: expanded, clientKey: `${projectPath}/action-client-key` });
       await graph.addAction(expandedNode, { kind: "navigate", relation: "expand", sourceLayer: expanded, label: "Expand again", target: nested, clientKey: "nested-expand" });
       await graph.addAction(rootNode, { kind: "navigate", relation: "reference", sourceLayer: root, label: "Shared", target: shared, clientKey: "root-shared" });
       await graph.addAction(expandedNode, { kind: "navigate", relation: "reference", sourceLayer: expanded, label: "Shared again", target: shared, clientKey: "expanded-shared" });

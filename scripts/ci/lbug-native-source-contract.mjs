@@ -37,6 +37,15 @@ export function digestCargoResolvedLbugTree(root) {
         }
         continue;
       }
+      // lbug's build script materializes downloaded/prebuilt native outputs in
+      // this crate-root directory. Those outputs are not part of the pinned
+      // crate archive and must not change the reviewed source-tree identity.
+      if (directory === root && entry.name === ".cache") {
+        if (!info.isDirectory()) {
+          throw new Error("lbug crate .cache path is not a directory");
+        }
+        continue;
+      }
       if (info.isDirectory()) {
         digest.update(`D\0${normalized}\0`);
         visit(path);

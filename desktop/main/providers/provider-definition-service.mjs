@@ -745,6 +745,19 @@ export class ProviderDefinitionService {
     });
   }
 
+  /**
+   * Retries every removal whose provider has no running lease. Called when an owner
+   * acknowledges a lease the harness host no longer tracks.
+   */
+  async finalizeDrainedRemovals() {
+    await this.#serialized(async () => {
+      await this.#initialize();
+      for (const { id } of this.definitions.filter(({ lifecycleState }) => lifecycleState === "removal_pending")) {
+        await this.#finalizeDrainedRemoval(id);
+      }
+    });
+  }
+
   async #finalizeDrainedRemoval(id) {
     const current = this.definitions.find((item) => item.id === id);
     if (!this.activeExecutions.has(id) && current?.lifecycleState === "removal_pending") {

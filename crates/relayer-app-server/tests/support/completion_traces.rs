@@ -18,7 +18,7 @@ use super::*;
 use crate::{
     api::auth::DesktopSessionAuthenticator,
     completion_broker::{CompletionBrokerRegistry, CompletionObservations},
-    conversation_export::ExportProducer,
+    conversation_export::{ConversationExportRecord, ExportAttemptOutcome, ExportProducer},
     product::{CreateThreadCommand, NodeContextDraftConfirmationService, ProductService},
     runtime::RuntimeClient,
     storage::SqliteProductStore,
@@ -1559,6 +1559,70 @@ async fn a_child_returned_while_its_provider_runs_exports_and_restarts_as_accept
             .unwrap(),
         Some("accepted")
     );
+    // The replay keeps the parent graph current active so it can exercise recursive-child
+    // lifecycle independently. Complete that already-product-accepted parent before asking the
+    // production share builder for every accepted closure.
+    let root = world
+        .product
+        .get_interaction(world.thread.root_interaction_id)
+        .await
+        .unwrap();
+    let root_node_id = NodeId::new(root.graph_node_id.unwrap()).unwrap();
+    let root_current = world.graph.current_completion(root_node_id).await.unwrap();
+    let root_writer = world.graph.writer_for_subgraph(root_node_id).await.unwrap();
+    root_writer
+        .add_action(&ActionDraft {
+            client_key: "response".into(),
+            source_node_id: root_node_id,
+            source_layer_id: None,
+            kind: ActionKind::Navigate,
+            relation: Some(NavigateRelation::Expand),
+            label: "Response".into(),
+            variant: ActionVariant::default(),
+            icon: None,
+            description: None,
+            target_layer_id: root_current.current_layer_id,
+            interaction_text: None,
+            input: None,
+        })
+        .await
+        .unwrap();
+    root_writer
+        .transition_current(
+            root_current.head_revision,
+            "share-root-return",
+            CurrentTransition::Return {
+                layer_id: root_current.current_layer_id.unwrap(),
+            },
+        )
+        .await
+        .unwrap();
+    let share = crate::conversation_export_service::build_share_conversation_export(
+        &world.product,
+        &world.runtime,
+        world.thread.id,
+        world.state.export_producer.clone(),
+        "2026-01-01T00:00:00Z".into(),
+        "Accepted recursive work",
+    )
+    .await
+    .unwrap();
+    let shared_child = share
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<ConversationExportRecord>(line).unwrap())
+        .find_map(|record| match record {
+            ConversationExportRecord::Turn(turn) if turn.text == "Child work" => Some(turn),
+            _ => None,
+        })
+        .expect("the accepted recursive child must be present in the share snapshot");
+    assert_eq!(
+        shared_child.completion.attempt_outcome,
+        Some(ExportAttemptOutcome::Accepted),
+        "the production share builder must project the settled outcome while the provider unwinds"
+    );
+    assert!(shared_child.completion.attempt_admission_id.is_none());
+    assert!(shared_child.completion.admitted_model_plan.is_none());
 
     // A running-but-unsettled snapshot never takes a decided outcome, even if the
     // execution settles between the two reads.

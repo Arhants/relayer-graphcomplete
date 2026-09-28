@@ -2601,11 +2601,19 @@ function expectGraphAuthoringRules(prompt: string): void {
   expect(prompt).toContain("Only a card accepts description, and a card requires one.");
   // Graph core exempts the interaction root before enforcing draft ownership, so the rule states that exception.
   expect(prompt).toContain("Apart from the interaction node's one root expand action, add actions only on draft nodes created for this interaction");
-  expect(prompt).toContain("the next current layer must keep a navigation path back to it");
+  expect(prompt).toContain("The first current layer may contain visible accepted nodes");
+  expect(prompt).toContain("when no prior current exists, it needs no new draft carrier");
+  expect(prompt).toContain("Reuse an existing valid path when one already exists");
+  expect(prompt).toContain("every later current layer and the root of your final graph.submit must retain a navigation path back");
   expect(prompt).toContain('current["currentLayerId"], relation="reference", source_layer=new_layer');
-  // Graph core checks the same path on the final submit's Return, and only a draft node takes the action.
-  expect(prompt).toContain("to the root layer of your final graph.submit");
-  expect(prompt).toContain("every layer you make current needs at least one new draft node to carry that reference");
+  expect(prompt).toContain("Give each distinct logical advance_current transition its own stable operation key");
+  expect(prompt).toContain("After submitting the complete closure and registering all its actions, publish it with await graph.advance_current(");
+  expect(prompt).toContain("An exact retry reuses all three unchanged");
+  expect(prompt).toContain("After a successful nonterminal advance_current, refresh with current = await graph.get_current()");
+  expect(prompt).toContain("Use a different stable key for that next transition");
+  expect(prompt).toContain("A successful terminal graph.submit ends graph access: do not call get_current");
+  expect(prompt).not.toContain("every layer you make current needs at least one new draft node");
+  expect(prompt).not.toContain("a-stable-operation-key");
 }
 
 const pythonExecutable = process.platform === "win32" ? "python" : "python3";
