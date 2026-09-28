@@ -104,6 +104,7 @@ pub(crate) struct LayerRecord {
 
 #[derive(FromRow)]
 struct LayerRow {
+    default_node_id: Option<i64>,
     id: i64,
     client_key: String,
     state: String,
@@ -129,7 +130,7 @@ impl<'connection> LayerTable<'connection> {
         id: LayerId,
     ) -> Result<Option<LayerRecord>, GraphError> {
         let row = sqlx::query_as::<_, LayerRow>(
-            "SELECT id,client_key,state,owner_interaction_id,layout_schema_version FROM layers WHERE id=?1 AND ((?2 IS NOT NULL AND project_id=?2) OR (?2 IS NULL AND project_id IS NULL AND thread_id=?3))",
+            "SELECT id,client_key,state,owner_interaction_id,layout_schema_version,default_node_id FROM layers WHERE id=?1 AND ((?2 IS NOT NULL AND project_id=?2) OR (?2 IS NULL AND project_id IS NULL AND thread_id=?3))",
         )
         .bind(id.value())
         .bind(scope.project_id.map(ProjectId::value))
@@ -163,9 +164,19 @@ impl<'connection> LayerTable<'connection> {
         .bind(id.value())
         .fetch_all(&mut *self.connection)
         .await?;
+        if row
+            .default_node_id
+            .is_some_and(|id| !nodes.iter().any(|node| node.value() == id))
+        {
+            return Err(GraphError::Internal(format!(
+                "layer {} has a default node outside its membership",
+                row.id
+            )));
+        }
         let layout = stored_layout(row.id, row.layout_schema_version, placement_rows, &nodes)?;
         Ok(Some(LayerRecord {
             layer: GraphLayer {
+                default_node_id: row.default_node_id.map(valid_node_id).transpose()?,
                 id: valid_layer_id(row.id)?,
                 client_key: Some(row.client_key),
                 nodes,
@@ -300,11 +311,14 @@ impl<'connection> LayerTable<'connection> {
                     .bind(id.value())
                     .execute(&mut *self.connection)
                     .await?;
-                sqlx::query("UPDATE layers SET layout_schema_version=?1 WHERE id=?2")
-                    .bind(layout(draft)?.version as i64)
-                    .bind(id.value())
-                    .execute(&mut *self.connection)
-                    .await?;
+                sqlx::query(
+                    "UPDATE layers SET layout_schema_version=?1,default_node_id=?3 WHERE id=?2",
+                )
+                .bind(layout(draft)?.version as i64)
+                .bind(id.value())
+                .bind(draft.default_node_id.map(NodeId::value))
+                .execute(&mut *self.connection)
+                .await?;
                 id
             }
             Some((_, RecordState::Accepted)) => {
@@ -323,13 +337,14 @@ impl<'connection> LayerTable<'connection> {
             }
             None => {
                 let result = sqlx::query(
-                    "INSERT INTO layers(project_id,thread_id,state,owner_interaction_id,client_key,layout_schema_version) VALUES (?1,?2,'draft',?3,?4,?5)",
+                    "INSERT INTO layers(project_id,thread_id,state,owner_interaction_id,client_key,layout_schema_version,default_node_id) VALUES (?1,?2,'draft',?3,?4,?5,?6)",
                 )
                 .bind(scope.project_id.map(ProjectId::value))
                 .bind(scope.thread_id.value())
                 .bind(scope.root_node_id.value())
                 .bind(&draft.client_key)
                 .bind(layout(draft)?.version as i64)
+                .bind(draft.default_node_id.map(NodeId::value))
                 .execute(&mut *self.connection)
                 .await?;
                 valid_layer_id(result.last_insert_rowid())?
@@ -364,6 +379,7 @@ impl<'connection> LayerTable<'connection> {
             .await?;
         }
         Ok(GraphLayer {
+            default_node_id: draft.default_node_id,
             id,
             client_key: Some(draft.client_key.clone()),
             nodes: draft.nodes.clone(),

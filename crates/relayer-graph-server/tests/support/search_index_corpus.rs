@@ -153,6 +153,7 @@ pub async fn prepare_case(
             .collect();
         let layer = writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: format!("{}-layer-{layer_index}", case.id),
                 nodes: nodes.iter().map(|node| node.id).collect(),
                 edges: edges.iter().map(|edge| edge.id).collect(),
