@@ -8,8 +8,10 @@ CHECK (tombstone_cause IS NULL OR tombstone_cause = 'no_eligible_models');
 
 -- Families already in that recovery state. A provider's managed families were all tombstoned by
 -- a zero-eligible refresh when it has no active managed family left while it is active: policy
--- retirement always leaves a successor active. The kept family is the one retired last (then the
--- newer id), not simply the newest id, which after a policy revert can be a superseded family.
+-- retirement always leaves a successor active. The kept family is the provider's default when it is
+-- one of them, since reconciliation keeps the default on the provider's current family; otherwise
+-- the one retired last. Neither the newest id nor the retirement second alone is enough: after a
+-- policy revert the superseded family has the higher id, and removed_at has one-second resolution.
 -- The provider is connected and still reports no eligible models, or has disconnected since,
 -- which overwrote that reason. Earlier builds cleared `enabled` when tombstoning and set it again
 -- on restore, so the user's choice is unknown; restore it as enabled, which is what the next
@@ -37,6 +39,9 @@ WHERE kind = 'system'
     SELECT kept.id FROM model_families kept
     WHERE kept.managed_provider_id = model_families.managed_provider_id
       AND kept.lifecycle_state = 'tombstoned'
-    ORDER BY CAST(kept.removed_at AS INTEGER) DESC, kept.id DESC
+    ORDER BY
+      kept.id = (SELECT default_family_id FROM product_model_preferences WHERE singleton = 1) DESC,
+      CAST(kept.removed_at AS INTEGER) DESC,
+      kept.id DESC
     LIMIT 1
   );

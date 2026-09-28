@@ -544,6 +544,9 @@ export function createModelPicker({
     } = {}) {
       harnessValidationGate.invalidate();
       validatingHarness = false;
+      const recoveringFamilyId = selectionReady()
+        ? null
+        : modelPickerModelSetup(currentSettings, currentSelection)?.familyId ?? null;
       currentSettings = nextSettings;
       currentPinnedHarnessId = nextPinnedHarnessId;
       currentSelection = currentSettings
@@ -556,6 +559,22 @@ export function createModelPicker({
           replaceSelection,
         }))
         : null;
+      // A refresh that ends the selected family's recovery can restore it with another roster.
+      // The family is kept, and its first available model replaces one it no longer has, as when
+      // the thread is first opened (PROV-008).
+      if (
+        recoveringFamilyId != null
+        && currentSettings
+        && !selectionReady()
+        && String(currentSelection?.familyId) === String(recoveringFamilyId)
+        && !modelPickerModelSetup(currentSettings, currentSelection)
+      ) {
+        const restored = resolveUnsentModelIntent(currentSettings, {
+          ...currentSelection,
+          harnessId: selectedHarnessId(),
+        });
+        if (restored.selection) currentSelection = restored.selection;
+      }
       error = null;
       render();
       onSelectionChange(selectionReady() ? currentSelection : null);

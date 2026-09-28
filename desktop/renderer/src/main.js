@@ -40,6 +40,7 @@ import {
 import { createReviewPresentationAdapter } from "./review-tools.js";
 import { initializeProviderSettings, refreshProviderSettings } from "./provider-settings.js";
 import { setProviderModelsRefreshedHandler } from "./provider-models-refresh.js";
+import { createProviderModelsRefreshedHandler } from "./provider-ui-model.js";
 import {
   installOnboardingTutorialController,
   onboardingTutorialController,
@@ -81,13 +82,16 @@ function applyPlatformCopy() {
   $("#appearanceDescription").textContent = `Choose how Relayer looks on this ${device}.`;
 }
 
+async function refreshModelSurfaces() {
+  if (!productApiAvailable) return;
+  await refreshModelFamilySettings();
+  refreshNewThreadModelPicker();
+  updateCreateThreadAvailability();
+  updateTutorialAvailability();
+}
+
 async function refreshProviderModelUi() {
-  if (productApiAvailable) {
-    await refreshModelFamilySettings();
-    refreshNewThreadModelPicker();
-    updateCreateThreadAvailability();
-    updateTutorialAvailability();
-  }
+  await refreshModelSurfaces();
   if (productApiAvailable) await refreshState(viewState.currentThreadId);
 }
 
@@ -411,10 +415,12 @@ async function boot() {
   });
   // A Refresh models action for a default family that needs model setup reloads the provider
   // cards, Settings, both composers and the open thread (PROV-008).
-  setProviderModelsRefreshedHandler(async () => {
-    await refreshProviderSettings();
-    await refreshProviderModelUi();
-  });
+  setProviderModelsRefreshedHandler(createProviderModelsRefreshedHandler({
+    currentThreadId: () => viewState.currentThreadId,
+    refreshProviderSettings,
+    refreshModelUi: refreshModelSurfaces,
+    refreshThreadState: (threadId) => (productApiAvailable ? refreshState(threadId) : undefined),
+  }));
   const account = await refreshAccount();
   await initializeProviderSettings();
   if (productApiAvailable) await initializeModelFamilySettings();

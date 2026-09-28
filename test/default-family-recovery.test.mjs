@@ -9,9 +9,12 @@ import {
 } from "../desktop/renderer/src/model-family-model.js";
 import {
   defaultFamilyModelSetup,
+  defaultFamilyRecoveryError,
+  firstAvailableSelection,
   isModelSelectionCatalogError,
   pickerSelectionIsAvailable,
 } from "../desktop/renderer/src/model-picker-model.js";
+import { createProviderModelsRefreshedHandler } from "../desktop/renderer/src/provider-ui-model.js";
 import {
   composerSendTitle,
   createModelPicker,
@@ -285,6 +288,59 @@ describe("default family that needs model setup (PROV-008)", () => {
     picker.dispose();
   });
 
+  it("selects the restored family's first model when a refresh ends a thread's recovery", () => {
+    // The thread's last model is not in the restored roster.
+    const selection = { harnessId: "codex-basic", familyId: 1, providerId: "codex", modelId: "gpt-5.6-terra" };
+    const { picker } = mountPicker(recovering(), {
+      mode: "ongoing",
+      pinnedHarnessId: "codex-basic",
+      selection,
+      onRefreshModels: async () => {},
+    });
+    expect(picker.modelSetup()).toMatchObject({ familyId: 1 });
+    // The settings reload after the refresh keeps the thread's selection (no replaceSelection).
+    picker.setContext({ settings: restored() });
+    expect(picker.isReady()).toBe(true);
+    expect(picker.getSelection()).toEqual({
+      harnessId: "codex-basic",
+      familyId: 1,
+      providerId: "codex",
+      modelId: "gpt-5.6-sol",
+    });
+    picker.dispose();
+  });
+
+  it("refreshes thread state after a model refresh only when a thread is open", async () => {
+    const calls = [];
+    const handler = (currentThreadId) => createProviderModelsRefreshedHandler({
+      currentThreadId: () => currentThreadId,
+      refreshProviderSettings: async () => { calls.push("providers"); },
+      refreshModelUi: async () => { calls.push("models"); },
+      refreshThreadState: async (threadId) => { calls.push(`thread:${threadId}`); },
+    });
+    // From the New Thread composer, a thread refresh would select and open a saved thread.
+    await handler(null)();
+    expect(calls).toEqual(["providers", "models"]);
+    calls.length = 0;
+    await handler(7)();
+    expect(calls).toEqual(["providers", "models", "thread:7"]);
+  });
+
+  it("keeps Eval from falling through to another family while the default recovers", () => {
+    const settings = recovering();
+    // Work defaults is healthy, but Eval resolves the default family, which is recovering.
+    expect(firstAvailableSelection(settings, "codex-basic")).toBeNull();
+    const error = defaultFamilyRecoveryError(settings);
+    expect(error.code).toBe("provider_no_eligible_execution_models");
+    expect(error.message).toBe(
+      "The default model family is unavailable. Codex defaults needs model setup. Codex has no models eligible for agent execution.",
+    );
+    const offline = defaultFamilyRecoveryError(disconnected());
+    expect(offline.code).toBe("provider_unavailable");
+    expect(defaultFamilyRecoveryError(restored())).toBeNull();
+    expect(firstAvailableSelection(restored(), "codex-basic")).toMatchObject({ familyId: 1 });
+  });
+
   it("says why Send is blocked", () => {
     const modelSetup = defaultFamilyModelSetup(recovering());
     expect(composerSendTitle({ ready: false, modelSetup, readyTitle: "Send" })).toBe(
@@ -356,7 +412,15 @@ describe("default family that needs model setup (PROV-008)", () => {
     expect(threads).toContain("if (!isModelSelectionCatalogError(error)) return;");
     expect(workspace).toContain("send.title = composerSendTitle({");
     expect(threads).toContain('$("#createThread").title = composerSendTitle({');
-    expect(main).toContain("setProviderModelsRefreshedHandler(");
+    expect(main).toContain("setProviderModelsRefreshedHandler(createProviderModelsRefreshedHandler({");
+    expect(main).toContain("currentThreadId: () => viewState.currentThreadId,");
+    const [evalService, liveCredentials] = await Promise.all([
+      readFile(new URL("../desktop/eval-main/eval-service.mjs", import.meta.url), "utf8"),
+      readFile(new URL("../desktop/eval-main/live-credentials.mjs", import.meta.url), "utf8"),
+    ]);
+    for (const evalSource of [evalService, liveCredentials]) {
+      expect(evalSource).toContain("defaultFamilyRecoveryError(");
+    }
     // Picker "Open Settings" opens the tab the recovery needs.
     for (const opener of [graph, main]) {
       expect(opener).toContain('onOpenSettings: (tab = "models") => {');

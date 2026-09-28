@@ -1,5 +1,9 @@
 import { CodexCredentialAdapter } from "../main/credentials/codex-credential-adapter.mjs";
-import { firstAvailableSelection, harnessUsesConfigurationModel } from "../renderer/src/model-picker-model.js";
+import {
+  defaultFamilyRecoveryError,
+  firstAvailableSelection,
+  harnessUsesConfigurationModel,
+} from "../renderer/src/model-picker-model.js";
 
 const CONNECTED_PRODUCT_PROVIDER = "connected-product-provider";
 const CODEX_JUDGE_CONFIGURATION_NAMES = new Set(["simulated-user", "simulated-user-sol-high"]);
@@ -58,6 +62,9 @@ export function createLiveModelRouteResolver({
         selectedModel = firstAvailableSelection(settings, harnessName);
         provider = providerForSelection(settings, selectedModel);
       }
+      // A recovering default family is refused, never replaced by another family (PROV-008).
+      const recoveryError = selectedModel ? null : defaultFamilyRecoveryError(settings);
+      if (recoveryError) throw recoveryError;
       return routeForSelection({
         settings,
         selectedModel,

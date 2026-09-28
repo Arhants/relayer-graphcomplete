@@ -3293,6 +3293,70 @@ mod provider_definition_tests {
         store.pool.close().await;
     }
 
+    // PROV-008 upgrade, finding: a policy revert and a zero-eligible refresh in the same second give
+    // both tombstones the same removed_at. The provider's default is the family kept, not the
+    // newer superseded id.
+    #[tokio::test]
+    async fn upgrade_marks_the_default_when_two_tombstones_share_a_second() {
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-family-recovery-tie-")
+            .tempdir()
+            .unwrap();
+        let database = temporary.path().join("product.sqlite3");
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                sqlx::sqlite::SqliteConnectOptions::new()
+                    .filename(&database)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        sqlx::migrate::Migrator {
+            migrations: std::borrow::Cow::Owned(
+                super::super::migrations::MIGRATOR
+                    .iter()
+                    .filter(|migration| migration.version <= 36)
+                    .cloned()
+                    .collect(),
+            ),
+            ..sqlx::migrate::Migrator::DEFAULT
+        }
+        .run(&pool)
+        .await
+        .unwrap();
+        for statement in [
+            "INSERT INTO model_providers(id,label,connected,refreshed_at,adapter_id,access_contract,lifecycle_state,unavailable_reason_code,unavailable_reason_message) VALUES('tied','Tied',1,'1','codex-subscription','managed-runtime@1','active','provider_no_eligible_execution_models','No eligible models.')",
+            "INSERT INTO model_families(id,name,kind,system_key,enabled,position,managed_provider_id,policy_id,policy_version,lifecycle_state,removed_at) VALUES(107,'Tied defaults','system','tied:p@1',0,(SELECT COUNT(*) FROM model_families),'tied','p',1,'tombstoned','9')",
+            "INSERT INTO model_families(id,name,kind,system_key,enabled,position,managed_provider_id,policy_id,policy_version,lifecycle_state,removed_at) VALUES(108,'Tied v2','system','tied:p@2',0,(SELECT COUNT(*) FROM model_families),'tied','p',2,'tombstoned','9')",
+            "UPDATE product_model_preferences SET default_provider_id='tied',default_family_id=107 WHERE singleton=1",
+        ] {
+            sqlx::query(statement).execute(&pool).await.unwrap();
+        }
+        pool.close().await;
+
+        let store = SqliteProductStore::open(&database).await.unwrap();
+        let recovery = store
+            .load_model_settings()
+            .await
+            .unwrap()
+            .default_family_recovery
+            .expect("the default stays in recovery");
+        assert_eq!(recovery.family_id, ModelFamilyId::from_database(107));
+        let marked: Vec<(i64, Option<String>)> = sqlx::query_as(
+            "SELECT id,tombstone_cause FROM model_families WHERE id IN (107,108) ORDER BY id",
+        )
+        .fetch_all(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            marked,
+            vec![(107, Some("no_eligible_models".into())), (108, None)]
+        );
+        store.pool.close().await;
+    }
+
     // PROV-008: execution of a managed family that a zero-eligible refresh tombstoned reports the
     // provider's recovery reason, not model_family_removed.
     #[tokio::test]

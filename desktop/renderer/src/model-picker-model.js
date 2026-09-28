@@ -68,6 +68,16 @@ export function defaultFamilyModelSetup(settings) {
   return familyModelSetup(settings, settings?.defaults?.familyId);
 }
 
+// The typed error an automatic caller, such as Eval, reports while the default family recovers.
+export function defaultFamilyRecoveryError(settings) {
+  const recovery = settings?.defaultFamilyRecovery;
+  const modelSetup = defaultFamilyModelSetup(settings);
+  if (!recovery || !modelSetup) return null;
+  const error = new Error(`The default model family is unavailable. ${modelSetup.message}`);
+  error.code = recovery.reason.code;
+  return error;
+}
+
 function harnessFor(settings, harnessId) {
   return settings.harnesses.find((harness) => harness.id === harnessId);
 }
@@ -142,7 +152,10 @@ export function availablePickerFamilies(settings, harnessId) {
     .filter((family) => family.availableMembers.length > 0);
 }
 
+// Automatic selection resolves the default family. While that family is in recovery it refuses,
+// rather than running another family the user did not choose (PROV-008).
 export function firstAvailableSelection(settings, harnessId) {
+  if (defaultFamilyModelSetup(settings)) return null;
   const families = availablePickerFamilies(settings, harnessId);
   const family = families.find((item) => String(item.id) === String(settings.defaults?.familyId))
     ?? families[0];

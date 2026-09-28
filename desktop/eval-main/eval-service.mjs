@@ -55,7 +55,11 @@ import {
   validateEvalChecksV1,
 } from "@relayer/eval-runner";
 import { loadHarnessConfigurations } from "@relayer/harness-host";
-import { firstAvailableSelection, harnessUsesConfigurationModel } from "../renderer/src/model-picker-model.js";
+import {
+  defaultFamilyRecoveryError,
+  firstAvailableSelection,
+  harnessUsesConfigurationModel,
+} from "../renderer/src/model-picker-model.js";
 import { RECURSIVE_TEMPORAL_FEATURES } from "../main/services/graphcomplete-runtime.mjs";
 import {
   buildAcceptedReviewTopology,
@@ -2539,6 +2543,11 @@ export class EvalService {
         execution.harnessConfigurationName,
       );
       const modelLessEvalFixture = execution.harnessConfiguration.implementation.startsWith("fixture.");
+      // A recovering default family is refused, never replaced by another family (PROV-008).
+      const recoveryError = productModelSelection && selectedModel === null && !modelLessEvalFixture
+        ? defaultFamilyRecoveryError(modelSettings)
+        : null;
+      if (recoveryError) throw recoveryError;
       if (productModelSelection && selectedModel === null && !modelLessEvalFixture) {
         throw new Error(`Eval has no available model for ${execution.harnessConfigurationName}.`);
       }
