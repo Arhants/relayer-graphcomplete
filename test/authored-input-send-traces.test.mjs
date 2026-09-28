@@ -86,6 +86,18 @@ describe("A newer turn arriving while Send waits for an authored commit", () => 
     });
   }
 
+  it("keeps the retyped text a second newer turn carried on while Send waited", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    for (const step of [["Type", 1], ["Commit"], ["ClickSend"]]) await world.apply(step);
+    await world.newerTurnArrives({ invoked: true });
+    await world.typePrompt(COMPOSED);
+    await world.newerTurnArrives({ invoked: true, id: 7 });
+    expect(world.promptText).toBe(COMPOSED);
+    for (const step of [["ServeCommit"], ["CommitReturns"], ["ServeSend"], ["SendReturns"]]) await world.apply(step);
+    await world.newerTurnArrives({ text: COMPOSED, id: 8 });
+    expect(world.promptText).toBe(COMPOSED);
+  });
+
   it("keeps text typed since then, and does not restore the older text", async () => {
     world = await new AuthoredInputSendWorld().ready();
     for (const step of [["Type", 1], ["Commit"], ["ClickSend"]]) await world.apply(step);
@@ -299,6 +311,24 @@ describe("An authored answer typed but not committed, with an empty composer", (
 });
 
 describe("An answer that failed while its Node Detail was replaced", () => {
+  it("shows a refused answer's error again, until the input is edited", async () => {
+    world = await new AuthoredInputSendWorld({ otherNode: true }).ready();
+    world.input.value = " ";
+    world.input.dispatchEvent(new world.window.Event("change", { bubbles: true }));
+    await world.settled();
+    const revisit = async () => {
+      await world.click('[data-node="8"]');
+      await world.settled();
+      await world.click('[data-node="7"]');
+      await world.settled();
+    };
+    await revisit();
+    expect(world.input?.getAttribute("aria-invalid")).toBe("true");
+    await world.apply(["Type", 2]);
+    await revisit();
+    expect(world.input?.getAttribute("aria-invalid")).not.toBe("true");
+  });
+
   it("shows the failure again when the input is shown", async () => {
     world = await new AuthoredInputSendWorld().ready();
     for (const step of [["Type", 1], ["Commit"]]) await world.apply(step);

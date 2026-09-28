@@ -1273,8 +1273,10 @@ export function transitionComposerDraftScope(state, {
   }
   const stored = drafts.get(nextScopeKey);
   // A newer turn's scope starts empty; unsent text typed while the previous
-  // turn's scope was active moves into it, so it is not stranded there.
-  const carried = !restoredDraft && persistedDraftText === null && !stored?.promptValue
+  // turn's scope was active moves into it, so it is not stranded there. It
+  // wins over the turn's retry text, as a user's draft does, which leaves
+  // the restoration pending (SCP-018, SCP-020).
+  const carried = persistedDraftText === null && !stored?.promptValue
     ? unsentOlderDraft(drafts, olderScopeKeys, [inFlightSubmission, ...sentDrafts])
     : null;
   if (carried) {
@@ -4646,6 +4648,10 @@ export function createProductWorkspace({
     if (draftTransition.carriedFromScopeKey) {
       persistThreadFollowupDraft(composerDraftScopeState.activeScopeKey, prompt.value);
       clearThreadFollowupDraft(draftTransition.carriedFromScopeKey);
+      // An edit made while Send waits moves with its text.
+      if (sendEditScopes.get(threadId) === draftTransition.carriedFromScopeKey) {
+        sendEditScopes.set(threadId, composerDraftScopeState.activeScopeKey);
+      }
     }
     const sentRecord = sentThreadFollowup(threadId);
     if (sentRecord) {
@@ -5853,7 +5859,9 @@ export function createProductWorkspace({
         const threadId = String(getThread()?.id);
         const editKey = `${authoredDetailMountKey}\u0000${context.mountId}`;
         const refusalKey = refusedInputKey(authoredDetailMountKey, context.mountId);
-        if (typeof value === "string") failedAuthoredInputs.get(threadId)?.delete(refusalKey);
+        if (typeof value === "string" && failedAuthoredInputs.get(threadId)?.delete(refusalKey)) {
+          authoredInputErrors.delete(`${threadId}\u0000${refusedInputOccurrences.get(refusalKey)}`);
+        }
         if (typeof value === "string" && value.trim()) authoredInputEdits.set(editKey, threadId);
         else authoredInputEdits.delete(editKey);
         if (submitted) trackAuthoredInputSubmit(threadId, submitted, refusalKey);
@@ -5867,10 +5875,10 @@ export function createProductWorkspace({
         const issue = validateInputStage(action, value);
         if (issue) {
           if (interactionNodeId != null && layerId != null) {
-            refusedInputOccurrences.set(
-              refusedInputKey(authoredDetailMountKey, context.mountId),
-              authoredInputKey(createInputOccurrence(interactionNodeId, layerId, action.id)),
-            );
+            const inputKey = authoredInputKey(createInputOccurrence(interactionNodeId, layerId, action.id));
+            refusedInputOccurrences.set(refusedInputKey(authoredDetailMountKey, context.mountId), inputKey);
+            // Shown again if the Node Detail remounts before the Send it stops.
+            authoredInputErrors.set(`${thread.id}\u0000${inputKey}`, issue.message);
           }
           throw new Error(issue.message);
         }

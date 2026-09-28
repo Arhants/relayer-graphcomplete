@@ -276,6 +276,26 @@ describe("An edit after Send that retypes the same text", () => {
     expect(world.prompt.value).toBe(sentText);
   });
 
+  it("is carried ahead of the retry text when the sent turn first loads already failed", async () => {
+    world = await new TurnComposerWorld({ maxText: 2, maxTurns: 2 }).ready();
+    await world.apply(["Type"]);
+    const sentText = world.prompt.value;
+    await world.apply(["ClickSend"]);
+    world.prompt.value = "an edit after Send";
+    world.prompt.dispatchEvent(new world.window.Event("input"));
+    for (const step of [["PostInserted", "A"], ["PostSucceeds", "A"], ["RefreshSkipped", "A"], ["Settle", "A"]]) {
+      await world.apply(step);
+    }
+    world.pendingTurn.A = false;
+    world.turns.A.push({ status: "not_started", text: sentText, latestAttempt: { id: 1, outcome: "model_failed" } });
+    await world.apply(["BackgroundRender"]);
+    expect(world.prompt.value).toBe("an edit after Send");
+    // The retry text stays pending, and returns once the edit is cleared.
+    world.prompt.value = "";
+    world.prompt.dispatchEvent(new world.window.Event("input"));
+    expect(world.prompt.value).toBe(sentText);
+  });
+
   it("leaves no record once the server rejects the send outright", async () => {
     world = await new TurnComposerWorld({ maxText: 2, maxTurns: 2 }).ready();
     await world.apply(["Type"]);
