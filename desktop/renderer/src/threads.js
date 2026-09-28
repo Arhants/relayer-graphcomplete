@@ -1,3 +1,4 @@
+import { preferredLayerNode, rememberedLayerSelection, rememberLayerSelection } from "./product-workspace/layer-selection.js";
 import { request } from "./api.js";
 import {
   actionWasInvoked,
@@ -678,7 +679,9 @@ export function hydrateWorkspace(
     String(previousInteractionId) !== String(interaction?.id)
     || String(previousLayerId) !== String(nextLayerId)
   ) {
-    viewState.selectedNodeId = selectedNodeId ?? null;
+    viewState.selectedNodeId = preferredLayerNode(layer, selectedNodeId, rememberedLayerSelection(
+      viewState.currentThreadId, interaction?.id, layer?.layer?.id,
+    ));
   } else if (selectedNodeId !== undefined) {
     viewState.selectedNodeId = selectedNodeId;
   }
@@ -1016,6 +1019,9 @@ export function getNavigationHistory() {
 
 export function replaceCurrentSelection(selectedNodeId) {
   viewState.selectedNodeId = selectedNodeId ?? null;
+  if (appState.visibleLayer?.nodes?.some((node) => String(node.id) === String(selectedNodeId))) {
+    rememberLayerSelection(viewState.currentThreadId, viewState.currentInteractionId, appState.visibleLayer?.layer?.id, selectedNodeId);
+  }
   // Selecting a node is a newer presentation intent than an invoke destination
   // already being resolved. Selection is intentionally not part of the
   // navigation location key, so explicitly invalidate that async request while

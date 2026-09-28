@@ -226,6 +226,7 @@ mod tests {
             .unwrap();
         let root = writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "root".into(),
                 nodes: vec![preference.id],
                 edges: vec![],
