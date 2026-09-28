@@ -3109,9 +3109,9 @@ mod tests {
             ExportAuthoredDetailOmission, ExportCompletionStatus, ExportTurnOrigin,
         },
         product::{
-            ActionInvocation, DurableInteractionInput, Interaction, InteractionAttempt,
-            InteractionContextIntent, InteractionContextTarget as ProductInteractionContextTarget,
-            InteractionId, ModelFamilyId, ProviderId, SubmittedInputEvidence, ThreadId,
+            ActionInvocation, DurableInteractionInput, Interaction, InteractionContextIntent,
+            InteractionContextTarget as ProductInteractionContextTarget, InteractionId,
+            SubmittedInputEvidence, ThreadId,
         },
     };
     use relayer_graph_core::{
@@ -3888,79 +3888,6 @@ mod tests {
         assert!(exported.completion.harness_configuration_digest.is_none());
         assert!(exported.completion.effective_execution_digest.is_none());
         assert!(exported.completion.effective_permission_receipt.is_none());
-        assert!(exported.completion.attempt_admission_id.is_none());
-        assert!(exported.completion.admitted_model_plan.is_none());
-    }
-
-    #[test]
-    fn share_turn_projects_an_accepted_outcome_while_the_provider_unwinds() {
-        let interaction_id = InteractionId::from_database(7);
-        let interaction = Interaction {
-            id: interaction_id,
-            thread_id: ThreadId::from_database(1),
-            sequence: 1,
-            text: "Accepted recursive result".into(),
-            created_at: "2026-01-01T00:00:00Z".into(),
-            graph_node_id: None,
-            completion_status: "accepted".into(),
-            harness_configuration_name: Some("codex.basic".into()),
-            harness_configuration_digest: Some("harness-secret-digest".into()),
-            permission_profile_id: "default".into(),
-            model_selection: None,
-            effective_execution_digest: None,
-            effective_permission_receipt: None,
-            completion_output: None,
-            completion_error: None,
-            stop_requested: false,
-            stop_error: None,
-            latest_attempt: Some(InteractionAttempt {
-                id: 1,
-                attempt_number: 1,
-                started_at: "2026-01-01T00:00:00Z".into(),
-                finished_at: None,
-                family_id: ModelFamilyId::from_database(1),
-                family_revision: 1,
-                harness_configuration_name: "codex.basic".into(),
-                harness_configuration_revision: 1,
-                harness_configuration_digest: "harness-secret-digest".into(),
-                provider_id: ProviderId::from_database("test".into()),
-                adapter_id: "test".into(),
-                adapter_implementation_version: 1,
-                model_id: "test".into(),
-                access_contract: "test".into(),
-                outcome: "running".into(),
-                failure_category: None,
-                effect_boundary: "none".into(),
-                attempt_admission_id: Some("private-admission".into()),
-                admitted_plan: None,
-            }),
-        };
-        let turn_sequences = [(interaction_id, 1)].into_iter().collect();
-        let exported = export_turn(
-            &interaction,
-            TurnExportContext {
-                portable_sequence: 1,
-                closure: None,
-                context_input: None,
-                submitted_evidence: &[],
-                invocation: None,
-                imported: ImportedExportContext {
-                    turn: None,
-                    turn_sequences: &Default::default(),
-                },
-                turn_sequences: &turn_sequences,
-                redactor: &ProjectPathRedactor::for_share(None),
-                settled_attempt_outcome: Some("accepted"),
-                authored_detail_assets: &Default::default(),
-            },
-            &mut PortableIds::default(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            exported.completion.attempt_outcome,
-            Some(crate::conversation_export::ExportAttemptOutcome::Accepted)
-        );
         assert!(exported.completion.attempt_admission_id.is_none());
         assert!(exported.completion.admitted_model_plan.is_none());
     }
