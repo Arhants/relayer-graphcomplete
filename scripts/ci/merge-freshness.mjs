@@ -76,62 +76,73 @@ export async function sweep({ github, owner, repo, clock = Date.now, decode = de
   const prs = await github.paginate(github.rest.pulls.list, { owner, repo, state: "open", base: "main", per_page: 100 });
   const results = [];
   for (const listed of prs) {
-    const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: listed.number });
-    if (pr.state !== "open" || pr.base.ref !== "main") continue;
-    // Revoke the previous success before doing fallible evidence IO. Global
-    // workflow concurrency serializes writers; recheck head before completion.
-    const { data: check } = await github.rest.checks.create({
-      owner, repo, name: CHECK_NAME, head_sha: pr.head.sha, status: "in_progress",
-      output: { title: "Checking 12-hour CI freshness", summary: "Scheduled refresh; no code is executed from this PR." },
-    });
-    let verdict;
     try {
-      const { data } = await github.rest.actions.listWorkflowRuns({
-        owner, repo, workflow_id: "ci.yml", event: "pull_request", head_sha: pr.head.sha, per_page: 1,
-      });
-      const run = data.workflow_runs[0];
-      let jobs = [], receipt, merge;
-      if (run?.status === "completed" && run.conclusion === "success" &&
-          clock() - Date.parse(run.created_at) < WINDOW_MS) {
-        jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRunAttempt, {
-          owner, repo, run_id: run.id, attempt_number: run.run_attempt, per_page: 100,
-        });
-        const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
-          owner, repo, run_id: run.id, per_page: 100,
-        });
-        // "Re-run failed jobs" does not repeat a successful plan job. Its
-        // receipt remains valid for this immutable run/merge, but can never
-        // renew the original created_at window. Prefer the newest plan receipt.
-        const matches = artifacts.filter((item) => {
-          const attempt = /^merge-freshness-v1-([1-9][0-9]*)$/.exec(item.name)?.[1];
-          return attempt && Number(attempt) <= run.run_attempt && !item.expired;
-        }).sort((a, b) => Number(b.name.split("-").at(-1)) - Number(a.name.split("-").at(-1)));
-        if (matches.length && matches[0].size_in_bytes <= 64 * 1024) {
-          if (matches[1]?.name === matches[0].name) throw new Error("Duplicate evidence");
-          const archive = await github.rest.actions.downloadArtifact({
-            owner, repo, artifact_id: matches[0].id, archive_format: "zip",
-          });
-          receipt = await decode(archive.data);
-          if (matches[0].name !== artifactName(receipt?.attempt)) throw new Error("Evidence attempt mismatch");
-          if (sha(receipt?.mergeSha)) {
-            ({ data: merge } = await github.rest.git.getCommit({ owner, repo, commit_sha: receipt.mergeSha }));
-          }
-        }
-      }
-      const { data: current } = await github.rest.pulls.get({ owner, repo, pull_number: pr.number });
-      verdict = current.head.sha === pr.head.sha
-        ? evaluateEvidence({ pr: current, run, jobs, receipt, merge, repository, now: clock() })
-        : { conclusion: "failure", description: "PR head changed during evaluation" };
+      const result = await refreshPullRequest({ github, owner, repo, repository, listed, clock, decode });
+      if (result) results.push(result);
     } catch {
-      verdict = { conclusion: "failure", description: "Freshness evidence unavailable; retry the guard" };
+      // A PR-specific read/write failure must not prevent expiration of other PRs.
+      results.push({ pr: listed.number, conclusion: "failure", published: false,
+        description: "Freshness check could not be refreshed; retry the guard" });
     }
-    await github.rest.checks.update({
-      owner, repo, check_run_id: check.id, status: "completed", conclusion: verdict.conclusion,
-      output: { title: verdict.description, summary: `${verdict.description}\n\n12-hour window; scheduled expiration can lag. Required check CI is separate.` },
-    });
-    results.push({ pr: pr.number, ...verdict });
   }
   return results;
+}
+
+async function refreshPullRequest({ github, owner, repo, repository, listed, clock, decode }) {
+  const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: listed.number });
+  if (pr.state !== "open" || pr.base.ref !== "main") return null;
+  // Revoke the previous success before doing fallible evidence IO. Global
+  // workflow concurrency serializes writers; recheck head before completion.
+  const { data: check } = await github.rest.checks.create({
+    owner, repo, name: CHECK_NAME, head_sha: pr.head.sha, status: "in_progress",
+    output: { title: "Checking 12-hour CI freshness", summary: "Scheduled refresh; no code is executed from this PR." },
+  });
+  let verdict;
+  try {
+    const { data } = await github.rest.actions.listWorkflowRuns({
+      owner, repo, workflow_id: "ci.yml", event: "pull_request", head_sha: pr.head.sha, per_page: 1,
+    });
+    const run = data.workflow_runs[0];
+    let jobs = [], receipt, merge;
+    if (run?.status === "completed" && run.conclusion === "success" &&
+        clock() - Date.parse(run.created_at) < WINDOW_MS) {
+      jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRunAttempt, {
+        owner, repo, run_id: run.id, attempt_number: run.run_attempt, per_page: 100,
+      });
+      const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+        owner, repo, run_id: run.id, per_page: 100,
+      });
+      // "Re-run failed jobs" does not repeat a successful plan job. Its
+      // receipt remains valid for this immutable run/merge, but can never
+      // renew the original created_at window. Prefer the newest plan receipt.
+      const matches = artifacts.filter((item) => {
+        const attempt = /^merge-freshness-v1-([1-9][0-9]*)$/.exec(item.name)?.[1];
+        return attempt && Number(attempt) <= run.run_attempt && !item.expired;
+      }).sort((a, b) => Number(b.name.split("-").at(-1)) - Number(a.name.split("-").at(-1)));
+      if (matches.length && matches[0].size_in_bytes <= 64 * 1024) {
+        if (matches[1]?.name === matches[0].name) throw new Error("Duplicate evidence");
+        const archive = await github.rest.actions.downloadArtifact({
+          owner, repo, artifact_id: matches[0].id, archive_format: "zip",
+        });
+        receipt = await decode(archive.data);
+        if (matches[0].name !== artifactName(receipt?.attempt)) throw new Error("Evidence attempt mismatch");
+        if (sha(receipt?.mergeSha)) {
+          ({ data: merge } = await github.rest.git.getCommit({ owner, repo, commit_sha: receipt.mergeSha }));
+        }
+      }
+    }
+    const { data: current } = await github.rest.pulls.get({ owner, repo, pull_number: pr.number });
+    verdict = current.head.sha === pr.head.sha
+      ? evaluateEvidence({ pr: current, run, jobs, receipt, merge, repository, now: clock() })
+      : { conclusion: "failure", description: "PR head changed during evaluation" };
+  } catch {
+    verdict = { conclusion: "failure", description: "Freshness evidence unavailable; retry the guard" };
+  }
+  await github.rest.checks.update({
+    owner, repo, check_run_id: check.id, status: "completed", conclusion: verdict.conclusion,
+    output: { title: verdict.description, summary: `${verdict.description}\n\n12-hour window; scheduled expiration can lag. Required check CI is separate.` },
+  });
+  return { pr: pr.number, ...verdict, published: true };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -33,6 +33,9 @@ There is no maximum-lateness guarantee. The sweep first publishes an in-progress
 check before reading evidence, rechecks the head before completing it, and uses
 one non-cancelling concurrency group to prevent overlapping stale writers.
 Brief pending checks during refresh are expected.
+PR-specific read and check-write failures are isolated: the sweep continues with
+later PRs and reports unpublished results without including raw API errors.
+After processing all PRs, unpublished results fail the workflow for operator attention.
 
 The privileged sweep checks out protected main with persisted credentials off;
 it never checks out or executes PR code, installs PR dependencies, or extracts
@@ -59,7 +62,8 @@ Checkpoint mapping (no product runtime behavior changes):
 | Exact head, main merge, run and attempt identity | `test/ci-merge-freshness.test.mjs`: receipt and policy scenarios |
 | 12-hour edge, future/invalid time, reruns | policy clock scenarios |
 | Failed/missing/latest CI, conflicts, malformed evidence | rejection scenarios |
-| Expiration, API failure, changing head, pagination | fake GitHub sweep journey |
+| Expiration, evidence API failure, changing head | fake GitHub sweep journey |
+| PR read/create/update failure isolation and visible partial failure | two-PR sweep scenarios and workflow contract |
 | Artifact bytes never executed or extracted | real ZIP decoder scenarios |
 | Trusted checkout, permissions, schedule and required contexts | workflow/ruleset contract scenario |
 | Existing release authority remains configured | desktop-shell release-authority audit scenario |

@@ -153,6 +153,37 @@ describe("scheduled merge freshness", () => {
     expect(fake.outputs.at(-1).conclusion).toBe("failure");
   });
 
+  it.each(["get", "create", "update"])("continues after one PR's %s failure and reports unpublished results", async (failureAt) => {
+    const f = fixture(), fake = fakeGitHub(f);
+    const paginate = fake.api.paginate;
+    fake.api.paginate = async (method, args) => method === fake.api.rest.pulls.list
+      ? [{ number: 41 }, f.pr] : paginate(method, args);
+    const get = fake.api.rest.pulls.get;
+    fake.api.rest.pulls.get = async (args) => {
+      if (args.pull_number === 41) {
+        if (failureAt === "get") throw new Error("sensitive API error");
+        return { data: { ...f.pr, number: 41 } };
+      }
+      return get(args);
+    };
+    if (failureAt !== "get") {
+      const original = fake.api.rest.checks[failureAt];
+      let first = true;
+      fake.api.rest.checks[failureAt] = async (args) => {
+        if (first) { first = false; throw new Error("sensitive API error"); }
+        return original(args);
+      };
+    }
+    // The second PR had a previous success, but its evidence has now expired.
+    f.now = started + WINDOW_MS;
+    const results = await sweep(fake.options);
+    expect(results).toEqual([
+      { pr: 41, conclusion: "failure", published: false, description: "Freshness check could not be refreshed; retry the guard" },
+      { pr: 42, conclusion: "failure", published: true, description: "CI evidence expired (12h); update branch and run fresh PR CI" },
+    ]);
+    expect(fake.outputs.at(-1)).toMatchObject({ status: "completed", conclusion: "failure" });
+  });
+
   it("reads only bounded literal JSON from a real ZIP and rejects malformed archives", async () => {
     const directory = await mkdtemp(join(tmpdir(), "freshness-test-"));
     try {
@@ -178,6 +209,8 @@ describe("scheduled merge freshness", () => {
     expect(workflow.jobs.refresh.if).toBe("github.ref == 'refs/heads/main'");
     expect(workflow.jobs.refresh.steps[0].with).toEqual({ ref: "refs/heads/main", "persist-credentials": false });
     expect(workflow.jobs.refresh.steps).toHaveLength(2);
+    expect(workflow.jobs.refresh.steps[1].with.script).toContain("result.published === false");
+    expect(workflow.jobs.refresh.steps[1].with.script).toContain("core.setFailed(");
     const ci = parse(await read(".github/workflows/ci.yml"));
     expect(ci.jobs.plan.steps.find((step) => step.name === "Upload merge freshness evidence").with.name).toBe("merge-freshness-v1-${{ github.run_attempt }}");
     const main = JSON.parse(await read("infra/github/desktop-release-authority/main-ruleset.json"));
