@@ -2190,26 +2190,33 @@ fn markdown_rendered_text(value: &str) -> String {
                 }
             }
             ']' if characters.get(index + 1) == Some(&'(') => {
-                index += 2;
+                let mut cursor = index + 2;
                 let mut depth = 1usize;
-                while index < characters.len() && depth > 0 {
-                    match characters[index] {
+                while cursor < characters.len() && depth > 0 {
+                    match characters[cursor] {
                         '(' => depth = depth.saturating_add(1),
                         ')' => depth = depth.saturating_sub(1),
-                        '\\' => index = index.saturating_add(1),
+                        '\\' => cursor = cursor.saturating_add(1),
                         _ => {}
                     }
+                    cursor += 1;
+                }
+                if depth == 0 {
+                    index = cursor;
+                } else {
+                    rendered.push(']');
                     index += 1;
                 }
             }
             ']' if characters.get(index + 1) == Some(&'[') => {
-                index += 2;
-                while index < characters.len() {
-                    let character = characters[index];
+                if let Some(offset) = characters[index + 2..]
+                    .iter()
+                    .position(|character| *character == ']')
+                {
+                    index += 2 + offset + 1;
+                } else {
+                    rendered.push(']');
                     index += 1;
-                    if character == ']' {
-                        break;
-                    }
                 }
             }
             '*' | '`' | '~' | '[' | ']' | '!' => index += 1,
@@ -2228,7 +2235,7 @@ fn markdown_rendered_text(value: &str) -> String {
 /// credentials. The relaxed credential matcher intentionally tolerates a
 /// visible-label prefix; false positives redact one public field.
 fn markdown_security_skeleton(value: &str) -> String {
-    strip_markdown_presentation(value)
+    strip_closed_markdown_destinations(value)
         .chars()
         .filter(|character| {
             character.is_alphanumeric()
@@ -2238,23 +2245,15 @@ fn markdown_security_skeleton(value: &str) -> String {
         .collect()
 }
 
-/// Remove structurally complete inline HTML and closed Markdown destinations
-/// before building the lossy security projection. Malformed outer syntax is
-/// preserved so nested visible text remains scannable.
-fn strip_markdown_presentation(value: &str) -> String {
+/// Remove only closed inline-link destinations for the lossy security
+/// projection. HTML-like regions and reference labels remain intact because
+/// malformed forms can render visibly; the separate renderer projection
+/// removes grammar-shaped tags and resolved destination syntax.
+fn strip_closed_markdown_destinations(value: &str) -> String {
     let characters: Vec<char> = value.chars().collect();
     let mut stripped = String::with_capacity(value.len());
     let mut index = 0;
     while index < characters.len() {
-        if characters[index] == '<' {
-            if let Some(end) = inline_html_end(&characters, index) {
-                index = end;
-            } else {
-                stripped.push('<');
-                index += 1;
-            }
-            continue;
-        }
         if characters[index] == ']' && characters.get(index + 1) == Some(&'(') {
             let mut cursor = index + 2;
             let mut depth = 1usize;
@@ -2276,14 +2275,6 @@ fn strip_markdown_presentation(value: &str) -> String {
             if depth == 0 {
                 continue;
             }
-        } else if characters[index] == ']'
-            && characters.get(index + 1) == Some(&'[')
-            && let Some(offset) = characters[index + 2..]
-                .iter()
-                .position(|character| *character == ']')
-        {
-            index += 2 + offset + 1;
-            continue;
         }
         stripped.push(characters[index]);
         index += 1;
@@ -3378,10 +3369,13 @@ mod tests {
             "<s<em>k</em>-proj-12345678901234567890>",
             "<s<!-- > -->k-proj-12345678901234567890>",
             "<s[k](https://example.test)-proj-12345678901234567890>",
+            "<x s[k](https://example.test)-proj-12345678901234567890>",
+            "<x s`k`-proj-12345678901234567890 >",
             "a < s[k](https://example.test)-proj-12345678901234567890 >",
             "[label](s**k**-proj-12345678901234567890",
             "[label](s<em>k</em>-proj-12345678901234567890",
             "[label][s**k**-proj-12345678901234567890",
+            "[label][s**k**-proj-12345678901234567890]",
             "a < B**earer** abc.def.ghi >",
             "a < e**yJ**hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.synthetic_signature >",
             "[label](e**yJ**hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.synthetic_signature",
@@ -3391,7 +3385,7 @@ mod tests {
             node.detail = format!("Credential: {secret}");
             let exported = export_node(&node, &mut PortableIds::default(), &redactor).unwrap();
             assert!(!exported.detail.contains("sk-proj-"), "{secret}");
-            assert!(exported.detail.contains("[redacted-secret]"));
+            assert!(exported.detail.contains("[redacted-secret]"), "{secret}");
         }
         let safe = "Q&amp;A [docs](https://example.test/?q=a%20b)";
         assert_eq!(redactor.text(safe), safe);
