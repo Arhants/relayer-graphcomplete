@@ -285,3 +285,35 @@ html[data-theme="light"] .public-share-error {
     width: 100%;
   }
 }
+
+/* Bounded reading surface at every embed width. */
+.public-share-embed .workspace-layout {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px;
+  gap: 8px;
+}
+.public-share-embed .thread-header { grid-column: 1; grid-row: 1; }
+.public-share-embed .interaction-banner { grid-column: 1; grid-row: 2; margin: 0; }
+.public-share-embed .thread-workspace { grid-column: 1; grid-row: 3; min-height: 0; }
+.public-share-embed .graph-stage { min-height: 0; touch-action: pan-y; }
+.public-share-embed .inspector { min-height: 0; }
+.public-share-embed .inspector-content { min-height: 0; overscroll-behavior: contain; }
+.public-share-embed #closeInspector { width: auto; padding: 6px 8px; font-size: 11px; }
+.public-share-embed :focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+@media (max-width: 1100px) {
+  .public-share-embed .thread-workspace { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .public-share-embed .graph-column { grid-area: 1 / 1; min-height: 0; }
+  .public-share-embed .thread-workspace:has(.inspector:not(.hidden)) .graph-column { display: none; }
+  .public-share-embed .inspector {
+    position: static; grid-area: 1 / 1; width: 100%; max-height: none;
+    height: 100%; border: 1px solid var(--line); border-radius: 12px;
+  }
+  .public-share-embed .graph-hint { display: none; }
+  .public-share-embed .interaction-banner { width: 100%; }
+  .public-share-embed .interaction-copy { overflow: hidden; }
+}
+/* Vertical touch reading also works when the gesture begins on a node. */
+.public-share-embed .graph-node { touch-action: pan-y; }

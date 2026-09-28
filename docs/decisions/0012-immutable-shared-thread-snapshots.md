@@ -93,3 +93,15 @@ admit only the two approved website origins in a later, separately authorized
 slice. No publication, live policy change, network capability, or parent messaging
 is introduced here. PRD section 8.4.1 records the complete accepted design and
 remaining slices; local source/fixture proof is not hosted acceptance.
+
+
+Slices 2–5 extend the embed shell with bounded responsive reading, explicit
+wheel zoom, native lazy iframes, and server-owned system/light/dark theme selection.
+The private embed route admits the two PRD origins while retaining the standalone
+artifact CSP. Exact pinned template support is declared by the hash-verified
+PUBLIC_VIEWER_EMBED_VERSION=1 export; an older or unavailable artifact returns the
+compact unavailable state. Publication of a new share after deployment is required
+to opt into a newer renderer. Existing share records and frozen bytes are not migrated.
+The website preserves standalone links in print/PDF output. Real example shares
+and deployed framing require their own observed evidence; local fixtures cannot
+substitute for that acceptance.

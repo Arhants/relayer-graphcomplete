@@ -10,6 +10,7 @@ import {
   bootPublicViewer,
   fitPublicTurnPopover,
   observeEmbedInspectorLayout,
+  configureEmbedReading,
 } from "../desktop/renderer/src/public-share-viewer/main.js";
 import {
   parsePublicSnapshot,
@@ -500,10 +501,12 @@ describe("public share HTML boundary", () => {
         expect(frames.size).toBe(0);
         flush();
       }
-      transition();
+      stop.scheduleFit();
       windowRef.innerWidth = 700;
       flush();
       expect(fit).toHaveBeenCalledTimes(2);
+      transition(); flush(); // Narrow Back to graph fits the newly visible canvas.
+      expect(fit).toHaveBeenCalledTimes(3);
       windowRef.innerWidth = 1320;
       transition();
       stop();
@@ -512,6 +515,31 @@ describe("public share HTML boundary", () => {
     } finally {
       await browser.close();
     }
+  });
+
+  it("keeps ordinary wheel native while preserving explicit zoom and keyboard reading", async () => {
+    const browser = new Window();
+    browser.document.body.innerHTML = '<div id="host"><div id="graphStage"><span class="graph-hint"></span></div><button id="closeInspector"></button><div class="inspector-content"></div></div>';
+    const host=browser.document.querySelector('#host');
+    const stage=host.querySelector('#graphStage');
+    const zoom=vi.fn(event=>event.preventDefault());
+    stage.onwheel=zoom;
+    const stop=configureEmbedReading(host);
+    try {
+      const ordinary=new browser.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:100});
+      stage.dispatchEvent(ordinary);
+      expect(ordinary.defaultPrevented).toBe(false);
+      expect(zoom).not.toHaveBeenCalled();
+      const pinch = new browser.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:100});
+      Object.defineProperty(pinch, 'ctrlKey', {value:true}); // happy-dom omits WheelEvent modifier fields.
+      stage.dispatchEvent(pinch);
+      expect(zoom).toHaveBeenCalledOnce();
+      expect(stage.tabIndex).toBe(0);
+      expect(host.querySelector('.inspector-content').getAttribute('aria-label')).toBe('Node details content');
+      stop();
+      stage.dispatchEvent(new browser.WheelEvent('wheel',{bubbles:true,deltaY:100}));
+      expect(zoom).toHaveBeenCalledTimes(2);
+    } finally { stop(); await browser.close(); }
   });
 
   it("quantizes a short viewport to complete turn rows", async () => {
@@ -544,6 +572,7 @@ describe("public share HTML boundary", () => {
       expect(() => renderPublicViewerTemplate({ snapshot: fixtureJsonl(), presentation: "embed", sharePath })).toThrow();
     }
     expect(() => renderPublicViewerTemplate({ snapshot: fixtureJsonl(), presentation: "unknown" })).toThrow();
+    expect(() => renderPublicViewerTemplate({ snapshot: fixtureJsonl(), theme: "unsafe" })).toThrow();
     const html = renderPublicViewerTemplate({ snapshot: fixtureJsonl(), presentation: "embed", sharePath: `/t/${"a".repeat(32)}` });
     expect(html).toContain("connect-src &#39;none&#39;");
     expect(publicViewerCsp()).toContain("frame-ancestors 'none'");
@@ -597,7 +626,7 @@ describe("public share HTML boundary", () => {
     root.actions.push({ id: "action:unresolved", sourceNodeId: "node:root", sourceLayerId: "layer:root",
       kind: "invoke", interactionText: "Do new work", label: "Unexecuted action", variant: "pill", state: "accepted" });
     const sharePath = `/t/${"a".repeat(32)}`;
-    const page = renderPublicViewerTemplate({ snapshot: recordsJsonl(records), presentation, sharePath });
+    const page = renderPublicViewerTemplate({ snapshot: recordsJsonl(records), presentation, sharePath, theme: presentation === "embed" ? "light" : "system" });
     windowRef.document.write(page);
     const previous = {
       DOMParser: globalThis.DOMParser,
@@ -624,6 +653,7 @@ describe("public share HTML boundary", () => {
       const viewer = bootPublicViewer({ documentRef: windowRef.document, windowRef, onRenderError });
       expect(onRenderError).not.toHaveBeenCalled();
       expect(viewer).not.toBeNull();
+      if (presentation === "embed") expect(windowRef.document.documentElement.dataset.theme).toBe("light");
       expect(viewer.adapter.selection.currentInteractionId).toBe("turn:1");
       expect(windowRef.document.querySelector("#publicViewerHost")?.classList.contains("hidden")).toBe(false);
       const downloadCard = windowRef.document.querySelector(".public-share-download-card");

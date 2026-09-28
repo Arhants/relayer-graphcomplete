@@ -16,7 +16,9 @@ export const PUBLIC_VIEWER_CLIENT_TELEMETRY = Object.freeze({
 function setTheme(documentRef, windowRef) {
   const query = windowRef?.matchMedia?.("(prefers-color-scheme: light)");
   const apply = () => {
-    documentRef.documentElement.dataset.theme = query?.matches ? "light" : "dark";
+    const fixed = documentRef.documentElement.dataset.viewerTheme;
+    documentRef.documentElement.dataset.theme = fixed === "light" || fixed === "dark"
+      ? fixed : query?.matches ? "light" : "dark";
   };
   apply();
   query?.addEventListener?.("change", apply);
@@ -82,28 +84,56 @@ export function observeEmbedInspectorLayout(host, windowRef) {
     windowRef.cancelAnimationFrame?.(fitFrame);
     fitFrame = null;
   };
-  const observer = new windowRef.MutationObserver(() => {
+  const scheduleFit = () => {
     const isOpen = !inspector.classList.contains("hidden");
-    if (isOpen === wasOpen) return;
-    wasOpen = isOpen;
     cancelFit();
-    if (windowRef.innerWidth > 1100) {
+    if (windowRef.innerWidth > 1100 || !isOpen) {
       fitFrame = windowRef.requestAnimationFrame(() => {
         fitFrame = null;
-        if (windowRef.innerWidth > 1100 && isOpen === !inspector.classList.contains("hidden")) {
+        if ((windowRef.innerWidth > 1100 || !isOpen) && isOpen === !inspector.classList.contains("hidden")) {
           host.querySelector("#fitGraph")?.click();
         }
       });
     }
+  };
+  const observer = new windowRef.MutationObserver(() => {
+    const isOpen = !inspector.classList.contains("hidden");
+    if (isOpen === wasOpen) return;
+    wasOpen = isOpen;
+    scheduleFit();
   });
   observer.observe(inspector, { attributes: true, attributeFilter: ["class"] });
   const gestures = ["pointerdown", "wheel", "keydown"];
   for (const type of gestures) host.addEventListener(type, cancelFit, true);
-  return () => {
+  windowRef.addEventListener?.("resize", scheduleFit);
+  const dispose = () => {
+    windowRef.removeEventListener?.("resize", scheduleFit);
     observer.disconnect();
     cancelFit();
     for (const type of gestures) host.removeEventListener(type, cancelFit, true);
   };
+  dispose.scheduleFit = scheduleFit;
+  return dispose;
+}
+
+// Let ordinary wheel input reach browser scroll chaining across the iframe.
+// Ctrl-wheel (including trackpad pinch) remains an explicit graph zoom gesture.
+export function configureEmbedReading(host) {
+  const stage = host.querySelector("#graphStage");
+  const wheel = (event) => {
+    if (!event.ctrlKey && !event.metaKey) event.stopImmediatePropagation();
+  };
+  stage.addEventListener("wheel", wheel, { capture: true, passive: true });
+  stage.tabIndex = 0;
+  host.querySelector(".graph-hint").textContent = "Pinch or Ctrl-scroll to zoom · Use controls to fit · Drag to pan";
+  const close = host.querySelector("#closeInspector");
+  close.textContent = "Back to graph";
+  close.setAttribute("aria-label", "Back to graph (close node details)");
+  const content = host.querySelector(".inspector-content");
+  content.tabIndex = 0;
+  content.setAttribute("role", "region");
+  content.setAttribute("aria-label", "Node details content");
+  return () => stage.removeEventListener("wheel", wheel, true);
 }
 
 /**
@@ -124,6 +154,7 @@ export function bootPublicViewer({
   let onResize;
   let workspace;
   let stopEmbedLayout = () => {};
+  let stopEmbedReading = () => {};
   try {
     const snapshot = parsePublicSnapshot(snapshotLiteral(documentRef));
     const adapter = createPublicViewerAdapter(snapshot);
@@ -143,6 +174,7 @@ export function bootPublicViewer({
       workspace.render();
       securePublicLinks(host);
       fitPublicTurnPopover(host, windowRef);
+      stopEmbedLayout.scheduleFit?.();
     };
     workspace = createProductWorkspace({
       root: host,
@@ -195,9 +227,13 @@ export function bootPublicViewer({
     }
     workspaceLayout.querySelector(".environment-panel")?.remove();
     if (!embedded) workspaceLayout.append(downloadCard);
-    if (embedded) stopEmbedLayout = observeEmbedInspectorLayout(host, windowRef);
+    if (embedded) {
+      stopEmbedLayout = observeEmbedInspectorLayout(host, windowRef);
+      stopEmbedReading = configureEmbedReading(host);
+    }
     onResize = () => {
       fitPublicTurnPopover(host, windowRef);
+      stopEmbedLayout.scheduleFit?.();
     };
     windowRef?.addEventListener?.("resize", onResize);
     render();
@@ -208,6 +244,7 @@ export function bootPublicViewer({
       dispose() {
         linkObserver?.disconnect();
         stopEmbedLayout();
+        stopEmbedReading();
         host.removeEventListener("click", onLinkClick, true);
         windowRef?.removeEventListener?.("resize", onResize);
         workspace.dispose();
@@ -217,6 +254,7 @@ export function bootPublicViewer({
   } catch (error) {
     workspace?.dispose();
     stopEmbedLayout();
+    stopEmbedReading();
     linkObserver?.disconnect();
     host?.removeEventListener("click", onLinkClick, true);
     windowRef?.removeEventListener?.("resize", onResize);

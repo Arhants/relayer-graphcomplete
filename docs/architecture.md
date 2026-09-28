@@ -496,8 +496,9 @@ These are planned service boundaries, not implemented product capabilities. See
 
 The public viewer also has an explicit embed presentation for the website and
 online white paper (PRD 8.4.1). It shares the snapshot reader, adapter, and
-ProductWorkspace. Only chrome and wide layout differ: compact attribution,
-canonical standalone-share link, and equal graph/details columns. The default
+ProductWorkspace. Embed-specific chrome and reading behavior include compact attribution, a
+canonical standalone-share link, equal wide graph/details columns, full-width
+narrow details, explicit wheel zoom, and host-selected theme. The default
 standalone template and hosted CSP contract remain unchanged. A loopback-only
 fixture host exercises the iframe seam locally; hosted routing/framing policy
 belongs to the private service and a later delivery slice.

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session } from "electron";
+import { app, BrowserWindow, session, nativeTheme } from "electron";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -22,7 +22,8 @@ async function waitFor(frame, expression) {
 
 async function main() {
   await mkdir(output, { recursive: true });
-  const fixture = await startEmbedFixtureServer();
+  const fixture = await startEmbedFixtureServer({ crossOrigin: true });
+  const frameOrigin = fixture.origin.replace("127.0.0.1", "localhost");
   const requests = [];
   const errors = [];
   const knownDiagnostics = [];
@@ -31,7 +32,7 @@ async function main() {
   const partition = "embed-slice-one-evidence";
   session.fromPartition(partition).webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, callback) => {
     requests.push({ url: details.url, type: details.resourceType });
-    callback({ cancel: new URL(details.url).origin !== fixture.origin });
+    callback({ cancel: ![fixture.origin, frameOrigin].includes(new URL(details.url).origin) });
   });
   const window = new BrowserWindow({ width: 1440, height: 1100, useContentSize: true, show: false,
     webPreferences: { partition, sandbox: true, nodeIntegration: false, contextIsolation: true } });
@@ -44,10 +45,18 @@ async function main() {
   window.webContents.setWindowOpenHandler(({ url }) => { openedUrl = url; return { action: "deny" }; });
   try {
     await window.loadURL(`${fixture.origin}/`);
-    await waitFor(window.webContents.mainFrame, "Boolean(document.querySelector('iframe')?.contentDocument?.querySelector('.graph-node'))");
-    const frame = window.webContents.mainFrame.frames.find((candidate) => candidate.url.endsWith("/embed"));
+    const findFrame = async () => {
+      const deadline = Date.now() + 15000;
+      while (Date.now() < deadline) {
+        const candidate = window.webContents.mainFrame.frames.find(frame => frame.url.endsWith("/embed"));
+        if (candidate) { await waitFor(candidate, "Boolean(document.querySelector('.graph-node'))"); return candidate; }
+        await new Promise(done => setTimeout(done, 40));
+      }
+      throw new Error("Viewer iframe did not load");
+    };
+    let frame = await findFrame();
     if (!frame) throw new Error("The production viewer did not load in an iframe.");
-    const run = (expression) => frame.executeJavaScript(expression);
+    const run = (expression) => frame.executeJavaScript(expression, true);
     const check = async (name, expression) => {
       const actual = await run(expression);
       if (actual !== true) throw new Error(`${name}: ${JSON.stringify(actual)}`);
@@ -102,6 +111,12 @@ async function main() {
     await click('[data-action-id="action:details-1"]');
     await waitFor(frame, "Boolean(document.querySelector('[data-node=\"node:details-1\"]'))");
     assertions.expansionReachedNestedLayer = true;
+    await run("new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))");
+    await check("nestedDestinationFitsSplit", `(() => {
+      const stage=document.querySelector('#graphStage').getBoundingClientRect();
+      return [...document.querySelectorAll('.graph-node')].every(n=>{const r=n.getBoundingClientRect();return r.left>=stage.left && r.right<=stage.right && r.top>=stage.top && r.bottom<=stage.bottom;});
+    })()`);
+    await capture("nested-layer-split");
     await click('#nextTurn');
     await waitFor(frame, "document.querySelector('#turnPickerButton').textContent.trim() === 'Turn 2 of 5'");
     await click('[data-node="node:root-2"]');
@@ -115,18 +130,135 @@ async function main() {
     await waitFor(frame, "Boolean(document.querySelector('[data-node=\"node:root-2\"]')) && document.querySelector('#turnPickerButton').textContent.trim() === 'Turn 2 of 5'");
     assertions.completedInvokeOpenedAcceptedResult = true;
     await check("mutationControlsUnavailable", "['#threadComposerShell','#approvalDock','#annotationPanel','#nodeContextDock'].every(selector => {const e=document.querySelector(selector);return !e || getComputedStyle(e).display === 'none';})");
-    await check("frameUrlUnchanged", `location.href === ${JSON.stringify(`${fixture.origin}${sharePath}/embed`)}`);
+    await check("frameUrlUnchanged", `location.href === ${JSON.stringify(`${frameOrigin}${sharePath}/embed`)}`);
     if (window.webContents.getURL() !== `${fixture.origin}/`) throw new Error("Parent URL changed");
     assertions.parentUrlUnchanged = true;
     await check("fullGraphLinkSafe", `(() => {const a=document.querySelector('.public-share-embed-branding a');return a.getAttribute('href')===${JSON.stringify(sharePath)} && a.target==='_blank' && a.rel.includes('noopener') && a.rel.includes('noreferrer');})()`);
     await click('.public-share-embed-branding a');
     await waitFor(window.webContents.mainFrame, "true");
-    if (openedUrl !== `${fixture.origin}${sharePath}`) throw new Error(`Full graph opened wrong destination: ${openedUrl}`);
+    if (openedUrl !== `${frameOrigin}${sharePath}`) throw new Error(`Full graph opened wrong destination: ${openedUrl}`);
     assertions.fullGraphRequestedNewWindow = true;
     await window.loadURL(`${fixture.origin}/`);
-    await waitFor(window.webContents.mainFrame, "document.querySelector('iframe')?.contentDocument?.querySelector('#turnPickerButton')?.textContent.trim() === 'Turn 1 of 5'");
+    frame = await findFrame();
+    await waitFor(frame, "document.querySelector('#turnPickerButton')?.textContent.trim() === 'Turn 1 of 5'");
     assertions.reloadResetFirstTurn = true;
-    const unexpected = requests.filter(({ url, type }) => new URL(url).origin !== fixture.origin || ["xhr", "webSocket", "ping"].includes(type));
+    // Browser input and cross-origin frames, not synthetic wheel dispatch.
+    await click('#closeInspector');
+    await waitFor(frame, "document.querySelector('#inspector').classList.contains('hidden')");
+    await run("new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>done(true))))");
+    const zoomBefore = await run("document.querySelector('#graphZoomLevel').textContent");
+    const frameBox = await window.webContents.mainFrame.executeJavaScript("(()=>{const r=document.querySelector('iframe').getBoundingClientRect();return {x:r.x,y:r.y};})()");
+    await window.webContents.mainFrame.executeJavaScript("window.__scrollEnded=false;addEventListener('scrollend',()=>window.__scrollEnded=true,{once:true})");
+    window.webContents.sendInputEvent({type:"mouseWheel",x:Math.round(frameBox.x+200),y:Math.round(frameBox.y+350),deltaY:-350,deltaX:0});
+    await waitFor(window.webContents.mainFrame,"scrollY > 0 && window.__scrollEnded");
+    if (await run("document.querySelector('#graphZoomLevel').textContent") !== zoomBefore) throw new Error("Article scroll zoomed the graph");
+    assertions.ordinaryWheelScrollsArticle = true;
+    await window.webContents.mainFrame.executeJavaScript("scrollTo(0,0)");
+    await click('#zoomOutGraph');
+    if (await run("document.querySelector('#graphZoomLevel').textContent") === zoomBefore) throw new Error("Explicit zoom control did not work");
+    assertions.explicitZoomWorks = true;
+    const beforePinch=await run("document.querySelector('#graphZoomLevel').textContent");
+    const pinchPoint=await window.webContents.mainFrame.executeJavaScript("(()=>{const r=document.querySelector('iframe').getBoundingClientRect();return {x:Math.round(r.x+200),y:Math.round(r.y+350)};})()");
+    window.webContents.sendInputEvent({type:'mouseMove',...pinchPoint});
+    window.webContents.sendInputEvent({type:'mouseDown',...pinchPoint,button:'left',clickCount:1});
+    window.webContents.sendInputEvent({type:'mouseUp',...pinchPoint,button:'left',clickCount:1});
+    window.webContents.debugger.attach('1.3');
+    await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseWheel',...pinchPoint,deltaY:-150,deltaX:0,modifiers:2});
+    window.webContents.debugger.detach();
+    await run("new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>done(true))))");
+    await waitFor(frame,`document.querySelector('#graphZoomLevel').textContent!==${JSON.stringify(beforePinch)}`);
+    assertions.explicitCtrlWheelZoomWorks=true;
+    if (requests.some(r=>r.url.includes('theme=light'))) throw new Error("Distant lazy iframe loaded eagerly");
+    assertions.distantFrameDeferred = true;
+    await window.webContents.mainFrame.executeJavaScript("document.querySelectorAll('iframe')[1].scrollIntoView()");
+    const secondDeadline=Date.now()+15000;
+    let secondFrame;
+    while(Date.now()<secondDeadline) {
+      secondFrame=window.webContents.mainFrame.frames.find(f=>f.url.includes('theme=light'));
+      if(secondFrame) break;
+      await new Promise(done=>setTimeout(done,40));
+    }
+    if(!secondFrame) throw new Error("Near-viewport frame failed to load");
+    await waitFor(secondFrame,"Boolean(document.querySelector('.graph-node'))");
+    if(await secondFrame.executeJavaScript("document.documentElement.dataset.theme") !== 'light') throw new Error("Fixed theme was not applied");
+    assertions.nearViewportLoadsFixedTheme = true;
+    await window.webContents.mainFrame.executeJavaScript("scrollTo(0,0)");
+    const themeSource=nativeTheme.themeSource;
+    try {
+      nativeTheme.themeSource='light';
+      await waitFor(frame,"document.documentElement.dataset.theme==='light'");
+      nativeTheme.themeSource='dark';
+      await waitFor(frame,"document.documentElement.dataset.theme==='dark'");
+      if(await secondFrame.executeJavaScript("document.documentElement.dataset.theme")!=='light') throw new Error('System preference replaced fixed theme');
+      assertions.systemThemeChangesPreserveFixedTheme=true;
+    } finally { nativeTheme.themeSource=themeSource; }
+    await secondFrame.executeJavaScript("document.querySelector('#nextTurn').click()");
+    await waitFor(secondFrame,"document.querySelector('#turnPickerButton').textContent.trim()==='Turn 2 of 5'");
+    await check("independentEmbedNavigation","document.querySelector('#turnPickerButton').textContent.trim()==='Turn 1 of 5'");
+    await window.webContents.mainFrame.executeJavaScript("scrollTo(0,0)");
+    window.setContentSize(390,844);
+    await selected();
+    await run("new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>done(true))))");
+    await check("narrowDetailsReplaceGraph", `(()=>{const panel=document.querySelector('#inspector').getBoundingClientRect();return getComputedStyle(document.querySelector('.graph-column')).display==='none' && panel.width>innerWidth-60 && panel.bottom<=innerHeight+1;})()`);
+    await window.webContents.mainFrame.executeJavaScript("document.querySelector('iframe').scrollIntoView()");
+    await capture("mobile-details");
+    await click('#closeInspector');
+    await check("backRestoresKeyboardGraph", "document.activeElement===document.querySelector('#graphStage') && getComputedStyle(document.querySelector('.graph-column')).display!=='none'");
+    await click('[data-node="node:reason"]');
+    await waitFor(frame,"document.querySelector('#nodeTitle')?.textContent==='Reasoning' || document.querySelector('.node-heading')?.textContent.includes('Reasoning')");
+    await check("longDetailsRemainBounded", `(()=>{const content=document.querySelector('.inspector-content');return content.scrollHeight>content.clientHeight && document.querySelector('#inspector').getBoundingClientRect().bottom<=innerHeight+1;})()`);
+    await run("document.querySelector('.inspector-content').scrollTop=100000");
+    await check("finalDetailReachable", `(()=>{const e=document.querySelector('.inspector-content');return e.textContent.includes('Final detail paragraph.') && e.scrollTop+e.clientHeight>=e.scrollHeight-1;})()`);
+    await capture("mobile-long-details");
+    window.show();
+    window.focus();
+    const nativeClick = async selector => {
+      const rect = await run(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+      const offset = await window.webContents.mainFrame.executeJavaScript("(()=>{const r=document.querySelector('iframe').getBoundingClientRect();return {x:r.x,y:r.y};})()");
+      const point={x:Math.round(offset.x+rect.x),y:Math.round(offset.y+rect.y)};
+      window.webContents.debugger.attach('1.3');
+      for (const type of ['mouseMoved','mousePressed','mouseReleased']) await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});
+      window.webContents.debugger.detach();
+    };
+    await nativeClick('#closeInspector');
+    await waitFor(frame,"document.querySelector('#inspector').classList.contains('hidden')");
+    await run("new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>done(true))))");
+    await nativeClick('[data-node="node:reason"]');
+    await waitFor(frame,"!document.querySelector('#inspector').classList.contains('hidden')");
+    await run("document.querySelector('#closeInspector').focus()");
+    window.webContents.debugger.attach('1.3');
+    await window.webContents.debugger.sendCommand('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+    await window.webContents.debugger.sendCommand('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+    window.webContents.debugger.detach();
+    await run("new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>done(true))))");
+    await waitFor(frame,"document.querySelector('#inspector').classList.contains('hidden') && document.activeElement===document.querySelector('#graphStage')");
+    assertions.keyboardEscapeRestoresGraph=true;
+    await run("new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>done(true))))");
+    await check("narrowBackFitsVisibleCanvas",`(()=>{const stage=document.querySelector('#graphStage').getBoundingClientRect();return [...document.querySelectorAll('.graph-node')].every(n=>{const r=n.getBoundingClientRect();return r.left>=stage.left && r.right<=stage.right && r.top>=stage.top && r.bottom<=stage.bottom;});})()`);
+    await run("document.querySelector('#fitGraph').focus()");
+    let exited=false;
+    for(let i=0;i<35;i++) {
+      window.webContents.sendInputEvent({type:"keyDown",keyCode:"Tab"});
+      window.webContents.sendInputEvent({type:"keyUp",keyCode:"Tab"});
+      exited=await window.webContents.mainFrame.executeJavaScript("document.activeElement?.id==='after-first-graph'");
+      if(exited) break;
+    }
+    if(!exited) throw new Error('Keyboard could not exit iframe');
+    assertions.keyboardExitsToArticle=true;
+    await capture("mobile-graph");
+    await window.webContents.mainFrame.executeJavaScript("document.querySelector('iframe').scrollIntoView()");
+    const touchPoint=await window.webContents.mainFrame.executeJavaScript("(()=>{const r=document.querySelector('iframe').getBoundingClientRect();return {x:r.x+140,y:r.y+350};})()");
+    const scrollBeforeTouch=await window.webContents.mainFrame.executeJavaScript("scrollY");
+    const zoomBeforeTouch=await run("document.querySelector('#graphZoomLevel').textContent");
+    window.webContents.debugger.attach('1.3');
+    try {
+      await window.webContents.debugger.sendCommand('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:2});
+      await window.webContents.debugger.sendCommand('Input.synthesizeScrollGesture',{...touchPoint,yDistance:-180,gestureSourceType:'touch',preventFling:true});
+    } finally { window.webContents.debugger.detach(); }
+    await waitFor(window.webContents.mainFrame,`scrollY>${scrollBeforeTouch}`);
+    if(await run("document.querySelector('#graphZoomLevel').textContent")!==zoomBeforeTouch) throw new Error('Touch article scroll changed graph zoom');
+    assertions.touchScrollContinuesArticle=true;
+    const unexpected = requests.filter(({ url, type }) => ![fixture.origin, frameOrigin].includes(new URL(url).origin) || ["xhr", "webSocket", "ping"].includes(type));
     if (unexpected.length) throw new Error(`Unexpected requests: ${JSON.stringify(unexpected)}`);
     assertions.noOutboundOrApiRequests = true;
     if (errors.length) throw new Error(`Browser errors: ${JSON.stringify(errors)}`);
@@ -135,7 +267,7 @@ async function main() {
       "docs/evidence/issue-471-public-share-viewer/synthetic-snapshot.jsonl"])].sort();
     const sourceFiles = {};
     for (const path of sourcePaths) sourceFiles[path] = hash(await readFile(resolve(repositoryRoot, path)));
-    const manifest = { schemaVersion: 1, evidence: "issue-558-embed-slice-one", scope: "Local wide iframe; not hosted or mobile proof",
+    const manifest = { schemaVersion: 1, evidence: "issue-558-embed-slice-one", scope: "Local cross-origin wide/mobile iframes; not hosted service proof",
       source: { commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot, encoding: "utf8" }).trim(), sourceFiles, digest: hash(JSON.stringify(sourceFiles)) },
       fixture: { sha256: hash(fixture.snapshot), kind: "synthetic" }, browser: { electron: process.versions.electron, viewport: { width:1440,height:1100 }, geometry, assertions, requests, errors, knownDiagnostics }, captures };
     await writeFile(resolve(output, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

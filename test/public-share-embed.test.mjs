@@ -20,9 +20,9 @@ describe("local embed evidence boundary", () => {
     const fixture = await startEmbedFixtureServer();
     try {
       const article = await fetch(`${fixture.origin}/`).then(r => r.text());
-      expect(article).toContain(`<iframe src="${embedPath}"`);
+      expect(article).toContain(`<iframe loading="lazy" src="${embedPath}"`);
       const embedded = await fetch(`${fixture.origin}${embedPath}`);
-      expect(embedded.headers.get("content-security-policy")).toBe(publicViewerCsp().replace("frame-ancestors 'none'", "frame-ancestors 'self'"));
+      expect(embedded.headers.get("content-security-policy")).toBe(publicViewerCsp().replace("frame-ancestors 'none'", `frame-ancestors 'self' ${fixture.origin}`));
       expect(await embedded.text()).toContain('class="public-share-shell public-share-embed"');
       const standalone = await fetch(`${fixture.origin}${sharePath}`);
       expect(standalone.headers.get("content-security-policy")).toBe(publicViewerCsp());
