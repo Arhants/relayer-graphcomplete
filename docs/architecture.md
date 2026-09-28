@@ -497,7 +497,8 @@ again, but it skips a harness whose runtime was never installed on this machine;
 route waits for Connect or Repair, so an upgrade never installs Prime by itself. A
 managed provider whose activation failed on a broken runtime publishes no models and so
 has no route; the step first repairs it through its explicit refresh, as Repair does,
-when its recipe is installed and due, and that refresh evaluates its routes. The next committed result for the harness clears the mark, so it runs once per
+when its recipe is installed and due. That refresh evaluates its routes, so the step does
+not evaluate a harness the repair already published again. The next committed result for the harness clears the mark, so it runs once per
 changed digest; a start before the commit tries again. Migration 0039 also marks
 every loaded route startup left in `harness_readiness_pending`. The recipe trigger is
 Desktop memory only, so a quit before its result commits drops it. The evaluation runs

@@ -34,15 +34,20 @@ export function startPostUpgradeReadiness({
 }) {
   const evaluation = Promise.resolve().then(async () => {
     let due = await updatesDue();
+    let settled = [];
     if (repairProviders) {
       const { recipeIds } = await readiness.recipeUpdateTargets({ updatesDue: due, recipeUpdates });
       if (recipeIds.length > 0) {
+        const mark = readiness.publicationMark();
         await repairProviders(recipeIds);
+        // A harness a repair already published a result for has had its one evaluation,
+        // whether a due mark or a newly activated recipe selected it.
+        settled = readiness.publishedSince(mark);
         due = await updatesDue();
       }
     }
     const providers = await routes();
-    return readiness.evaluateRecipeUpdate({ updatesDue: due, recipeUpdates, providers });
+    return readiness.evaluateRecipeUpdate({ updatesDue: due, recipeUpdates, providers, skipHarnessIds: settled });
   }).catch((error) => {
     onError(error);
     return null;
@@ -75,6 +80,8 @@ export function createHarnessReadinessCoordinator({
   let generation = 0;
   const harnessGenerations = new Map();
   let publication = Promise.resolve();
+  // The generation of each harness's last result the app server accepted in this process.
+  const publishedGenerations = new Map();
 
   function routeProvider(configuration, providers) {
     return providers.find(({ providerDefinition, models = [] }) => (
@@ -161,6 +168,7 @@ export function createHarnessReadinessCoordinator({
       ));
       if (publishable.length === 0) return [];
       await publishAvailability(publishable);
+      for (const { harnessId } of publishable) publishedGenerations.set(harnessId, currentGeneration);
       return publishable.filter(({ harnessId }) => harnessGenerations.get(harnessId) === currentGeneration);
     });
     publication = publish;
@@ -198,11 +206,21 @@ export function createHarnessReadinessCoordinator({
     return Object.freeze({ harnessIds: Object.freeze(harnessIds), recipeIds: Object.freeze([...recipeIds]) });
   }
 
-  async function evaluateRecipeUpdate({ updatesDue = [], recipeUpdates = [], providers = [] }) {
-    const { harnessIds } = await recipeUpdateTargets({ updatesDue, recipeUpdates });
+  async function evaluateRecipeUpdate({
+    updatesDue = [], recipeUpdates = [], providers = [], skipHarnessIds = [],
+  }) {
+    const skipped = new Set(skipHarnessIds);
+    const harnessIds = (await recipeUpdateTargets({ updatesDue, recipeUpdates })).harnessIds
+      .filter((harnessId) => !skipped.has(harnessId));
     if (harnessIds.length === 0) return Object.freeze({ readyHarnessIds: [], routeResults: [] });
     return evaluate({ trigger: "recipe-update", providers, harnessIds });
   }
 
-  return Object.freeze({ evaluate, evaluateRecipeUpdate, recipeUpdateTargets });
+  // A point in evaluation order, and the harnesses published by evaluations started after it.
+  const publicationMark = () => generation;
+  const publishedSince = (mark) => [...publishedGenerations]
+    .filter(([, published]) => published > mark)
+    .map(([harnessId]) => harnessId);
+
+  return Object.freeze({ evaluate, evaluateRecipeUpdate, recipeUpdateTargets, publicationMark, publishedSince });
 }

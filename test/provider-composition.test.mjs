@@ -442,9 +442,10 @@ describe("injectable production provider composition", () => {
   // no route, so the evaluation alone would never run. The post-upgrade step repairs that
   // provider as Repair does, but only when its runtime was installed before.
   it.each([
-    ["repairs a managed provider whose activation failed on its broken runtime", true],
-    ["never installs a missing runtime to recover a managed provider", false],
-  ])("%s", async (_, installedBefore) => {
+    ["repairs a managed provider whose activation failed on its broken runtime", true, "digest"],
+    ["repairs a failed managed provider once for a newly activated recipe", true, "recipe"],
+    ["never installs a missing runtime to recover a managed provider", false, "digest"],
+  ])("%s", async (_, installedBefore, trigger) => {
     let runtimeHealthy = false;
     const prepareRuntime = vi.fn(async () => { runtimeHealthy = true; });
     const create = vi.fn(({ definition }) => {
@@ -471,7 +472,9 @@ describe("injectable production provider composition", () => {
       modelRules: { allow: [{ adapterId: "codex-subscription", modelIdRegex: "^work-" }], deny: [] },
       executionAccessContracts: ["managed-runtime@1"], settings: {},
     }]]);
-    const due = new Set(["codex-basic"]);
+    const due = new Set(trigger === "digest" ? ["codex-basic"] : []);
+    const recipeUpdates = trigger === "recipe" ? ["codex@0.147.0"] : [];
+    const prepareRecipe = vi.fn(async (recipeId) => ({ recipeId }));
     const publishAvailability = vi.fn(async (updates) => {
       for (const { harnessId } of updates) due.delete(harnessId);
     });
@@ -479,7 +482,7 @@ describe("injectable production provider composition", () => {
       configurations,
       digestConfiguration: ({ name }) => `sha256:${name}-upgraded`,
       runtimeRequirements: { "codex.basic": { runtimeId: "codex", recipeId: "codex@0.147.0" } },
-      prepareRecipe: async (recipeId) => ({ recipeId }),
+      prepareRecipe,
       checkers: { "codex.basic": async () => ({ available: runtimeHealthy }) },
       publishAvailability,
       recipeInstalled: async () => installedBefore,
@@ -510,7 +513,7 @@ describe("injectable production provider composition", () => {
     await startPostUpgradeReadiness({
       readiness,
       updatesDue: async () => [...due],
-      recipeUpdates: [],
+      recipeUpdates,
       routes: () => composition.readinessRoutes(),
       repairProviders: (recipeIds) => composition.repairFailedActivations(recipeIds, {
         recipeForAdapter: () => "codex@0.147.0",
@@ -520,7 +523,9 @@ describe("injectable production provider composition", () => {
     expect(onError).not.toHaveBeenCalled();
 
     if (installedBefore) {
+      // The repair's own evaluation is the one evaluation: nothing prepares or publishes again.
       expect(prepareRuntime).toHaveBeenCalledOnce();
+      expect(prepareRecipe).toHaveBeenCalledOnce();
       expect(publishAvailability).toHaveBeenCalledOnce();
       expect(publishAvailability).toHaveBeenCalledWith([expect.objectContaining({
         harnessId: "codex-basic", available: true,
@@ -533,6 +538,7 @@ describe("injectable production provider composition", () => {
       expect(prepareRuntime).not.toHaveBeenCalled();
       expect(publishAvailability).not.toHaveBeenCalled();
       expect(due).toEqual(new Set(["codex-basic"]));
+      expect(prepareRecipe).not.toHaveBeenCalled();
     }
     await composition.close();
   });
