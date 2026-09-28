@@ -7,7 +7,8 @@
     "LastRequestWins",
     "DraftedSelectionHasEditor",
     "InspectorIsCurrent",
-    "OnlyLatestRequestSelects"
+    "OnlyLatestRequestSelects",
+    "ResolvingEditorLocked"
   ],
   "generatedBy": "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
   "steps": [

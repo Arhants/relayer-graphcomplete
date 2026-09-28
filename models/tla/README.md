@@ -446,6 +446,8 @@ The candidate fixes are:
 A restored retry that the user's non-empty draft keeps out stays pending,
 and returns once the user empties the composer; an empty value persisted
 after the user cleared restored text is a tombstone, and wins (SCP-020).
+A restoration is identified by its interaction and retry attempt, so a
+later failed attempt of the same interaction restores again.
 Clearing a draft that kept a restoration out brings the retry text back at
 once, and persists nothing, so it also returns after a restart; tests cover
 both. The
@@ -540,9 +542,15 @@ and its host marks them closed when the workspace reports no selection.
 Scenario: `inspector-new-view-selects-first-node`.
 
 A request waiting for a draft is void once the workspace enters another
-view, whether it is a click, Close, turn change, Back or Forward, or a layer
+view (a view-entry epoch, so a round trip back to a view with the same key
+does not revive it), whether it is a click, Close, turn change, Back or Forward, or a layer
 change. The model clears any remembered request on entering a view.
 Scenario: `inspector-view-change-voids-waiting-close`.
+
+While a draft resolves, an editor the dock shows must be locked
+(`ResolvingEditorLocked`, checked at every step on the real dock). When a
+switch's destination disappears during its save, the kept node is shown
+again from the latest state; a test covers it.
 
 An editor remounted while its draft's confirm or discard is in flight, after
 the user left the thread and returned, resolves until that operation
@@ -643,9 +651,9 @@ Since #477, returning to a view restores its camera only if the user moved
 it (camera revision above 0). An automatic camera is refitted, and so are
 the fits after a drop and before leaving, which the model tracks as
 `manualCam`. The fit before leaving therefore matters only for a camera the
-user panned. The replay cannot reach a pan followed by a node drag: the
-pointer moves only while pressed, and a pan keeps the node beside it. So
-that path is covered by the model alone (`canvas-without-fit-before-leaving`).
+user panned. `Hover` moves the pointer with no button pressed, so a pan can
+be followed by a node drag. Scenario `canvas-leave-after-pan-and-layout-change`
+replays that path, and fails without the fit before leaving.
 
 A fit centers the graph, which the model writes as `Fit`: the one node at
 location 0. The replay reads locations and camera offsets modulo `L`, and

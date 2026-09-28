@@ -1656,6 +1656,35 @@ describe("product workspace keyboard behavior", () => {
     expect(emptied.promptValue).toBe("the failed prompt");
   });
 
+  it("restores a later failed attempt of the same interaction once the user's edit is cleared", () => {
+    const first = transitionComposerDraftScope(createComposerDraftScopeState(), {
+      threadId: 10,
+      interactionId: 100,
+      currentPromptValue: "",
+      restoredDraft: { text: "attempt one", retryAttemptId: 1 },
+      persistedDraftText: null,
+    });
+    expect(first.promptValue).toBe("attempt one");
+    const withheld = transitionComposerDraftScope(first.state, {
+      threadId: 10,
+      interactionId: 100,
+      currentPromptValue: "my edit",
+      currentPromptRevision: first.promptRevision + 1,
+      restoredDraft: { text: "attempt two", retryAttemptId: 2 },
+      persistedDraftText: "my edit",
+    });
+    expect(withheld.promptValue).toBe("my edit");
+    const emptied = transitionComposerDraftScope(withheld.state, {
+      threadId: 10,
+      interactionId: 100,
+      currentPromptValue: "",
+      currentPromptRevision: withheld.promptRevision + 1,
+      restoredDraft: { text: "attempt two", retryAttemptId: 2 },
+      persistedDraftText: "",
+    });
+    expect(emptied.promptValue).toBe("attempt two");
+  });
+
   it("keeps an explicit empty follow-up tombstone ahead of a failed prompt restoration", () => {
     const transition = transitionComposerDraftScope(createComposerDraftScopeState(), {
       threadId: 10,

@@ -161,6 +161,11 @@ export class CanvasGestureWorld {
         this.#dispatch("pointermove", this.#target());
         break;
       }
+      case "Hover": {
+        this.pointer = this.#point(arg);
+        this.#dispatch("pointermove", this.#underPointer(), 0);
+        break;
+      }
       case "Release": {
         const target = this.#target();
         this.#dispatch("pointerup", target);

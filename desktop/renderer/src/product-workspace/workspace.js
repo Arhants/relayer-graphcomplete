@@ -1209,6 +1209,11 @@ export function transitionComposerDraftScope(state, {
   sentDrafts = [],
 }) {
   const nextScopeKey = composerDraftScopeKey(threadId, interactionId);
+  // A restoration is identified by its interaction and retry attempt, so a
+  // later failed attempt of the same interaction restores again (SCP-020).
+  const restorationId = restoredDraft?.retryAttemptId != null
+    ? `${interactionId}:${restoredDraft.retryAttemptId}`
+    : interactionId;
   if (state.activeScopeKey === nextScopeKey) {
     const currentDraft = state.drafts.get(nextScopeKey) ?? {
       promptValue: currentPromptValue,
@@ -1216,7 +1221,7 @@ export function transitionComposerDraftScope(state, {
       restoredDraftInteractionId: null,
     };
     const restorationArrived = restoredDraft
-      && String(currentDraft.restoredDraftInteractionId) !== String(interactionId);
+      && String(currentDraft.restoredDraftInteractionId) !== String(restorationId);
     const persistedDraftChanged = persistedDraftText !== null
       && persistedDraftText !== currentPromptValue;
     // A persisted draft the user wrote wins over a restoration, as it does on
@@ -1235,7 +1240,7 @@ export function transitionComposerDraftScope(state, {
       // A restoration the user's draft keeps out stays pending: once the
       // user empties the composer, the retry text returns (SCP-020).
       restoredDraftInteractionId: restores
-        ? interactionId
+        ? restorationId
         : currentDraft.restoredDraftInteractionId,
     });
     return {
@@ -1268,14 +1273,14 @@ export function transitionComposerDraftScope(state, {
     });
     drafts.delete(carried.scopeKey);
   } else if (restoredDraft && persistedDraftText === null && !stored?.promptValue
-    && String(stored?.restoredDraftInteractionId) !== String(interactionId)) {
+    && String(stored?.restoredDraftInteractionId) !== String(restorationId)) {
     // A pending restoration fills an empty composer: an emptied composer
     // holds no draft (SCP-020). An empty value persisted after the user
     // cleared the restored text is a tombstone, and wins.
     drafts.set(nextScopeKey, {
       promptValue: restoredDraft.text,
       promptRevision: Math.max(stored?.promptRevision ?? 0, currentPromptRevision) + 1,
-      restoredDraftInteractionId: interactionId,
+      restoredDraftInteractionId: restorationId,
     });
   } else if (persistedDraftText !== null && stored?.promptValue !== persistedDraftText) {
     // A scope's revision only moves forward, so settlement's revision check
@@ -1287,12 +1292,12 @@ export function transitionComposerDraftScope(state, {
       promptValue: persistedDraftText,
       promptRevision: Math.max(stored?.promptRevision ?? 0, currentPromptRevision) + 1,
       restoredDraftInteractionId: restoredDraft && !persistedDraftText
-        ? interactionId
+        ? restorationId
         : stored?.restoredDraftInteractionId ?? null,
     });
   } else if (persistedDraftText === "" && restoredDraft) {
     // An unchanged empty tombstone keeps its revision and consumes the restoration.
-    drafts.set(nextScopeKey, { ...stored, restoredDraftInteractionId: interactionId });
+    drafts.set(nextScopeKey, { ...stored, restoredDraftInteractionId: restorationId });
   } else if (!drafts.has(nextScopeKey)) {
     drafts.set(nextScopeKey, {
       promptValue: "",
@@ -1620,6 +1625,9 @@ export function createProductWorkspace({
   let graphEdges = [];
   let graphSignature = "";
   let graphViewKey = "";
+  // Advances on every view entry, so a request made in a view the user left
+  // is void even after returning to a view with the same key.
+  let graphViewEpoch = 0;
   let dragging = null;
   // A layout that changed mid-drag is fitted once the drag ends.
   let fitGraphAfterDrop = false;
@@ -1876,10 +1884,10 @@ export function createProductWorkspace({
   const prepareNodeContextSelectionChange = async () => {
     const requestSequence = ++nodeSelectionSequence;
     if (contextEditor?.resolving) {
-      const viewKey = graphViewKey;
+      const viewEpoch = graphViewEpoch;
       if (!await awaitUserRequestTurn()) return false;
       // A request made in a view the workspace has since left is void.
-      if (graphViewKey !== viewKey) {
+      if (graphViewEpoch !== viewEpoch) {
         refreshSelection();
         return false;
       }
@@ -3923,13 +3931,13 @@ export function createProductWorkspace({
     const activeScopeKey = composerDraftScopeState.activeScopeKey;
     const activeDraft = composerDraftScopeState.drafts.get(activeScopeKey);
     if (!prompt.value && pendingRestoration?.scopeKey === activeScopeKey
-      && String(activeDraft?.restoredDraftInteractionId) !== String(pendingRestoration.interactionId)) {
+      && String(activeDraft?.restoredDraftInteractionId) !== String(pendingRestoration.restorationId)) {
       prompt.value = pendingRestoration.text;
       const drafts = new Map(composerDraftScopeState.drafts);
       drafts.set(activeScopeKey, {
         promptValue: prompt.value,
         promptRevision: composerPromptRevision,
-        restoredDraftInteractionId: pendingRestoration.interactionId,
+        restoredDraftInteractionId: pendingRestoration.restorationId,
       });
       composerDraftScopeState = { ...composerDraftScopeState, drafts };
     }
@@ -4364,7 +4372,13 @@ export function createProductWorkspace({
     const restoredDraft = restoredDraftForInteraction(latestInteraction);
     restoredDraftActive = Boolean(restoredDraft);
     pendingRestoration = restoredDraft
-      ? { scopeKey: composerDraftScopeKey(threadId, latestInteraction?.id), interactionId: latestInteraction?.id, text: restoredDraft.text }
+      ? {
+        scopeKey: composerDraftScopeKey(threadId, latestInteraction?.id),
+        restorationId: restoredDraft.retryAttemptId != null
+          ? `${latestInteraction?.id}:${restoredDraft.retryAttemptId}`
+          : latestInteraction?.id,
+        text: restoredDraft.text,
+      }
       : null;
     const restoredConfirmationKey = confirmationRestorationKey(threadId, latestInteraction);
     if (restoredConfirmationKey
@@ -4768,6 +4782,7 @@ export function createProductWorkspace({
       contextNodeOverrides,
     );
     if (enteringView) {
+      graphViewEpoch += 1;
       clearInputStagesForThread(thread?.id);
       nodeSelectionSequence += 1;
       cancelInspectorFit();
@@ -5396,11 +5411,12 @@ export function createProductWorkspace({
       // It supersedes the request in flight, such as a switch waiting on the
       // draft save, so only the newest request selects.
       nodeSelectionSequence += 1;
-      const viewKey = graphViewKey;
+      const viewEpoch = graphViewEpoch;
       if (!await awaitUserRequestTurn()) return false;
       const latest = getState();
-      // A click made in a view the user has since left is void.
-      if (graphViewKey !== viewKey
+      // A click made in a view the user has since left is void, even after
+      // returning to a view with the same key.
+      if (graphViewEpoch !== viewEpoch
         || !resolveInteractionContextNode(id, latest.nodes, composerContextState.value, contextNodeOverrides)) {
         refreshSelection();
         return false;
@@ -5465,7 +5481,14 @@ export function createProductWorkspace({
       contextEditor = null;
       endResolution({ refresh: false });
       // Continue from the latest state, not the one read before the save.
-      return selectNode(getState(), id, options);
+      const latest = getState();
+      if (!resolveInteractionContextNode(id, latest.nodes, composerContextState.value, contextNodeOverrides)) {
+        // The destination is gone: the kept node is shown again, with its
+        // saved draft's editor.
+        refreshSelection();
+        return false;
+      }
+      return selectNode(latest, id, options);
     }
     if (requestSequence !== nodeSelectionSequence
       || String(getThread()?.id) !== sourceThreadId) return false;

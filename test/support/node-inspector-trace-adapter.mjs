@@ -375,6 +375,17 @@ export class NodeInspectorWorld {
     await settle();
   }
 
+  // Not in the model: render a refresh that shows the given layer (a view
+  // change when its id differs) with the given nodes.
+  async showLayer(layerId, visible = this.visible) {
+    this.layerId = layerId;
+    this.visible = visible;
+    this.srev += 1;
+    this.#loadState();
+    this.workspace.render();
+    await settle();
+  }
+
   // The refinement mapping onto the spec's observable variables.
   observe() {
     const $ = (selector) => this.window.document.querySelector(selector);
@@ -454,6 +465,10 @@ export const PROMISES = {
     real.open === (real.sel !== "none")
     && (!real.open || (real.title.node === real.sel && real.detail.node === real.sel && real.detail.live))
   ),
+  // While a draft resolves, an editor the dock shows is locked, so an edit
+  // cannot race the save, confirm, or discard. Checked at every step.
+  ResolvingEditorLocked: (real, model) => !model.editor.resolving || real.dock.node === "none"
+    || real.dock.resolving,
   // Only the newest request reports a selection: every node the workspace
   // reported during the step is the one the user wants.
   OnlyLatestRequestSelects: (real, model) => real.reported.every((node) => node === model.want),

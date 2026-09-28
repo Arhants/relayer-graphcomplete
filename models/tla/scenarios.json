@@ -1298,7 +1298,8 @@
         "LastRequestWins",
         "DraftedSelectionHasEditor",
         "InspectorIsCurrent",
-        "OnlyLatestRequestSelects"
+        "OnlyLatestRequestSelects",
+        "ResolvingEditorLocked"
       ],
       "summary": "A node is annotated, the user switches to another node and back, and the draft's editor returns.",
       "steps": [
@@ -1351,7 +1352,8 @@
         "LastRequestWins",
         "DraftedSelectionHasEditor",
         "InspectorIsCurrent",
-        "OnlyLatestRequestSelects"
+        "OnlyLatestRequestSelects",
+        "ResolvingEditorLocked"
       ],
       "summary": "A click on another node while a draft discard is in flight waits for it and then opens that node.",
       "steps": [
@@ -1396,7 +1398,8 @@
         "LastRequestWins",
         "DraftedSelectionHasEditor",
         "InspectorIsCurrent",
-        "OnlyLatestRequestSelects"
+        "OnlyLatestRequestSelects",
+        "ResolvingEditorLocked"
       ],
       "summary": "A click on another node while a draft is being confirmed waits for the confirmation and then opens that node.",
       "steps": [
@@ -1444,7 +1447,8 @@
         "LastRequestWins",
         "DraftedSelectionHasEditor",
         "InspectorIsCurrent",
-        "OnlyLatestRequestSelects"
+        "OnlyLatestRequestSelects",
+        "ResolvingEditorLocked"
       ],
       "summary": "Close pressed while a switch flushes the draft supersedes the switch and closes the inspector once the draft is saved.",
       "steps": [
@@ -1485,7 +1489,8 @@
         "LastRequestWins",
         "DraftedSelectionHasEditor",
         "InspectorIsCurrent",
-        "OnlyLatestRequestSelects"
+        "OnlyLatestRequestSelects",
+        "ResolvingEditorLocked"
       ],
       "summary": "A second Close while the first flushes the draft closes the inspector once the draft is saved.",
       "steps": [
@@ -1524,7 +1529,8 @@
         "LastRequestWins",
         "DraftedSelectionHasEditor",
         "InspectorIsCurrent",
-        "OnlyLatestRequestSelects"
+        "OnlyLatestRequestSelects",
+        "ResolvingEditorLocked"
       ],
       "summary": "A failed draft save refuses a switch and re-renders the kept node's Node Detail.",
       "steps": [
@@ -1574,7 +1580,8 @@
         "LastRequestWins",
         "DraftedSelectionHasEditor",
         "InspectorIsCurrent",
-        "OnlyLatestRequestSelects"
+        "OnlyLatestRequestSelects",
+        "ResolvingEditorLocked"
       ],
       "summary": "A refresh arrives while a draft save holds a node switch; once the save succeeds, the switched-to node shows the refreshed state.",
       "steps": [
@@ -1620,7 +1627,8 @@
         "LastRequestWins",
         "DraftedSelectionHasEditor",
         "InspectorIsCurrent",
-        "OnlyLatestRequestSelects"
+        "OnlyLatestRequestSelects",
+        "ResolvingEditorLocked"
       ],
       "summary": "A click on another node arrives while a switch waits on a draft save; once the save succeeds, only the newer click selects.",
       "steps": [
@@ -1662,7 +1670,8 @@
         "LastRequestWins",
         "DraftedSelectionHasEditor",
         "InspectorIsCurrent",
-        "OnlyLatestRequestSelects"
+        "OnlyLatestRequestSelects",
+        "ResolvingEditorLocked"
       ],
       "summary": "A Close waits on a draft flush, a new view drops that draft's editor, and the user clicks a node; when the flush returns, the older Close does not close the inspector.",
       "steps": [
@@ -1774,7 +1783,8 @@
         "LastRequestWins",
         "DraftedSelectionHasEditor",
         "InspectorIsCurrent",
-        "OnlyLatestRequestSelects"
+        "OnlyLatestRequestSelects",
+        "ResolvingEditorLocked"
       ],
       "summary": "A new view that keeps the selected node arrives while a draft discard is in flight; the inspector reopens on it once the discard resolves.",
       "steps": [
@@ -1821,7 +1831,8 @@
         "LastRequestWins",
         "DraftedSelectionHasEditor",
         "InspectorIsCurrent",
-        "OnlyLatestRequestSelects"
+        "OnlyLatestRequestSelects",
+        "ResolvingEditorLocked"
       ],
       "summary": "A Close waits on a draft discard, and a new view arrives before the discard returns; the Close made in the old view does not close the inspector.",
       "steps": [
@@ -1867,7 +1878,8 @@
         "LastRequestWins",
         "DraftedSelectionHasEditor",
         "InspectorIsCurrent",
-        "OnlyLatestRequestSelects"
+        "OnlyLatestRequestSelects",
+        "ResolvingEditorLocked"
       ],
       "summary": "A new view without the selected node arrives; Node Details stays open on the layer's first node, and after Close a new view selects nothing.",
       "steps": [
@@ -2011,6 +2023,54 @@
         [
           "Move",
           1
+        ],
+        [
+          "RenderLayout"
+        ],
+        [
+          "Leave"
+        ],
+        [
+          "Release"
+        ],
+        [
+          "Return"
+        ]
+      ]
+    },
+    {
+      "id": "canvas-leave-after-pan-and-layout-change",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "init": "ptr = 1",
+      "promises": [
+        "DragFollowsPointer",
+        "DropStays",
+        "DropFitsNewLayout",
+        "FitCentersNode"
+      ],
+      "summary": "The user pans, then drags the node, the layout changes mid-drag, and the user leaves the view before dropping it; returning shows the new layout fitted although the camera had been moved by hand.",
+      "steps": [
+        [
+          "Press"
+        ],
+        [
+          "Move",
+          2
+        ],
+        [
+          "Release"
+        ],
+        [
+          "Hover",
+          1
+        ],
+        [
+          "Press"
+        ],
+        [
+          "Move",
+          2
         ],
         [
           "RenderLayout"

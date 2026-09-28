@@ -77,6 +77,37 @@ describe("A request waiting for a resolving draft", () => {
     expect(await turnChange).toBe(false);
   });
 
+  it("is void after a round trip through another view with the same key", async () => {
+    const trace = traces.find((candidate) => candidate.scenario === "inspector-view-change-during-discard");
+    const discard = trace.steps.findIndex(({ action }) => action?.[0] === "Discard");
+    world = await new NodeInspectorWorld().ready();
+    for (let index = 1; index <= discard; index += 1) {
+      await world.apply(trace.steps[index].action, trace.steps[index - 1].state, trace.steps[index].state);
+    }
+    world.window.document.querySelector('[data-node="8"]').click();
+    const home = world.layerId;
+    await world.showLayer(home + 50);
+    await world.showLayer(home);
+    await world.apply(["DiscardReturns", "ok"], quietModel, quietModel);
+    expect(String(world.selection.selectedNodeId)).not.toBe("8");
+  });
+
+  it("shows the kept node again when a switch's destination disappears", async () => {
+    const trace = traces.find((candidate) => candidate.scenario === "inspector-click-during-switch");
+    const switching = trace.steps.findIndex(({ action }, index) => index > 1 && action?.[0] === "Click");
+    world = await new NodeInspectorWorld().ready();
+    for (let index = 1; index <= switching; index += 1) {
+      await world.apply(trace.steps[index].action, trace.steps[index - 1].state, trace.steps[index].state);
+    }
+    await world.showLayer(world.layerId, ["n1"]);
+    await world.apply(["SaveReturns", 1, "ok"], quietModel, quietModel);
+    const real = world.observe();
+    expect(real).toMatchObject({ sel: "n1", open: true, title: { node: "n1" }, detail: { node: "n1", live: true } });
+    expect(real.dock.node).toBe("n1");
+    // The kept node shows the refresh that arrived during the save.
+    expect(real.title.rev).toBe(real.srev);
+  });
+
   it("waits for a discard the user left and returned to", async () => {
     const trace = traces.find((candidate) => candidate.scenario === "inspector-view-change-during-discard");
     const discard = trace.steps.findIndex(({ action }) => action?.[0] === "Discard");

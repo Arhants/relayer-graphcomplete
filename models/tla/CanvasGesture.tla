@@ -132,6 +132,13 @@ Move(p) ==
   /\ manualCam' = (manualCam \/ (pressed = "stage" /\ view = "home" /\ cam' # cam))
   /\ UNCHANGED <<view, layout, gen, cache, pressed, pan, sel, fitDue>>
 
+\* The pointer moves with no button pressed. Nothing is dragged or panned.
+Hover(p) ==
+  /\ pressed = "none" /\ p # ptr
+  /\ ptr' = p
+  /\ UNCHANGED <<view, layout, gen, w, pinned, cam, cache, pressed, drag, pan, sel, fitDue,
+                 dropped, unfitted, fitted, manualCam>>
+
 \* pointerup and the click that follows it. On N's element, a moved drag
 \* suppresses the click (the node's onpointerup and onclick); otherwise the click
 \* selects N. Released elsewhere, N's handlers do not run and the drag
@@ -235,7 +242,7 @@ Return ==
 -----------------------------------------------------------------------------
 Next ==
   \/ Press \/ Release
-  \/ \E p \in 0..(L - 1) : Move(p)
+  \/ \E p \in 0..(L - 1) : Move(p) \/ Hover(p)
   \/ RenderSame \/ RenderLayout \/ Leave \/ Return
 
 Spec == Init /\ [][Next]_vars
@@ -244,6 +251,7 @@ Act(s) ==
   LET n == s[1] IN
   CASE n = "Press" -> Press
     [] n = "Move" -> Move(s[2])
+    [] n = "Hover" -> Hover(s[2])
     [] n = "Release" -> Release
     [] n = "RenderSame" -> RenderSame
     [] n = "RenderLayout" -> RenderLayout
