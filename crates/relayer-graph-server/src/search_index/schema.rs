@@ -598,8 +598,10 @@ fn named_properties(names: &[&str], values: &[Value]) -> Result<Properties> {
 fn encode_inventory_entry(
     key: Vec<String>,
     properties: Properties,
-    targets: Vec<String>,
+    mut targets: Vec<String>,
 ) -> String {
+    // Visibility is a set; incremental publication order is not semantic.
+    targets.sort();
     serde_json::to_string(&(key, properties, targets)).expect("search inventory entry serializes")
 }
 

@@ -1,0 +1,83 @@
+[
+  {
+    "reviewer": "authority_review",
+    "sourceSha256": "22dfc89b6a71e55bd5df7c6c94b5c4c64128efb8ccb1505b91bf5dc78a43818a",
+    "files": [
+      "crates/relayer-app-server/src/api.rs",
+      "crates/relayer-app-server/src/api/error.rs",
+      "crates/relayer-app-server/src/api/state.rs",
+      "crates/relayer-app-server/src/api/threads.rs",
+      "crates/relayer-app-server/src/conversation_export_service.rs",
+      "crates/relayer-app-server/src/runtime.rs",
+      "crates/relayer-app-server/tests/product_persistence_flow.rs",
+      "crates/relayer-graph-core/src/graph/database.rs",
+      "crates/relayer-graph-core/src/storage/sqlite/actions.rs",
+      "crates/relayer-graph-core/src/storage/sqlite/migrations/0022_permission_delete_guard.sql",
+      "crates/relayer-graph-core/tests/graph_database.rs",
+      "crates/relayer-graph-server/src/lib.rs"
+    ],
+    "verdict": "No unresolved findings",
+    "mode": "Static adversarial review; independent execution not claimed",
+    "unresolved": [],
+    "reviewedCommit": "1e9dad0d2fe0138f2bfe3a40b621c334e8045d36",
+    "continuity": "Historical integrated review; final_boundary_review covers subsequent executable changes"
+  },
+  {
+    "reviewer": "renderer_review",
+    "sourceSha256": "0c514acf3999932a2aa5a9c5287e36b6456a0b01f9ba07754b3f3cbd9b402b2d",
+    "files": [
+      "desktop/renderer/src/product-workspace/node-detail-runtime.js",
+      "desktop/renderer/src/product-workspace/workspace.js",
+      "desktop/renderer/src/threads.js",
+      "desktop/shared/telemetry-module-inventory.mjs",
+      "scripts/run-interaction-permissions-human-gate.mjs",
+      "scripts/test-desktop-first-message.mjs",
+      "test/node-detail-runtime.test.mjs"
+    ],
+    "verdict": "No unresolved findings",
+    "mode": "Static adversarial review; independent execution not claimed",
+    "unresolved": [],
+    "reviewedCommit": "1e9dad0d2fe0138f2bfe3a40b621c334e8045d36",
+    "continuity": "Historical integrated review; final_boundary_review covers subsequent executable changes"
+  },
+  {
+    "reviewer": "final_boundary_review",
+    "sourceSha256": "fb93e93b93f8412e58c4d16c3b1bae955e302284a447eeb02dc42a716491c042",
+    "files": [
+      "crates/relayer-graph-core/src/storage/sqlite/migrations/0023_invoke_resolution_immutability.sql",
+      "crates/relayer-graph-core/tests/graph_database.rs",
+      "desktop/renderer/src/threads.js",
+      "scripts/test-desktop-first-message.mjs",
+      "test/workspace-navigation-integration.test.mjs"
+    ],
+    "verdict": "No unresolved findings",
+    "mode": "Static adversarial review of final receipt/cache delta; independent full execution not claimed",
+    "unresolved": []
+  },
+  {
+    "reviewer": "authority_review",
+    "scope": "Live qualification development-only production Desktop gate",
+    "sourceSha256": "8ea2922bad0bf7bea804eb79b139f3d8d61169ae2547f5c158b7388762b8a359",
+    "files": [
+      "desktop/main/index.mjs",
+      "desktop/main/services/graphcomplete-runtime.mjs",
+      "test/graphcomplete-runtime-temporal-features.test.mjs"
+    ],
+    "verdict": "No unresolved findings",
+    "mode": "Static packaged/default-off review plus actual runtime spawn-option boundary test; packaged live execution not claimed",
+    "unresolved": []
+  },
+  {
+    "reviewer": "final_boundary_review",
+    "scope": "Live invoke result presentation ownership correction",
+    "sourceSha256": "4f87baf557bcd28c885132064cb4be47053a593499103a9916e15c3237ad2976",
+    "files": [
+      "desktop/renderer/src/threads.js",
+      "test/workspace-navigation-integration.test.mjs"
+    ],
+    "verdict": "No unresolved findings",
+    "mode": "Static adversarial review; actual controller red/green observed by implementer; live run separately verified",
+    "unresolved": [],
+    "continuity": "Supersedes prior receipt/cache review for threads.js and workspace-navigation-integration.test.mjs only; other previously reviewed source unchanged."
+  }
+]

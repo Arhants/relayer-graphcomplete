@@ -28,6 +28,9 @@ export function recordEvidence(event, env, git) {
   // parent is the tested base; the guard compares it to this main observation.
   const observedMain = git(["ls-remote", "origin", "refs/heads/main"]).split(/\s+/)[0];
   if (![mergeSha, ...parents, observedMain].every(sha)) throw new Error("Invalid Git identity");
+  // Event base metadata can precede GitHub's synthetic merge. Bind the actual
+  // first parent to the observed remote main instead of that stale metadata.
+  if (parents[0] !== observedMain) throw new Error("CI checkout does not merge observed main");
   return {
     version: 1, repository: env.GITHUB_REPOSITORY, pr: pr.number,
     runId: Number(env.GITHUB_RUN_ID), attempt: Number(env.GITHUB_RUN_ATTEMPT),

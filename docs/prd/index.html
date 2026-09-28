@@ -2396,6 +2396,22 @@ settings:
 <li>An imported submitted input is retained only when its accepted presenting occurrence belongs to an earlier conversation turn than the consuming turn. An occurrence presented in the same turn or a later turn is dropped and recorded on the import receipt.</li>
 <li>Within one consuming turn, only the first valid answer for an exact presenting interaction, layer, and action occurrence is retained. An additional answer for that occurrence is dropped and recorded with reason <code>input_attachment_duplicate</code>; the same occurrence may be answered in a different consuming turn. These import rejection rules are tracked by <a href="https://github.com/vishaltandale00/relayer-graphcomplete/issues/312">issue #312</a>.</li>
 </ul>
+<h3>7.2A Typed interaction permissions: Slice 1</h3>
+<p>The interaction node owns a frozen, versioned permission description, derived by trusted preparation before Complete. Unknown permission variants fail closed. Runtime credentials, prompts, and caller payloads cannot create grants.</p>
+<p><code>invoke.resolve</code> names the exact invoked action. Atomic acceptance changes that same action to <code>navigate</code> with relation <code>expand</code>, targeting the accepted response. Identity and presentation survive; invocation text and origin remain on the interaction. Every occurrence observes the navigation. Rejection and stop publish no conversion, replay cannot redirect it, and expand cycles remain forbidden.</p>
+<p><code>navigate.add</code> grants ability on each exact attached node, never an obligation. It permits no invoke, input, removal, or general edit. Targets follow graph visibility rules, without a frozen allowlist. Future detail replacement must accompany an authorized addition, preserve existing actions, and bind every addition. Shared reads and imports cannot mint mutation authority.</p>
+<p>Native helpers share their completion's frozen permissions; semantic Complete children receive their own. Acceptance and stop deactivate grants while retaining provenance. Project and standalone chat scope remain unchanged.</p>
+<p>Slice 1 is disabled by default. The trusted <code>--interaction-permissions</code> qualification switch enables new permission preparation and invoke conversion. Persistent attached-node edits remain disabled. Slice 2 must provide portable snapshots, identity remapping, inert historical imports, and fail-closed legacy migration. Converted-action export is unavailable until then. The B3 navigator is outside this slice.</p>
+<p>This gated contract supersedes the retained-invoke lifecycle above only for newly prepared interactions. Existing compiled invoke buttons must navigate through the exact graph-recorded transition, including after reopen and from another occurrence.</p>
+<h4>Slice 1 verification checkpoints</h4>
+<ul>
+<li><code>IP-001</code>: exact frozen invocation and attachment authority; active-only, scope, read-only, unknown-version, and caller-payload denial.</li>
+<li><code>IP-002</code>: same-action conversion and metadata, replay, reopen, cycle rejection, stop, and atomic storage failure.</li>
+<li><code>IP-003</code>: existing compiled button navigates without execution; arbitrary kind substitutions remain unavailable.</li>
+<li><code>IP-004</code>: default-off legacy behavior and disabled persistent-node writes; converted export is explicitly unavailable.</li>
+<li><code>IP-005</code>: search publication matches canonical graph semantics without widening thread visibility.</li>
+</ul>
+<p>Required deterministic handoff checks are <code>npm run check</code>, <code>npm run build</code>, and the existing zero-inference desktop first-message runner in enabled and disabled modes. The <a href="../evidence/issue-517-slice-1/README.md">Slice 1 evidence ledger</a> maps executable seams and records results separately from this required plan. No paid inference or release-candidate proof is required for this slice.</p>
 <h3>7.3 Current proof boundary</h3>
 <ul>
 <li>Navigate actions open accepted descendant layers in Relayer Desktop and read-only Eval review.</li>

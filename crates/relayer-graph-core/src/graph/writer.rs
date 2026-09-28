@@ -384,6 +384,18 @@ impl GraphWriter {
         })
     }
 
+    /// Authorization preflight only. Slice 1 never enables persistent-node writes.
+    pub async fn authorize_interaction_permission(
+        &self,
+        permission: &crate::InteractionPermission,
+    ) -> Result<(), GraphError> {
+        let mut transaction = self.database.storage.begin_read().await?;
+        crate::storage::sqlite::permissions::authorize(&mut transaction, &self.scope, permission)
+            .await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
     pub async fn add_action(&self, draft: &ActionDraft) -> Result<GraphAction, GraphError> {
         let canonical_icon = draft.validate_shape()?;
         let normalized_draft = ActionDraft {

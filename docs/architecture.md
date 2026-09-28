@@ -561,3 +561,14 @@ parents are instructed to pass the pinned preference and applicable recipes to
 graph-authoring children. That instruction is not automatic child injection.
 Acceptance establishes graph integrity; rendered-result review establishes
 whether the chosen representation communicates the task effectively.
+
+## Typed interaction permissions (gated Slice 1)
+
+Graph preparation freezes a closed permission description after validating origin
+and context, before execution. One graph-owned authorization seam checks the exact
+operation and active lifecycle. Atomic Return may consume `invoke.resolve` by
+converting that action to node-owned expansion; a durable graph-only receipt admits
+the exact old compiled binding. Search updates preserve each publication's scope.
+The graph-server `--interaction-permissions` qualification flag defaults off.
+Persistent attached-node mutation and portable conversion export remain unavailable;
+see [ADR 0010](decisions/0010-typed-interaction-permissions.md).
