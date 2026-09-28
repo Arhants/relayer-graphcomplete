@@ -9,12 +9,14 @@ import threading
 import types
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.request import HTTPRedirectHandler, Request
 
 from relayer_graph import (APIError, CompletionCurrentSnapshot, CompletionInputGraph, CompletionTerminalError, CompletionWatch, ConfigurationError, EdgeObject, GraphNode, GraphSession,
                            LayerLayoutObject, LayerObject, NodeObject,
                            NodePlacementObject,
                            RELAYER_ICON_NAMES, RelayerGraphClient, TransportError, ValidationError,
                            complete, is_supported_relayer_icon, resolve_relayer_icon_name)
+from relayer_graph.completion import _OPENER
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -632,6 +634,17 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
         finally:
             os.environ.clear()
             os.environ.update(previous)
+
+    def test_a_redirect_to_another_scheme_does_not_carry_the_broker_token(self):
+        # The client's own redirect handler decides before the redirected request is sent, so no TLS broker is needed.
+        [redirects] = [handler for handler in _OPENER.handlers if isinstance(handler, HTTPRedirectHandler)]
+        port = self.server.server_port
+        request = Request(f"http://127.0.0.1:{port}/api/completions/79/current", headers={"authorization": "Bearer broker-token"})
+        redirected = redirects.redirect_request(
+            request, None, 307, "Temporary Redirect", {}, f"https://127.0.0.1:{port}/api/completions/77/current"
+        )
+        self.assertEqual(redirected.full_url, f"https://127.0.0.1:{port}/api/completions/77/current")
+        self.assertFalse(redirected.has_header("Authorization"))
 
     @staticmethod
     def _held_children():
