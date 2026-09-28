@@ -234,7 +234,11 @@ export function defaultProviderChoices(settings) {
 
 const joinLabels = (providers) => providers.map((provider) => provider.label).join(", ");
 
-export function defaultProviderHint({ needsRefresh = [], noHarness = [] } = {}) {
+export function defaultProviderHint({ needsRefresh = [], noHarness = [] } = {}, currentProviderId = null) {
+  // The current default keeps its own family; a hint saying it cannot be the default would
+  // contradict the selection.
+  needsRefresh = needsRefresh.filter((provider) => String(provider.id) !== String(currentProviderId));
+  noHarness = noHarness.filter((provider) => String(provider.id) !== String(currentProviderId));
   const lines = [];
   if (needsRefresh.length === 1) {
     lines.push(`${joinLabels(needsRefresh)} has no usable model family yet. Refresh its models to make it the default.`);

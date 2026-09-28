@@ -305,7 +305,7 @@ function render() {
   $("#defaultProviderSelect").innerHTML = defaultProviderOptions();
   $("#defaultHarnessSelect").disabled = savingDefaults;
   $("#defaultProviderSelect").disabled = savingDefaults;
-  const providerHint = defaultProviderHint(defaultProviderChoices(settings));
+  const providerHint = defaultProviderHint(defaultProviderChoices(settings), settings.defaults?.providerId);
   $("#defaultProviderHint").textContent = providerHint ?? "";
   $("#defaultProviderHint").classList.toggle("hidden", !providerHint);
   const harnessError = defaultHarnessError(settings);
@@ -550,6 +550,7 @@ async function persistDefault(field) {
   settings.defaults[field] = candidate;
   render();
   let saved = null;
+  let harnessNotice = null;
   try {
     let applyPermissionProfiles = field === "harnessId"
       ? await preparePermissionProfiles(candidate)
@@ -559,7 +560,7 @@ async function persistDefault(field) {
     // family, and may move the default harness to one that runs it (PROV-008).
     settings.defaults = { ...saved };
     if (appState.modelSettings) appState.modelSettings.defaults = { ...saved };
-    const harnessNotice = field === "providerId"
+    harnessNotice = field === "providerId"
       ? defaultHarnessChangeNotice(previous, saved, settings)
       : null;
     if (harnessNotice) applyPermissionProfiles = await preparePermissionProfiles(saved.harnessId);
@@ -569,7 +570,8 @@ async function persistDefault(field) {
     setStatus(harnessNotice ?? "Saved", "success");
   } catch (error) {
     if (!saved) settings.defaults = previous;
-    setStatus(saved ? `Saved, but could not refresh: ${error.message}` : error.message, "error");
+    const savedStatus = harnessNotice ? `${harnessNotice} Could not refresh: ${error.message}` : `Saved, but could not refresh: ${error.message}`;
+    setStatus(saved ? savedStatus : error.message, "error");
   } finally {
     savingDefaults = false;
     render();

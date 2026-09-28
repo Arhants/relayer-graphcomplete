@@ -636,7 +636,7 @@ CloseLeavesNoOpenRuntime ==
   closed => \A r \in RuntimeIds : rt[r] /= "open"
 
 \* The default family is always a live, enabled family. Disable, delete,
-\* and provider removal all refuse to break it (CAT:803-861, 2509-2559).
+\* and provider removal all refuse to break it (CAT:803-861, 2656-2706).
 \* The PRD states no such promise; this checks the guards' shared intent.
 DefaultFamilyIsLive ==
   fam[defaultFamily].state = "active" /\ fam[defaultFamily].enabled

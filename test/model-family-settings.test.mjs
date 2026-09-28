@@ -312,6 +312,11 @@ describe("default provider choice (PROV-008)", () => {
       "Fresh has no usable model family yet. Refresh its models to make it the default.",
     );
     expect(defaultProviderHint({ needsRefresh: [], noHarness: [] })).toBeNull();
+    // The current default is never told it cannot be the default.
+    expect(defaultProviderHint(choices, "router")).toBe(
+      "Fresh, Hidden family have no usable model family yet. Refresh their models to make one the default.",
+    );
+    expect(defaultProviderHint({ needsRefresh: choices.needsRefresh.slice(0, 1) }, "fresh")).toBeNull();
   });
 
   it("keeps a provider the current default harness runs without a permission profile", () => {
