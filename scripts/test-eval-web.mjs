@@ -199,12 +199,26 @@ try {
   await humanPage.waitForLoadState();
   await until(async () => (await rpc(host.url, "humanTask", [humanId])).events.some((event) => event.kind === "presentation" && event.snapshot.graphVisible), "human first visible graph");
   assert.equal(await humanPage.evaluate(() => Boolean(window.relayerEvalReview)), false);
+  assert.equal(await humanPage.evaluate(async () => (await (await fetch("/api/capabilities")).json()).annotations), true);
+  const modelValidation = await humanPage.evaluate(async () => {
+    const response = await fetch("/api/model-selection/validate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ harnessId: "fixture-human-task", familyId: 1, providerId: "codex", modelId: "deliberately-missing-model" }) });
+    return { status: response.status, body: await response.json() };
+  });
+  assert.equal(modelValidation.status, 422, JSON.stringify(modelValidation));
+  assert.equal(modelValidation.body.code, "model_selection_unknown", "validation must reach product semantics, not fail with read-only authority");
+  await humanPage.locator(".graph-node").first().click();
+  await humanPage.locator("#annotationComment").fill("This node helped me understand the task.");
+  await humanPage.locator("#submitAnnotation").click();
+  await until(async () => (await humanPage.locator("#annotationList").textContent()).includes("This node helped me understand the task."), "native live node annotation saved");
+
   await humanPage.evaluate(() => window.relayerHumanTask.workspaceLayout.set(0.64));
   const reopenedTask = await browser.newPage();
   await reopenedTask.goto(await rpc(host.url, "openHumanTask", [humanId]));
   assert.notEqual(new URL(reopenedTask.url()).origin, new URL(humanPage.url()).origin);
   await until(async () => (await reopenedTask.locator("#workspaceDivider").getAttribute("aria-valuenow")) === "64", "live task split restored across origins");
   assert.equal(await reopenedTask.evaluate(() => Boolean(window.relayerEvalReview)), false);
+  await reopenedTask.locator(".graph-node").first().click();
+  await until(async () => (await reopenedTask.locator("#annotationList").textContent()).includes("This node helped me understand the task."), "native node annotation restored in new live workspace");
   await reopenedTask.close();
 
   for (const surface of [humanPage, review]) {
@@ -271,6 +285,9 @@ try {
   const humanExport = await rpc(host.url, "exportHumanTask", [humanId]);
   assert.equal(humanExport.bundle.session.annotations.at(-1).comment, "First useful map.");
   assert.equal(humanExport.bundle.session.conversations.length, 1);
+  const graphAnnotation = humanExport.bundle.graphAnnotations.threads.flatMap(({ annotations }) => annotations)
+    .find(({ revisions }) => revisions.some(({ comment }) => comment === "This node helped me understand the task."));
+  assert.equal(graphAnnotation?.anchor.kind, "node", "native node feedback remains in immutable human-task export");
   assert.ok(humanExport.sha256.startsWith("sha256:"));
   if (process.env.RELAYER_HUMAN_TASK_SCREENSHOT) {
     await dashboard.locator("#humanRefresh").click();

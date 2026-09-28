@@ -2,7 +2,7 @@ import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { createSettingsStore } from "../desktop/main/services/settings-store.mjs";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { HumanTaskService } from "../desktop/eval-main/human-task-service.mjs";
 import { createHumanTaskSurface } from "../desktop/eval-main/web-host.mjs";
 
@@ -276,4 +276,116 @@ it("persists a live workspace split across scoped origins without granting setti
   expect(await (await send(reopened, "/eval-api/workspace-layout")).json()).toBe(0.64);
   expect((await send(reopened, "/api/model-settings/defaults", "PUT", { providerId: "forged" })).status).toBe(403);
   expect(tasks.get(session.id).completions).toBe(1);
+});
+
+
+it("records an ambiguous opening dispatch as interrupted with its reserved budget", async () => {
+  const f = await fixture();
+  f.options.evalService.createHumanTaskThread = async () => { throw new Error("Response lost after dispatch"); };
+  await expect(f.tasks.create({ maxCompletions: 2, endpoint: "A result" })).rejects.toThrow("Response lost");
+  expect(f.tasks.list()[0]).toMatchObject({ status: "interrupted", completions: 1, termination: { reason: "product_write_unknown", success: null } });
+});
+
+it("admits scoped retries of failed unsent attempts with a pinned model and spent budget", async () => {
+  const f = await fixture();
+  f.threads.get(1)[0] = { id: 10, completionStatus: "not_started", latestAttempt: { id: 91, outcome: "model_failed" } };
+  const fetchImpl = f.tasks.fetchImpl;
+  f.tasks.fetchImpl = (url, init) => {
+    if (!url.pathname.endsWith("/retry")) return fetchImpl(url, init);
+    const interaction = { id: 10, completionStatus: "running", latestAttempt: { id: 92 } };
+    f.threads.get(1)[0] = interaction;
+    return Promise.resolve(Response.json(interaction));
+  };
+  await expect(f.tasks.write(f.session.id, "/api/threads/2/interactions/10/retry", "POST", { attemptId: 91 })).rejects.toThrow("outside");
+  await expect(f.tasks.write(f.session.id, "/api/threads/1/interactions/10/retry", "POST", { attemptId: 91, modelSelection: { providerId: "other" } })).rejects.toThrow("starting model");
+  expect((await f.tasks.write(f.session.id, "/api/threads/1/interactions/10/retry", "POST", { attemptId: 91 })).status).toBe(200);
+  expect(f.tasks.get(f.session.id).completions).toBe(2);
+  expect(f.tasks.get(f.session.id).events.at(-1).request.modelSelection.providerId).toBe("pinned");
+  f.tasks.find(f.session.id).events[0].at = new Date(1000).toISOString();
+  const submission = f.tasks.get(f.session.id).events.at(-1);
+  await f.tasks.observe(f.session.id, { threadId: 1, turnId: 10, graphVisible: true, content: "Retried graph", observedAt: Date.parse(submission.at) + 100 });
+  expect(f.tasks.get(f.session.id).firstVisibleGraph).toMatchObject({ submissionEventId: submission.id, latencyMs: 100 });
+  expect(f.tasks.get(f.session.id).responseTimings[0]).toMatchObject({ submissionEventId: submission.id, latencyMs: 100 });
+  await expect(f.tasks.finish(f.session.id, { reason: "budget_exhausted" })).rejects.toThrow("Wait");
+  f.threads.get(1)[0] = { id: 10, completionStatus: "not_started", latestAttempt: { id: 92, outcome: "model_failed" } };
+  await expect(f.tasks.write(f.session.id, "/api/threads/1/interactions/10/retry", "POST", { attemptId: 92 })).rejects.toThrow("limit");
+  await f.tasks.finish(f.session.id, { reason: "budget_exhausted" });
+});
+
+it("rolls back failed grade and annotation persistence before retry", async () => {
+  const f = await fixture();
+  await f.tasks.grade(f.session.id, { satisfaction: 2, comment: "Saved" });
+  const persist = vi.spyOn(f.tasks, "persist").mockRejectedValueOnce(new Error("Disk full"));
+  await expect(f.tasks.grade(f.session.id, { satisfaction: 4, comment: "Not saved" })).rejects.toThrow("Disk full");
+  expect(f.tasks.get(f.session.id).grades).toHaveLength(1);
+  expect(f.tasks.get(f.session.id).satisfaction.value).toBe(2);
+  persist.mockRejectedValueOnce(new Error("Disk full"));
+  await expect(f.tasks.annotate(f.session.id, { eventId: f.session.events[0].id, comment: "Not saved" })).rejects.toThrow("Disk full");
+  expect(f.tasks.get(f.session.id).annotations).toHaveLength(0);
+  persist.mockRestore();
+  await f.tasks.grade(f.session.id, { satisfaction: 4, comment: "Retry saved" });
+  expect(f.tasks.get(f.session.id).grades).toHaveLength(2);
+});
+
+it("exports interrupted evidence even when the possibly dispatched completion remains running", async () => {
+  const f = await fixture();
+  f.failTransport();
+  await expect(f.tasks.write(f.session.id, "/api/threads/1/interactions", "POST", {})).rejects.toThrow();
+  f.threads.get(1)[0].completionStatus = "running";
+  expect((await f.tasks.export(f.session.id)).bundle.conversationEvidence).toBe("unavailable-after-interruption");
+});
+
+it("attributes first visible graph to its matching later submission", async () => {
+  const f = await fixture({ steps: 2 });
+  f.tasks.find(f.session.id).events[0].at = new Date(1000).toISOString();
+  await f.tasks.nextStep(f.session.id);
+  const submission = f.tasks.get(f.session.id).events.find(event => event.kind === "submission" && event.threadId === 2);
+  await f.tasks.observe(f.session.id, { threadId: 2, turnId: 20, graphVisible: true, content: "Later graph", observedAt: Date.parse(submission.at) + 100 });
+  expect(f.tasks.get(f.session.id).firstVisibleGraph.latencyMs).toBe(100);
+});
+
+it("removes a final step check when export fails", async () => {
+  const f = await fixture({ steps: 2 }); await f.tasks.nextStep(f.session.id); f.failExport();
+  await expect(f.tasks.finish(f.session.id, { reason: "endpoint_reached" })).rejects.toThrow("freeze");
+  expect(f.tasks.get(f.session.id).stepChecks).toHaveLength(1);
+});
+it("does not include frozen evidence in list summaries", async () => {
+  const f = await fixture(); await f.tasks.finish(f.session.id, { reason: "satisfied" });
+  expect(f.tasks.list()[0]).not.toHaveProperty("conversations");
+  expect(f.tasks.list()[0]).not.toHaveProperty("stepChecks");
+});
+
+
+it("validates only the task model using semantic write authority without spending a completion", async () => {
+  const f = await fixture();
+  const model = { harnessId: "fixture", familyId: 1, providerId: "pinned", modelId: "model" };
+  expect((await f.tasks.write(f.session.id, "/api/model-selection/validate", "POST", model)).status).toBe(200);
+  expect(f.calls.at(-1).headers.Cookie).toBe("control=secret");
+  expect(f.tasks.get(f.session.id).completions).toBe(1);
+  await expect(f.tasks.write(f.session.id, "/api/model-selection/validate", "POST", { ...model, providerId: "other" })).rejects.toThrow("starting model");
+  await expect(f.tasks.write(f.session.id, "/api/model-selection/validate", "POST", { ...model, harnessId: "other" })).rejects.toThrow("starting harness");
+});
+
+
+it("leaves finish retryable when persisting its initial transition fails", async () => {
+  const f = await fixture();
+  const persist = vi.spyOn(f.tasks, "persist").mockRejectedValueOnce(new Error("Disk full"));
+  await expect(f.tasks.finish(f.session.id, { reason: "satisfied" })).rejects.toThrow("Disk full");
+  expect(f.tasks.get(f.session.id)).toMatchObject({ status: "active", stepChecks: [] });
+  persist.mockRestore();
+  expect((await f.tasks.finish(f.session.id, { reason: "satisfied" })).status).toBe("completed");
+});
+
+
+it("rolls back an unpersisted write reservation before any product dispatch", async () => {
+  const f = await fixture();
+  const before = f.tasks.get(f.session.id);
+  const persist = vi.spyOn(f.tasks, "persist").mockRejectedValueOnce(new Error("Disk full"));
+  await expect(f.tasks.write(f.session.id, "/api/threads/1/interactions", "POST", { text: "Refine" })).rejects.toThrow("Disk full");
+  expect(f.tasks.get(f.session.id)).toMatchObject({ status: "active", completions: before.completions, events: before.events });
+  expect(f.calls.filter(call => call.method === "POST")).toHaveLength(0);
+  persist.mockRestore();
+  expect((await f.tasks.write(f.session.id, "/api/threads/1/interactions", "POST", { text: "Refine" })).status).toBe(201);
+  expect(f.tasks.get(f.session.id).completions).toBe(2);
+  expect(f.tasks.get(f.session.id).events).toHaveLength(before.events.length + 1);
 });

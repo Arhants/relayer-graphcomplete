@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEvalProviderSetup } from "../desktop/eval-main/provider-setup.mjs";
@@ -64,7 +64,7 @@ async function setup({ managed = false, failing = false, credentialStore, now, a
   });
   cleanups.push(() => service.close());
   return { service, directory, snapshots, dependencies, runtimeResolver, fetchImpl,
-    setBusy: (value) => { busy = value; }, stored: () => stored,
+    setBusy: (value) => { busy = value; }, seed: (definitions) => { stored = structuredClone(definitions); }, stored: () => stored,
     connect: () => service.connect({ connectionId: "chosen", adapterId, label: "Chosen", fields: { "api-key": "private-key" } }),
   };
 }
@@ -107,6 +107,29 @@ describe("Eval production provider setup", () => {
     await lease.release();
     await fixture.service.logout("chosen");
     expect((await fixture.service.status()).definitions[0].connected).toBe(false);
+  });
+
+  it.each([
+    ['cli_auth_credentials_store = "keyring"\n', false],
+    ['# cli_auth_credentials_store = "file"\n', false],
+    ['description = """\ncli_auth_credentials_store = "file"\n"""\n', false],
+    ['', false],
+    ['cli_auth_credentials_store = "file"\n', true],
+  ])("validates existing Codex file auth before startup or reconnect: %s", async (config, safe) => {
+    const fixture = await setup({ managed: true });
+    fixture.seed([{ id: "codex", adapterId: "codex-subscription", label: "Codex", accessContract: "managed-runtime@1", endpoint: null, credentialReference: null, lifecycleState: "active", removedAt: null }]);
+    const home = join(fixture.directory, "codex-home");
+    await mkdir(home, { recursive: true });
+    await writeFile(join(home, "config.toml"), config);
+    await fixture.service.start();
+    if (safe) {
+      expect(fixture.dependencies).toHaveLength(1);
+      expect(await fixture.service.reconnect("codex")).toMatchObject({ status: "pending" });
+    } else {
+      await expect(fixture.service.reconnect("codex")).rejects.toThrow("Existing configuration was preserved");
+      expect(fixture.dependencies).toHaveLength(0);
+    }
+    expect(await readFile(join(home, "config.toml"), "utf8")).toBe(config);
   });
 
   it("does not reflect arbitrary provider errors into the browser", async () => {

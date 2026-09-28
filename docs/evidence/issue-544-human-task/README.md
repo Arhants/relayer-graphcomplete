@@ -1,6 +1,7 @@
 # Human task sessions — slice 1
 
-Latest integration results: [merge-verification.md](merge-verification.md).
+Latest review corrections: [review-fixes.md](review-fixes.md).
+Previous integration results: [merge-verification.md](merge-verification.md).
 Pre-merge stabilization: [final-verification.md](final-verification.md). Earlier
 entries below are historical checkpoints and do not supersede the final report.
 

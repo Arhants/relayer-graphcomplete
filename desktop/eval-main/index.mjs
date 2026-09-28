@@ -279,7 +279,11 @@ async function start() {
     openHumanTask: async (sessionId) => {
       requireRunning();
       if (humanTasks.get(sessionId).status !== "active") throw new Error("This task has ended. Open its review instead.");
-      const pending = createHumanTaskSurface({ tasks: humanTasks, sessionId, productSession });
+      const pending = createHumanTaskSurface({ tasks: humanTasks, sessionId, productSession, assertRunning: requireRunning,
+        registerAnnotations: (session, scope) => controlProductRequest(session, "/api/internal/annotation-sessions", {
+          method: "POST", body: { ...scope, authorId: `local:${userInfo().username}`, authorDisplayName: userInfo().username },
+        }),
+      });
       reviewSurfaces.add(pending);
       return (await pending).url;
     },

@@ -291,7 +291,21 @@ export async function openHumanReview({ executionId, reviewContext, productSessi
 }
 
 // Live task authority is intentionally separate from immutable review authority.
-export async function createHumanTaskSurface({ tasks, sessionId, productSession, fetchImpl = fetch, presentationSettings = reviewPresentationSettings }) {
+export async function createHumanTaskSurface({ tasks, sessionId, productSession, registerAnnotations, assertRunning = () => {}, fetchImpl = fetch, presentationSettings = reviewPresentationSettings }) {
+  assertRunning();
+  const annotationThreads = new Set((tasks.get(sessionId).threadIds || []).map(String));
+  const annotationToken = registerAnnotations ? randomBytes(32).toString("hex") : null;
+  if (annotationToken) {
+    if (!productSession.readOnlyCookie) throw new Error("Task annotations require read-only product authority.");
+    await registerAnnotations(productSession, { token: annotationToken, threadIds: [...annotationThreads].map(Number) });
+    assertRunning();
+  }
+  const annotationUpstream = (path, options = {}) => fetchImpl(new URL(path, productSession.origin), {
+    ...options, redirect: "error", headers: {
+      Cookie: `${productSession.readOnlyCookie.name}=${productSession.readOnlyCookie.value}; relayer_annotation=${annotationToken}`,
+      ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+  });
   const surface = await serveEvalSurface(async ({ request, response, url }) => {
     const session = tasks.get(sessionId);
     if (url.pathname === "/eval-api/workspace-layout") return workspaceLayoutPreference(request, response, presentationSettings);
@@ -302,11 +316,13 @@ export async function createHumanTaskSurface({ tasks, sessionId, productSession,
     if (url.pathname === "/eval-api/annotate" && request.method === "POST") return json(response, await tasks.annotate(sessionId, JSON.parse((await body(request)).toString())));
     if (url.pathname.startsWith("/eval-api/")) throw fail(404, "Not found.");
     if (url.pathname.startsWith("/api/")) {
-      if (request.method === "POST" && url.pathname === "/api/model-selection/validate") {
-        const upstream = await tasks.upstream(url.pathname, { method: "POST", body: JSON.parse((await body(request)).toString()) });
+      const annotation = /^\/api\/threads\/([1-9][0-9]*)\/annotations(?:\/[1-9][0-9]*\/(?:revisions|retract))?$/.exec(url.pathname);
+      if (request.method === "POST" && annotation) {
+        if (!annotationToken || !annotationThreads.has(annotation[1]) || !session.threadIds.map(String).includes(annotation[1])) throw fail(403, "Annotation is outside this task workspace.");
+        const upstream = await annotationUpstream(url.pathname, { method: "POST", body: await body(request) });
         response.statusCode = upstream.status;
-        response.setHeader("Content-Type", "application/json");
-        return response.end(await upstream.text());
+        response.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json");
+        return response.end(Buffer.from(await upstream.arrayBuffer()));
       }
       if (request.method !== "GET") {
         const result = await tasks.write(sessionId, `${url.pathname}${url.search}`, request.method, JSON.parse((await body(request)).toString() || "null"));
@@ -325,7 +341,9 @@ export async function createHumanTaskSurface({ tasks, sessionId, productSession,
         throw fail(403, "Read is outside this task session.");
       }
       const draftRead = /^\/api\/threads\/[1-9][0-9]*\/(?:context-drafts|input-draft)$/.test(url.pathname);
-      const upstream = await tasks.upstream(`${url.pathname}${url.search}`, {}, draftRead);
+      const upstream = annotationToken && !draftRead
+        ? await annotationUpstream(`${url.pathname}${url.search}`)
+        : await tasks.upstream(`${url.pathname}${url.search}`, {}, draftRead);
       let bytes = Buffer.from(await upstream.arrayBuffer());
       if (upstream.ok && stateRead) {
         const state = JSON.parse(bytes.toString());

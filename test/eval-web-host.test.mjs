@@ -13,6 +13,61 @@ const authorized = (surface, extra = {}) => ({ Authorization: `Bearer ${new URL(
 const context = { readOnly: true, executionId: "e1", cases: [{ executionId: "e1", threadIds: [7] }] };
 
 describe("Eval localhost authority", () => {
+  it("registers live graph annotations without widening product write authority", async () => {
+    const registered = [];
+    const forwarded = [];
+    const productSession = { origin: "http://product.invalid", cookie: { name: "control", value: "private" }, readOnlyCookie: { name: "read", value: "only" } };
+    const fetchImpl = async (url, options = {}) => {
+      forwarded.push({ path: url.pathname, method: options.method || "GET", cookie: options.headers?.Cookie });
+      const scoped = registered.some(({ token, threadIds }) => options.headers?.Cookie === `read=only; relayer_annotation=${token}` && threadIds.includes(7));
+      if (url.pathname === "/api/capabilities") return Response.json({ annotations: scoped });
+      if (url.pathname === "/api/state") return Response.json({ capabilities: { annotations: scoped }, threads: [{ id: 7, projectId: 1, active: true }], projects: [{ id: 1 }], interactions: [] });
+      return Response.json({ annotation: { id: 1 } }, { status: scoped ? 201 : 401, headers: { "Set-Cookie": "control=must-not-escape" } });
+    };
+    const tasks = {
+      get: () => ({ status: "active", currentThreadId: 7, threadIds: [7], prepared: { execution: { projectId: 1 } } }),
+      upstream: (path, options) => fetchImpl(new URL(path, productSession.origin), { ...options, headers: { Cookie: "read=only" } }),
+      write: () => { throw Object.assign(new Error("Write is outside this task session."), { status: 403 }); },
+    };
+    const surface = await createHumanTaskSurface({ tasks, sessionId: "task", productSession, fetchImpl,
+      registerAnnotations: async (_product, scope) => registered.push(scope),
+    });
+    opened.push(surface);
+    expect(registered).toHaveLength(1);
+    expect(registered[0].threadIds).toEqual([7]);
+    const request = (path, method = "GET") => fetch(surface.origin + path, {
+      method, headers: authorized(surface, { Cookie: "control=forged; relayer_annotation=forged" }),
+      ...(method === "POST" ? { body: JSON.stringify({ anchor: { kind: "thread" }, comment: "Useful" }) } : {}),
+    });
+    expect(await (await request("/api/capabilities")).json()).toEqual({ annotations: true });
+    expect((await (await request("/api/state?threadId=7")).json()).capabilities.annotations).toBe(true);
+    for (const suffix of ["", "/1/revisions", "/1/retract"]) {
+      const response = await request(`/api/threads/7/annotations${suffix}`, "POST");
+      expect(response.status).toBe(201);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    }
+    for (const path of ["/api/threads/8/annotations", "/api/threads/7/interactions", "/api/internal/annotation-sessions"]) {
+      expect((await request(path, "POST")).status).toBe(403);
+    }
+    expect(forwarded).toHaveLength(5);
+    expect(forwarded.every(({ cookie }) => cookie === `read=only; relayer_annotation=${registered[0].token}`)).toBe(true);
+  });
+
+  it("routes only model validation through the task's scoped write admission", async () => {
+    const calls = [];
+    const selection = { harnessId: "codex-basic", familyId: 1, providerId: "codex", modelId: "fixture" };
+    const surface = await createHumanTaskSurface({ sessionId: "owned", productSession: { origin: "http://product.invalid" }, tasks: {
+      get: () => ({ status: "active", currentThreadId: 7, threadIds: [7] }),
+      upstream: async () => Response.json({ error: "read-only authority" }, { status: 403 }),
+      write: async (...args) => { calls.push(args); return { status: 200, bytes: JSON.stringify(selection) }; },
+    } });
+    opened.push(surface);
+    const response = await fetch(surface.origin + "/api/model-selection/validate", { method: "POST", headers: authorized(surface), body: JSON.stringify(selection) });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(selection);
+    expect(calls).toEqual([["owned", "/api/model-selection/validate", "POST", selection]]);
+  });
+
   it("allows human-session grading in read-only review without enabling product writes or judge grading", async () => {
     const grades = [];
     const productSession = { origin: "http://product.invalid", readOnlyCookie: { name: "read", value: "only" } };

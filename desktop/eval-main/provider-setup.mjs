@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { createManagedRuntimeInstaller } from "../main/managed-runtimes/installer.mjs";
 import { createManagedRuntimeResolver } from "../main/managed-runtimes/resolver.mjs";
 import { createProviderComposition } from "../main/providers/provider-composition.mjs";
@@ -81,9 +81,18 @@ export function createEvalProviderSetup({ userDataDirectory, productServer, prod
       // named subscriptions. Do not accidentally share an OS keychain login.
       if (dependencies.environment?.CODEX_HOME) {
         await mkdir(dependencies.environment.CODEX_HOME, { recursive: true, mode: 0o700 });
-        await writeFile(join(dependencies.environment.CODEX_HOME, "config.toml"),
-          'cli_auth_credentials_store = "file"\n', { flag: "wx", mode: 0o600 })
-          .catch((error) => { if (error.code !== "EEXIST") throw error; });
+        const configPath = join(dependencies.environment.CODEX_HOME, "config.toml");
+        const isolatedConfig = 'cli_auth_credentials_store = "file"\n';
+        try { await writeFile(configPath, isolatedConfig, { flag: "wx", mode: 0o600 }); }
+        catch (error) {
+          if (error.code !== "EEXIST") throw error;
+          // Only our known configuration proves this invariant without interpreting
+          // arbitrary TOML (including tables or multiline strings). Preserve any
+          // existing custom file and fail before constructing the native adapter.
+          if ((await readFile(configPath, "utf8")).trim() !== isolatedConfig.trim()) {
+            throw Object.assign(new Error("Existing Codex config cannot prove file-backed authentication."), { code: "EVAL_CODEX_AUTH_CONFIG_UNSAFE" });
+          }
+        }
       }
       return dependencies;
     },
@@ -123,6 +132,7 @@ export function createEvalProviderSetup({ userDataDirectory, productServer, prod
       return result;
     } catch (error) {
       const storageMessages = {
+        EVAL_CODEX_AUTH_CONFIG_UNSAFE: 'Eval Codex requires its profile config.toml to contain only cli_auth_credentials_store = "file". Existing configuration was preserved; review and replace it before reconnecting.',
         EVAL_LOGIN_TIMEOUT: "Provider sign-in expired. Connect again to start a new sign-in.",
         EVAL_CREDENTIAL_UNSUPPORTED: "Persistent Eval API credentials currently require macOS Keychain. Native subscription connections are still available.",
         EVAL_CREDENTIAL_UNAVAILABLE: "Eval credential storage is unavailable. Unlock the macOS Keychain and try again.",

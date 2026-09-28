@@ -1,3 +1,4 @@
+import { interactionReturnsToUnsent } from "../renderer/src/interaction-failure-model.js";
 import { randomUUID, createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -6,7 +7,7 @@ const clone = (value) => structuredClone(value);
 const digest = (value) => `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
 const terminal = new Set(["accepted", "failed", "stopped"]);
 const failure = (message, status = 400) => Object.assign(new Error(message), { status });
-const completionRoute = /\/interactions(?:\/[1-9][0-9]*\/actions\/[1-9][0-9]*\/invoke)?$/;
+const completionRoute = /\/interactions(?:\/[1-9][0-9]*(?:\/actions\/[1-9][0-9]*\/invoke|\/retry))?$/;
 
 // Eval owns the session and evidence, never graph execution or acceptance.
 // One serial admission queue also covers multiple tabs and finish/export races.
@@ -50,7 +51,7 @@ export class HumanTaskService {
     if (!session) throw failure("Unknown human task session.", 404);
     return session;
   }
-  list() { return this.sessions.map(({ prepared, events, ...session }) => ({ ...clone(session), name: prepared?.name, eventCount: events.length })); }
+  list() { return this.sessions.map(({ prepared, events, conversations, stepChecks, annotations, grades, responseTimings, ...session }) => ({ ...clone(session), name: prepared?.name, eventCount: events.length })); }
   get(id) { return clone(this.find(id)); }
   async upstream(path, { method = "GET", body } = {}, write = false) {
     const cookie = write ? this.productSession.cookie : this.productSession.readOnlyCookie;
@@ -68,7 +69,7 @@ export class HumanTaskService {
   async settled(session) {
     for (const threadId of session.threadIds) {
       const detail = await this.detail(threadId);
-      if ((detail.interactions || []).some((turn) => !terminal.has(turn.completionStatus))) {
+      if ((detail.interactions || []).some((turn) => !terminal.has(turn.completionStatus) && !interactionReturnsToUnsent(turn))) {
         throw failure("Wait for the current response, or stop it in the workspace, before continuing.", 409);
       }
     }
@@ -85,8 +86,9 @@ export class HumanTaskService {
         session.status = "active";
         await this.startThread(session);
       } catch (error) {
-        session.status = "failed";
-        session.termination = { reason: "preparation_failed", at: new Date().toISOString(), success: null };
+        const unknown = session.completions > 0;
+        session.status = unknown ? "interrupted" : "failed";
+        session.termination = { reason: unknown ? "product_write_unknown" : "preparation_failed", at: new Date().toISOString(), success: null };
         this.event(session, "error", { message: error.message });
         await this.persist();
         throw error;
@@ -120,7 +122,12 @@ export class HumanTaskService {
       session.stepChecks.push({ step: session.step, checks });
       session.step++;
       try { await this.startThread(session); }
-      catch (error) { session.status = "interrupted"; await this.persist(); throw error; }
+      catch (error) {
+        session.status = "interrupted";
+        session.termination = { reason: "product_write_unknown", at: new Date().toISOString(), success: null };
+        this.event(session, "error", { message: "Initial dispatch outcome unknown; session locked against replay." });
+        await this.persist(); throw error;
+      }
       return this.get(id);
     });
   }
@@ -129,10 +136,18 @@ export class HumanTaskService {
       const session = this.find(id);
       if (session.status !== "active") throw failure("Task session is read-only.", 403);
       const pathname = new URL(path, "http://task.invalid").pathname;
+      if (method === "POST" && pathname === "/api/model-selection/validate") {
+        const selected = session.prepared.execution.modelResolution?.selectedModel;
+        if (body?.harnessId && body.harnessId !== session.prepared.execution.harnessConfigurationName) throw failure("This task uses its starting harness.", 403);
+        if (selected && ["familyId", "providerId", "modelId"].some((key) => body?.[key] !== undefined && body[key] !== selected[key])) throw failure("This task uses its starting model.", 403);
+        const response = await this.upstream(path, { method, body }, true);
+        return { status: response.status, contentType: response.headers.get("content-type"), bytes: await response.text() };
+      }
       const prefix = `/api/threads/${session.currentThreadId}`;
       const route = pathname.startsWith(`${prefix}/`) ? pathname.slice(prefix.length) : "";
+      const retries = method === "POST" && /^\/interactions\/[1-9][0-9]*\/retry$/.test(route);
       const starts = method === "POST" && completionRoute.test(pathname);
-      const allowed = (starts && (route === "/interactions" || /^\/interactions\/[1-9][0-9]*\/actions\/[1-9][0-9]*\/invoke$/.test(route)))
+      const allowed = (starts && (route === "/interactions" || retries || /^\/interactions\/[1-9][0-9]*\/actions\/[1-9][0-9]*\/invoke$/.test(route)))
         || (method === "POST" && /^\/interactions\/[1-9][0-9]*\/(?:stop|approvals\/[^/%]+\/decision)$/.test(route))
         || (method === "PUT" && route === "/input-draft/attachments")
         || (method === "DELETE" && /^\/input-draft\/attachments\/[1-9][0-9]*\/[1-9][0-9]*\/[1-9][0-9]*$/.test(route))
@@ -141,9 +156,11 @@ export class HumanTaskService {
       if (!allowed) throw failure("Write is outside this task session.", 403);
       const controlDuringRun = method === "POST" && /^\/interactions\/[1-9][0-9]*\/(?:stop|approvals\/[^/%]+\/decision)$/.test(route);
       if (!controlDuringRun) await this.settled(session);
+      const previousCompletions = session.completions;
+      const previousEventCount = session.events.length;
       if (starts) {
         if (session.completions >= session.maxCompletions) throw failure("Completion limit reached. Finish this task session.", 409);
-        if (route === "/interactions") {
+        if (route === "/interactions" || retries) {
           const selection = session.prepared.execution.modelResolution;
           body = { ...body };
           const pinned = selection.productModelSelection && selection.selectedModel
@@ -157,7 +174,14 @@ export class HumanTaskService {
         session.completions++;
       }
       const event = this.event(session, starts ? "submission" : "product_action", { threadId: session.currentThreadId, path, method, request: body, outcome: "pending" });
-      await this.persist();
+      try { await this.persist(); }
+      catch (error) {
+        // Nothing has reached product execution: a failed reservation grants no
+        // authority and leaves no phantom attempt in the active session.
+        session.completions = previousCompletions;
+        session.events.length = previousEventCount;
+        throw error;
+      }
       try {
         const response = await this.upstream(path, { method, body }, true);
         const bytes = await response.text();
@@ -173,7 +197,13 @@ export class HumanTaskService {
           try {
             const result = JSON.parse(bytes);
             event.interactionId = result.interaction?.id ?? (starts ? result.id : undefined);
-            if (starts && (result.created === false || session.events.some((prior) => prior !== event && prior.kind === "submission" && prior.interactionId != null && prior.interactionId === event.interactionId))) {
+            // Retry admits a new attempt on the same interaction. Only replaying
+            // the same expected attempt may refund that reservation.
+            const priorSubmission = session.events.some((prior) => prior !== event
+              && prior.kind === "submission" && prior.interactionId != null
+              && prior.interactionId === event.interactionId
+              && (!retries || (prior.path === path && prior.request?.attemptId === body?.attemptId && prior.outcome === "accepted")));
+            if (starts && (result.created === false || priorSubmission)) {
               session.completions--;
               event.outcome = "replayed";
             }
@@ -213,19 +243,22 @@ export class HumanTaskService {
       session.viewerAttachedAtByThread ??= {};
       session.viewerAttachedAtByThread[String(snapshot.threadId)] ??= snapshot.observedAt;
       const threadViewerAttachedAt = session.viewerAttachedAtByThread[String(snapshot.threadId)];
-      const submission = session.events.find((item) => item.kind === "submission" && String(item.interactionId) === String(snapshot.turnId));
+      const submission = session.events.findLast((item) => item.kind === "submission"
+        && String(item.threadId) === String(snapshot.threadId)
+        && String(item.interactionId) === String(snapshot.turnId)
+        && (item.outcome == null || item.outcome === "accepted"));
       if (snapshot.graphVisible && submission) {
         session.responseTimings ??= [];
-        if (!session.responseTimings.some((item) => String(item.interactionId) === String(snapshot.turnId))) session.responseTimings.push({
-          interactionId: snapshot.turnId, eventId: event.id,
+        if (!session.responseTimings.some((item) => item.submissionEventId === submission.id)) session.responseTimings.push({
+          interactionId: snapshot.turnId, submissionEventId: submission.id, eventId: event.id,
           latencyMs: Math.max(0, snapshot.observedAt - Date.parse(submission.at)),
           observerPresentBeforeSubmission: threadViewerAttachedAt <= Date.parse(submission.at),
           usefulness: "not_assessed",
         });
       }
-      if (snapshot.graphVisible && !session.firstVisibleGraph) {
-        const firstSubmission = session.events.find((item) => item.kind === "submission");
-        session.firstVisibleGraph = { eventId: event.id, observedAt: snapshot.observedAt, latencyMs: Math.max(0, snapshot.observedAt - Date.parse(firstSubmission.at)), usefulness: "not_assessed", observerPresentBeforeSubmission: threadViewerAttachedAt <= Date.parse(firstSubmission.at) };
+      if (snapshot.graphVisible && submission && !session.firstVisibleGraph) {
+        const firstSubmission = submission;
+        session.firstVisibleGraph = { eventId: event.id, submissionEventId: submission.id, observedAt: snapshot.observedAt, latencyMs: Math.max(0, snapshot.observedAt - Date.parse(firstSubmission.at)), usefulness: "not_assessed", observerPresentBeforeSubmission: threadViewerAttachedAt <= Date.parse(firstSubmission.at) };
       }
       await this.persist();
       return event.id;
@@ -237,9 +270,16 @@ export class HumanTaskService {
       if (!["active", "completed", "failed", "interrupted"].includes(session.status)) throw failure("Wait for the session to settle.", 409);
       if (![1, 2, 3, 4].includes(input?.satisfaction) || typeof input.comment !== "string" || input.comment.length > 8000) throw failure("Choose a satisfaction rating from 1 to 4 and valid feedback.");
       const grade = { scale: "human-1-4", value: input.satisfaction, comment: input.comment.trim(), at: new Date().toISOString(), author: clone(this.annotator) };
+      const previousSatisfaction = session.satisfaction;
+      const previousGradeCount = session.grades?.length ?? 0;
       (session.grades ??= []).push(grade);
       session.satisfaction = grade;
-      await this.persist();
+      try { await this.persist(); }
+      catch (error) {
+        session.satisfaction = previousSatisfaction;
+        session.grades.length = previousGradeCount;
+        throw error;
+      }
       return this.get(id);
     });
   }
@@ -254,8 +294,10 @@ export class HumanTaskService {
       await this.settled(session);
       const previousSatisfaction = session.satisfaction;
       const previousGradeCount = session.grades?.length ?? 0;
+      const previousCheckCount = session.stepChecks.length;
       session.status = "finishing";
-      await this.persist();
+      try { await this.persist(); }
+      catch (error) { session.status = "active"; throw error; }
       try {
         session.stepChecks.push({ step: session.step, checks: await this.evalService.gradeHumanTaskStep(session.prepared, session.step) });
       } catch (error) { session.stepChecks.push({ step: session.step, checks: { status: "error", reason: error.message } }); }
@@ -281,6 +323,7 @@ export class HumanTaskService {
         delete session.evidenceDigest;
         session.satisfaction = previousSatisfaction;
         if (session.grades) session.grades.length = previousGradeCount;
+        session.stepChecks.length = previousCheckCount;
         session.termination = null;
         session.status = "active";
         if (session.events.at(-1)?.kind === "finished") session.events.pop();
@@ -296,7 +339,8 @@ export class HumanTaskService {
       if (!["active", "completed", "failed", "interrupted"].includes(session.status) || !session.events.some((item) => item.id === eventId)) throw failure("Choose a recorded moment in this session.");
       if (typeof comment !== "string" || !comment.trim() || comment.length > 8000 || (rating !== null && ![1, 2, 3, 4].includes(rating))) throw failure("Invalid annotation.");
       session.annotations.push({ id: randomUUID(), eventId, comment: comment.trim(), rating, at: new Date().toISOString(), author: clone(this.annotator) });
-      await this.persist();
+      try { await this.persist(); }
+      catch (error) { session.annotations.pop(); throw error; }
       return this.get(id);
     });
   }
@@ -304,7 +348,7 @@ export class HumanTaskService {
     return this.serial(async () => {
       const session = this.find(id);
       if (!["completed", "failed", "interrupted"].includes(session.status)) throw failure("Finish the session before exporting immutable evidence.");
-      await this.settled(session);
+      if (session.status === "completed") await this.settled(session);
       const graphAnnotations = this.annotationSnapshotLoader && session.threadIds.length ? await this.annotationSnapshotLoader(session.threadIds) : null;
       const bundle = { schemaVersion: 1, kind: "relayer_human_task_bundle", exportedAt: new Date().toISOString(), session: clone(session), graphAnnotations, conversationEvidence: session.status === "completed" && session.conversations?.length === session.threadIds.length ? "frozen-at-finish" : "unavailable-after-interruption" };
       const sha256 = digest(bundle);

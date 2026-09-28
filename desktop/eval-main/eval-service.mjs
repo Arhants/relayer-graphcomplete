@@ -2444,11 +2444,18 @@ export class EvalService {
   async createHumanTaskThread(prepared, step) {
     const item = prepared.plan[step];
     if (!item) throw new Error("Unknown case step.");
-    return this.#createProductThread({
+    // A session's first route owns every case thread, including persisted sessions
+    // written before pinnedModelResolution was introduced.
+    if (prepared.execution.pinnedModelResolution === undefined && prepared.execution.modelResolution !== undefined) {
+      prepared.execution.pinnedModelResolution = copy(prepared.execution.modelResolution);
+    }
+    const thread = await this.#createProductThread({
       execution: prepared.execution, title: `${prepared.name} · human · ${item.name}`,
       prompt: item.prompts[0], projectId: prepared.execution.projectId ?? null,
       permissionProfileId: item.permissionProfileId,
     });
+    prepared.execution.pinnedModelResolution ??= copy(prepared.execution.modelResolution);
+    return thread;
   }
 
   async gradeHumanTaskStep(prepared, step) {
@@ -2575,8 +2582,13 @@ export class EvalService {
   async #createProductThread({ execution, title, prompt, projectId = null, permissionProfileId = "auto" }) {
     let selectedModel = execution.pinnedModelResolution?.selectedModel;
     let productModelSelection = execution.pinnedModelResolution?.productModelSelection;
+    const configurationOwned = execution.pinnedModelResolution === undefined && this.selectModel
+      && harnessUsesConfigurationModel(await this.#productRequest("/api/model-settings"), execution.harnessConfigurationName);
     if (execution.pinnedModelResolution !== undefined) {
-      // The treatment cell uses the control cell's exact provider/model resolution.
+      // The treatment cell or human session retains its exact starting route.
+    } else if (configurationOwned) {
+      selectedModel = null;
+      productModelSelection = false;
     } else if (this.selectModel && !execution.harnessConfiguration.implementation.startsWith("fixture.")) {
       selectedModel = await this.selectModel(execution.harnessConfigurationName);
       productModelSelection = true;
