@@ -24,7 +24,7 @@ import { EvalService } from "./eval-service.mjs";
 import { loadExternalEvalCatalog } from "./external-catalog.mjs";
 import { loadAtomicAnnotationSnapshots } from "./annotation-snapshot-loader.mjs";
 import { loadJudgeScreenshotArtifact } from "./judge-screenshot-loader.mjs";
-import { createLiveCredentialValidator } from "./live-credentials.mjs";
+import { createLiveCredentialValidator, createLiveModelRouteResolver } from "./live-credentials.mjs";
 import {
   LOCAL_SIMULATED_USER_JUDGE_CONFIGURATION as LOCAL_INPUT_GROUNDING_JUDGE_CONFIGURATION,
   buildInputGroundingTopology,
@@ -213,6 +213,13 @@ async function start() {
     productSession,
     resolveRuntime: () => managedCodexRuntime.resolve(),
   });
+  const resolveLiveModelRoute = createLiveModelRouteResolver({
+    readModelSettings: () => productRequest(productSession, "/api/model-settings"),
+    readDefaultModelSelection: (harnessId) => productRequest(productSession,
+      `/api/model-selection/default?harnessId=${encodeURIComponent(harnessId)}`),
+    ensureCodexModelCatalog: ensureEvalCodexCatalog,
+    selectPrimeModel: primeProvider ? (harnessId) => primeProvider.select(harnessId) : null,
+  });
   const simulatedUserJudgeRunner = createLocalSimulatedUserJudgeRunner({
     resolveCodexRuntime: () => managedCodexRuntime.resolve(),
     loadLayer: ({ threadId, turnId, layerId }) => productRequest(productSession, (
@@ -242,7 +249,7 @@ async function start() {
     primeModelAvailability: primeProvider ? (harnessId) => primeProvider.availability(harnessId) : null,
     validateLiveCredential: createLiveCredentialValidator({
       resolveCodexRuntime: () => managedCodexRuntime.resolve(),
-      selectPrimeModel: primeProvider ? (harnessId) => primeProvider.select(harnessId) : null,
+      resolveModelRoute: resolveLiveModelRoute,
     }),
     conversationImportEnabled: true,
     annotationSnapshotLoader: (threadIds) => loadAnnotationSnapshots(productSession, threadIds),

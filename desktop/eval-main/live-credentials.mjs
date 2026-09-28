@@ -1,11 +1,100 @@
 import { CodexCredentialAdapter } from "../main/credentials/codex-credential-adapter.mjs";
+import { firstAvailableSelection, harnessUsesConfigurationModel } from "../renderer/src/model-picker-model.js";
 
 const CONNECTED_PRODUCT_PROVIDER = "connected-product-provider";
+const CODEX_JUDGE_CONFIGURATION_NAMES = new Set(["simulated-user", "simulated-user-sol-high"]);
+const SUPPORTED_PROVIDER_ADAPTERS = new Set([
+  "codex-subscription",
+  "claude-subscription",
+  "openai-api",
+  "anthropic-api",
+  "openrouter",
+  "vercel-ai-router",
+]);
+
+export function createLiveModelRouteResolver({
+  readModelSettings,
+  readDefaultModelSelection,
+  ensureCodexModelCatalog = async () => {},
+  selectPrimeModel,
+} = {}) {
+  if (typeof readModelSettings !== "function") {
+    throw new TypeError("Live Eval model route resolution requires product model settings.");
+  }
+
+  return async function resolveLiveModelRoute(configuration) {
+    const implementation = configuration?.implementation;
+    const harnessName = configuration?.name;
+    if (typeof harnessName !== "string" || harnessName.trim() === "") {
+      throw new Error("The live Eval harness configuration is invalid.");
+    }
+
+    if (implementation === "codex.basic") {
+      if (CODEX_JUDGE_CONFIGURATION_NAMES.has(harnessName)) {
+        return {
+          selectedModel: null,
+          productModelSelection: false,
+          provider: { id: "codex", adapterId: "codex-subscription", connected: true },
+        };
+      }
+      let settings = await readModelSettings();
+      let selectedModel = firstAvailableSelection(settings, harnessName);
+      let provider = providerForSelection(settings, selectedModel);
+      // Preserve the legacy first-use Codex catalog bootstrap, but do not
+      // require a subscription when this harness already resolves to an API provider.
+      if (!selectedModel || provider?.adapterId === "codex-subscription") {
+        await ensureCodexModelCatalog(harnessName);
+        settings = await readModelSettings();
+        selectedModel = firstAvailableSelection(settings, harnessName);
+        provider = providerForSelection(settings, selectedModel);
+      }
+      return routeForSelection({
+        settings,
+        selectedModel,
+        provider,
+        productModelSelection: !harnessUsesConfigurationModel(settings, harnessName),
+        expectedHarnessId: harnessName,
+      });
+    }
+
+    if (implementation === "claude.basic") {
+      if (typeof readDefaultModelSelection !== "function") {
+        throw new Error("Claude Eval has no product model-selection reader.");
+      }
+      const selectedModel = await readDefaultModelSelection(harnessName);
+      const settings = await readModelSettings();
+      return routeForSelection({
+        settings,
+        selectedModel,
+        provider: providerForSelection(settings, selectedModel),
+        productModelSelection: true,
+        expectedHarnessId: harnessName,
+      });
+    }
+
+    if (implementation === "prime.agent") {
+      if (typeof selectPrimeModel !== "function") {
+        throw new Error("Prime Eval has no connected model-selection route.");
+      }
+      const selectedModel = await selectPrimeModel(harnessName);
+      const settings = await readModelSettings();
+      return routeForSelection({
+        settings,
+        selectedModel,
+        provider: providerForSelection(settings, selectedModel),
+        productModelSelection: true,
+        expectedHarnessId: harnessName,
+      });
+    }
+
+    throw new Error("The live Eval harness has no trusted model-selection route.");
+  };
+}
 
 export function createLiveCredentialValidator({
   resolveCodexRuntime,
   createCredentials = (environment) => new CodexCredentialAdapter({ environment }),
-  selectPrimeModel,
+  resolveModelRoute,
 } = {}) {
   return async function validateLiveCredential(configuration, credentialReference) {
     if (credentialReference !== CONNECTED_PRODUCT_PROVIDER) {
@@ -17,41 +106,95 @@ export function createLiveCredentialValidator({
       throw new Error("The live Eval harness configuration is invalid.");
     }
 
-    if (configuration.implementation === "codex.basic") {
-      if (typeof resolveCodexRuntime !== "function") {
-        throw new Error("The live Eval Codex credential is unavailable.");
+    let route;
+    try {
+      if (typeof resolveModelRoute !== "function") {
+        throw new Error("No model-selection route is configured.");
       }
-      let credentials;
-      try {
-        const runtime = await resolveCodexRuntime();
-        credentials = createCredentials({
-          ...runtime.environment,
-          RELAYER_CODEX_BINARY: runtime.executable,
-        });
-        const account = await credentials.account();
-        if (account?.status !== "connected") {
-          throw new Error("The live Eval Codex credential is not connected.");
-        }
-      } catch {
-        throw new Error("The live Eval Codex credential is not connected.");
-      } finally {
-        await credentials?.close().catch(() => undefined);
-      }
-      return;
+      route = await resolveModelRoute(configuration);
+    } catch {
+      throw new Error("The selected live Eval model route is unavailable.");
+    }
+    validateResolvedRoute(route, configuration.name);
+
+    if (route.provider.adapterId === "codex-subscription") {
+      await validateCodexAccount({ resolveCodexRuntime, createCredentials });
     }
 
-    if (configuration.implementation === "prime.agent") {
-      if (typeof selectPrimeModel !== "function") {
-        throw new Error("The live Eval Prime credential is unavailable.");
-      }
-      try {
-        await selectPrimeModel(configuration.name);
-      } catch {
-        throw new Error("The live Eval Prime credential is not connected.");
-      }
-      return;
-    }
-
-    throw new Error("The live Eval harness has no trusted credential validator.");
+    return {
+      selectedModel: route.selectedModel === null ? null : {
+        harnessId: route.selectedModel.harnessId,
+        ...(route.selectedModel.familyId === undefined ? {} : { familyId: route.selectedModel.familyId }),
+        providerId: route.selectedModel.providerId,
+        modelId: route.selectedModel.modelId,
+      },
+      productModelSelection: route.productModelSelection,
+    };
   };
+}
+
+function routeForSelection({ settings, selectedModel, provider, productModelSelection, expectedHarnessId }) {
+  if (!selectedModel || typeof selectedModel.providerId !== "string"
+    || typeof selectedModel.modelId !== "string" || selectedModel.modelId.trim() === ""
+    || selectedModel.harnessId !== expectedHarnessId) {
+    throw new Error("The selected provider has no available model.");
+  }
+  const resolvedProvider = provider ?? providerForSelection(settings, selectedModel);
+  const model = resolvedProvider?.models?.find(({ id }) => id === selectedModel.modelId);
+  if (!resolvedProvider || resolvedProvider.connected !== true || !model
+    || model?.visible === false || model?.available === false) {
+    throw new Error("The selected provider credential or model is unavailable.");
+  }
+  return { selectedModel, productModelSelection, provider: resolvedProvider };
+}
+
+function providerForSelection(settings, selectedModel) {
+  if (!selectedModel || typeof selectedModel.providerId !== "string") return null;
+  return settings?.providers?.find(({ id }) => id === selectedModel.providerId) ?? null;
+}
+
+function validateResolvedRoute(route, expectedHarnessId) {
+  const selectedModel = route?.selectedModel;
+  const provider = route?.provider;
+  if (!provider || provider.connected !== true || !SUPPORTED_PROVIDER_ADAPTERS.has(provider.adapterId)) {
+    throw new Error("The selected provider credential is unavailable.");
+  }
+  if (typeof route.productModelSelection !== "boolean") {
+    throw new Error("The selected model route is invalid.");
+  }
+  if (selectedModel === null) {
+    if (provider.adapterId !== "codex-subscription" || route.productModelSelection !== false) {
+      throw new Error("The selected live Eval model route is invalid.");
+    }
+    return;
+  }
+  if (!selectedModel || selectedModel.providerId !== provider.id
+    || typeof selectedModel.modelId !== "string" || selectedModel.modelId.trim() === ""
+    || selectedModel.harnessId !== expectedHarnessId || route.productModelSelection !== true) {
+    throw new Error("The selected live Eval model route is invalid.");
+  }
+  const model = provider.models?.find(({ id }) => id === selectedModel.modelId);
+  if (!model || model.visible === false || model.available === false) {
+    throw new Error("The selected live Eval model route is unavailable.");
+  }
+}
+
+async function validateCodexAccount({ resolveCodexRuntime, createCredentials }) {
+  if (typeof resolveCodexRuntime !== "function") {
+    throw new Error("The live Eval Codex credential is unavailable.");
+  }
+  let credentials;
+  try {
+    const runtime = await resolveCodexRuntime();
+    credentials = createCredentials({
+      ...runtime.environment,
+      RELAYER_CODEX_BINARY: runtime.executable,
+    });
+    const account = await credentials.account();
+    if (account?.status !== "connected") throw new Error("Codex account is disconnected.");
+  } catch {
+    throw new Error("The live Eval Codex credential is not connected.");
+  } finally {
+    await credentials?.close().catch(() => undefined);
+  }
 }

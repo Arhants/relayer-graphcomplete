@@ -101,6 +101,60 @@ describe("EvalService live external authorization", () => {
     expect(stored.runs[0].liveAuthorization).toEqual(completed.liveAuthorization);
   });
 
+  it("pins the credential-validated provider route into every matching external execution", async () => {
+    const pinnedModelResolution = {
+      selectedModel: {
+        harnessId: "codex-basic",
+        familyId: 7,
+        providerId: "codex",
+        modelId: "gpt-6-sol",
+      },
+      productModelSelection: true,
+    };
+    const validateLiveCredential = vi.fn(async () => pinnedModelResolution);
+    const { service, product } = await openService({ validateLiveCredential });
+
+    const created = await service.createRun(liveSelection({ testCaseIds: [externalCaseIds[0]] }));
+    const completed = await waitForTerminal(service, created.id);
+
+    expect(validateLiveCredential).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "codex-basic", implementation: "codex.basic" }),
+      providerReference,
+    );
+    expect(completed.executions[0]).toMatchObject({
+      pinnedModelResolution,
+      modelResolution: pinnedModelResolution,
+    });
+    const threadRequest = product.mock.calls.find(([url, options]) => (
+      new URL(url).pathname === "/api/threads" && options?.method === "POST"
+    ));
+    expect(JSON.parse(threadRequest[1].body)).toMatchObject({
+      harnessConfigurationName: "codex-basic",
+      modelSelection: {
+        familyId: 7,
+        providerId: "codex",
+        modelId: "gpt-6-sol",
+      },
+    });
+  });
+
+  it("rejects a credential route that would omit its selected model before queueing", async () => {
+    const validateLiveCredential = vi.fn(async () => ({
+      selectedModel: {
+        harnessId: "codex-basic",
+        providerId: "codex",
+        modelId: "gpt-6-sol",
+      },
+      productModelSelection: false,
+    }));
+    const { service, product } = await openService({ validateLiveCredential });
+
+    await expect(service.createRun(liveSelection({ testCaseIds: [externalCaseIds[0]] })))
+      .rejects.toThrow("did not resolve an exact provider model route");
+    expect(service.listRuns()).toEqual([]);
+    expect(product.mock.calls.some(([url]) => new URL(url).pathname === "/api/threads")).toBe(false);
+  });
+
   it("keeps an external deterministic fixture run exempt from live authorization", async () => {
     const validateLiveCredential = vi.fn(async () => {});
     const { service } = await openService({ validateLiveCredential });

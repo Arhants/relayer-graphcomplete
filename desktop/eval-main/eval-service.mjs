@@ -243,7 +243,7 @@ export function evalModelSelectionRequest(selectedModel, productModelSelection =
   };
 }
 
-function outcomeGradeFromChecks(checks, caseSnapshot = null, evaluateMandatoryGate = null) {
+function outcomeGradeFromChecks(checks, caseSnapshot = null, evaluateMandatoryGate = null, evidenceRefForCheck = null) {
   const criteria = caseSnapshot?.artifacts?.outcomeRubric?.criteria || [];
   const criterionGrades = criteria.map((criterion) => ({
       criterionId: criterion.id,
@@ -258,7 +258,7 @@ function outcomeGradeFromChecks(checks, caseSnapshot = null, evaluateMandatoryGa
     return { ...grade, criteria: criterionGrades };
   }
   const mandatoryGates = declarations.map((gate) => evaluateMandatoryGate
-    ? externalMandatoryGateReceipt(gate, checks, evaluateMandatoryGate)
+    ? externalMandatoryGateReceipt(gate, checks, evaluateMandatoryGate, evidenceRefForCheck)
     : mandatoryGateReceipt(gate, checks));
   return {
     ...buildTaskOutcomeGrade({
@@ -550,18 +550,19 @@ export async function validateCandidateTrace(directory, descriptor, interaction,
   return marker;
 }
 
-function externalMandatoryGateReceipt(gate, checks, evaluate) {
+function externalMandatoryGateReceipt(gate, checks, evaluate, evidenceRefForCheck) {
   const result = evaluate(gate, checks);
   const supplied = Array.isArray(result?.matched) ? result.matched : [];
   const matched = supplied.filter((check) => checks.includes(check));
+  const evidenceRefs = matched.map(evidenceRefForCheck).filter((reference) => typeof reference === "string");
   const complete = result?.complete === true && typeof result?.passed === "boolean"
-    && matched.length > 0 && matched.length === supplied.length;
+    && matched.length > 0 && matched.length === supplied.length && evidenceRefs.length === matched.length;
   return {
     schemaVersion: 1, gateId: gate.id, name: gate.label, mandatory: true,
     status: complete ? "completed" : "failed", passed: complete ? result.passed : null,
     detail: complete ? matched.map((check) => `${check.name}: ${check.detail}`).join("\n")
       : `Verifier ${gate.id} did not emit every required check.`,
-    evidenceRefs: matched.map((check) => `deterministic-check:${check.name}`),
+    evidenceRefs,
   };
 }
 
@@ -1431,6 +1432,7 @@ export class EvalService {
       authorization: selection?.liveAuthorization,
       ...authorizationCatalog,
     });
+    const pinnedLiveModelResolutions = new Map();
     if (externalLiveAuthorization) {
       if (typeof this.validateLiveCredential !== "function") {
         throw new Error("External live Eval has no trusted credential validator.");
@@ -1439,7 +1441,15 @@ export class EvalService {
         if (evalSelectionRequiresLiveAuthorization({
           harnessConfigurationNames: [name], judgeConfigurationName: deterministicJudgeId,
         }, authorizationCatalog, testCaseIds)) {
-          await this.validateLiveCredential(this.configurations.get(name), externalLiveAuthorization.credentialReference);
+          const pinnedModelResolution = await this.validateLiveCredential(
+            this.configurations.get(name),
+            externalLiveAuthorization.credentialReference,
+          );
+          if (!pinnedModelResolution?.selectedModel
+            || pinnedModelResolution.productModelSelection !== true) {
+            throw new Error("External live Eval did not resolve an exact provider model route.");
+          }
+          pinnedLiveModelResolutions.set(name, copy(pinnedModelResolution));
         }
       }
       if (judgeConfigurationName !== deterministicJudgeId) {
@@ -1502,6 +1512,9 @@ export class EvalService {
         caseSnapshotDigest: definition?.caseSnapshotDigest || null,
         suiteIdentity: plan.suiteIdentity ? copy(plan.suiteIdentity) : null,
         catalogIdentity: this.externalCases.has(plan.testCaseId) ? copy(this.externalCatalog.identity) : null,
+        ...(this.externalCases.has(plan.testCaseId) && pinnedLiveModelResolutions.has(plan.harnessConfigurationName)
+          ? { pinnedModelResolution: copy(pinnedLiveModelResolutions.get(plan.harnessConfigurationName)) }
+          : {}),
         judgeConfiguration: plan.judgeConfiguration,
         status: "queued",
         lifecycle: {
@@ -2170,6 +2183,7 @@ export class EvalService {
         }
       }
       const checks = [];
+      const externalCheckEvidenceRefs = new Map();
       for (const [turnIndex, executedTurn] of interactions.entries()) {
         const { interaction, threadDefinition, workspaceChecks } = executedTurn;
         const turn = execution.turns[turnIndex];
@@ -2276,10 +2290,11 @@ export class EvalService {
             });
           }
         }
-        turnChecks.push(...workspaceChecks.map((check) => ({
-          ...check,
-          name: `${checkPrefix}:${check.name}`,
-        })));
+        turnChecks.push(...workspaceChecks.map((check) => {
+          const persistedName = `${checkPrefix}:${check.name}`;
+          externalCheckEvidenceRefs.set(check, `deterministic-check:${persistedName}`);
+          return { ...check, name: persistedName };
+        }));
         turn.deterministicChecks = turnChecks;
         turn.deterministicPassed = turnChecks.length > 0 && turnChecks.every((check) => check.passed);
         checks.push(...turnChecks);
@@ -2344,7 +2359,12 @@ export class EvalService {
       execution.outcomeGrade = definition.id === RECURSIVE_GRAPH_MEMORY_CASE_ID
         ? recursiveGraphMemoryOutcomeGrade()
         : externalCase
-          ? await this.#runExternalCatalogCallback(() => outcomeGradeFromChecks(outcomeChecks, execution.caseSnapshot, externalCase.evaluateMandatoryGate))
+          ? await this.#runExternalCatalogCallback(() => outcomeGradeFromChecks(
+            outcomeChecks,
+            execution.caseSnapshot,
+            externalCase.evaluateMandatoryGate,
+            (check) => externalCheckEvidenceRefs.get(check),
+          ))
           : outcomeGradeFromChecks(outcomeChecks, execution.caseSnapshot);
       execution.presentationGrade = presentationGradeFromTurns(
         execution.turns,

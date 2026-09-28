@@ -816,6 +816,14 @@ describe("EvalService simulated-user result persistence", () => {
     const single = await service.createRun({ testCaseIds: ["fixture.external-a"], harnessConfigurationNames: ["fixture-task-system"], judgeConfigurationName: "deterministic-graph-contract" });
     const singleResult = await waitForCompletedRun(service, single.id);
     expect(singleResult.executions[0]).toMatchObject({ status: "passed" });
+    expect(singleResult.executions[0].outcomeGrade.mandatoryGates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        evidenceRefs: ["deterministic-check:implementation:turn-1:arbitrary-public-check-name"],
+      }),
+    ]));
+    expect(singleResult.executions[0].checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "implementation:turn-1:arbitrary-public-check-name" }),
+    ]));
     expect(materialize).toHaveBeenCalledWith(expect.objectContaining({ caseId: "fixture.external-a", platform: "darwin" }));
     expect(grade).toHaveBeenCalledWith(expect.objectContaining({ caseId: "fixture.external-a", fixture: expect.objectContaining({ sourceRevision: expect.stringMatching(/^git-tree:/) }) }));
     expect(singleResult.catalogIdentity).toEqual(catalog.identity);
@@ -837,6 +845,51 @@ describe("EvalService simulated-user result persistence", () => {
       catalogIdentity: catalog.identity,
       suiteIdentity: { suiteId: "synthetic-external-suite", members: [{ caseId: "fixture.external-a" }, { caseId: "fixture.external-b" }] },
     });
+  });
+
+  it("binds duplicate public grader names to each exact persisted thread check", async () => {
+    const { stateFile, configurationPath } = await testPaths();
+    globalThis.fetch = fakeExternalAcceptedProduct().fetch;
+    const fixtureCatalog = createSyntheticExternalCatalog();
+    const first = fixtureCatalog.cases[0];
+    const [thread] = first.definition.threads;
+    const definition = {
+      ...first.definition,
+      threads: [
+        { ...thread, id: "first", name: "First", prompts: [thread.prompts[0]] },
+        { ...thread, id: "second", name: "Second", prompts: [thread.prompts[0]] },
+      ],
+    };
+    const grade = vi.fn(async () => [{ name: "shared-public-name", passed: true, detail: "Passed." }]);
+    const catalog = withExternalIdentity({
+      ...fixtureCatalog,
+      cases: [{ ...first, definition, grade }, fixtureCatalog.cases[1]],
+    });
+    const service = await new EvalService({
+      stateFile,
+      productSession: productSession(),
+      configurationPaths: [configurationPath],
+      platform: "darwin",
+      externalCatalog: catalog,
+    }).open();
+
+    const created = await service.createRun({
+      testCaseIds: [definition.id],
+      harnessConfigurationNames: ["fixture-task-system"],
+      judgeConfigurationName: "deterministic-graph-contract",
+    });
+    const execution = (await waitForCompletedRun(service, created.id)).executions[0];
+    const expectedRefs = [
+      "deterministic-check:first:turn-1:shared-public-name",
+      "deterministic-check:second:turn-1:shared-public-name",
+    ];
+    expect(grade).toHaveBeenCalledTimes(2);
+    expect(execution.outcomeGrade.mandatoryGates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ evidenceRefs: expectedRefs }),
+    ]));
+    for (const reference of expectedRefs) {
+      expect(execution.checks.some(({ name }) => reference === `deterministic-check:${name}`)).toBe(true);
+    }
   });
 
   it("keeps external mandatory gates failed for missing or failing verifier checks", async () => {

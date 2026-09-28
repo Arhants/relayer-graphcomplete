@@ -59,6 +59,43 @@ describe('pinned external evaluation catalog loader', () => {
     expect(catalog.identity.commit).toBe(repo.commit);
     await catalog.assertUnchanged();
   });
+  it('rejects a checkout switched to alternate transitive code after resolving HEAD', async () => {
+    const repo = await fixture();
+    const pinned = repo.commit;
+    const marker = path.join(repo.root, '.alternate-module-executed');
+    const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+    await writeFile(path.join(repo.root, 'catalog-data.mjs'), `
+      import {writeFileSync} from 'node:fs';
+      import {execFileSync} from 'node:child_process';
+      writeFileSync(${JSON.stringify(marker)}, 'executed');
+      execFileSync(${JSON.stringify(realGit)}, ['checkout', '--detach', ${JSON.stringify(pinned)}], {cwd:${JSON.stringify(repo.root)},stdio:'ignore'});
+      export const valid=true;
+    `);
+    execFileSync(realGit, ['add', 'catalog-data.mjs'], { cwd: repo.root });
+    execFileSync(realGit, ['commit', '-qm', 'alternate transitive code'], { cwd: repo.root });
+    const alternate = execFileSync(realGit, ['rev-parse', 'HEAD'], { cwd: repo.root, encoding: 'utf8' }).trim();
+    execFileSync(realGit, ['checkout', '--detach', pinned], { cwd: repo.root, stdio: 'ignore' });
+
+    const bin = await mkdtemp(path.join(tmpdir(), 'catalog-git-wrapper-'));
+    roots.push(bin);
+    await writeFile(path.join(bin, 'git'), `#!/usr/bin/env node
+      const {spawnSync}=require('node:child_process');
+      const args=process.argv.slice(2);
+      const command=args.slice(3);
+      const result=spawnSync(${JSON.stringify(realGit)}, args, {encoding:'utf8'});
+      process.stdout.write(result.stdout || '');
+      process.stderr.write(result.stderr || '');
+      if(result.status === 0 && command[0] === 'rev-parse' && command[1] === 'HEAD') {
+        const switched=spawnSync(${JSON.stringify(realGit)}, ['checkout','--detach',${JSON.stringify(alternate)}], {cwd:${JSON.stringify(repo.root)},stdio:'ignore'});
+        if(switched.status !== 0) process.exit(switched.status ?? 1);
+      }
+      process.exit(result.status ?? 1);
+    `, { mode: 0o700 });
+    vi.stubEnv('PATH', `${bin}${path.delimiter}${process.env.PATH}`);
+
+    await expect(loadExternalEvalCatalog({ repositoryDirectory: repo.root, lock: lockFor(repo) })).rejects.toThrow(/not clean|tracked bytes differ/);
+    await expect(access(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
   it('rejects replacement objects even when HEAD and status conceal different imported bytes', async () => {
     const repo = await fixture(false);
     const git = (...args) => execFileSync('git', args, { cwd: repo.root, encoding: 'utf8' }).trim();
@@ -152,5 +189,31 @@ describe('pinned external evaluation catalog loader', () => {
     expect(catalog.cases).toEqual([]);
     expect(await readFile(liveData, 'utf8')).toBe(original);
     await expect(access(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+  it('makes snapshot directories non-writable before catalog code can replace a sibling', async () => {
+    const repo = await fixture();
+    await writeFile(path.join(repo.root, 'index.mjs'), `
+      import {rm,writeFile} from 'node:fs/promises';
+      export async function createEvalCatalog(){
+        const sibling=new URL('./catalog-data.mjs', import.meta.url);
+        try {
+          await rm(sibling);
+          await writeFile(sibling, 'export const valid=false\\n');
+          throw new Error('snapshot directory was writable');
+        } catch(error) {
+          if(error.message === 'snapshot directory was writable') throw error;
+          if(error.code !== 'EACCES' && error.code !== 'EPERM') throw error;
+        }
+        const {valid}=await import('./catalog-data.mjs?locked-directory');
+        if(!valid)throw Error();
+        return {schemaVersion:1,cases:[],suites:[]};
+      }
+    `);
+    execFileSync('git', ['add', 'index.mjs'], { cwd: repo.root });
+    execFileSync('git', ['commit', '-qm', 'snapshot directory fixture'], { cwd: repo.root });
+    repo.commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo.root, encoding: 'utf8' }).trim();
+
+    const catalog = await loadExternalEvalCatalog({ repositoryDirectory: repo.root, lock: lockFor(repo) });
+    expect(catalog.cases).toEqual([]);
   });
 });

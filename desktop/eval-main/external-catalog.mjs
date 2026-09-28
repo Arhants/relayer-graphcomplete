@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { execFile as execFileCallback } from 'node:child_process';
 import { promisify } from 'node:util';
 import { chmod, lstat, mkdir, mkdtemp, realpath, readFile, symlink, writeFile } from 'node:fs/promises';
-import { rmSync } from 'node:fs';
+import { chmodSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -13,11 +13,11 @@ const execFile = promisify(execFileCallback);
 // path needs a fresh process; a query string on the entrypoint is insufficient.
 const importedCheckoutIdentities = new Map();
 const verifiedSnapshots = new Map();
-const snapshotRoots = new Set();
+const snapshotRoots = new Map();
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 
 process.once('exit', () => {
-  for (const root of snapshotRoots) rmSync(root, { recursive: true, force: true });
+  for (const [root, directories] of snapshotRoots) removeSnapshot(root, directories);
 });
 
 export async function loadExternalEvalCatalog({ repositoryDirectory, lock }) {
@@ -69,14 +69,15 @@ async function inspectCheckout(root, lock, captureFiles = false) {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  const [head, tree, remote, staged, untracked, listing] = await Promise.all([
-    git(root, 'rev-parse', 'HEAD'), git(root, 'rev-parse', 'HEAD^{tree}'), git(root, 'remote', 'get-url', 'origin'),
+  const head = await git(root, 'rev-parse', 'HEAD');
+  if (head.toLowerCase() !== lock.commit.toLowerCase()) throw new Error(`External catalog HEAD mismatch: expected ${lock.commit}, received ${head}.`);
+  const [tree, remote, staged, untracked, listing] = await Promise.all([
+    git(root, 'rev-parse', `${head}^{tree}`), git(root, 'remote', 'get-url', 'origin'),
     // Compare index objects only. Worktree status can execute local clean filters;
     // tracked worktree bytes are checked directly below without Git conversions.
-    git(root, 'diff', '--cached', '--name-status', '--no-ext-diff', '--no-textconv', 'HEAD'),
-    git(root, 'ls-files', '--others', '--exclude-standard'), git(root, 'ls-tree', '-r', '-z', '--full-tree', 'HEAD'),
+    git(root, 'diff', '--cached', '--name-status', '--no-ext-diff', '--no-textconv', head),
+    git(root, 'ls-files', '--others', '--exclude-standard'), git(root, 'ls-tree', '-r', '-z', '--full-tree', head),
   ]);
-  if (head.toLowerCase() !== lock.commit.toLowerCase()) throw new Error(`External catalog HEAD mismatch: expected ${lock.commit}, received ${head}.`);
   if (remote !== lock.repositoryUrl) throw new Error(`External catalog origin mismatch: expected ${lock.repositoryUrl}, received ${remote}.`);
   if (staged || untracked) throw new Error(`External catalog checkout is not clean: ${(staged || untracked).split('\n')[0]}`);
   const entries = listing.split('\0').filter(Boolean).map((record) => {
@@ -114,11 +115,16 @@ async function verifiedSnapshot(root, identity, files) {
 }
 async function createVerifiedSnapshot(root, identity, files) {
   const snapshotRoot = await mkdtemp(path.join(tmpdir(), 'relayer-eval-catalog-'));
-  snapshotRoots.add(snapshotRoot);
+  const directories = new Set([snapshotRoot]);
+  snapshotRoots.set(snapshotRoot, directories);
   try {
     for (const file of files) {
       const destination = path.join(snapshotRoot, file.file);
       await mkdir(path.dirname(destination), { recursive: true });
+      for (let directory = path.dirname(destination); directory.startsWith(snapshotRoot); directory = path.dirname(directory)) {
+        directories.add(directory);
+        if (directory === snapshotRoot) break;
+      }
       await writeFile(destination, file.bytes, { mode: file.mode === '100755' ? 0o500 : 0o400 });
       await chmod(destination, file.mode === '100755' ? 0o500 : 0o400);
     }
@@ -128,13 +134,20 @@ async function createVerifiedSnapshot(root, identity, files) {
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     }
+    for (const directory of [...directories].sort((left, right) => right.length - left.length)) await chmod(directory, 0o500);
     const entry = path.join(snapshotRoot, identity.entrypoint);
     return entry;
   } catch (error) {
-    rmSync(snapshotRoot, { recursive: true, force: true });
-    snapshotRoots.delete(snapshotRoot);
+    removeSnapshot(snapshotRoot, directories);
     throw error;
   }
+}
+function removeSnapshot(root, directories) {
+  for (const directory of [...directories].sort((left, right) => left.length - right.length)) {
+    try { chmodSync(directory, 0o700); } catch {}
+  }
+  rmSync(root, { recursive: true, force: true });
+  snapshotRoots.delete(root);
 }
 async function resolveCommittedEntry(root, entrypoint) {
   const full = path.resolve(root, entrypoint);
