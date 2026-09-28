@@ -1,0 +1,43 @@
+{
+  "sourceSnapshot": "source-snapshot.json",
+  "sourceSha256": "d1a67ba8d584fc8a2e4b42e46b865111229642f98d8300d120d2564e27027579",
+  "recordedAt": "2026-09-28T01:46:19.067759+00:00",
+  "preFixImplementationCommit": "a7efc4ff6bcbd8df45c3143a94d604dfab92f372",
+  "redObservation": {
+    "passed": 7,
+    "failed": [
+      "typed_imported_invoke_cannot_gain_authority_through_writable_occurrence",
+      "typed_conversion_updates_legacy_occurrences_atomically"
+    ],
+    "scope": "Initial permanent reproductions, before later rollback/reopen extensions"
+  },
+  "verification": {
+    "npm run check": {
+      "exitCode": 0,
+      "graphDatabaseCases": 92,
+      "typedCases": 9,
+      "legacyLadybugInventoryAndReopen": "passed in default and crash-feature suites",
+      "vitestPassed": 2483,
+      "vitestSkipped": 3,
+      "separateSecretBoundaryPassed": 2,
+      "pythonAndReceiptAndPrdChecks": "passed"
+    },
+    "npm run build": {
+      "exitCode": 0
+    },
+    "desktopGated": {
+      "exitCode": 0,
+      "result": "gated-result.json"
+    },
+    "desktopDefaultOff": {
+      "exitCode": 0,
+      "result": "default-off-result.json"
+    }
+  },
+  "limitations": [
+    "Native keyboard/focus not verified",
+    "Background throttling disabled for desktop evidence",
+    "History-size performance not measured",
+    "No live, paid-inference, signed release, merge, or deployment proof"
+  ]
+}

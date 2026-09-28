@@ -1,3 +1,4 @@
+import { isResolvedInvokeAction } from "./product-workspace/node-detail-runtime.js";
 import { preferredLayerNode, rememberedLayerSelection, rememberLayerSelection } from "./product-workspace/layer-selection.js";
 import { request } from "./api.js";
 import {
@@ -498,7 +499,9 @@ export async function refreshState(
     !refreshGate.isCurrent(refreshToken)
     || (requestedThreadId && String(viewState.currentThreadId) !== String(requestedThreadId))
   ) return false;
-  const previousInteractionId = viewState.currentInteractionId;
+  // The visible layer belongs to the hydrated presentation, not a pending
+  // turn-selection intent (invoke advances that intent before this refresh).
+  const previousInteractionId = appState.currentInteractionId;
   const previousLiveInteraction = latestInteractionForThread(appState.interactions, threadId);
   const previousProjectId = activeProjectId();
   const previousVisibleLayer = appState.visibleLayer;
@@ -560,6 +563,7 @@ export async function refreshState(
   let temporalSelectedNodeId;
   let temporalCurrent = viewState.temporalCurrent;
   let temporalProjectionFailed = false;
+  let canonicalVisibleLayerRead = false;
   const projectionPage = state.currentProjection;
   const projectionState = projectionPage?.states?.find((projection) => (
     String(projection.completionId) === String(selected?.graphNodeId)
@@ -636,6 +640,7 @@ export async function refreshState(
           currentNodeIds: currentLayer.nodes.map(({ id }) => id),
         });
         refreshedVisibleLayer = currentLayer;
+        canonicalVisibleLayerRead = true;
         temporalSelectedNodeId = reconciled.view.selectedNodeId;
         temporalCurrent = {
           completionId: projectionState.completionId,
@@ -653,7 +658,12 @@ export async function refreshState(
   if (
     selected
     && visibleLayerId != null
-    && layerContainsRefreshableInvokedAction(refreshedVisibleLayer, nextActionInvocations)
+    // A successful temporal read already supplies this exact canonical layer.
+    // Do not add another await after reconciling its node selection.
+    && !canonicalVisibleLayerRead
+    && ((selected.completionStatus === "accepted"
+      && String(visibleLayerId) !== String(selected.completionOutput?.rootLayer?.layer?.id))
+      || layerContainsRefreshableInvokedAction(refreshedVisibleLayer, nextActionInvocations))
   ) {
     const identity = {
       threadId: nextThreadId,
@@ -661,6 +671,9 @@ export async function refreshState(
       layerId: visibleLayerId,
     };
     try {
+      // Accepted descendant membership may gain a resolved invoke absent from
+      // its old snapshot. Revalidate only the visible layer on an existing refresh.
+      acceptedLayerCache.delete(identity);
       const canonicalLayer = validateResolvedLayer(identity, await request(
         `/api/threads/${encodeURIComponent(identity.threadId)}/interactions/${encodeURIComponent(identity.turnId)}/layers/${encodeURIComponent(identity.layerId)}`,
       ));
@@ -982,6 +995,9 @@ export async function navigateLayer(layerId, navigation = {}) {
   };
   let ownedNavigation = false;
   try {
+    // User navigation must observe canonical membership, including legacy
+    // occurrences that omitted the invoke before its atomic conversion.
+    if (String(rootLayer?.layer?.id) !== String(layerId)) acceptedLayerCache.delete(identity);
     const layer = String(rootLayer?.layer?.id) === String(layerId)
       ? rootLayer
       : await acceptedLayerCache.getOrLoad(identity, async () => validateResolvedLayer(
@@ -1029,7 +1045,7 @@ export async function navigateResolvedInvoke(action, { beforeCommit } = {}) {
   if (
     !sourceThreadId
     || !sourceInteractionId
-    || action?.kind !== "invoke"
+    || (action?.kind !== "invoke" && !isResolvedInvokeAction(action))
     || action.targetLayerId == null
     || action.id == null
   ) return false;
@@ -1050,7 +1066,7 @@ export async function navigateResolvedInvoke(action, { beforeCommit } = {}) {
     ) return false;
     if (
       String(destination.actionId) !== String(action.id)
-      || destination.actionKind !== "invoke"
+      || destination.actionKind !== action.kind
       || String(destination.targetLayerId) !== String(action.targetLayerId)
       || String(destination.rootLayerId) !== String(action.targetLayerId)
     ) throw new Error("Resolved invoke destination did not match the selected graph action.");
@@ -1244,6 +1260,9 @@ export async function navigateHistory(deltaOrDirection, { beforeCommit } = {}) {
   let committed = false;
   try {
     renderThread();
+    // Keep ancestor caching, but revalidate the selected descendant on entry.
+    const destination = descendantLayerIdentities(transition.entry).at(-1);
+    if (destination) acceptedLayerCache.delete(destination);
     const resolved = await resolveNavigationPresentation(transition.entry, {
       loadThread: (threadId) => request(`/api/threads/${encodeURIComponent(threadId)}`),
       loadLayer: ({ threadId, turnId, layerId }) => request(

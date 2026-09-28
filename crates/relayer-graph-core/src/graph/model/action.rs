@@ -245,6 +245,8 @@ impl ActionKind {
 pub struct GraphAction {
     pub id: ActionId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_invoke_interaction_id: Option<NodeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_key: Option<String>,
     pub source_node_id: NodeId,
     pub source_layer_id: Option<LayerId>,

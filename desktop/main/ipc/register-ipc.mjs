@@ -41,6 +41,10 @@ function bindConnectionToRenderer(providerDefinitions, contents, connectionId, o
 const MAX_COMPOSER_DRAFT_BYTES = 1024 * 1024;
 const MAX_FOLLOWUP_DRAFTS = 256;
 
+function plainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 export function normalizeComposerDrafts(value) {
   const pending = value?.pendingNewThread;
   const followups = value?.threadFollowups;
@@ -51,15 +55,51 @@ export function normalizeComposerDrafts(value) {
     threadFollowups: followups && typeof followups === "object" && !Array.isArray(followups)
       ? Object.fromEntries(Object.entries(followups).filter(([, text]) => typeof text === "string"))
       : {},
+    // The retry restoration each draft grew from, and per thread a send whose
+    // turn has not loaded (renderer composer-drafts.js).
+    threadFollowupRestorations: plainObject(value?.threadFollowupRestorations)
+      ? Object.fromEntries(Object.entries(value.threadFollowupRestorations)
+        .filter(([, restorationId]) => typeof restorationId === "string"))
+      : {},
+    sentThreadFollowups: plainObject(value?.sentThreadFollowups)
+      ? Object.fromEntries(Object.entries(value.sentThreadFollowups)
+        .filter(([, record]) => typeof record?.scopeKey === "string"
+          && typeof record.originScopeKey === "string" && typeof record.textDigest === "string"
+          && typeof record.edited === "boolean" && Number.isSafeInteger(record.sends) && record.sends >= 1)
+        .map(([threadId, record]) => [threadId, {
+          scopeKey: record.scopeKey,
+          originScopeKey: record.originScopeKey,
+          textDigest: record.textDigest,
+          edited: record.edited,
+          sends: record.sends,
+        }]))
+      : {},
   };
   const followupKeys = Object.keys(normalized.threadFollowups);
   for (const staleKey of followupKeys.slice(0, -MAX_FOLLOWUP_DRAFTS)) {
     delete normalized.threadFollowups[staleKey];
   }
+  // Over the cap, records that protect no draft go first, oldest first.
+  const sentKeys = Object.keys(normalized.sentThreadFollowups);
+  if (sentKeys.length > MAX_FOLLOWUP_DRAFTS) {
+    const protects = (key) => normalized.sentThreadFollowups[key].edited
+      && Object.hasOwn(normalized.threadFollowups, normalized.sentThreadFollowups[key].scopeKey);
+    for (const staleKey of [...sentKeys.filter((key) => !protects(key)), ...sentKeys.filter(protects)]
+      .slice(0, sentKeys.length - MAX_FOLLOWUP_DRAFTS)) {
+      delete normalized.sentThreadFollowups[staleKey];
+    }
+  }
+  const dropOrphanRestorations = () => {
+    for (const scopeKey of Object.keys(normalized.threadFollowupRestorations)) {
+      if (!(scopeKey in normalized.threadFollowups)) delete normalized.threadFollowupRestorations[scopeKey];
+    }
+  };
+  dropOrphanRestorations();
   while (Buffer.byteLength(JSON.stringify(normalized), "utf8") > MAX_COMPOSER_DRAFT_BYTES) {
     const [staleKey] = Object.keys(normalized.threadFollowups);
     if (!staleKey) break;
     delete normalized.threadFollowups[staleKey];
+    dropOrphanRestorations();
   }
   if (Buffer.byteLength(JSON.stringify(normalized), "utf8") > MAX_COMPOSER_DRAFT_BYTES) {
     throw new TypeError("Composer drafts exceed the local persistence limit.");

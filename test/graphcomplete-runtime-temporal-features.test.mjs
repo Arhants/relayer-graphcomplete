@@ -11,7 +11,7 @@ import {
 
 const runtimeDirectories = [];
 
-function spawnedGraphArguments(temporalFeatures) {
+function spawnedGraphArguments(temporalFeatures, runtimeOptions = {}) {
   const spawned = [];
   const userDataDirectory = mkdtempSync(join(tmpdir(), "relayer-temporal-features-"));
   runtimeDirectories.push(userDataDirectory);
@@ -20,6 +20,7 @@ function spawnedGraphArguments(temporalFeatures) {
     graphServerBinary: "/tmp/relayer-graph-server",
     configurationPaths: [],
     temporalFeatures,
+    ...runtimeOptions,
     spawnProcess: (_binary, args) => {
       spawned.push(args);
       throw new Error("startup is not exercised by this test");
@@ -55,6 +56,18 @@ describe("product recursion enable path", () => {
       invokeResolution: true,
       providerRecursion: true,
     });
+  });
+
+  it("enables typed interaction preparation only for an explicit trusted runtime option", async () => {
+    for (const [runtimeOptions, enabled] of [
+      [{}, false],
+      [{ interactionPermissions: "1" }, false],
+      [{ interactionPermissions: true }, true],
+    ]) {
+      const { service, spawned } = spawnedGraphArguments({}, runtimeOptions);
+      await expect(service.start()).rejects.toThrow("startup is not exercised");
+      expect(spawned[0].includes("--interaction-permissions")).toBe(enabled);
+    }
   });
 
   it("passes the enabled chain to the graph server it starts", async () => {
