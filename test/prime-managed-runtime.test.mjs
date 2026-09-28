@@ -1,14 +1,17 @@
 import { join } from "node:path";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { describe, expect, it, vi } from "vitest";
 
 import { resolveManagedRuntimeRecipe } from "../desktop/main/managed-runtimes/recipes.mjs";
 import { createManagedRuntimeInstaller } from "../desktop/main/managed-runtimes/installer.mjs";
+import { digestFilesystemTree } from "../desktop/shared/prime-runtime-integrity.mjs";
 import {
+  PRIME_AGENT_ASSET_SHA256,
   PRIME_AGENT_PACKAGED_DEPENDENCY_CLOSURE_SHA256_BY_TARGET,
   PRIME_AGENT_REPOSITORY_DEPENDENCY_CLOSURE_SHA256,
   PRIME_AGENT_PACKAGE_SHA256,
@@ -51,6 +54,20 @@ describe("Prime managed runtime", () => {
   it("marks a target without a Prime recipe so startup validation stays quiet", () => {
     expect(() => resolveManagedRuntimeRecipe("prime@0.8.1", "linux-x64"))
       .toThrow(expect.objectContaining({ code: "managed_runtime_unsupported_target" }));
+  });
+
+  it("pins the Python client to its reviewed files in every contract that names it", async () => {
+    // Packaging and the runtime check the same filter: every .py file in the client package.
+    const tree = await digestFilesystemTree(
+      fileURLToPath(new URL("../python/relayer-graph/src/relayer_graph", import.meta.url)),
+      (path) => path.endsWith(".py"),
+    );
+    const manifest = JSON.parse(await readFile(new URL("../vendor/prime-agent/manifest.json", import.meta.url), "utf8"));
+    expect({
+      runtime: PRIME_AGENT_ASSET_SHA256.pythonPackageTree,
+      vendorManifest: manifest.assets.pythonPackageTreeSha256,
+      managedRecipe: resolveManagedRuntimeRecipe("prime@0.8.1", "macos-arm64").runtimeContract.python.client.sha256,
+    }).toEqual({ runtime: tree, vendorManifest: tree, managedRecipe: tree });
   });
 
   it("selects exactly the closure identity for the assembly environment", () => {

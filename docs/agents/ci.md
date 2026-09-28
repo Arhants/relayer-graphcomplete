@@ -11,7 +11,10 @@ current head has successful CI evidence less than 12 hours old. Age starts at
 GitHub's original CI run creation time, not PR creation, author timestamps, job
 completion, or a rerun. The plan job records the actual checkout's two parents
 and observes `refs/heads/main`; the base parent must equal that observation.
-All ordinary CI jobs use the same event merge SHA. A newer main commit does not
+PR base metadata may lag the generated merge and is not its base authority.
+All ordinary CI checkouts explicitly pin the same immutable event merge SHA.
+The merge must contain the event PR head as its second parent.
+A newer main commit does not
 immediately invalidate otherwise recent evidence. A rerun cannot extend the
 original window. Update the branch to create fresh PR CI when it expires.
 
@@ -25,6 +28,9 @@ failed jobs does not repeat a successful plan. This never renews the window.
 Missing/expired evidence, conflicts, unknown mergeability, and per-PR API or
 artifact errors fail closed when the sweep can publish a check. Older PRs
 without the new artifact must run fresh CI after rollout.
+Receipt generation and upload are non-blocking plan steps. Their failures remain
+visible, but do not skip application tests or affected-module planning. Missing
+or invalid evidence still fails the separately required `merge-freshness` check.
 
 This is **scheduled, not atomic, expiration**. GitHub can delay or drop cron
 jobs. A failed list request or check-write request, disabled workflow, rate
@@ -61,6 +67,8 @@ Checkpoint mapping (no product runtime behavior changes):
 | Boundary | Deterministic checkpoint |
 | --- | --- |
 | Exact head, main merge, run and attempt identity | `test/ci-merge-freshness.test.mjs`: receipt and policy scenarios |
+| Stale PR base metadata, wrong event merge/head, all-job immutable source | real Git receipt scenario and CI checkout contract |
+| Receipt failure does not stop test planning; missing proof still blocks merge | non-blocking receipt-step contract and missing-receipt rejection |
 | 12-hour edge, future/invalid time, reruns | policy clock scenarios |
 | Failed/missing/latest CI, conflicts, malformed evidence | rejection scenarios |
 | Expiration, evidence API failure, changing head | fake GitHub sweep journey |
