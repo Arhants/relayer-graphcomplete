@@ -38,6 +38,20 @@ describe("agent-facing graph objects", () => {
     expect([nodeId(node), edgeId(edge), layerId(layer)]).toEqual([10, 20, 30]);
   });
 
+  it("submits an explicit default member independently of node order", async () => {
+    const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      return new Response(JSON.stringify({ layer: { ...body, id: 30, state: "draft" } }));
+    });
+    vi.stubGlobal("fetch", fetch);
+    const layer = new LayerObject([10, 20], [5], new LayerLayoutObject([
+      new NodePlacementObject(10, 0.25, 0.5), new NodePlacementObject(20, 0.75, 0.5),
+    ]), "choice", 20);
+    const result = await new RelayerGraphClient({ url: "http://127.0.0.1:1", token: "token", nodeId: 1 }).submitLayer(layer);
+    expect(JSON.parse(String(fetch.mock.calls[0]![1].body))).toMatchObject({ nodes: [10, 20], defaultNodeId: 20 });
+    expect(result.defaultNodeId).toBe(20);
+  });
+
   it("owns authored detail through the draft node lifecycle and submits it exactly once", async () => {
     const requests: Record<string, unknown>[] = [];
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {

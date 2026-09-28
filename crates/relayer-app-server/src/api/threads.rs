@@ -299,6 +299,7 @@ pub(super) async fn get(
     let stale = refresh_accepted_outputs(
         &state.product,
         state.runtime.as_ref(),
+        state.interaction_execution.as_ref(),
         &mut detail.interactions,
         &detail.action_invocations,
     )
@@ -409,6 +410,7 @@ pub(super) async fn list_interactions(
     let stale = refresh_accepted_outputs(
         &state.product,
         state.runtime.as_ref(),
+        state.interaction_execution.as_ref(),
         &mut detail.interactions,
         &detail.action_invocations,
     )
@@ -1103,7 +1105,13 @@ pub(super) async fn get_action_destination(
         .get_interaction_by_graph_node_id(layer_owner.owner_interaction_node_id)
         .await?;
     if is_reconciliation_pending(&destination) {
-        reconcile_quarantined_interaction(&state.product, runtime, &mut destination).await?;
+        reconcile_quarantined_interaction(
+            &state.product,
+            runtime,
+            state.interaction_execution.as_ref(),
+            &mut destination,
+        )
+        .await?;
     }
     if destination.completion_status != "accepted" {
         return Err(ApiError::invalid(
@@ -1141,6 +1149,7 @@ pub(super) async fn get_action_destination(
 pub(super) async fn refresh_accepted_outputs(
     product: &crate::product::ProductService,
     runtime: Option<&crate::runtime::RuntimeClient>,
+    execution: Option<&crate::product::InteractionExecutionService>,
     interactions: &mut [Interaction],
     action_invocations: &[crate::product::ActionInvocation],
 ) -> std::collections::HashSet<i64> {
@@ -1157,7 +1166,7 @@ pub(super) async fn refresh_accepted_outputs(
         if is_reconciliation_pending(interaction) {
             match runtime {
                 Some(runtime) => {
-                    if reconcile_quarantined_interaction(product, runtime, interaction)
+                    if reconcile_quarantined_interaction(product, runtime, execution, interaction)
                         .await
                         .is_err()
                     {
@@ -1210,7 +1219,27 @@ fn is_reconciliation_pending(interaction: &Interaction) -> bool {
             .is_some_and(|error| error.starts_with(RECONCILIATION_PENDING_PREFIX))
 }
 
+/// Settles a quarantined interaction from canonical graph state. Settling it also ends its
+/// attempt, which turns the attempt's provider lease into debt, so the one worker that owns
+/// that debt is woken rather than left until the next restart. The wake also follows a failed
+/// settle, since its commit may have landed before a later read failed.
 async fn reconcile_quarantined_interaction(
+    product: &crate::product::ProductService,
+    runtime: &crate::runtime::RuntimeClient,
+    execution: Option<&crate::product::InteractionExecutionService>,
+    interaction: &mut Interaction,
+) -> Result<(), RuntimeError> {
+    let settled = settle_quarantined_interaction(product, runtime, interaction).await;
+    // Wake even when a read after the settling commit failed: the commit may already have
+    // made durable lease debt, and later reads will not retry this path. A wake with no debt
+    // does nothing.
+    if let Some(execution) = execution {
+        execution.schedule_execution_lease_reconciliation();
+    }
+    settled
+}
+
+async fn settle_quarantined_interaction(
     product: &crate::product::ProductService,
     runtime: &crate::runtime::RuntimeClient,
     interaction: &mut Interaction,
@@ -2484,8 +2513,8 @@ async fn cancel_if_terminal(
 }
 
 /// Ends a child's attempt once both its provider run has ended and its execution has
-/// settled, then releases the attempt's leases. Until then the provider keeps its leases,
-/// so provider removal waits for it.
+/// settled, then releases the attempt's leases. The harness host has already released the
+/// access when the provider run ended; provider removal waits for the attempt to end.
 async fn end_child_attempt(
     state: &ApiState,
     runtime: &crate::runtime::RuntimeClient,
@@ -2522,11 +2551,59 @@ async fn finish_child_attempt(
     crate::app_server::reconcile_terminal_execution_lease(product, runtime, attempt_id).await
 }
 
-/// After the product server restarts, resumes waiting on each child that had settled while
-/// its provider was still unwinding. Its attempt ends, and its leases are released, only
-/// once the harness confirms the run ended. A harness that restarted too knows no such run
-/// and answers at once, while one that stayed up keeps the leases held until the run ends.
+/// Whether one immediate observation shows that a child's provider run has ended. Only the
+/// host's answer naming the child and not saying it runs, or the host's refusal (a restarted
+/// host knows no such run), counts as ended; a timeout, an unreachable host, or any other shape
+/// proves nothing.
+async fn provider_end_observed_now(
+    runtime: &crate::runtime::RuntimeClient,
+    thread_id: i64,
+    completion_id: i64,
+) -> bool {
+    match runtime
+        .probe_invoked_completion(thread_id, completion_id)
+        .await
+    {
+        Ok(observation) => {
+            observation["running"] != true
+                && observation["completionId"].as_i64() == Some(completion_id)
+        }
+        Err(error) => !error.is_timeout() && error.is_host_answer(),
+    }
+}
+
+/// How long startup waits, across all unwinding children together, before serving Desktop.
+/// Desktop allows the app server ten seconds to become ready, so this stays well inside it.
+const STARTUP_UNWINDING_BOUND: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// After the product server restarts, ends the attempt of each child that had settled while
+/// its provider was still unwinding, once the harness confirms the run ended. Every child is
+/// observed at once and concurrently. A child whose run already ended (a harness that
+/// restarted with the server knows no such run) normally has its attempt ended, and its
+/// leases released, before startup serves Desktop, so a provider removal finished at startup
+/// does not wait on it. Startup waits for finding and finishing them at most
+/// `STARTUP_UNWINDING_BOUND` in total; anything still running, unreported, or not yet read
+/// keeps going in the background, and a child keeps its leases until its run ends.
 pub(crate) async fn resume_unwinding_recursive_children(
+    product: crate::product::ProductService,
+    runtime: crate::runtime::RuntimeClient,
+    reconciler: Option<crate::app_server::ExecutionLeaseReconciler>,
+) {
+    // Dropping the handle when the bound expires detaches the task; it is not cancelled.
+    let resume = tokio::spawn(resume_unwinding_children_until_ended(
+        product, runtime, reconciler,
+    ));
+    if tokio::time::timeout(STARTUP_UNWINDING_BOUND, resume)
+        .await
+        .is_err()
+    {
+        eprintln!(
+            "recursive children still unwinding were not all resumed when startup continued; they finish in the background"
+        );
+    }
+}
+
+async fn resume_unwinding_children_until_ended(
     product: crate::product::ProductService,
     runtime: crate::runtime::RuntimeClient,
     reconciler: Option<crate::app_server::ExecutionLeaseReconciler>,
@@ -2542,18 +2619,27 @@ pub(crate) async fn resume_unwinding_recursive_children(
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     };
+    let mut children = tokio::task::JoinSet::new();
     for child in unwinding {
         let product = product.clone();
         let runtime = runtime.clone();
         let reconciler = reconciler.clone();
-        tokio::spawn(async move {
-            let _ = await_provider_end(
+        children.spawn(async move {
+            if !provider_end_observed_now(
                 &runtime,
                 child.thread_id.value(),
                 child.graph_completion_id,
-                PROVIDER_END_RETRY_STEP,
             )
-            .await;
+            .await
+            {
+                let _ = await_provider_end(
+                    &runtime,
+                    child.thread_id.value(),
+                    child.graph_completion_id,
+                    PROVIDER_END_RETRY_STEP,
+                )
+                .await;
+            }
             if !finish_child_attempt(&product, &runtime, child.interaction_id, child.attempt_id)
                 .await
                 && let Some(reconciler) = reconciler
@@ -2562,6 +2648,7 @@ pub(crate) async fn resume_unwinding_recursive_children(
             }
         });
     }
+    while children.join_next().await.is_some() {}
 }
 
 pub(super) async fn invoke_action(
@@ -3259,7 +3346,6 @@ mod tests {
             Arc, Mutex,
             atomic::{AtomicUsize, Ordering},
         },
-        time::{SystemTime, UNIX_EPOCH},
     };
 
     /// One recursive child bound to its parent execution, with a controllable graph fake.
@@ -3267,7 +3353,6 @@ mod tests {
         state: ApiState,
         product: ProductService,
         thread: Thread,
-        root: std::path::PathBuf,
         starts: Arc<AtomicUsize>,
         headers: HeaderMap,
         current: Arc<Mutex<Value>>,
@@ -3280,13 +3365,14 @@ mod tests {
         _lease: CompletionBrokerLease,
         graph_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
         harness_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
+        /// Declared last so every field holding the database drops before its directory.
+        _root: tempfile::TempDir,
     }
 
     impl BrokerFixture {
         fn finish(self) {
             self.graph_task.abort();
             self.harness_task.abort();
-            fs::remove_dir_all(self.root).unwrap();
         }
     }
 
@@ -3320,17 +3406,12 @@ mod tests {
         agent_authored_complete: bool,
         valid_start_acknowledgement: bool,
     ) -> BrokerFixture {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "relayer-completion-broker-{label}-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
-        let database = root.join("product.sqlite3");
-        let catalog = root.join("catalog.json");
+        let root = tempfile::Builder::new()
+            .prefix(&format!("relayer-completion-broker-{label}-"))
+            .tempdir()
+            .unwrap();
+        let database = root.path().join("product.sqlite3");
+        let catalog = root.path().join("catalog.json");
         fs::write(
             &catalog,
             serde_json::json!({"schemaVersion":1,"configurations":[{"configuration":{
@@ -3633,7 +3714,7 @@ mod tests {
             .unwrap()
             .interaction;
         assert!(product.claim_interaction_preparing(child.id).await.unwrap());
-        let working_directory = root.to_string_lossy().into_owned();
+        let working_directory = root.path().to_string_lossy().into_owned();
         let seeded = runtime
             .prepare(&CompleteInteraction {
                 project_id: None,
@@ -3719,7 +3800,7 @@ mod tests {
             default_harness_configuration: "test".into(),
             allow_harness_override: true,
             allow_conversation_import: false,
-            standalone_workspaces_directory: root.join("workspaces"),
+            standalone_workspaces_directory: root.path().join("workspaces"),
             export_producer: ExportProducer {
                 desktop_version: "test".into(),
                 build_commit: "test".into(),
@@ -3738,7 +3819,7 @@ mod tests {
             state,
             product,
             thread,
-            root,
+            _root: root,
             starts,
             headers,
             current,

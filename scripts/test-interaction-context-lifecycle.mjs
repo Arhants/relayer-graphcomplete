@@ -1,3 +1,5 @@
+import { createSettingsStore } from "../desktop/main/services/settings-store.mjs";
+import { registerComposerDraftIpc } from "../desktop/main/ipc/register-ipc.mjs";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { mkdtempSync } from "node:fs";
 import { rm, writeFile } from "node:fs/promises";
@@ -84,6 +86,7 @@ const {
 });
 
 function registerIpc() {
+  registerComposerDraftIpc({ ipcMain, settings: createSettingsStore(dataDirectory) });
   ipcMain.handle("relayer:account-read", () => ({
     status: "signed-in",
     channel: "stable",
@@ -112,6 +115,8 @@ function registerIpc() {
 
 function unregisterIpc() {
   for (const channel of [
+    "relayer:composer-drafts-read",
+    "relayer:composer-drafts-write",
     "relayer:account-read",
     "relayer:appearance-read",
     "relayer:update-status",
@@ -279,7 +284,7 @@ async function startServices() {
   });
   const runtimeSession = await runtime.start();
   catalogRefreshServer = await startModelCatalogRefreshServer({
-    refresh: () => product.publishProviderCatalog(catalogSnapshot),
+    refresh: () => product.seedProviderCatalog(catalogSnapshot),
   });
   product = new RelayerAppServerService({
     userDataDirectory: dataDirectory,
@@ -291,7 +296,7 @@ async function startServices() {
     defaultHarnessConfiguration: "fixture-task-system",
   });
   productSession = await product.start();
-  await product.publishProviderCatalog(catalogSnapshot);
+  await product.seedProviderCatalog(catalogSnapshot);
 }
 
 async function stopServices() {
@@ -320,6 +325,7 @@ async function openThreadWindow(threadId) {
     desktopDirectory: join(repositoryRoot, "desktop"),
     getAppearance: () => "dark",
     updater: { status: () => ({ phase: "development" }) },
+    openExternal: async () => undefined,
   });
   window = await createWindow(productSession);
   window.setSize(1280, 820);
@@ -473,45 +479,57 @@ async function run() {
       && response.drafts[0].revision >= 1;
   });
   const dockGeometry = await evaluate(`(() => {
-    const inspector = document.querySelector('#inspector').getBoundingClientRect();
+    const inspectorElement = document.querySelector('#inspector');
+    const inspector = inspectorElement.getBoundingClientRect();
+    const inspectorStyle = getComputedStyle(inspectorElement);
+    const contentBottom = inspector.bottom - parseFloat(inspectorStyle.paddingBottom) - parseFloat(inspectorStyle.borderBottomWidth);
     const content = document.querySelector('#inspectorContent').getBoundingClientRect();
     const dock = document.querySelector('#nodeContextDock').getBoundingClientRect();
     const graph = document.querySelector('#graphStage').getBoundingClientRect();
     const composer = document.querySelector('#threadComposerShell').getBoundingClientRect();
     return {
       ratio: dock.height / inspector.height,
-      detailScrollableAbove: content.bottom <= dock.top + 1,
+      detailUnderOverlay: content.top < dock.top && content.bottom > dock.top
+        && Math.abs(content.bottom - contentBottom) <= 1,
       insideInspector: dock.left >= inspector.left && dock.right <= inspector.right + 1,
       graphUnobstructed: dock.left >= graph.right,
       composerStable: dock.bottom <= composer.bottom && dock.left >= composer.right,
     };
   })()`);
   if (dockGeometry.ratio < 0.25 || dockGeometry.ratio > 0.42
-    || !dockGeometry.detailScrollableAbove || !dockGeometry.insideInspector
+    || !dockGeometry.detailUnderOverlay || !dockGeometry.insideInspector
     || !dockGeometry.graphUnobstructed || !dockGeometry.composerStable) {
     throw new Error(`Node Details dock geometry is invalid: ${JSON.stringify(dockGeometry)}`);
   }
   window.setContentSize(900, 600);
+  await click("#collapseSidebar");
   await waitForPaint();
   const responsiveGeometry = await evaluate(`(() => {
-    const inspector = document.querySelector('#inspector').getBoundingClientRect();
+    const inspectorElement = document.querySelector('#inspector');
+    const inspector = inspectorElement.getBoundingClientRect();
+    const inspectorStyle = getComputedStyle(inspectorElement);
+    const contentBottom = inspector.bottom - parseFloat(inspectorStyle.paddingBottom) - parseFloat(inspectorStyle.borderBottomWidth);
     const content = document.querySelector('#inspectorContent').getBoundingClientRect();
     const dock = document.querySelector('#nodeContextDock').getBoundingClientRect();
     const textarea = document.querySelector('#contextAnnotationEditor').getBoundingClientRect();
     const actions = document.querySelector('.node-context-dock-actions').getBoundingClientRect();
     return {
       ratio: dock.height / inspector.height,
-      contentScrollableAbove: content.bottom <= dock.top + 1,
+      detailFillsWorkspace: Math.abs(inspector.width - document.querySelector('.thread-workspace').getBoundingClientRect().width) <= 1,
+      contentUnderOverlay: content.top < dock.top && content.bottom > dock.top
+        && Math.abs(content.bottom - contentBottom) <= 1,
       textareaContained: textarea.top >= dock.top && textarea.bottom <= dock.bottom,
       controlsContained: actions.top >= dock.top && actions.bottom <= dock.bottom,
     };
   })()`);
   if (responsiveGeometry.ratio < 0.25 || responsiveGeometry.ratio > 0.42
-    || !responsiveGeometry.contentScrollableAbove
+    || !responsiveGeometry.detailFillsWorkspace
+    || !responsiveGeometry.contentUnderOverlay
     || !responsiveGeometry.textareaContained
     || !responsiveGeometry.controlsContained) {
     throw new Error(`Responsive Node Details dock geometry is invalid: ${JSON.stringify(responsiveGeometry)}`);
   }
+  await click("#collapseSidebar");
   window.webContents.setZoomFactor(1.5);
   await waitForPaint();
   const largeTextControlsFit = await evaluate(`(() => {
@@ -964,7 +982,17 @@ async function run() {
 
   await setValue("#threadPrompt", SUCCESS_MESSAGE);
   await click("#sendInteraction");
-  await waitForAcceptedInteractions(thread.id, 3);
+  const successfulDetail = await waitForAcceptedInteractions(thread.id, 3);
+  const successfulNodeIds = successfulDetail.interactions.at(-1).completionOutput.rootLayer.nodes
+    .map(({ id }) => String(id)).sort();
+  // Durable acceptance precedes the renderer's next refresh. The prior turn's historical
+  // context must stay visible until first-ready navigation actually commits.
+  await waitFor("accepted follow-up layer to become the visible turn", () => evaluate(`(() => {
+    const visibleNodeIds = [...document.querySelectorAll('.graph-node[data-node]')]
+      .map((node) => node.dataset.node).sort();
+    return document.querySelector('#turnPickerButton')?.textContent === 'Turn 3 of 3'
+      && JSON.stringify(visibleNodeIds) === ${JSON.stringify(JSON.stringify(successfulNodeIds))};
+  })()`));
   await waitFor("next composer to become available", () => evaluate(`
     !document.querySelector('#threadPrompt')?.disabled
   `));

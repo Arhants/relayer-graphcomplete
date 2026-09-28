@@ -1,10 +1,13 @@
 import { createServer, type IncomingMessage } from "node:http";
+import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { runCodexAppServerTurn } from "../src/implementations/codex-app-server.js";
 import { CodexBasicHarness } from "../src/implementations/codex-basic.js";
 import { createNoopHarnessTraceSink } from "../src/trace.js";
 
@@ -21,13 +24,14 @@ describe("Codex secret-provider process boundary", () => {
     await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
   });
 
-  // Run this native-process boundary in isolation. Codex 0.147's shell-policy
-  // behavior is not stable when many unrelated native tests execute in parallel,
-  // and non-Darwin binaries are not evidence for the shipped macOS boundary.
+  // Non-Darwin binaries are not evidence for the shipped macOS boundary.
+  // Snapshot isolation is checked against the native parser before the real turn,
+  // so the regression does not depend on racing snapshot generation.
   nativeDarwinIt("authenticates the selected Responses endpoint while excluding provider secrets from model-requested shell tools", async () => {
     const codexBinary = resolvePinnedCodexBinary();
     const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-secret-provider-"));
     temporaryDirectories.push(codexHome);
+    await configureFixture(codexBinary, codexHome, ["features.shell_snapshot = true"]);
     const requestReceived = deferred<CapturedRequest>();
     const shellOutputReceived = deferred<string>();
     let requestNumber = 0;
@@ -55,6 +59,7 @@ describe("Codex secret-provider process boundary", () => {
     if (address === null || typeof address === "string") throw new Error("Loopback provider did not expose a TCP port.");
     const endpoint = `http://127.0.0.1:${address.port}/v1`;
     const abort = new AbortController();
+    let nativeFeatures = "";
     const harness = new CodexBasicHarness({
       threadId: 1,
       permissionProfileId: "full",
@@ -69,6 +74,21 @@ describe("Codex secret-provider process boundary", () => {
           full: { sandboxMode: "danger-full-access", approvalPolicy: "never" },
         },
         settings: { skipGitRepoCheck: true },
+      },
+    }, {
+      runAppServerTurn: async (options) => {
+        // Use the exact production overrides and environment. The fixture enables
+        // snapshots, so only the adapter's enforced override can make this pass.
+        // Codex 0.147 snapshots inherit provider secrets and restore them after
+        // shell_environment_policy filtering; checking only a fast first shell
+        // command can miss that asynchronous path.
+        const configArguments = (options.codexConfigOverrides ?? []).flatMap((value) => ["-c", value]);
+        const { stdout } = await promisify(execFile)(options.codexPathOverride, [...configArguments, "features", "list"], {
+          env: { ...options.environment },
+          timeout: 5_000,
+        });
+        nativeFeatures = stdout;
+        return runCodexAppServerTurn(options);
       },
     });
     const inputGraph = {
@@ -118,6 +138,7 @@ describe("Codex secret-provider process boundary", () => {
           10_000,
         )),
       ]);
+      expect(nativeFeatures).toMatch(/^shell_snapshot\s+\S+\s+false$/mu);
       expect(captured).toMatchObject({
         method: "POST",
         url: "/v1/responses",
@@ -205,7 +226,7 @@ describe("Codex secret-provider process boundary", () => {
     const providerAddress = providerServer.address();
     if (providerAddress === null || typeof providerAddress === "string") throw new Error("Loopback provider did not expose a TCP port.");
     const endpoint = `http://127.0.0.1:${providerAddress.port}/v1`;
-    await writeFile(join(codexHome, "config.toml"), [
+    await configureFixture(codexBinary, codexHome, [
       'model_provider = "relayer_loopback"',
       "[model_providers.relayer_loopback]",
       'name = "Relayer loopback test provider"',
@@ -214,7 +235,10 @@ describe("Codex secret-provider process boundary", () => {
       "requires_openai_auth = false",
       "supports_websockets = false",
       "",
-    ].join("\n"));
+    ]).catch(async (error: unknown) => {
+      await Promise.all([closeServer(providerServer), closeServer(graphServer)]);
+      throw error;
+    });
     const harness = new CodexBasicHarness({
       threadId: 1,
       permissionProfileId: "full",
@@ -506,6 +530,19 @@ function responseEnvelope(id: string, status: string, output: readonly unknown[]
     user: null,
     metadata: {},
   };
+}
+
+async function configureFixture(codexBinary: string, codexHome: string, configuration: string[] = []): Promise<void> {
+  // These loopback probes exercise credentials and shell graph authority, not
+  // plugin discovery. Default plugin clones can outlive the app-server and race
+  // removal of this synthetic home. Disable that unrelated network work rather
+  // than retrying cleanup or weakening the native-process assertions below.
+  await writeFile(join(codexHome, "config.toml"), ["features.plugins = false", ...configuration].join("\n"));
+  const { stdout } = await promisify(execFile)(codexBinary, ["features", "list"], {
+    env: { ...process.env, CODEX_HOME: codexHome },
+    timeout: 5_000,
+  });
+  expect(stdout).toMatch(/^plugins\s+\S+\s+false$/mu);
 }
 
 function pinnedCodexVersion(): string {

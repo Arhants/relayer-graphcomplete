@@ -82,9 +82,13 @@ Provider access, model-family organization, and harness execution are separate p
 3. A product-owned model family is an ordered list of exact provider-definition/model pairs. Families contain no credentials or execution behavior and may span providers. Managed read-only families are derived by versioned product policy; custom families remain harness-agnostic.
 4. A named harness configuration declares its versioned execution-access contract and exact or regular-expression model rules over stable adapter ID plus model ID. It never contains a user provider-definition ID or credential.
 5. Product resolution is the only join among the thread-pinned harness configuration, the selected family, current provider/catalog state, and the unsent exact selection. Send atomically pins the resolved provider definition and model to one execution attempt. The harness host defensively revalidates the adapter/model rule and access contract before invoking the selected harness implementation.
-6. Electron owns one credential-free readiness coordinator for loaded production harness configurations. Connect, reconnect, and explicit repair resolve exact access-contract and model-rule candidates, prepare shared recipes once, and publish one digest-guarded availability batch. Rust persists only global configuration availability and derives provider routes through the existing catalog joins; there is no provider-by-harness persistence. Loaded configurations start unavailable, and startup, catalog background work, renderer reads, and Send perform no readiness probes. Secret provider access contains only provider material; Codex and Claude managed runtime descriptors are injected by their harness factories.
+6. Electron owns one credential-free readiness coordinator for loaded production harness configurations. Connect, reconnect, and explicit repair resolve exact access-contract and model-rule candidates, prepare shared recipes once, and publish one digest-guarded availability batch. Rust persists only global configuration availability and derives provider routes through the existing catalog joins; there is no provider-by-harness persistence. That persisted row is the only readiness record: Electron publishes only to Rust, and Rust rejects a generation older than one it accepted in the same process. Loaded configurations start unavailable unless startup restores Rust's own ready row, and startup, catalog background work, renderer reads, and Send perform no readiness probes. Secret provider access contains only provider material; Codex and Claude managed runtime descriptors are injected by their harness factories.
 
 Threads pin a harness-configuration identity, not an immutable copy of catalog or family state. Unsent turns resolve lazily against current semantic revisions when the picker opens or Send is pressed. A still-valid exact selection is preserved; an invalid selection may move only within its current family. The product never selects another family implicitly. Once an attempt is sent, its provider/model identity cannot change or fall back mid-flight.
+
+Every provider row carries a connection generation owned by the Rust catalog. Creating a provider starts it at 1. Reconnect completion and sign-out publish their catalog with a lifecycle event that advances the generation in the same transaction; removal advances it with the lifecycle change. Every catalog publish names the generation its result started with, and Rust refuses an older one inside the write transaction with `provider_connection_superseded`, so a superseded refresh, recovery, or discovery changes nothing (PROV-002). Electron tags a refresh when it starts: the model-catalog service resolves the provider's adapter and generation at that point, not at request time, and skips the publish if the generation moved. Harness readiness is global per configuration and outside this rule. A refused publish rereads the generation, which recovers from a lifecycle write whose response was lost; a reconnect also reads the generation when it starts, and a refused sign-out retries once at the current generation. Sign-out commits its disconnected state itself and does not wait inside the provider queue for its refresh. A cancelled or failed reconnect leaves the provider a catalog adapter: a fresh runtime replaces a reused one, and the recovery adapter stays when the reconnect created its own runtime. Recovery refuses while a reconnect is pending.
+
+Connect is all-or-nothing (PROV-007). The credential is written just before the staged create so a committed definition always has it; a refused create removes it. The runtime and catalog adapter are registered only after the create commits, so nothing refreshes or publishes for a provider before its definition exists. A create with no answer is resolved by reading the definitions back; if that read fails, the credential and runtime state stay for startup reconciliation, which keeps them only for a persisted definition.
 
 Provider removal uses atomic admission and draining. Marking a definition `removal_pending` immediately blocks new attempts through it while already admitted work finishes. Credential deletion and the non-secret historical tombstone occur only after the last execution reference is released. Family deletion needs no drain because a sent attempt no longer consults family membership.
 
@@ -115,6 +119,8 @@ projects normalized coordinates into a stable world plane; responsive fitting,
 panning, zooming, and inspector changes affect only the camera. Historical
 accepted layers without layout data remain readable through one deterministic,
 viewport-independent renderer fallback and are never rewritten during reads.
+
+Layers may carry an explicit `defaultNodeId` chosen by the author from their member nodes. Graph core validates membership and preserves the choice through publication, persistence, and portable import/export. Missing values from older clients or accepted layers remain readable. Product opens the chosen detail automatically when no valid user selection exists; legacy layers use their first canonical member. Per-thread, interaction, and layer presentation memory preserves the user's later choice without mutating the accepted layer. Explicit history selection takes precedence. Empty layers do not fabricate a detail node.
 
 Each product or Eval review window owns one bounded renderer-side navigation history for thread, turn, authored layer path, and remembered node selection. Restoration resolves accepted product data before committing the presentation and cursor together. Eval's judge history command delegates to this controller; the Eval main process records and validates the result but does not own a second stack. Hierarchy breadcrumbs and direct chronological turn controls remain separate presentations of layer ancestry and durable interaction order.
 
@@ -233,6 +239,26 @@ The runner input is a test-run ID, selected test-case IDs, selected harness-conf
 
 The ordinary test suite never invokes inference. Evaluation execution and review belong to the Eval application through the product app server and shared production graph/chat workspace. The retired standalone CLI and HTML viewer are no longer supported.
 
+## External capability catalog
+
+The ten Issue #278 capability cases live in `relayer-capability-evals`.
+That repository owns their tasks, fixtures, references, mutants, verifiers,
+platform requirements, suite membership, and admission evidence. Older built-in
+H3, frontier, and calibration cases remain in this checkout.
+
+Relayer Eval loads an explicitly selected local catalog checkout at the commit
+in `eval-catalog.lock.json`. It checks provenance before importing trusted
+catalog code and rechecks it before queuing and executing external work.
+Startup never clones repositories, installs dependencies, or builds a catalog.
+This is a developer-code trust boundary, not a sandbox for untrusted plugins.
+
+A catalog registers case definitions and materialize, grade, and mandatory-gate
+callbacks. Its definitions expose only public snapshots. The host retains the
+ordinary case × harness matrix, product threads, graph acceptance, read-only
+review, and independent outcome and presentation grades. Catalog provenance and
+suite identity persist with each external execution and survive reopen without
+loading the package. Each harness still owns its native recursive execution.
+
 ## Runtime package boundaries
 
 - `crates/relayer-graph-core/src/graph.rs` is the graph behavior boundary. `graph/database` and `graph/writer` expose the public control flow, `graph/model` owns the node, edge, layer, action, ID, and state objects, and `graph/completion` separates closure planning from atomic acceptance.
@@ -256,13 +282,19 @@ The recursive target keeps `complete(inputGraph)` as one deep module interface. 
 
 The common harness-configuration envelope optionally declares `complete.agentAuthored`. Absence or `false` fails closed. `true` permits the product to issue completion-broker authority only when the runtime's recursive temporal substrate is also active; the app server and harness host both revalidate that conjunction for roots and invoked children. This is capability authority, not an implementation-specific recursion policy and not a scheduler. Relayer Eval uses this seam for a paired Codex comparison whose two configurations are otherwise execution-equivalent. The shipped Desktop catalog does not opt in.
 
-For `prime.agent`, a prompt settling is not the run boundary. The adapter waits for that Prime session's recursive runtime to become quiescent before returning or releasing graph and provider access. Human-root turns remain serialized around the persistent root session. Each explicit invoked Complete uses a fresh ordinary Prime session, so it can run independently without replacing root continuity or converting Prime's RLM topology into GraphComplete topology. External cancellation targets only the owning session and still waits for quiescence and cleanup; barrier and abort failures remain visible rather than releasing authority early.
+For `prime.agent`, a prompt settling is not the run boundary. The adapter waits for that Prime session's recursive runtime to become quiescent before returning or releasing graph and provider access. Human-root turns remain serialized around the persistent root session. Each explicit invoked Complete uses a fresh ordinary Prime session, so it can run independently without replacing root continuity or converting Prime's RLM topology into GraphComplete topology. External cancellation targets only the owning session and still waits for quiescence and cleanup; barrier and abort failures remain visible rather than releasing authority early. The per-turn force-stop below is the one exception: it force-disposes that turn's own session and stops waiting for it. For an invoked child, that is the child's session only. For a root turn force-stopped while running on the root session, that session is disposed and the next root turn starts a fresh native session rather than resuming a file the stopped session may still write. A root turn force-stopped while still acquiring its session, for example in a reload or a session creation that never settles, abandons that acquisition: the root session it was working on is force-disposed, and a session it creates too late is disposed instead of installed. An invoked child force-stopped before its own session existed force-disposes that session once it is created.
 
 Harness factories may initialize asynchronously so provider runtimes such as Prime Agent can open durable sessions before registration completes. The host serializes first construction and Complete calls per thread, forwards cancellation through an `AbortSignal`, aborts active work during shutdown, and disposes every live harness object exactly once.
 
 Product and graph metadata remain in separate SQLite databases, so the app server uses an explicit recoverable handoff rather than pretending they share a transaction. It first creates the durable product interaction and conditionally reserves `submitted`; an input-assisted Send creates the root plus immutable submitted-input attempt before that reservation. It then prepares the canonical graph interaction and stores the graph `NodeId`, frozen configuration/model identity, effective-execution digest, and permission receipt. Only a conditional transition on that exact prepared identity may claim `running` and enter the harness. The graph capability token remains transient runtime memory and is never product data. Product graph reads use control-authenticated read endpoints rather than minting harness writer capabilities.
 
-Terminal provider-execution lease debt is handled by one app-owned reconciliation worker. Startup and later release failures only wake that worker; they never spawn competing retry loops. The worker serially scans durable debt, retries with capped backoff, and returns to an idle notification wait after the debt is clear.
+Provider execution access lives exactly as long as the native turn that uses it, unless that turn is force-stopped (below). The harness host releases a claimed lease when that turn settles, whether or not the product has persisted the outcome yet. A release requested by the product while the native turn still runs cancels the turn and takes effect when it settles, or within ten seconds of a force-stop. The product's release after the outcome is durable acknowledges the access to its provider. That acknowledgement retries a removal the catalog refused while the attempt still counted as running, so removal during a turn finishes without a restart. A release for a lease the host no longer tracks retries every drained removal instead.
+
+A cancelled turn that has not settled within two minutes is force-stopped. The host arms one timer per completion when that completion is cancelled, including by the owner's release, and clears it when the completion returns, so only that turn is ever stopped; sibling turns and invoked children on the same thread keep running with their access. The harness receives the force-stop through `HarnessRunContext.forceSignal` and ends that one turn's native work: `codex.basic` kills the turn's own app-server process group, and `prime.agent` force-disposes the turn's own session. Codex settles once the killed process group exits; Prime's native disposal is synchronous, so it stops waiting for the disposed session at once. In any case the host waits at most ten more seconds for the turn to settle and releases its access even if the harness never settles; a later settlement changes nothing. A force-stop only ever follows a cancellation, so the turn settles as a settled cancellation, whether the harness resolves, rejects, or never settles while being stopped. The host logs the force-stop with the thread, completion, origin, product interaction and native outcome kind, and no provider text; when a trace is kept, it also records the force-stop and the native outcome as a warning. The product records a user's Stop as stopped, because it stops the graph completion and then sees a settled cancellation. A turn cancelled by its owner's release, when the product gives up on it, or by host close is never recorded as stopped by this path: the product has already stopped waiting for the turn or is shutting down, and its graph completion is not stopped. The force-stop is best effort: it relies on the process kill or session disposal actually ending the provider work, and PROV-004 is relaxed for a force-stopped turn only. The next Prime root turn never waits for an abandoned acquisition; it starts a fresh native session. A root turn force-stopped while its native conversation ran also drops that conversation: `codex.basic` forgets the thread the killed process may have left mid-write when the force fires, and ignores a thread identity reported after it, so the next root turn starts a fresh thread, as Prime starts a fresh session. A Codex root turn force-stopped before it spawned keeps the saved thread, which nothing wrote. The next turn still receives its graph context. A harness that does not declare `supportsForceStop`, currently `claude.basic`, whose SDK already terminates its process on cancellation, keeps a turn that never settles holding its access, which is the safe fallback.
+
+The catalog's removal drain counts an attempt only while its outcome is undecided and Relayer still waits on its native run. When the execution task stops waiting without persisting the attempt's outcome, it ends that wait with bounded retries. If the interaction already failed or stopped, for example through an expired, aborted, or cancelled approval, the attempt ends with that outcome. Otherwise the interaction is pending reconciliation: the attempt keeps its `running` outcome, and `native_wait_ended_at` records the end of the wait. Canonical graph output can still settle that attempt later. Startup records the same for attempts it leaves open for reconciliation, since their process exited with the application. Either way the attempt's lease becomes debt and is released once, and the drain stops counting it. The drain is necessary but not sufficient while Relayer runs: Relayer may stop waiting while the native turn still runs. Live native work stays guarded by the harness host's claim and by the provider service's lease count. The claim is released when the turn settles, or at most ten seconds after a force-stop. After a restart, startup observes each recursive child still unwinding once before it serves Desktop. A child the harness no longer runs ends first, so Desktop's startup removal does not wait on it; a child it still runs keeps waiting in the background. Desktop's startup reconciliation attempts each pending removal on its own, then sweeps runtime state and orphaned credentials. It records each failure and never throws, so one provider cannot stop Relayer from starting or other providers from activating. A removal that fails or is deferred before its tombstone stays pending for the next start; cleanup that fails after the tombstone is swept by the next start.
+
+Terminal provider-execution lease debt is handled by one app-owned reconciliation worker. It covers terminal attempts and undecided attempts that Relayer no longer waits on. Startup, a thread, state, or action-destination read that settles a quarantined attempt, and later release failures only wake that worker; they never spawn competing retry loops. The worker serially scans durable debt, retries with capped backoff, and returns to an idle notification wait after the debt is clear.
 
 Invoke preparation supplies the accepted source interaction/action pair to graph control. That pair is the graph-side idempotency key, so retrying a lost create response recovers the same leased graph interaction while the product-side invocation record recovers the same result interaction. At startup, bound interrupted invokes are reconciled against canonical graph completion output: an accepted graph finalizes product history using its already persisted execution receipt, while the absence of graph acceptance fails the product result and leaves the leased action unresolved. This closes the graph-accepted/product-uncommitted crash window without a distributed transaction or a second scheduler.
 
@@ -297,9 +329,15 @@ effort remote revocation, without signing the browser out. See
 
 After provider setup, the optional account decision is a dedicated full-screen
 onboarding step. The desktop workspace is not revealed until the user signs in or
-explicitly continues without an account. Once resolved, a sidebar-footer control
-beside Settings starts sign-in directly while signed out and opens Account
-settings for an existing account. The Account panel contains only concise status
+explicitly continues without an account. Once resolved, Account stays in the sidebar footer beside Settings. At widths
+up to 760px, the existing sidebar starts as a collapsed icon rail. Its existing
+toggle expands the same sidebar in normal flow, leaving the workspace to fit
+the remaining width; an explicit expansion stays open until the viewport leaves
+the narrow breakpoint. The footer shows icons while collapsed and labels while
+expanded. Both actions remain in the single footer controller: signed out or
+error starts sign-in directly, while an existing or uncertain account opens
+Account settings. There is no dropdown or floating Account overlay. The
+Account panel contains only concise status
 and the applicable sign-in or logout action. Stable or Preview is not part of the
 account UX; callback-pool diagnostics remain main-owned.
 
@@ -429,11 +467,18 @@ affect Codex or Claude. `npm run test:prime-managed-runtime` owns the clean-root
 checkpoint. Signed release proof, updater publication (#378), and downloadable
 JavaScript reconstruction (#379) remain separate.
 
-On restart, an unchanged configuration may recover a previously ready route
-only after cheap local validation of its exact managed receipt, owned real
-state directory, installation marker, and entrypoints whose resolved targets
-remain inside that exact installation. A recovered ready boolean starts a new
-process-local readiness ordering epoch. Startup does not download, prepare,
+On restart, Electron writes the configuration catalog by temporary file and
+rename. It never reads readiness back from that file. For each coordinated
+configuration it records only whether cheap local validation passed: the
+exact managed receipt, owned real state directory, installation marker, and
+entrypoints whose resolved targets remain inside that exact installation.
+Rust then restores a ready route only when its own previous row said ready
+for the same configuration digest and that validation passed. Migration 0034
+clears every ready row once, because a row from an older build may not come
+from an evaluation; each route then waits for its next evaluation. Each app-server
+process starts a new readiness ordering epoch. The desktop never restarts the
+app server alone; if it did, the restored row stays the record and the
+coordinator's generations keep increasing. Startup does not download, prepare,
 invoke a readiness probe, or contact a provider. A digest mismatch or corrupt
 local descriptor keeps the harness unavailable and records a sanitized error.
 
@@ -474,6 +519,15 @@ caches. Public code is outside desktop telemetry and has no reporting client.
 These are planned service boundaries, not implemented product capabilities. See
 [ADR 0011](decisions/0011-shared-thread-snapshot-service.md),
 [ADR 0012](decisions/0012-immutable-shared-thread-snapshots.md), and PRD section 8.4.
+
+The public viewer also has an explicit embed presentation for the website and
+online white paper (PRD 8.4.1). It shares the snapshot reader, adapter, and
+ProductWorkspace. Embed-specific chrome and reading behavior include compact attribution, a
+canonical standalone-share link, equal wide graph/details columns, full-width
+narrow details, explicit wheel zoom, and host-selected theme. The default
+standalone template and hosted CSP contract remain unchanged. A loopback-only
+fixture host exercises the iframe seam locally; hosted routing/framing policy
+belongs to the private service and a later delivery slice.
 
 ## Developer Eval host
 

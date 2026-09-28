@@ -1,0 +1,47 @@
+name: Merge freshness guard
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited, ready_for_review, closed]
+  push:
+    branches: [main]
+
+# One writer for every trigger. Never cancel an in-flight expiration sweep.
+concurrency:
+  group: merge-freshness-writer
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  checks: write # legacy check during migration
+  statuses: write
+
+jobs:
+  refresh:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Privileged workflow: ONLY protected main, no PR checkout, npm install,
+      # PR scripts, downloaded executable artifacts, or interpolated PR text.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const { sweep } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/ci/merge-freshness.mjs`);
+            const results = await sweep({ github, ...context.repo, pullNumber: context.payload.pull_request?.number });
+            core.info(JSON.stringify(results));
+            if (results.some((result) => result.published === false)) {
+              core.setFailed('Some PR freshness checks could not be refreshed; see per-PR results.');
+            }

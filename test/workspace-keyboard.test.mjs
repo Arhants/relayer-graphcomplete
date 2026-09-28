@@ -573,7 +573,7 @@ describe("product workspace keyboard behavior", () => {
       .toBe("Not saved: disk full");
   });
 
-  it("reserves a stable annotation region at the bottom of Node Details", async () => {
+  it("overlays the annotation editor without reserving detail space", async () => {
     const markup = productWorkspaceMarkup();
     const detailContent = markup.indexOf('id="inspectorContent"');
     const dock = markup.indexOf('id="nodeContextDock"');
@@ -592,8 +592,8 @@ describe("product workspace keyboard behavior", () => {
     expect(composerTray).not.toContain("contextAnnotationEditor");
 
     const styles = await readFile(new URL("../desktop/renderer/styles.css", import.meta.url), "utf8");
-    expect(styles).toContain(".node-context-dock{height:33.333%;min-height:0");
-    expect(styles).toContain(".inspector-content{min-height:0}.inspector>.node-context-dock.hidden{display:flex!important;visibility:hidden;pointer-events:none;border-top-color:transparent}");
+    expect(styles).toContain(".node-context-dock{position:absolute;z-index:2;inset:auto 12px 12px;height:33.333%;min-height:0");
+    expect(styles).toContain(".inspector{position:relative}.inspector-content{min-height:0}.inspector>.node-context-dock.hidden{display:none!important}");
     // The account control moved into the sidebar footer, so the dock no longer
     // reserves a lane for a floating pill that overlapped it.
     expect(styles).not.toContain("desktop-account-corner-control");
@@ -752,7 +752,7 @@ describe("product workspace keyboard behavior", () => {
     const composerEnd = workspaceSource.indexOf("const releaseSendAttempt", composerStart);
     const composerSeam = workspaceSource.slice(composerStart, composerEnd);
     expect(composerSeam).toContain(
-      "threadHasPendingInputMutation(inputPending, thread.id)",
+      "threadHasPendingInputMutation(pendingInputDetaches, thread.id)",
     );
     expect(composerSeam).not.toContain("inputPending.size > 0");
   });
@@ -1404,6 +1404,88 @@ describe("product workspace keyboard behavior", () => {
       .toMatchObject({ promptValue: "draft B", restoredDraftInteractionId: null });
   });
 
+  it("keeps a re-entered scope's revision moving forward so settlement tells edits from sent text", () => {
+    const enter = (state, threadId, currentPromptValue, currentPromptRevision, persistedDraftText) => (
+      transitionComposerDraftScope(state, {
+        threadId,
+        interactionId: `${threadId}-turn`,
+        currentPromptValue,
+        currentPromptRevision,
+        persistedDraftText,
+      })
+    );
+    let a = enter(createComposerDraftScopeState(), "thread-a", "", 0, null);
+    let b = enter(a.state, "thread-b", "", a.promptRevision, null);
+    const sentRevision = b.promptRevision + 1;
+    const sentScope = b.state.activeScopeKey;
+
+    a = enter(b.state, "thread-a", "sent text", sentRevision, null);
+    b = enter(a.state, "thread-b", "", a.promptRevision, "sent text");
+    expect(b.promptValue).toBe("sent text");
+    expect(b.promptRevision).toBe(sentRevision);
+    expect(clearSubmittedComposerDraft(b.state, sentScope, sentRevision, b.promptRevision).drafts.has(sentScope))
+      .toBe(false);
+
+    a = enter(b.state, "thread-a", "sent text", sentRevision, null);
+    b = enter(a.state, "thread-b", "", a.promptRevision, "edited after send");
+    expect(b.promptValue).toBe("edited after send");
+    expect(b.promptRevision).toBeGreaterThan(sentRevision);
+    expect(clearSubmittedComposerDraft(b.state, sentScope, sentRevision, b.promptRevision)
+      .drafts.get(sentScope).promptValue).toBe("edited after send");
+  });
+
+  it("moves unsent text into a newer turn's empty scope unless it is the send in flight", () => {
+    const older = composerDraftScopeKey("thread-a", "turn-1");
+    const first = transitionComposerDraftScope(createComposerDraftScopeState(), {
+      threadId: "thread-a",
+      interactionId: "turn-1",
+      currentPromptValue: "",
+    });
+    const enterTurn2 = (currentPromptValue, currentPromptRevision, inFlightSubmission) => (
+      transitionComposerDraftScope(first.state, {
+        threadId: "thread-a",
+        interactionId: "turn-2",
+        currentPromptValue,
+        currentPromptRevision,
+        olderScopeKeys: [older],
+        inFlightSubmission,
+      })
+    );
+
+    const typedDuringSend = enterTurn2("typed during send", 5, { scopeKey: older, promptRevision: 4 });
+    expect(typedDuringSend.promptValue).toBe("typed during send");
+    expect(typedDuringSend.promptRevision).toBe(6);
+    expect(typedDuringSend.carriedFromScopeKey).toBe(older);
+    expect(typedDuringSend.state.drafts.has(older)).toBe(false);
+
+    const stillSending = enterTurn2("sent text", 4, { scopeKey: older, promptRevision: 4 });
+    expect(stillSending.promptValue).toBe("");
+    expect(stillSending.carriedFromScopeKey).toBeNull();
+    expect(stillSending.state.drafts.get(older).promptValue).toBe("sent text");
+  });
+
+  it("keeps the user's persisted draft when a restored retry arrives in its scope", () => {
+    const render = (state, currentPromptValue, currentPromptRevision) => transitionComposerDraftScope(state, {
+      threadId: "thread-a",
+      interactionId: "turn-2",
+      currentPromptValue,
+      currentPromptRevision,
+      restoredDraft: { text: "failed turn text" },
+      persistedDraftText: "typed while it ran",
+    });
+    const entered = transitionComposerDraftScope(createComposerDraftScopeState(), {
+      threadId: "thread-a",
+      interactionId: "turn-2",
+      currentPromptValue: "",
+      persistedDraftText: "typed while it ran",
+    });
+    const restored = render(entered.state, entered.promptValue, entered.promptRevision);
+    expect(restored.promptValue).toBe("typed while it ran");
+    const next = render(restored.state, restored.promptValue, restored.promptRevision);
+    expect(next.promptValue).toBe("typed while it ran");
+    expect(next.promptRevision).toBe(restored.promptRevision);
+  });
+
   it("retains a newer prompt revision across unrelated renders in the same scope", () => {
     const initial = transitionComposerDraftScope(createComposerDraftScopeState(), {
       threadId: 10,
@@ -1545,6 +1627,62 @@ describe("product workspace keyboard behavior", () => {
         promptValue: "user edited the restored prompt",
         restoredDraftInteractionId: 100,
       });
+  });
+
+  it("returns retry text the user's draft kept out once the user empties the composer", () => {
+    const entered = transitionComposerDraftScope(createComposerDraftScopeState(), {
+      threadId: 10,
+      interactionId: 100,
+      currentPromptValue: "",
+      persistedDraftText: "my newer draft",
+    });
+    const withheld = transitionComposerDraftScope(entered.state, {
+      threadId: 10,
+      interactionId: 100,
+      currentPromptValue: "my newer draft",
+      currentPromptRevision: entered.promptRevision,
+      restoredDraft: { text: "the failed prompt" },
+      persistedDraftText: "my newer draft",
+    });
+    expect(withheld.promptValue).toBe("my newer draft");
+    const emptied = transitionComposerDraftScope(withheld.state, {
+      threadId: 10,
+      interactionId: 100,
+      currentPromptValue: "",
+      currentPromptRevision: withheld.promptRevision + 1,
+      restoredDraft: { text: "the failed prompt" },
+      persistedDraftText: "",
+    });
+    expect(emptied.promptValue).toBe("the failed prompt");
+  });
+
+  it("restores a later failed attempt of the same interaction once the user's edit is cleared", () => {
+    const first = transitionComposerDraftScope(createComposerDraftScopeState(), {
+      threadId: 10,
+      interactionId: 100,
+      currentPromptValue: "",
+      restoredDraft: { text: "attempt one", retryAttemptId: 1 },
+      persistedDraftText: null,
+    });
+    expect(first.promptValue).toBe("attempt one");
+    const withheld = transitionComposerDraftScope(first.state, {
+      threadId: 10,
+      interactionId: 100,
+      currentPromptValue: "my edit",
+      currentPromptRevision: first.promptRevision + 1,
+      restoredDraft: { text: "attempt two", retryAttemptId: 2 },
+      persistedDraftText: "my edit",
+    });
+    expect(withheld.promptValue).toBe("my edit");
+    const emptied = transitionComposerDraftScope(withheld.state, {
+      threadId: 10,
+      interactionId: 100,
+      currentPromptValue: "",
+      currentPromptRevision: withheld.promptRevision + 1,
+      restoredDraft: { text: "attempt two", retryAttemptId: 2 },
+      persistedDraftText: "",
+    });
+    expect(emptied.promptValue).toBe("attempt two");
   });
 
   it("keeps an explicit empty follow-up tombstone ahead of a failed prompt restoration", () => {

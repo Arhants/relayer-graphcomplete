@@ -1,5 +1,7 @@
 import { createEvalProviderSetup } from "./provider-setup.mjs";
 import { createEvalCredentialStore } from "./credential-store.mjs";
+import { createManagedRuntimeInstaller } from "../main/managed-runtimes/installer.mjs";
+import { managedRuntimeRequirementForHarness } from "../shared/managed-runtime-requirements.mjs";
 import { HumanTaskService } from "./human-task-service.mjs";
 import { homedir } from "node:os";
 import { createEvalDashboard, openHumanReview, createHumanTaskSurface, createSettingsSurface } from "./web-host.mjs";
@@ -24,8 +26,10 @@ import {
 } from "@relayer/eval-runner";
 import { evalHarnessConfigurationPaths, evalRuntimeTarget } from "./configuration-paths.mjs";
 import { EvalService } from "./eval-service.mjs";
+import { loadExternalEvalCatalog } from "./external-catalog.mjs";
 import { loadAtomicAnnotationSnapshots } from "./annotation-snapshot-loader.mjs";
 import { loadJudgeScreenshotArtifact } from "./judge-screenshot-loader.mjs";
+import { createLiveCredentialValidator, createLiveModelRouteResolver } from "./live-credentials.mjs";
 import {
   LOCAL_SIMULATED_USER_JUDGE_CONFIGURATION as LOCAL_INPUT_GROUNDING_JUDGE_CONFIGURATION,
   buildInputGroundingTopology,
@@ -61,6 +65,13 @@ const permissionCatalogPath = join(repositoryRoot, "permissions", "desktop.json"
 const productRendererDirectory = join(desktopDirectory, "renderer");
 const evalRendererDirectory = join(desktopDirectory, "eval-renderer");
 const configurationPaths = evalHarnessConfigurationPaths({ harnessDirectory, targetKey: evalTarget.key });
+// Only explicitly selected, commit-pinned developer catalogs execute here.
+const externalCatalog = process.env.RELAYER_EVAL_CATALOG_ROOT
+  ? await loadExternalEvalCatalog({
+    repositoryDirectory: resolve(process.env.RELAYER_EVAL_CATALOG_ROOT),
+    lock: JSON.parse(await readFile(join(repositoryRoot, "eval-catalog.lock.json"), "utf8")),
+  })
+  : null;
 process.env.PYTHONPATH = [join(repositoryRoot, "python", "relayer-graph", "src"), process.env.PYTHONPATH].filter(Boolean).join(delimiter);
 const codexBrowserMcpInspection = await inspectCodexBrowserMcpRuntime({ executable: process.execPath, packageRoot: join(repositoryRoot, "node_modules", "chrome-devtools-mcp") });
 let providerSetup;
@@ -71,6 +82,8 @@ let dashboard;
 const reviewSurfaces = new Set();
 const judgeBrowser = createJudgeBrowser();
 const evalStateFile = join(userDataDirectory, "eval-data", "test-runs.json");
+// Validation only: startup checks local bytes, never prepares or probes runtimes.
+const runtimeFileValidator = createManagedRuntimeInstaller({ root: join(userDataDirectory, "managed-runtimes") });
 const graphRuntime = new GraphCompleteRuntimeService({
   userDataDirectory,
   graphServerBinary,
@@ -85,6 +98,11 @@ const graphRuntime = new GraphCompleteRuntimeService({
   resolveClaudeRuntime: () => providerSetup.resolveClaudeRuntime(),
   resolvePrimeRuntime: () => providerSetup.resolvePrimeRuntime(),
   acquireProviderExecution: (providerId) => providerSetup.acquireExecution(providerId),
+  coordinateHarnessReadiness: ({ implementation }) => ["codex.basic", "claude.basic", "prime.agent"].includes(implementation),
+  validateHarnessRuntime: async ({ implementation }) => {
+    await runtimeFileValidator.validate(managedRuntimeRequirementForHarness(implementation).recipeId);
+    return true;
+  },
   // Eval keeps the temporal substrate coherent for every matrix cell. The selected
   // harness configuration independently controls whether agent-authored Complete is
   // exposed, so control and treatment can share one production-faithful runtime.
@@ -154,18 +172,6 @@ async function start() {
   try { await lock.writeFile(String(process.pid)); } finally { await lock.close(); }
   requireRunning();
   const runtimeSession = await graphRuntime.start();
-  requireRunning();
-  // Prime has an explicit readiness path; fixture and existing Codex startup stay
-  // unchanged. Publish the initial unavailable state before the product opens.
-  await graphRuntime.recordHarnessReadiness([...runtimeSession.configurations.values()]
-    .filter(({ implementation }) => implementation === "prime.agent")
-    .map((configuration) => ({
-      harnessId: configuration.name,
-      configurationDigest: runtimeSession.digestConfiguration(configuration),
-      generation: 0,
-      available: false,
-      unavailableReason: { code: "harness_readiness_pending", message: "Prime Eval runtime is not ready." },
-    })));
 
   requireRunning();
   productServer = new RelayerAppServerService({
@@ -197,6 +203,13 @@ async function start() {
   try { await providerSetup.start(primeProfile); }
   finally { if (primeProfile) primeProfile.apiKey = undefined; }
   requireRunning();
+  const resolveLiveModelRoute = createLiveModelRouteResolver({
+    readModelSettings: () => productRequest(productSession, "/api/model-settings"),
+    readDefaultModelSelection: (harnessId) => productRequest(productSession,
+      `/api/model-selection/default?harnessId=${encodeURIComponent(harnessId)}`),
+    ensureCodexModelCatalog: () => providerSetup.settingsOpened(),
+    selectPrimeModel: (harnessId) => providerSetup.select(harnessId),
+  });
   const simulatedUserJudgeRunner = createLocalSimulatedUserJudgeRunner({
     resolveCodexRuntime: () => providerSetup.resolveCodexJudgeRuntime(),
     loadLayer: ({ threadId, turnId, layerId }) => productRequest(productSession, (
@@ -212,6 +225,7 @@ async function start() {
     stateFile: evalStateFile,
     productSession,
     configurationPaths,
+    externalCatalog,
     simulatedUserJudgeRunner,
     candidateTraceExporter: (productInteractionId, targetDirectory, correlation) => (
       graphRuntime.exportCandidateTrace(productInteractionId, targetDirectory, correlation)
@@ -223,6 +237,25 @@ async function start() {
     selectModel: (harnessId) => providerSetup.select(harnessId),
     selectPrimeModel: (harnessId) => providerSetup.select(harnessId),
     primeModelAvailability: (harnessId) => providerSetup.availability(harnessId),
+    validateLiveCredential: async (configuration, credentialReference) => {
+      let selectedRoute;
+      let lease;
+      const validate = createLiveCredentialValidator({
+        resolveModelRoute: async (candidate) => {
+          selectedRoute = await resolveLiveModelRoute(candidate);
+          return selectedRoute;
+        },
+        resolveCodexRuntime: async () => {
+          if (!selectedRoute.selectedModel) return providerSetup.resolveCodexJudgeRuntime();
+          lease = await providerSetup.acquireExecution(selectedRoute.provider.id);
+          const access = await lease.runtime.executionAccess();
+          if (access.kind !== "managed-runtime" || access.runtimeId !== "codex") throw new Error("Selected provider has no Codex execution access.");
+          return { ...await providerSetup.resolveCodexRuntime(), environment: access.environment };
+        },
+      });
+      try { return await validate(configuration, credentialReference); }
+      finally { await lease?.release(); }
+    },
     conversationImportEnabled: true,
     annotationSnapshotLoader: (threadIds) => loadAnnotationSnapshots(productSession, threadIds),
     targetKey: evalTarget.key,

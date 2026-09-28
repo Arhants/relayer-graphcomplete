@@ -6,10 +6,11 @@ use super::{
 use crate::product::{
     CompleteProviderOnboardingCommand, CreateModelFamilyCommand, HarnessModelRule,
     HarnessModelRules, ModelFamily, ModelFamilyId, ModelFamilyMember, ModelSelection,
-    ModelSettings, ModelSettingsDefaults, ProviderCatalogSnapshot, ProviderDefinition, ProviderId,
-    ProviderOnboardingCompletion, ProviderOnboardingFamilyIntent, ProviderOnboardingProjection,
-    ProviderOnboardingStatus, ReorderModelFamiliesCommand, UpdateHarnessModelRulesCommand,
-    UpdateModelFamilyCommand, UpdateModelSettingsDefaultsCommand, ValidateModelSelectionCommand,
+    ModelSettings, ModelSettingsDefaults, ProviderCatalogSnapshot, ProviderConnectionEvent,
+    ProviderConnectionStamp, ProviderDefinition, ProviderId, ProviderOnboardingCompletion,
+    ProviderOnboardingFamilyIntent, ProviderOnboardingProjection, ProviderOnboardingStatus,
+    ReorderModelFamiliesCommand, UpdateHarnessModelRulesCommand, UpdateModelFamilyCommand,
+    UpdateModelSettingsDefaultsCommand, ValidateModelSelectionCommand,
 };
 use axum::{
     Json,
@@ -70,6 +71,17 @@ pub(super) struct ValidateSelectionRequest {
 #[serde(rename_all = "camelCase")]
 pub(super) struct DefaultSelectionQuery {
     harness_id: String,
+}
+
+/// Every catalog publish names the connection generation its result started with (PROV-002).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PublishProviderCatalogRequest {
+    #[serde(flatten)]
+    snapshot: ProviderCatalogSnapshot,
+    connection_generation: i64,
+    #[serde(default)]
+    connection_event: Option<ProviderConnectionEvent>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -135,7 +147,12 @@ pub(super) async fn get(
     headers: HeaderMap,
 ) -> Result<Json<ModelSettings>, ApiError> {
     authorize_read(&state, &headers)?;
-    Ok(Json(state.product.model_settings().await?))
+    let mut settings = state.product.model_settings().await?;
+    let permitted = permission_available_in(&state, &settings);
+    for harness in &mut settings.harnesses {
+        harness.permission_available = permitted.contains(&harness.id);
+    }
+    Ok(Json(settings))
 }
 
 pub(super) async fn provider_onboarding_projection(
@@ -247,17 +264,27 @@ pub(super) async fn update_defaults(
             "At least one of harnessId, providerId, or familyId is required.",
         ));
     }
+    // Only a save without a harness can move the harness, which needs the permission profiles.
+    let permission_available = if request.harness_id.is_none() {
+        permission_available_harnesses(&state).await?
+    } else {
+        HashSet::new()
+    };
     Ok(Json(
         state
             .product
-            .update_model_settings_defaults(UpdateModelSettingsDefaultsCommand {
-                harness_id: request.harness_id,
-                provider_id: request.provider_id.map(ProviderId::parse).transpose()?,
-                family_id: request
-                    .family_id
-                    .map(ModelFamilyId::try_from_value)
-                    .transpose()?,
-            })
+            .update_model_settings_defaults(
+                UpdateModelSettingsDefaultsCommand {
+                    harness_id: request.harness_id,
+                    provider_id: request.provider_id.map(ProviderId::parse).transpose()?,
+                    family_id: request
+                        .family_id
+                        .map(ModelFamilyId::try_from_value)
+                        .transpose()?,
+                },
+                &state.default_harness_configuration,
+                &permission_available,
+            )
             .await?,
     ))
 }
@@ -366,10 +393,19 @@ pub(super) async fn default_selection(
 pub(super) async fn publish_provider_catalog(
     State(state): State<ApiState>,
     headers: HeaderMap,
-    Json(snapshot): Json<ProviderCatalogSnapshot>,
+    Json(request): Json<PublishProviderCatalogRequest>,
 ) -> Result<StatusCode, ApiError> {
     authorize_provider_publish(&state, &headers)?;
-    state.product.publish_provider_catalog(snapshot).await?;
+    state
+        .product
+        .publish_provider_catalog(
+            request.snapshot,
+            ProviderConnectionStamp {
+                generation: request.connection_generation,
+                event: request.connection_event,
+            },
+        )
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -458,10 +494,14 @@ fn enabled_by_default() -> bool {
 
 async fn permission_available_harnesses(state: &ApiState) -> Result<HashSet<String>, ApiError> {
     let settings = state.product.model_settings().await?;
+    Ok(permission_available_in(state, &settings))
+}
+
+fn permission_available_in(state: &ApiState, settings: &ModelSettings) -> HashSet<String> {
     let Some(runtime) = state.runtime.as_ref() else {
-        return Ok(HashSet::new());
+        return HashSet::new();
     };
-    Ok(settings
+    settings
         .harnesses
         .iter()
         .filter(|harness| runtime.has_configuration(&harness.id))
@@ -478,7 +518,7 @@ async fn permission_available_harnesses(state: &ApiState) -> Result<HashSet<Stri
                 })
         })
         .map(|harness| harness.id.clone())
-        .collect())
+        .collect()
 }
 
 #[cfg(test)]

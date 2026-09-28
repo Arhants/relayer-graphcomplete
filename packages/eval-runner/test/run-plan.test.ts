@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HarnessConfiguration } from "@relayer/harness-host";
-import { expandTestRun } from "../src/run-plan.js";
+import { expandCapabilitySuiteRun, expandTestRun } from "../src/run-plan.js";
+import type { ResolvedCapabilitySuiteV1 } from "../src/suites/contracts.js";
 
 const medium: HarnessConfiguration = {
   schemaVersion: 1,
@@ -44,5 +45,32 @@ describe("test run expansion", () => {
       harnessConfigurationNames: ["missing"],
       judgeConfiguration: { name: "none" },
     }, new Map())).toThrow("Unknown harness configuration: missing");
+  });
+
+  it("expands a resolved suite through the same ordered case by harness matrix", () => {
+    const suite: ResolvedCapabilitySuiteV1 = {
+      identity: { suiteId: "synthetic-suite", suiteDigest: `sha256:${"0".repeat(64)}`, status: "candidate", presentationContract: {} as ResolvedCapabilitySuiteV1["identity"]["presentationContract"], members: [
+        { caseId: "case-a", expectedCaseSnapshotDigest: `sha256:${"1".repeat(64)}`, outcomeContractVersion: "outcome-v1", outcomeContractDigest: `sha256:${"2".repeat(64)}`, presentationPolicyDigest: `sha256:${"3".repeat(64)}` },
+        { caseId: "case-b", expectedCaseSnapshotDigest: `sha256:${"4".repeat(64)}`, outcomeContractVersion: "outcome-v1", outcomeContractDigest: `sha256:${"5".repeat(64)}`, presentationPolicyDigest: `sha256:${"6".repeat(64)}` },
+      ] },
+      members: [
+        { caseId: "case-a", expectedCaseSnapshotDigest: `sha256:${"1".repeat(64)}`, outcomeContractVersion: "outcome-v1", outcomeContractDigest: `sha256:${"2".repeat(64)}`, presentationPolicyDigest: `sha256:${"3".repeat(64)}`, caseSnapshot: {} as never },
+        { caseId: "case-b", expectedCaseSnapshotDigest: `sha256:${"4".repeat(64)}`, outcomeContractVersion: "outcome-v1", outcomeContractDigest: `sha256:${"5".repeat(64)}`, presentationPolicyDigest: `sha256:${"6".repeat(64)}`, caseSnapshot: {} as never },
+      ],
+    };
+    const executions = expandCapabilitySuiteRun({
+      testRunId: "suite-run",
+      suite,
+      harnessConfigurationNames: [medium.name, high.name],
+      judgeConfiguration: { name: "judge-v1" },
+    }, new Map([[medium.name, medium], [high.name, high]]));
+
+    expect(executions).toHaveLength(4);
+    expect(executions.map(({ testCaseId }) => testCaseId)).toEqual(
+      suite.members.flatMap(({ caseId }) => [caseId, caseId]),
+    );
+    expect(executions.every(({ suiteIdentity }) => suiteIdentity.suiteDigest === suite.identity.suiteDigest)).toBe(true);
+    expect(executions[0]?.suiteIdentity).not.toBe(suite.identity);
+    expect(Object.isFrozen(executions[0]?.suiteIdentity)).toBe(true);
   });
 });

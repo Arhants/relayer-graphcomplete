@@ -241,6 +241,12 @@ export interface HarnessRunContext {
   /** Execution-scoped and never persisted in harness session state or receipts. */
   readonly access?: HarnessExecutionAccess;
   readonly trace: HarnessTraceSink;
+  /**
+   * Present only for a harness that declares `supportsForceStop`. It aborts when this
+   * completion was cancelled and its native turn has not settled within two minutes. The
+   * harness then ends this one turn's native work, and nothing else, and settles.
+   */
+  readonly forceSignal?: AbortSignal;
 }
 
 /**
@@ -294,6 +300,11 @@ export type HarnessExecutionAccess =
 export interface HarnessExecutionAccessLease {
   readonly access: HarnessExecutionAccess;
   release(): void | Promise<void>;
+  /**
+   * Called after release once the lease's owner has durably recorded that the work using
+   * this access ended. A failure is returned to the owner, which retries.
+   */
+  acknowledge?(): void | Promise<void>;
 }
 
 /** One currently resolvable model-family member. Array order is family order. */
@@ -338,6 +349,11 @@ export interface HarnessExecutionAccessBroker {
     acceptedContracts: readonly string[],
     signal: AbortSignal,
   ): Promise<HarnessExecutionAccessLease>;
+  /**
+   * The owner acknowledged a lease this host no longer knows (it forgot the released access,
+   * or restarted). Providers retry any work that waited on such an acknowledgement.
+   */
+  acknowledgeUnknownRelease?(): void | Promise<void>;
 }
 
 export interface InteractionModelSelection {
@@ -352,6 +368,12 @@ export interface Harness {
   traceSupport?(): HarnessTraceSupport;
   /** Root Complete is mandatory; this opts the same method into agent-invoked Complete. */
   readonly supportsInvokedComplete?: true;
+  /**
+   * complete() honours HarnessRunContext.forceSignal by ending only that turn's native work.
+   * The host then releases the turn's provider access, waiting a bounded time for the turn
+   * to settle. Without it, a cancelled turn that never settles keeps its access.
+   */
+  readonly supportsForceStop?: true;
   complete(context: HarnessRunContext, signal?: AbortSignal): NativeExecutionHandle | Promise<void>;
   state(): HarnessSessionState;
   dispose?(): void | Promise<void>;

@@ -10,7 +10,7 @@ import { startModelCatalogRefreshServer } from "../desktop/main/models/model-cat
 import { GraphCompleteRuntimeService } from "../desktop/main/services/graphcomplete-runtime.mjs";
 import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 import { createSettingsStore } from "../desktop/main/services/settings-store.mjs";
-import { registerComposerDraftIpc } from "../desktop/main/ipc/register-ipc.mjs";
+import { registerComposerDraftIpc, registerLayerSelectionIpc } from "../desktop/main/ipc/register-ipc.mjs";
 import { createWindowFactory } from "../desktop/main/window.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
@@ -42,6 +42,7 @@ function registerTestIpc() {
   }));
   ipcMain.handle("relayer:appearance-read", () => ({ appearance: "dark" }));
   registerComposerDraftIpc({ ipcMain, settings: desktopSettings });
+  registerLayerSelectionIpc({ ipcMain, settings: { read: () => desktopSettings.read(), update: (fn) => desktopSettings.update(fn) } });
   ipcMain.handle("relayer:folder-choose", () => null);
   ipcMain.handle("relayer:provider-status", () => ({
     adapters: [],
@@ -70,6 +71,8 @@ function unregisterTestIpc() {
     "relayer:appearance-read",
     "relayer:composer-drafts-read",
     "relayer:composer-drafts-write",
+    "relayer:layer-selections-read",
+    "relayer:layer-selections-remember",
     "relayer:folder-choose",
     "relayer:provider-status",
     "relayer:model-catalog-settings-open",
@@ -108,11 +111,23 @@ async function run() {
   registerTestIpc();
   keepaliveWindow = new BrowserWindow({ width: 1, height: 1, show: false });
   const configurationPath = join(repositoryRoot, "harnesses", "fixture-task-system.yaml");
+  let providerAttempts = 0;
   const runtime = new GraphCompleteRuntimeService({
     userDataDirectory: dataDirectory,
     graphServerBinary: join(repositoryRoot, "target", "debug", "relayer-graph-server"),
     configurationPaths: [configurationPath],
     additionalImplementations: { "fixture.task-system": taskSystemFixtureFactory },
+    acquireProviderExecution: async (providerId) => {
+      // Author the first graph for selection persistence; later attempts retain
+      // the original runner's failed-prompt draft/tombstone coverage.
+      if (++providerAttempts > 1) throw new Error("Deterministic provider admission failure.");
+      return {
+        definition: { id: providerId, adapterId: "codex-subscription", accessContract: "managed-runtime@1" },
+        descriptor: { adapterId: "codex-subscription", accessContract: "managed-runtime@1", implementationVersion: "1" },
+        runtime: { executionAccess: async () => ({ kind: "managed-runtime", environment: {} }) },
+        async release() {},
+      };
+    },
   });
   services.push(runtime);
   const runtimeSession = await runtime.start();
@@ -133,7 +148,7 @@ async function run() {
     systemFamily: { key: "codex", name: "Codex", modelIds: ["fixture-model"] },
   };
   const modelCatalogRefreshServer = await startModelCatalogRefreshServer({
-    refresh: () => product.publishProviderCatalog(catalogSnapshot),
+    refresh: () => product.seedProviderCatalog(catalogSnapshot),
   });
   services.push(modelCatalogRefreshServer);
   let productSession;
@@ -149,7 +164,7 @@ async function run() {
     });
     services.push(product);
     productSession = await product.start();
-    await product.publishProviderCatalog(catalogSnapshot);
+    await product.seedProviderCatalog(catalogSnapshot);
   };
   await startProduct();
   await productRequest(productSession, "/api/model-families", {
@@ -466,6 +481,19 @@ async function run() {
     !document.querySelector('#threadView')?.classList.contains('hidden')
       && document.querySelector('[data-thread="${firstThread.id}"]')?.classList.contains('active')
   )`));
+  const selectionThread = await productRequest(productSession, `/api/threads/${firstThread.id}`);
+  if (!selectionThread.interactions.some((turn) => turn.completionStatus === "accepted")) {
+    throw new Error(`Selection restart fixture has no accepted graph: ${JSON.stringify(selectionThread)}`);
+  }
+  const rememberedNodeId = await waitFor("a non-default node to remember", () => evaluate(`(() => {
+    const node = document.querySelector('.graph-node:not(.selected)');
+    if (!node) return false;
+    node.click();
+    return node.dataset.node;
+  })()`));
+  await waitFor("node choice persisted outside the renderer origin", async () => (
+    (await desktopSettings.read()).layerSelections?.some(([, nodeId]) => nodeId === rememberedNodeId)
+  ));
   await setValue("#threadPrompt", followupPrompt);
   await clickProjectAction(project.id);
   await waitFor("the separate empty pending composer", () => evaluate(`(
@@ -511,6 +539,10 @@ async function run() {
       && document.querySelector('#scopeLabel')?.textContent === ${JSON.stringify(project.name)}
   )`));
   await click(`[data-thread="${firstThread.id}"]`);
+  await waitFor("the remembered detail after restart on a different origin", () => evaluate(`(
+    document.querySelector('.graph-node.selected')?.dataset.node === ${JSON.stringify(rememberedNodeId)}
+      && !document.querySelector('#inspector')?.classList.contains('hidden')
+  )`));
   await waitFor("the follow-up draft after app restart", () => evaluate(`(
     document.querySelector('#threadPrompt')?.value === ${JSON.stringify(followupPrompt)}
   )`));
@@ -635,6 +667,7 @@ async function run() {
     projectId: project.id,
     threads: 2,
     restartPersistence: true,
+    layerSelectionRestartPersistence: true,
     evidence,
   })}\n`);
   exitCode = 0;

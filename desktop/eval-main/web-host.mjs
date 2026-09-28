@@ -2,7 +2,11 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { readFile, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join, resolve, extname, sep } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
+import { createSettingsStore } from "../main/services/settings-store.mjs";
+import { validWorkspaceRatio } from "../renderer/src/product-workspace/workspace-layout.js";
+
+const reviewPresentationSettings = createSettingsStore(resolve(process.env.RELAYER_EVAL_USER_DATA_DIR || join(homedir(), ".relayer", "eval-web")));
 
 const bridge = new URL("../eval-renderer/web-bridge.js", import.meta.url);
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
@@ -81,12 +85,27 @@ export async function serveEvalSurface(handle) {
   };
 }
 
-export async function createReviewSurface({ productSession, context, annotationToken, humanGrading, fetchImpl = fetch }) {
+async function workspaceLayoutPreference(request, response, presentationSettings) {
+  if (request.method === "GET") {
+    const ratio = (await presentationSettings.read()).workspaceSplitRatio;
+    return json(response, validWorkspaceRatio(ratio) ? ratio : 0.5);
+  }
+  if (request.method === "POST") {
+    const ratio = JSON.parse((await body(request, 64)).toString());
+    if (!validWorkspaceRatio(ratio)) throw fail(400, "Invalid workspace split ratio.");
+    await presentationSettings.update((current) => ({ ...current, workspaceSplitRatio: ratio }));
+    return json(response, ratio);
+  }
+  throw fail(405, "Method not allowed.");
+}
+
+export async function createReviewSurface({ productSession, context, annotationToken, humanGrading, fetchImpl = fetch, presentationSettings = reviewPresentationSettings }) {
   if (!productSession.readOnlyCookie) throw new Error("Review requires read-only authority.");
   const cookie = productSession.readOnlyCookie;
   const allowedThreads = new Set(context.cases.flatMap((item) => item.threadIds).map(String));
   let allowedProjects = new Set();
   return serveEvalSurface(async ({ request, response, url }) => {
+    if (url.pathname === "/eval-api/workspace-layout") return workspaceLayoutPreference(request, response, presentationSettings);
     if (url.pathname === "/eval-api/context" && request.method === "GET") return json(response, context);
     if (humanGrading && url.pathname === "/eval-api/task" && request.method === "GET") return json(response, { ...humanGrading.task(), workspaceGrading: 2 });
     if (humanGrading && url.pathname === "/eval-api/grade" && request.method === "POST") return json(response, await humanGrading.grade(JSON.parse((await body(request)).toString())));
@@ -162,7 +181,7 @@ export async function createEvalDashboard({ service, rendererDirectory, refreshC
     getRun: ([id]) => service.getRun(id),
     createRun: ([selection]) => service.createRun(selection),
     judgeImportedConversation: ([id, judge]) => service.judgeImportedConversation(id, judge),
-    rejudgeExecution: ([id, judge]) => service.rejudgeExecution(id, judge),
+    rejudgeExecution: ([id, judge, authorization]) => service.rejudgeExecution(id, judge, authorization),
     openReview: ([id]) => openReview(id),
     exportAnnotations: ([id]) => service.exportAnnotatedExecution(id),
     loadCandidateTrace: ([id, turn]) => service.candidateTraceContext(id, turn),
@@ -272,9 +291,10 @@ export async function openHumanReview({ executionId, reviewContext, productSessi
 }
 
 // Live task authority is intentionally separate from immutable review authority.
-export async function createHumanTaskSurface({ tasks, sessionId, productSession, fetchImpl = fetch }) {
+export async function createHumanTaskSurface({ tasks, sessionId, productSession, fetchImpl = fetch, presentationSettings = reviewPresentationSettings }) {
   const surface = await serveEvalSurface(async ({ request, response, url }) => {
     const session = tasks.get(sessionId);
+    if (url.pathname === "/eval-api/workspace-layout") return workspaceLayoutPreference(request, response, presentationSettings);
     if (url.pathname === "/eval-api/task" && request.method === "GET") return json(response, { ...session, workspaceGrading: 2 });
     if (url.pathname === "/eval-api/observe" && request.method === "POST") return json(response, await tasks.observe(sessionId, JSON.parse((await body(request)).toString())));
     if (url.pathname === "/eval-api/grade" && request.method === "POST") return json(response, await tasks.grade(sessionId, JSON.parse((await body(request)).toString())));

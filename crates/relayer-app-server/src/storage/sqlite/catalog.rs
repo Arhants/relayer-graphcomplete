@@ -5,12 +5,12 @@ use crate::product::{
     HarnessModelCompatibility, HarnessModelRule, HarnessModelRules,
     HarnessRuntimeAvailabilityUpdate, ManagedFamilyPolicy, ModelFamily, ModelFamilyId,
     ModelFamilyKind, ModelFamilyMember, ModelSettings, ModelSettingsDefaults, ProductHarness,
-    Provider, ProviderCatalogSnapshot, ProviderDefinition, ProviderId, ProviderModel,
-    ProviderOnboardingCompletion, ProviderOnboardingFamily, ProviderOnboardingFamilyIntent,
-    ProviderOnboardingHarness, ProviderOnboardingManagedFamily, ProviderOnboardingModel,
-    ProviderOnboardingProjection, ProviderOnboardingProvider, ProviderOnboardingResolution,
-    ProviderOnboardingStatus, ReorderModelFamiliesCommand, RuntimeProductHarness,
-    SystemFamilySnapshot, UnavailableReason, UpdateHarnessModelRulesCommand,
+    Provider, ProviderCatalogSnapshot, ProviderConnectionStamp, ProviderDefinition, ProviderId,
+    ProviderModel, ProviderOnboardingCompletion, ProviderOnboardingFamily,
+    ProviderOnboardingFamilyIntent, ProviderOnboardingHarness, ProviderOnboardingManagedFamily,
+    ProviderOnboardingModel, ProviderOnboardingProjection, ProviderOnboardingProvider,
+    ProviderOnboardingResolution, ProviderOnboardingStatus, ReorderModelFamiliesCommand,
+    RuntimeProductHarness, SystemFamilySnapshot, UnavailableReason, UpdateHarnessModelRulesCommand,
     UpdateModelFamilyCommand, UpdateModelSettingsDefaultsCommand, ValidateModelSelectionCommand,
     validate_family,
 };
@@ -24,6 +24,9 @@ impl SqliteProductStore {
         &self,
         updates: &[HarnessRuntimeAvailabilityUpdate],
     ) -> Result<(), StorageError> {
+        // Held through the commit, so a check and its write cannot interleave with another
+        // publication (PROV-005).
+        let mut accepted_generations = self.harness_readiness_generations.lock().await;
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let mut seen = HashSet::new();
         for update in updates {
@@ -31,6 +34,15 @@ impl SqliteProductStore {
                 return Err(StorageError::Catalog(CatalogError::invalid(
                     "harness_readiness_invalid",
                     "Harness readiness updates require unique harnesses and a positive generation.",
+                )));
+            }
+            if accepted_generations
+                .get(&update.harness_id)
+                .is_some_and(|accepted| update.generation < *accepted)
+            {
+                return Err(StorageError::Catalog(CatalogError::invalid(
+                    "harness_readiness_superseded",
+                    "Harness readiness came from an older readiness evaluation than one already published.",
                 )));
             }
             let reason = match (update.available, update.unavailable_reason.as_ref()) {
@@ -65,6 +77,9 @@ impl SqliteProductStore {
             }
         }
         transaction.commit().await?;
+        for update in updates {
+            accepted_generations.insert(update.harness_id.clone(), update.generation);
+        }
         Ok(())
     }
 
@@ -140,11 +155,12 @@ impl SqliteProductStore {
     pub(crate) async fn load_provider_definitions(
         &self,
     ) -> Result<Vec<ProviderDefinition>, StorageError> {
-        sqlx::query("SELECT id,adapter_id,label,endpoint,access_contract,credential_reference,lifecycle_state,removed_at FROM model_providers ORDER BY label,id")
+        sqlx::query("SELECT id,adapter_id,label,endpoint,access_contract,credential_reference,lifecycle_state,removed_at,connection_generation FROM model_providers ORDER BY label,id")
             .fetch_all(&self.pool).await?.into_iter().map(|row| Ok(ProviderDefinition {
                 id: ProviderId::from_database(row.try_get(0)?), adapter_id: row.try_get(1)?,
                 label: row.try_get(2)?, endpoint: row.try_get(3)?, access_contract: row.try_get(4)?,
                 credential_reference: row.try_get(5)?, lifecycle_state: row.try_get(6)?, removed_at: row.try_get(7)?,
+                connection_generation: row.try_get(8)?,
             })).collect()
     }
 
@@ -188,7 +204,11 @@ impl SqliteProductStore {
                         .await?;
                 }
                 if old_state == "removal_pending" && definition.lifecycle_state == "tombstoned" {
-                    let running: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM interaction_attempts WHERE provider_id=?1 AND outcome='running')")
+                    // An undecided attempt Relayer no longer waits on does not count; its outcome
+                    // is reconciled from the canonical graph later. This drain is necessary but
+                    // not sufficient: live native work is guarded by the harness host's claim
+                    // and the provider service's lease count.
+                    let running: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM interaction_attempts WHERE provider_id=?1 AND outcome='running' AND native_wait_ended_at IS NULL)")
                         .bind(definition.id.as_str()).fetch_one(&mut *transaction).await?;
                     if running {
                         return Err(StorageError::Catalog(CatalogError::invalid(
@@ -197,10 +217,14 @@ impl SqliteProductStore {
                         )));
                     }
                 }
-                sqlx::query("UPDATE model_providers SET adapter_id=?1,label=?2,endpoint=?3,access_contract=?4,credential_reference=?5,lifecycle_state=?6,removed_at=?7 WHERE id=?8")
+                // Removal supersedes every result still in flight for this provider (PROV-002).
+                // The store owns the generation, so a written definition never sets it.
+                let removal_step = old_state != definition.lifecycle_state;
+                sqlx::query("UPDATE model_providers SET adapter_id=?1,label=?2,endpoint=?3,access_contract=?4,credential_reference=?5,lifecycle_state=?6,removed_at=?7,connection_generation=connection_generation+?9 WHERE id=?8")
                     .bind(&definition.adapter_id).bind(&definition.label).bind(&definition.endpoint)
                     .bind(&definition.access_contract).bind(&definition.credential_reference)
                     .bind(&definition.lifecycle_state).bind(&definition.removed_at).bind(definition.id.as_str())
+                    .bind(i64::from(removal_step))
                     .execute(&mut *transaction).await?;
             } else {
                 if definition.lifecycle_state != "active" {
@@ -284,6 +308,15 @@ impl SqliteProductStore {
             }
         }
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        // The app server's own row is the only readiness record (PROV-006). Read which
+        // runtime configurations it last recorded ready before the reset below.
+        let prior_ready: HashSet<(String, String)> = sqlx::query_as(
+            "SELECT configuration_name,runtime_configuration_digest FROM product_harnesses WHERE available=1 AND product_visible=1",
+        )
+        .fetch_all(&mut *transaction)
+        .await?
+        .into_iter()
+        .collect();
         sqlx::query(
             "UPDATE product_harnesses SET available=0,unavailable_reason_code='harness_unavailable',unavailable_reason_message='The harness runtime is unavailable.',runtime_configuration_digest='sha256:not-loaded'",
         )
@@ -307,6 +340,7 @@ impl SqliteProductStore {
                 execution_access_contracts: Vec::new(),
                 family_policy: None,
                 runtime_available: false,
+                restore_prior_readiness: false,
                 unavailable_reason: Some(UnavailableReason {
                     code: "harness_unavailable".into(),
                     message: "The harness runtime is unavailable.".into(),
@@ -315,7 +349,20 @@ impl SqliteProductStore {
         }
         harnesses.sort_by(|left, right| left.id.cmp(&right.id));
         harnesses.dedup_by(|left, right| left.id == right.id);
-        for harness in harnesses {
+        for mut harness in harnesses {
+            if harness.restore_prior_readiness
+                && harness.runtime_available
+                && !prior_ready
+                    .contains(&(harness.id.clone(), harness.configuration_digest.clone()))
+            {
+                // Valid runtime files alone never make a route ready: a new or changed
+                // digest, or a route last recorded unavailable, waits for an evaluation.
+                harness.runtime_available = false;
+                harness.unavailable_reason = Some(UnavailableReason {
+                    code: "harness_readiness_pending".into(),
+                    message: "This execution configuration is currently unavailable.".into(),
+                });
+            }
             let runtime_present = harness.runtime_available;
             let model_selecting =
                 harness.model_rules.is_some() || !harness.model_compatibility.is_empty();
@@ -583,6 +630,8 @@ impl SqliteProductStore {
     pub(crate) async fn update_model_settings_defaults(
         &self,
         command: &UpdateModelSettingsDefaultsCommand,
+        app_default_harness_id: &str,
+        permission_available_harnesses: &HashSet<String>,
     ) -> Result<ModelSettingsDefaults, StorageError> {
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         if let Some(harness_id) = command.harness_id.as_deref() {
@@ -626,51 +675,51 @@ impl SqliteProductStore {
             }
         }
         let stored_defaults = load_defaults(&mut transaction).await?;
-        if command.harness_id.is_some() || command.family_id.is_some() {
-            let family_id = command.family_id.or(stored_defaults.family_id);
-            let harness_id = command
-                .harness_id
-                .clone()
-                .unwrap_or(stored_defaults.harness_id);
+        // The default provider and the default family are one pair (PROV-008). Choosing a
+        // provider selects its managed family; choosing a managed family selects its provider.
+        // A later catalog refresh then finds nothing to reconcile.
+        let (provider_id, new_family_id, managed_family) = paired_default_on(
+            &mut transaction,
+            command.provider_id.as_ref(),
+            command.family_id,
+        )
+        .await?;
+        // A provider or managed family chosen without a harness also brings a harness that can
+        // run the managed family, so the save never strands the default harness on a family it
+        // cannot execute.
+        let harness_id = match (&command.harness_id, new_family_id) {
+            (None, Some(family_id)) if managed_family => Some(
+                default_harness_for_family_on(
+                    &mut transaction,
+                    family_id,
+                    &stored_defaults.harness_id,
+                    app_default_harness_id,
+                    permission_available_harnesses,
+                )
+                .await?,
+            ),
+            (harness_id, _) => harness_id.clone(),
+        };
+        if harness_id.is_some() || new_family_id.is_some() {
+            let family_id = new_family_id.or(stored_defaults.family_id);
+            let harness_id = harness_id.clone().unwrap_or(stored_defaults.harness_id);
             let configuration_owned =
                 harness_uses_configuration_model_on(&mut transaction, &harness_id).await?;
-            if let Some(family_id) = family_id.filter(|_| !configuration_owned) {
-                let candidates = sqlx::query_as::<_, (String, String)>(
-                "SELECT provider_id,model_id FROM model_family_members WHERE family_id=?1 ORDER BY position",
-            )
-            .bind(family_id.value())
-            .fetch_all(&mut *transaction)
-            .await?;
-                let mut resolvable = false;
-                for (provider_id, model_id) in candidates {
-                    let validation = ValidateModelSelectionCommand {
-                        harness_id: harness_id.clone(),
-                        family_id,
-                        provider_id: ProviderId::from_database(provider_id),
-                        model_id,
-                    };
-                    if validate_model_selection_on(&mut transaction, &validation)
-                        .await
-                        .is_ok()
-                    {
-                        resolvable = true;
-                        break;
-                    }
-                }
-                if !resolvable {
-                    return Err(StorageError::Catalog(CatalogError::invalid(
-                        "default_family_unresolvable",
-                        "The default family must contain a model resolvable by the default harness.",
-                    )));
-                }
+            if let Some(family_id) = family_id.filter(|_| !configuration_owned)
+                && !family_resolves_on(&mut transaction, &harness_id, family_id).await?
+            {
+                return Err(StorageError::Catalog(CatalogError::invalid(
+                    "default_family_unresolvable",
+                    "The default family must contain a model resolvable by the default harness.",
+                )));
             }
         }
         sqlx::query(
             "UPDATE product_model_preferences SET default_harness_configuration_name=COALESCE(?1,default_harness_configuration_name),default_provider_id=COALESCE(?2,default_provider_id),default_family_id=COALESCE(?3,default_family_id),defaults_modified=1 WHERE singleton=1",
         )
-        .bind(command.harness_id.as_deref())
-        .bind(command.provider_id.as_ref().map(ProviderId::as_str))
-        .bind(command.family_id.map(ModelFamilyId::value))
+        .bind(harness_id.as_deref())
+        .bind(provider_id.as_ref().map(ProviderId::as_str))
+        .bind(new_family_id.map(ModelFamilyId::value))
         .execute(&mut *transaction)
         .await?;
         let defaults = load_defaults(&mut transaction).await?;
@@ -681,12 +730,13 @@ impl SqliteProductStore {
     pub(crate) async fn publish_provider_catalog(
         &self,
         snapshot: &ProviderCatalogSnapshot,
+        stamp: ProviderConnectionStamp,
         managed_policy: Option<&FamilyPolicyReference>,
         timestamp: &str,
     ) -> Result<(), StorageError> {
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
-        let lifecycle = sqlx::query_scalar::<_, String>(
-            "SELECT lifecycle_state FROM model_providers WHERE id=?1",
+        let (lifecycle, generation) = sqlx::query_as::<_, (String, i64)>(
+            "SELECT lifecycle_state,connection_generation FROM model_providers WHERE id=?1",
         )
         .bind(snapshot.provider_id.as_str())
         .fetch_optional(&mut *transaction)
@@ -702,6 +752,23 @@ impl SqliteProductStore {
                 "provider_not_active",
                 "Only active provider definitions can publish model catalogs.",
             )));
+        }
+        // PROV-002: a result started under an older connection generation has no effect. The
+        // check sits inside the write transaction, so no lifecycle write can land between it
+        // and this publish.
+        if generation != stamp.generation {
+            return Err(StorageError::Catalog(CatalogError::invalid(
+                "provider_connection_superseded",
+                "The provider connection changed after this catalog result started.",
+            )));
+        }
+        if stamp.event.is_some() {
+            sqlx::query(
+                "UPDATE model_providers SET connection_generation=connection_generation+1 WHERE id=?1",
+            )
+            .bind(snapshot.provider_id.as_str())
+            .execute(&mut *transaction)
+            .await?;
         }
         sqlx::query(
             "UPDATE model_providers SET connected=?2,unavailable_reason_code=?3,unavailable_reason_message=?4,refreshed_at=?5 WHERE id=?1 AND lifecycle_state='active'",
@@ -2020,6 +2087,148 @@ fn overlay_digest(
     Ok(format!("sha256:{:x}", digest.finalize()))
 }
 
+/// Whether some member of the family resolves under the harness.
+async fn family_resolves_on(
+    connection: &mut SqliteConnection,
+    harness_id: &str,
+    family_id: ModelFamilyId,
+) -> Result<bool, StorageError> {
+    let candidates = sqlx::query_as::<_, (String, String)>(
+        "SELECT provider_id,model_id FROM model_family_members WHERE family_id=?1 ORDER BY position",
+    )
+    .bind(family_id.value())
+    .fetch_all(&mut *connection)
+    .await?;
+    for (provider_id, model_id) in candidates {
+        let validation = ValidateModelSelectionCommand {
+            harness_id: harness_id.into(),
+            family_id,
+            provider_id: ProviderId::from_database(provider_id),
+            model_id,
+        };
+        if validate_model_selection_on(connection, &validation)
+            .await
+            .is_ok()
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// The default harness that goes with a newly chosen default provider's managed family.
+///
+/// The stored harness stays when it can run the family. Otherwise the choice follows first-run
+/// onboarding: among available harnesses with an enabled permission profile that can run the
+/// family, the application default harness wins, then the lowest configuration name. When none
+/// can, the save is refused and the defaults stay unchanged.
+async fn default_harness_for_family_on(
+    connection: &mut SqliteConnection,
+    family_id: ModelFamilyId,
+    stored_harness_id: &str,
+    app_default_harness_id: &str,
+    permission_available_harnesses: &HashSet<String>,
+) -> Result<String, StorageError> {
+    if harness_uses_configuration_model_on(connection, stored_harness_id).await?
+        || family_resolves_on(connection, stored_harness_id, family_id).await?
+    {
+        return Ok(stored_harness_id.to_owned());
+    }
+    let mut candidates = sqlx::query_scalar::<_, String>(
+        "SELECT configuration_name FROM product_harnesses WHERE product_visible=1 AND available=1 ORDER BY configuration_name",
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    candidates.sort_by_key(|harness_id| harness_id != app_default_harness_id);
+    for harness_id in candidates {
+        if !permission_available_harnesses.contains(&harness_id)
+            || harness_uses_configuration_model_on(connection, &harness_id).await?
+        {
+            continue;
+        }
+        if family_resolves_on(connection, &harness_id, family_id).await? {
+            return Ok(harness_id);
+        }
+    }
+    Err(StorageError::Catalog(CatalogError::invalid(
+        "default_provider_harness_unavailable",
+        "No available harness can run the selected provider's models.",
+    )))
+}
+
+/// Resolves the provider and family a defaults update writes, keeping them paired.
+///
+/// A provider chosen alone brings its enabled managed family; a provider without one is refused,
+/// so the stored defaults stay unchanged. A chosen family must be active and enabled. A managed
+/// family brings its provider, which must be connected and active, and is refused with a
+/// different provider. A custom family keeps whatever provider was chosen or stored. The last
+/// value says whether the family is a managed family.
+async fn paired_default_on(
+    connection: &mut SqliteConnection,
+    provider_id: Option<&ProviderId>,
+    family_id: Option<ModelFamilyId>,
+) -> Result<(Option<ProviderId>, Option<ModelFamilyId>, bool), StorageError> {
+    match (provider_id, family_id) {
+        (None, None) => Ok((None, None, false)),
+        (Some(provider_id), None) => {
+            let managed = sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM model_families WHERE kind='system' AND managed_provider_id=?1 AND lifecycle_state='active' AND enabled=1 ORDER BY id DESC LIMIT 1",
+            )
+            .bind(provider_id.as_str())
+            .fetch_optional(&mut *connection)
+            .await?
+            .ok_or_else(|| {
+                StorageError::Catalog(CatalogError::invalid(
+                    "default_provider_family_unavailable",
+                    "The selected provider has no enabled model family yet. Refresh its models, then choose it again.",
+                ))
+            })?;
+            Ok((
+                Some(provider_id.clone()),
+                Some(ModelFamilyId::from_database(managed)),
+                true,
+            ))
+        }
+        (provider_id, Some(family_id)) => {
+            let owner = sqlx::query_scalar::<_, Option<String>>(
+                "SELECT CASE WHEN kind='system' THEN managed_provider_id END FROM model_families WHERE id=?1 AND lifecycle_state='active' AND enabled=1",
+            )
+            .bind(family_id.value())
+            .fetch_optional(&mut *connection)
+            .await?
+            .ok_or_else(|| {
+                StorageError::Catalog(CatalogError::invalid(
+                    "default_family_unavailable",
+                    "The selected family is unavailable.",
+                ))
+            })?
+            .map(ProviderId::from_database);
+            if let Some(owner) = owner.as_ref() {
+                if provider_id.is_some_and(|chosen| chosen != owner) {
+                    return Err(StorageError::Catalog(CatalogError::invalid(
+                        "default_family_provider_mismatch",
+                        "The default family belongs to a different provider.",
+                    )));
+                }
+                let connected: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM model_providers WHERE id=?1 AND connected=1 AND lifecycle_state='active')",
+                )
+                .bind(owner.as_str())
+                .fetch_one(&mut *connection)
+                .await?;
+                if !connected {
+                    return Err(StorageError::Catalog(CatalogError::invalid(
+                        "provider_disconnected",
+                        "The selected family's provider is not connected.",
+                    )));
+                }
+            }
+            let managed = owner.is_some();
+            Ok((provider_id.cloned().or(owner), Some(family_id), managed))
+        }
+    }
+}
+
 async fn load_defaults(
     connection: &mut SqliteConnection,
 ) -> Result<ModelSettingsDefaults, StorageError> {
@@ -2146,6 +2355,7 @@ async fn load_harnesses(
                 usable_now: false,
                 usable_provider_ids: Vec::new(),
                 usable_family_ids: Vec::new(),
+                permission_available: false,
             })
         })
         .collect()
@@ -2293,8 +2503,10 @@ async fn replace_system_family(
         policy.id,
         policy.version
     );
+    // Only a legacy default owned solely by this provider moves: the statement below retires it.
+    // A legacy family shared with other providers stays active and stays the default.
     let legacy_default: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM product_model_preferences pref JOIN model_families family ON family.id=pref.default_family_id WHERE pref.singleton=1 AND family.kind='system' AND family.managed_provider_id IS NULL AND family.lifecycle_state='active' AND EXISTS(SELECT 1 FROM model_family_members member WHERE member.family_id=family.id AND member.provider_id=?1))",
+        "SELECT EXISTS(SELECT 1 FROM product_model_preferences pref JOIN model_families family ON family.id=pref.default_family_id WHERE pref.singleton=1 AND family.kind='system' AND family.managed_provider_id IS NULL AND family.lifecycle_state='active' AND EXISTS(SELECT 1 FROM model_family_members member WHERE member.family_id=family.id AND member.provider_id=?1) AND NOT EXISTS(SELECT 1 FROM model_family_members member WHERE member.family_id=family.id AND member.provider_id!=?1))",
     )
     .bind(snapshot.provider_id.as_str())
     .fetch_one(&mut *connection)
@@ -2377,10 +2589,9 @@ async fn replace_system_family(
     replace_family_members(connection, id, &members).await?;
     compact_family_positions(connection).await?;
     // Move only an unset or managed default. A user-owned custom family is never replaced by
-    // reconciliation. A separately chosen provider survives even when the saved family
-    // still belongs to this provider. The entire transition commits atomically.
+    // reconciliation. The entire catalog/family/default transition commits atomically.
     if reconcile_managed_default {
-        sqlx::query("UPDATE product_model_preferences SET default_family_id=CASE WHEN ?3 OR EXISTS(SELECT 1 FROM model_families current WHERE current.id=default_family_id AND current.kind='system' AND current.managed_provider_id=?2) OR (default_family_id IS NULL AND (default_provider_id IS NULL OR default_provider_id=?2 OR NOT EXISTS(SELECT 1 FROM model_providers chosen WHERE chosen.id=default_provider_id AND chosen.lifecycle_state='active' AND chosen.connected=1))) THEN ?1 ELSE default_family_id END,default_provider_id=CASE WHEN ((default_provider_id IS NULL OR default_provider_id=?2) AND (?3 OR EXISTS(SELECT 1 FROM model_families current WHERE current.id=default_family_id AND current.kind='system' AND current.managed_provider_id=?2))) OR (default_family_id IS NULL AND (default_provider_id IS NULL OR default_provider_id=?2 OR NOT EXISTS(SELECT 1 FROM model_providers chosen WHERE chosen.id=default_provider_id AND chosen.lifecycle_state='active' AND chosen.connected=1))) THEN ?2 ELSE default_provider_id END WHERE singleton=1")
+        sqlx::query("UPDATE product_model_preferences SET default_family_id=CASE WHEN ?3 OR EXISTS(SELECT 1 FROM model_families current WHERE current.id=default_family_id AND current.kind='system' AND current.managed_provider_id=?2) OR (default_family_id IS NULL AND (default_provider_id IS NULL OR default_provider_id=?2 OR NOT EXISTS(SELECT 1 FROM model_providers chosen WHERE chosen.id=default_provider_id AND chosen.lifecycle_state='active' AND chosen.connected=1))) THEN ?1 ELSE default_family_id END,default_provider_id=CASE WHEN ?3 OR EXISTS(SELECT 1 FROM model_families current WHERE current.id=default_family_id AND current.kind='system' AND current.managed_provider_id=?2) OR (default_family_id IS NULL AND (default_provider_id IS NULL OR default_provider_id=?2 OR NOT EXISTS(SELECT 1 FROM model_providers chosen WHERE chosen.id=default_provider_id AND chosen.lifecycle_state='active' AND chosen.connected=1))) THEN ?2 ELSE default_provider_id END WHERE singleton=1")
             .bind(id.value())
             .bind(snapshot.provider_id.as_str())
             .bind(legacy_default)
@@ -2727,7 +2938,6 @@ async fn retire_absent_product_harness(
 #[cfg(test)]
 mod provider_definition_tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn definition(id: &str) -> ProviderDefinition {
         ProviderDefinition {
@@ -2739,6 +2949,7 @@ mod provider_definition_tests {
             credential_reference: Some(format!("provider:{id}")),
             lifecycle_state: "active".into(),
             removed_at: None,
+            connection_generation: 1,
         }
     }
 
@@ -2752,20 +2963,18 @@ mod provider_definition_tests {
             execution_access_contracts: Vec::new(),
             family_policy: None,
             runtime_available: true,
+            restore_prior_readiness: false,
             unavailable_reason: None,
         }
     }
 
     #[tokio::test]
     async fn harness_readiness_batch_is_digest_guarded_and_atomic() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-harness-readiness-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-harness-readiness-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let harnesses = [
             runtime_harness("codex-basic"),
@@ -2839,19 +3048,295 @@ mod provider_definition_tests {
             codex_available,
             "the stale batch must roll back its earlier row"
         );
-        std::fs::remove_file(path).unwrap();
+    }
+
+    /// Desktop startup writes this catalog shape for a harness whose readiness the app
+    /// server owns (`desktop/main/services/graphcomplete-runtime.mjs`; the desktop-shell
+    /// test "hands startup readiness to the app server record" asserts the same shape).
+    fn coordinated_catalog(path: &std::path::Path, digest: &str, files_valid: bool) {
+        std::fs::write(
+            path,
+            serde_json::json!({
+                "schemaVersion": 1,
+                "configurations": [{
+                    "configuration": {
+                        "schemaVersion": 1, "name": "codex-basic", "implementation": "test",
+                        "implementationVersion": 1, "permissionBindings": {"auto": {}},
+                        "settings": {}
+                    },
+                    "digest": digest,
+                    "runtimeAvailable": false,
+                    "unavailableReason": {
+                        "code": "harness_readiness_pending",
+                        "message": "This execution configuration is currently unavailable."
+                    },
+                    "appServerReadiness": { "runtimeFilesValid": files_valid }
+                }],
+                "unavailableConfigurations": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    /// One app-server startup: the real catalog reader, then the real catalog
+    /// initialization. Returns the harness row's availability and reason code.
+    async fn start_app_server(
+        store: &SqliteProductStore,
+        catalog: &std::path::Path,
+    ) -> (bool, Option<String>) {
+        let runtime = crate::runtime::RuntimeClient::open(
+            "http://127.0.0.1:1",
+            "http://127.0.0.1:2",
+            "graph-control".into(),
+            "harness-control".into(),
+            catalog,
+        )
+        .await
+        .unwrap();
+        store
+            .initialize_model_catalog("codex-basic", &runtime.product_harnesses())
+            .await
+            .unwrap();
+        sqlx::query_as(
+            "SELECT available,unavailable_reason_code FROM product_harnesses WHERE configuration_name='codex-basic'",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .unwrap()
+    }
+
+    fn readiness(
+        digest: &str,
+        generation: u64,
+        available: bool,
+    ) -> HarnessRuntimeAvailabilityUpdate {
+        HarnessRuntimeAvailabilityUpdate {
+            harness_id: "codex-basic".into(),
+            configuration_digest: digest.into(),
+            generation,
+            available,
+            unavailable_reason: (!available).then(|| UnavailableReason {
+                code: "runtime_probe_failed".into(),
+                message: "This execution configuration is currently unavailable.".into(),
+            }),
+        }
+    }
+
+    fn readiness_root(label: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("relayer-readiness-{label}-"))
+            .tempdir()
+            .unwrap()
+    }
+
+    /// PROV-006, finding R1: the app server last recorded the route unavailable, then
+    /// the app restarted with runtime files that still validate. The restart must not
+    /// bring back an older "ready".
+    #[tokio::test]
+    async fn restart_keeps_the_app_server_record_of_an_unavailable_route() {
+        let directory = readiness_root("r1");
+        let root = directory.path();
+        let catalog = root.join("harness-configurations.json");
+        let store = SqliteProductStore::open(root.join("product.sqlite3"))
+            .await
+            .unwrap();
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        start_app_server(&store, &catalog).await;
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 2, false)])
+            .await
+            .unwrap();
+
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        let (available, _) = start_app_server(&store, &catalog).await;
+        assert!(
+            !available,
+            "startup restored ready although the app server last recorded unavailable"
+        );
+    }
+
+    /// PROV-006 upgrade: a row that was ready before this rule may not come from an
+    /// evaluation, so the first launch after the upgrade verifies every route again.
+    #[tokio::test]
+    async fn first_launch_after_upgrade_reverifies_a_route_an_older_build_left_ready() {
+        let directory = readiness_root("upgrade");
+        let root = directory.path();
+        let catalog = root.join("harness-configurations.json");
+        let database = root.join("product.sqlite3");
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                sqlx::sqlite::SqliteConnectOptions::new()
+                    .filename(&database)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        let before_rule = sqlx::migrate::Migrator {
+            migrations: std::borrow::Cow::Owned(
+                super::super::migrations::MIGRATOR
+                    .iter()
+                    .filter(|migration| migration.version <= 33)
+                    .cloned()
+                    .collect(),
+            ),
+            ..sqlx::migrate::Migrator::DEFAULT
+        };
+        before_rule.run(&pool).await.unwrap();
+        // An older build left the route ready, for example restored from the JSON catalog.
+        let left_ready = sqlx::query("UPDATE product_harnesses SET available=1,unavailable_reason_code=NULL,unavailable_reason_message=NULL,runtime_configuration_digest='sha256:d1' WHERE configuration_name='codex-basic'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(left_ready.rows_affected(), 1);
+        pool.close().await;
+
+        let store = SqliteProductStore::open(&database).await.unwrap();
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (false, Some("harness_readiness_pending".to_owned())),
+            "the first launch after the upgrade waits for an evaluation"
+        );
+
+        // The re-verification happens once: an evaluated ready survives later restarts.
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        store.pool.close().await;
+        let reopened = SqliteProductStore::open(&database).await.unwrap();
+        assert_eq!(start_app_server(&reopened, &catalog).await, (true, None));
+        reopened.pool.close().await;
+    }
+
+    /// PROV-006: startup restores ready only from the app server's own ready record for
+    /// the same digest, and only while the runtime files validate.
+    #[tokio::test]
+    async fn startup_restores_ready_only_from_the_app_server_record() {
+        let directory = readiness_root("restore");
+        let root = directory.path();
+        let catalog = root.join("harness-configurations.json");
+        let store = SqliteProductStore::open(root.join("product.sqlite3"))
+            .await
+            .unwrap();
+        let pending = Some("harness_readiness_pending".to_owned());
+
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (false, pending.clone()),
+            "a new digest starts pending"
+        );
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (true, None),
+            "the app server's ready record restores for the same digest"
+        );
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (true, None),
+            "a restored record stays the record"
+        );
+
+        coordinated_catalog(&catalog, "sha256:d1", false);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (false, pending.clone()),
+            "runtime files that no longer validate withhold the restore"
+        );
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (false, pending.clone()),
+            "a withheld restore is recorded; only an evaluation makes it ready again"
+        );
+
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        coordinated_catalog(&catalog, "sha256:d2", true);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (false, pending),
+            "a changed digest starts pending"
+        );
+    }
+
+    /// PROV-005, finding R3: within one app-server process, a readiness result from an
+    /// older evaluation is never published over a newer one.
+    #[tokio::test]
+    async fn readiness_rejects_an_older_generation_within_a_process() {
+        let directory = readiness_root("r3");
+        let root = directory.path();
+        let catalog = root.join("harness-configurations.json");
+        let store = SqliteProductStore::open(root.join("product.sqlite3"))
+            .await
+            .unwrap();
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        start_app_server(&store, &catalog).await;
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 3, true)])
+            .await
+            .unwrap();
+
+        let older = store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 2, false)])
+            .await
+            .unwrap_err();
+        assert!(
+            older.to_string().contains("older readiness evaluation"),
+            "{older}"
+        );
+        let available: bool = sqlx::query_scalar(
+            "SELECT available FROM product_harnesses WHERE configuration_name='codex-basic'",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+        assert!(available, "the older result must not replace the newer one");
+
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 3, true)])
+            .await
+            .unwrap();
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 4, false)])
+            .await
+            .unwrap();
+
+        // A new app-server process starts a fresh epoch: a restarted Electron coordinator
+        // counts from 1 again, and its first result is accepted.
+        store.pool.close().await;
+        let restarted = SqliteProductStore::open(root.join("product.sqlite3"))
+            .await
+            .unwrap();
+        start_app_server(&restarted, &catalog).await;
+        restarted
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        restarted.pool.close().await;
     }
 
     #[tokio::test]
     async fn desktop_catalog_retires_product_codex_high_without_rewriting_history() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-product-codex-retirement-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-product-codex-retirement-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("INSERT INTO product_harnesses(configuration_name,label,product_visible,available,unavailable_reason_code,unavailable_reason_message) VALUES ('codex-basic-high','Codex Basic High',1,1,NULL,NULL)")
             .execute(&store.pool).await.unwrap();
@@ -2927,19 +3412,15 @@ mod provider_definition_tests {
             ("codex-basic-high".into(), "sha256:high".into())
         );
         drop(store);
-        let _ = std::fs::remove_file(path);
     }
 
     #[tokio::test]
     async fn eval_catalog_preserves_codex_basic_high_threads_and_preferences() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-eval-codex-high-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-eval-codex-high-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("INSERT INTO product_harnesses(configuration_name,label,product_visible,available,unavailable_reason_code,unavailable_reason_message) VALUES ('codex-basic-high','Codex Basic High',1,1,NULL,NULL)")
             .execute(&store.pool).await.unwrap();
@@ -2981,19 +3462,15 @@ mod provider_definition_tests {
         assert_eq!(default_harness, "codex-basic-high");
         assert_eq!(high, (true, true));
         drop(store);
-        let _ = std::fs::remove_file(path);
     }
 
     #[tokio::test]
     async fn product_catalog_retires_prime_agent_deep_onto_prime_agent_basic() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-prime-deep-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-prime-deep-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("INSERT INTO product_harnesses(configuration_name,label,product_visible,available,unavailable_reason_code,unavailable_reason_message) VALUES ('prime-agent-deep','Prime Agent Deep',1,1,NULL,NULL)")
             .execute(&store.pool).await.unwrap();
@@ -3038,19 +3515,15 @@ mod provider_definition_tests {
         // Accepted history keeps the identity of the harness that actually executed.
         assert_eq!(historical_harness, "prime-agent-deep");
         drop(store);
-        let _ = std::fs::remove_file(path);
     }
 
     #[tokio::test]
     async fn absent_prime_replacement_leaves_deep_threads_untouched() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-prime-deep-absent-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-prime-deep-absent-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("INSERT INTO threads(id,title,created_at,updated_at,harness_configuration_name,permission_profile_id) VALUES (1,'Deep','1','1','prime-agent-deep','auto')")
             .execute(&store.pool).await.unwrap();
@@ -3069,19 +3542,15 @@ mod provider_definition_tests {
 
         assert_eq!(thread_harness, "prime-agent-deep");
         drop(store);
-        let _ = std::fs::remove_file(path);
     }
 
     #[tokio::test]
     async fn sqlite_is_authoritative_for_provider_identity_and_removal_admission() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-provider-lifecycle-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-provider-lifecycle-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let codex = store.load_provider_definitions().await.unwrap();
         assert!(codex.iter().any(|value| value.id.as_str() == "codex"
@@ -3098,17 +3567,16 @@ mod provider_definition_tests {
             .sync_provider_definitions(&[work.clone()])
             .await
             .unwrap();
-        assert_eq!(
-            store
-                .load_provider_definitions()
-                .await
-                .unwrap()
-                .into_iter()
-                .find(|value| value.id.as_str() == "work-openai")
-                .unwrap()
-                .lifecycle_state,
-            "removal_pending"
-        );
+        let removing = store
+            .load_provider_definitions()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|value| value.id.as_str() == "work-openai")
+            .unwrap();
+        assert_eq!(removing.lifecycle_state, "removal_pending");
+        // Removal supersedes every result still in flight (PROV-002).
+        assert_eq!(removing.connection_generation, 2);
 
         let mut changed = work.clone();
         changed.endpoint = Some("https://proxy.example.test/v1".into());
@@ -3159,12 +3627,22 @@ mod provider_definition_tests {
             1
         );
         staged.label = "Renamed Atomic Provider".into();
+        // The store owns the generation: a written definition cannot set it.
+        staged.connection_generation = 7;
         store
             .sync_provider_definitions(&[staged.clone()])
             .await
             .unwrap();
+        let stale = store
+            .publish_provider_catalog(&snapshot, ProviderConnectionStamp::refresh(7), None, "2")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&stale, StorageError::Catalog(error) if error.code() == "provider_connection_superseded"),
+            "{stale}"
+        );
         store
-            .publish_provider_catalog(&snapshot, None, "2")
+            .publish_provider_catalog(&snapshot, ProviderConnectionStamp::refresh(1), None, "2")
             .await
             .unwrap();
         assert_eq!(
@@ -3199,14 +3677,11 @@ mod provider_definition_tests {
 
     #[tokio::test]
     async fn provider_removal_preserves_a_default_family_member_resolvable_by_default_harness() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-provider-default-guard-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-provider-default-guard-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let mut removed = definition("removed-provider");
         removed.label = "Removed Provider".into();
@@ -3251,14 +3726,11 @@ mod provider_definition_tests {
 
     #[tokio::test]
     async fn provider_removal_waits_for_restart_to_finalize_a_durable_running_attempt() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-provider-removal-drain-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-provider-removal-drain-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let mut provider = definition("draining-provider");
         store
@@ -3322,20 +3794,34 @@ mod provider_definition_tests {
                 "unknown".into()
             )
         );
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn managed_catalog_refresh_preserves_a_separately_chosen_default_provider() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-explicit-provider-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-explicit-provider-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
+        store
+            .initialize_model_catalog(
+                "codex-basic",
+                &[RuntimeProductHarness {
+                    model_rules: Some(HarnessModelRules {
+                        allow: vec![HarnessModelRule {
+                            adapter_id: "codex-subscription".into(),
+                            model_id_exact: None,
+                            model_id_regex: Some(".*".into()),
+                        }],
+                        deny: Vec::new(),
+                    }),
+                    execution_access_contracts: vec!["managed-runtime@1".into()],
+                    ..runtime_harness("codex-basic")
+                }],
+            )
+            .await
+            .unwrap();
         let mut named = definition("work-codex");
         named.adapter_id = "codex-subscription".into();
         named.access_contract = "managed-runtime@1".into();
@@ -3375,66 +3861,92 @@ mod provider_definition_tests {
         };
         for catalog in [&codex, &work] {
             store
-                .publish_provider_catalog(catalog, Some(&policy), "1")
+                .publish_provider_catalog(
+                    catalog,
+                    ProviderConnectionStamp::refresh(1),
+                    Some(&policy),
+                    "1",
+                )
                 .await
                 .unwrap();
         }
         let prior = store.load_model_settings().await.unwrap().defaults;
         assert_eq!(prior.provider_id.as_str(), "codex");
         let chosen = store
-            .update_model_settings_defaults(&UpdateModelSettingsDefaultsCommand {
-                harness_id: None,
-                provider_id: Some(named.id.clone()),
-                family_id: None,
-            })
+            .update_model_settings_defaults(
+                &UpdateModelSettingsDefaultsCommand {
+                    harness_id: None,
+                    provider_id: Some(named.id.clone()),
+                    family_id: None,
+                },
+                "codex-basic",
+                &HashSet::from(["codex-basic".into()]),
+            )
             .await
             .unwrap();
-        assert_eq!(chosen.family_id, prior.family_id);
-        // Settings reload refreshes both providers. Neither owns the explicit
-        // provider selection simply because its managed family is still saved.
+        assert_eq!(chosen.provider_id, named.id);
+        assert_ne!(chosen.family_id, prior.family_id);
+        // A provider-only save brings its managed family. Refreshing either
+        // provider must preserve that explicit pair (PROV-008).
         for catalog in [&codex, &work] {
             store
-                .publish_provider_catalog(catalog, Some(&policy), "2")
+                .publish_provider_catalog(
+                    catalog,
+                    ProviderConnectionStamp::refresh(1),
+                    Some(&policy),
+                    "2",
+                )
                 .await
                 .unwrap();
         }
         let refreshed = store.load_model_settings().await.unwrap().defaults;
         assert_eq!(refreshed.provider_id, named.id);
-        assert_eq!(refreshed.family_id, prior.family_id);
-        // Policy migration still replaces its own managed family atomically.
+        assert_eq!(refreshed.family_id, chosen.family_id);
+        // Migrating an unrelated provider cannot change the chosen pair.
+        let next_policy = FamilyPolicyReference {
+            version: 2,
+            ..policy
+        };
         store
             .publish_provider_catalog(
                 &codex,
-                Some(&FamilyPolicyReference {
-                    version: 2,
-                    ..policy
-                }),
+                ProviderConnectionStamp::refresh(1),
+                Some(&next_policy),
                 "3",
+            )
+            .await
+            .unwrap();
+        let unrelated = store.load_model_settings().await.unwrap().defaults;
+        assert_eq!(unrelated.provider_id, named.id);
+        assert_eq!(unrelated.family_id, chosen.family_id);
+        // Migrating the chosen provider advances its family and keeps the pair.
+        store
+            .publish_provider_catalog(
+                &work,
+                ProviderConnectionStamp::refresh(1),
+                Some(&next_policy),
+                "4",
             )
             .await
             .unwrap();
         let migrated = store.load_model_settings().await.unwrap().defaults;
         assert_eq!(migrated.provider_id, named.id);
-        assert_ne!(migrated.family_id, prior.family_id);
+        assert_ne!(migrated.family_id, chosen.family_id);
         store.pool.close().await;
         let reopened = SqliteProductStore::open(&path).await.unwrap();
         let restored = reopened.load_model_settings().await.unwrap().defaults;
         assert_eq!(restored.provider_id, named.id);
         assert_eq!(restored.family_id, migrated.family_id);
         reopened.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn declarative_policy_retires_and_moves_a_legacy_system_default_atomically() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-legacy-managed-family-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-legacy-managed-family-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("UPDATE model_providers SET connected=1 WHERE id='codex'")
             .execute(&store.pool)
@@ -3473,6 +3985,7 @@ mod provider_definition_tests {
         store
             .publish_provider_catalog(
                 &snapshot,
+                ProviderConnectionStamp::refresh(1),
                 Some(&FamilyPolicyReference {
                     id: "codex-default-family".into(),
                     version: 1,
@@ -3502,14 +4015,11 @@ mod provider_definition_tests {
 
     #[tokio::test]
     async fn user_edited_harness_rules_are_revision_guarded_and_survive_runtime_sync() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-harness-rules-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-harness-rules-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let shipped = RuntimeProductHarness {
             id: "codex-basic".into(),
@@ -3527,6 +4037,7 @@ mod provider_definition_tests {
             execution_access_contracts: vec!["managed-runtime@1".into()],
             family_policy: None,
             runtime_available: true,
+            restore_prior_readiness: false,
             unavailable_reason: None,
         };
         store
@@ -3593,6 +4104,7 @@ mod provider_definition_tests {
                 "codex-basic",
                 &[RuntimeProductHarness {
                     runtime_available: false,
+                    restore_prior_readiness: false,
                     unavailable_reason: Some(UnavailableReason {
                         code: "prime_agent_boundary_unsupported".into(),
                         message: "Choose another available harness on this device.".into(),
@@ -3619,7 +4131,7 @@ mod provider_definition_tests {
 
     #[tokio::test]
     async fn onboarding_projection_uses_exact_rules_access_and_app_default_without_fallback() {
-        let (store, path, provider_id) = onboarding_store().await;
+        let (_directory, store, provider_id) = onboarding_store().await;
         let allowed = HashSet::from(["codex-basic".to_owned(), "claude-basic".to_owned()]);
         let projection = store
             .provider_onboarding_projection(&provider_id, "codex-basic", &allowed)
@@ -3685,12 +4197,11 @@ mod provider_definition_tests {
                 .code,
             "harness_model_incompatible"
         );
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn unavailable_execution_configurations_are_hidden_behind_provider_recovery_state() {
-        let (store, path, provider_id) = onboarding_store().await;
+        let (_directory, store, provider_id) = onboarding_store().await;
         sqlx::query("UPDATE product_harnesses SET available=0,unavailable_reason_code='harness_readiness_failed',unavailable_reason_message='This execution configuration is currently unavailable.' WHERE configuration_name IN ('codex-basic','codex-alternate')")
             .execute(&store.pool).await.unwrap();
         let allowed = HashSet::from(["codex-basic".to_owned(), "codex-alternate".to_owned()]);
@@ -3720,12 +4231,11 @@ mod provider_definition_tests {
                 .code,
             "provider_no_available_execution_configurations"
         );
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn onboarding_create_and_defaults_commit_together_and_status_uses_saved_harness() {
-        let (store, path, provider_id) = onboarding_store().await;
+        let (_directory, store, provider_id) = onboarding_store().await;
         let allowed = HashSet::from(["codex-basic".to_owned(), "codex-alternate".to_owned()]);
         let projection = store
             .provider_onboarding_projection(&provider_id, "codex-basic", &allowed)
@@ -3762,12 +4272,11 @@ mod provider_definition_tests {
         assert!(status.complete);
         assert_eq!(status.defaults.harness_id, "codex-alternate");
         assert_eq!(status.resolution.unwrap(), completion.resolution);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn onboarding_revision_conflict_rolls_back_family_and_defaults() {
-        let (store, path, provider_id) = onboarding_store().await;
+        let (_directory, store, provider_id) = onboarding_store().await;
         let allowed = HashSet::from(["codex-basic".to_owned()]);
         let projection = store
             .provider_onboarding_projection(&provider_id, "codex-basic", &allowed)
@@ -3812,16 +4321,15 @@ mod provider_definition_tests {
             .unwrap(),
             0
         );
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn onboarding_managed_preview_uses_policy_and_avoids_custom_name_collision() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-managed-onboarding-{}-{}.sqlite3",
-            std::process::id(),
-            uuid::Uuid::new_v4()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-managed-onboarding-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let rules = HarnessModelRules {
             allow: vec![HarnessModelRule {
@@ -3844,6 +4352,7 @@ mod provider_definition_tests {
                         execution_access_contracts: vec!["managed-runtime@1".into()],
                         family_policy: None,
                         runtime_available: true,
+                        restore_prior_readiness: false,
                         unavailable_reason: None,
                     },
                     RuntimeProductHarness {
@@ -3858,6 +4367,7 @@ mod provider_definition_tests {
                             version: 1,
                         }),
                         runtime_available: true,
+                        restore_prior_readiness: false,
                         unavailable_reason: None,
                     },
                 ],
@@ -3951,12 +4461,11 @@ mod provider_definition_tests {
                 .await
                 .unwrap();
         assert_eq!(retained_custom_name, custom_name);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn model_settings_project_only_exactly_executable_harnesses_as_usable_now() {
-        let (store, path, provider_id) = onboarding_store().await;
+        let (_directory, store, provider_id) = onboarding_store().await;
         let allowed = HashSet::from(["codex-basic".to_owned(), "claude-basic".to_owned()]);
         let projection = store
             .provider_onboarding_projection(&provider_id, "codex-basic", &allowed)
@@ -4004,12 +4513,11 @@ mod provider_definition_tests {
         assert!(!claude.usable_now);
         assert!(claude.usable_provider_ids.is_empty());
         assert!(claude.usable_family_ids.is_empty());
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn configuration_owned_harness_can_become_default_with_a_saved_family() {
-        let (store, path, provider_id) = onboarding_store().await;
+        let (_directory, store, provider_id) = onboarding_store().await;
         let allowed = HashSet::from(["codex-basic".to_owned()]);
         let projection = store
             .provider_onboarding_projection(&provider_id, "codex-basic", &allowed)
@@ -4047,6 +4555,7 @@ mod provider_definition_tests {
                     execution_access_contracts: Vec::new(),
                     family_policy: None,
                     runtime_available: true,
+                    restore_prior_readiness: false,
                     unavailable_reason: None,
                 }],
             )
@@ -4054,26 +4563,30 @@ mod provider_definition_tests {
             .unwrap();
 
         let defaults = store
-            .update_model_settings_defaults(&UpdateModelSettingsDefaultsCommand {
-                harness_id: Some("configuration-owned".into()),
-                provider_id: None,
-                family_id: None,
-            })
+            .update_model_settings_defaults(
+                &UpdateModelSettingsDefaultsCommand {
+                    harness_id: Some("configuration-owned".into()),
+                    provider_id: None,
+                    family_id: None,
+                },
+                "codex-basic",
+                &HashSet::new(),
+            )
             .await
             .unwrap();
 
         assert_eq!(defaults.harness_id, "configuration-owned");
         assert_eq!(defaults.family_id, Some(completion.resolution.family_id));
-        std::fs::remove_file(path).unwrap();
     }
 
-    async fn onboarding_store() -> (SqliteProductStore, std::path::PathBuf, ProviderId) {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-provider-onboarding-{}-{}.sqlite3",
-            std::process::id(),
-            uuid::Uuid::new_v4()
-        ));
-        let store = SqliteProductStore::open(&path).await.unwrap();
+    async fn onboarding_store() -> (tempfile::TempDir, SqliteProductStore, ProviderId) {
+        let directory = tempfile::Builder::new()
+            .prefix("relayer-provider-onboarding-")
+            .tempdir()
+            .unwrap();
+        let store = SqliteProductStore::open(directory.path().join("product.sqlite3"))
+            .await
+            .unwrap();
         let allow = HarnessModelRules {
             allow: vec![HarnessModelRule {
                 adapter_id: "openai-api".into(),
@@ -4095,6 +4608,7 @@ mod provider_definition_tests {
                         execution_access_contracts: vec!["secret@1".into()],
                         family_policy: None,
                         runtime_available: true,
+                        restore_prior_readiness: false,
                         unavailable_reason: None,
                     },
                     RuntimeProductHarness {
@@ -4106,6 +4620,7 @@ mod provider_definition_tests {
                         execution_access_contracts: vec!["managed-runtime@1".into()],
                         family_policy: None,
                         runtime_available: true,
+                        restore_prior_readiness: false,
                         unavailable_reason: None,
                     },
                     RuntimeProductHarness {
@@ -4124,6 +4639,7 @@ mod provider_definition_tests {
                         execution_access_contracts: vec!["secret@1".into()],
                         family_policy: None,
                         runtime_available: true,
+                        restore_prior_readiness: false,
                         unavailable_reason: None,
                     },
                 ],
@@ -4140,6 +4656,7 @@ mod provider_definition_tests {
             credential_reference: Some("provider:work-openai".into()),
             lifecycle_state: "active".into(),
             removed_at: None,
+            connection_generation: 1,
         };
         let snapshot = ProviderCatalogSnapshot {
             provider_id: provider_id.clone(),
@@ -4163,6 +4680,6 @@ mod provider_definition_tests {
             .create_provider_with_catalog(&definition, &snapshot, None, "1")
             .await
             .unwrap();
-        (store, path, provider_id)
+        (directory, store, provider_id)
     }
 }

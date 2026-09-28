@@ -59,7 +59,7 @@ async function setup({ managed = false, failing = false, credentialStore, now, a
       publishProviderCatalog: async (value) => { snapshots.set(value.providerId, value); },
       providerStatuses: async () => snapshots,
       publishHarnessReadiness: vi.fn(async () => {}),
-    }, graphRuntime: { recordHarnessReadiness: vi.fn(async () => {}) },
+    },
     runtimeSession: { configurations: new Map([["codex-basic", { name: "codex-basic", implementation: "codex.basic", executionAccessContracts: [managed ? "managed-runtime@1" : "secret@1"], modelRules: { allow: [], deny: [] } }]]), digestConfiguration: () => "digest" },
   });
   cleanups.push(() => service.close());

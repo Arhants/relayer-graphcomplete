@@ -41,6 +41,10 @@ function bindConnectionToRenderer(providerDefinitions, contents, connectionId, o
 const MAX_COMPOSER_DRAFT_BYTES = 1024 * 1024;
 const MAX_FOLLOWUP_DRAFTS = 256;
 
+function plainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 export function normalizeComposerDrafts(value) {
   const pending = value?.pendingNewThread;
   const followups = value?.threadFollowups;
@@ -51,15 +55,51 @@ export function normalizeComposerDrafts(value) {
     threadFollowups: followups && typeof followups === "object" && !Array.isArray(followups)
       ? Object.fromEntries(Object.entries(followups).filter(([, text]) => typeof text === "string"))
       : {},
+    // The retry restoration each draft grew from, and per thread a send whose
+    // turn has not loaded (renderer composer-drafts.js).
+    threadFollowupRestorations: plainObject(value?.threadFollowupRestorations)
+      ? Object.fromEntries(Object.entries(value.threadFollowupRestorations)
+        .filter(([, restorationId]) => typeof restorationId === "string"))
+      : {},
+    sentThreadFollowups: plainObject(value?.sentThreadFollowups)
+      ? Object.fromEntries(Object.entries(value.sentThreadFollowups)
+        .filter(([, record]) => typeof record?.scopeKey === "string"
+          && typeof record.originScopeKey === "string" && typeof record.textDigest === "string"
+          && typeof record.edited === "boolean" && Number.isSafeInteger(record.sends) && record.sends >= 1)
+        .map(([threadId, record]) => [threadId, {
+          scopeKey: record.scopeKey,
+          originScopeKey: record.originScopeKey,
+          textDigest: record.textDigest,
+          edited: record.edited,
+          sends: record.sends,
+        }]))
+      : {},
   };
   const followupKeys = Object.keys(normalized.threadFollowups);
   for (const staleKey of followupKeys.slice(0, -MAX_FOLLOWUP_DRAFTS)) {
     delete normalized.threadFollowups[staleKey];
   }
+  // Over the cap, records that protect no draft go first, oldest first.
+  const sentKeys = Object.keys(normalized.sentThreadFollowups);
+  if (sentKeys.length > MAX_FOLLOWUP_DRAFTS) {
+    const protects = (key) => normalized.sentThreadFollowups[key].edited
+      && Object.hasOwn(normalized.threadFollowups, normalized.sentThreadFollowups[key].scopeKey);
+    for (const staleKey of [...sentKeys.filter((key) => !protects(key)), ...sentKeys.filter(protects)]
+      .slice(0, sentKeys.length - MAX_FOLLOWUP_DRAFTS)) {
+      delete normalized.sentThreadFollowups[staleKey];
+    }
+  }
+  const dropOrphanRestorations = () => {
+    for (const scopeKey of Object.keys(normalized.threadFollowupRestorations)) {
+      if (!(scopeKey in normalized.threadFollowups)) delete normalized.threadFollowupRestorations[scopeKey];
+    }
+  };
+  dropOrphanRestorations();
   while (Buffer.byteLength(JSON.stringify(normalized), "utf8") > MAX_COMPOSER_DRAFT_BYTES) {
     const [staleKey] = Object.keys(normalized.threadFollowups);
     if (!staleKey) break;
     delete normalized.threadFollowups[staleKey];
+    dropOrphanRestorations();
   }
   if (Buffer.byteLength(JSON.stringify(normalized), "utf8") > MAX_COMPOSER_DRAFT_BYTES) {
     throw new TypeError("Composer drafts exceed the local persistence limit.");
@@ -76,6 +116,48 @@ export function registerComposerDraftIpc({ ipcMain, settings }) {
     const composerDrafts = normalizeComposerDrafts(value);
     await settings.update((current) => ({ ...current, composerDrafts }));
     return composerDrafts;
+  });
+}
+
+function validLayerSelection(key, nodeId) {
+  if (typeof key !== "string" || key.length > 256 || typeof nodeId !== "string" || nodeId.length > 64) return false;
+  try {
+    const ids = JSON.parse(key);
+    return Array.isArray(ids) && ids.length === 3
+      && [...ids, nodeId].every((id) => typeof id === "string" && /^[1-9]\d*$/.test(id));
+  } catch { return false; }
+}
+
+function layerSelectionEntries(value) {
+  return Array.isArray(value) ? value.filter((entry) => (
+    Array.isArray(entry) && entry.length === 2 && validLayerSelection(...entry)
+  )).slice(-512) : [];
+}
+
+export function registerWorkspaceLayoutIpc({ ipcMain, settings }) {
+  const valid = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0.2 && value <= 0.8;
+  ipcMain.handle("relayer:workspace-layout-read", async () => {
+    const value = (await settings.read()).workspaceSplitRatio;
+    return valid(value) ? value : 0.5;
+  });
+  ipcMain.handle("relayer:workspace-layout-set", async (_event, value) => {
+    if (!valid(value)) throw new TypeError("Invalid workspace split ratio.");
+    await settings.update((current) => ({ ...current, workspaceSplitRatio: value }));
+  });
+}
+
+export function registerLayerSelectionIpc({ ipcMain, settings }) {
+  ipcMain.handle("relayer:layer-selections-read", async () => (
+    layerSelectionEntries((await settings.read()).layerSelections)
+  ));
+  ipcMain.handle("relayer:layer-selections-remember", async (_event, { key, nodeId } = {}) => {
+    if (!validLayerSelection(key, nodeId)) throw new TypeError("Invalid layer selection.");
+    await settings.update((current) => {
+      const entries = new Map(layerSelectionEntries(current.layerSelections));
+      entries.delete(key);
+      entries.set(key, nodeId);
+      return { ...current, layerSelections: [...entries].slice(-512) };
+    });
   });
 }
 
@@ -294,6 +376,8 @@ export function registerDesktopIpc({
     return { appearance };
   });
   registerComposerDraftIpc({ ipcMain, settings });
+  registerLayerSelectionIpc({ ipcMain, settings });
+  registerWorkspaceLayoutIpc({ ipcMain, settings });
   ipcMain.handle("relayer:tutorial-read", (_event, context) => tutorial.read(context));
   ipcMain.handle("relayer:tutorial-begin-automatic", (_event, context) => tutorial.beginAutomatic(context));
   ipcMain.handle("relayer:tutorial-begin-manual", () => tutorial.beginManual());

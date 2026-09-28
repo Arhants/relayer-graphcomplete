@@ -150,9 +150,14 @@
       return () => { stopped = true; clearTimeout(timer); };
     },
   };
+  const workspaceLayout = {
+    read: () => fetch("/eval-api/workspace-layout").then(result),
+    set: (ratio) => fetch("/eval-api/workspace-layout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ratio) }).then(result),
+  };
   window.relayerEvalTrace = { load: (id, turn) => call("loadCandidateTrace", id, turn) };
   if (new URLSearchParams(location.search).get("humanTask") === "1") {
     window.relayerHumanTask = {
+      workspaceLayout,
       task: () => fetch("/eval-api/task").then(result),
       grade: (input) => fetch("/eval-api/grade", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }).then(result),
       finish: (input) => fetch("/eval-api/finish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }).then(result),
@@ -174,6 +179,7 @@
     };
   }
   window.relayerEvalReview = {
+    workspaceLayout,
     context: () => fetch("/eval-api/context").then(result),
     registerPresentationAdapter: (adapter) => { window.__evalPresentation = adapter; },
   };

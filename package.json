@@ -83,12 +83,16 @@
     "desktop:release:publish-preview": "node desktop/release/publish-preview.mjs",
     "desktop:release:promote-stable": "node desktop/release/promote-stable.mjs",
     "test:eval-web": "node scripts/test-eval-web.mjs",
-    "test:eval-compiled-runtime": "vitest run --config scripts/eval-compiled.vitest.config.mjs"
+    "test:eval-compiled-runtime": "vitest run --config scripts/eval-compiled.vitest.config.mjs",
+    "evidence:public-share-embed": "RELAYER_CAPTURE_PUBLIC_SHARE_EMBED_EVIDENCE=1 electron scripts/capture-public-share-embed-evidence.mjs",
+    "review:public-share-embed": "node scripts/fixtures/public-share-embed.mjs",
+    "test:desktop:narrow-sidebar": "npm run build && electron scripts/test-desktop-narrow-sidebar.mjs"
   },
   "devDependencies": {
     "@actions/cache": "6.2.0",
     "@actions/core": "3.0.1",
     "@electron/asar": "3.4.1",
+    "@sentry/cli": "3.7.0",
     "@types/node": "^22.20.1",
     "app-builder-lib": "26.15.3",
     "electron": "43.0.0",

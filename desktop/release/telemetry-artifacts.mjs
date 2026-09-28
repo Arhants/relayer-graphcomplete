@@ -25,6 +25,8 @@ import { extractFile, listPackage } from "@electron/asar";
 import { desktopTargetByKey } from "../shared/target.mjs";
 import { exactKeys } from "../shared/telemetry-validation.mjs";
 
+import { copySignedSymbols, verifySignedSnapshot } from "../packaging/signed-native-cache.mjs";
+
 const RELEASE_ID_PREFIX = "ai.relayer.desktop@";
 const RELEASE_COMMIT_PATTERN = /^[a-f0-9]{40}$/u;
 const SENTRY_ORGANIZATION = "relayer-labs-llc";
@@ -176,7 +178,7 @@ async function defaultExecute(command, args, options = {}) {
 }
 
 async function defaultCapture(command, args, options = {}) {
-  return execFileAsync(command, args, { ...options, encoding: "utf8" });
+  return execFileAsync(command, args, { maxBuffer: 32 * 1024 * 1024, ...options, encoding: "utf8" });
 }
 
 function packagedResourcesPath(packagedApplication, platform) {
@@ -259,6 +261,7 @@ export async function prepareDesktopTelemetryArtifacts({
   packagedApplication,
   sourceGroups,
   rustBinaries,
+  nativeDebugArtifacts,
   execute = defaultExecute,
   capture = defaultCapture,
 } = {}) {
@@ -299,11 +302,15 @@ export async function prepareDesktopTelemetryArtifacts({
     sourceMaps.push(Object.freeze({ component, module: modulePath, ...mapArtifact, source: sourceArtifact }));
   }
 
+  if (nativeDebugArtifacts) {
+    await verifySignedSnapshot(nativeDebugArtifacts, async (command, args) => (await capture(command, args)).stdout);
+  }
   const nativeDebugIdentities = [];
   if (contract.platform === "darwin") {
     for (const binary of selectedRustBinaries) {
       const destination = resolve(debugRoot, `${basename(binary)}.dSYM`);
-      await execute("dsymutil", [binary, "-o", destination], { cwd: repositoryRoot });
+      if (nativeDebugArtifacts) await copySignedSymbols(nativeDebugArtifacts, basename(binary), destination);
+      else await execute("dsymutil", [binary, "-o", destination], { cwd: repositoryRoot });
       const identity = await correlateNativeDebugIdentity({ contract, resources, sourceBinary: binary, debugPath: destination, capture });
       nativeDebugIdentities.push({
         binary: normalizedRelativePath(relative(resources, identity.packagedBinary)),

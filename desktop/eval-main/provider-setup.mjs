@@ -13,7 +13,7 @@ import { HARNESS_MANAGED_RUNTIME_REQUIREMENTS, managedRuntimeRequirementForAdapt
 // The host injects its secure credential store; tests may use an ephemeral store.
 // Native login adapters retain their own profile-scoped credential state.
 export function createEvalProviderSetup({ userDataDirectory, productServer, productSession,
-  runtimeSession, graphRuntime, appRoot, pythonClientRoot, isBusy = () => false,
+  runtimeSession, appRoot, pythonClientRoot, isBusy = () => false,
   environment = process.env, fetchImpl = fetch, registry = productionProviderAdapterRegistry,
   createInstaller = createManagedRuntimeInstaller, runtimeResolver: injectedResolver,
   createComposition = createProviderComposition, checkPrime = checkPrimeManagedRuntime,
@@ -65,7 +65,6 @@ export function createEvalProviderSetup({ userDataDirectory, productServer, prod
     },
     publishAvailability: async (updates) => {
       await productServer.publishHarnessReadiness(updates);
-      await graphRuntime.recordHarnessReadiness(updates);
     },
   });
   const composition = createComposition({ registry,

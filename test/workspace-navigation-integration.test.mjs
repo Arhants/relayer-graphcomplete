@@ -145,6 +145,28 @@ describe("workspace navigation integration", () => {
     expect(controller.appState.nodes.map(({ id }) => id)).toEqual([11]);
   });
 
+  it("opens the authored default and restores the user's choice on sidebar reopen", async () => {
+    const layer = { ...rootLayer(101, 11), layer: { id: 101, nodes: [11, 12], defaultNodeId: 12 }, nodes: [{ id: 11, title: "Other" }, { id: 12, title: "Default" }] };
+    const turn = interaction(1, 10, layer);
+    const other = interaction(2, 20, rootLayer(201, 21));
+    const threads = [{ id: 10, title: "First" }, { id: 20, title: "Second" }];
+    requestImplementation = vi.fn(async (path) => {
+      if (path.startsWith("/api/state?threadId=10")) return productState(threads, [turn]);
+      if (path.startsWith("/api/state?threadId=20")) return productState(threads, [other]);
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const controller = await loadModules();
+    await controller.loadThread(10);
+    expect(controller.viewState.selectedNodeId).toBe(12);
+    controller.replaceCurrentSelection(11);
+    await controller.loadThread(20);
+    await controller.loadThread(10);
+    expect(String(controller.viewState.selectedNodeId)).toBe("11");
+    // Explicit history restoration wins over the most recent per-layer choice.
+    controller.hydrateWorkspace(turn, layer, { selectedNodeId: 12 });
+    expect(controller.viewState.selectedNodeId).toBe(12);
+  });
+
   it("restores thread, turn, path, numeric node selection, and deep-link URL", async () => {
     const layer1 = rootLayer(101, 11);
     const layer2 = rootLayer(201, 21);
@@ -181,6 +203,30 @@ describe("workspace navigation integration", () => {
       forwardChangesTurn: true,
       pendingDirection: null,
     });
+  });
+
+  it("restores explicitly closed details with Back and Forward", async () => {
+    const turns = [interaction(1, 10, rootLayer(101, 11)), interaction(2, 20, rootLayer(201, 21))];
+    const threads = [{ id: 10, title: "First" }, { id: 20, title: "Second" }];
+    requestImplementation = vi.fn(async (path) => {
+      const id = path.includes("threadId=20") || path === "/api/threads/20" ? 20 : 10;
+      const selected = turns.filter((turn) => turn.threadId === id);
+      return path.startsWith("/api/state") ? productState(threads, selected)
+        : { thread: threads.find((thread) => thread.id === id), interactions: selected, actionInvocations: [] };
+    });
+    const controller = await loadModules();
+    await controller.loadThread(10);
+    expect(controller.viewState.selectedNodeId).toBe(11);
+    controller.replaceCurrentSelection(null);
+    await controller.loadThread(20);
+    expect(controller.viewState.selectedNodeId).toBe(21);
+    controller.replaceCurrentSelection(null);
+    await controller.navigateHistory(-1);
+    expect(controller.viewState).toMatchObject({ selectedNodeId: null, nodeDetailsClosed: true });
+    await controller.navigateHistory(1);
+    expect(controller.viewState).toMatchObject({ selectedNodeId: null, nodeDetailsClosed: true });
+    await controller.loadThread(10);
+    expect(String(controller.viewState.selectedNodeId)).toBe("11");
   });
 
   it("waits for tutorial completion persistence before refreshing to the submitted follow-up", async () => {
@@ -234,7 +280,8 @@ describe("workspace navigation integration", () => {
     completionPersistence.resolve(true);
     await expect(submitting).resolves.toEqual(followup);
     expect(stateReads).toBe(2);
-    expect(controller.viewState.currentInteractionId).toBe(2);
+    expect(controller.viewState.currentInteractionId).toBe(1);
+    expect(controller.appState.pendingTurn).toMatchObject({ interactionId: 2, status: "submitted" });
   });
 
   it("submits annotation-only context with stable occurrence identity", async () => {
@@ -277,7 +324,8 @@ describe("workspace navigation integration", () => {
       { providerId: "openai", modelId: "gpt-5" },
       contexts,
     )).resolves.toEqual(followup);
-    expect(controller.viewState.currentInteractionId).toBe(2);
+    expect(controller.viewState.currentInteractionId).toBe(1);
+    expect(controller.appState.pendingTurn).toMatchObject({ interactionId: 2, status: "submitted" });
   });
 
   it("lets a newer turn choice cancel a slower history restoration", async () => {
@@ -369,7 +417,7 @@ describe("workspace navigation integration", () => {
     expect(controller.viewState).toMatchObject({
       currentThreadId: 20,
       currentInteractionId: 2,
-      selectedNodeId: null,
+      selectedNodeId: 21,
     });
     expect(controller.viewState.layerPath.map(({ layerId }) => layerId)).toEqual([201]);
     expect(controller.getNavigationHistory().canGoBack).toBe(true);
@@ -868,7 +916,7 @@ describe("workspace navigation integration", () => {
 
   it.each([
     ["submitted", false, 1],
-    ["running", true, 100],
+    ["running", true, 1],
   ])("advances the invoke tutorial only for a non-retryable %s result", async (
     resultCompletionStatus,
     shouldAdvance,

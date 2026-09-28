@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,7 +54,7 @@ describe("CodexBasicHarness", () => {
     const codexProviderPrompt = buildLayeredNavigationPrompt(personalPresentationRunContext(true), "@relayer/graph-client", undefined, false);
 
     expect(neutral).toBe(baseline);
-    for (const fragment of ["html`", "css`", "detailCapability", "setComponent", "checkpointNodeDetail", "submitNode", "graph.addAction"]) {
+    for (const fragment of ["html`", "css`", "detailCapability", "setComponent", "checkpointNodeDetail", "submitNode", "graph.addAction", "graph.bindNode", "do not copy a whole explanation across siblings", "const common = css", "evidence.detailAuthoring.setComponent"]) {
       expect(visualTreatment).toContain(fragment);
     }
     expect(treatment).toContain("Personal graph presentation preferences:");
@@ -250,6 +250,145 @@ describe("CodexBasicHarness", () => {
 
     await expect(completing).rejects.toThrow("force-disposed");
     expect(submitted?.forceSignal?.aborted).toBe(true);
+  });
+
+  it("force-stops only the turn whose force signal fires, and never spawns an already force-stopped turn", async () => {
+    const submitted = new Map<string, CodexAppServerTurnOptions>();
+    const harness = harnessFixture("auto", (options) => {
+      submitted.set(options.environment.RELAYER_GRAPH_TOKEN!, options);
+      return new Promise((_resolve, reject) => {
+        // Like a wedged turn: cancellation is ignored, and only the process kill ends it.
+        options.forceSignal?.addEventListener("abort", () => reject(options.forceSignal?.reason), { once: true });
+      });
+    });
+    const turn = (id: number, token: string, origin: HarnessRunContext["origin"], forceSignal: AbortSignal): HarnessRunContext => ({
+      ...runContext(id, token),
+      origin,
+      forceSignal,
+      ...(origin.kind === "invoke" ? {
+        model: { providerId: "codex", adapterId: "codex-subscription", modelId: "gpt-test" },
+        access: codexAccess(),
+      } : {}),
+    });
+    const rootForce = new AbortController();
+    const stuckChildForce = new AbortController();
+    const siblingForce = new AbortController();
+    const root = harness.complete(turn(1, "root-token", { kind: "root" }, rootForce.signal));
+    const stuckChild = harness.complete(turn(2, "stuck-token", { kind: "invoke", sourceCompletionId: 1, actionId: 102 }, stuckChildForce.signal));
+    const sibling = harness.complete(turn(3, "sibling-token", { kind: "invoke", sourceCompletionId: 1, actionId: 103 }, siblingForce.signal));
+    await vi.waitFor(() => expect(submitted.size).toBe(3));
+
+    stuckChildForce.abort(new Error("force-stopped after two minutes"));
+
+    await expect(stuckChild).rejects.toThrow("force-stopped after two minutes");
+    expect(submitted.get("stuck-token")?.forceSignal?.aborted).toBe(true);
+    expect(submitted.get("root-token")?.forceSignal?.aborted).toBe(false);
+    expect(submitted.get("sibling-token")?.forceSignal?.aborted).toBe(false);
+
+    const alreadyForced = new AbortController();
+    alreadyForced.abort(new Error("forced before spawn"));
+    await expect(harness.complete(turn(4, "late-token", { kind: "root" }, alreadyForced.signal))).rejects.toThrow("forced before spawn");
+    expect(submitted.has("late-token")).toBe(false);
+
+    harness.forceShutdown();
+    await Promise.allSettled([root, sibling]);
+    expect(harness.supportsForceStop).toBe(true);
+  });
+
+  it("starts the next root turn in a fresh native thread after a force-stopped root turn", async () => {
+    const submissions: CodexAppServerTurnOptions[] = [];
+    const harness = new CodexBasicHarness({
+      ...context("auto"),
+      savedState: { codexThreadId: "root-thread", codexThreadPersonalPresentationVersionId: null },
+    }, {
+      codexPathOverride: "/managed/codex",
+      runAppServerTurn: async (options) => {
+        submissions.push(options);
+        const threadId = options.savedThreadId ?? `fresh-thread-${submissions.length}`;
+        await options.onThreadId(threadId);
+        if (submissions.length === 1) {
+          // The first root turn is wedged until its process is killed.
+          await new Promise<never>((_resolve, reject) => {
+            options.forceSignal?.addEventListener("abort", () => reject(options.forceSignal?.reason), { once: true });
+          });
+        }
+        return { threadId, turnId: `turn-${submissions.length}`, status: "completed" };
+      },
+    });
+    const force = new AbortController();
+
+    const stuck = harness.complete({ ...runContext(1, "stuck-token"), forceSignal: force.signal });
+    await vi.waitFor(() => expect(submissions).toHaveLength(1));
+    expect(submissions[0]?.savedThreadId).toBe("root-thread");
+    force.abort(new Error("force-stopped after two minutes"));
+    await expect(stuck).rejects.toThrow("force-stopped after two minutes");
+    // The killed process may have left the thread mid-write, so it is neither saved nor resumed.
+    expect(harness.state()).toEqual({});
+
+    await harness.complete({ ...runContext(2, "next-token"), forceSignal: new AbortController().signal });
+    expect(submissions[1]?.savedThreadId).toBeUndefined();
+    expect(harness.state()).toEqual({
+      codexThreadId: "fresh-thread-2",
+      codexThreadPersonalPresentationVersionId: null,
+    });
+  });
+
+  it("keeps the next root turn's thread when a force-stopped root turn settles late", async () => {
+    let releaseKilledProcess!: () => void;
+    const killedProcessExited = new Promise<void>((resolve) => { releaseKilledProcess = resolve; });
+    const submissions: CodexAppServerTurnOptions[] = [];
+    const harness = new CodexBasicHarness({
+      ...context("auto"),
+      savedState: { codexThreadId: "root-thread", codexThreadPersonalPresentationVersionId: null },
+    }, {
+      codexPathOverride: "/managed/codex",
+      runAppServerTurn: async (options) => {
+        submissions.push(options);
+        const threadId = options.savedThreadId ?? `fresh-thread-${submissions.length}`;
+        await options.onThreadId(threadId);
+        if (submissions.length === 1) {
+          // The killed process takes longer than the host's wait to exit.
+          await new Promise<void>((resolve) => options.forceSignal?.addEventListener("abort", () => resolve(), { once: true }));
+          await killedProcessExited;
+          throw new Error("killed app-server exited");
+        }
+        return { threadId, turnId: `turn-${submissions.length}`, status: "completed" };
+      },
+    });
+    const force = new AbortController();
+
+    const stuck = harness.complete({ ...runContext(1, "stuck-token"), forceSignal: force.signal });
+    await vi.waitFor(() => expect(submissions).toHaveLength(1));
+    force.abort(new Error("force-stopped after two minutes"));
+    // The host has given up waiting, so the user's next root turn runs and stores its thread.
+    await harness.complete({ ...runContext(2, "next-token"), forceSignal: new AbortController().signal });
+    releaseKilledProcess();
+    await expect(stuck).rejects.toThrow("killed app-server exited");
+
+    expect(harness.state()).toEqual({
+      codexThreadId: "fresh-thread-2",
+      codexThreadPersonalPresentationVersionId: null,
+    });
+  });
+
+  it("does not keep a thread a force-stopped root turn reports after the force", async () => {
+    const harness = new CodexBasicHarness(context("auto"), {
+      codexPathOverride: "/managed/codex",
+      runAppServerTurn: async (options) => {
+        await new Promise<void>((resolve) => options.forceSignal?.addEventListener("abort", () => resolve(), { once: true }));
+        // A thread identity that arrives only after the kill must not be resumed.
+        await options.onThreadId("late-thread");
+        throw new Error("killed app-server exited");
+      },
+    });
+    const force = new AbortController();
+
+    const stuck = harness.complete({ ...runContext(1, "stuck-token"), forceSignal: force.signal });
+    await new Promise((resolve) => setImmediate(resolve));
+    force.abort(new Error("force-stopped after two minutes"));
+    await expect(stuck).rejects.toThrow("killed app-server exited");
+
+    expect(harness.state()).toEqual({});
   });
 
   it("rejects an unsupported implementation version", () => {
@@ -866,6 +1005,7 @@ describe("CodexBasicHarness", () => {
         'model_providers.relayer_execution_provider.wire_api="responses"',
         "model_providers.relayer_execution_provider.requires_openai_auth=false",
         "model_providers.relayer_execution_provider.supports_websockets=false",
+        "features.shell_snapshot=false",
         'shell_environment_policy.inherit="all"',
         "shell_environment_policy.ignore_default_excludes=true",
         'shell_environment_policy.filters.OPENAI_API_KEY="exclude"',
@@ -1031,6 +1171,132 @@ describe("CodexBasicHarness", () => {
       })).rejects.toThrow("codex turn failed");
       await expect(readFile(join(codexHome, "auth.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
+      await rm(codexHome, { recursive: true, force: true });
+    }
+  });
+
+  it("never lets a force-stopped turn's late auth.json removal delete the next turn's credentials", async () => {
+    const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-home-"));
+    let releaseStaleRemoval!: () => void;
+    const staleRemovalGate = new Promise<void>((resolve) => { releaseStaleRemoval = resolve; });
+    let removals = 0;
+    const removeCodexApiKeyAuthFile = async (home: string) => {
+      removals += 1;
+      // The force-stopped turn's unlink is still pending after the host stopped waiting for it.
+      if (removals === 1) await staleRemovalGate;
+      await unlink(join(home, "auth.json")).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+    };
+    const reads: unknown[] = [];
+    let runs = 0;
+    const access = (apiKey: string) => ({
+      kind: "secret" as const, contract: "secret@1" as const, providerId: "openai-work", adapterId: "openai-api",
+      adapterImplementationVersion: "1", endpoint: "https://api.openai.test/v1", fields: { "api-key": apiKey },
+      runtime: {
+        runtimeId: "codex" as const, version: "0.147.0", executable: "/managed/codex",
+        environment: { CODEX_HOME: codexHome, RELAYER_CODEX_BINARY: "/managed/codex" },
+      },
+    });
+    const harness = new CodexBasicHarness(context("auto"), {
+      removeCodexApiKeyAuthFile,
+      runAppServerTurn: async (options) => {
+        runs += 1;
+        if (runs === 1) {
+          await new Promise<void>((_resolve, reject) => options.forceSignal?.addEventListener("abort", () => reject(options.forceSignal?.reason), { once: true }));
+        }
+        // The successor's run reads its credentials after the stale removal was let through.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        reads.push(JSON.parse(await readFile(join(codexHome, "auth.json"), "utf8")));
+        return { threadId: "api-thread", turnId: "turn", status: "completed" as const };
+      },
+    });
+    const turn = (id: number, apiKey: string, forceSignal: AbortSignal): HarnessRunContext => ({
+      ...runContext(id, `token-${id}`),
+      model: { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" },
+      access: access(apiKey),
+      forceSignal,
+    });
+    try {
+      const force = new AbortController();
+      const stale = harness.complete(turn(1, "first-secret", force.signal)).then(() => undefined, () => undefined);
+      await vi.waitFor(() => expect(runs).toBe(1));
+      force.abort(new Error("force-stopped after two minutes"));
+      await vi.waitFor(() => expect(removals).toBe(1));
+
+      // The host stopped waiting, so the next root turn starts on the same CODEX_HOME.
+      const next = harness.complete(turn(2, "next-secret", new AbortController().signal));
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      releaseStaleRemoval();
+      await next;
+      await stale;
+
+      expect(reads).toEqual([{ auth_mode: "apikey", OPENAI_API_KEY: "next-secret" }]);
+      await expect(readFile(join(codexHome, "auth.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      releaseStaleRemoval();
+      await rm(codexHome, { recursive: true, force: true });
+    }
+  });
+
+  it("never writes auth.json for a turn force-stopped while it waited behind another turn's removal", async () => {
+    const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-home-"));
+    let releaseStaleRemoval!: () => void;
+    const staleRemovalGate = new Promise<void>((resolve) => { releaseStaleRemoval = resolve; });
+    let removals = 0;
+    const removeCodexApiKeyAuthFile = async (home: string) => {
+      removals += 1;
+      if (removals === 1) await staleRemovalGate;
+      await unlink(join(home, "auth.json")).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+    };
+    const writes: string[] = [];
+    const writeCodexApiKeyAuthFile = async (_home: string, apiKey: string) => { writes.push(apiKey); };
+    let runs = 0;
+    const access = (apiKey: string) => ({
+      kind: "secret" as const, contract: "secret@1" as const, providerId: "openai-work", adapterId: "openai-api",
+      adapterImplementationVersion: "1", endpoint: "https://api.openai.test/v1", fields: { "api-key": apiKey },
+      runtime: {
+        runtimeId: "codex" as const, version: "0.147.0", executable: "/managed/codex",
+        environment: { CODEX_HOME: codexHome, RELAYER_CODEX_BINARY: "/managed/codex" },
+      },
+    });
+    const harness = new CodexBasicHarness(context("auto"), {
+      removeCodexApiKeyAuthFile,
+      writeCodexApiKeyAuthFile,
+      runAppServerTurn: async (options) => {
+        runs += 1;
+        await new Promise<void>((_resolve, reject) => options.forceSignal?.addEventListener("abort", () => reject(options.forceSignal?.reason), { once: true }));
+        return { threadId: "api-thread", turnId: "turn", status: "completed" as const };
+      },
+    });
+    const turn = (id: number, apiKey: string, forceSignal: AbortSignal): HarnessRunContext => ({
+      ...runContext(id, `token-${id}`),
+      model: { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" },
+      access: access(apiKey),
+      forceSignal,
+    });
+    try {
+      const firstForce = new AbortController();
+      const first = harness.complete(turn(1, "first-secret", firstForce.signal)).then(() => undefined, () => undefined);
+      await vi.waitFor(() => expect(runs).toBe(1));
+      firstForce.abort(new Error("force-stopped after two minutes"));
+      await vi.waitFor(() => expect(removals).toBe(1));
+
+      // The next turn queues its write behind the stalled removal and is force-stopped there.
+      const queuedForce = new AbortController();
+      const queued = harness.complete(turn(2, "queued-secret", queuedForce.signal));
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      queuedForce.abort(new Error("queued turn force-stopped"));
+      releaseStaleRemoval();
+      await expect(queued).rejects.toThrow("queued turn force-stopped");
+      await first;
+
+      expect(writes).toEqual(["first-secret"]);
+      expect(runs).toBe(1);
+    } finally {
+      releaseStaleRemoval();
       await rm(codexHome, { recursive: true, force: true });
     }
   });

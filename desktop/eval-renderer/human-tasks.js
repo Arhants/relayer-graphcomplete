@@ -67,7 +67,8 @@ export function initializeHumanTasks({ api, show, toast }) {
   async function open() {
     show("humanView");
     const catalog = await api.catalog();
-    root.querySelector("#humanCase").innerHTML = catalog.cases.map((item) => `<option value="${escape(item.id)}">${escape(item.name)}</option>`).join("");
+    const externalIds = new Set(catalog.externalCaseIds || []);
+    root.querySelector("#humanCase").innerHTML = catalog.cases.map((item) => `<option value="${escape(item.id)}" ${externalIds.has(item.id) ? "disabled" : ""}>${escape(item.name)}${externalIds.has(item.id) ? " · requires external budget/credential approval" : ""}</option>`).join("");
     root.querySelector("#humanHarness").innerHTML = catalog.harnessConfigurations.filter((item) => item.available).map((item) => `<option value="${escape(item.name)}">${escape(item.name)}</option>`).join("");
     const setEndpoint = () => { root.querySelector("#humanEndpoint").value = catalog.cases.find((item) => item.id === root.querySelector("#humanCase").value)?.description || ""; };
     root.querySelector("#humanCase").onchange = setEndpoint; setEndpoint();

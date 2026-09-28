@@ -766,6 +766,12 @@ describe("packaged graph-client authored detail boundary", () => {
     const client = new RelayerGraphClient({ url: "http://127.0.0.1:1", token: "token", nodeId: 1 });
     for (const [name, markup, styles] of cases) {
       const node = new NodeObject("box", "Template", "Fallback", "concept", `template-${name}`);
+      if (name !== "css-accessor") {
+        expect(() => node.detailAuthoring.setComponent(name, markup, styles)).toThrowError(expect.objectContaining({
+          issues: expect.arrayContaining([expect.objectContaining({ code: "detail_template_unrecognized", componentId: name })]),
+        }));
+        continue;
+      }
       node.detailAuthoring.setComponent(name, markup, styles);
       await expect(client.checkpointNodeDetail(node)).rejects.toBeInstanceOf(DetailCompilationError);
       await expect(client.checkpointNodeDetail(node)).rejects.toMatchObject({

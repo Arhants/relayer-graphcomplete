@@ -1,6 +1,7 @@
 # Human task sessions — slice 1
 
-Final stabilization results: [final-verification.md](final-verification.md). Earlier
+Latest integration results: [merge-verification.md](merge-verification.md).
+Pre-merge stabilization: [final-verification.md](final-verification.md). Earlier
 entries below are historical checkpoints and do not supersede the final report.
 
 Product authority: PRD §13.2.2 and ADR 0003's human task execution decision.

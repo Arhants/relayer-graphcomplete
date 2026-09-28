@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isProxy } from "node:util/types";
-import { DetailCompilationError, NodeDetailAuthoring, beginNodeDetailAuthoringFinalization, cancelNodeDetailAuthoringFinalization, compileAuthenticatedNodeDetail, finalizedNodeDetailAuthoring, freezeNodeDetailAuthoring, isNodeDetailAuthoringCleared, isNodeDetailAuthoringOwner, snapshotAuthoredNodeDetailProgram, snapshotRetainedCompiledNodeDetail, type AuthenticatedNodeDetailOwnerSnapshot, type AuthenticatedNodeDetailProgramSnapshot, type CompiledNodeDetail } from "./detail.js";
+import { DetailCompilationError, NodeDetailAuthoring, bindNodeDetailOwner, beginNodeDetailAuthoringFinalization, cancelNodeDetailAuthoringFinalization, compileAuthenticatedNodeDetail, finalizedNodeDetailAuthoring, freezeNodeDetailAuthoring, isNodeDetailAuthoringCleared, isNodeDetailAuthoringOwner, snapshotAuthoredNodeDetailProgram, snapshotRetainedCompiledNodeDetail, type AuthenticatedNodeDetailOwnerSnapshot, type AuthenticatedNodeDetailProgramSnapshot, type CompiledNodeDetail } from "./detail.js";
 import { isRelayerIconName } from "./icons.js";
 import { applyAcceptedNodeResponse } from "./node-response.js";
 import { EdgeObject, LayerObject, NodeObject, actionId, edgeId, layerId, nodeId, type ActionObject, type ActionReference, type EdgeReference, type LayerReference, type NodeReference } from "./objects.js";
@@ -51,7 +51,21 @@ export class RelayerGraphClient {
     return this.request<ResolvedPersonalPresentation>("/api/graph/personal-presentation");
   }
 
+  /** Bind a replacement object before reusing an existing same-node HTML template. */
+  bindNode(node: NodeObject): NodeObject {
+    const envelope = materializeNodeSubmissionEnvelope(node);
+    bindNodeDetailOwner(envelope.detailAuthoring, node, this.capability.url, this.capability.nodeId);
+    return node;
+  }
+
+  private bindSubmissionNode(node: NodeObject): void {
+    const envelope = this.#submissionEnvelopes.get(node);
+    if (envelope === undefined) this.bindNode(node);
+    else bindNodeDetailOwner(envelope.detailAuthoring, node, this.capability.url, this.capability.nodeId, envelope.clientKey);
+  }
+
   submitNode(node: NodeObject): Promise<GraphNode> {
+    try { this.bindSubmissionNode(node); } catch (error) { return Promise.reject(error); }
     const existing = this.#submittedNodes.get(node);
     if (existing !== undefined) return existing;
     const submission = deferred<GraphNode>();
@@ -117,6 +131,7 @@ export class RelayerGraphClient {
   }
 
   checkpointNodeDetail(node: NodeObject): Promise<CompiledNodeDetail> {
+    try { this.bindSubmissionNode(node); } catch (error) { return Promise.reject(error); }
     const accepted = this.#acceptedDetails.get(node);
     if (accepted !== undefined) return accepted;
     const finalized = this.#submittedDetails.get(node);
@@ -211,6 +226,7 @@ export class RelayerGraphClient {
       body: JSON.stringify({
         clientKey: layer.clientKey,
         nodes: layer.nodes.map(nodeId),
+        defaultNodeId: layer.defaultNode == null ? undefined : nodeId(layer.defaultNode),
         edges: layer.edges.map(edgeId),
         layout: {
           version: layer.layout.version,

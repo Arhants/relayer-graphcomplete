@@ -32,12 +32,12 @@ use relayer_graph_core::{
 use std::{
     collections::HashMap,
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 /// How long the replay lets the start-failure cleanup task run before it
@@ -122,8 +122,22 @@ struct World {
     /// it starts at the trace's first cleanup step.
     pending_cleanup: Option<(PreparedInteraction, LaunchFailure, Option<i64>)>,
     pool: sqlx::SqlitePool,
-    root: PathBuf,
-    tasks: Vec<tokio::task::JoinHandle<Result<(), std::io::Error>>>,
+    tasks: ServerTasks,
+    /// Owns the world's database, catalog, and workspaces; removed on drop, even when a
+    /// trace panics. Declared last so every field holding the database drops first.
+    root: tempfile::TempDir,
+}
+
+/// The fake graph and harness servers, aborted on drop so a panicking trace does not leave
+/// them holding the database after the world's directory is removed.
+struct ServerTasks(Vec<tokio::task::JoinHandle<Result<(), std::io::Error>>>);
+
+impl Drop for ServerTasks {
+    fn drop(&mut self) {
+        for task in &self.0 {
+            task.abort();
+        }
+    }
 }
 
 async fn serve(app: Router) -> (String, tokio::task::JoinHandle<Result<(), std::io::Error>>) {
@@ -140,17 +154,12 @@ impl World {
     /// and the recursive child prepared and bound for it, before any launch. A
     /// selected world gives the root a model selection the child inherits.
     async fn new(label: &str, selected: bool) -> Self {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "relayer-completion-trace-{label}-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
-        let database = root.join("product.sqlite3");
-        let catalog = root.join("catalog.json");
+        let root = tempfile::Builder::new()
+            .prefix(&format!("relayer-completion-trace-{label}-"))
+            .tempdir()
+            .unwrap();
+        let database = root.path().join("product.sqlite3");
+        let catalog = root.path().join("catalog.json");
         fs::write(
             &catalog,
             serde_json::json!({"schemaVersion":1,"configurations":[{"configuration":{
@@ -203,6 +212,7 @@ impl World {
             .unwrap();
         let layer = writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "current".into(),
                 nodes: vec![source.id],
                 edges: vec![],
@@ -519,7 +529,7 @@ impl World {
             default_harness_configuration: HARNESS.into(),
             allow_harness_override: true,
             allow_conversation_import: false,
-            standalone_workspaces_directory: root.join("workspaces"),
+            standalone_workspaces_directory: root.path().join("workspaces"),
             export_producer: ExportProducer {
                 desktop_version: "test".into(),
                 build_commit: "test".into(),
@@ -565,8 +575,8 @@ impl World {
             pending_cleanup: None,
             attachment: None,
             pool,
+            tasks: ServerTasks(vec![graph_task, harness_task]),
             root,
-            tasks: vec![graph_task, harness_task],
         }
     }
 
@@ -790,6 +800,7 @@ impl World {
                     .unwrap();
                 let layer = writer
                     .submit_layer(&LayerDraft {
+                        default_node_id: None,
                         client_key: "answer".into(),
                         nodes: vec![answer.id],
                         edges: vec![],
@@ -962,11 +973,14 @@ impl World {
         })
     }
 
-    fn finish(self) {
-        for task in self.tasks {
+    /// Stops the servers and waits until they have released the database, so the
+    /// world's directory can be removed even where open files cannot be deleted.
+    async fn finish(mut self) {
+        for task in std::mem::take(&mut self.tasks.0) {
             task.abort();
+            let _ = task.await;
         }
-        fs::remove_dir_all(self.root).unwrap();
+        self.pool.close().await;
     }
 }
 
@@ -1086,7 +1100,7 @@ async fn replay(trace: &Value) {
             "{scenario}: {promise} is broken at the end, in {last}"
         );
     }
-    world.finish();
+    world.finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1193,15 +1207,11 @@ async fn provider_end_waits_through_observation_timeouts() {
     );
     let (graph_url, graph_task) = serve(graph).await;
     let (harness_url, harness_task) = serve(harness).await;
-    let root = std::env::temp_dir().join(format!(
-        "relayer-provider-end-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-provider-end-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let catalog = root.join("catalog.json");
     fs::write(
         &catalog,
@@ -1252,7 +1262,6 @@ async fn provider_end_waits_through_observation_timeouts() {
 
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 /// A harness that closes each connection unanswered while `drops` lasts, then answers every
@@ -1325,15 +1334,11 @@ async fn provider_end_waits_through_an_unreachable_harness() {
         }),
     );
     let (graph_url, graph_task) = serve(graph).await;
-    let root = std::env::temp_dir().join(format!(
-        "relayer-provider-unreachable-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-provider-unreachable-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let catalog = root.join("catalog.json");
     fs::write(
         &catalog,
@@ -1437,7 +1442,6 @@ async fn provider_end_waits_through_an_unreachable_harness() {
     harness_task.abort();
 
     graph_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 /// The host granted a child's leases, but the product could not record the attempt that
@@ -1473,7 +1477,7 @@ async fn a_child_whose_attempt_cannot_be_recorded_releases_its_leases() {
         "leases no attempt records are released"
     );
     assert_eq!(world.observe().await["attempt"], "none");
-    world.finish();
+    world.finish().await;
 }
 
 /// A harness-policy revision that lands after the child was prepared would split its
@@ -1518,7 +1522,7 @@ async fn a_child_whose_harness_policy_changed_since_prepare_is_refused() {
     );
     assert!(world.harness.granted.lock().unwrap().is_empty());
     assert_eq!(world.observe().await["attempt"], "none");
-    world.finish();
+    world.finish().await;
 }
 
 /// A child that returned while its provider still runs is accepted, and its attempt stays
@@ -1637,7 +1641,7 @@ async fn a_child_returned_while_its_provider_runs_exports_and_restarts_as_accept
         None
     );
 
-    let restarted = SqliteProductStore::open(&world.root.join("product.sqlite3"))
+    let restarted = SqliteProductStore::open(&world.root.path().join("product.sqlite3"))
         .await
         .unwrap();
     restarted
@@ -1660,13 +1664,15 @@ async fn a_child_returned_while_its_provider_runs_exports_and_restarts_as_accept
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(world.observe().await["attempt"], "running");
 
-    // A harness that restarted with the server knows no such run, so the wait ends at once.
-    // The replay's own exit observer is still blocked on the live fake, so this proves the
-    // resumed wait ended the attempt and released its lease.
+    // A harness that restarted with the server knows no such run, so it answers the one
+    // startup observation with a refusal (after a moment). The replay's own exit observer is
+    // still blocked on the live fake, so this proves resuming ended the attempt and released
+    // its lease, and did so before it returned: startup orders it before serving Desktop.
     let restarted_harness = Router::new()
         .route(
             "/sessions/{id}/invoked-completions/{completion}",
             routing::get(|| async {
+                tokio::time::sleep(Duration::from_millis(200)).await;
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     axum::Json(serde_json::json!({"error":"Invoked completion is not registered"})),
@@ -1688,7 +1694,7 @@ async fn a_child_returned_while_its_provider_runs_exports_and_restarts_as_accept
     );
     let (graph_url, graph_task) = serve(graph).await;
     let (harness_url, harness_task) = serve(restarted_harness).await;
-    let catalog = world.root.join("restarted-catalog.json");
+    let catalog = world.root.path().join("restarted-catalog.json");
     fs::write(
         &catalog,
         serde_json::json!({"schemaVersion":1,"configurations":[]}).to_string(),
@@ -1704,32 +1710,25 @@ async fn a_child_returned_while_its_provider_runs_exports_and_restarts_as_accept
     .await
     .unwrap();
     resume_unwinding_recursive_children(world.product.clone(), restarted_runtime, None).await;
-    let deadline = Instant::now() + Duration::from_secs(3);
-    let (outcome, boundary, reconciled): (String, String, Option<String>) = loop {
-        let row: (String, String, Option<String>) = sqlx::query_as(
-            "SELECT outcome,effect_boundary,execution_lease_reconciled_at FROM interaction_attempts WHERE interaction_id=?1",
-        )
-        .bind(world.child.id.value())
-        .fetch_one(&world.pool)
-        .await
-        .unwrap();
-        if row.2.is_some() || Instant::now() >= deadline {
-            break row;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    };
+    let (outcome, boundary, reconciled): (String, String, Option<String>) = sqlx::query_as(
+        "SELECT outcome,effect_boundary,execution_lease_reconciled_at FROM interaction_attempts WHERE interaction_id=?1",
+    )
+    .bind(world.child.id.value())
+    .fetch_one(&world.pool)
+    .await
+    .unwrap();
     assert_eq!(
         (outcome.as_str(), boundary.as_str()),
         ("accepted", "graph_write")
     );
     assert!(
         reconciled.is_some(),
-        "the lease is released once the run is confirmed ended"
+        "the lease is released once the run is confirmed ended, before resuming returns"
     );
     assert_eq!(world.observe().await["status"], "accepted");
     graph_task.abort();
     harness_task.abort();
-    world.finish();
+    world.finish().await;
 }
 
 /// A child whose graph is already stopped has no work left, but the one cancel sent for it
@@ -1784,15 +1783,11 @@ async fn a_stopped_child_that_keeps_running_is_cancelled_again() {
         );
     let (graph_url, graph_task) = serve(graph).await;
     let (harness_url, harness_task) = serve(harness).await;
-    let root = std::env::temp_dir().join(format!(
-        "relayer-stopped-child-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-stopped-child-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
     let catalog = root.join("catalog.json");
     fs::write(
         &catalog,
@@ -1824,7 +1819,6 @@ async fn a_stopped_child_that_keeps_running_is_cancelled_again() {
     );
     graph_task.abort();
     harness_task.abort();
-    fs::remove_dir_all(root).unwrap();
 }
 
 /// Cancelling a child's approval stops its interaction before its graph is failed. The
@@ -1890,7 +1884,7 @@ async fn a_child_stopped_by_a_cancelled_approval_settles_and_ends_its_attempt() 
             .await
             .unwrap();
     assert_eq!(outcome, "cancelled");
-    world.finish();
+    world.finish().await;
 }
 
 /// A product-server restart that finds a child still launching fails its graph, since the
@@ -1909,7 +1903,7 @@ async fn a_restart_keeps_a_launching_childs_leases_held() {
     ] {
         world.apply(step.as_array().unwrap(), false).await;
     }
-    let restarted = SqliteProductStore::open(&world.root.join("product.sqlite3"))
+    let restarted = SqliteProductStore::open(&world.root.path().join("product.sqlite3"))
         .await
         .unwrap();
     crate::app_server::reconcile_interrupted_recursive_completion_executions(
@@ -1929,7 +1923,7 @@ async fn a_restart_keeps_a_launching_childs_leases_held() {
         "its attempt stays held: {state}"
     );
     assert_eq!(state["lease"], "held", "and so do its leases: {state}");
-    world.finish();
+    world.finish().await;
 }
 
 /// A failed start fails and settles its child before cancelling, so a harness that cannot
@@ -1967,5 +1961,5 @@ async fn a_failed_start_settles_while_its_cancel_cannot_reach_the_harness() {
         state["attempt"], "running",
         "its attempt stays held until the run is confirmed ended: {state}"
     );
-    world.finish();
+    world.finish().await;
 }

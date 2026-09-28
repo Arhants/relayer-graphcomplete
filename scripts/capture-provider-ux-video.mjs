@@ -5,6 +5,10 @@ import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import {
+  providerSidebarSnapshotFunctionSource,
+  providerSidebarAuditFunctionSource,
+} from "./provider-ux-layout-audit.mjs";
 
 const run = promisify(execFile);
 const repositoryRoot = resolve(import.meta.dirname, "..");
@@ -18,6 +22,8 @@ const ffmpeg = process.env.RELAYER_EVIDENCE_FFMPEG ?? "/opt/homebrew/bin/ffmpeg"
 const framesDirectory = join(outputDirectory, "frames");
 const variantsDirectory = join(outputDirectory, "variants");
 const motionDirectory = join(outputDirectory, "motion");
+const auditMutationsRequested = process.argv.includes("--audit-mutations");
+let sidebarMutationAuditComplete = false;
 const browserProfile = await mkdtemp(join(tmpdir(), "relayer-provider-evidence-"));
 const scenes = [
   ["onboarding", "Choose a provider"],
@@ -32,6 +38,29 @@ const scenes = [
 const variants = [
   { scene: "light", caption: "Light appearance", width: 1280, required: ["OpenAI Work", "data-theme=\"light\""] },
   { scene: "narrow", caption: "Narrow responsive settings", width: 620, required: ["OpenAI Work", "Providers"] },
+  { scene: "sidebar-thread-collapsed", caption: "Saved graph with collapsed sidebar at 620px", width: 620, required: ["Provider fallback review", "Settings", "Account"] },
+  { scene: "sidebar-thread-expanded", caption: "Saved graph with expanded sidebar at 620px", width: 620, required: ["Provider fallback review", "Settings", "Account"] },
+  { scene: "sidebar-thread-journey", caption: "Collapse, expand and collapse the 620px sidebar", width: 761, required: ["Provider fallback review", "Settings", "Account"] },
+  { scene: "sidebar-thread-light-expanded", caption: "Expanded saved graph in light appearance", width: 620, required: ["Provider fallback review", 'data-theme="light"'] },
+  { scene: "sidebar-new-thread", caption: "New-thread composer beside the 620px sidebar", width: 620, required: ["What are we working on?", "Settings", "Account"] },
+  { scene: "sidebar-new-thread-light", caption: "Centered New Thread icon in the light collapsed sidebar", width: 620, required: ["What are we working on?", "Account", 'data-theme="light"'] },
+  { scene: "sidebar-new-thread-expanded", caption: "New-thread composer beside the expanded 620px sidebar", width: 620, required: ["What are we working on?", "Settings", "Account"] },
+  { scene: "sidebar-thread-421-expanded", caption: "Expanded saved graph with a 421px viewport", width: 421, required: ["Provider fallback review", "Settings", "Account"] },
+  { scene: "sidebar-new-thread-421-expanded", caption: "Expanded new-thread composer with a 421px viewport", width: 421, required: ["What are we working on?", "Settings", "Account"] },
+  { scene: "sidebar-thread-450-expanded", caption: "Expanded saved graph with a 450px viewport", width: 450, required: ["Provider fallback review", "Settings", "Account"] },
+  { scene: "sidebar-new-thread-450-expanded", caption: "Expanded new-thread composer with a 450px viewport", width: 450, required: ["What are we working on?", "Settings", "Account"] },
+  { scene: "sidebar-thread-480-expanded", caption: "Expanded saved graph with a 480px viewport", width: 480, required: ["Provider fallback review", "Settings", "Account"] },
+  { scene: "sidebar-new-thread-480-expanded", caption: "Expanded new-thread composer with a 480px viewport", width: 480, required: ["What are we working on?", "Settings", "Account"] },
+  { scene: "sidebar-thread-375", caption: "Saved graph with collapsed sidebar at 375px", width: 375, required: ["Provider fallback review", "Settings", "Account"] },
+  { scene: "sidebar-thread-375-expanded", caption: "Saved graph with expanded sidebar at 375px", width: 375, required: ["Provider fallback review", "Settings", "Account"] },
+  { scene: "sidebar-new-thread-375-expanded", caption: "New-thread composer with expanded sidebar at 375px", width: 375, required: ["What are we working on?", "Settings", "Account"] },
+  { scene: "sidebar-new-thread-375-expanded-menu", caption: "Open scope menu remains inside the 375px workspace", width: 375, required: ["What are we working on?", "Settings", "Account"] },
+  { scene: "sidebar-new-thread-483-expanded-scope-menu", caption: "Open scope menu inside the 483px workspace", width: 483, required: ["What are we working on?", "Settings", "Account"] },
+  { scene: "sidebar-new-thread-483-expanded-permission-menu", caption: "Open permission menu inside the 483px workspace", width: 483, required: ["What are we working on?", "Settings", "Account"] },
+  { scene: "sidebar-new-thread-483-expanded-model-menu", caption: "Open model menu inside the 483px workspace", width: 483, required: ["What are we working on?", "Settings", "Account"] },
+  { scene: "sidebar-thread-760", caption: "Sidebar at the 760px breakpoint", width: 760, required: ["Provider fallback review", "Settings", "Account"] },
+  { scene: "sidebar-thread-761", caption: "Sidebar at 761px", width: 761, required: ["Provider fallback review", "Settings", "Account"] },
+  { scene: "sidebar-thread-wide", caption: "Sidebar at 1280px", width: 1280, required: ["Provider fallback review", "Settings", "Account"] },
   { scene: "long-label", caption: "Long provider identity", width: 1280, required: ["North America Platform Engineering and Applied Research"] },
   { scene: "loading", caption: "Connecting and discovering models", width: 1280, required: ["Connecting and discovering models"] },
   { scene: "invalid", caption: "Invalid connection details", width: 1280, required: ["Use an HTTPS endpoint", "Enter API key"] },
@@ -110,7 +139,21 @@ function cdpClient(webSocketUrl) {
   });
 }
 
-async function captureBrowserScene(url, frame, profile, width = 1280) {
+async function stopCaptureBrowser(child) {
+  if (child.exitCode !== null) return;
+  await new Promise((resolvePromise) => {
+    const finish = () => {
+      clearTimeout(timeout);
+      resolvePromise();
+    };
+    child.once("exit", finish);
+    child.kill("SIGKILL");
+    const timeout = setTimeout(finish, 2_000);
+    timeout.unref();
+  });
+}
+
+async function captureBrowserScene(url, frame, profile, width = 1280, { forcedColors = false } = {}) {
   await mkdir(profile, { recursive: true });
   const child = spawn(chrome, [
     "--headless=new",
@@ -141,6 +184,11 @@ async function captureBrowserScene(url, frame, profile, width = 1280) {
         deviceScaleFactor: 1,
         mobile: false,
       });
+      if (forcedColors) {
+        await cdp.call("Emulation.setEmulatedMedia", {
+          features: [{ name: "forced-colors", value: "active" }],
+        });
+      }
       await cdp.call("Page.reload", { ignoreCache: true });
       const deadline = Date.now() + 12_000;
       let readiness = "pending";
@@ -152,7 +200,76 @@ async function captureBrowserScene(url, frame, profile, width = 1280) {
         readiness = evaluated.result.value;
         if (readiness === "pending") await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
       }
-      if (readiness !== "ready") throw new Error(`Evidence page did not become ready (${readiness}).`);
+      if (readiness !== "ready") {
+        const diagnostic = await cdp.call("Runtime.evaluate", { expression: "document.documentElement.outerHTML", returnByValue: true });
+        await writeFile(frame.replace(/\.png$/, ".failed.html"), diagnostic.result.value);
+        const failedImage = await cdp.call("Page.captureScreenshot", { format: "png", fromSurface: true });
+        await writeFile(frame, Buffer.from(failedImage.data, "base64"));
+        throw new Error(`Evidence page did not become ready (${readiness}).`);
+      }
+      const scene = new URL(url).searchParams.get("scene");
+      if (scene === "sidebar-thread-journey") {
+        await cdp.call("Emulation.setDeviceMetricsOverride", { width: 620, height: 800, deviceScaleFactor: 1, mobile: false });
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+        const gestureChecks = [];
+        const cameraSnapshot = async () => (await cdp.call("Runtime.evaluate", {
+          expression: "JSON.stringify([...document.querySelectorAll('#nodeLayer [data-node]')].map(n => [n.style.left,n.style.top,n.style.getPropertyValue('--graph-zoom')]))",
+          returnByValue: true,
+        })).result.value;
+        for (const ending of ["release", "cancel"]) {
+          await cdp.call("Emulation.setDeviceMetricsOverride", { width: 761, height: 800, deviceScaleFactor: 1, mobile: false });
+          await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+          const before = await cameraSnapshot();
+          const point = (await cdp.call("Runtime.evaluate", {
+            expression: "(() => {const r=document.querySelector('#nodeLayer [data-node]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()",
+            returnByValue: true,
+          })).result.value;
+          await cdp.call("Runtime.evaluate", {
+            expression: `(() => {window.__gestureEndCamera=null;document.querySelector('#nodeLayer [data-node]').addEventListener('${ending === "cancel" ? "pointercancel" : "pointerup"}',()=>{window.__gestureEndCamera=JSON.stringify([...document.querySelectorAll('#nodeLayer [data-node]')].map(n=>[n.style.left,n.style.top,n.style.getPropertyValue('--graph-zoom')]));},{once:true});})()`,
+          });
+          await cdp.call("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
+          await cdp.call("Emulation.setDeviceMetricsOverride", { width: 620, height: 800, deviceScaleFactor: 1, mobile: false });
+          await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+          const during = await cameraSnapshot();
+          if (during !== before) throw new Error("Automatic camera moved during active node gesture.");
+          if (ending === "cancel") {
+            await cdp.call("Runtime.evaluate", {
+              expression: "document.querySelector('#nodeLayer [data-node]').dispatchEvent(new PointerEvent('pointercancel',{bubbles:true,pointerId:1}))",
+            });
+          } else {
+            await cdp.call("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
+          }
+          const after = (await cdp.call("Runtime.evaluate", { expression: "window.__gestureEndCamera", returnByValue: true })).result.value;
+          if (!after || after === before) throw new Error(`Automatic camera did not refit synchronously on node gesture ${ending}.`);
+          if (ending === "cancel") await cdp.call("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
+          gestureChecks.push({ ending, before, during, after, passed: true });
+        }
+        await writeFile(join(outputDirectory, "gesture-resize.json"), JSON.stringify(gestureChecks, null, 2));
+        const journeyDirectory = join(outputDirectory, "sidebar-journey-frames");
+        await rm(journeyDirectory, { recursive: true, force: true });
+        await mkdir(journeyDirectory, { recursive: true });
+        const captureJourneyPhase = async (startIndex, expectedCollapsed) => {
+          const state = await cdp.call("Runtime.evaluate", {
+            expression: "document.body.classList.contains('sidebar-collapsed')",
+            returnByValue: true,
+          });
+          if (state.result.value !== expectedCollapsed) {
+            throw new Error(`Sidebar journey expected ${expectedCollapsed ? "collapsed" : "expanded"} before recording phase.`);
+          }
+          for (let offset = 0; offset < 18; offset += 1) {
+            const shot = await cdp.call("Page.captureScreenshot", { format: "png", fromSurface: true });
+            await writeFile(join(journeyDirectory, `${String(startIndex + offset).padStart(3, "0")}.png`), Buffer.from(shot.data, "base64"));
+            await new Promise((resolvePromise) => setTimeout(resolvePromise, 120));
+          }
+        };
+        await captureJourneyPhase(1, true);
+        await cdp.call("Runtime.evaluate", { expression: "document.querySelector('#collapseSidebar').click()" });
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+        await captureJourneyPhase(19, false);
+        await cdp.call("Runtime.evaluate", { expression: "document.querySelector('#collapseSidebar').click()" });
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+        await captureJourneyPhase(37, true);
+      }
       const screenshot = await cdp.call("Page.captureScreenshot", { format: "png", fromSurface: true });
       await writeFile(frame, Buffer.from(screenshot.data, "base64"));
       const dom = await cdp.call("Runtime.evaluate", {
@@ -169,7 +286,81 @@ async function captureBrowserScene(url, frame, profile, width = 1280) {
           };
           const compactSelect = document.querySelector("#settingsCompactSelect");
           const invalidInputs = [...document.querySelectorAll('[aria-invalid="true"]')];
+          const box = (element) => {
+            if (!element) return null;
+            const rect = element.getBoundingClientRect();
+            return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
+          };
+          const graphStage = document.querySelector("#graphStage");
+          const graphStageRect = graphStage?.getBoundingClientRect();
+          const sidebar = document.querySelector(".sidebar");
+          const sidebarToggle = document.querySelector("#collapseSidebar");
+          const accountButton = document.querySelector("#desktopAccountButton");
+          const settingsButton = document.querySelector("#settingsButton");
+          const sidebarExpanded = !document.body.classList.contains("sidebar-collapsed");
+          const newThreadView = document.querySelector("#newThreadView");
+          const activeComposer = newThreadView && !newThreadView.classList.contains("hidden")
+            ? newThreadView.querySelector(".new-composer")
+            : document.querySelector("#threadComposer");
+          const graphToolbar = document.querySelector(".graph-controls");
+          const newThreadButton = document.querySelector("#newThread");
+          const newThreadIcon = newThreadButton?.querySelector("span");
+          const iconOffset = () => {
+            const button = newThreadButton.getBoundingClientRect();
+            const icon = newThreadIcon.getBoundingClientRect();
+            return { x: icon.left + icon.width / 2 - button.left - button.width / 2,
+              y: icon.top + icon.height / 2 - button.top - button.height / 2 };
+          };
+          let newThreadIconCentering = null;
+          if (!sidebarExpanded && newThreadButton && newThreadIcon) {
+            const previousFocus = document.activeElement;
+            const resting = iconOffset();
+            newThreadButton.focus({ preventScroll: true });
+            const focused = iconOffset();
+            previousFocus?.focus?.({ preventScroll: true });
+            const logo = document.querySelector(".sidebar-title .logo").getBoundingClientRect();
+            const button = newThreadButton.getBoundingClientRect();
+            const logoOffsetX = logo.left + logo.width / 2 - button.left - button.width / 2;
+            newThreadIconCentering = { resting, focused, logoOffsetX,
+              centered: Math.abs(logoOffsetX) <= 0.5
+                && [resting, focused].every(({ x, y }) => Math.abs(x) <= 0.5 && Math.abs(y) <= 0.5) };
+          }
           return {
+            sidebarLayout: (() => {
+              const scene = new URLSearchParams(location.search).get("scene");
+              if (!scene.startsWith("sidebar-")) return null;
+              const collectSidebarSnapshot = ${providerSidebarSnapshotFunctionSource};
+              const snapshot = collectSidebarSnapshot(document, window, scene);
+              const audit = ${providerSidebarAuditFunctionSource}(snapshot);
+              return {
+                viewportWidth: innerWidth,
+                newThreadIconCentering,
+                sidebar: box(sidebar),
+                mainArea: box(document.querySelector(".main-area")),
+                sidebarExpanded,
+                sidebarToggle: box(sidebarToggle),
+                footerAccount: box(accountButton),
+                footerSettings: box(settingsButton),
+                toggleWithinSidebar: audit.toggleWithinSidebar,
+                footerControlsWithinSidebar: audit.footerControlsWithinSidebar,
+                graphStage: box(graphStage),
+                graphZoom: document.querySelector("#graphZoomLevel")?.textContent ?? null,
+                resizeObserverAvailable: typeof ResizeObserver === "function",
+                graphNodes: snapshot.graphNodes.map((node) => node.rect),
+                graphNodesPresentOnce: audit.graphNodesPresentOnce,
+                graphNodesHavePositiveArea: audit.graphNodesHavePositiveArea,
+                graphToolbar: box(graphToolbar),
+                graphToolbarWithinCanvas: audit.graphToolbarWithinCanvas,
+                allGraphNodesWithinCanvas: audit.allGraphNodesWithinCanvas,
+                activeComposer: box(activeComposer),
+                activeComposerWithinViewport: audit.activeComposerWithinViewport,
+                composerControlRects: snapshot.expectedControls.map((control) => ({ rect: control.rect, visible: control.visible })),
+                composerControlsWithinComposer: audit.composerControlsWithinComposer,
+                openMenus: audit.openMenus,
+                menusWithinViewport: audit.menusWithinViewport,
+                documentScrollWidth: document.documentElement.scrollWidth,
+              };
+            })(),
             compactBackVisible: visible("#settingsCompactBackButton"),
             compactSelectVisible: visible("#settingsCompactSelect"),
             compactSelectValue: compactSelect?.value ?? null,
@@ -219,12 +410,112 @@ async function captureBrowserScene(url, frame, profile, width = 1280) {
         })()`,
         returnByValue: true,
       });
+      await writeFile(frame.replace(/\.png$/, ".audit.json"), JSON.stringify(audit.result.value, null, 2));
+      if (auditMutationsRequested && !sidebarMutationAuditComplete && scene.startsWith("sidebar-thread-")) {
+        const mutationProof = await cdp.call("Runtime.evaluate", {
+          expression: `(() => {
+            const collect = ${providerSidebarSnapshotFunctionSource};
+            const audit = ${providerSidebarAuditFunctionSource};
+            const results = [];
+            const assert = (name, condition) => {
+              results.push({ name, passed: Boolean(condition) });
+              if (!condition) throw new Error('Provider UX mutation audit failed: ' + name);
+            };
+            const run = (forScene = ${JSON.stringify(scene)}) => audit(collect(document, window, forScene));
+            const baseline = run();
+            assert('unmutated graph/control baseline', baseline.graphNodesPresentOnce && baseline.graphNodesHavePositiveArea
+              && baseline.toggleWithinSidebar && baseline.footerControlsWithinSidebar
+              && baseline.activeComposerWithinViewport && baseline.composerControlsWithinComposer
+              && baseline.graphToolbarWithinCanvas && baseline.allGraphNodesWithinCanvas);
+            const layer = document.querySelector('#graphStage #nodeLayer');
+            const originalNodes = [...layer.querySelectorAll('.graph-node')];
+            const target = originalNodes.find((node) => node.getAttribute('data-node') === '911');
+            for (const [name, omitted] of [['zero graph nodes', originalNodes], ['one graph node', originalNodes.slice(1)]]) {
+              for (const node of omitted) node.remove();
+              assert(name, !run().graphNodesPresentOnce);
+              for (const node of originalNodes) layer.append(node);
+            }
+            const duplicate = originalNodes[0].cloneNode(true);
+            layer.append(duplicate);
+            assert('duplicate graph node', !run().graphNodesPresentOnce);
+            duplicate.remove();
+            const priorTransform = target.style.transform;
+            target.style.transform = 'translateY(2000px)';
+            assert('vertical graph clipping', !run().allGraphNodesWithinCanvas);
+            target.style.transform = 'translateY(-2000px)';
+            assert('graph clipping above canvas', !run().allGraphNodesWithinCanvas);
+            target.style.transform = priorTransform;
+            const toggleParent = document.querySelector('#collapseSidebar').parentElement;
+            const toggleVisibility = toggleParent.style.visibility;
+            toggleParent.style.visibility = 'hidden';
+            assert('hidden toggle ancestor', !run().toggleWithinSidebar);
+            toggleParent.style.visibility = toggleVisibility;
+            const footerParent = document.querySelector('#settingsButton').parentElement;
+            const footerVisibility = footerParent.style.visibility;
+            footerParent.style.visibility = 'hidden';
+            assert('hidden footer ancestor', !run().footerControlsWithinSidebar);
+            footerParent.style.visibility = footerVisibility;
+            const graphToolbar = document.querySelector('.graph-controls');
+            const toolbarVisibility = graphToolbar.style.visibility;
+            graphToolbar.style.visibility = 'hidden';
+            assert('hidden graph toolbar', !run().graphToolbarWithinCanvas);
+            graphToolbar.style.visibility = toolbarVisibility;
+            const composerControlParent = document.querySelector('#sendInteraction').parentElement;
+            const controlVisibility = composerControlParent.style.visibility;
+            composerControlParent.style.visibility = 'hidden';
+            assert('hidden composer controls', !run().composerControlsWithinComposer);
+            composerControlParent.style.visibility = controlVisibility;
+            const composerParent = document.querySelector('#threadComposer').parentElement;
+            const composerDisplay = composerParent.style.display;
+            composerParent.style.display = 'none';
+            assert('hidden composer', !run().activeComposerWithinViewport);
+            composerParent.style.display = composerDisplay;
+            const threadComposer = document.querySelector('#threadComposer');
+            const composerTransform = threadComposer.style.transform;
+            for (const [name, transform] of [['composer above viewport', 'translateY(-2000px)'], ['composer below viewport', 'translateY(2000px)']]) {
+              threadComposer.style.transform = transform;
+              const moved = run();
+              assert(name, !moved.activeComposerWithinViewport && moved.composerControlsWithinComposer);
+            }
+            threadComposer.style.transform = composerTransform;
+            const newThreadView = document.querySelector('#newThreadView');
+            const menu = document.querySelector('#scopeMenu');
+            const menuParent = menu.parentElement;
+            const menuNextSibling = menu.nextSibling;
+            const viewWasHidden = newThreadView.classList.contains('hidden');
+            const menuWasHidden = menu.classList.contains('hidden');
+            const menuStyle = menu.getAttribute('style');
+            newThreadView.classList.remove('hidden');
+            menu.classList.remove('hidden');
+            Object.assign(menu.style, { position: 'fixed', left: '12px', top: '120px', width: '180px', height: '100px', display: 'block', visibility: 'visible', opacity: '1' });
+            const menuScene = 'sidebar-new-thread-483-expanded-scope-menu';
+            assert('rendered expected menu baseline', run(menuScene).menusWithinViewport);
+            for(const [property,value] of [['display','none'],['visibility','hidden'],['opacity','0']]) {
+              const previous=menu.style[property];menu.style[property]=value;
+              assert('hidden expected menu '+property,!run(menuScene).menusWithinViewport);
+              menu.style[property]=previous;
+            }
+            menu.remove();
+            assert('missing expected menu', !run(menuScene).menusWithinViewport);
+            menuParent.insertBefore(menu, menuNextSibling);
+            if (viewWasHidden) newThreadView.classList.add('hidden');
+            if (menuWasHidden) menu.classList.add('hidden');
+            if (menuStyle === null) menu.removeAttribute('style'); else menu.setAttribute('style', menuStyle);
+            assert('restored baseline', JSON.stringify(run())===JSON.stringify(baseline));
+            return { results };
+          })()`,
+          returnByValue: true,
+        });
+        if(mutationProof.exceptionDetails) throw new Error(mutationProof.exceptionDetails.exception?.description || 'Browser mutation proof failed');
+        await writeFile(frame.replace(/\.png$/, ".mutations.json"), JSON.stringify(mutationProof.result.value, null, 2));
+        sidebarMutationAuditComplete = true;
+      }
       return { dom: dom.result.value, audit: audit.result.value };
     } finally {
       cdp.close();
     }
   } finally {
-    child.kill("SIGKILL");
+    await stopCaptureBrowser(child);
   }
 }
 
@@ -694,8 +985,26 @@ async function requestJson(request) {
 }
 
 function productState(scene) {
-  const recovery = scene === "recovery" || scene === "flow";
+  const recovery = scene === "recovery" || scene === "flow" || scene.startsWith("sidebar-thread-");
   const retryAccepted = scene === "flow" && flowState.retrySubmitted;
+  const sidebarGraph = scene.startsWith("sidebar-thread-");
+  const acceptedGraph = {
+    layer: { id: 901, layout: { version: 1, placements: [
+      { nodeId: 910, x: 0.18, y: 0.35 },
+      { nodeId: 911, x: 0.5, y: 0.65 },
+      { nodeId: 912, x: 0.82, y: 0.35 },
+    ] } },
+    nodes: [
+      { id: 910, kind: "claim", title: "Provider adapters", text: "Keep provider-specific execution behind the shared contract." },
+      { id: 911, kind: "evidence", title: "Credential boundary", text: "Each adapter owns authentication and model discovery." },
+      { id: 912, kind: "decision", title: "Product boundary", text: "The workspace owns graph semantics and acceptance." },
+    ],
+    edges: [
+      { id: 920, endpoints: [910, 911] },
+      { id: 921, endpoints: [911, 912] },
+    ],
+    actions: [],
+  };
   const failedSelection = {
     familyId: scene === "flow" ? 404 : 11,
     providerId: "openai-work",
@@ -718,10 +1027,11 @@ function productState(scene) {
       threadId: 1,
       sequence: 1,
       text: "Review the provider adapter architecture",
-      completionStatus: retryAccepted ? "accepted" : "not_started",
+      completionStatus: retryAccepted || sidebarGraph ? "accepted" : "not_started",
       permissionProfileId: "auto",
+      ...(sidebarGraph ? { graphNodeId: 91, completionOutput: { rootLayer: acceptedGraph } } : {}),
       modelSelection: retryAccepted ? acceptedSelection : failedSelection,
-      latestAttempt: retryAccepted ? {
+      latestAttempt: retryAccepted || sidebarGraph ? {
         id: 45,
         attemptNumber: 2,
         outcome: "accepted",
@@ -861,14 +1171,23 @@ await mkdir(framesDirectory, { recursive: true });
 await mkdir(variantsDirectory, { recursive: true });
 await mkdir(motionDirectory, { recursive: true });
 
+const requestedScene = process.argv.find((argument) => argument.startsWith("--scene="))?.slice("--scene=".length);
+const onlySidebar = process.argv.includes("--only-sidebar");
+const selectedScene = requestedScene ? (scene) => scene === requestedScene : onlySidebar ? (scene) => scene.startsWith("sidebar-") : () => true;
+
 try {
-  for (const [scene, caption] of scenes) {
-    const url = `http://127.0.0.1:${port}/evidence.html?scene=${encodeURIComponent(scene)}&caption=${encodeURIComponent(caption)}${scene === "recovery" ? "&threadId=1" : ""}`;
+  for (const [scene, caption] of scenes.filter(([scene]) => selectedScene(scene))) {
+    const thread = scene === "recovery" ? "&threadId=1" : "";
+    const url = `http://127.0.0.1:${port}/evidence.html?scene=${encodeURIComponent(scene)}&caption=${encodeURIComponent(caption)}${thread}`;
     const frame = join(framesDirectory, `${scene}.png`);
     await rm(frame, { force: true });
     const { dom, audit } = await captureBrowserScene(url, frame, join(browserProfile, scene));
     const { size } = await stat(frame);
-    if (size < 20_000) throw new Error(`Evidence frame ${scene} is unexpectedly small (${size} bytes).`);
+    if (size < 20_000) {
+      await writeFile(join(framesDirectory, `${scene}.html`), dom);
+      await writeFile(join(framesDirectory, `${scene}.audit.json`), JSON.stringify(audit, null, 2));
+      throw new Error(`Evidence frame ${scene} is unexpectedly small (${size} bytes).`);
+    }
     if (!dom.includes('data-evidence-ready="true"')) {
       await writeFile(join(framesDirectory, `${scene}.html`), dom);
       const reported = dom.match(/data-evidence-error="([^"]+)"/)?.[1];
@@ -906,10 +1225,13 @@ try {
     }
   }
 
-  for (const { scene, caption, width, required } of variants) {
-    const url = `http://127.0.0.1:${port}/evidence.html?scene=${encodeURIComponent(scene)}&caption=${encodeURIComponent(caption)}`;
+  for (const { scene, caption, width, required } of variants.filter(({ scene }) => selectedScene(scene))) {
+    const thread = scene.startsWith("sidebar-thread-") ? "&threadId=1" : "";
+    const url = `http://127.0.0.1:${port}/evidence.html?scene=${encodeURIComponent(scene)}&caption=${encodeURIComponent(caption)}${thread}`;
     const frame = join(variantsDirectory, `${scene}.png`);
-    const { dom, audit } = await captureBrowserScene(url, frame, join(browserProfile, `variant-${scene}`), width);
+    const { dom, audit } = await captureBrowserScene(url, frame, join(browserProfile, `variant-${scene}`), width, {
+      forcedColors: scene.endsWith("-forced-colors"),
+    });
     const { size } = await stat(frame);
     if (size < 15_000) throw new Error(`Evidence variant ${scene} is unexpectedly small (${size} bytes).`);
     if (!dom.includes('data-evidence-ready="true"')) {
@@ -919,6 +1241,26 @@ try {
     }
     for (const text of required) {
       if (!dom.includes(text)) throw new Error(`Evidence variant ${scene} is missing ${text}.`);
+    }
+    if (scene.startsWith("sidebar-thread-")
+      && (!audit.sidebarLayout?.graphNodesPresentOnce || !audit.sidebarLayout?.graphNodesHavePositiveArea)) {
+      throw new Error(`Saved graph is missing expected visible nodes at ${scene}: ${JSON.stringify(audit.sidebarLayout)}`);
+    }
+    if (scene.startsWith("sidebar-thread-") && !audit.sidebarLayout?.allGraphNodesWithinCanvas
+      && !(width <= 450 && scene.endsWith("expanded"))) {
+      throw new Error(`Saved graph nodes are clipped by the canvas at ${scene}: ${JSON.stringify(audit.sidebarLayout)}`);
+    }
+    if (audit.sidebarLayout?.newThreadIconCentering?.centered === false) {
+      throw new Error(`Collapsed New Thread icon is off center at ${scene}: ${JSON.stringify(audit.sidebarLayout.newThreadIconCentering)}`);
+    }
+    if (scene.startsWith("sidebar-") && (!audit.sidebarLayout?.activeComposerWithinViewport
+      || !audit.sidebarLayout?.composerControlsWithinComposer
+      || !audit.sidebarLayout?.toggleWithinSidebar
+      || !audit.sidebarLayout?.footerControlsWithinSidebar
+      || !audit.sidebarLayout?.menusWithinViewport
+      || !audit.sidebarLayout?.graphToolbarWithinCanvas
+      || audit.sidebarLayout.documentScrollWidth > width)) {
+      throw new Error(`Sidebar layout clips a control or overflows at ${scene}: ${JSON.stringify(audit.sidebarLayout)}`);
     }
     if (scene === "narrow" && (!audit.compactBackVisible || !audit.compactSelectVisible || audit.compactSelectValue !== "providers")) {
       throw new Error(`Narrow Settings navigation is not usable: ${JSON.stringify(audit)}`);
@@ -961,17 +1303,44 @@ try {
     }
   }
 
-  const motionFrameCount = await recordBrowserFlow(
-    `http://127.0.0.1:${port}/evidence.html?scene=flow&caption=${encodeURIComponent("Provider setup · deterministic interactive recording")}`,
-    motionDirectory,
-    join(browserProfile, "interactive-flow"),
-  );
-  if (motionFrameCount < 60) throw new Error(`Interactive evidence recording is unexpectedly short (${motionFrameCount} frames).`);
-  if (flowState.retryRequest?.modelSelection?.providerId !== "codex"
-    || flowState.retryRequest?.modelSelection?.modelId !== "gpt-5.6-sol"
-    || !flowState.retryRequest?.text?.includes("verify retry safety")) {
-    throw new Error(`Interactive retry did not preserve the edited prompt and explicit model selection: ${JSON.stringify(flowState.retryRequest)}`);
+  if (auditMutationsRequested && !sidebarMutationAuditComplete) {
+    throw new Error("--audit-mutations requires a selected saved-thread sidebar scene to exercise the production audit.");
   }
+
+  let motionFrameCount = 0;
+  if (!requestedScene && !onlySidebar) {
+    motionFrameCount = await recordBrowserFlow(
+      `http://127.0.0.1:${port}/evidence.html?scene=flow&caption=${encodeURIComponent("Provider setup · deterministic interactive recording")}`,
+      motionDirectory,
+      join(browserProfile, "interactive-flow"),
+    );
+    if (motionFrameCount < 60) throw new Error(`Interactive evidence recording is unexpectedly short (${motionFrameCount} frames).`);
+    if (flowState.retryRequest?.modelSelection?.providerId !== "codex"
+      || flowState.retryRequest?.modelSelection?.modelId !== "gpt-5.6-sol"
+      || !flowState.retryRequest?.text?.includes("verify retry safety")) {
+      throw new Error(`Interactive retry did not preserve the edited prompt and explicit model selection: ${JSON.stringify(flowState.retryRequest)}`);
+    }
+  }
+  if (requestedScene) {
+    const sourceFrame = join(scenes.some(([scene]) => scene === requestedScene) ? framesDirectory : variantsDirectory, `${requestedScene}.png`);
+    await copyFile(sourceFrame, join(outputDirectory, `${requestedScene}.png`));
+    if (requestedScene === "sidebar-thread-journey") {
+      await run(ffmpeg, ["-y", "-framerate", "6", "-i", join(outputDirectory, "sidebar-journey-frames", "%03d.png"), "-vf", "fps=12,format=yuv420p", "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-movflags", "+faststart", join(outputDirectory, "sidebar-collapse-expand-collapse.mp4")], { maxBuffer: 1024 * 1024 * 8 });
+    }
+    process.stdout.write(`${JSON.stringify({ outputDirectory, scene: requestedScene, screenshot: sourceFrame })}\n`);
+  } else if (onlySidebar) {
+    const captured = variants.filter(({ scene }) => selectedScene(scene));
+    const manifest = {
+      schemaVersion: 1, generator: "scripts/capture-provider-ux-video.mjs", inference: false,
+      scenes: {},
+      variants: Object.fromEntries(await Promise.all(captured.map(async ({ scene, caption, width }) => [scene, {
+        caption, file: `variants/${scene}.png`, width: scene === "sidebar-thread-journey" ? 620 : width, height: 800,
+        ...await fileEvidence(join(variantsDirectory, `${scene}.png`)),
+      }]))),
+    };
+    await writeFile(join(outputDirectory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ outputDirectory, scenes: [], variants: captured.map(({ scene }) => scene) })}\n`);
+  } else {
   const recordedFrames = await motionEvidence(motionDirectory);
   const video = join(outputDirectory, "provider-ux-demo.mp4");
   await run(ffmpeg, [
@@ -1013,7 +1382,7 @@ try {
       {
         caption,
         file: `variants/${scene}.png`,
-        width,
+        width: scene === "sidebar-thread-journey" ? 620 : width,
         height: 800,
         ...await fileEvidence(join(variantsDirectory, `${scene}.png`)),
       },
@@ -1034,6 +1403,7 @@ try {
   };
   await writeFile(join(outputDirectory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify({ outputDirectory, video, scenes: scenes.map(([scene]) => scene), bytes: videoStats.size })}\n`);
+  }
 } finally {
   server.close();
   await rm(browserProfile, { recursive: true, force: true });

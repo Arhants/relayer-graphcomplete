@@ -1,3 +1,5 @@
+import { createWorkspaceLayout } from "./workspace-layout.js";
+import { preferredLayerNode, rememberedLayerSelection, rememberLayerSelection } from "./layer-selection.js";
 import { escapeHtml, toast } from "../ui.js";
 import { actionCanRetry, actionWasInvoked, actionReviewKind } from "../action-invocation-state.js";
 import { setControlActivationCompletion } from "../control-activation.js";
@@ -70,8 +72,12 @@ import {
 } from "../approval-model.js";
 import {
   clearThreadFollowupDraft,
+  followupTextDigest,
+  persistSentThreadFollowup,
   persistThreadFollowupDraft,
+  sentThreadFollowup,
   threadFollowupDraft,
+  threadFollowupRestoration,
 } from "../composer-drafts.js";
 
 export const GRAPH_NODE_ICON_RADIUS = 24;
@@ -98,6 +104,7 @@ export async function renderProductNodeDetail({
   onNavigate,
   onInvoke,
   onInput,
+  onInputEdit,
   capabilityState,
 }) {
   if (!node?.authoredDetail) {
@@ -117,7 +124,7 @@ export async function renderProductNodeDetail({
     appendCompatibilityNodeDetail(container, node);
     return Object.freeze({ authored: false, status: "fallback", error: compatibilityIssue });
   }
-  const adapters = { resolveAction, onNavigate, onInvoke, onInput };
+  const adapters = { resolveAction, onNavigate, onInvoke, onInput, onInputEdit };
   if (existing?.authored === true
     && existing.status === "mounted"
     && existing.mountKey === mountKey
@@ -143,6 +150,7 @@ export async function renderProductNodeDetail({
     onNavigate,
     onInvoke,
     onInput,
+    onInputEdit,
     capabilityState,
   });
   if (runtime.status !== "mounted") {
@@ -150,6 +158,37 @@ export async function renderProductNodeDetail({
     return Object.freeze({ authored: false, mountKey, host, ...runtime });
   }
   return Object.freeze({ authored: true, mountKey, host, ...runtime });
+}
+
+export function observeAutomaticGraphFitOnResize({
+  graphStage,
+  graphWindow,
+  getCameraRevision,
+  getGraphNodes,
+  hasActiveGesture,
+  refit,
+}) {
+  const Observer = graphWindow?.ResizeObserver;
+  if (!Observer) return { flush: () => {}, dispose: () => {} };
+  const initialRect = graphStage.getBoundingClientRect();
+  let previousSize = { width: initialRect.width, height: initialRect.height };
+  let pending = false;
+  let disposed = false;
+  const flush = () => {
+    if (disposed || !pending || hasActiveGesture()) return;
+    pending = false;
+    if (getGraphNodes().length > 0 && getCameraRevision() === 0) refit();
+  };
+  const observer = new Observer(() => {
+    if (disposed) return;
+    const { width, height } = graphStage.getBoundingClientRect();
+    const changed = Math.abs(width - previousSize.width) > 0.5 || Math.abs(height - previousSize.height) > 0.5;
+    previousSize = { width, height };
+    pending ||= changed;
+    flush();
+  });
+  observer.observe(graphStage);
+  return { flush, dispose: () => { disposed = true; pending = false; observer.disconnect(); } };
 }
 
 const GRAPH_NODE_HALF_WIDTH = 82;
@@ -735,11 +774,13 @@ export function rebuildInteractionSendIntentAfterInputReconciliation({
   clickedIntent,
   currentIntent,
   inputDraftRevision,
+  inputCompositionRevision,
 }) {
   return Object.freeze({
     ...(clickedIntent || currentIntent),
     contextConfirmationIds: currentIntent.contextConfirmationIds,
     inputDraftRevision,
+    ...(inputCompositionRevision === undefined ? {} : { inputCompositionRevision }),
   });
 }
 
@@ -1144,6 +1185,25 @@ export function createComposerDraftScopeState() {
   return { activeScopeKey: null, drafts: new Map() };
 }
 
+/**
+ * The newest unsent follow-up text written this session in an older turn's
+ * scope of the same thread, unless it is held, unchanged since Send: the
+ * submission in flight, or text a later turn shows was sent. Settlement deletes a sent draft, so what remains in memory is unsent;
+ * persisted text from earlier sessions is not moved. `olderScopeKeys` lists
+ * the thread's older scopes, newest first.
+ */
+function unsentOlderDraft(drafts, olderScopeKeys, heldSubmissions) {
+  for (const scopeKey of olderScopeKeys) {
+    const stored = drafts.get(scopeKey);
+    const text = stored?.promptValue || "";
+    if (!text) continue;
+    const held = heldSubmissions.some((submission) => submission?.scopeKey === scopeKey
+      && Object.is(stored?.promptRevision, submission.promptRevision));
+    return held ? null : { scopeKey, text };
+  }
+  return null;
+}
+
 export function transitionComposerDraftScope(state, {
   threadId,
   interactionId,
@@ -1151,8 +1211,22 @@ export function transitionComposerDraftScope(state, {
   currentPromptRevision = 0,
   restoredDraft = null,
   persistedDraftText = null,
+  persistedRestorationId = null,
+  olderScopeKeys = [],
+  inFlightSubmission = null,
+  sentDrafts = [],
 }) {
   const nextScopeKey = composerDraftScopeKey(threadId, interactionId);
+  // A restoration is identified by its interaction and retry attempt, so a
+  // later failed attempt of the same interaction restores again (SCP-020).
+  const restorationId = restoredDraft?.retryAttemptId != null
+    ? `${interactionId}:${restoredDraft.retryAttemptId}`
+    : interactionId;
+  // A persisted draft that grew from this restoration, before a restart,
+  // counts as having applied it, so clearing it leaves the composer empty. A
+  // user's own draft with the same text does not (SCP-020).
+  const restorationPersisted = Boolean(restoredDraft) && persistedDraftText !== null
+    && persistedRestorationId != null && String(persistedRestorationId) === String(restorationId);
   if (state.activeScopeKey === nextScopeKey) {
     const currentDraft = state.drafts.get(nextScopeKey) ?? {
       promptValue: currentPromptValue,
@@ -1160,21 +1234,26 @@ export function transitionComposerDraftScope(state, {
       restoredDraftInteractionId: null,
     };
     const restorationArrived = restoredDraft
-      && String(currentDraft.restoredDraftInteractionId) !== String(interactionId);
+      && String(currentDraft.restoredDraftInteractionId) !== String(restorationId);
     const persistedDraftChanged = persistedDraftText !== null
       && persistedDraftText !== currentPromptValue;
+    // A persisted draft the user wrote wins over a restoration, as it does on
+    // entering the scope; otherwise the next render would flip back to it.
+    const restores = restorationArrived && !persistedDraftText;
     const promptValue = persistedDraftChanged
       ? persistedDraftText
-      : restorationArrived ? restoredDraft.text : currentPromptValue;
-    const promptRevision = restorationArrived || persistedDraftChanged
+      : restores ? restoredDraft.text : currentPromptValue;
+    const promptRevision = restores || persistedDraftChanged
       ? currentPromptRevision + 1
       : currentPromptRevision;
     const drafts = new Map(state.drafts);
     drafts.set(nextScopeKey, {
       promptValue,
       promptRevision,
-      restoredDraftInteractionId: restorationArrived
-        ? interactionId
+      // A restoration the user's draft keeps out stays pending: once the
+      // user empties the composer, the retry text returns (SCP-020).
+      restoredDraftInteractionId: restores || restorationPersisted
+        ? restorationId
         : currentDraft.restoredDraftInteractionId,
     });
     return {
@@ -1193,23 +1272,59 @@ export function transitionComposerDraftScope(state, {
         ?.restoredDraftInteractionId ?? null,
     });
   }
-  if (persistedDraftText !== null) {
+  const stored = drafts.get(nextScopeKey);
+  // A newer turn's scope starts empty; unsent text typed while the previous
+  // turn's scope was active moves into it, so it is not stranded there. It
+  // wins over the turn's retry text, as a user's draft does, which leaves
+  // the restoration pending (SCP-018, SCP-020).
+  const carried = persistedDraftText === null && !stored?.promptValue
+    ? unsentOlderDraft(drafts, olderScopeKeys, [inFlightSubmission, ...sentDrafts])
+    : null;
+  if (carried) {
+    drafts.set(nextScopeKey, {
+      promptValue: carried.text,
+      promptRevision: Math.max(stored?.promptRevision ?? 0, currentPromptRevision) + 1,
+      restoredDraftInteractionId: null,
+    });
+    drafts.delete(carried.scopeKey);
+  } else if (restoredDraft && persistedDraftText === null && !stored?.promptValue
+    && String(stored?.restoredDraftInteractionId) !== String(restorationId)) {
+    // A pending restoration fills an empty composer: an emptied composer
+    // holds no draft (SCP-020). An empty value persisted after the user
+    // cleared the restored text is a tombstone, and wins.
+    drafts.set(nextScopeKey, {
+      promptValue: restoredDraft.text,
+      promptRevision: Math.max(stored?.promptRevision ?? 0, currentPromptRevision) + 1,
+      restoredDraftInteractionId: restorationId,
+    });
+  } else if (persistedDraftText !== null && stored?.promptValue !== persistedDraftText) {
+    // A scope's revision only moves forward, so settlement's revision check
+    // can tell an edit from the text it sent. Unchanged text keeps its
+    // revision (below); changed text takes one above any it had. The user's
+    // draft wins over a restoration, which stays pending; an empty tombstone
+    // consumes it.
     drafts.set(nextScopeKey, {
       promptValue: persistedDraftText,
-      promptRevision: currentPromptRevision + 1,
-      restoredDraftInteractionId: restoredDraft ? interactionId : null,
+      promptRevision: Math.max(stored?.promptRevision ?? 0, currentPromptRevision) + 1,
+      restoredDraftInteractionId: (restoredDraft && !persistedDraftText) || restorationPersisted
+        ? restorationId
+        : stored?.restoredDraftInteractionId ?? null,
     });
+  } else if ((persistedDraftText === "" || restorationPersisted) && restoredDraft) {
+    // An unchanged empty tombstone keeps its revision and consumes the restoration.
+    drafts.set(nextScopeKey, { ...stored, restoredDraftInteractionId: restorationId });
   } else if (!drafts.has(nextScopeKey)) {
     drafts.set(nextScopeKey, {
-      promptValue: restoredDraft?.text ?? "",
+      promptValue: "",
       promptRevision: currentPromptRevision + 1,
-      restoredDraftInteractionId: restoredDraft ? interactionId : null,
+      restoredDraftInteractionId: null,
     });
   }
   return {
     state: { activeScopeKey: nextScopeKey, drafts },
     promptValue: drafts.get(nextScopeKey).promptValue,
     promptRevision: drafts.get(nextScopeKey).promptRevision,
+    carriedFromScopeKey: carried?.scopeKey ?? null,
   };
 }
 
@@ -1351,6 +1466,30 @@ export function compiledNodeDetailCoversActions(detail, actions, node) {
   return (actions ?? []).every((action) => boundActionIds.has(String(action.id)));
 }
 
+export function graphCameraForView({
+  cachedView,
+  cachedLayoutMatches,
+  enteringView,
+  nodes,
+  bounds,
+  currentCamera,
+  currentCameraRevision,
+}) {
+  if (cachedView && cachedLayoutMatches) {
+    if (cachedView.cameraRevision === 0) {
+      return { camera: fitGraphCamera(nodes, bounds), cameraRevision: 0 };
+    }
+    return {
+      camera: { ...cachedView.camera },
+      cameraRevision: cachedView.cameraRevision,
+    };
+  }
+  if (enteringView || !cachedLayoutMatches) {
+    return { camera: fitGraphCamera(nodes, bounds), cameraRevision: 0 };
+  }
+  return { camera: currentCamera, cameraRevision: currentCameraRevision };
+}
+
 export function captureGraphViewState(
   nodes,
   camera,
@@ -1480,6 +1619,8 @@ export function createProductWorkspace({
   onSelectTurn = () => {},
   onSelectTurnById,
   onSelectionChange = () => {},
+  onOpenReadyResult = () => {},
+  layerSelectionMemoryOwner = globalThis.window,
   onExportConversation = null,
   shareApi = null,
   onSubmitInteraction = async () => {},
@@ -1500,7 +1641,12 @@ export function createProductWorkspace({
   let graphEdges = [];
   let graphSignature = "";
   let graphViewKey = "";
+  // Advances on every view entry, so a request made in a view the user left
+  // is void even after returning to a view with the same key.
+  let graphViewEpoch = 0;
   let dragging = null;
+  // A layout that changed mid-drag is fitted once the drag ends.
+  let fitGraphAfterDrop = false;
   let panning = null;
   let pinching = null;
   let camera = { x: 0, y: 0, zoom: 1 };
@@ -1539,7 +1685,10 @@ export function createProductWorkspace({
   const contextDraftController = contextDraftApi
     ? createNodeContextDraftController({
       api: contextDraftApi,
-      onChange: () => renderContextDraftStatus(),
+      onChange: () => {
+        settleAdoptedDraftOperations();
+        renderContextDraftStatus();
+      },
     })
     : null;
   const contextEditorErrors = new Map();
@@ -1572,6 +1721,109 @@ export function createProductWorkspace({
   const inputErrors = new Map();
   const inputTouched = new Set();
   const inputPending = createInputMutationTracker();
+  // Stage keys whose pending mutation is a commit. Send waits for a commit
+  // (through authoredInputCommits) instead of being disabled by it.
+  const committingInputStages = new Set();
+  // An authored Node Detail input commits on change, and pressing Send blurs
+  // it first. Send waits for these commits instead of being disabled by
+  // them, so that click is not lost and it carries the committed answer.
+  const authoredInputCommits = new Map();
+  // A commit can fail before the click that blurred its input arrives, so an
+  // input's latest failed commit is kept until a Send it stops, a newer
+  // commit of that input, or detaching that input accounts for it.
+  const latestAuthoredInputCommits = new Map();
+  const failedAuthoredInputs = new Map();
+  // thread and input -> why its latest commit failed, shown again when its
+  // Node Detail remounts, until a later commit or detaching it clears it.
+  const authoredInputErrors = new Map();
+  const authoredInputKey = (occurrence) => [
+    occurrence.presentingInteractionNodeId,
+    occurrence.presentingLayerId,
+    occurrence.actionId,
+  ].join("\u0000");
+  const trackAuthoredInputCommit = (threadId, inputKey, commit) => {
+    const key = String(threadId);
+    const inputSlot = `${key}\u0000${inputKey}`;
+    const commits = authoredInputCommits.get(key) ?? new Set();
+    authoredInputCommits.set(key, commits);
+    commits.add(commit);
+    latestAuthoredInputCommits.set(inputSlot, commit);
+    failedAuthoredInputs.get(key)?.delete(inputKey);
+    void commit.then(() => {
+      if (latestAuthoredInputCommits.get(inputSlot) === commit) authoredInputErrors.delete(inputSlot);
+    }, (error) => {
+      if (latestAuthoredInputCommits.get(inputSlot) !== commit) return;
+      authoredInputErrors.set(inputSlot, error?.message || "Input could not be committed.");
+      const failed = failedAuthoredInputs.get(key) ?? new Set();
+      failedAuthoredInputs.set(key, failed);
+      failed.add(inputKey);
+    }).finally(() => {
+      if (latestAuthoredInputCommits.get(inputSlot) === commit) latestAuthoredInputCommits.delete(inputSlot);
+      commits.delete(commit);
+      if (!commits.size && authoredInputCommits.get(key) === commits) authoredInputCommits.delete(key);
+      syncComposer();
+    });
+    syncComposer();
+    return commit;
+  };
+  // mount key and input -> the thread of an authored text input edited and
+  // not yet committed. Pressing Send leaves the field, which commits it, so
+  // the answer counts toward Send being ready while its Node Detail shows.
+  const authoredInputEdits = new Map();
+  // The change that leaves the field starts its commit after an await; until
+  // onInput tracks that commit, the submission counts as the commit. One the
+  // input refused (a blank answer, or one it cannot commit here) failed, and
+  // stops a Send as a failed commit does, until that input is edited again
+  // or a later submission of it commits.
+  // Keyed by the Node Detail's mount key as well, since mount IDs repeat
+  // across Node Details.
+  const refusedInputKey = (mountKey, mountId) => `refused\u0000${mountKey}\u0000${mountId}`;
+  // refusal key -> the input key of the occurrence it refused, so detaching
+  // that input clears it.
+  const refusedInputOccurrences = new Map();
+  const trackAuthoredInputSubmit = (threadId, submitted, refusalKey) => {
+    const key = String(threadId);
+    const commits = authoredInputCommits.get(key) ?? new Set();
+    authoredInputCommits.set(key, commits);
+    commits.add(submitted);
+    void submitted.then((committed) => {
+      // A later submission that commits (a select reports no edit between
+      // them) accounts for the refusal too.
+      if (committed !== false) {
+        failedAuthoredInputs.get(key)?.delete(refusalKey);
+        return;
+      }
+      const failed = failedAuthoredInputs.get(key) ?? new Set();
+      failedAuthoredInputs.set(key, failed);
+      failed.add(refusalKey);
+    }).finally(() => {
+      commits.delete(submitted);
+      if (!commits.size && authoredInputCommits.get(key) === commits) authoredInputCommits.delete(key);
+      syncComposer();
+    });
+  };
+  const pendingAuthoredInputCommits = (threadId) => {
+    const key = String(threadId);
+    const mountKey = mountedAuthoredDetail?.host?.isConnected && !$("#inspector").classList.contains("hidden")
+      ? mountedAuthoredDetail.mountKey
+      : null;
+    const edits = [...authoredInputEdits].filter(([editKey, editThreadId]) => (
+      editThreadId === key && editKey.startsWith(`${mountKey}\u0000`))).length;
+    return (authoredInputCommits.get(key)?.size ?? 0) + edits;
+  };
+  // Whether every answer saved. A failure stops this Send only, whether or
+  // not its Node Detail is still open; the input shows why, and sending
+  // again without the answer is the user's choice.
+  const settleAuthoredInputCommits = async (threadId) => {
+    const key = String(threadId);
+    let commits;
+    while ((commits = authoredInputCommits.get(key))?.size) {
+      await Promise.allSettled([...commits]);
+    }
+    const failed = failedAuthoredInputs.get(key);
+    failedAuthoredInputs.delete(key);
+    return !failed?.size;
+  };
   const inputRailScroll = new Map();
   let inputFocusRequest = null;
   const renderedInputDraftStatusKeys = new Map();
@@ -1636,25 +1888,133 @@ export function createProductWorkspace({
       && !loadedInputDraftThreads.has(String(threadId)),
   }) : null;
 
+  // While an annotation draft resolves (its flush before a switch or a
+  // navigation, ✓, or ×), a user's click or navigation waits for it and then
+  // proceeds if it is still the latest one, instead of being dropped. When
+  // the draft resolves, the selection is re-rendered from the latest state
+  // unless a waiting request or the continuing switch will render it.
+  let editorResolution = null;
+  let userRequestTicket = 0;
+  let waitingUserRequests = 0;
+  const refreshSelection = () => {
+    if (disposed || selection.selectedNodeId == null) return;
+    void selectNode(getState(), selection.selectedNodeId, { notify: false });
+  };
+  const beginEditorResolution = (editor) => {
+    editor.resolving = true;
+    let settle;
+    const resolution = new Promise((resolve) => { settle = resolve; });
+    editorResolution = resolution;
+    let ended = false;
+    return ({ refresh = true } = {}) => {
+      if (ended) return;
+      ended = true;
+      editor.resolving = false;
+      if (editorResolution === resolution) editorResolution = null;
+      settle();
+      if (refresh && !waitingUserRequests) refreshSelection();
+    };
+  };
+  // An editor remounted while its draft's confirm, discard, or reconcile is
+  // still in flight (after leaving the thread and returning) resolves until
+  // that operation settles, as the editor that started it did.
+  // The workspace's own confirm or discard is the stable signal: its promise
+  // settles only once any revision-conflict reconciliation and retry are
+  // done, while the draft's operation kind passes through idle and saving.
+  const draftOperationPending = (draft) => (
+    ["confirming", "discarding", "reconciling"].includes(draft?.operation?.kind));
+  const workspaceDraftOperations = new Map();
+  const draftOperationKey = (threadId, nodeId) => `${threadId}\u0000${nodeId}`;
+  const trackDraftOperation = (threadId, nodeId, operation) => {
+    const key = draftOperationKey(threadId, nodeId);
+    const tracked = Promise.resolve(operation);
+    workspaceDraftOperations.set(key, tracked);
+    const release = () => {
+      if (workspaceDraftOperations.get(key) === tracked) workspaceDraftOperations.delete(key);
+    };
+    tracked.then(release, release);
+    return operation;
+  };
+  const adoptedDraftOperations = new Set();
+  const adoptDraftOperation = (editor, threadId, nodeId) => {
+    if (!editor || editor.resolving) return;
+    const tracked = workspaceDraftOperations.get(draftOperationKey(threadId, nodeId));
+    if (tracked) {
+      const end = beginEditorResolution(editor);
+      tracked.then(() => end(), () => end());
+      return;
+    }
+    // An operation the workspace did not start: settle once the controller
+    // shows it done after the current task, past any transient state.
+    if (!draftOperationPending(contextDraftController?.draftForNode(threadId, nodeId))) return;
+    adoptedDraftOperations.add({ threadId, nodeId, end: beginEditorResolution(editor) });
+  };
+  function settleAdoptedDraftOperations() {
+    if (!adoptedDraftOperations.size) return;
+    queueMicrotask(() => {
+      for (const adopted of adoptedDraftOperations) {
+        if (draftOperationPending(contextDraftController?.draftForNode(adopted.threadId, adopted.nodeId))) continue;
+        adoptedDraftOperations.delete(adopted);
+        adopted.end();
+      }
+    });
+  }
+  const awaitUserRequestTurn = async () => {
+    const ticket = ++userRequestTicket;
+    waitingUserRequests += 1;
+    try {
+      while (editorResolution) await editorResolution;
+    } finally {
+      waitingUserRequests -= 1;
+    }
+    return !disposed && ticket === userRequestTicket;
+  };
+
   const prepareNodeContextSelectionChange = async () => {
     const requestSequence = ++nodeSelectionSequence;
+    if (contextEditor?.resolving) {
+      const viewEpoch = graphViewEpoch;
+      if (!await awaitUserRequestTurn()) return false;
+      // A request made in a view the workspace has since left is void.
+      if (graphViewEpoch !== viewEpoch) {
+        refreshSelection();
+        return false;
+      }
+      return prepareNodeContextSelectionChange();
+    }
+    // A request that proceeds at once voids any still waiting.
+    userRequestTicket += 1;
     const editor = contextEditor;
     if (!editor?.durable) return true;
-    if (editor.resolving) return false;
-    editor.resolving = true;
-    renderNodeContextDock();
-    const saved = await saveContextDraftBeforeSelection({
-      controller: contextDraftController,
-      editor,
-      textarea: $("#nodeContextDock #contextAnnotationEditor"),
-    });
-    editor.resolving = false;
-    if (requestSequence !== nodeSelectionSequence || contextEditor !== editor) {
+    const endResolution = beginEditorResolution(editor);
+    let saved = false;
+    try {
+      renderNodeContextDock();
+      saved = await saveContextDraftBeforeSelection({
+        controller: contextDraftController,
+        editor,
+        textarea: $("#nodeContextDock #contextAnnotationEditor"),
+      });
+    } catch {
+      saved = false;
+    } finally {
+      const current = requestSequence === nodeSelectionSequence;
+      const again = current && contextEditor !== editor && saved;
+      const proceeds = current && contextEditor === editor && saved;
+      // A proceeding or repeated prepare renders what follows; otherwise the
+      // selection is re-rendered now that the draft has resolved.
+      endResolution({ refresh: !proceeds && !again });
+    }
+    if (requestSequence !== nodeSelectionSequence) {
       if (contextEditor === editor) renderComposerContexts();
       return false;
     }
-    if (!saved) {
-      renderComposerContexts();
+    if (contextEditor !== editor && saved) {
+      // The editor was replaced meanwhile; prepare again for the one open now.
+      return prepareNodeContextSelectionChange();
+    }
+    if (contextEditor !== editor || !saved) {
+      if (contextEditor === editor) renderComposerContexts();
       return false;
     }
     return true;
@@ -1798,6 +2158,8 @@ export function createProductWorkspace({
   };
   graphDocument.addEventListener("pointerdown", closeSettingsMenuFromOutside, true);
   graphDocument.addEventListener("keydown", closeSettingsMenuOnEscape, true);
+  const readingLayout = createWorkspaceLayout(root, graphWindow);
+  $("#openReadyResult").onclick = () => onOpenReadyResult();
   const narrowInspectorMedia = graphWindow?.matchMedia?.("(max-width: 760px)");
   let inspectorUsesOverlay = narrowInspectorMedia?.matches
     ?? (graphWindow?.innerWidth ?? 0) <= 760;
@@ -2326,6 +2688,15 @@ export function createProductWorkspace({
   const midpoint = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
   const pointerDistance = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
 
+  // The node stays where it was dropped; the view fits the new layout.
+  function fitAfterDrop() {
+    if (!fitGraphAfterDrop || dragging) return;
+    fitGraphAfterDrop = false;
+    // An automatic fit, as graphCameraForView makes: camera revision 0.
+    cameraRevision = 0;
+    updateCamera(fitGraphCamera(graphNodes, graphStage.getBoundingClientRect()), false);
+  }
+
   function updateCamera(nextCamera, manual = true) {
     camera = nextCamera;
     if (manual) {
@@ -2334,6 +2705,15 @@ export function createProductWorkspace({
     }
     drawGraph();
   }
+
+  const automaticGraphFit = observeAutomaticGraphFitOnResize({
+    graphStage,
+    graphWindow,
+    getCameraRevision: () => cameraRevision,
+    getGraphNodes: () => graphNodes,
+    hasActiveGesture: () => Boolean(dragging || panning || pinching),
+    refit: () => updateCamera(fitGraphCamera(graphNodes, graphStage.getBoundingClientRect()), false),
+  });
 
   function zoomAt(zoom, anchor = {
     x: graphStage.getBoundingClientRect().width / 2,
@@ -2412,6 +2792,7 @@ export function createProductWorkspace({
       panning = null;
     }
     if (!panning && !pinching) graphStage.classList.remove("panning");
+    automaticGraphFit.flush();
   };
   graphStage.onpointerup = finishPan;
   graphStage.onpointercancel = finishPan;
@@ -2441,6 +2822,44 @@ export function createProductWorkspace({
   const confirmContextDraftSend = $("#confirmContextDraftSend");
   let sendAttempt = null;
   const inFlightSendThreads = new Map();
+  // thread -> the scope and prompt revision of its submission in flight,
+  // from the click on Send.
+  const inFlightSubmissions = new Map();
+  // thread -> the scope typed in since its Send was clicked, before the POST
+  // wrote its send record; a newer turn may have moved the composer there.
+  const sendEditScopes = new Map();
+  // Text left in a turn's scope was sent once a later turn of the thread
+  // carries it, as after a send that failed with a network or server error
+  // (SCP-019) or one interrupted by a restart. It is neither carried into a
+  // newer turn nor handed back.
+  // How many of the thread's user turns after scopeKey's turn match.
+  const laterUserTurnMatches = (threadId, scopeKey, matches) => {
+    // A turn an invoke action created is not the user's follow-up.
+    const invoked = new Set((getState().actionInvocations || [])
+      .map((invocation) => String(invocation.resultInteractionId)));
+    const turns = (getState().interactions || [])
+      .filter((turn) => String(turn.threadId) === String(threadId));
+    const from = turns.findIndex((turn) => composerDraftScopeKey(threadId, turn.id) === scopeKey);
+    return from < 0 ? 0 : turns.slice(from + 1)
+      .filter((turn) => !invoked.has(String(turn.id)) && matches(String(turn.text ?? ""))).length;
+  };
+  const sentByLaterTurn = (threadId, scopeKey, text) => Boolean(String(text ?? "").trim())
+    && laterUserTurnMatches(threadId, scopeKey, (turnText) => turnText.trim() === String(text).trim()) > 0;
+  // A thread's send whose turn has not loaded is persisted from when its POST
+  // starts, so it outlives a restart: the scope its text is in now, the scope
+  // it was sent from, a digest of the sent text, whether that scope's draft
+  // was typed after Send, and how many Sends of that text from that scope
+  // it waits for. Such a draft is kept until every one of those turns
+  // loads, even when it repeats the sent text (SCP-018).
+  const sentTurnLoaded = (threadId, record) => laterUserTurnMatches(
+    threadId,
+    record.originScopeKey,
+    (turnText) => followupTextDigest(turnText) === record.textDigest,
+  ) >= record.sends;
+  const editedAfterSendScopeKey = (threadId) => {
+    const record = sentThreadFollowup(threadId);
+    return record?.edited ? record.scopeKey : null;
+  };
   let sendWarningIntent = null;
   let failedConfirmationSends = new Map();
   const establishConfirmationReplayContextRevision = (threadId) => {
@@ -2459,6 +2878,8 @@ export function createProductWorkspace({
   let composerDraftScopeState = createComposerDraftScopeState();
   let composerPromptRevision = 0;
   let restoredDraftActive = false;
+  // The latest turn's retry restoration, applied when the composer is empty.
+  let pendingRestoration = null;
   let modelPicker;
   const replaceComposerContexts = (value) => {
     composerContextState = transitionComposerContextState(composerContextState, {
@@ -2651,6 +3072,7 @@ export function createProductWorkspace({
         attaching: !contextForTarget(selectedDraft.target),
         error: restoredContextEditorError(threadId, selectedDraft.id),
       });
+      adoptDraftOperation(contextEditor, threadId, selectedNode.id);
     }
     if (!contextEditor?.durable
       || !selectedNode
@@ -2747,16 +3169,18 @@ export function createProductWorkspace({
     discard.onclick = async () => {
       if (contextStagingDisabled()) return;
       const discardingEditor = contextEditor;
-      discardingEditor.resolving = true;
-      clearContextEditorError(discardingEditor);
-      renderNodeContextDock();
+      const endResolution = beginEditorResolution(discardingEditor);
       try {
-        await contextDraftController.discard(threadId, selectedNode.id);
+        clearContextEditorError(discardingEditor);
+        renderNodeContextDock();
+        await trackDraftOperation(threadId, selectedNode.id,
+          contextDraftController.discard(threadId, selectedNode.id));
         clearContextEditorError(discardingEditor);
         closeDurableEditor(threadId, discardingEditor.draftId);
       } catch (discardError) {
-        discardingEditor.resolving = false;
         rememberContextEditorError(discardingEditor, discardError.message);
+      } finally {
+        endResolution();
       }
       renderComposerContexts();
     };
@@ -2770,13 +3194,13 @@ export function createProductWorkspace({
     confirm.onclick = async () => {
       if (contextStagingDisabled()) return;
       const confirmingEditor = contextEditor;
-      confirmingEditor.resolving = true;
-      clearContextEditorError(confirmingEditor);
-      renderNodeContextDock();
+      const endResolution = beginEditorResolution(confirmingEditor);
       try {
-        const confirmation = await contextDraftController.confirm(threadId, selectedNode.id);
+        clearContextEditorError(confirmingEditor);
+        renderNodeContextDock();
+        const confirmation = await trackDraftOperation(threadId, selectedNode.id,
+          contextDraftController.confirm(threadId, selectedNode.id));
         if (!confirmation) {
-          confirmingEditor.resolving = false;
           rememberContextEditorError(
             confirmingEditor,
             "This annotation could not be confirmed. Retry after it is saved.",
@@ -2789,8 +3213,9 @@ export function createProductWorkspace({
           }
         }
       } catch (confirmError) {
-        confirmingEditor.resolving = false;
         rememberContextEditorError(confirmingEditor, confirmError.message);
+      } finally {
+        endResolution();
       }
       renderComposerContexts();
     };
@@ -3078,7 +3503,9 @@ export function createProductWorkspace({
         detach.setAttribute("aria-label", `Detach ${attachment.action.prompt}`);
         detach.disabled = contextStagingDisabled() || inputPending.has(stageKey);
         detach.onclick = async () => {
-          if (detach.disabled) return;
+          // Checked at the click: a Send that began after this pill rendered
+          // locks the committed inputs it reserves.
+          if (detach.disabled || contextStagingDisabled() || inputPending.has(stageKey)) return;
           beginNodeInputMutation({
             inputPending,
             stageKey,
@@ -3091,6 +3518,14 @@ export function createProductWorkspace({
           });
           try {
             await inputDraftController.detach(thread.id, attachment.occurrence);
+            const detachedInputKey = authoredInputKey(attachment.occurrence);
+            failedAuthoredInputs.get(String(thread.id))?.delete(detachedInputKey);
+            for (const [refusalKey, inputKey] of refusedInputOccurrences) {
+              if (inputKey !== detachedInputKey) continue;
+              failedAuthoredInputs.get(String(thread.id))?.delete(refusalKey);
+              refusedInputOccurrences.delete(refusalKey);
+            }
+            authoredInputErrors.delete(`${thread.id}\u0000${authoredInputKey(attachment.occurrence)}`);
             markInputCompositionChanged(thread.id);
             inputStages.delete(stageKey);
             inputErrors.delete(stageKey);
@@ -3148,7 +3583,13 @@ export function createProductWorkspace({
     const inputThreadId = String(thread.id);
     const inputDraftsReady = !inputDraftController
       || (loadedInputDraftThreads.has(inputThreadId) && !inputDraftLoads.has(inputThreadId));
-    const inputAttachments = inputDraftController?.current(thread.id)?.attachments || [];
+    const committedInputs = inputDraftController?.current(thread.id)?.attachments || [];
+    // An answer still committing counts: Send waits for it (and stops if it fails).
+    const inputAttachments = pendingAuthoredInputCommits(thread.id)
+      ? [...committedInputs, { pending: true }]
+      : committedInputs;
+    // Send waits for a commit in flight; a detach in flight disables it.
+    const pendingInputDetaches = [...inputPending].filter((key) => !committingInputStages.has(key));
     const failedConfirmationSend = failedConfirmationSends.get(String(thread.id));
     const replayIntent = confirmationSendReplayIntent({
       intent: failedConfirmationSend?.intent,
@@ -3166,7 +3607,7 @@ export function createProductWorkspace({
       && (modelPicker?.isReady() ?? false)
       && !contextEditor;
     send.disabled = threadHasInFlightSend(inFlightSendThreads, thread.id)
-      || threadHasPendingInputMutation(inputPending, thread.id)
+      || threadHasPendingInputMutation(pendingInputDetaches, thread.id)
       || !contextDraftsReady || !inputDraftsReady || (!replayReady && !composerSubmissionReady(
       prompt.value,
       prompt.disabled,
@@ -3193,8 +3634,14 @@ export function createProductWorkspace({
     releaseSendAttempt();
   };
   const closeContextDraftSendWarning = ({ focusSend = true, cancelAttempt = true } = {}) => {
+    const cancelled = cancelAttempt ? sendWarningIntent : null;
     sendWarningIntent = null;
     if (cancelAttempt) cancelSendAttempt();
+    // A cancelled Send hands back text a newer turn left in its scope.
+    if (cancelled?.submission) {
+      restoreStrandedSubmission(cancelled.submission);
+      syncComposer();
+    }
     if (contextDraftSendWarning.open) contextDraftSendWarning.close();
     if (focusSend) send.focus({ preventScroll: true });
   };
@@ -3250,12 +3697,83 @@ export function createProductWorkspace({
   });
   cancelContextDraftSend.onclick = () => closeContextDraftSendWarning();
 
+  // A send that fails after its thread's newer turn arrived leaves its text
+  // in the older turn's scope; bring it back into the empty prompt. Text the
+  // user typed since wins, and the older text is retired, so it cannot be
+  // carried forward later (SCP-021).
+  const restoreStrandedSubmission = (submission) => {
+    const { activeScopeKey } = composerDraftScopeState;
+    const shown = String(getThread()?.id) === String(submission.threadId);
+    if (shown && activeScopeKey === submission.scopeKey) return;
+    const stored = composerDraftScopeState.drafts.get(submission.scopeKey);
+    const stranded = stored?.promptValue;
+    if (!stranded) return;
+    if (sentByLaterTurn(submission.threadId, submission.scopeKey, stranded)) return;
+    // While another thread is shown, the send's thread's newest scope
+    // decides: newer text there supersedes the stranded text, and an empty
+    // one carries it forward when the thread is shown again.
+    const newestTurn = shown ? null : (getState().interactions || [])
+      .filter((turn) => String(turn.threadId) === String(submission.threadId)).at(-1);
+    const newestScopeKey = newestTurn ? composerDraftScopeKey(submission.threadId, newestTurn.id) : null;
+    if (!shown && (!newestScopeKey || newestScopeKey === submission.scopeKey
+      || !(threadFollowupDraft(newestScopeKey) ?? composerDraftScopeState.drafts.get(newestScopeKey)?.promptValue))) {
+      return;
+    }
+    const drafts = new Map(composerDraftScopeState.drafts);
+    drafts.delete(submission.scopeKey);
+    composerDraftScopeState = { activeScopeKey, drafts };
+    clearThreadFollowupDraft(submission.scopeKey);
+    if (!shown || prompt.value) return;
+    prompt.value = stranded;
+    composerPromptRevision += 1;
+    persistThreadFollowupDraft(activeScopeKey, stranded);
+  };
+
   const submitInteraction = async (intent) => {
     const submittedThreadId = intent.threadId;
     const submittedContexts = intent.contexts;
     const submittedConfirmationIds = intent.contextConfirmationIds;
     const submission = intent.submission;
-    prompt.disabled = true;
+    const inFlightSubmission = Object.freeze({
+      scopeKey: submission.scopeKey,
+      promptRevision: submission.prompt.revision,
+    });
+    inFlightSubmissions.set(String(submittedThreadId), inFlightSubmission);
+    const sentRecord = String(submission.prompt.value).trim()
+      ? {
+        scopeKey: submission.scopeKey,
+        originScopeKey: submission.scopeKey,
+        textDigest: followupTextDigest(submission.prompt.value),
+      }
+      : null;
+    if (sentRecord) {
+      // An edit made while Send waited for input commits already counts, in
+      // the scope it was made in.
+      const editScopeKey = sendEditScopes.get(String(submittedThreadId));
+      const scopeRevision = composerDraftScopeState.activeScopeKey === submission.scopeKey
+        ? composerPromptRevision
+        : composerDraftScopeState.drafts.get(submission.scopeKey)?.promptRevision;
+      // An earlier Send of the same text from the same scope whose turn has
+      // not loaded is still waited for, so the first of those turns does not
+      // end this one's protection.
+      const earlier = sentThreadFollowup(submittedThreadId);
+      const earlierSends = earlier?.originScopeKey === sentRecord.originScopeKey
+        && earlier.textDigest === sentRecord.textDigest ? earlier.sends : 0;
+      persistSentThreadFollowup(submittedThreadId, {
+        ...sentRecord,
+        sends: earlierSends + 1,
+        scopeKey: editScopeKey ?? submission.scopeKey,
+        edited: editScopeKey != null
+          || (scopeRevision !== undefined && scopeRevision !== submission.prompt.revision),
+      });
+    }
+    const ownsSentRecord = () => {
+      const record = sentThreadFollowup(submittedThreadId);
+      return Boolean(sentRecord) && record?.originScopeKey === sentRecord.originScopeKey
+        && record.textDigest === sentRecord.textDigest;
+    };
+    // The prompt stays editable while the send is pending (SCP-019); Send
+    // stays disabled, so one follow-up is in flight per thread.
     send.disabled = true;
     for (const control of $("#nodeInputActions").querySelectorAll("button, textarea")) {
       control.disabled = true;
@@ -3383,8 +3901,22 @@ export function createProductWorkspace({
           : null,
         preserve: preserveReplay,
       });
+      // Only a definite rejection: after a network or server error the send
+      // may have committed, and the newer turn may be this very submission.
+      // A send that may have gone through is handed back too: an unrelated
+      // newer turn carries its text forward, and its own turn, once it
+      // arrives, shows it was sent (SCP-019).
+      restoreStrandedSubmission(submission);
+      // A definite rejection creates no turn to wait for.
+      if (!confirmationSendFailureMayHaveCommitted(error) && ownsSentRecord()) {
+        const record = sentThreadFollowup(submittedThreadId);
+        persistSentThreadFollowup(submittedThreadId, record.sends > 1 ? { ...record, sends: record.sends - 1 } : null);
+      }
       toast(error.message);
     } finally {
+      if (inFlightSubmissions.get(String(submittedThreadId)) === inFlightSubmission) {
+        inFlightSubmissions.delete(String(submittedThreadId));
+      }
       prompt.disabled = composerDisabledForState(
         getState().status,
         capabilities.canCompose,
@@ -3431,9 +3963,24 @@ export function createProductWorkspace({
     const attempt = { threadId: String(threadId) };
     inFlightSendThreads.set(attempt.threadId, attempt);
     sendAttempt = attempt;
+    // The text is held from the click, so a newer turn that loads while Send
+    // reconciles inputs does not carry it into its scope before it is sent.
+    const clickSubmission = draftOverride ? null : Object.freeze({
+      scopeKey: sendRequest.draftScopeKey,
+      promptRevision: sendRequest.promptRevision,
+    });
+    if (clickSubmission) {
+      inFlightSubmissions.set(attempt.threadId, clickSubmission);
+      sendEditScopes.delete(attempt.threadId);
+    }
     send.setAttribute("aria-busy", "true");
     for (const control of $("#nodeInputActions").querySelectorAll("button, textarea")) {
       control.disabled = true;
+    }
+    // The composer's committed-input pills lock with the Send too.
+    renderComposerContexts();
+    if (selection.selectedNodeId != null) {
+      void selectNode(getState(), selection.selectedNodeId, { notify: false });
     }
     try {
       if (!draftOverride && contextDraftController) {
@@ -3453,9 +4000,13 @@ export function createProductWorkspace({
           modelSelection: sendRequest.modelSelection,
         });
         intent = await selectInteractionSendIntentAfterInputReconciliation({
-          awaitInputDraft: () => inputDraftController
-            ? ensureInputDraftLoaded(threadId)
-            : Promise.resolve(),
+          awaitInputDraft: async () => {
+            if (!await settleAuthoredInputCommits(threadId)) {
+              // The answer the user entered did not save; the input shows why.
+              throw new Error("An answer in Node Details could not be saved, so the message was not sent.");
+            }
+            if (inputDraftController) await ensureInputDraftLoaded(threadId);
+          },
           selectionIsCurrent: () => sendIntentIsCurrentThread(getThread()?.id, threadId)
             && sendAttempt === attempt,
           replayIntent: () => confirmationSendReplayIntent({
@@ -3473,6 +4024,7 @@ export function createProductWorkspace({
             clickedIntent: clickTimeIntentWithoutDraftAuthority(),
             currentIntent: sendRequest.freshIntent,
             inputDraftRevision: reconciledInputDraftRevision(),
+            inputCompositionRevision: currentInputCompositionRevision(threadId),
           }),
         });
         if (!intent || !sendIntentIsCurrentThread(threadId, intent.threadId)) return;
@@ -3503,6 +4055,14 @@ export function createProductWorkspace({
     } catch (error) {
       toast(error.message);
     } finally {
+      if (clickSubmission && inFlightSubmissions.get(attempt.threadId) === clickSubmission) {
+        inFlightSubmissions.delete(attempt.threadId);
+        // The Send ended without posting. Unless the draft-send warning now
+        // holds it, text a newer turn left in its scope comes back.
+        if (String(sendWarningIntent?.threadId) !== attempt.threadId) {
+          restoreStrandedSubmission({ threadId: attempt.threadId, scopeKey: clickSubmission.scopeKey });
+        }
+      }
       releaseInFlightSend(inFlightSendThreads, attempt);
       if (sendAttempt === attempt) releaseSendAttempt();
       else syncComposer();
@@ -3529,8 +4089,42 @@ export function createProductWorkspace({
       preserve: false,
     });
     composerPromptRevision += 1;
+    // Emptying the composer while a newer draft held a restoration out
+    // brings the retry text back at once (SCP-020).
+    const activeScopeKey = composerDraftScopeState.activeScopeKey;
+    const activeDraft = composerDraftScopeState.drafts.get(activeScopeKey);
+    if (!prompt.value && pendingRestoration?.scopeKey === activeScopeKey
+      && String(activeDraft?.restoredDraftInteractionId) !== String(pendingRestoration.restorationId)) {
+      prompt.value = pendingRestoration.text;
+      const drafts = new Map(composerDraftScopeState.drafts);
+      drafts.set(activeScopeKey, {
+        promptValue: prompt.value,
+        promptRevision: composerPromptRevision,
+        restoredDraftInteractionId: pendingRestoration.restorationId,
+      });
+      composerDraftScopeState = { ...composerDraftScopeState, drafts };
+    }
+    // Typing while a Send's turn has not loaded is an edit after that Send
+    // (SCP-018), in whichever scope the composer is in: a newer turn may have
+    // moved it on.
+    const typingThreadId = String(getThread()?.id);
+    if (inFlightSubmissions.has(typingThreadId)) sendEditScopes.set(typingThreadId, activeScopeKey);
+    const sentRecord = sentThreadFollowup(typingThreadId);
+    if (sentRecord && (!sentRecord.edited || sentRecord.scopeKey !== activeScopeKey)) {
+      persistSentThreadFollowup(typingThreadId, { ...sentRecord, scopeKey: activeScopeKey, edited: true });
+    }
+    // An empty value is kept as a tombstone only when it clears restored
+    // retry text that was shown. Clearing a draft that kept a restoration
+    // out leaves no draft, so the retry text returns, after a restart too
+    // (SCP-020).
+    const shownRestorationId = composerDraftScopeState.drafts
+      .get(composerDraftScopeState.activeScopeKey)?.restoredDraftInteractionId ?? null;
+    const restorationShown = shownRestorationId != null;
     persistThreadFollowupDraft(composerDraftScopeState.activeScopeKey, prompt.value, {
-      preserveEmpty: restoredDraftActive,
+      preserveEmpty: restoredDraftActive && restorationShown,
+      // Which restoration this draft grew from, so a restart can tell it from
+      // a user's draft with the same text.
+      restorationId: shownRestorationId,
     });
     syncComposer();
   };
@@ -3812,10 +4406,13 @@ export function createProductWorkspace({
   }
 
   function render() {
+    if (disposed) return;
     const state = getState();
     const thread = getThread();
     if (!thread) {
       nodeSelectionSequence += 1;
+      // A request still waiting for a draft belongs to the thread left.
+      userRequestTicket += 1;
       contextEditor = null;
       releaseSendAttempt();
       if (contextDraftSendWarning.open) {
@@ -3855,7 +4452,10 @@ export function createProductWorkspace({
       });
     }
     if (renderedThreadId !== null && renderedThreadId !== threadId) {
+      readingLayout.closeEnvironment();
       nodeSelectionSequence += 1;
+      // A request still waiting for a draft belongs to the thread left.
+      userRequestTicket += 1;
       releaseSendAttempt();
       if (contextDraftSendWarning.open) {
         closeContextDraftSendWarning({ focusSend: false });
@@ -3922,6 +4522,16 @@ export function createProductWorkspace({
     $("#threadScope").textContent = threadScope;
     $("#threadTitle").title = threadScope;
     renderEnvironment(state.environment, project);
+    const pendingTurn = state.pendingTurn;
+    const showPending = pendingTurn && String(pendingTurn.threadId) === String(thread.id)
+      && String(pendingTurn.interactionId) !== String(state.currentInteractionId);
+    $("#pendingTurnNotice").classList.toggle("hidden", !showPending);
+    if (showPending) {
+      const pendingInteraction = state.interactions.find((item) => String(item.id) === String(pendingTurn.interactionId));
+      const label = pendingTurn.readyLayer ? "Result ready" : turnStatusPresentation(pendingTurn.status).label;
+      $("#pendingTurnText").textContent = `Turn ${pendingInteraction?.sequence ?? ""} · ${label}`;
+      $("#openReadyResult").classList.toggle("hidden", !pendingTurn.readyLayer);
+    }
     const interaction = interactionForThread(state, thread);
     updateCountBadge($("#threadAnnotationBadge"), subjectAnchor("thread", {}, state, thread));
     updateCountBadge($("#turnAnnotationBadge"), subjectAnchor("turn", {}, state, thread));
@@ -3948,6 +4558,15 @@ export function createProductWorkspace({
     }
     const restoredDraft = restoredDraftForInteraction(latestInteraction);
     restoredDraftActive = Boolean(restoredDraft);
+    pendingRestoration = restoredDraft
+      ? {
+        scopeKey: composerDraftScopeKey(threadId, latestInteraction?.id),
+        restorationId: restoredDraft.retryAttemptId != null
+          ? `${latestInteraction?.id}:${restoredDraft.retryAttemptId}`
+          : latestInteraction?.id,
+        text: restoredDraft.text,
+      }
+      : null;
     const restoredConfirmationKey = confirmationRestorationKey(threadId, latestInteraction);
     if (restoredConfirmationKey
       && !recoveredConfirmationThreads.has(restoredConfirmationKey)
@@ -3968,6 +4587,48 @@ export function createProductWorkspace({
     retryMessage.classList.toggle("is-stopped", latestInteraction?.completionStatus === "stopped" && !latestInteraction.stopError);
     retryMessage.classList.toggle("hidden", !restoredDraft && !stopMessage);
     retryMessage.textContent = stopMessage || restoredDraft?.message || "";
+    // Text an earlier session persisted in an older turn's scope, such as one
+    // closed while a send was in flight, can be carried forward too, unless
+    // a later turn with that text shows it was sent.
+    if (composerDraftScopeState.activeScopeKey !== composerDraftScopeKey(threadId, latestInteraction?.id)) {
+      const drafts = new Map(composerDraftScopeState.drafts);
+      const editedScopeKey = editedAfterSendScopeKey(threadId);
+      turns.slice(0, -1).forEach((turn, index) => {
+        const scopeKey = composerDraftScopeKey(threadId, turn.id);
+        const text = drafts.has(scopeKey) ? null : threadFollowupDraft(scopeKey);
+        if (!text) return;
+        // Sent text is not kept (SCP-016), and text a newer turn's draft
+        // superseded is retired (SCP-021).
+        const superseded = turns.slice(index + 1).some((later) => {
+          const laterKey = composerDraftScopeKey(threadId, later.id);
+          return Boolean(threadFollowupDraft(laterKey) || drafts.get(laterKey)?.promptValue);
+        });
+        // What was typed after a Send whose turn had not loaded is kept like
+        // any unsent text.
+        if ((scopeKey !== editedScopeKey && sentByLaterTurn(threadId, scopeKey, text)) || superseded) {
+          clearThreadFollowupDraft(scopeKey);
+          return;
+        }
+        drafts.set(scopeKey, { promptValue: text, promptRevision: -1, restoredDraftInteractionId: null });
+      });
+      composerDraftScopeState = { ...composerDraftScopeState, drafts };
+    }
+    // Drafts in older scopes that a later turn shows were sent. The scope of
+    // a send still in flight is left to its revision (settlement and the
+    // carry's hold), so an edit after Send that repeats the text is kept, as
+    // is text typed after a Send whose turn had not loaded when it settled.
+    const inFlightScopeKey = inFlightSubmissions.get(threadId)?.scopeKey;
+    const editedScopeKey = editedAfterSendScopeKey(threadId);
+    const sentDrafts = turns.slice(0, -1).flatMap((turn) => {
+      const scopeKey = composerDraftScopeKey(threadId, turn.id);
+      if (scopeKey === inFlightScopeKey || scopeKey === editedScopeKey) return [];
+      const draft = scopeKey === composerDraftScopeState.activeScopeKey
+        ? { promptValue: prompt.value, promptRevision: composerPromptRevision }
+        : composerDraftScopeState.drafts.get(scopeKey);
+      return draft && sentByLaterTurn(threadId, scopeKey, draft.promptValue)
+        ? [{ scopeKey, promptRevision: draft.promptRevision }]
+        : [];
+    });
     const draftTransition = transitionComposerDraftScope(composerDraftScopeState, {
       threadId,
       interactionId: latestInteraction?.id,
@@ -3977,10 +4638,59 @@ export function createProductWorkspace({
       persistedDraftText: threadFollowupDraft(
         composerDraftScopeKey(threadId, latestInteraction?.id),
       ),
+      persistedRestorationId: threadFollowupRestoration(
+        composerDraftScopeKey(threadId, latestInteraction?.id),
+      ),
+      olderScopeKeys: turns.slice(0, -1).reverse()
+        .map((turn) => composerDraftScopeKey(threadId, turn.id)),
+      // A Send waiting on the draft-send warning still holds its text.
+      inFlightSubmission: inFlightSubmissions.get(threadId)
+        ?? (String(sendWarningIntent?.threadId) === threadId
+          ? {
+            scopeKey: sendWarningIntent.submission?.scopeKey,
+            promptRevision: sendWarningIntent.submission?.prompt?.revision,
+          }
+          : null),
+      sentDrafts,
     });
     composerDraftScopeState = draftTransition.state;
+    // A draft a later turn shows was sent is deleted, in memory and storage
+    // (SCP-016). The submission in flight is left to its settlement.
+    const settling = inFlightSubmissions.get(threadId);
+    const sentBehind = sentDrafts.filter(({ scopeKey, promptRevision }) => (
+      scopeKey !== composerDraftScopeState.activeScopeKey
+      && !(settling?.scopeKey === scopeKey && Object.is(settling.promptRevision, promptRevision))));
+    if (sentBehind.length) {
+      const drafts = new Map(composerDraftScopeState.drafts);
+      for (const { scopeKey } of sentBehind) {
+        drafts.delete(scopeKey);
+        clearThreadFollowupDraft(scopeKey);
+      }
+      composerDraftScopeState = { ...composerDraftScopeState, drafts };
+    }
     prompt.value = draftTransition.promptValue;
     composerPromptRevision = draftTransition.promptRevision;
+    if (draftTransition.carriedFromScopeKey) {
+      persistThreadFollowupDraft(composerDraftScopeState.activeScopeKey, prompt.value);
+      clearThreadFollowupDraft(draftTransition.carriedFromScopeKey);
+      // An edit made while Send waits moves with its text.
+      if (sendEditScopes.get(threadId) === draftTransition.carriedFromScopeKey) {
+        sendEditScopes.set(threadId, composerDraftScopeState.activeScopeKey);
+      }
+    }
+    const sentRecord = sentThreadFollowup(threadId);
+    if (sentRecord) {
+      // The edit moves with its text; once the sent turn has loaded, it has
+      // been carried past that turn and needs no more protection.
+      if (sentTurnLoaded(threadId, sentRecord)) {
+        persistSentThreadFollowup(threadId, null);
+      } else if (draftTransition.carriedFromScopeKey === sentRecord.scopeKey) {
+        persistSentThreadFollowup(threadId, {
+          ...sentRecord,
+          scopeKey: composerDraftScopeState.activeScopeKey,
+        });
+      }
+    }
     const inheritanceKey = `${thread.id}:${latestInteraction?.id ?? "none"}`;
     if (modelPicker) {
       const replaceSelection = inheritanceKey !== pickerInheritanceKey;
@@ -4288,15 +4998,31 @@ export function createProductWorkspace({
       contextNodeOverrides,
     );
     if (enteringView) {
+      graphViewEpoch += 1;
+      clearInputStagesForThread(thread?.id);
       nodeSelectionSequence += 1;
       cancelInspectorFit();
       if (!preserveHistoricalSelection) $("#inspector").classList.add("hidden");
+      // A layout that changed mid-drag is fitted before its view is cached,
+      // so returning shows it fitted.
+      if (fitGraphAfterDrop) {
+        camera = fitGraphCamera(graphNodes, graphStage.getBoundingClientRect());
+        cameraRevision = 0;
+      }
       saveGraphView();
+      // A drag cannot follow its node into another view, which is fitted.
+      dragging = null;
+      fitGraphAfterDrop = false;
     }
     $("#graphEmpty").classList.toggle("hidden", responseNodes.length > 0);
     $("#graphStage").classList.toggle("hidden", responseNodes.length === 0);
     if (!responseNodes.length) {
       graphViewKey = nextViewKey;
+      dragging = null;
+      fitGraphAfterDrop = false;
+      // Removing the node elements also releases a drag's pointer capture,
+      // so its release cannot click a node that is gone.
+      $("#nodeLayer").replaceChildren();
       graphNodes = [];
       graphEdges = [];
       graphSignature = "";
@@ -4342,6 +5068,16 @@ export function createProductWorkspace({
       pinned: false,
       index,
     }));
+    // A drag in progress continues on its node's new object and element, so
+    // a render while the user drags does not strand the drag on the old ones.
+    const draggedFrom = dragging?.node ?? null;
+    if (dragging) {
+      dragging.node = graphNodes.find((node) => String(node.id) === String(draggedFrom.id));
+      if (!dragging.node) dragging = null;
+    }
+    const dragMoved = Boolean(dragging?.moved);
+    // Kept where the user moved it even if the drag ends in this render.
+    const draggedNode = dragMoved ? dragging.node : null;
     const ids = graphNodeIdentitySet(graphNodes);
     graphEdges = (state.edges || []).filter((edge) => {
       const [source, target] = edge.endpoints || [edge.source, edge.target];
@@ -4392,6 +5128,7 @@ export function createProductWorkspace({
         const node = graphNodes.find((candidate) => String(candidate.id) === element.dataset.node);
         dragging = node ? {
           node,
+          pointerId: event.pointerId,
           startClientX: event.clientX,
           startClientY: event.clientY,
           moved: false,
@@ -4400,6 +5137,13 @@ export function createProductWorkspace({
       };
       element.onpointermove = (event) => {
         if (!dragging || String(dragging.node.id) !== element.dataset.node) return;
+        // No button is pressed: the release was missed, so the drag is over.
+        if (!event.buttons) {
+          dragging = null;
+          fitAfterDrop();
+          automaticGraphFit.flush();
+          return;
+        }
         const rect = $("#graphStage").getBoundingClientRect();
         const distance = Math.hypot(
           event.clientX - dragging.startClientX,
@@ -4421,9 +5165,24 @@ export function createProductWorkspace({
           graphWindow?.setTimeout?.(() => { suppressClickAfterDrag = false; }, 0);
         }
         dragging = null;
+        fitAfterDrop();
+        automaticGraphFit.flush();
       };
-      element.onpointercancel = () => { dragging = null; };
+      element.onpointercancel = () => {
+        dragging = null;
+        fitAfterDrop();
+        automaticGraphFit.flush();
+      };
     });
+    if (dragging) {
+      const element = $$('[data-node]').find((item) => item.dataset.node === String(dragging.node.id));
+      try {
+        element?.setPointerCapture(dragging.pointerId);
+      } catch {
+        // The pointer is no longer active, so no pointerup will end the drag.
+        dragging = null;
+      }
+    }
     const projected = projectLayerNodePositions(state.visibleLayer, graphNodes);
     for (const node of graphNodes) {
       const canonical = projected.positions.get(String(node.id));
@@ -4432,7 +5191,12 @@ export function createProductWorkspace({
       node.canonicalY = canonical.y;
       node.layoutSource = projected.source;
       const prior = previous.get(String(node.id));
-      if (cachedLayoutMatches && prior?.pinned) {
+      if (node === draggedNode) {
+        // The dragged node stays under the pointer, even in a changed layout.
+        node.x = draggedFrom.x;
+        node.y = draggedFrom.y;
+        node.pinned = true;
+      } else if (cachedLayoutMatches && prior?.pinned) {
         node.x = prior.x;
         node.y = prior.y;
         node.pinned = true;
@@ -4452,11 +5216,36 @@ export function createProductWorkspace({
       selection.selectedNodeId = null;
       $("#inspector").classList.add("hidden");
     }
-    if (cachedView && cachedLayoutMatches) {
-      camera = { ...cachedView.camera };
-      cameraRevision = cachedView.cameraRevision;
-    } else if (enteringView || !cachedLayoutMatches) {
+    if (!preserveHistoricalSelection && !selection.nodeDetailsClosed && (enteringView || (selection.selectedNodeId != null && !ids.has(String(selection.selectedNodeId))))) {
+      const previousSelection = selection.selectedNodeId;
+      selection.selectedNodeId = preferredLayerNode(state.visibleLayer ?? { nodes: responseNodes }, selection.selectedNodeId,
+        rememberedLayerSelection(thread?.id, state.currentInteractionId, state.visibleLayer?.layer?.id, layerSelectionMemoryOwner));
+      if (selection.selectedNodeId != null && String(previousSelection) !== String(selection.selectedNodeId)) {
+        onSelectionChange(selection.selectedNodeId, { automatic: true });
+      }
+    }
+    if (dragMoved && dragging && !cachedLayoutMatches) {
+      // While a node is dragged, the new layout is fitted after the drop.
+      fitGraphAfterDrop = true;
+    } else {
+      const restoredCamera = graphCameraForView({
+        cachedView,
+        cachedLayoutMatches,
+        enteringView,
+        nodes: graphNodes,
+        bounds: graphStage.getBoundingClientRect(),
+        currentCamera: camera,
+        currentCameraRevision: cameraRevision,
+      });
+      camera = restoredCamera.camera;
+      cameraRevision = restoredCamera.cameraRevision;
+    }
+    // A drag that ended in this render, when its pointer could not be
+    // captured again, gets its fit now.
+    if (fitGraphAfterDrop && !dragging) {
+      fitGraphAfterDrop = false;
       camera = fitGraphCamera(graphNodes, graphStage.getBoundingClientRect());
+      cameraRevision = 0;
     }
     drawGraph();
   }
@@ -4724,6 +5513,9 @@ export function createProductWorkspace({
       undo.onclick = () => {
         inputStages.set(stageKey, committedValue);
         inputErrors.delete(stageKey);
+        // The answer that failed is gone, with its error, so it stops no Send.
+        failedAuthoredInputs.get(String(thread.id))?.delete(authoredInputKey(occurrence));
+        authoredInputErrors.delete(`${thread.id}\u0000${authoredInputKey(occurrence)}`);
         inputTouched.delete(stageKey);
         renderNodeInputActions(state, node, actions);
       };
@@ -4736,6 +5528,7 @@ export function createProductWorkspace({
           presentingLayerId: layerId,
         };
         inputErrors.delete(stageKey);
+        committingInputStages.add(stageKey);
         beginNodeInputMutation({
           inputPending,
           stageKey,
@@ -4743,11 +5536,17 @@ export function createProductWorkspace({
           renderComposer: syncComposer,
         });
         try {
-          const next = await inputDraftController.commit(
+          // A Send clicked meanwhile waits for this answer, and stops if it
+          // does not save, as for an authored input.
+          const next = await trackAuthoredInputCommit(
             thread.id,
-            occurrence,
-            semantic,
-            inputStages.get(stageKey),
+            authoredInputKey(occurrence),
+            inputDraftController.commit(
+              thread.id,
+              occurrence,
+              semantic,
+              inputStages.get(stageKey),
+            ),
           );
           const nextAttachment = committedInputAttachment(next, occurrence);
           inputStages.set(stageKey, initialInputStageValue(semantic, nextAttachment));
@@ -4755,6 +5554,7 @@ export function createProductWorkspace({
         } catch (commitError) {
           inputErrors.set(stageKey, commitError?.message || "Input could not be committed.");
         } finally {
+          committingInputStages.delete(stageKey);
           settleNodeInputCommit({
             inputPending,
             stageKey,
@@ -4829,8 +5629,30 @@ export function createProductWorkspace({
     contextTarget,
     origin = null,
   } = {}) {
-    if (contextEditor?.resolving) return false;
+    if (disposed) return false;
+    const options = { notify, userInitiated, focusInspector, contextTarget, origin };
+    if (contextEditor?.resolving) {
+      // A refresh is dropped: the resolution re-renders the selection when it
+      // ends. A user's click waits its turn and uses the state it finds then.
+      if (!userInitiated) return false;
+      // It supersedes the request in flight, such as a switch waiting on the
+      // draft save, so only the newest request selects.
+      nodeSelectionSequence += 1;
+      const viewEpoch = graphViewEpoch;
+      if (!await awaitUserRequestTurn()) return false;
+      const latest = getState();
+      // A click made in a view the user has since left is void, even after
+      // returning to a view with the same key.
+      if (graphViewEpoch !== viewEpoch
+        || !resolveInteractionContextNode(id, latest.nodes, composerContextState.value, contextNodeOverrides)) {
+        refreshSelection();
+        return false;
+      }
+      return selectNode(latest, id, options);
+    }
     const requestSequence = ++nodeSelectionSequence;
+    // A user's request that proceeds at once voids any still waiting.
+    if (userInitiated) userRequestTicket += 1;
     const sourceThread = getThread();
     const sourceThreadId = String(sourceThread?.id);
     const node = resolveInteractionContextNode(
@@ -4856,25 +5678,44 @@ export function createProductWorkspace({
     if (switchingDurableDraft) {
       const previousEditor = contextEditor;
       const mountedTextarea = $("#nodeContextDock #contextAnnotationEditor");
-      previousEditor.resolving = true;
-      renderNodeContextDock();
-      const saved = await saveContextDraftBeforeSelection({
-        controller: contextDraftController,
-        editor: previousEditor,
-        textarea: mountedTextarea,
-      });
-      previousEditor.resolving = false;
+      const endResolution = beginEditorResolution(previousEditor);
+      let saved = false;
+      try {
+        renderNodeContextDock();
+        saved = await saveContextDraftBeforeSelection({
+          controller: contextDraftController,
+          editor: previousEditor,
+          textarea: mountedTextarea,
+        });
+      } catch {
+        saved = false;
+      } finally {
+        if (!saved) endResolution();
+      }
       if (requestSequence !== nodeSelectionSequence
         || String(getThread()?.id) !== sourceThreadId) {
+        endResolution();
         if (contextEditor === previousEditor) renderComposerContexts();
         return false;
       }
       if (!saved) {
+        // The switch is refused; the kept node, whose own detail this
+        // request superseded, was re-rendered as the draft resolved.
         contextEditor = previousEditor;
         renderComposerContexts();
         return false;
       }
       contextEditor = null;
+      endResolution({ refresh: false });
+      // Continue from the latest state, not the one read before the save.
+      const latest = getState();
+      if (!resolveInteractionContextNode(id, latest.nodes, composerContextState.value, contextNodeOverrides)) {
+        // The destination is gone: the kept node is shown again, with its
+        // saved draft's editor.
+        refreshSelection();
+        return false;
+      }
+      return selectNode(latest, id, options);
     }
     if (requestSequence !== nodeSelectionSequence
       || String(getThread()?.id) !== sourceThreadId) return false;
@@ -4882,6 +5723,9 @@ export function createProductWorkspace({
       clearInputStagesForThread(getThread()?.id);
     }
     selection.selectedNodeId = id;
+    if (state.visibleLayer?.nodes?.some((member) => String(member.id) === String(id))) {
+      rememberLayerSelection(getThread()?.id, state.currentInteractionId, state.visibleLayer?.layer?.id, id, layerSelectionMemoryOwner);
+    }
     selectedContextTarget = nextSelectedContextTarget;
     if (!contextEditor && contextDraftController) {
       const draft = nodeContextDraftForSelection(
@@ -4894,6 +5738,7 @@ export function createProductWorkspace({
           attaching: !contextForTarget(draft.target),
           error: restoredContextEditorError(String(getThread()?.id), draft.id),
         });
+        adoptDraftOperation(contextEditor, getThread()?.id, node.id);
       }
     }
     const nodeAnchor = annotationEnabled
@@ -4964,12 +5809,20 @@ export function createProductWorkspace({
         const attachment = occurrence && inputDraftController
           ? committedInputAttachment(inputDraftController.current(getThread()?.id), occurrence)
           : null;
+        const failure = occurrence
+          ? authoredInputErrors.get(`${getThread()?.id}\u0000${authoredInputKey(occurrence)}`)
+          : null;
         authoredCapabilityState[mount.id] = {
           value: initialInputStageValue(action, attachment),
+          ...(failure ? { error: failure } : {}),
+          // Locked while a Send is in flight, so no commit races its
+          // reservation. A commit during a run goes to the next draft (ADR 0008).
           disabled: mode === "review"
             || !inputDraftController
             || !loadedInputDraftThreads.has(String(getThread()?.id))
-            || occurrence === null,
+            || occurrence === null
+            || sendAttemptBlocksThread(sendAttempt?.threadId, getThread()?.id)
+            || threadHasInFlightSend(inFlightSendThreads, getThread()?.id),
         };
       }
     }
@@ -5027,26 +5880,45 @@ export function createProductWorkspace({
           await onInvokeAction(action);
         }
       },
+      onInputEdit: (context, value, submitted) => {
+        const threadId = String(getThread()?.id);
+        const editKey = `${authoredDetailMountKey}\u0000${context.mountId}`;
+        const refusalKey = refusedInputKey(authoredDetailMountKey, context.mountId);
+        if (typeof value === "string" && failedAuthoredInputs.get(threadId)?.delete(refusalKey)) {
+          authoredInputErrors.delete(`${threadId}\u0000${refusedInputOccurrences.get(refusalKey)}`);
+        }
+        if (typeof value === "string" && value.trim()) authoredInputEdits.set(editKey, threadId);
+        else authoredInputEdits.delete(editKey);
+        if (submitted) trackAuthoredInputSubmit(threadId, submitted, refusalKey);
+        syncComposer();
+      },
       onInput: async (action, value, context) => {
         const thread = getThread();
         const interactionNodeId = currentInteraction(state, thread)?.graphNodeId;
         const layerId = currentLayerId(state, thread);
+        // A refused answer throws, so the runtime shows why and reports it.
         const issue = validateInputStage(action, value);
         if (issue) {
-          authoredDetailRuntime?.updateCapability(context.mountId, { error: issue.message });
-          return;
+          if (interactionNodeId != null && layerId != null) {
+            const inputKey = authoredInputKey(createInputOccurrence(interactionNodeId, layerId, action.id));
+            refusedInputOccurrences.set(refusedInputKey(authoredDetailMountKey, context.mountId), inputKey);
+            // Shown again if the Node Detail remounts before the Send it stops.
+            authoredInputErrors.set(`${thread.id}\u0000${inputKey}`, issue.message);
+          }
+          throw new Error(issue.message);
         }
         if (!inputDraftController || interactionNodeId == null || layerId == null) {
-          authoredDetailRuntime?.updateCapability(context.mountId, {
-            disabled: true,
-            error: "Input editing is unavailable in this view.",
-          });
-          return;
+          authoredDetailRuntime?.updateCapability(context.mountId, { disabled: true });
+          throw new Error("Input editing is unavailable in this view.");
         }
         const occurrence = createInputOccurrence(interactionNodeId, layerId, action.id);
         authoredDetailRuntime?.updateCapability(context.mountId, { busy: true, error: null });
         try {
-          const draft = await inputDraftController.commit(thread.id, occurrence, action, value);
+          const draft = await trackAuthoredInputCommit(
+            thread.id,
+            authoredInputKey(occurrence),
+            inputDraftController.commit(thread.id, occurrence, action, value),
+          );
           const attachment = committedInputAttachment(draft, occurrence);
           markInputCompositionChanged(thread.id);
           authoredDetailRuntime?.updateCapability(context.mountId, {
@@ -5068,6 +5940,13 @@ export function createProductWorkspace({
       || String(getThread()?.id) !== sourceThreadId) {
       if (authoredDetail !== mountedAuthoredDetail) authoredDetail.dispose?.();
       return false;
+    }
+    // Edits another mount's fields left behind were never committed. This
+    // mount's fields can be edited while its assets load, so theirs are kept.
+    if (authoredDetail !== mountedAuthoredDetail) {
+      for (const editKey of [...authoredInputEdits.keys()]) {
+        if (!editKey.startsWith(`${authoredDetailMountKey}\u0000`)) authoredInputEdits.delete(editKey);
+      }
     }
     mountedAuthoredDetail = authoredDetail.authored ? authoredDetail : null;
     if (authoredDetail.authored) {
@@ -5207,10 +6086,12 @@ export function createProductWorkspace({
     contextDraftLoadRetryAttempts.clear();
     inputDraftLoadRetries?.dispose();
     graphDocument.defaultView.removeEventListener("resize", repositionContextDraftSendWarning);
+    automaticGraphFit.dispose();
     cancelInspectorFit();
     graphDocument.removeEventListener("pointerdown", blurGraphFromOutsidePointer, true);
     graphDocument.removeEventListener("pointerdown", closeTurnPopoverFromOutside, true);
     graphDocument.removeEventListener("pointerdown", closeSettingsMenuFromOutside, true);
+    readingLayout.dispose();
     graphDocument.removeEventListener("keydown", closeTurnPopoverOnEscape, true);
     graphDocument.removeEventListener("keydown", closeSettingsMenuOnEscape, true);
     graphDocument.removeEventListener("keydown", closeInspectorOnEscape, true);

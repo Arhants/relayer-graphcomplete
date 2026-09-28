@@ -67,13 +67,18 @@ export async function preparePermissionProfiles(harnessId = null) {
   };
 }
 
+/** Fails closed: no permission profile stays selected when the harness's profiles are unknown. */
+export function clearPermissionSelection() {
+  viewState.selectedPermissionProfileId = null;
+  renderPermissionPicker();
+}
+
 export async function loadPermissionProfiles(harnessId = null) {
   try {
     const apply = await preparePermissionProfiles(harnessId);
     apply?.();
   } catch (error) {
-    viewState.selectedPermissionProfileId = null;
-    renderPermissionPicker();
+    clearPermissionSelection();
     throw error;
   }
 }

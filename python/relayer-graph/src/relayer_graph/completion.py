@@ -9,7 +9,8 @@ import socket
 from dataclasses import dataclass
 from typing import Any, Awaitable, Iterable, Mapping
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .authoring import CompletionInputGraph
 from .exceptions import ConfigurationError, TransportError
@@ -198,7 +199,7 @@ class _CompletionTransport:
 
     async def _start(self) -> None:
         self.url, self.token = await _current_broker()
-        value = await self.request("POST", "", {"interactionNode": self.completion_id})
+        value = await self.request("POST", "", {"interactionNode": self.completion_id}, accepted=(200, 201))
         if value.get("completionId") != self.completion_id:
             raise TransportError("completion broker returned a different completion identity")
 
@@ -249,14 +250,17 @@ class _CompletionTransport:
                 continue
             current = value.get("current") if isinstance(value, Mapping) else None
             if status == 409 and isinstance(current, Mapping):
-                raise CompletionTerminalError(
-                    CompletionCurrentSnapshot.from_dict(current), str(value.get("reason") or "completion_failed")
-                )
+                snapshot = CompletionCurrentSnapshot.from_dict(current)
+                if snapshot.lifecycle in ("stopped", "failed"):
+                    reason = value.get("reason")
+                    raise CompletionTerminalError(snapshot, reason if isinstance(reason, str) else "completion_failed")
             raise _broker_error(status, value)
 
-    async def request(self, method: str, path: str, body: Any = None) -> Mapping[str, Any]:
+    async def request(
+        self, method: str, path: str, body: Any = None, accepted: tuple[int, ...] = (200,)
+    ) -> Mapping[str, Any]:
         status, value = await self.request_with_status(method, path, body)
-        if status not in (200, 201):
+        if status not in accepted:
             raise _broker_error(status, value)
         return value
 
@@ -269,7 +273,7 @@ class _CompletionTransport:
         def send() -> tuple[int, Mapping[str, Any]]:
             request = Request(self.url + path, data=encoded, method=method, headers=headers)
             try:
-                with urlopen(request, timeout=30.0) as response:
+                with _OPENER.open(request, timeout=30.0) as response:
                     return response.status, json.loads(response.read() or b"{}")
             except HTTPError as error:
                 try:
@@ -284,6 +288,23 @@ class _CompletionTransport:
 
         return await asyncio.to_thread(send)
 
+
+class _BrokerRedirects(HTTPRedirectHandler):
+    """Drop the broker token when a redirect leaves the broker's origin, as fetch does."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None and _origin(newurl) != _origin(req.full_url):
+            redirected.remove_header("Authorization")
+        return redirected
+
+
+def _origin(url: str) -> tuple[str, str | None, int | None]:
+    parts = urlsplit(url)
+    return parts.scheme, parts.hostname, parts.port or {"http": 80, "https": 443}.get(parts.scheme)
+
+
+_OPENER = build_opener(_BrokerRedirects())
 
 _CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
 

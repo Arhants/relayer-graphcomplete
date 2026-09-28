@@ -34,7 +34,7 @@ Families == {"custom", "managedP"}
 NoRt == 0
 
 VARIABLES
-  \* --- desktop main, provider service (PDS:89-99) ---
+  \* --- desktop main, provider service (PDS:115-128) ---
   lock,        \* holder of the #serialized queue, or "none"
   defs,        \* id -> absent | active | removal_pending | tombstoned
   rmap,        \* id -> runtime in this.runtimes, or NoRt
@@ -78,7 +78,7 @@ NextRt == CHOOSE r \in FreeRts : \A s \in FreeRts : r <= s
 \* runs first (FIFO). Only RunCancel may take the queue while one waits.
 Free == lock = "none" /\ \A i \in Ids : ~cancelQ[i]
 
-\* What list() reports (PDS:121-141): an override wins over SQLite.
+\* What list() reports (PDS:181-201): an override wins over SQLite.
 ShownConnected == override = "none" /\ sqlConnected
 
 Init ==
@@ -109,21 +109,30 @@ Init ==
   /\ defaultFamily \in Families
 
 -----------------------------------------------------------------------------
-(* #cancelPendingConnection (PDS:462-496) for every id in S. Both branches *)
+(* #cancelPendingConnection (PDS:598-650) for every id in S. Both branches *)
 (* delete the runtime from this.runtimes and close it; neither consults    *)
-(* leases. The reconnect branch marks the provider signed out.             *)
+(* leases. The reconnect branch marks the provider signed out. A reconnect *)
+(* that reused the live runtime then registers a fresh runtime in its      *)
+(* place, so the active provider keeps a catalog adapter (F4); one that    *)
+(* created its runtime leaves the recovery adapter it never replaced.     *)
 CancelSetEffect(S) ==
   LET live == {i \in S : pend[i].kind /= "none"}
+      restore == /\ "P" \in live /\ pend["P"].kind = "reconnect"
+                 /\ ~reconCreated /\ defs["P"] = "active" /\ ~closing
+                 /\ FreeRts /= {}
   IN /\ pend' = [i \in Ids |-> IF i \in live THEN NoPend ELSE pend[i]]
-     /\ rmap' = [i \in Ids |-> IF i \in live THEN NoRt ELSE rmap[i]]
+     /\ rmap' = [i \in Ids |-> IF i \in live
+                                THEN (IF i = "P" /\ restore THEN NextRt ELSE NoRt)
+                                ELSE rmap[i]]
      /\ rt' = [r \in RuntimeIds |->
-                IF \E i \in live : pend[i].rt = r THEN "closed" ELSE rt[r]]
+                IF \E i \in live : pend[i].rt = r THEN "closed"
+                ELSE IF restore /\ r = NextRt THEN "open" ELSE rt[r]]
      /\ override' = IF "P" \in live /\ pend["P"].kind = "reconnect"
                     THEN "logged_out" ELSE override
 
 CancelPendingEffect(id) == CancelSetEffect({id})
 
-(* cancelConnection (PDS:452-460) for every id in S, from the cancel IPC,  *)
+(* cancelConnection (PDS:588-596) for every id in S, from the cancel IPC,  *)
 (* a failed browser handoff, or the renderer's "destroyed" listeners. A    *)
 (* preparing attempt is only flagged. Anything else takes the queue: at    *)
 (* once when it is free, otherwise behind the operation holding it.        *)
@@ -141,7 +150,7 @@ RequestCancel(id) == RequestCancels({id})
 
 -----------------------------------------------------------------------------
 (* New connection N: relayer:provider-connect (IPC:162-172) -> #connect   *)
-(* (PDS:196-318), managed-login branch.                                   *)
+(* (PDS:256-450), managed-login branch.                                   *)
 ConnStart ==
   /\ connPc = "idle" /\ alive /\ ~closing
   /\ prep' = "cancellable"
@@ -151,7 +160,7 @@ ConnStart ==
                  complCap, exec, alive, bound, cancelQ, ipcDone, sqlConnected,
                  fam, defaultFamily>>
 
-\* S1 (PDS:225-234) is atomic; prepareRuntime then runs outside the queue.
+\* S1 (PDS:284-293) is atomic; prepareRuntime then runs outside the queue.
 ConnS1 ==
   /\ connPc = "s1" /\ Free
   /\ IF cancelled \/ pend["N"].kind /= "none" \/ defs["N"] /= "absent"
@@ -162,7 +171,7 @@ ConnS1 ==
                  complPc, complCap, exec, alive, bound, cancelQ, ipcDone,
                  sqlConnected, fam, defaultFamily>>
 
-\* S2 (PDS:242-258): re-check, create the runtime, then await login()
+\* S2 (PDS:301-317): re-check, create the runtime, then await login()
 \* while holding the queue.
 ConnS2 ==
   /\ connPc = "s2" /\ Free
@@ -178,8 +187,8 @@ ConnS2 ==
                  alive, bound, cancelQ, ipcDone, sqlConnected, fam,
                  defaultFamily>>
 
-\* login() resolves; cancellation observed at PDS:257; pending set at :258.
-\* The finally block deletes the preparation (PDS:316).
+\* login() resolves; cancellation observed at PDS:316; pending set at :258.
+\* The finally block deletes the preparation (PDS:367).
 ConnLogin ==
   /\ connPc = "login"
   /\ lock' = "none"
@@ -208,7 +217,7 @@ ConnFail ==
 
 -----------------------------------------------------------------------------
 (* Existing provider P: relayer:provider-reconnect (IPC:223-233) ->        *)
-(* #reconnect (PDS:552-606). The UI offers Reconnect only while list()     *)
+(* #reconnect (PDS:729-793). The UI offers Reconnect only while list()     *)
 (* reports the provider disconnected (UI provider-ui.js:187).              *)
 ReconGuard == defs["P"] = "active" /\ Holders = {} /\ pend["P"].kind = "none"
 
@@ -244,7 +253,7 @@ ReconS2 ==
 ReconLogin(ok) ==
   /\ reconPc = "login"
   /\ lock' = "none"
-  /\ \/ /\ ~ok \/ closing   \* login() rejected, or closing observed (PDS:583)
+  /\ \/ /\ ~ok \/ closing   \* login() rejected, or closing observed (PDS:760)
         /\ reconPc' = "ipcdone"
         /\ rt' = IF reconCreated THEN [rt EXCEPT ![reconRt] = "closed"] ELSE rt
         /\ UNCHANGED <<rmap, pend, override>>
@@ -320,7 +329,7 @@ RunCancel(id) ==
                  alive, bound, ipcDone, sqlConnected, fam, defaultFamily>>
 
 -----------------------------------------------------------------------------
-(* completeConnection (PDS:328-442), the renderer's 750 ms poll. It holds *)
+(* completeConnection (PDS:460-578), the renderer's 750 ms poll. It holds *)
 (* the queue across account(), discovery, and the durable commit, and it  *)
 (* is not a lifecycle task, so close() does not wait for it. The pending  *)
 (* entry it captured is what it registers, even if close() cleared the    *)
@@ -374,11 +383,11 @@ CompleteFinish(id, outcome) ==
 
 -----------------------------------------------------------------------------
 (* A turn on provider P. Rust admission resolves the plan against SQLite  *)
-(* (CAT:1632-1710: provider connected and active), and only later does    *)
+(* (CAT:1634-1712: provider connected and active), and only later does    *)
 (* the harness call the lease broker (RTB:181-227) -> acquireExecution    *)
-(* (PDS:608-634), which checks only that the definition is active and     *)
+(* (PDS:795-821), which checks only that the definition is active and     *)
 (* does not look at closing. #runtimeFor awaits onRuntimeReady before     *)
-(* registering a new runtime (PDS:638-656).                               *)
+(* registering a new runtime (PDS:825-843).                               *)
 ExecAdmit(e) ==
   /\ exec[e].pc = "idle"
   /\ defs["P"] = "active" /\ sqlConnected
@@ -418,7 +427,7 @@ ExecRegistered(e) ==
                  alive, bound, cancelQ, ipcDone, sqlConnected, fam,
                  defaultFamily>>
 
-(* #finalizeRemoval (PDS:744-761): tombstone commits, then the runtime in *)
+(* #finalizeRemoval (PDS:914-931): tombstone commits, then the runtime in *)
 (* this.runtimes is closed.                                               *)
 FinalizeRemoval ==
   /\ defs' = [defs EXCEPT !["P"] = "tombstoned"]
@@ -437,9 +446,11 @@ ExecRelease(e) ==
                  defaultFamily>>
 
 -----------------------------------------------------------------------------
-(* logout (PDS:513-545). A failed catalog refresh is only logged, so      *)
-(* model_providers.connected may keep its old value.                      *)
-\* refreshed: the catalog refresh after logout published (connected = 0).
+(* logout (PDS:667-722). It publishes its signed-out state with the next  *)
+(* connection generation, then starts a catalog refresh it does not await. *)
+(* A failed publish is only logged, so model_providers.connected may keep *)
+(* its old value.                                                          *)
+\* refreshed: the signed-out publish committed (connected = 0).
 Logout(refreshed) ==
   /\ Free /\ defs["P"] = "active" /\ Holders = {} /\ rmap["P"] /= NoRt
   /\ sqlConnected' = (sqlConnected /\ ~refreshed)
@@ -449,8 +460,8 @@ Logout(refreshed) ==
                  complCap, exec, alive, bound, cancelQ, ipcDone, fam,
                  defaultFamily>>
 
-(* remove (PDS:721-737) with the SQLite guard_provider_removal            *)
-(* (CAT:2509-2559) and tombstone_managed_provider_families (CAT:186).     *)
+(* remove (PDS:891-907) with the SQLite guard_provider_removal            *)
+(* (CAT:2656-2706) and tombstone_managed_provider_families (CAT:186).     *)
 (* P is never the default provider in this model, so the guard reduces to *)
 (* "the default family keeps a member outside P", i.e. is not managedP.  *)
 (* The UI offers Remove for any non-default provider (provider-ui.js:210).*)
@@ -475,11 +486,11 @@ Remove ==
 (* service's own queue, not the provider queue, through whichever runtime *)
 (* is registered, including one reused by a pending reconnect.            *)
 
-\* publish_provider_catalog (CAT:681-765). "no_eligible" is the
+\* publish_provider_catalog (CAT:683-767). "no_eligible" is the
 \* provider_no_eligible_execution_models reason, which tombstones P's
 \* managed families without consulting product_model_preferences. A later
 \* publish with eligible models reactivates the same family id
-\* (replace_system_family, CAT:2310-2333).
+\* (replace_system_family, CAT:2455-2478).
 CatalogRefresh(outcome) ==
   /\ defs["P"] = "active" /\ ~closed
   /\ sqlConnected' = (outcome = "models")
@@ -493,7 +504,7 @@ CatalogRefresh(outcome) ==
                  reconCreated, complPc, complCap, exec, alive, bound, cancelQ,
                  ipcDone, defaultFamily>>
 
-\* update_model_settings_defaults (CAT:583-679): the family must resolve.
+\* update_model_settings_defaults (CAT:583-681): the family must resolve.
 SetDefaultFamily(f) ==
   /\ fam[f].state = "active" /\ fam[f].enabled
   /\ f = "managedP" => (sqlConnected /\ defs["P"] = "active")
@@ -503,7 +514,7 @@ SetDefaultFamily(f) ==
                  reconCreated, complPc, complCap, exec, alive, bound, cancelQ,
                  ipcDone, sqlConnected, fam>>
 
-\* update_model_family / delete_model_family (CAT:801-860): both refuse the
+\* update_model_family / delete_model_family (CAT:803-861): both refuse the
 \* default family; system families are read-only.
 DisableOrDeleteCustom(state) ==
   /\ defaultFamily /= "custom" /\ fam["custom"].state = "active"
@@ -522,7 +533,7 @@ EnableCustom ==
                  ipcDone, sqlConnected, defaultFamily>>
 
 -----------------------------------------------------------------------------
-(* close() (PDS:778-795). It flags cancellable preparations, awaits the   *)
+(* close() (PDS:948-965). It flags cancellable preparations, awaits the   *)
 (* lifecycle tasks (connect and reconnect promises only; not the queue),  *)
 (* then closes and clears every runtime in this.runtimes and              *)
 (* pendingConnections.                                                    *)
@@ -614,7 +625,7 @@ TypeOK ==
 \* A runtime a running turn holds is never closed under it. The logout and
 \* reconnect guards refuse while leases exist, and #finalizeRemoval waits
 \* for the last lease: "the runtime and credentials remain usable by that
-\* attempt" (PDS:748-750). Shutdown closing everything is out of scope.
+\* attempt" (PDS:918-920). Shutdown closing everything is out of scope.
 LeasedRuntimeStaysOpen ==
   ~closing =>
     \A e \in Execs : exec[e].pc = "holding" => rt[exec[e].rt] = "open"
@@ -636,7 +647,7 @@ CloseLeavesNoOpenRuntime ==
   closed => \A r \in RuntimeIds : rt[r] /= "open"
 
 \* The default family is always a live, enabled family. Disable, delete,
-\* and provider removal all refuse to break it (CAT:801-860, 2509-2559).
+\* and provider removal all refuse to break it (CAT:803-861, 2656-2706).
 \* The PRD states no such promise; this checks the guards' shared intent.
 DefaultFamilyIsLive ==
   fam[defaultFamily].state = "active" /\ fam[defaultFamily].enabled

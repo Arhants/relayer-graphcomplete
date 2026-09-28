@@ -87,6 +87,11 @@ const graphSearchConfiguration = (search: "disabled" | "query-v1"): HarnessConfi
   ...testConfiguration,
   graphCapabilityProfile: { search },
 });
+/** Lets pending promise chains run without advancing fake time (vi.waitFor advances it). */
+const settleMicrotasks = async () => {
+  for (let step = 0; step < 20; step += 1) await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+};
 const legacyConfiguration = (configuration: HarnessConfiguration) => {
   const { permissionBindings: _permissionBindings, ...legacy } = configuration;
   return legacy;
@@ -1330,13 +1335,15 @@ describe("HarnessHost", () => {
       expect(release).not.toHaveBeenCalled();
       await expect(host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId)).resolves.toMatchObject({ output: completion });
       expect(acquire).toHaveBeenCalledOnce();
-      expect(release).not.toHaveBeenCalled();
+      // Access lives as long as the native turn: it is released once the turn settles.
+      await vi.waitFor(() => expect(release).toHaveBeenCalledOnce());
       accepted = false;
       await expect(host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId))
         .rejects.toThrow("invalid or expired");
+      // The owner's later release acknowledges the already-released access once.
       expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
-      expect(release).toHaveBeenCalledOnce();
       expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(false);
+      expect(release).toHaveBeenCalledOnce();
 
       accepted = false;
       const cancelled = await host.admitProviderExecution(1, model, new AbortController().signal);
@@ -1432,7 +1439,7 @@ describe("HarnessHost", () => {
         admission.executionLeaseId, policy, plan, "attempt-family-29",
       )).resolves.toMatchObject({ output: completion });
       expect(observedContext?.modelPlan).toEqual(admission.admittedPlan);
-      expect(releases).toEqual([]);
+      await vi.waitFor(() => expect(releases).toEqual(["anthropic-work", "openai-work"]));
       accepted = false;
       await expect(host.complete(
         1, 29, graph(), plan.orchestrator, undefined, undefined,
@@ -1509,8 +1516,9 @@ describe("HarnessHost", () => {
 
       expect(observedContext?.modelPlan).toEqual(admission.admittedPlan);
       expect(observedContext?.accessBundle?.byProviderId["openrouter-work"]?.adapterImplementationVersion).toBe("2");
-      // The child's leases stay held until the product releases them after settlement.
-      expect(releases).toEqual([]);
+      // The child's native run has ended, so its access is released without waiting for
+      // the product to settle the child; the product's later release only acknowledges it.
+      await vi.waitFor(() => expect(releases).toEqual(["openrouter-work"]));
       expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
       expect(releases).toEqual(["openrouter-work"]);
     } finally {
@@ -1685,7 +1693,7 @@ describe("HarnessHost", () => {
     }
   });
 
-  it("does not release a claimed lease on execution or terminal-ack timeouts", async () => {
+  it("holds a claimed lease for the whole native turn and releases it once the turn settles", async () => {
     vi.useFakeTimers();
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-lease-timeouts-"));
     const release = vi.fn();
@@ -1735,10 +1743,10 @@ describe("HarnessHost", () => {
 
       finishHarness();
       await running;
-      await vi.advanceTimersByTimeAsync(29_999);
-      expect(release).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(60_001);
-      expect(release).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(release).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(release).toHaveBeenCalledOnce();
       expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
       expect(release).toHaveBeenCalledOnce();
     } finally {
@@ -1748,7 +1756,7 @@ describe("HarnessHost", () => {
     }
   });
 
-  it("aborts and settles an active family completion on close without releasing before durable acknowledgement", async () => {
+  it("aborts an active family completion on close and releases its access once the turn settles", async () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-family-close-"));
     const release = vi.fn();
     let harnessStarted!: () => void;
@@ -1804,10 +1812,681 @@ describe("HarnessHost", () => {
       await started;
       await host.close();
       expect(await completionRun).toBeInstanceOf(Error);
-      expect(release).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(release).toHaveBeenCalledOnce());
       expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
       expect(release).toHaveBeenCalledOnce();
     } finally {
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a running turn's access when its owner releases it, then releases and acknowledges on settle", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-release-live-turn-"));
+    const events: string[] = [];
+    const release = vi.fn(() => { events.push("release"); });
+    let failAcknowledge = true;
+    const acknowledge = vi.fn(() => {
+      events.push("acknowledge");
+      if (failAcknowledge) throw new Error("provider store is busy");
+    });
+    let finishNative!: () => void;
+    const nativeFinished = new Promise<void>((resolve) => { finishNative = resolve; });
+    let nativeStarted!: () => void;
+    const started = new Promise<void>((resolve) => { nativeStarted = resolve; });
+    let observedSignal: AbortSignal | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ node: { id: 1, kind: "user-interaction", icon: "user", title: "Question", detail: "Question", state: "accepted" } }), { status: 200, headers: { "content-type": "application/json" } })));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire() {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+              adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
+            },
+            release,
+            acknowledge,
+          };
+        } },
+        // Like Codex's turn/interrupt or Prime's quiescence wait: the native turn observes the
+        // cancellation but keeps running until it settles on its own.
+        implementations: { test: () => ({ async complete(_context, signal) {
+          observedSignal = signal;
+          nativeStarted();
+          await nativeFinished;
+        }, state: emptyState }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: {
+          ...testConfiguration,
+          modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      const model = { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" };
+      const admission = await host.admitProviderExecution(1, model, new AbortController().signal);
+      const running = host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId)
+        .catch(() => undefined);
+      await started;
+
+      // The product gives up on the turn (for example an approval persistence failure).
+      expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
+      expect(observedSignal?.aborted).toBe(true);
+      expect(release).not.toHaveBeenCalled();
+
+      finishNative();
+      await running;
+      await vi.waitFor(() => expect(events).toEqual(["release", "acknowledge"]));
+      // The owner will not ask again, so the host retries a failed acknowledgement itself.
+      failAcknowledge = false;
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(events).toEqual(["release", "acknowledge", "acknowledge"]);
+      expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(false);
+    } finally {
+      finishNative();
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("force-stops only a cancelled turn still running after two minutes and releases only its access", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-force-stop-"));
+    const releases: string[] = [];
+    const forced: number[] = [];
+    const accepted = new Set<number>();
+    const turns = new Map<number, { readonly forceSignal?: AbortSignal; readonly settle: () => void }>();
+    const nodeByToken: Record<string, number> = { "root-token": 1, "stuck-token": 2, "sibling-token": 3, "next-token": 4 };
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const nodeId = nodeByToken[new Headers(init?.headers).get("authorization")!.replace("Bearer ", "")]!;
+      if (url.endsWith("/output")) {
+        return accepted.has(nodeId)
+          ? new Response(JSON.stringify({ ...completion, nodeId }), { status: 200, headers: { "content-type": "application/json" } })
+          : new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } });
+      }
+      if (url.endsWith("/neighbors")) {
+        return new Response(JSON.stringify({ nodes: [] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return graphReadResponse(url, nodeId, [], nodeId === 2 || nodeId === 3 ? nodeId + 100 : undefined);
+    }));
+    const route = (providerId: string) => ({ providerId, adapterId: "openai-api", accessContract: "secret@1", modelId: "gpt" });
+    const plan = (providerId: string): HarnessModelPlan => ({
+      familyId: 1, familyRevision: 1, orchestrator: route(providerId), roster: [route(providerId)],
+    });
+    const policy = {
+      configurationRevision: 1,
+      configurationDigest: `sha256:${"f".repeat(64)}`,
+      executionAccessContracts: ["secret@1"],
+      modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt" }], deny: [] },
+    };
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        trace: {
+          directory: join(directory, "traces"),
+          policy: { mode: "required", requiredFeatures: {}, includeNativeArtifacts: false, maxBytesPerTurn: 100_000, maxEventsPerTurn: 100 },
+        },
+        accessBroker: { async acquire(selected) {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: selected.providerId, adapterId: "openai-api",
+              adapterImplementationVersion: "1", endpoint: "https://provider.test", fields: { "api-key": "opaque" },
+            },
+            release() { releases.push(selected.providerId); },
+          };
+        } },
+        implementations: { test: () => ({
+          supportsInvokedComplete: true,
+          supportsForceStop: true,
+          complete(context) {
+            const id = context.inputGraph.id;
+            // Every turn ignores cancellation. Root turns end when force-stopped, as a killed
+            // Codex process does; the stuck child never settles at all.
+            return new Promise<void>((resolve, reject) => {
+              turns.set(id, { ...(context.forceSignal === undefined ? {} : { forceSignal: context.forceSignal }), settle: () => { accepted.add(id); resolve(); } });
+              context.forceSignal?.addEventListener("abort", () => {
+                forced.push(id);
+                if (id !== 2) reject(new Error("native process killed"));
+              }, { once: true });
+            });
+          },
+          state: emptyState,
+        }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: { ...completeEnabledConfiguration, revision: 1, modelRules: policy.modelRules, executionAccessContracts: ["secret@1"] },
+      });
+      const rootAdmission = await host.admitModelPlanExecution(1, 9, "attempt-root", plan("root-provider"), new AbortController().signal, policy);
+      const rootTurn = host.complete(
+        1, 9, graph(1, "root-token"), route("root-provider"), undefined, { productInteractionId: 9 },
+        rootAdmission.executionLeaseId, policy, plan("root-provider"), "attempt-root",
+      ).then(() => undefined, (error: unknown) => error);
+      const startChild = async (nodeId: number, token: string, providerId: string) => {
+        const admission = await host.admitModelPlanExecution(1, nodeId + 27, `attempt-${nodeId}`, plan(providerId), new AbortController().signal, policy);
+        await host.startInvokedCompletion(1, {
+          ...invoked(graph(nodeId, token)),
+          traceContext: { productInteractionId: nodeId + 27 },
+          harnessPolicy: policy,
+          modelPlan: plan(providerId),
+          executionLeaseId: admission.executionLeaseId,
+          attemptAdmissionId: `attempt-${nodeId}`,
+        });
+        return admission;
+      };
+      const stuckAdmission = await startChild(2, "stuck-token", "stuck-provider");
+      await startChild(3, "sibling-token", "sibling-provider");
+      await vi.waitFor(() => expect([...turns.keys()].sort()).toEqual([1, 2, 3]));
+      const stuckObserved = host.observeInvokedCompletion(1, 2).then(() => undefined, (error: unknown) => error);
+      const siblingObserved = host.observeInvokedCompletion(1, 3).then(() => undefined, (error: unknown) => error);
+
+      // The product gives up the stuck child's access, which cancels it; the sibling is cancelled.
+      expect(await host.releaseProviderExecution(stuckAdmission.executionLeaseId)).toBe(true);
+      expect(host.cancel(1, 3)).toBe(true);
+      // The sibling settles within the deadline, so it is never force-stopped.
+      await vi.advanceTimersByTimeAsync(90_000);
+      turns.get(3)!.settle();
+      await siblingObserved;
+      await settleMicrotasks();
+      expect(releases).toEqual(["sibling-provider"]);
+
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(forced).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(forced).toEqual([2]);
+      // Access is released only after the bounded wait for the forced turn to settle.
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(releases).toEqual(["sibling-provider"]);
+      await vi.advanceTimersByTimeAsync(1);
+      await settleMicrotasks();
+      expect(releases).toEqual(["sibling-provider", "stuck-provider"]);
+      // A force-stop settles the turn exactly as its cancellation would have: here, the
+      // owner's release. It is not reported as a provider failure.
+      const stuckOutcome = await stuckObserved;
+      expect(stuckOutcome).not.toBeInstanceOf(HarnessExecutionFailure);
+      expect((stuckOutcome as Error).constructor.name).toBe("HarnessCancellationSettled");
+      expect((stuckOutcome as Error).message).toBe("Provider execution access was released by its owner");
+
+      // The running root turn and the settled sibling were never touched.
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(forced).toEqual([2]);
+      expect(turns.get(1)!.forceSignal?.aborted).toBe(false);
+      expect(turns.get(3)!.forceSignal?.aborted).toBe(false);
+      expect(releases).toEqual(["sibling-provider", "stuck-provider"]);
+
+      // The owner already released the forced turn's lease, so its release was acknowledged
+      // and forgotten; a late settlement releases nothing again.
+      turns.get(2)!.settle();
+      expect(await host.releaseProviderExecution(stuckAdmission.executionLeaseId)).toBe(false);
+      await settleMicrotasks();
+      expect(releases).toEqual(["sibling-provider", "stuck-provider"]);
+
+      // A stuck root turn is force-stopped the same way, and the next root turn then runs.
+      expect(host.cancel(1)).toBe(true);
+      await vi.advanceTimersByTimeAsync(119_999);
+      expect(forced).toEqual([2]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(forced).toEqual([2, 1]);
+      // The user's Stop stays a stop, so the product records it as stopped; the force-stop
+      // is kept in the turn's diagnostics.
+      const rootOutcome = await rootTurn;
+      expect(rootOutcome).not.toBeInstanceOf(HarnessExecutionFailure);
+      expect((rootOutcome as Error).constructor.name).toBe("HarnessCancellationSettled");
+      expect((rootOutcome as Error).message).toBe("Harness completion cancelled for thread 1");
+      const exported = join(directory, "exported-root-trace");
+      await host.exportCandidateTrace(9, exported, {
+        runId: "run", executionId: "root", interactionId: "9", harnessConfigurationName: "test-complete-enabled",
+      });
+      const rootTrace = await readFile(join(exported, "events.jsonl"), "utf8");
+      expect(rootTrace).toContain("was force-stopped");
+      expect(rootTrace).toContain("native process killed");
+      expect(rootTrace).toContain('"forceStopped":true');
+      await settleMicrotasks();
+      expect(releases).toEqual(["sibling-provider", "stuck-provider", "root-provider"]);
+
+      const nextAdmission = await host.admitModelPlanExecution(1, 10, "attempt-next", plan("next-provider"), new AbortController().signal, policy);
+      const nextTurn = host.complete(
+        1, 10, graph(4, "next-token"), route("next-provider"), undefined, undefined,
+        nextAdmission.executionLeaseId, policy, plan("next-provider"), "attempt-next",
+      );
+      await vi.waitFor(() => expect(turns.has(4)).toBe(true));
+      turns.get(4)!.settle();
+      await expect(nextTurn).resolves.toMatchObject({ threadId: 1 });
+      await vi.waitFor(() => expect(releases).toEqual(["sibling-provider", "stuck-provider", "root-provider", "next-provider"]));
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["resolves", "rejects", "never settles"] as const)("settles a Stop the harness %s after a force-stop as one stop and logs it", async (ending) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-force-stop-outcome-"));
+    let started = false;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : url.endsWith("/neighbors")
+        ? new Response(JSON.stringify({ nodes: [] }), { status: 200, headers: { "content-type": "application/json" } })
+        : graphReadResponse(url)));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        trace: {
+          directory: join(directory, "traces"),
+          policy: { mode: "required", requiredFeatures: {}, includeNativeArtifacts: false, maxBytesPerTurn: 100_000, maxEventsPerTurn: 100 },
+        },
+        implementations: { test: () => ({
+          supportsForceStop: true,
+          complete(context) {
+            started = true;
+            // Ignores the Stop; the force-stop ends it, and the adapter then resolves or rejects.
+            return new Promise<void>((resolve, reject) => {
+              context.forceSignal?.addEventListener("abort", () => {
+                if (ending === "resolves") resolve();
+                else if (ending === "rejects") reject(new Error("native process killed"));
+              }, { once: true });
+            });
+          },
+          state: emptyState,
+        }) },
+      });
+      await host.initialize();
+      await host.createSession({ threadId: 1, permissionProfileId: "auto", configuration: testConfiguration, workingDirectory: directory });
+      const running = host.complete(1, 1, graph(), undefined, undefined, { productInteractionId: 41 })
+        .then(() => undefined, (error: unknown) => error);
+      await vi.waitFor(() => expect(started).toBe(true));
+
+      expect(host.cancel(1)).toBe(true);
+      await vi.advanceTimersByTimeAsync(120_000);
+      if (ending === "never settles") await vi.advanceTimersByTimeAsync(10_000);
+
+      const outcome = await running;
+      expect(outcome).not.toBeInstanceOf(HarnessExecutionFailure);
+      expect((outcome as Error).constructor.name).toBe("HarnessCancellationSettled");
+      expect((outcome as Error).message).toBe("Harness completion cancelled for thread 1");
+      const exported = join(directory, "exported");
+      await host.exportCandidateTrace(41, exported, {
+        runId: "run", executionId: "execution", interactionId: "41", harnessConfigurationName: "test-default",
+      });
+      const events = await readFile(join(exported, "events.jsonl"), "utf8");
+      expect(events).toContain("was force-stopped");
+      expect(events).toContain({
+        resolves: '"nativeOutcome":"settled"',
+        rejects: '"nativeOutcome":"native process killed"',
+        "never settles": '"nativeOutcome":"did not settle within ten seconds"',
+      }[ending]);
+      // The product log records the force-stop even without a trace store, and no provider text.
+      expect(warn).toHaveBeenCalledWith("Force-stopped harness completion 1 on thread 1", {
+        threadId: 1,
+        completionId: 1,
+        origin: "root",
+        productInteractionId: 41,
+        nativeOutcome: { resolves: "settled", rejects: "rejected", "never settles": "did not settle within ten seconds" }[ending],
+      });
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("answers an invoked start whose native attachment never settles once the force-stopped run ends", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-force-stop-start-"));
+    let started = false;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : url.endsWith("/neighbors")
+        ? new Response(JSON.stringify({ nodes: [] }), { status: 200, headers: { "content-type": "application/json" } })
+        : graphReadResponse(url, 2, [], 102)));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        implementations: { test: () => ({
+          supportsInvokedComplete: true,
+          supportsForceStop: true,
+          complete() {
+            started = true;
+            // Neither the execution nor its attachment ever settles, even after the force-stop.
+            return nativeExecutionHandle(new Promise<void>(() => undefined), undefined, new Promise(() => undefined));
+          },
+          state: emptyState,
+        }) },
+      });
+      await host.initialize();
+      await host.createSession({ threadId: 1, permissionProfileId: "auto", configuration: completeEnabledConfiguration, workingDirectory: directory });
+      const start = host.startInvokedCompletion(1, invoked(graph(2, "child-token")))
+        .then(() => "resolved", (error: unknown) => error);
+      await vi.waitFor(() => expect(started).toBe(true));
+
+      expect(host.cancel(1, 2)).toBe(true);
+      await vi.advanceTimersByTimeAsync(130_000);
+      // The run itself ends as a settled cancellation; the start must answer with it too.
+      await expect(host.observeInvokedCompletion(1, 2)).rejects.toThrow("cancelled for thread 1");
+      let outcome: unknown = "still pending";
+      void start.then((value) => { outcome = value; });
+      await settleMicrotasks();
+      expect((outcome as Error).constructor.name).toBe("HarnessCancellationSettled");
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a cancelled turn's access until it settles when its harness cannot force-stop", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-no-force-stop-"));
+    const release = vi.fn();
+    let observedContext: HarnessRunContext | undefined;
+    let settle!: () => void;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : graphReadResponse(url)));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire() {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+              adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
+            },
+            release,
+          };
+        } },
+        implementations: { test: () => ({ complete(context) {
+          observedContext = context;
+          return new Promise<void>((resolve) => { settle = resolve; });
+        }, state: emptyState }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: {
+          ...testConfiguration,
+          modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      const model = { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" };
+      const admission = await host.admitProviderExecution(1, model, new AbortController().signal);
+      const running = host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId)
+        .catch(() => undefined);
+      await vi.waitFor(() => expect(observedContext).toBeDefined());
+      expect(observedContext!.forceSignal).toBeUndefined();
+
+      expect(host.cancel(1)).toBe(true);
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(release).not.toHaveBeenCalled();
+
+      settle();
+      await running;
+      await vi.waitFor(() => expect(release).toHaveBeenCalledOnce());
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("acknowledges released access to its provider only when the owner releases the lease", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-release-acknowledge-"));
+    const events: string[] = [];
+    let accepted = false;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? accepted
+        ? new Response(JSON.stringify(completion), { status: 200, headers: { "content-type": "application/json" } })
+        : new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ node: { id: 1, kind: "user-interaction", icon: "user", title: "Question", detail: "Question", state: "accepted" } }), { status: 200, headers: { "content-type": "application/json" } })));
+    let failAcknowledge = true;
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire() {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+              adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
+            },
+            release() { events.push("release"); },
+            acknowledge() {
+              events.push("acknowledge");
+              if (failAcknowledge) throw new Error("provider removal could not finish yet");
+            },
+          };
+        } },
+        implementations: { test: () => ({ async complete() { accepted = true; }, state: emptyState }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: {
+          ...testConfiguration,
+          modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      const model = { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" };
+      const admission = await host.admitProviderExecution(1, model, new AbortController().signal);
+      await host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId);
+      await vi.waitFor(() => expect(events).toEqual(["release"]));
+
+      // A failed acknowledgement is returned to the owner, which retries.
+      await expect(host.releaseProviderExecution(admission.executionLeaseId)).rejects.toThrow("could not finish yet");
+      failAcknowledge = false;
+      expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
+      expect(events).toEqual(["release", "acknowledge", "acknowledge"]);
+      expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("forgets access released without an owner, and still acknowledges the owner's late release", async () => {
+    vi.useFakeTimers();
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-unacknowledged-release-"));
+    const release = vi.fn();
+    const acknowledge = vi.fn();
+    const acknowledgeUnknownRelease = vi.fn();
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { acknowledgeUnknownRelease, async acquire() {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+              adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
+            },
+            release,
+            acknowledge,
+          };
+        } },
+        implementations: { test: () => ({ async complete() {}, state: emptyState }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: {
+          ...testConfiguration,
+          modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      const model = { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" };
+      const admission = await host.admitProviderExecution(1, model, new AbortController().signal);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(release).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      // The owner's release arrives after the host forgot the lease. The acknowledgement it
+      // carries still reaches the providers, so a removal waiting on it can finish.
+      expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(false);
+      expect(acknowledge).not.toHaveBeenCalled();
+      expect(acknowledgeUnknownRelease).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to claim an admission whose release failed and is being retried", async () => {
+    vi.useFakeTimers();
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-failed-release-claim-"));
+    const release = vi.fn(async () => { throw new Error("provider service is busy"); });
+    const complete = vi.fn(async () => undefined);
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ node: { id: 1, kind: "user-interaction", icon: "user", title: "Question", detail: "Question", state: "accepted" } }), { status: 200, headers: { "content-type": "application/json" } })));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire() {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+              adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
+            },
+            release,
+          };
+        } },
+        implementations: { test: () => ({ complete, state: emptyState }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: {
+          ...testConfiguration,
+          modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      const model = { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" };
+      const admission = await host.admitProviderExecution(1, model, new AbortController().signal);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(release).toHaveBeenCalledOnce();
+      await expect(host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId))
+        .rejects.toThrow("invalid or expired");
+      expect(complete).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("settles a lease only through the completion that claimed it", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-claim-owner-"));
+    const release = vi.fn();
+    let finishNative!: () => void;
+    const nativeFinished = new Promise<void>((resolve) => { finishNative = resolve; });
+    let nativeStarted!: () => void;
+    const started = new Promise<void>((resolve) => { nativeStarted = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ node: { id: 1, kind: "user-interaction", icon: "user", title: "Question", detail: "Question", state: "accepted" } }), { status: 200, headers: { "content-type": "application/json" } })));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire() {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+              adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
+            },
+            release,
+          };
+        } },
+        implementations: { test: () => ({ async complete() { nativeStarted(); await nativeFinished; }, state: emptyState }) },
+      });
+      await host.initialize();
+      for (const threadId of [1, 2]) {
+        await host.createSession({
+          threadId, permissionProfileId: "auto", workingDirectory: directory,
+          configuration: {
+            ...testConfiguration,
+            modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+            executionAccessContracts: ["secret@1"],
+          },
+        });
+      }
+      const model = { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" };
+      const admission = await host.admitProviderExecution(1, model, new AbortController().signal);
+      const running = host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId)
+        .catch(() => undefined);
+      await started;
+      // Another completion naming the same, already claimed lease is refused and must not
+      // release the access the running turn still uses.
+      await expect(host.complete(2, 2, graph(), model, undefined, undefined, admission.executionLeaseId))
+        .rejects.toThrow("invalid or expired");
+      expect(release).not.toHaveBeenCalled();
+      finishNative();
+      await running;
+      await vi.waitFor(() => expect(release).toHaveBeenCalledOnce());
+    } finally {
+      finishNative();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to claim an admission whose release has already started", async () => {
+    vi.useFakeTimers();
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-late-claim-"));
+    let finishRelease!: () => void;
+    const releaseFinished = new Promise<void>((resolve) => { finishRelease = resolve; });
+    const release = vi.fn(() => releaseFinished);
+    const complete = vi.fn(async () => undefined);
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ node: { id: 1, kind: "user-interaction", icon: "user", title: "Question", detail: "Question", state: "accepted" } }), { status: 200, headers: { "content-type": "application/json" } })));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire() {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+              adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
+            },
+            release,
+          };
+        } },
+        implementations: { test: () => ({ complete, state: emptyState }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: {
+          ...testConfiguration,
+          modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      const model = { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" };
+      const admission = await host.admitProviderExecution(1, model, new AbortController().signal);
+      // The admission timer fires and its release is still in flight when the claim arrives.
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(release).toHaveBeenCalledOnce();
+      await expect(host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId))
+        .rejects.toThrow("invalid or expired");
+      expect(complete).not.toHaveBeenCalled();
+      finishRelease();
+    } finally {
+      vi.useRealTimers();
       vi.unstubAllGlobals();
       await rm(directory, { recursive: true, force: true });
     }

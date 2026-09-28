@@ -79,7 +79,17 @@ interface PendingExecutionAccess {
   readonly heldLeases: readonly HeldExecutionAccessLease[];
   timeout: NodeJS.Timeout | undefined;
   releasePromise: Promise<void> | undefined;
-  state: "admitted" | "claimed" | "awaiting-terminal";
+  /**
+   * `claimed` while the native turn that uses the access runs, `settled` once that turn has
+   * ended and the access is being released, and `released` until the owner acknowledges.
+   */
+  state: "admitted" | "claimed" | "settled" | "released";
+  /** Set once a release has been decided; the admission can no longer be claimed. */
+  releaseRequested: boolean;
+  /** The owner has given up the lease; its acknowledgement follows the release. */
+  ownerReleased: boolean;
+  /** Cancels the completion that claimed this access. */
+  abandon?: () => void;
 }
 
 interface LiveSession {
@@ -149,8 +159,15 @@ interface InvokedCompletionRun {
 }
 
 const EXECUTION_ADMISSION_TIMEOUT_MS = 30_000;
-const EXECUTION_TERMINAL_ACK_TIMEOUT_MS = 30_000;
+const EXECUTION_RELEASE_RETRY_MS = 30_000;
+/** How long access released without an owner waits for the owner's acknowledgement. */
+const UNACKNOWLEDGED_RELEASE_TTL_MS = 10 * 60_000;
 const HARNESS_CLOSE_SESSION_TIMEOUT_MS = 5_000;
+/** A cancelled turn that has not settled after this long is force-stopped (PROV-004). */
+export const CANCELLED_TURN_FORCE_STOP_MS = 2 * 60_000;
+/** How long the host waits for a force-stopped turn to settle before releasing its access. */
+export const FORCE_STOPPED_TURN_SETTLE_MS = 10_000;
+const FORCE_STOPPED_TURN_MESSAGE = "The turn did not stop within two minutes of cancellation, so it was force-stopped.";
 
 export type HarnessEffectBoundary = "none" | "partial_output" | "graph_write" | "tool_effect" | "unknown";
 
@@ -687,7 +704,6 @@ export class HarnessHost {
     }
     let resolveStarted!: (value: HarnessInvokedCompletionStart) => void;
     let rejectStarted!: (error: unknown) => void;
-    let nativeReported = false;
     const started = new Promise<HarnessInvokedCompletionStart>((resolve, reject) => {
       resolveStarted = resolve;
       rejectStarted = reject;
@@ -713,7 +729,6 @@ export class HarnessHost {
       } : {}),
       ...(signal === undefined ? {} : { signal }),
       onNativeExecution: (native) => {
-        nativeReported = true;
         if (native?.attached === undefined) {
           resolveStarted({ completionId: capability.nodeId });
           return;
@@ -724,9 +739,14 @@ export class HarnessHost {
         );
       },
     }).then(() => ({ completionId: capability.nodeId }));
-    void run.catch((error) => {
-      if (!nativeReported) rejectStarted(error);
-    });
+    // The start acknowledgement never outlives the run. A run can end before its native
+    // attachment settles, for example when a force-stopped child's adapter never settles
+    // either: the start then answers with the run's end instead of waiting forever. An
+    // attachment that already settled wins, because a promise settles once.
+    void run.then(
+      () => resolveStarted({ completionId: capability.nodeId }),
+      (error: unknown) => rejectStarted(error),
+    );
     const entry = { invocationDigest, run, started };
     session.invokedCompletionRuns.set(capability.nodeId, entry);
     return entry;
@@ -752,6 +772,19 @@ export class HarnessHost {
   }): Promise<HarnessCompleteResult | HarnessInvokedCompletionObservation> {
     const { threadId, interactionId, session, capability } = input;
     const controller = new AbortController();
+    // Per-turn force-stop: once this completion is cancelled, a harness that supports it gets
+    // two minutes to settle before this one turn, and nothing else, is force-stopped.
+    const forceController = new AbortController();
+    let forceTimer: NodeJS.Timeout | undefined;
+    const armForceStop = () => {
+      if (session.harness.supportsForceStop !== true || forceTimer !== undefined) return;
+      forceTimer = setTimeout(
+        () => forceController.abort(new Error(FORCE_STOPPED_TURN_MESSAGE)),
+        CANCELLED_TURN_FORCE_STOP_MS,
+      );
+      forceTimer.unref?.();
+    };
+    controller.signal.addEventListener("abort", armForceStop, { once: true });
     const detachSignal = forwardAbort(input.signal, controller);
     const completeCallId = randomUUID();
     const approvals = session.approvals.beginCompletion({ interactionId, completeCallId });
@@ -787,11 +820,15 @@ export class HarnessHost {
         input.onNativeExecution,
         () => { nativeStarted = true; },
         input.admissionInteractionId,
+        () => controller.abort(new Error("Provider execution access was released by its owner")),
+        forceController.signal,
       );
     } catch (error) {
       operationError = error;
       if (!nativeStarted && error !== null && typeof error === "object") executionNotStartedErrors.add(error);
     }
+    controller.signal.removeEventListener("abort", armForceStop);
+    if (forceTimer !== undefined) clearTimeout(forceTimer);
     session.approvals.endCompletion(
       completeCallId,
       "aborted",
@@ -813,7 +850,6 @@ export class HarnessHost {
     } catch (error) {
       errors.push(error);
     }
-    if (input.executionLeaseId !== undefined) this.awaitTerminalAcknowledgement(input.executionLeaseId);
     if (errors.length === 1) throw errors[0];
     if (errors.length > 1) throw new AggregateError(errors, "Harness completion and cleanup failed");
     return result!;
@@ -843,6 +879,7 @@ export class HarnessHost {
       const timeout = this.releaseAfter(executionLeaseId, EXECUTION_ADMISSION_TIMEOUT_MS);
       this.pendingExecutionAccess.set(executionLeaseId, {
         threadId, model, heldLeases: [{ lease, released: false }], timeout, releasePromise: undefined, state: "admitted",
+        releaseRequested: false, ownerReleased: false,
         ...(harnessPolicy === undefined ? {} : { policyIdentity: executionPolicyIdentity(harnessPolicy) }),
       });
       return { executionLeaseId, adapterImplementationVersion: lease.access.adapterImplementationVersion };
@@ -918,6 +955,8 @@ export class HarnessHost {
         timeout,
         releasePromise: undefined,
         state: "admitted",
+        releaseRequested: false,
+        ownerReleased: false,
       });
       return {
         executionLeaseId,
@@ -934,40 +973,125 @@ export class HarnessHost {
     }
   }
 
+  /**
+   * The owner of an execution lease gives it up after durably recording that the work using
+   * it ended. Provider access lives exactly as long as the native turn that uses it: access
+   * claimed by a turn that still runs is not released here; the turn is cancelled and the
+   * access is released when it settles. Access that is already released is acknowledged to
+   * its provider, which may finish a removal that was waiting on that work. Returns false for
+   * an unknown lease.
+   */
   async releaseProviderExecution(executionLeaseId: string): Promise<boolean> {
     const pending = this.pendingExecutionAccess.get(executionLeaseId);
-    if (pending === undefined) return false;
+    if (pending === undefined) {
+      // The acknowledgement this lease would have carried must not be lost: a failure here is
+      // returned to the owner, which retries.
+      await this.options.accessBroker?.acknowledgeUnknownRelease?.();
+      return false;
+    }
+    pending.ownerReleased = true;
+    if (pending.state === "claimed") {
+      pending.abandon?.();
+      return true;
+    }
+    if (pending.state === "admitted") pending.releaseRequested = true;
+    await this.releaseHeldExecution(executionLeaseId, pending);
+    await this.acknowledgeReleasedExecution(executionLeaseId, pending);
+    return true;
+  }
+
+  /** Releases access whose native turn has ended. */
+  private settleExecutionAccess(executionLeaseId: string): void {
+    const pending = this.pendingExecutionAccess.get(executionLeaseId);
+    if (pending?.state !== "claimed") return;
+    pending.state = "settled";
+    delete pending.abandon;
+    void this.releaseHeldExecution(executionLeaseId, pending)
+      .then(() => this.finishReleasedExecution(executionLeaseId, pending))
+      .catch(() => {});
+  }
+
+  /**
+   * After access is released without the owner waiting on it: acknowledge it if the owner has
+   * already given the lease up, retrying on failure because the owner will not ask again;
+   * otherwise keep it for the owner's acknowledgement for a bounded time.
+   */
+  private async finishReleasedExecution(executionLeaseId: string, pending: PendingExecutionAccess): Promise<void> {
+    if (this.pendingExecutionAccess.get(executionLeaseId) !== pending) return;
+    if (pending.timeout !== undefined) clearTimeout(pending.timeout);
+    pending.timeout = undefined;
+    if (!pending.ownerReleased) {
+      pending.timeout = this.expireUnacknowledged(executionLeaseId, pending);
+      return;
+    }
+    try {
+      await this.acknowledgeReleasedExecution(executionLeaseId, pending);
+    } catch (error) {
+      if (this.pendingExecutionAccess.get(executionLeaseId) === pending && !this.closed) {
+        pending.timeout = this.retryAcknowledgement(executionLeaseId, pending);
+      }
+      throw error;
+    }
+  }
+
+  private retryAcknowledgement(executionLeaseId: string, pending: PendingExecutionAccess): NodeJS.Timeout {
+    const timer = setTimeout(() => {
+      pending.timeout = undefined;
+      void this.finishReleasedExecution(executionLeaseId, pending).catch(() => {});
+    }, EXECUTION_RELEASE_RETRY_MS);
+    timer.unref?.();
+    return timer;
+  }
+
+  private expireUnacknowledged(executionLeaseId: string, pending: PendingExecutionAccess): NodeJS.Timeout {
+    const timer = setTimeout(() => {
+      if (this.pendingExecutionAccess.get(executionLeaseId) === pending && !pending.ownerReleased) {
+        this.pendingExecutionAccess.delete(executionLeaseId);
+      }
+    }, UNACKNOWLEDGED_RELEASE_TTL_MS);
+    timer.unref?.();
+    return timer;
+  }
+
+  /** Releases held access, retrying on the host's own timer until it succeeds. */
+  private async releaseHeldExecution(executionLeaseId: string, pending: PendingExecutionAccess): Promise<void> {
+    if (pending.state === "released") return;
     if (pending.timeout !== undefined) clearTimeout(pending.timeout);
     pending.timeout = undefined;
     pending.releasePromise ??= releaseHeldExecutionAccess(pending.heldLeases).then(() => {
-      this.pendingExecutionAccess.delete(executionLeaseId);
+      pending.state = "released";
     });
     try {
       await pending.releasePromise;
     } catch (error) {
       pending.releasePromise = undefined;
-      pending.timeout = this.releaseAfter(
-        executionLeaseId,
-        pending.state === "admitted" ? EXECUTION_ADMISSION_TIMEOUT_MS : EXECUTION_TERMINAL_ACK_TIMEOUT_MS,
-      );
+      if (this.pendingExecutionAccess.get(executionLeaseId) === pending && !this.closed) {
+        if (pending.timeout !== undefined) clearTimeout(pending.timeout);
+        pending.timeout = this.releaseAfter(executionLeaseId, EXECUTION_RELEASE_RETRY_MS);
+      }
       throw error;
     }
-    return true;
+  }
+
+  /** Tells each provider its access ended durably, then forgets the lease. */
+  private async acknowledgeReleasedExecution(executionLeaseId: string, pending: PendingExecutionAccess): Promise<void> {
+    if (pending.timeout !== undefined) clearTimeout(pending.timeout);
+    pending.timeout = undefined;
+    for (const held of pending.heldLeases) await held.lease.acknowledge?.();
+    if (this.pendingExecutionAccess.get(executionLeaseId) === pending) this.pendingExecutionAccess.delete(executionLeaseId);
   }
 
   private releaseAfter(executionLeaseId: string, delay: number): NodeJS.Timeout {
-    return setTimeout(() => {
-      void this.releaseProviderExecution(executionLeaseId).catch(() => {});
+    const timer = setTimeout(() => {
+      const pending = this.pendingExecutionAccess.get(executionLeaseId);
+      if (pending === undefined || pending.state === "claimed" || pending.state === "released") return;
+      pending.releaseRequested = true;
+      void this.releaseHeldExecution(executionLeaseId, pending)
+        .then(() => this.finishReleasedExecution(executionLeaseId, pending))
+        .catch(() => {});
     }, delay);
-  }
-
-  private awaitTerminalAcknowledgement(executionLeaseId: string): void {
-    const pending = this.pendingExecutionAccess.get(executionLeaseId);
-    if (pending?.state !== "claimed") return;
-    pending.state = "awaiting-terminal";
-    // Failure, cancellation, and elapsed time are not durable terminal acknowledgement.
-    // The trusted caller must explicitly release the lease after persisting terminal state.
-    pending.timeout = undefined;
+    timer.unref?.();
+    return timer;
   }
 
   private async executeCompletion(
@@ -988,6 +1112,8 @@ export class HarnessHost {
     onNativeExecution?: (native: NativeExecutionHandle | undefined) => void,
     onNativeStarted?: () => void,
     admissionInteractionId: number = productInteractionId,
+    abandonCompletion?: () => void,
+    forceSignal: AbortSignal = new AbortController().signal,
   ): Promise<HarnessCompleteResult | HarnessInvokedCompletionObservation> {
     const graph = new RelayerGraphClient(capability);
     const interactionNodeId = capability.nodeId;
@@ -1057,12 +1183,16 @@ export class HarnessHost {
     let admittedModelPlan: HarnessAdmittedModelPlan | undefined;
     let accessBundle: HarnessExecutionAccessBundle | undefined;
     let releaseAccessAfterCompletion = false;
+    let claimedExecutionLeaseId: string | undefined;
     let harnessStarted = false;
+    /** Set when the force-stop fired before the native turn settled: how that turn ended. */
+    let forceStoppedNativeOutcome: { readonly kind: ForceStoppedNativeOutcome; readonly detail?: string } | undefined;
     try {
       const acceptedContracts = session.descriptor.configuration.executionAccessContracts;
       if (executionLeaseId !== undefined) {
         const pending = this.pendingExecutionAccess.get(executionLeaseId);
-        if (pending === undefined || pending.state !== "admitted" || pending.threadId !== threadId || model === undefined
+        if (pending === undefined || pending.state !== "admitted" || pending.releaseRequested
+          || pending.threadId !== threadId || model === undefined
           || pending.model.providerId !== model.providerId || pending.model.adapterId !== model.adapterId
           || pending.model.modelId !== model.modelId
           || pending.interactionId !== (modelPlan === undefined ? undefined : admissionInteractionId)
@@ -1076,6 +1206,8 @@ export class HarnessHost {
         pending.state = "claimed";
         if (pending.timeout !== undefined) clearTimeout(pending.timeout);
         pending.timeout = undefined;
+        if (abandonCompletion !== undefined) pending.abandon = abandonCompletion;
+        claimedExecutionLeaseId = executionLeaseId;
         accessLease = pending.heldLeases[0]?.lease;
         admittedModelPlan = pending.admittedPlan;
         accessBundle = pending.accessBundle;
@@ -1105,6 +1237,8 @@ export class HarnessHost {
         }
         selectedAccess = accessLease.access;
       }
+      // A turn cancelled and force-stopped before its native work starts ends as a cancellation.
+      if (forceSignal.aborted) throw signal.reason;
       harnessStarted = true;
       onNativeStarted?.();
       const native = session.harness.complete({
@@ -1120,17 +1254,27 @@ export class HarnessHost {
         ...(model === undefined ? {} : { model }),
         ...(accessBundle === undefined ? {} : { accessBundle }),
         ...(selectedAccess === undefined ? {} : { access: selectedAccess }),
+        ...(session.harness.supportsForceStop === true ? { forceSignal } : {}),
       }, signal);
       onNativeExecution?.(isNativeExecutionHandle(native) ? native : undefined);
-      await native;
+      await settledOrForceStopped(native, forceSignal);
+      // Checked at once: the timer may still fire during later cleanup, after a natural settle.
+      if (forceSignal.aborted) forceStoppedNativeOutcome = { kind: "settled" };
     } catch (error) {
-      // Adapters may reject with this exact AbortSignal reason before native work
-      // starts. Distinct abort, quiescence, or cleanup errors remain failures.
-      if (!signal.aborted || (error !== signal.reason && !(error instanceof NativeExecutionCancelled))) {
+      if (forceSignal.aborted && harnessStarted) {
+        forceStoppedNativeOutcome = error instanceof ForceStoppedTurnDidNotSettle
+          ? { kind: "did not settle within ten seconds" }
+          : { kind: "rejected", detail: errorMessage(error) };
+      } else if (!signal.aborted || (error !== signal.reason && !(error instanceof NativeExecutionCancelled))) {
+        // Adapters may reject with this exact AbortSignal reason before native work
+        // starts. Distinct abort, quiescence, or cleanup errors remain failures.
         completionError = normalizeHarnessFailure(error, harnessStarted, observedTrace.effectBoundary());
       }
     } finally {
       scope.close();
+      // The native turn has ended, was force-stopped, or never started, so nothing uses the
+      // claimed access. Only this completion's claim is settled.
+      if (claimedExecutionLeaseId !== undefined) this.settleExecutionAccess(claimedExecutionLeaseId);
       if (releaseAccessAfterCompletion) {
         try {
           await accessLease?.release();
@@ -1138,6 +1282,28 @@ export class HarnessHost {
           completionError ??= normalizeHarnessFailure(error, true, observedTrace.effectBoundary());
         }
       }
+    }
+    const forceStopped = forceStoppedNativeOutcome !== undefined;
+    if (forceStoppedNativeOutcome !== undefined) {
+      // A force-stop only follows a cancellation, so the turn settles as a settled
+      // cancellation, whether the harness resolved or rejected while being stopped: a user's
+      // Stop stays stopped. The force-stop and the native outcome are diagnostics only. The
+      // product log carries no provider text; the trace, when one is kept, adds the detail.
+      console.warn(`Force-stopped harness completion ${interactionNodeId} on thread ${threadId}`, {
+        threadId,
+        completionId: interactionNodeId,
+        origin: origin.kind,
+        ...(traceContext === undefined ? {} : { productInteractionId: traceContext.productInteractionId }),
+        nativeOutcome: forceStoppedNativeOutcome.kind,
+      });
+      traceSink.emit({
+        type: "warning",
+        data: {
+          message: FORCE_STOPPED_TURN_MESSAGE,
+          forceStopped: true,
+          nativeOutcome: forceStoppedNativeOutcome.detail ?? forceStoppedNativeOutcome.kind,
+        },
+      });
     }
     if (completionError !== undefined) {
       // A harness can successfully accept the graph and then fail while unwinding. The accepted
@@ -1178,8 +1344,11 @@ export class HarnessHost {
       throw completionError;
     }
     if (signal.aborted) {
-      traceSink.emit({ type: "cancelled", data: { message: errorMessage(signal.reason) } });
-      await sealTrace(trace, "partial", "Stopped by user");
+      traceSink.emit({
+        type: "cancelled",
+        data: { message: errorMessage(signal.reason), ...(forceStopped ? { forceStopped: true } : {}) },
+      });
+      await sealTrace(trace, "partial", forceStopped ? `Stopped by user. ${FORCE_STOPPED_TURN_MESSAGE}` : "Stopped by user");
       throw new HarnessCancellationSettled(errorMessage(signal.reason));
     }
     if (origin.kind === "invoke") {
@@ -1296,14 +1465,19 @@ export class HarnessHost {
         errors.push(error);
       }
     }));
+    // Unclaimed and settled access is released now. Access still claimed by a native turn
+    // that did not stop within the close wait stays held until the process exits.
     await Promise.all([...this.pendingExecutionAccess.entries()]
-      .filter(([, pending]) => pending.state === "admitted")
-      .map(async ([id]) => {
+      .filter(([, pending]) => pending.state === "admitted" || pending.state === "settled")
+      .map(async ([id, pending]) => {
+        pending.releaseRequested = true;
         try {
-          await this.releaseProviderExecution(id);
+          await this.releaseHeldExecution(id, pending);
         } catch (error) {
           errors.push(error);
         }
+        if (pending.timeout !== undefined) clearTimeout(pending.timeout);
+        pending.timeout = undefined;
       }));
     this.sessions.clear();
     if (!this.closeAbandoned && this.initialized) {
@@ -2349,6 +2523,42 @@ function captureHarnessState(harness: Harness): HarnessSessionState {
   const state = readHarnessState(harness.state());
   if (state === undefined) throw new Error("Harness did not return implementation state");
   return state;
+}
+
+type ForceStoppedNativeOutcome = "settled" | "rejected" | "did not settle within ten seconds";
+
+class ForceStoppedTurnDidNotSettle extends Error {
+  constructor() { super("The force-stopped turn did not settle within ten seconds"); }
+}
+
+/**
+ * Waits for a native turn to settle. Once the turn is force-stopped, waits at most
+ * FORCE_STOPPED_TURN_SETTLE_MS more and then rejects, so the host can release the turn's
+ * access even if the harness never settles. A later settlement is ignored.
+ */
+async function settledOrForceStopped(native: PromiseLike<void>, forceSignal: AbortSignal): Promise<void> {
+  const settled = Promise.resolve(native);
+  void settled.catch(() => undefined);
+  let timer: NodeJS.Timeout | undefined;
+  let detach = () => {};
+  const abandoned = new Promise<never>((_resolve, reject) => {
+    const expire = () => {
+      timer = setTimeout(() => reject(new ForceStoppedTurnDidNotSettle()), FORCE_STOPPED_TURN_SETTLE_MS);
+      timer.unref?.();
+    };
+    if (forceSignal.aborted) {
+      expire();
+      return;
+    }
+    forceSignal.addEventListener("abort", expire, { once: true });
+    detach = () => forceSignal.removeEventListener("abort", expire);
+  });
+  try {
+    await Promise.race([settled, abandoned]);
+  } finally {
+    detach();
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 function forwardAbort(signal: AbortSignal | undefined, controller: AbortController): () => void {

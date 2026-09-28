@@ -195,6 +195,74 @@ export function defaultHarnessIsSelectable(settings, harnessId) {
   );
 }
 
+// A provider can be the default only with an enabled managed family that a harness can run,
+// because choosing it also selects that family and, when needed, a harness (PROV-008). This
+// mirrors the server: the current default harness stays if it can run the family; otherwise a
+// harness must be available, run the family and have an enabled permission profile.
+function harnessCanRunFamily(settings, familyId) {
+  const runs = (harness) => harness.available !== false
+    && harness.usableNow === true
+    && (harness.usableFamilyIds ?? []).some((id) => String(id) === String(familyId));
+  const current = settings.harnesses?.find((harness) => harness.id === settings.defaults?.harnessId);
+  if (current && (harnessUsesConfigurationModel(settings, current.id) || runs(current))) return true;
+  return (settings.harnesses ?? []).some((harness) => (
+    harness.permissionAvailable === true
+    && !harnessUsesConfigurationModel(settings, harness.id)
+    && runs(harness)
+  ));
+}
+
+// Connected providers that cannot be the default are sorted by the remedy: a provider with no
+// enabled managed family needs a model refresh; one whose family no harness can run does not.
+export function defaultProviderChoices(settings) {
+  const selectable = [];
+  const needsRefresh = [];
+  const noHarness = [];
+  for (const provider of settings.providers ?? []) {
+    if (provider.connected === false) continue;
+    const family = (settings.families ?? []).find((candidate) => (
+      candidate.kind === "system"
+      && candidate.enabled
+      && String(candidate.managedPolicy?.providerId) === String(provider.id)
+    ));
+    if (!family) needsRefresh.push(provider);
+    else if (!harnessCanRunFamily(settings, family.id)) noHarness.push(provider);
+    else selectable.push(provider);
+  }
+  return { selectable, needsRefresh, noHarness };
+}
+
+const joinLabels = (providers) => providers.map((provider) => provider.label).join(", ");
+
+export function defaultProviderHint({ needsRefresh = [], noHarness = [] } = {}, currentProviderId = null) {
+  // The current default keeps its own family; a hint saying it cannot be the default would
+  // contradict the selection.
+  needsRefresh = needsRefresh.filter((provider) => String(provider.id) !== String(currentProviderId));
+  noHarness = noHarness.filter((provider) => String(provider.id) !== String(currentProviderId));
+  const lines = [];
+  if (needsRefresh.length === 1) {
+    lines.push(`${joinLabels(needsRefresh)} has no usable model family yet. Refresh its models to make it the default.`);
+  } else if (needsRefresh.length) {
+    lines.push(`${joinLabels(needsRefresh)} have no usable model family yet. Refresh their models to make one the default.`);
+  }
+  if (noHarness.length === 1) {
+    lines.push(`No available harness can run ${joinLabels(noHarness)} models, so it cannot be the default.`);
+  } else if (noHarness.length) {
+    lines.push(`No available harness can run models from ${joinLabels(noHarness)}, so they cannot be the default.`);
+  }
+  return lines.length ? lines.join(" ") : null;
+}
+
+// A provider save can move the default harness to one that runs its family. The notice is built
+// from the defaults the save returned, not from a later settings refresh.
+export function defaultHarnessChangeNotice(previousDefaults, savedDefaults, settings) {
+  const harnessId = savedDefaults?.harnessId;
+  if (!previousDefaults || !harnessId || previousDefaults.harnessId === harnessId) return null;
+  const harness = settings.harnesses?.find((item) => item.id === harnessId);
+  const provider = settings.providers?.find((item) => item.id === savedDefaults.providerId);
+  return `Saved. The default harness is now ${harness?.label ?? harnessId}, which can run ${provider?.label ?? savedDefaults.providerId} models.`;
+}
+
 export function availableModels(providerCatalog, providerId) {
   return providerCatalog.find((provider) => provider.id === providerId)?.models ?? [];
 }

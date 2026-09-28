@@ -1,6 +1,7 @@
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { createSettingsStore } from "../desktop/main/services/settings-store.mjs";
 import { afterEach, expect, it } from "vitest";
 import { HumanTaskService } from "../desktop/eval-main/human-task-service.mjs";
 import { createHumanTaskSurface } from "../desktop/eval-main/web-host.mjs";
@@ -251,4 +252,28 @@ it("does not qualify a late-opened second thread using an earlier thread's obser
   const final = await tasks.finish(session.id, { reason: "satisfied", satisfaction: 4, comment: "Legacy finish grade" });
   expect(final.grades.map(grade => grade.value)).toEqual([2, 4]);
   expect(final.grades[1]).toMatchObject({ at: expect.any(String), author: expect.any(Object) });
+});
+
+
+it("persists a live workspace split across scoped origins without granting settings authority", async () => {
+  const { tasks, session, options } = await fixture();
+  const start = async () => {
+    const surface = await createHumanTaskSurface({ tasks, sessionId: session.id, productSession: options.productSession,
+      presentationSettings: createSettingsStore(dirname(options.stateFile)) });
+    cleanups.push(() => surface.close());
+    return surface;
+  };
+  const first = await start();
+  const send = (surface, path, method = "GET", value, authenticated = true) => fetch(surface.origin + path, {
+    method, headers: authenticated ? { Authorization: `Bearer ${new URL(surface.url).hash.slice(1)}` } : {},
+    ...(value === undefined ? {} : { body: JSON.stringify(value) }),
+  });
+  expect((await send(first, "/eval-api/workspace-layout", "POST", 0.64, false)).status).toBe(401);
+  expect((await send(first, "/eval-api/workspace-layout", "POST", { workspaceSplitRatio: 0.64, providerId: "forged" })).status).toBe(400);
+  expect((await send(first, "/eval-api/workspace-layout", "POST", 0.64)).status).toBe(200);
+  const reopened = await start();
+  expect(reopened.origin).not.toBe(first.origin);
+  expect(await (await send(reopened, "/eval-api/workspace-layout")).json()).toBe(0.64);
+  expect((await send(reopened, "/api/model-settings/defaults", "PUT", { providerId: "forged" })).status).toBe(403);
+  expect(tasks.get(session.id).completions).toBe(1);
 });

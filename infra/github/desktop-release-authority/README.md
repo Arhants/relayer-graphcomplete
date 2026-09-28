@@ -4,7 +4,14 @@ These rulesets close the live repository-control assumptions made by the desktop
 
 ## Intended controls
 
-`main-ruleset.json` requires every `main` update to come through a pull request, requires the GitHub Actions `check` job from app ID `15368`, requires the branch to be current, blocks force pushes and deletion, and keeps history linear. It requires zero approving reviews because this personal repository currently has one administrator. The administrator still cannot push directly to `main`.
+`main-ruleset.json` requires every `main` update to come through a pull request, requires the GitHub Actions `check` check and `merge-freshness-status` commit status from app ID `15368`, blocks force pushes and deletion, and keeps history linear. Strict up-to-date checking is disabled in favor of the scheduled 12-hour CI evidence guard described in `docs/agents/ci.md`. It requires zero approving reviews because this personal repository currently has one administrator. The administrator still cannot push directly to `main`.
+
+Do not replace the legacy `merge-freshness` requirement before the dual-publishing
+guard is on main and actual hosted enforcement of the new status has passed the
+migration gates in `docs/agents/ci.md`, including same-head metadata refresh and
+valid/expired evidence. Check/status API success alone does not prove enforcement.
+Update the existing ruleset rather than creating a duplicate. The audit checks
+configuration, not scheduler health or runtime enforcement.
 
 `desktop-tags-ruleset.json` restricts creation, replacement, and deletion of `desktop-v*` tags to repository administrators. Repository role ID `5` is GitHub's built-in administrator role. The signed-candidate workflow separately rejects a tag unless its version matches `desktop/package.json` and its commit is on `main`.
 
@@ -29,14 +36,18 @@ jq . infra/github/desktop-release-authority/main-ruleset.json
 jq . infra/github/desktop-release-authority/desktop-tags-ruleset.json
 ```
 
-Applying either command changes live repository policy:
+For an existing repository, inspect the live ruleset by ID and change only the
+approved fields. Do not POST a second main ruleset or replace live settings with
+this template: unrelated approval requirements, target conditions, and bypass
+settings must remain unchanged. The migration replaces only the GitHub Actions
+`merge-freshness` context with `merge-freshness-status` (app 15368), preserving
+required `check` and disabled strict freshness; it does not change the tag ruleset. Use the browser or a reviewed PUT payload derived from
+the freshly fetched live ruleset, after the hosted evidence gates above pass.
 
-```sh
-gh api --method POST repos/vishaltandale00/relayer-graphcomplete/rulesets \
-  --input infra/github/desktop-release-authority/main-ruleset.json
+Creating either ruleset from its whole template is appropriate only for an
+explicitly approved initial bootstrap after verifying that no matching ruleset
+already exists.
 
-gh api --method POST repos/vishaltandale00/relayer-graphcomplete/rulesets \
-  --input infra/github/desktop-release-authority/desktop-tags-ruleset.json
-```
-
-Run the read-only audit again after both API calls. Do not merge, tag, or publish merely because the policy audit passes; those remain separate approval gates.
+Run the read-only audit after any approved policy update. Do not merge, tag, or
+publish merely because the policy audit passes; those remain separate approval
+gates.

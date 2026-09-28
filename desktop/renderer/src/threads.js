@@ -1,3 +1,4 @@
+import { preferredLayerNode, rememberedLayerSelection, rememberLayerSelection } from "./product-workspace/layer-selection.js";
 import { request } from "./api.js";
 import {
   actionWasInvoked,
@@ -75,6 +76,39 @@ import {
 import { onboardingTutorialController } from "./onboarding-tutorial.js";
 import { clearPendingNewThreadDraft } from "./composer-drafts.js";
 import { projectComposerGate } from "./project-composer-navigation.js";
+
+// A pending result has no authority to replace a newer browsing intent.
+let readingIntent = 0;
+const pendingTurns = new Map();
+function cancelAutomaticTurn() {
+  readingIntent += 1;
+  for (const pending of pendingTurns.values()) pending.auto = false;
+}
+function trackPendingTurn(threadId, interactionId, intent) {
+  const pending = { threadId, interactionId, auto: readingIntent === intent, status: "running", readyLayer: null };
+  pendingTurns.set(String(threadId), pending);
+  if (String(viewState.currentThreadId) === String(threadId)) appState.pendingTurn = pending;
+}
+function displayableLayer(layer) {
+  return layer?.layer?.id != null && layer.layer.state !== "draft" && layer.layer.state !== "stopped"
+    && layer.nodes?.length > 0;
+}
+export function openReadyResult() {
+  const pending = pendingTurns.get(String(viewState.currentThreadId));
+  if (!pending?.readyLayer) return false;
+  const interaction = appState.interactions.find((item) => String(item.id) === String(pending.interactionId));
+  if (!interaction) return false;
+  cancelAutomaticTurn();
+  refreshGate.invalidate();
+  supersedePendingHistory({ presentationChanged: true });
+  hydrateWorkspace(interaction, pending.readyLayer, { temporalCurrent: pending.temporalCurrent ?? null });
+  pendingTurns.delete(String(pending.threadId));
+  appState.pendingTurn = null;
+  recordCurrentNavigation("push");
+  renderThread();
+  schedulePendingRefresh(viewState.currentThreadId);
+  return true;
+}
 
 let creatingFirstThread = false;
 let pendingRefreshTimer;
@@ -396,6 +430,7 @@ function supersedePendingHistory({
 }
 
 export function cancelNavigationHistory() {
+  cancelAutomaticTurn();
   supersedePendingHistory({ presentationChanged: true, renderAfterCancel: false });
 }
 
@@ -447,11 +482,13 @@ export async function refreshState(
   const stateQuery = new URLSearchParams();
   if (threadId) stateQuery.set("threadId", threadId);
   stateQuery.set("currentProjectionAfter", String(appState.currentProjectionCursor || 0));
-  if (viewState.currentInteractionId != null) {
-    stateQuery.set("currentProjectionInteractionId", String(viewState.currentInteractionId));
+  const pendingBeforeRefresh = pendingTurns.get(String(threadId));
+  const projectionInteractionId = pendingBeforeRefresh?.interactionId ?? viewState.currentInteractionId;
+  if (projectionInteractionId != null) {
+    stateQuery.set("currentProjectionInteractionId", String(projectionInteractionId));
   }
   const selectedBeforeRefresh = appState.interactions.find((interaction) => (
-    String(interaction.id) === String(viewState.currentInteractionId)
+    String(interaction.id) === String(projectionInteractionId)
   ));
   if (selectedBeforeRefresh?.graphNodeId != null) {
     stateQuery.set("currentProjectionCompletionId", String(selectedBeforeRefresh.graphNodeId));
@@ -476,7 +513,42 @@ export async function refreshState(
   const threadInteractions = nextInteractions.filter((interaction) => (
     String(interaction.threadId) === String(nextThreadId)
   ));
-  const selected = threadInteractions.find((interaction) => (
+  const pending = pendingTurns.get(String(nextThreadId));
+  let pendingReadFailed = false;
+  if (pending) {
+    const target = threadInteractions.find((item) => String(item.id) === String(pending.interactionId));
+    pending.status = target?.completionStatus ?? pending.status;
+    if (displayableLayer(target?.completionOutput?.rootLayer)) {
+      pending.readyLayer = target.completionOutput.rootLayer;
+    }
+    const projection = state.currentProjection?.states?.find((item) => (
+      String(item.completionId) === String(target?.graphNodeId) && item.temporalFeatures?.projectionUi === true
+    ));
+    if (projection?.currentLayerId != null && String(projection.currentLayerId) !== String(pending.readyLayer?.layer?.id)) {
+      const intent = readingIntent;
+      try {
+        const identity = { threadId: nextThreadId, turnId: target.id, layerId: projection.currentLayerId };
+        const layer = validateResolvedLayer(identity, await request(
+          `/api/threads/${encodeURIComponent(nextThreadId)}/interactions/${encodeURIComponent(target.id)}/layers/${encodeURIComponent(projection.currentLayerId)}`,
+        ));
+        if (displayableLayer(layer)) {
+          pending.readyLayer = layer;
+          pending.temporalCurrent = { completionId: projection.completionId, revision: projection.headRevision, mode: "following" };
+          acceptedLayerCache.set(identity, layer);
+        }
+      } catch { pendingReadFailed = true; }
+      if (!refreshGate.isCurrent(refreshToken) || readingIntent !== intent
+        || String(viewState.currentThreadId) !== String(nextThreadId)) {
+        schedulePendingRefresh(viewState.currentThreadId, { force: true });
+        return false;
+      }
+    }
+    if (pending.readyLayer && String(projection?.currentLayerId) === String(pending.readyLayer.layer.id)) {
+      pending.temporalCurrent = { completionId: projection.completionId, revision: projection.headRevision, mode: "following" };
+    }
+  }
+  const advancePending = pending?.auto && pending.readyLayer && viewState.mainView === "thread";
+  const selected = (advancePending ? threadInteractions.find((item) => String(item.id) === String(pending.interactionId)) : null) || threadInteractions.find((interaction) => (
     String(interaction.id) === String(viewState.currentInteractionId)
   )) || threadInteractions.at(-1);
   let refreshedVisibleLayer = visibleLayerAfterRefresh(
@@ -484,6 +556,7 @@ export async function refreshState(
     previousVisibleLayer,
     selected,
   );
+  if (advancePending) refreshedVisibleLayer = pending.readyLayer;
   let temporalSelectedNodeId;
   let temporalCurrent = viewState.temporalCurrent;
   let temporalProjectionFailed = false;
@@ -608,6 +681,15 @@ export async function refreshState(
     !refreshGate.isCurrent(refreshToken)
     || (requestedThreadId && String(viewState.currentThreadId) !== String(requestedThreadId))
   ) return false;
+  if (advancePending && !pending.auto) {
+    schedulePendingRefresh(viewState.currentThreadId, { force: true });
+    return false;
+  }
+  appState.pendingTurn = pending ?? null;
+  if (advancePending && pending.auto) {
+    pendingTurns.delete(String(nextThreadId));
+    appState.pendingTurn = null;
+  }
   appState.projects = nextProjects;
   appState.threads = nextThreads;
   appState.interactions = nextInteractions;
@@ -619,7 +701,7 @@ export async function refreshState(
   appState.capabilities = state.capabilities;
   appState.temporalSafeReason = projectionState?.safeReason ?? null;
   appState.temporalLifecycle = projectionState?.lifecycle ?? null;
-  if (projectionPage && !temporalProjectionFailed) {
+  if (projectionPage && !temporalProjectionFailed && !pendingReadFailed) {
     appState.currentProjectionCursor = projectionPage.cursor;
     for (const projection of projectionPage.states || []) {
       appState.currentProjections.set(String(projection.completionId), projection);
@@ -642,12 +724,13 @@ export async function refreshState(
   const terminalTransition = interactionReachedTerminal(previousLiveInteraction, nextLiveInteraction);
   void refreshCurrentEnvironment({ force: projectChanged || terminalTransition }).catch(() => {});
   schedulePendingRefresh(viewState.currentThreadId, {
-    force: canonicalRefreshFailed || temporalProjectionFailed || projectionPage?.hasMore === true,
+    force: pendingReadFailed || canonicalRefreshFailed || temporalProjectionFailed || projectionPage?.hasMore === true,
   });
   return true;
 }
 
 export async function loadThread(threadId) {
+  cancelAutomaticTurn();
   recordCurrentNavigation();
   supersedePendingHistory({ presentationChanged: true });
   viewState.currentThreadId = threadId;
@@ -664,7 +747,7 @@ export async function loadThread(threadId) {
 export function hydrateWorkspace(
   interaction,
   layer = interaction?.completionOutput?.rootLayer ?? null,
-  { layerPath, selectedNodeId, temporalCurrent } = {},
+  { layerPath, selectedNodeId, temporalCurrent, restoreSelection = false } = {},
 ) {
   const previousInteractionId = viewState.currentInteractionId;
   const previousLayerId = viewState.layerPath.at(-1)?.layerId;
@@ -678,8 +761,12 @@ export function hydrateWorkspace(
     String(previousInteractionId) !== String(interaction?.id)
     || String(previousLayerId) !== String(nextLayerId)
   ) {
-    viewState.selectedNodeId = selectedNodeId ?? null;
+    viewState.nodeDetailsClosed = restoreSelection && selectedNodeId === null;
+    viewState.selectedNodeId = viewState.nodeDetailsClosed ? null : preferredLayerNode(layer, selectedNodeId, rememberedLayerSelection(
+      viewState.currentThreadId, interaction?.id, layer?.layer?.id,
+    ));
   } else if (selectedNodeId !== undefined) {
+    viewState.nodeDetailsClosed = restoreSelection && selectedNodeId === null;
     viewState.selectedNodeId = selectedNodeId;
   }
   viewState.currentInteractionId = interaction?.id ?? null;
@@ -715,6 +802,7 @@ export function selectTurnById(interactionId) {
     && String(interaction.id) === String(interactionId)
   ));
   if (!target || String(target.id) === String(viewState.currentInteractionId)) return;
+  cancelAutomaticTurn();
   supersedePendingHistory({ presentationChanged: true });
   viewState.selectedNodeId = null;
   const projection = appState.currentProjections.get(String(target.graphNodeId));
@@ -740,8 +828,8 @@ export async function submitInteraction(
 ) {
   if (!viewState.currentThreadId) throw new Error("Select a thread before sending a follow-up.");
   const threadId = viewState.currentThreadId;
+  const intent = readingIntent;
   recordCurrentNavigation();
-  const sourceLocationKey = navigationEntryKey(navigationHistory.current);
   supersedePendingHistory({ cancelLayerNavigation: true });
   const thread = appState.threads.find((candidate) => String(candidate.id) === String(threadId));
   const harnessId = thread?.harnessId ?? thread?.harnessConfigurationName;
@@ -801,10 +889,8 @@ export async function submitInteraction(
   } catch (error) {
     console.error("Tutorial completion failed:", error);
   }
-  const current = currentNavigationEntry();
-  if (!current || navigationEntryKey(current) !== sourceLocationKey) return createdInteraction;
-  supersedePendingHistory({ presentationChanged: true });
-  viewState.currentInteractionId = null;
+  trackPendingTurn(threadId, createdInteraction?.id, intent);
+  if (String(viewState.currentThreadId) !== String(threadId)) return createdInteraction;
   try {
     await refreshState(threadId, { historyMode: "push" });
   } catch (error) {
@@ -875,6 +961,7 @@ export async function decideApproval(requestId, decision) {
 }
 
 export async function navigateLayer(layerId, navigation = {}) {
+  cancelAutomaticTurn();
   if (!viewState.currentThreadId || !viewState.currentInteractionId) return;
   recordCurrentNavigation();
   supersedePendingHistory({ presentationChanged: true });
@@ -936,6 +1023,7 @@ export async function navigateLayer(layerId, navigation = {}) {
 }
 
 export async function navigateResolvedInvoke(action, { beforeCommit } = {}) {
+  cancelAutomaticTurn();
   const sourceThreadId = viewState.currentThreadId;
   const sourceInteractionId = viewState.currentInteractionId;
   if (
@@ -1014,8 +1102,13 @@ export function getNavigationHistory() {
   });
 }
 
-export function replaceCurrentSelection(selectedNodeId) {
+export function replaceCurrentSelection(selectedNodeId, { automatic = false } = {}) {
+  if (!automatic) cancelAutomaticTurn();
+  viewState.nodeDetailsClosed = selectedNodeId == null;
   viewState.selectedNodeId = selectedNodeId ?? null;
+  if (appState.visibleLayer?.nodes?.some((node) => String(node.id) === String(selectedNodeId))) {
+    rememberLayerSelection(viewState.currentThreadId, viewState.currentInteractionId, appState.visibleLayer?.layer?.id, selectedNodeId);
+  }
   // Selecting a node is a newer presentation intent than an invoke destination
   // already being resolved. Selection is intentionally not part of the
   // navigation location key, so explicitly invalidate that async request while
@@ -1056,6 +1149,7 @@ function captureWorkspaceState() {
       currentThreadId: viewState.currentThreadId,
       currentInteractionId: viewState.currentInteractionId,
       selectedNodeId: viewState.selectedNodeId,
+      nodeDetailsClosed: viewState.nodeDetailsClosed,
       layerPath: viewState.layerPath,
       mainView: viewState.mainView,
     },
@@ -1073,7 +1167,7 @@ function restoreWorkspaceState(snapshot) {
   if (snapshot.view.mainView === "thread") renderThread();
 }
 
-function applyResolvedPresentation(resolved) {
+function applyResolvedPresentation(resolved, { restoreSelection = false } = {}) {
   const existingThread = appState.threads.find((thread) => (
     String(thread.id) === String(resolved.thread.id)
   ));
@@ -1118,6 +1212,7 @@ function applyResolvedPresentation(resolved) {
   hydrateWorkspace(resolved.interaction, resolved.layer, {
     layerPath: resolved.layerPath,
     selectedNodeId: resolved.selectedNodeId,
+    restoreSelection,
     temporalCurrent: resolved.entry.temporalCurrent,
   });
   setMainView("thread");
@@ -1127,6 +1222,7 @@ function applyResolvedPresentation(resolved) {
 }
 
 export async function navigateHistory(deltaOrDirection, { beforeCommit } = {}) {
+  cancelAutomaticTurn();
   const delta = deltaOrDirection === "back" ? -1
     : deltaOrDirection === "forward" ? 1
       : Number(deltaOrDirection);
@@ -1159,7 +1255,7 @@ export async function navigateHistory(deltaOrDirection, { beforeCommit } = {}) {
     sourceSnapshot = captureWorkspaceState();
     refreshGate.invalidate();
     applied = true;
-    applyResolvedPresentation(resolved);
+    applyResolvedPresentation(resolved, { restoreSelection: true });
     beforeCommit?.();
     if (!navigationHistory.commit(transition)) throw navigationSupersededError();
     committed = true;
@@ -1187,6 +1283,7 @@ export async function navigateHistory(deltaOrDirection, { beforeCommit } = {}) {
 }
 
 export async function invokeAction(action) {
+  const intent = readingIntent;
   const threadId = viewState.currentThreadId;
   const sourceInteractionId = viewState.currentInteractionId;
   if (!threadId || !sourceInteractionId || action?.kind !== "invoke" || !action.id) return null;
@@ -1229,14 +1326,9 @@ export async function invokeAction(action) {
       sourceInteractionId,
       action.id,
     );
-    const sourceIsStillSelected = (
-      currentNavigationEntry()
-      && navigationEntryKey(currentNavigationEntry()) === sourceLocationKey
-    );
     if (
       durable?.resultInteractionId
       && !invokeResultIsRetryable(durable.resultCompletionStatus)
-      && sourceIsStillSelected
     ) {
       onboardingTutorialController()?.actionSucceeded({
         threadId,
@@ -1245,7 +1337,7 @@ export async function invokeAction(action) {
         resultInteractionId: durable.resultInteractionId,
       });
       supersedePendingHistory({ presentationChanged: true });
-      viewState.currentInteractionId = durable.resultInteractionId;
+      trackPendingTurn(threadId, durable.resultInteractionId, intent);
       await refreshState(threadId, { historyMode: "push" }).catch(() => {});
       return { interaction: { id: durable.resultInteractionId }, recovered: true };
     } else {
@@ -1282,7 +1374,9 @@ export async function invokeAction(action) {
       resultInteractionId: response.interaction.id,
     });
     supersedePendingHistory({ presentationChanged: true });
-    viewState.currentInteractionId = response.interaction.id;
+  }
+  if (response.created && response.interaction?.id && !invokeResultIsRetryable(response.interaction.completionStatus)) {
+    trackPendingTurn(threadId, response.interaction.id, intent);
   }
   if (String(viewState.currentThreadId) === String(threadId)) {
     await refreshState(threadId, {

@@ -539,14 +539,11 @@ mod tests {
 
     #[tokio::test]
     async fn empty_input_snapshot_is_revision_checked_inside_send_transaction() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-empty-input-revision-{}-{}.sqlite3",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-empty-input-revision-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let input_digest = relayer_graph_core::interaction_input_digest("Prompt", &[]).unwrap();
         let clean_thread = sqlx::query(
@@ -617,14 +614,11 @@ mod tests {
 
     #[tokio::test]
     async fn interaction_atomically_consumes_and_unbound_delete_restores_confirmation() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-context-confirmation-consume-{}-{}.sqlite3",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-context-confirmation-consume-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let thread_id = sqlx::query(
             "INSERT INTO threads(title,created_at,updated_at) VALUES ('Context','1','1')",
@@ -756,19 +750,15 @@ mod tests {
                 .is_some()
         );
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn exact_not_started_replay_reclaims_restored_confirmations() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-context-confirmation-reclaim-{}-{}.sqlite3",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-context-confirmation-reclaim-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let thread_id = sqlx::query(
             "INSERT INTO threads(title,created_at,updated_at) VALUES ('Context','1','1')",
@@ -870,19 +860,15 @@ mod tests {
         .unwrap();
         assert_eq!(consumed_by, Some(interaction.id.value()));
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn each_confirmation_requires_a_distinct_submitted_annotation() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-context-confirmation-cardinality-{}-{}.sqlite3",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-context-confirmation-cardinality-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let thread_id = sqlx::query(
             "INSERT INTO threads(title,created_at,updated_at) VALUES ('Context','1','1')",
@@ -949,20 +935,16 @@ mod tests {
             2
         );
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn identified_context_intent_is_atomic_ordered_replayable_and_discard_restores_thread_time()
      {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-context-intent-{}-{}.sqlite3",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-context-intent-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let thread_id = sqlx::query(
             "INSERT INTO threads(title,created_at,updated_at) VALUES ('Context','1','1')",
@@ -1082,6 +1064,5 @@ mod tests {
             Err(StorageError::IncompatibleSchema(message)) if message.contains("partially populated")
         ));
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 }

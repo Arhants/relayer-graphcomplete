@@ -107,9 +107,14 @@ export function evaluateDesktopReleaseAuthority(snapshot, { windowsCandidateEnab
     "main has no always-bypass actor",
   );
   record(
-    requiredChecks?.strict_required_status_checks_policy === true &&
-      requiredChecks?.required_status_checks?.some((check) => check.context === "check" && check.integration_id === 15368),
-    "main requires the current GitHub Actions check job",
+    requiredChecks?.strict_required_status_checks_policy === false &&
+      !activeRulesets.some((ruleset) => ruleset.target === "branch" &&
+        (refIncludes(ruleset, "~DEFAULT_BRANCH") || refIncludes(ruleset, "refs/heads/main")) &&
+        ruleset.rules?.some((rule) => rule.type === "required_status_checks" &&
+          rule.parameters?.required_status_checks?.some((check) => check.context?.toLowerCase() === "merge-freshness"))) &&
+      ["check", "merge-freshness-status"].every((context) =>
+        requiredChecks?.required_status_checks?.some((check) => check.context === context && check.integration_id === 15368)),
+    "main requires GitHub Actions CI and scheduled merge freshness",
   );
 
   const tagRuleset = activeRulesets.find((ruleset) =>

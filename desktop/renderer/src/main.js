@@ -1,5 +1,6 @@
 import { initializeHumanTaskGrading } from "./human-task-grading.js";
 import { observeHumanTaskPresentation } from "./human-task-observer.js";
+import { initializeLayerSelections } from "./product-workspace/layer-selection.js";
 import {
   refreshAccount,
   setProviderOnboardingCompletionHandler,
@@ -58,6 +59,7 @@ import {
   persistPendingNewThreadDraft,
 } from "./composer-drafts.js";
 import { projectComposerGate } from "./project-composer-navigation.js";
+import { initializeSidebar } from "./sidebar.js";
 const PROJECT_COMPOSER_DESTINATION_SELECTOR = [
   "#settingsButton",
   "[data-thread]",
@@ -247,12 +249,7 @@ function bindEvents() {
     if (productApiAvailable && !newThreadModelSelectionReady()) openNewThreadModelPicker("model");
     else $("#createThread").click();
   });
-  $("#collapseSidebar").onclick = () => {
-    const collapsed = document.body.classList.toggle("sidebar-collapsed");
-    const label = collapsed ? "Expand sidebar" : "Collapse sidebar";
-    $("#collapseSidebar").title = label;
-    $("#collapseSidebar").setAttribute("aria-label", label);
-  };
+
   $("#settingsButton").onclick = async () => {
     projectComposerGate.invalidate();
     takeOverPendingAutomaticTutorial();
@@ -378,9 +375,15 @@ function bindEvents() {
 
 async function boot() {
   assertRelayerIconRendererReady();
+  initializeSidebar({
+    body: document.body,
+    toggle: $("#collapseSidebar"),
+    mediaQuery: window.matchMedia("(max-width: 760px)"),
+  });
   if (evalReview) viewState.evalContext = await evalReview.context();
   else if (window.relayerHumanTask) viewState.evalContext = await window.relayerHumanTask.context();
   applyPlatformCopy();
+  await initializeLayerSelections();
   bindEvents();
   await initializeComposerDrafts();
   window.addEventListener("focus", () => {

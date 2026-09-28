@@ -67,6 +67,15 @@ function validateReadyMessage(message) {
   return { origin: origin.origin, cookieName: message.cookieName };
 }
 
+// Catalog refusals carry a top-level `code` beside the message (api/error.rs catalog_error).
+// A caller tells a refusal, which committed nothing, from a lost response by that code.
+function catalogRefusal(detail, fallback) {
+  const error = new Error(detail?.error?.message || detail?.error || fallback);
+  const code = detail?.code ?? detail?.error?.code;
+  if (typeof code === "string") error.code = code;
+  return error;
+}
+
 export class RelayerAppServerService {
   constructor({
     userDataDirectory,
@@ -310,7 +319,9 @@ export class RelayerAppServerService {
     })).catch(() => undefined).finally(() => startupReporter?.revoke());
   }
 
-  async publishProviderCatalog(snapshot, { signal } = {}) {
+  // Every publish names the connection generation its result started with (PROV-002). A
+  // lifecycle event advances that generation in the same transaction as the publish.
+  async publishProviderCatalog(snapshot, { signal, connectionGeneration, connectionEvent } = {}) {
     const session = await this.start();
     signal?.throwIfAborted();
     const response = await fetch(new URL("/api/internal/provider-catalog", session.origin), {
@@ -319,7 +330,11 @@ export class RelayerAppServerService {
         Authorization: `Bearer ${session.cookie.value}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(snapshot),
+      body: JSON.stringify({
+        ...snapshot,
+        connectionGeneration,
+        ...(connectionEvent ? { connectionEvent } : {}),
+      }),
       signal,
     });
     if (response.ok) return;
@@ -329,7 +344,27 @@ export class RelayerAppServerService {
     } catch {
       detail = null;
     }
-    throw new Error(detail?.error?.message || detail?.error || `Provider catalog publish failed (${response.status}).`);
+    throw catalogRefusal(detail, `Provider catalog publish failed (${response.status}).`);
+  }
+
+  /**
+   * Publishes a known catalog at the provider's current connection generation. Fixtures,
+   * evidence scripts and Eval provisioning seed a catalog this way. It reads, then
+   * publishes, so it bypasses PROV-002: product code must instead send the generation its
+   * result started with.
+   */
+  async seedProviderCatalog(snapshot, { signal } = {}) {
+    const session = await this.start();
+    const response = await fetch(new URL("/api/internal/provider-definitions", session.origin), {
+      headers: { Authorization: `Bearer ${session.cookie.value}` },
+      signal,
+    });
+    if (!response.ok) throw new Error(`Provider definition read failed (${response.status}).`);
+    const definition = (await response.json()).find(({ id }) => id === snapshot.providerId);
+    return this.publishProviderCatalog(snapshot, {
+      signal,
+      connectionGeneration: definition?.connectionGeneration ?? 1,
+    });
   }
 
   async publishHarnessReadiness(updates, { signal } = {}) {
@@ -398,7 +433,11 @@ export class RelayerAppServerService {
         if (response.ok) return;
         let detail = null;
         try { detail = await response.json(); } catch { /* use status fallback */ }
-        throw new Error(detail?.error?.message || detail?.error || `Provider definition write failed (${response.status}).`);
+        // Catalog refusals carry a top-level `code` beside the message (api/error.rs catalog_error).
+        const error = new Error(detail?.error?.message || detail?.error || `Provider definition write failed (${response.status}).`);
+        const code = detail?.code ?? detail?.error?.code;
+        if (typeof code === "string") error.code = code;
+        throw error;
       },
       createWithCatalog: async (definition, catalog, { signal } = {}) => {
         const session = await this.start();
@@ -414,7 +453,7 @@ export class RelayerAppServerService {
         if (response.ok) return;
         let detail = null;
         try { detail = await response.json(); } catch { /* use status fallback */ }
-        throw new Error(detail?.error?.message || detail?.error || `Provider creation failed (${response.status}).`);
+        throw catalogRefusal(detail, `Provider creation failed (${response.status}).`);
       },
     });
   }
