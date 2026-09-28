@@ -21,6 +21,23 @@ import { assetRef } from "../src/detail.js";
 describe("typed Node Detail authoring compiler", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("compiles both product theme selectors but keeps general host access unavailable", () => {
+    const node = new NodeDetailAuthoring();
+    node.setComponent("theme", html`<p>Same meaning</p>`, css`
+      [data-relayer-theme="light"] p { color: #182c34; }
+      [data-relayer-theme="dark"] p { color: #edf2f3; }
+    `);
+    const compiled = node.checkpoint();
+    expect(compiled.components[0]?.css).toContain('[data-relayer-theme="dark"]');
+    expect(detailAuthoringReference().themeSelectors).toHaveLength(2);
+    for (const selector of [":host", ":host(*)", ':host([data-relayer-theme="dark"])', ':host([data-relayer-theme="system"])',
+      ":host([secret])", ':host([data-relayer-theme="dark"], [secret])', ":host-context(body)"]) {
+      const invalid = new NodeDetailAuthoring();
+      invalid.setComponent("invalid", html`<p>Text</p>`, cssSource(`${selector} p { color: red; }`));
+      expect(() => invalid.checkpoint(), selector).toThrow(DetailCompilationError);
+    }
+  });
+
   it("exposes detached compiler vocabulary without allowing callers to alter validation", () => {
     const reference = detailAuthoringReference();
     expect(reference.cssProperties).toContain("display");

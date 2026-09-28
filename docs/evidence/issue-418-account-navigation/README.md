@@ -175,3 +175,22 @@ final exit status. A deliberate wrong-minimum assertion is retained externally i
 `factory-418-native/exit-status-proof/` to compare the old and repaired behavior.
 The superseded check log remains under `factory-418-native/gates/`; only a fresh
 frozen-source gate run can certify this repair.
+
+
+A subsequent native-titlebar review found that the collapsed toggle's old
+`left:13px;top:9px` box overlapped part of macOS's traffic-light region. The prior
+center-point clicks proved activation at those points only; they did not prove
+clearance of the whole button. The collapsed toggle now sits below the top 40px
+native inset, with matching sidebar header space. Expanded positioning is
+unchanged. The native runner checks the complete toggle rectangle against the
+reserved top-left 80x40 region in every collapsed/expanded shell scenario.
+This CSS/native-check delta requires fresh source-bound gates and visual proof;
+commit `55a963bf` evidence does not certify the final titlebar repair.
+
+## Integration with main ac7657: Share header and toggle animation
+
+Incoming Share controls exposed a previously unmeasured narrow header seam. Native diagnostics recorded the menu extending beyond620px and into the sidebar at375px expanded. The menu now anchors to the title-group right edge and caps its width to the remaining pane. The native shell scenario requires visible, positive, contained, non-overlapping header controls, audits both menu actions, and exercises Share title entry then Cancel at375/620px without publishing. Local IPC supplies pending-null and ready preflight; create throws if called. These checks extend ACC-008 containment across the incoming Share seam; they do not claim live share-service proof.
+
+A native diagnostic also caught the whole toggle rotating into the reserved80×40 macOS region despite safe final coordinates. Rotation now belongs only to the18px SVG; the32×30 button hit box stays fixed at left13/top43 collapsed and left84/top9 expanded. Native checks sample active transform animations at0/25/50/75/100percent in addition to each resting shell checkpoint. Collapsed header padding78 preserves room beneath the button. Prior final-only clearance assertions do not certify this correction.
+
+Diagnostic failures and fixes live under the external factory-418-ac7657-integration evidence directory. Required canonical check/build, compiled/web Eval, desktop Stop, native sidebar, capture mutation/visual gates, and incoming theme CSP/visual-node-details integration proof must bind the final frozen source. Prior two canonical environment-test failures remain preserved; reduced local concurrency did not establish a pass or a sole cause.

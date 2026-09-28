@@ -327,7 +327,7 @@ describe("complete", () => {
     const first = watch.changes();
     await Promise.resolve();
     releases.get("1:-")!(snapshot(1, 0));
-    expect((await first).map(({ current }) => `${current.completionId}@${current.revision}`)).toEqual(["1@0"]);
+    expect((await first).map(({ current }) => `${current?.completionId}@${current?.revision}`)).toEqual(["1@0"]);
 
     // Child 2's first request is still open; it is not asked again.
     const second = watch.changes();
@@ -335,7 +335,7 @@ describe("complete", () => {
     releases.get("2:-")!(snapshot(2, 0));
     releases.get("1:0")!(snapshot(1, 1));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect((await second).map(({ current }) => `${current.completionId}@${current.revision}`).sort())
+    expect((await second).map(({ current }) => `${current?.completionId}@${current?.revision}`).sort())
       .toEqual(["1@1", "2@0"]);
 
     const third = watch.changes();
@@ -343,7 +343,7 @@ describe("complete", () => {
     releases.get("1:1")!(snapshot(1, 2, "succeeded"));
     releases.get("2:0")!(snapshot(2, 1, "failed"));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect((await third).map(({ current }) => current.lifecycle).sort()).toEqual(["failed", "succeeded"]);
+    expect((await third).map(({ current }) => current?.lifecycle).sort()).toEqual(["failed", "succeeded"]);
     expect(watch.settled).toBe(true);
     await expect(watch.changes()).resolves.toEqual([]);
     expect(asked).toEqual(["1:-", "2:-", "1:0", "1:1", "2:0"]);
@@ -357,35 +357,118 @@ describe("complete", () => {
     const second = watch.changes();
     await Promise.resolve();
     releases.get("1:-")!(snapshot(1, 0));
-    expect((await first).map(({ current }) => `${current.completionId}@${current.revision}`)).toEqual(["1@0"]);
+    expect((await first).map(({ current }) => `${current?.completionId}@${current?.revision}`)).toEqual(["1@0"]);
 
     // The second call starts after the first returns, so it waits for the next event.
     await new Promise((resolve) => setTimeout(resolve, 0));
     releases.get("2:-")!(snapshot(2, 0));
-    expect((await second).map(({ current }) => `${current.completionId}@${current.revision}`)).toEqual(["2@0"]);
+    expect((await second).map(({ current }) => `${current?.completionId}@${current?.revision}`)).toEqual(["2@0"]);
     expect(asked).toEqual(["1:-", "2:-", "1:0"]);
+  });
+
+  it("reports a child it can no longer observe once, and keeps reporting its sibling until settled", async () => {
+    const { snapshot, releases, refusals, asked, child } = heldChildren();
+    const watch = watchCompletions([child(1), child(2)]);
+
+    const first = watch.changes();
+    await Promise.resolve();
+    releases.get("1:-")!(snapshot(1, 0));
+    await first;
+
+    // Child 1's observation fails while child 2 moves; both reach the parent together.
+    const second = watch.changes();
+    await Promise.resolve();
+    refusals.get("1:0")!(new Error("Completion broker returned HTTP 500"));
+    releases.get("2:-")!(snapshot(2, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const reported = await second;
+    expect(reported.map((change) => (
+      `${change.child.completionId}:${change.error?.message ?? change.current?.revision}`
+    )).sort()).toEqual(["1:Completion broker returned HTTP 500", "2:0"]);
+    expect(watch.settled).toBe(false);
+
+    // Child 1 is not asked again; child 2's later events still arrive and settle the watch.
+    const third = watch.changes();
+    await Promise.resolve();
+    releases.get("2:0")!(snapshot(2, 1, "succeeded"));
+    expect((await third).map(({ current }) => `${current?.completionId}@${current?.revision}`)).toEqual(["2@1"]);
+    expect(watch.settled).toBe(true);
+    await expect(watch.changes()).resolves.toEqual([]);
+    expect(asked).toEqual(["1:-", "2:-", "1:0", "2:0"]);
+  });
+
+  it("reports a child whose next() throws or rejects with a non-Error value, without rejecting", async () => {
+    const { snapshot, releases, refusals, child } = heldChildren();
+    const throwing: CompletionHandle = {
+      ...child(3),
+      current: { snapshot: async () => snapshot(3, 0), next: () => { throw new Error("next is unavailable"); } },
+    };
+    const watch = watchCompletions([child(1), child(2), throwing]);
+
+    const first = watch.changes();
+    await Promise.resolve();
+    refusals.get("1:-")!(Object.create(null) as Error);
+    releases.get("2:-")!(snapshot(2, 0, "succeeded"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const reported = await first;
+    expect(reported.map((change) => (
+      `${change.child.completionId}:${change.error?.message ?? change.current?.lifecycle}`
+    )).sort()).toEqual(["1:Completion observation failed", "2:succeeded", "3:next is unavailable"]);
+    expect(watch.settled).toBe(true);
+  });
+
+  it("reports a child whose start the broker refuses with the broker's safe detail", async () => {
+    stubBroker([], {
+      start: new Response(JSON.stringify({ error: "The harness configuration changed while this child was launching." }), {
+        status: 409,
+        headers: { "content-type": "application/json" },
+      }),
+    });
+    const { snapshot, releases, child } = heldChildren();
+    const refused = complete(inputGraph);
+    const watch = watchCompletions([refused, child(2)]);
+
+    const reported = await watch.changes();
+    expect(reported).toHaveLength(1);
+    const change = reported[0]!;
+    expect(change.child).toBe(refused);
+    expect(change.current).toBeUndefined();
+    expect(change.error?.message).toBe(
+      "Completion broker returned HTTP 409: The harness configuration changed while this child was launching.",
+    );
+
+    const next = watch.changes();
+    await Promise.resolve();
+    releases.get("2:-")!(snapshot(2, 0, "failed"));
+    expect((await next).map(({ current }) => current?.lifecycle)).toEqual(["failed"]);
+    expect(watch.settled).toBe(true);
   });
 });
 
-/** Children whose next() calls stay open until the test releases them by `completionId:afterRevision`. */
+/** Children whose next() calls stay open until the test releases or refuses them by `completionId:afterRevision`. */
 function heldChildren() {
   const snapshot = (completionId: number, revision: number, lifecycle = "active"): CompletionCurrentSnapshot => ({
     completionId, revision, lifecycle: lifecycle as CompletionCurrentSnapshot["lifecycle"],
     currentLayerId: revision, finalLayerId: lifecycle === "succeeded" ? revision : null,
   });
   const releases = new Map<string, (current: CompletionCurrentSnapshot) => void>();
+  const refusals = new Map<string, (error: Error) => void>();
   const asked: string[] = [];
   const child = (completionId: number): CompletionHandle => ({
     completionId,
     current: {
       snapshot: async () => snapshot(completionId, 0),
       next: (afterRevision?: number) => {
-        asked.push(`${completionId}:${afterRevision ?? "-"}`);
-        return new Promise((resolve) => releases.set(`${completionId}:${afterRevision ?? "-"}`, resolve));
+        const key = `${completionId}:${afterRevision ?? "-"}`;
+        asked.push(key);
+        return new Promise((resolve, reject) => {
+          releases.set(key, resolve);
+          refusals.set(key, reject);
+        });
       },
     },
     result: Promise.resolve(layer),
     stop: async () => {},
   });
-  return { snapshot, releases, asked, child };
+  return { snapshot, releases, refusals, asked, child };
 }

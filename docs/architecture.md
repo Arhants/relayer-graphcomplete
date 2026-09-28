@@ -139,6 +139,8 @@ The Issue #363 client foundation attaches one `NodeDetailAuthoring` builder to e
 
 Issue #365 makes that compiler output an immutable graph record. The graph server verifies the shared canonical SHA-256 before storing `authoredDetail`; SQLite reopen, accepted-closure reads, TypeScript node responses, and conversation export/import all carry the same package beside the legacy Markdown fallback. Draft resubmission follows a three-state rule (omit retains, `null` clears, a package replaces), and conversation export omits a package that would carry a private project path in any raw or decoded form, recording `authoredDetailOmitted` beside the redacted fallback. The visual-assets Module owns digest-addressed catalog storage, provenance, scope, and media validation. The graph capability derives completion scope and calls a private host bridge with an independent token and generation. Submission prepares the exact canonical package through that bridge and pins validated bytes to graph nodes; accepted-image reads require an accepted node association. Conversation export carries globally deduplicated `visualAssetContent` records between the header and turns, with each content record bounded by the existing JSONL line limit. Import validates media through the same host library, stages bytes by digest within the private import session, and publishes node associations and content atomically. Product reads additionally require accepted-node membership in a layer readable by the selected thread interaction. This uses the ordinary graph layer authority for current and historical accepted state. Development and packaged harnesses receive the same HTML, CSS, capability, and logical asset authoring surface. Product's isolated runtime still validates the complete persisted package and degrades unavailable legacy or imported asset mounts safely; #371 owns Eval proof through that runtime.
 
+Authored theme presentation (#519) is renderer state, not graph state or harness execution. The public reference exposes `[data-relayer-theme="light"]` and `[data-relayer-theme="dark"]` theme selectors on a runtime-owned inner scope; the compiler still rejects host and ancestor selectors. Product and Eval mirror the document's active appearance onto the inner scope, initially and on changes, without replacing controls or altering package bytes. Only stylesheets whose parsed selectors reference the theme attribute receive the inner scope and observer. Unthemed packages retain their existing DOM ancestry. Disposal and failed mounting release the observer. Theme variants remain ordinary accepted CSS and pinned assets, so storage and portable import need no new schema. Generic harness guidance supplies theme references without imposing a palette, layout, or deterministic aesthetic gate. Unthemed output keeps its original styling. Existing containment and capability authority remain unchanged.
+
 ## Target self-assessing policy invariants
 
 The following apply when the optional recursive self-assessment policy is enabled; they are not prerequisites for the initial direct recursive completion slice.
@@ -330,9 +332,11 @@ separator prevents reuse as another product identity. The result is stable acros
 installations for the same Auth0 subject. Renderer presentation state is never an
 authority input.
 
-V1 reports only unhandled process crashes, supervised-child startup failures, and
-supervised-child unexpected exits. Handled operation failures and expected product
-states are excluded. Every adapter emits a closed record with stable component,
+V1 reports unhandled process crashes, supervised-child startup failures, and
+supervised-child unexpected exits. One closed Electron-main exception admits
+share export, oversize, upload, service, and unexpected deletion failures using
+the user-visible attempt reference. Cancellation, sign-in requirements, quota,
+and all other handled or expected product states remain excluded. Every adapter emits a closed record with stable component,
 operation, and failure codes plus a code-owned message. JavaScript frames are
 application-relative, limited to 32, and limited to 256 characters per module
 name. Rust frames name only approved workspace crates and modules. Absolute paths,
@@ -340,6 +344,26 @@ third-party frames, arbitrary maps, and raw errors are rejected. Module names mu
 also occur in the checked-in packaged-module inventory, so a caller cannot encode
 private data inside a valid-looking application path. The final event is validated
 again immediately before transport.
+
+The handled-share schema adds only the reference, closed stage/code, and optional
+oversize byte count. It reuses verified-account admission, the main-owned
+pseudonym, bounded encrypted queue, final transport validation, and recursion
+suppression. Main deduplicates account + reference + stage + code in process;
+the durable publish-attempt owner must preserve the same identity for restart
+deduplication. A handled failure is admitted only after that durable key saves;
+save failure suppresses reporting. Renderer and public viewer receive no reporting or network
+authority.
+
+The Electron-main publish coordinator writes a versioned, atomically replaced
+attempt record beneath private desktop user data before any upload. The record
+contains the exact frozen bytes, attempt/reference identity, original owner,
+source-thread identity, last closed result, and handled-failure deduplication
+keys, but never a bearer token or signed upload fields. Recovery is visible only
+for the matching open source thread after the original owner is verified. A
+successful response replaces snapshot bytes with a lightweight URL receipt;
+closing the result or explicitly dismissing a failure removes only that local
+record. Invalid or corrupt records fail closed, and capacity rejects new
+records instead of evicting an undisclosed frozen attempt.
 
 Authenticated transport failures may enter one `safeStorage`-encrypted queue. The
 queue holds at most 32 records and 256 KiB of encrypted bytes. Records expire after
@@ -427,19 +451,35 @@ Stable promotion is a separate protected workflow on `main`. It requires committ
 
 ## Planned shared thread snapshots
 
-The optional share service hosts immutable conversation-export v1 snapshots,
+The optional share service hosts immutable conversation-export V1 snapshots when accepted
+history is asset-free and V2 snapshots when accepted authored Node Details carry visual content,
 up to 16 MiB each. Rust owns export scrubbing; Electron main owns Auth0 and
-short-lived signed uploads to private S3 staging. A small HTTP API reserves and
+one frozen byte sequence plus an owner-bound attempt/reference identity. Renderer
+code receives neither bearer tokens nor direct network authority. Electron main
+owns short-lived signed uploads to private S3 staging. A small HTTP API reserves and
 finalizes uploads, lists shares, and accepts owner deletion. It never transports
 the snapshot body through API Gateway. DynamoDB stores owner hashes and share
-state; finalization validates the exact object before publication.
+state; finalization validates the exact object before publication. Concurrent
+retries of one owner-scoped attempt recover the same immutable result and charge
+the UTC-day quota once.
+
+Public graph records omit harness-authored layer, node, and action client keys;
+portable record IDs retain reference identity without exposing arbitrary key text.
+Asset collection uses the same rich-detail privacy predicate as node export, so
+omitted detail cannot leave orphan content. The V2 reader permits the canonical
+base64 expansion of an 8 MiB decoded asset while the whole snapshot remains
+bounded to 16 MiB. A renderer dialog binds to its source thread before preflight
+and closes when navigation changes that source.
 
 A separate Lambda streams safe inline snapshot HTML through a CloudFront-protected
 function URL. The stripped browser shell reuses the production graph workspace.
+Its versioned reader starts at the first accepted turn, keeps navigation out of
+the URL, and disables execution while preserving nested layers and Node Details.
 CloudFront reads only viewer assets from S3. Page reads check deletion and bypass
 caches. Public code is outside desktop telemetry and has no reporting client.
 These are planned service boundaries, not implemented product capabilities. See
-[ADR 0011](decisions/0011-shared-thread-snapshot-service.md) and PRD section 8.4.
+[ADR 0011](decisions/0011-shared-thread-snapshot-service.md),
+[ADR 0012](decisions/0012-immutable-shared-thread-snapshots.md), and PRD section 8.4.
 
 ## Developer Eval host
 

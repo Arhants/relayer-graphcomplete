@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import socket
 from dataclasses import dataclass
 from typing import Any, Awaitable, Iterable, Mapping
@@ -119,10 +120,13 @@ class CompletionWatch:
     Create one watch for the children you launched and call await watch.changes() when you
     are ready for the next event. It returns as soon as at least one child's current has
     moved or ended since the last call, with every change seen by then; the first call
-    reports each child's current. A child still unanswered keeps its request open; an
-    answered child is asked again after the revision it reported, so its next event carries
-    its latest current, with any moves made in between folded into it. Overlapping calls
-    take turns, so each event is returned by exactly one of them.
+    reports each child's current. Each change is a (child, current) pair. A child still
+    unanswered keeps its request open; an answered child is asked again after the revision
+    it reported, so its next event carries its latest current, with any moves made in
+    between folded into it. A child whose request fails, for example because its start was
+    refused, is reported once as (child, error) with the exception in place of the current,
+    and is not asked again; it never holds back its siblings. Overlapping calls take turns,
+    so each event is returned by exactly one of them.
     """
 
     def __init__(self, children: Iterable[CompletionHandle]) -> None:
@@ -134,31 +138,41 @@ class CompletionWatch:
 
     @property
     def settled(self) -> bool:
-        """True once every watched child's current is terminal."""
+        """True once every watched child's current is terminal or can no longer be observed."""
         return len(self._ended) == len(self._children)
 
-    async def changes(self) -> list[tuple[CompletionHandle, CompletionCurrentSnapshot]]:
+    async def changes(self) -> list[tuple[CompletionHandle, CompletionCurrentSnapshot | Exception]]:
         async with self._turn:
             return await self._collect()
 
-    async def _collect(self) -> list[tuple[CompletionHandle, CompletionCurrentSnapshot]]:
+    async def _collect(self) -> list[tuple[CompletionHandle, CompletionCurrentSnapshot | Exception]]:
         loop = asyncio.get_running_loop()
         for completion_id, child in self._children.items():
             if completion_id in self._ended or completion_id in self._pending:
                 continue
             request = loop.create_task(child.current.next(self._seen.get(completion_id)))
-            # A failure surfaces on the next changes() call; until then it is not unobserved.
+            # A failure is reported by the next changes() call; until then it is not unobserved.
             request.add_done_callback(_absorb_unobserved_failure)
             self._pending[completion_id] = request
         if not self._pending:
             return []
         await asyncio.wait(self._pending.values(), return_when=asyncio.FIRST_COMPLETED)
-        changes: list[tuple[CompletionHandle, CompletionCurrentSnapshot]] = []
+        changes: list[tuple[CompletionHandle, CompletionCurrentSnapshot | Exception]] = []
         for completion_id, request in list(self._pending.items()):
             if not request.done():
                 continue
-            current = request.result()
             del self._pending[completion_id]
+            try:
+                current = request.result()
+            except asyncio.CancelledError:
+                # Only this request was cancelled, never the caller; it still ends observation.
+                self._ended.add(completion_id)
+                changes.append((self._children[completion_id], TransportError("the completion observation was cancelled")))
+                continue
+            except Exception as error:
+                self._ended.add(completion_id)
+                changes.append((self._children[completion_id], error))
+                continue
             self._seen[completion_id] = current.revision
             if current.lifecycle != "active":
                 self._ended.add(completion_id)
@@ -203,15 +217,14 @@ class _CompletionTransport:
                 return CompletionCurrentSnapshot.from_dict(
                     await self.request("GET", f"/{self.completion_id}/current")
                 )
-            if status in (202, 409):
-                current = value.get("current") if isinstance(value, Mapping) else None
-                if not isinstance(current, Mapping):
-                    raise TransportError("completion broker delivered an observation without a current")
+            current = value.get("current") if isinstance(value, Mapping) else None
+            if status in (202, 409) and isinstance(current, Mapping):
                 snapshot = CompletionCurrentSnapshot.from_dict(current)
                 if status == 409 or after_revision is None or snapshot.revision > after_revision:
                     return snapshot
                 continue
-            raise TransportError(f"completion broker returned HTTP {status}")
+            # A refusal without a current, such as a runtime conflict, is a broker error.
+            raise _broker_error(status, value)
 
     async def observe_result(self) -> Mapping[str, Any]:
         """Observe this child until it settles, one request per delivered revision.
@@ -234,15 +247,17 @@ class _CompletionTransport:
                     raise TransportError("completion broker delivered an observation without a current")
                 after_revision = CompletionCurrentSnapshot.from_dict(current).revision
                 continue
-            if status == 409:
-                current = CompletionCurrentSnapshot.from_dict(value["current"])
-                raise CompletionTerminalError(current, str(value.get("reason") or "completion_failed"))
-            raise TransportError(f"completion broker returned HTTP {status}")
+            current = value.get("current") if isinstance(value, Mapping) else None
+            if status == 409 and isinstance(current, Mapping):
+                raise CompletionTerminalError(
+                    CompletionCurrentSnapshot.from_dict(current), str(value.get("reason") or "completion_failed")
+                )
+            raise _broker_error(status, value)
 
     async def request(self, method: str, path: str, body: Any = None) -> Mapping[str, Any]:
         status, value = await self.request_with_status(method, path, body)
         if status not in (200, 201):
-            raise TransportError(f"completion broker returned HTTP {status}")
+            raise _broker_error(status, value)
         return value
 
     async def request_with_status(self, method: str, path: str, body: Any = None) -> tuple[int, Mapping[str, Any]]:
@@ -259,12 +274,35 @@ class _CompletionTransport:
             except HTTPError as error:
                 try:
                     return error.code, json.loads(error.read() or b"{}")
+                except ValueError:
+                    # A refusal without a JSON body, such as a proxy's error page, is still named by its status.
+                    return error.code, {}
                 finally:
                     error.close()
             except (URLError, socket.timeout, TimeoutError, OSError) as error:
                 raise TransportError(f"could not reach the completion broker at {self.url}") from error
 
         return await asyncio.to_thread(send)
+
+
+_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _broker_error(status: int, value: Any) -> TransportError:
+    """Name a broker refusal by its status, adding the broker's detail only when it is safe.
+
+    A client (4xx) refusal may carry a short message without control characters, meant for the caller. A
+    server (5xx) failure may carry internal detail, so its body is never repeated.
+    """
+    detail = value.get("error") if 400 <= status < 500 and isinstance(value, Mapping) else None
+    if isinstance(detail, str) and _utf16_length(detail) <= 200 and not _CONTROL_CHARACTER.search(detail):
+        return TransportError(f"completion broker returned HTTP {status}: {detail}")
+    return TransportError(f"completion broker returned HTTP {status}")
+
+
+def _utf16_length(text: str) -> int:
+    """Measure text as the TypeScript client does, so both accept the same detail."""
+    return len(text.encode("utf-16-le", "surrogatepass")) // 2
 
 
 def _absorb_unobserved_failure(task: "asyncio.Task[Any]") -> None:

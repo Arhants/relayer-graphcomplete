@@ -29,6 +29,9 @@ const account = { status: "signed-in", channel: "stable", subject: "auth0|native
 const tutorial = { status: "dismissed", automaticEligible: false };
 const handlers = {
   "account-read": () => account,
+  "share-pending": () => null,
+  "share-preflight": () => ({ status: "ready" }),
+  "share-create": () => { throw new Error("Native layout proof must not publish"); },
   "appearance-read": () => ({ appearance }),
   "appearance-set": (_, value) => ({ appearance: appearance = value }),
   "composer-drafts-read": () => drafts,
@@ -65,8 +68,30 @@ async function shell(name, expanded) {
     const box = s => { const e=document.querySelector(s),r=e?.getBoundingClientRect(); return r && {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height,visible:e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})}; };
     return {inner:[innerWidth,innerHeight],collapsed:document.body.classList.contains('sidebar-collapsed'),sidebar:box('.sidebar'),main:box('.main-area'),toggle:box('#collapseSidebar'),account:box('#desktopAccountButton'),settings:box('#settingsButton'),scrollWidth:document.documentElement.scrollWidth};
   })()`);
+  const animationBounds=await evaluate(`(() => {
+    const toggle=document.querySelector('#collapseSidebar');
+    const samples=[];
+    for(const animation of toggle.getAnimations({subtree:true})) {
+      if(animation.transitionProperty!=='transform') continue;
+      const time=animation.currentTime,playing=animation.playState==='running';
+      animation.pause();
+      for(const fraction of [0,.25,.5,.75,1]) {
+        animation.currentTime=Number(animation.effect.getTiming().duration)*fraction;
+        const r=toggle.getBoundingClientRect();
+        samples.push({fraction,left:r.left,top:r.top,right:r.right,bottom:r.bottom});
+      }
+      animation.currentTime=time;
+      if(playing) animation.play();
+    }
+    return samples;
+  })()`);
+  if(process.platform==='darwin') assert.ok(animationBounds.every(r=>r.left>=80||r.top>=40), `${name}: animated toggle clearance ${JSON.stringify(animationBounds)}`);
+  state.animationBounds=animationBounds;
   assert.equal(state.collapsed, !expanded, name);
   assert.equal(state.sidebar.width, expanded ? 210 : 58, name);
+  // hiddenInset reserves the top-left 80x40 region for native macOS controls.
+  // A successful center click alone cannot prove the entire toggle is clear.
+  if(process.platform==='darwin') assert.ok(state.toggle.left>=80 || state.toggle.top>=40, `${name}: complete toggle hit box clears native titlebar controls ${JSON.stringify(state.toggle)}`);
   assert.ok(Math.abs(state.main.left - state.sidebar.right) <= 1, `${name}: sidebar stays in flow`);
   assert.ok(Math.abs(state.main.width - (state.inner[0] - state.sidebar.width)) <= 1, `${name}: workspace shrinks`);
   for (const key of ["toggle", "account", "settings"]) {
@@ -75,6 +100,40 @@ async function shell(name, expanded) {
   }
   assert.ok(state.scrollWidth <= state.inner[0], `${name}: horizontal document overflow`);
   results.push({ name, outer: window.getSize(), content: window.getContentSize(), minimum: window.getMinimumSize(), ...state });
+  const auditHeader = async (selectors) => evaluate(`(() => {
+    const header=document.querySelector('.thread-header').getBoundingClientRect();
+    return ${JSON.stringify(selectors)}.map(selector=>{
+      const e=document.querySelector(selector),r=e?.getBoundingClientRect();
+      return {selector,visible:e?.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}),rect:r&&{left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height},contained:r&&r.left>=header.left-.5&&r.right<=header.right+.5&&r.top>=0&&r.bottom<=innerHeight};
+    });
+  })()`);
+  const headerControls=await auditHeader(['#historyBack','#historyForward','#conversationSettingsButton','#shareConversation']);
+  assert.ok(headerControls.every(c=>c.visible&&c.rect.width>0&&c.rect.height>0&&c.contained), `${name}: header controls ${JSON.stringify(headerControls)}`);
+  for(let i=0;i<headerControls.length;i++) for(let j=i+1;j<headerControls.length;j++) {
+    const a=headerControls[i].rect,b=headerControls[j].rect;
+    assert.ok(Math.min(a.right,b.right)-Math.max(a.left,b.left)<=.5 || Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)<=.5, `${name}: header controls must not overlap`);
+  }
+  await evaluate("document.querySelector('#conversationSettingsButton').click()");
+  const menuControls=await auditHeader(['#conversationSettingsMenu','#shareConversationMenu','#exportConversation']);
+  assert.ok(menuControls.every(c=>c.visible&&c.rect.width>0&&c.rect.height>0&&c.contained), `${name}: menu controls ${JSON.stringify(menuControls)}`);
+  await capture(`${name}-conversation-menu`);
+  await evaluate("document.querySelector('#conversationSettingsButton').click()");
+  if([375,620].includes(state.inner[0])) {
+    await evaluate("document.querySelector('#shareConversation').click()");
+    await waitFor(`${name}: Share title`,()=>evaluate("Boolean(document.querySelector('#shareTitle'))"));
+    const dialog=await evaluate(`(() => {
+      const selectors=['.share-dialog-card','#shareTitle','[data-share-action="cancel"]','[data-share-action="create"]'];
+      return selectors.map(selector=>{const e=document.querySelector(selector),r=e.getBoundingClientRect();return {selector,visible:e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}),positive:r.width>0&&r.height>0,contained:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight};});
+    })()`);
+    assert.ok(dialog.every(c=>c.visible&&c.positive&&c.contained),`${name}: Share dialog controls ${JSON.stringify(dialog)}`);
+    assert.equal(await evaluate("document.querySelector('[data-share-action=\"create\"]').disabled"),true);
+    await capture(`${name}-share-title`);
+    await evaluate("document.querySelector('#shareTitle').value='Native layout evidence';document.querySelector('#shareTitle').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[data-share-action=\"cancel\"]').click()");
+    assert.equal(await evaluate("document.querySelector('#shareDialog').classList.contains('hidden')"),true);
+    results.at(-1).shareDialog=dialog;
+  }
+  results.at(-1).headerControls=headerControls;
+  results.at(-1).menuControls=menuControls;
   await capture(name);
   const composerControls=await evaluate(`(async()=>{
     const controls=[];
@@ -195,6 +254,7 @@ async function main() {
     await resize(761);
     await shell(`native-761-after-${width}`, true);
   }
+  assert.ok(results.some(r=>r.animationBounds?.length>=5), "At least one live toggle transform animation must be sampled");
   await resize(375);
   await shell("native-375-reentry", false);
   window.webContents.debugger.attach("1.3");

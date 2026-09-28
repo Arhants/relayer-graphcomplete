@@ -24,6 +24,23 @@ function echoedNodeResponse(init, node) {
 describe("packaged graph-client authored detail boundary", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("ships the same theme CSS through the isolated public compiler and submission", async () => {
+    const { NodeObject, RelayerGraphClient, html, css, detailAuthoringReference } = await import(graphClientIndexUrl.href);
+    const node = new NodeObject("box", "Themes", "Fallback", "concept", "themes");
+    node.detailAuthoring.setComponent("theme", html`<p>Same content</p>`, css`
+      [data-relayer-theme="light"] p { color: #182c34; }
+      [data-relayer-theme="dark"] p { color: #edf2f3; }
+    `);
+    vi.stubGlobal("fetch", vi.fn(async (_url, init) => echoedNodeResponse(init, {
+      id: 1, kind: "concept", icon: "box", title: "Themes", detail: "Fallback", state: "draft",
+    })));
+    const graph = new RelayerGraphClient({ url: "http://127.0.0.1:1", token: "token", nodeId: 1 });
+    const checkpoint = await graph.checkpointNodeDetail(node);
+    const saved = await graph.submitNode(node);
+    expect(saved.authoredDetail).toEqual(checkpoint);
+    for (const selector of detailAuthoringReference().themeSelectors) expect(checkpoint.components[0].css).toContain(selector);
+  });
+
   it("has no sibling compiler modules and ignores forged public compiler output", async () => {
     for (const sibling of ["detail-host.js", "detail.js"]) {
       await expect(import(new URL(`./${sibling}`, graphClientIndexUrl).href))

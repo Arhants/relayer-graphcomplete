@@ -1,0 +1,749 @@
+{
+  "schemaVersion": 1,
+  "paidInferenceCalls": 0,
+  "runId": "run-2026-09-28T00-21-00-332Z-48136860",
+  "executionId": "3d745616-bc74-417d-ac87-a38a5563f0a8",
+  "threadId": 1,
+  "turnId": 1,
+  "acceptedPackageIntegrity": "62f428c9c3c49e36b36f004f010e3a61235e36c44a68cc2fab13cd65c47e6ed7",
+  "screenshot": {
+    "schemaVersion": 1,
+    "screenshotId": "shot-8d342a38-9dc0-449d-8bd8-cec7cabb2806",
+    "label": "Accepted visual Node Detail in read-only Product workspace",
+    "executionId": "3d745616-bc74-417d-ac87-a38a5563f0a8",
+    "threadId": "1",
+    "threadRevision": "thread:1:updated:1790554860339:input-draft:0:interactions:1:1:accepted:server-input-draft:0",
+    "turnId": "1",
+    "layerId": "8",
+    "selectedNodeId": "24",
+    "activatedActionId": null,
+    "navigationPath": [
+      {
+        "layerId": "8",
+        "viaActionId": null
+      }
+    ],
+    "viewport": {
+      "width": 1480,
+      "height": 888,
+      "deviceScaleFactor": 2
+    },
+    "captureTarget": {
+      "kind": "element",
+      "elementRef": "node-detail"
+    },
+    "mode": "full",
+    "tileCount": 2,
+    "tiles": [
+      {
+        "index": 0,
+        "width": 604,
+        "height": 912,
+        "contentDigest": "sha256:7b95f17bdf2bf401a6ec65bc49399e82b0efd9f4d5e4802d87658e05f393a7bd"
+      },
+      {
+        "index": 1,
+        "width": 604,
+        "height": 912,
+        "contentDigest": "sha256:7eda9cbc032da2b2f39b1b840f5ba2a13c1091f5a4a4c3ec2c86d2f2a32e3fcd"
+      }
+    ],
+    "contentDigest": "sha256:5bf6c7702cbeba7cd4c8973f7e2406aab091ae1587bb8433324ca38a04bacf6c"
+  },
+  "screenshotDirectory": "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/shot-8d342a38-9dc0-449d-8bd8-cec7cabb2806",
+  "assertions": {
+    "themes": {
+      "eval": [
+        {
+          "theme": "light",
+          "value": "",
+          "sameInput": true,
+          "samePage": true,
+          "scrollPreserved": true,
+          "valuePreserved": true,
+          "cssPreserved": true,
+          "focusPreserved": true,
+          "disabled": true,
+          "textColor": "rgb(24, 44, 52)",
+          "surface": "rgb(250, 251, 249)",
+          "contrast": {
+            "text": 13.965359149081287,
+            "chartLabel": 5.115437270903876,
+            "control": 12.705142515620947
+          },
+          "visibleAssets": [
+            {
+              "alt": "Accepted detail status illustration light",
+              "width": 300,
+              "source": "blob:"
+            }
+          ],
+          "screenshot": {
+            "schemaVersion": 1,
+            "screenshotId": "shot-8923045d-2196-4d58-a694-4c666e77c20e",
+            "label": "Accepted Eval detail light",
+            "executionId": "3d745616-bc74-417d-ac87-a38a5563f0a8",
+            "threadId": "1",
+            "threadRevision": "thread:1:updated:1790554860339:input-draft:0:interactions:1:1:accepted:server-input-draft:0",
+            "turnId": "1",
+            "layerId": "8",
+            "selectedNodeId": "24",
+            "activatedActionId": null,
+            "navigationPath": [
+              {
+                "layerId": "8",
+                "viaActionId": null
+              }
+            ],
+            "viewport": {
+              "width": 1480,
+              "height": 888,
+              "deviceScaleFactor": 2
+            },
+            "captureTarget": {
+              "kind": "element",
+              "elementRef": "node-detail"
+            },
+            "mode": "full",
+            "tileCount": 2,
+            "tiles": [
+              {
+                "index": 0,
+                "width": 604,
+                "height": 912,
+                "contentDigest": "sha256:72ab95b54a2df186ca80f8bdf0669678a5eec7f493228f797601c4d9c1f85c51"
+              },
+              {
+                "index": 1,
+                "width": 604,
+                "height": 912,
+                "contentDigest": "sha256:cf6a5a9cbd71520eb38868530e468bd2d54b277cd4bda14f48fe631aa35a368c"
+              }
+            ],
+            "contentDigest": "sha256:5f12ea59831512988cbf901b32dc3c02126fd8a112eddb1e743e220f63ea6271"
+          },
+          "screenshotDirectory": "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/shot-8923045d-2196-4d58-a694-4c666e77c20e",
+          "durableScreenshots": [
+            "eval-light-1.png",
+            "eval-light-2.png"
+          ]
+        },
+        {
+          "theme": "dark",
+          "value": "",
+          "sameInput": true,
+          "samePage": true,
+          "scrollPreserved": true,
+          "valuePreserved": true,
+          "cssPreserved": true,
+          "focusPreserved": true,
+          "disabled": true,
+          "textColor": "rgb(237, 242, 243)",
+          "surface": "rgb(18, 22, 25)",
+          "contrast": {
+            "text": 16.107089408195918,
+            "chartLabel": 11.545498752860093,
+            "control": 14.252953083549349
+          },
+          "visibleAssets": [
+            {
+              "alt": "Accepted detail status illustration",
+              "width": 300,
+              "source": "blob:"
+            }
+          ],
+          "screenshot": {
+            "schemaVersion": 1,
+            "screenshotId": "shot-c983ee7c-125d-4517-8b41-53d07fa96c5b",
+            "label": "Accepted Eval detail dark",
+            "executionId": "3d745616-bc74-417d-ac87-a38a5563f0a8",
+            "threadId": "1",
+            "threadRevision": "thread:1:updated:1790554860339:input-draft:0:interactions:1:1:accepted:server-input-draft:0",
+            "turnId": "1",
+            "layerId": "8",
+            "selectedNodeId": "24",
+            "activatedActionId": null,
+            "navigationPath": [
+              {
+                "layerId": "8",
+                "viaActionId": null
+              }
+            ],
+            "viewport": {
+              "width": 1480,
+              "height": 888,
+              "deviceScaleFactor": 2
+            },
+            "captureTarget": {
+              "kind": "element",
+              "elementRef": "node-detail"
+            },
+            "mode": "full",
+            "tileCount": 2,
+            "tiles": [
+              {
+                "index": 0,
+                "width": 604,
+                "height": 912,
+                "contentDigest": "sha256:51b1196ad3969b95c2d7a160be766b1d01c585c7a852471250c6d7d97821f7f5"
+              },
+              {
+                "index": 1,
+                "width": 604,
+                "height": 912,
+                "contentDigest": "sha256:7eda9cbc032da2b2f39b1b840f5ba2a13c1091f5a4a4c3ec2c86d2f2a32e3fcd"
+              }
+            ],
+            "contentDigest": "sha256:c1b7a3a1e0adabbb0491610371a5218515657d0f439987ea3e17a322acf8bd4c"
+          },
+          "screenshotDirectory": "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/shot-c983ee7c-125d-4517-8b41-53d07fa96c5b",
+          "durableScreenshots": [
+            "eval-dark-1.png",
+            "eval-dark-2.png"
+          ]
+        }
+      ],
+      "product": [
+        {
+          "theme": "light",
+          "value": "Keep energy for dinner and lights",
+          "sameInput": true,
+          "samePage": true,
+          "scrollPreserved": true,
+          "valuePreserved": true,
+          "cssPreserved": true,
+          "focusPreserved": true,
+          "disabled": false,
+          "textColor": "rgb(24, 44, 52)",
+          "surface": "rgb(250, 251, 249)",
+          "contrast": {
+            "text": 13.965359149081287,
+            "chartLabel": 5.115437270903876,
+            "control": 12.705142515620947
+          },
+          "visibleAssets": [
+            {
+              "alt": "Accepted detail status illustration light",
+              "width": 300,
+              "source": "blob:"
+            }
+          ],
+          "screenshotPaths": [
+            "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/product-0-light-0.png",
+            "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/product-0-light-1.png"
+          ],
+          "durableScreenshots": [
+            "product-light-1.png",
+            "product-light-2.png"
+          ]
+        },
+        {
+          "theme": "dark",
+          "value": "Keep energy for dinner and lights",
+          "sameInput": true,
+          "samePage": true,
+          "scrollPreserved": true,
+          "valuePreserved": true,
+          "cssPreserved": true,
+          "focusPreserved": true,
+          "disabled": false,
+          "textColor": "rgb(237, 242, 243)",
+          "surface": "rgb(18, 22, 25)",
+          "contrast": {
+            "text": 16.107089408195918,
+            "chartLabel": 11.545498752860093,
+            "control": 14.252953083549349
+          },
+          "visibleAssets": [
+            {
+              "alt": "Accepted detail status illustration",
+              "width": 300,
+              "source": "blob:"
+            }
+          ],
+          "screenshotPaths": [
+            "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/product-1-dark-0.png",
+            "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/product-1-dark-1.png"
+          ],
+          "durableScreenshots": [
+            "product-dark-1.png",
+            "product-dark-2.png"
+          ]
+        },
+        {
+          "theme": "light",
+          "value": "Keep energy for dinner and lights",
+          "sameInput": true,
+          "samePage": true,
+          "scrollPreserved": true,
+          "valuePreserved": true,
+          "cssPreserved": true,
+          "focusPreserved": true,
+          "disabled": false,
+          "textColor": "rgb(24, 44, 52)",
+          "surface": "rgb(250, 251, 249)",
+          "contrast": {
+            "text": 13.965359149081287,
+            "chartLabel": 5.115437270903876,
+            "control": 12.705142515620947
+          },
+          "visibleAssets": [
+            {
+              "alt": "Accepted detail status illustration light",
+              "width": 300,
+              "source": "blob:"
+            }
+          ],
+          "screenshotPaths": [
+            "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/product-2-light-0.png",
+            "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/product-2-light-1.png"
+          ]
+        }
+      ],
+      "reopened": [
+        {
+          "theme": "light",
+          "value": "",
+          "sameInput": true,
+          "samePage": true,
+          "scrollPreserved": true,
+          "valuePreserved": true,
+          "cssPreserved": true,
+          "focusPreserved": true,
+          "disabled": true,
+          "textColor": "rgb(24, 44, 52)",
+          "surface": "rgb(250, 251, 249)",
+          "contrast": {
+            "text": 13.965359149081287,
+            "chartLabel": 5.115437270903876,
+            "control": 12.705142515620947
+          },
+          "visibleAssets": [
+            {
+              "alt": "Accepted detail status illustration light",
+              "width": 300,
+              "source": "blob:"
+            }
+          ],
+          "screenshot": {
+            "schemaVersion": 1,
+            "screenshotId": "shot-ed2d5488-030b-4cd9-9b50-659a329ee68b",
+            "label": "Reopened Eval detail light",
+            "executionId": "3d745616-bc74-417d-ac87-a38a5563f0a8",
+            "threadId": "1",
+            "threadRevision": "thread:1:updated:1790554860339:input-draft:0:interactions:1:1:accepted:server-input-draft:0",
+            "turnId": "1",
+            "layerId": "8",
+            "selectedNodeId": "24",
+            "activatedActionId": null,
+            "navigationPath": [
+              {
+                "layerId": "8",
+                "viaActionId": null
+              }
+            ],
+            "viewport": {
+              "width": 1480,
+              "height": 888,
+              "deviceScaleFactor": 2
+            },
+            "captureTarget": {
+              "kind": "element",
+              "elementRef": "node-detail"
+            },
+            "mode": "full",
+            "tileCount": 2,
+            "tiles": [
+              {
+                "index": 0,
+                "width": 604,
+                "height": 912,
+                "contentDigest": "sha256:72ab95b54a2df186ca80f8bdf0669678a5eec7f493228f797601c4d9c1f85c51"
+              },
+              {
+                "index": 1,
+                "width": 604,
+                "height": 912,
+                "contentDigest": "sha256:cf6a5a9cbd71520eb38868530e468bd2d54b277cd4bda14f48fe631aa35a368c"
+              }
+            ],
+            "contentDigest": "sha256:252f0f7eed7f701bc8eca46fd6f0f78675c70b1a92566bade3194772d3eccd2e"
+          },
+          "screenshotDirectory": "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/shot-ed2d5488-030b-4cd9-9b50-659a329ee68b"
+        },
+        {
+          "theme": "dark",
+          "value": "",
+          "sameInput": true,
+          "samePage": true,
+          "scrollPreserved": true,
+          "valuePreserved": true,
+          "cssPreserved": true,
+          "focusPreserved": true,
+          "disabled": true,
+          "textColor": "rgb(237, 242, 243)",
+          "surface": "rgb(18, 22, 25)",
+          "contrast": {
+            "text": 16.107089408195918,
+            "chartLabel": 11.545498752860093,
+            "control": 14.252953083549349
+          },
+          "visibleAssets": [
+            {
+              "alt": "Accepted detail status illustration",
+              "width": 300,
+              "source": "blob:"
+            }
+          ],
+          "screenshot": {
+            "schemaVersion": 1,
+            "screenshotId": "shot-ec3ed6b1-0d7a-4de1-a848-fbb3c486a18d",
+            "label": "Reopened Eval detail dark",
+            "executionId": "3d745616-bc74-417d-ac87-a38a5563f0a8",
+            "threadId": "1",
+            "threadRevision": "thread:1:updated:1790554860339:input-draft:0:interactions:1:1:accepted:server-input-draft:0",
+            "turnId": "1",
+            "layerId": "8",
+            "selectedNodeId": "24",
+            "activatedActionId": null,
+            "navigationPath": [
+              {
+                "layerId": "8",
+                "viaActionId": null
+              }
+            ],
+            "viewport": {
+              "width": 1480,
+              "height": 888,
+              "deviceScaleFactor": 2
+            },
+            "captureTarget": {
+              "kind": "element",
+              "elementRef": "node-detail"
+            },
+            "mode": "full",
+            "tileCount": 2,
+            "tiles": [
+              {
+                "index": 0,
+                "width": 604,
+                "height": 912,
+                "contentDigest": "sha256:51b1196ad3969b95c2d7a160be766b1d01c585c7a852471250c6d7d97821f7f5"
+              },
+              {
+                "index": 1,
+                "width": 604,
+                "height": 912,
+                "contentDigest": "sha256:7eda9cbc032da2b2f39b1b840f5ba2a13c1091f5a4a4c3ec2c86d2f2a32e3fcd"
+              }
+            ],
+            "contentDigest": "sha256:1fb1aa93ea22b760750d7fd715908cc53b30bbfc96cfbef5cb0590fdd890786c"
+          },
+          "screenshotDirectory": "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/shot-ec3ed6b1-0d7a-4de1-a848-fbb3c486a18d"
+        }
+      ],
+      "imported": [
+        {
+          "theme": "light",
+          "value": "",
+          "sameInput": true,
+          "samePage": true,
+          "scrollPreserved": true,
+          "valuePreserved": true,
+          "cssPreserved": true,
+          "focusPreserved": true,
+          "disabled": true,
+          "textColor": "rgb(24, 44, 52)",
+          "surface": "rgb(250, 251, 249)",
+          "contrast": {
+            "text": 13.965359149081287,
+            "chartLabel": 5.115437270903876,
+            "control": 12.705142515620947
+          },
+          "visibleAssets": [
+            {
+              "alt": "Accepted detail status illustration light",
+              "width": 300,
+              "source": "blob:"
+            }
+          ],
+          "screenshot": {
+            "schemaVersion": 1,
+            "screenshotId": "shot-17ee5c02-40dc-4eb1-89bd-a05287c51fda",
+            "label": "Imported Eval detail light",
+            "executionId": "execution-6d5b8ba6-32ed-4cdf-8df5-dc0e9bb04db9",
+            "threadId": "2",
+            "threadRevision": "thread:2:updated:1790554860339:input-draft:none:interactions:2:1:accepted:server-input-draft:none",
+            "turnId": "2",
+            "layerId": "9",
+            "selectedNodeId": "26",
+            "activatedActionId": null,
+            "navigationPath": [
+              {
+                "layerId": "9",
+                "viaActionId": null
+              }
+            ],
+            "viewport": {
+              "width": 1480,
+              "height": 888,
+              "deviceScaleFactor": 2
+            },
+            "captureTarget": {
+              "kind": "element",
+              "elementRef": "node-detail"
+            },
+            "mode": "full",
+            "tileCount": 2,
+            "tiles": [
+              {
+                "index": 0,
+                "width": 604,
+                "height": 912,
+                "contentDigest": "sha256:72ab95b54a2df186ca80f8bdf0669678a5eec7f493228f797601c4d9c1f85c51"
+              },
+              {
+                "index": 1,
+                "width": 604,
+                "height": 912,
+                "contentDigest": "sha256:cf6a5a9cbd71520eb38868530e468bd2d54b277cd4bda14f48fe631aa35a368c"
+              }
+            ],
+            "contentDigest": "sha256:542df35dc482c89c25f0b317ea15612023d152a8808a0038506aa8e6176087cc"
+          },
+          "screenshotDirectory": "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/shot-17ee5c02-40dc-4eb1-89bd-a05287c51fda"
+        },
+        {
+          "theme": "dark",
+          "value": "",
+          "sameInput": true,
+          "samePage": true,
+          "scrollPreserved": true,
+          "valuePreserved": true,
+          "cssPreserved": true,
+          "focusPreserved": true,
+          "disabled": true,
+          "textColor": "rgb(237, 242, 243)",
+          "surface": "rgb(18, 22, 25)",
+          "contrast": {
+            "text": 16.107089408195918,
+            "chartLabel": 11.545498752860093,
+            "control": 14.252953083549349
+          },
+          "visibleAssets": [
+            {
+              "alt": "Accepted detail status illustration",
+              "width": 300,
+              "source": "blob:"
+            }
+          ],
+          "screenshot": {
+            "schemaVersion": 1,
+            "screenshotId": "shot-6cdca9bc-75ae-4a88-a8da-d449e80bb9a1",
+            "label": "Imported Eval detail dark",
+            "executionId": "execution-6d5b8ba6-32ed-4cdf-8df5-dc0e9bb04db9",
+            "threadId": "2",
+            "threadRevision": "thread:2:updated:1790554860339:input-draft:none:interactions:2:1:accepted:server-input-draft:none",
+            "turnId": "2",
+            "layerId": "9",
+            "selectedNodeId": "26",
+            "activatedActionId": null,
+            "navigationPath": [
+              {
+                "layerId": "9",
+                "viaActionId": null
+              }
+            ],
+            "viewport": {
+              "width": 1480,
+              "height": 888,
+              "deviceScaleFactor": 2
+            },
+            "captureTarget": {
+              "kind": "element",
+              "elementRef": "node-detail"
+            },
+            "mode": "full",
+            "tileCount": 2,
+            "tiles": [
+              {
+                "index": 0,
+                "width": 604,
+                "height": 912,
+                "contentDigest": "sha256:51b1196ad3969b95c2d7a160be766b1d01c585c7a852471250c6d7d97821f7f5"
+              },
+              {
+                "index": 1,
+                "width": 604,
+                "height": 912,
+                "contentDigest": "sha256:51b1196ad3969b95c2d7a160be766b1d01c585c7a852471250c6d7d97821f7f5"
+              }
+            ],
+            "contentDigest": "sha256:7ccc7272eca0f8419d70fb2479adfd7e26bca37fffb1ba609bf9cf7849eb8fc7"
+          },
+          "screenshotDirectory": "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/shot-6cdca9bc-75ae-4a88-a8da-d449e80bb9a1"
+        }
+      ],
+      "acceptedPackageUnchanged": true
+    },
+    "ordinaryEvalProductState": true,
+    "authoredLayoutMounted": true,
+    "controlsDiscovered": [
+      "Open implementation notes",
+      "Open referenced evidence",
+      "Open fixture documentation",
+      "Investigate follow-up",
+      "Review note"
+    ],
+    "expandAndReferenceNavigation": true,
+    "historyRestoration": true,
+    "invokeAndInputDisabled": true,
+    "serverMutationRejected": {
+      "status": 403,
+      "code": "read_only_session"
+    },
+    "reopened": true,
+    "visualAsset": {
+      "id": "asset_e950d1ac-7aba-4a8c-9ae0-1f6c4687cad4",
+      "digestSha256": "0499cefdad4591290c673fa233821e8101512ee67ad8aec4c78f12d5df81e2f4",
+      "renderedAsset": {
+        "alt": "Accepted detail status illustration",
+        "assetState": "available",
+        "sourceProtocol": "blob:",
+        "complete": true,
+        "naturalWidth": 300
+      }
+    },
+    "visualAssetReopened": {
+      "alt": "Accepted detail status illustration",
+      "assetState": "available",
+      "sourceProtocol": "blob:",
+      "complete": true,
+      "naturalWidth": 300
+    },
+    "visualAssetExportImport": {
+      "exportPath": "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/conversation.jsonl",
+      "importedRunId": "import-6d5b8ba6-32ed-4cdf-8df5-dc0e9bb04db9",
+      "importedExecutionId": "execution-6d5b8ba6-32ed-4cdf-8df5-dc0e9bb04db9",
+      "importedThreadId": 2,
+      "pinPreserved": true,
+      "renderedAsset": {
+        "alt": "Accepted detail status illustration",
+        "assetState": "available",
+        "sourceProtocol": "blob:",
+        "complete": true,
+        "naturalWidth": 300
+      },
+      "portabilityPending": false,
+      "screenshot": {
+        "schemaVersion": 1,
+        "screenshotId": "shot-b7d36986-6b66-4134-a29c-2285a78682f4",
+        "label": "Imported accepted visual Node Detail with portable image bytes",
+        "executionId": "execution-6d5b8ba6-32ed-4cdf-8df5-dc0e9bb04db9",
+        "threadId": "2",
+        "threadRevision": "thread:2:updated:1790554860339:input-draft:none:interactions:2:1:accepted:server-input-draft:none",
+        "turnId": "2",
+        "layerId": "9",
+        "selectedNodeId": "26",
+        "activatedActionId": null,
+        "navigationPath": [
+          {
+            "layerId": "9",
+            "viaActionId": null
+          }
+        ],
+        "viewport": {
+          "width": 1480,
+          "height": 888,
+          "deviceScaleFactor": 2
+        },
+        "captureTarget": {
+          "kind": "element",
+          "elementRef": "node-detail"
+        },
+        "mode": "full",
+        "tileCount": 2,
+        "tiles": [
+          {
+            "index": 0,
+            "width": 604,
+            "height": 912,
+            "contentDigest": "sha256:51b1196ad3969b95c2d7a160be766b1d01c585c7a852471250c6d7d97821f7f5"
+          },
+          {
+            "index": 1,
+            "width": 604,
+            "height": 912,
+            "contentDigest": "sha256:7eda9cbc032da2b2f39b1b840f5ba2a13c1091f5a4a4c3ec2c86d2f2a32e3fcd"
+          }
+        ],
+        "contentDigest": "sha256:8108ae0914df6c2c25ae539bd489d1f3329382e58fc3c0d1402468da93bdfbd2"
+      },
+      "screenshotDirectory": "/Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete/.relayer/evidence/visual-node-details/run-2026-09-28T00-20-56.484Z-611ca968/shot-b7d36986-6b66-4134-a29c-2285a78682f4"
+    }
+  },
+  "sourceSnapshot": {
+    "base": "c3d6d6721d065f03532ef233fa13ba2734a760c6",
+    "sha256": "a82902aff97911ea4b43a5980d5dfe0cec1737c2e245c6f325714e9edc3e6f3e",
+    "algorithm": "sorted path + NUL + bytes + NUL",
+    "files": [
+      "desktop/renderer/src/product-workspace/node-detail-runtime.js",
+      "docs/architecture.md",
+      "docs/prd/index.html",
+      "packages/eval-runner/src/fixtures/node-detail.ts",
+      "packages/graph-client/src/detail.ts",
+      "packages/graph-client/test/detail.test.ts",
+      "packages/harness-host/src/implementations/graph-presentation-guidance.ts",
+      "packages/harness-host/test/graph-presentation-guidance-assertions.ts",
+      "packages/harness-host/test/prime-visual-authoring.test.ts",
+      "scripts/run-desktop-visual-node-details-test.mjs",
+      "scripts/test-desktop-visual-node-details.mjs",
+      "scripts/test-node-detail-csp.mjs",
+      "test/eval-app-integration.test.mjs",
+      "test/graph-client-packaged-detail.test.mjs",
+      "test/node-detail-runtime.test.mjs"
+    ]
+  },
+  "durableCaptureInventory": [
+    {
+      "file": "eval-dark-1.png",
+      "sha256": "51b1196ad3969b95c2d7a160be766b1d01c585c7a852471250c6d7d97821f7f5",
+      "bytes": 83296
+    },
+    {
+      "file": "eval-dark-2.png",
+      "sha256": "7eda9cbc032da2b2f39b1b840f5ba2a13c1091f5a4a4c3ec2c86d2f2a32e3fcd",
+      "bytes": 56294
+    },
+    {
+      "file": "eval-light-1.png",
+      "sha256": "72ab95b54a2df186ca80f8bdf0669678a5eec7f493228f797601c4d9c1f85c51",
+      "bytes": 85844
+    },
+    {
+      "file": "eval-light-2.png",
+      "sha256": "cf6a5a9cbd71520eb38868530e468bd2d54b277cd4bda14f48fe631aa35a368c",
+      "bytes": 55942
+    },
+    {
+      "file": "product-dark-1.png",
+      "sha256": "53605bd9d4e63a53303621db53081e89e3e58fe649d561eea96f8d49a156ea45",
+      "bytes": 84297
+    },
+    {
+      "file": "product-dark-2.png",
+      "sha256": "5d671745b34fa2981600e9073afdc0fa37b72d55f337e84e2ad658baa8e0608a",
+      "bytes": 67611
+    },
+    {
+      "file": "product-light-1.png",
+      "sha256": "652ed72b497208dc5290217e865c8af06a100337c154f30cb4f4d931b4e7390a",
+      "bytes": 87618
+    },
+    {
+      "file": "product-light-2.png",
+      "sha256": "bc40a00d5e34011e22d56a74231e083305f4c1dc2365480e2a8f930807462b81",
+      "bytes": 67077
+    }
+  ]
+}

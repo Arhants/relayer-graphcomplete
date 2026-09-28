@@ -12,6 +12,13 @@ This runbook covers the operator-controlled steps around the code-owned release 
 
 Enabled targets for a version come from one commit. Preview publication and Stable promotion happen independently per target. Windows is disabled until the exact publisher variable exists, Azure signing succeeds, and the interactive canary passes.
 
+Every signed Preview and Stable candidate uses `https://share.relayerlabs.ai`.
+Stable promotion reuses the signed Preview bytes, so their sealed service origin
+must remain valid after promotion. Packaged applications ignore process-environment
+endpoint overrides and reject missing or invalid release metadata. Private share
+Preview testing uses `RELAYER_SHARE_SERVICE_ENDPOINT` only in an explicitly
+non-packaged development application.
+
 ## Prime managed-runtime checkpoint
 
 On macOS Apple Silicon, run `npm run test:prime-managed-runtime` from the exact

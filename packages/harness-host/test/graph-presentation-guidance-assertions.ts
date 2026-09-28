@@ -5,6 +5,12 @@ export function expectGraphPresentationGuidance(prompt: string): void {
   expect(prompt).toContain("It is not a draft preview");
   expect(prompt).toContain('"cssProperties":["align-content"');
   expect(prompt).toContain("Valid node icons:");
+  expect(prompt).toContain('Theme authoring: design readable light AND dark');
+  expect(prompt).toContain('[data-relayer-theme="light"]');
+  expect(prompt).toContain('[data-relayer-theme="dark"]');
+  expect(prompt).toContain('guidance, not mandatory colors or a layout recipe');
+  expect(prompt).toContain('do not create duplicate inputs');
+  expect(prompt).toContain('bind both variants as ordinary assets/content');
   expect(prompt).toContain("Available presentation capabilities:");
   expect(prompt).toContain("without image files");
   expect(prompt).toContain("native image inspection");
