@@ -51,6 +51,11 @@ describe("Prime managed runtime", () => {
     expect(recipe.artifacts.some(({ kind }) => kind === "sdist")).toBe(false);
   });
 
+  it("marks a target without a Prime recipe so startup validation stays quiet", () => {
+    expect(() => resolveManagedRuntimeRecipe("prime@0.8.1", "linux-x64"))
+      .toThrow(expect.objectContaining({ code: "managed_runtime_unsupported_target" }));
+  });
+
   it("pins the Python client to its reviewed files in every contract that names it", async () => {
     // Packaging and the runtime check the same filter: every .py file in the client package.
     const tree = await digestFilesystemTree(
