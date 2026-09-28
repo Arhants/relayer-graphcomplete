@@ -36,3 +36,10 @@ source action into navigation while preserving that action's identity.
 **Context attachment**:
 A user-selected node and its causal occurrence, supplied as input to an interaction.
 It may confer narrowly bounded navigation authority on the node, never general edit authority.
+
+**Shared thread snapshot**:
+An immutable, public, read-only conversation-export v1 projection of one local
+thread's accepted history, frozen for one owner-bound publication attempt. It is
+not a live thread, provider session, product-data backup, or source of graph
+authority.
+_Avoid_: Shared thread, cloud thread, remote workspace

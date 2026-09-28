@@ -79,6 +79,28 @@ export function registerComposerDraftIpc({ ipcMain, settings }) {
   });
 }
 
+export function registerSharePublishIpc({ ipcMain, coordinator }) {
+  if (!coordinator) return;
+  if (typeof coordinator.preflight !== "function"
+    || typeof coordinator.create !== "function" || typeof coordinator.retry !== "function"
+    || typeof coordinator.pending !== "function" || typeof coordinator.dismiss !== "function") {
+    throw new TypeError("Share publication coordinator is invalid.");
+  }
+  ipcMain.handle("relayer:share-preflight", (_event, { threadId } = {}) => (
+    coordinator.preflight({ threadId })
+  ));
+  ipcMain.handle("relayer:share-create", (_event, { threadId, title } = {}) => (
+    coordinator.create({ threadId, title })
+  ));
+  ipcMain.handle("relayer:share-retry", (_event, { attemptReferenceId } = {}) => (
+    coordinator.retry(attemptReferenceId)
+  ));
+  ipcMain.handle("relayer:share-pending", (_event, { threadId } = {}) => coordinator.pending({ threadId }));
+  ipcMain.handle("relayer:share-dismiss", (_event, { attemptReferenceId } = {}) => (
+    coordinator.dismiss(attemptReferenceId)
+  ));
+}
+
 export function registerDesktopIpc({
   ipcMain,
   dialog,
@@ -90,6 +112,7 @@ export function registerDesktopIpc({
   providerDefinitions = null,
   validateProviderOnboarding = null,
   conversationExporter,
+  shareCoordinator = null,
   settings,
   tutorial,
   updater,
@@ -253,6 +276,7 @@ export function registerDesktopIpc({
     return { hasCompletedOnboarding: true };
   });
   ipcMain.handle("relayer:conversation-export", (_event, threadId) => conversationExporter.save(threadId));
+  registerSharePublishIpc({ ipcMain, coordinator: shareCoordinator });
   ipcMain.handle("relayer:folder-choose", async () => {
     const selection = await dialog.showOpenDialog(getWindow(), {
       properties: ["openDirectory", "createDirectory"],

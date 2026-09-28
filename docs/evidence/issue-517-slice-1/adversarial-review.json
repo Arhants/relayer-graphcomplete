@@ -1,8 +1,10 @@
 [
   {
     "reviewer": "authority_review",
-    "sourceSha256": "5c4ecc256eba098f070867909ddb4de21fc20ac1c2f2660ea27e51705212334f",
+    "sourceSha256": "22dfc89b6a71e55bd5df7c6c94b5c4c64128efb8ccb1505b91bf5dc78a43818a",
     "files": [
+      "crates/relayer-app-server/src/api.rs",
+      "crates/relayer-app-server/src/api/error.rs",
       "crates/relayer-app-server/src/api/state.rs",
       "crates/relayer-app-server/src/api/threads.rs",
       "crates/relayer-app-server/src/conversation_export_service.rs",
@@ -20,16 +22,15 @@
   },
   {
     "reviewer": "renderer_review",
-    "sourceSha256": "611074241f420da04daa48bda9d8641a6c0a005e99290f95454f860752bbe199",
+    "sourceSha256": "0c514acf3999932a2aa5a9c5287e36b6456a0b01f9ba07754b3f3cbd9b402b2d",
     "files": [
-      "crates/relayer-app-server/src/api/state.rs",
-      "crates/relayer-app-server/src/api/threads.rs",
-      "crates/relayer-app-server/src/runtime.rs",
-      "crates/relayer-app-server/tests/product_persistence_flow.rs",
-      "crates/relayer-graph-core/src/graph/database.rs",
-      "crates/relayer-graph-core/src/storage/sqlite/actions.rs",
-      "crates/relayer-graph-server/src/lib.rs",
-      "scripts/run-interaction-permissions-human-gate.mjs"
+      "desktop/renderer/src/product-workspace/node-detail-runtime.js",
+      "desktop/renderer/src/product-workspace/workspace.js",
+      "desktop/renderer/src/threads.js",
+      "desktop/shared/telemetry-module-inventory.mjs",
+      "scripts/run-interaction-permissions-human-gate.mjs",
+      "scripts/test-desktop-first-message.mjs",
+      "test/node-detail-runtime.test.mjs"
     ],
     "verdict": "No unresolved findings",
     "mode": "Static adversarial review; independent execution not claimed",

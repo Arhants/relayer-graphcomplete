@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/node-detail-themes/relayer-graphcomplete
+
+
+ Test Files  8 passed (8)
+      Tests  262 passed (262)
+   Start at  20:20:14
+   Duration  1.78s (transform 2.20s, setup 0ms, import 3.30s, tests 2.63s, environment 0ms)
+

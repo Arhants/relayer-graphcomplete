@@ -3176,6 +3176,7 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
         .bind(child.id.value()).execute(&pool).await.unwrap();
     pool.close().await;
     let blocked = app
+        .clone()
         .oneshot(api_request("GET", "/api/threads/1/export", None, true))
         .await
         .unwrap();
@@ -3192,6 +3193,24 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
         body.to_string()
             .contains("Typed invoke resolution portability requires Slice 2."),
         "{body}"
+    );
+
+    let shared = app
+        .oneshot(api_request(
+            "POST",
+            "/api/threads/1/share-export",
+            Some(json!({"title":"Typed result"})),
+            true,
+        ))
+        .await
+        .unwrap();
+    assert!(!shared.status().is_success());
+    let shared_error = response_json(shared).await;
+    assert!(
+        shared_error
+            .to_string()
+            .contains("Typed invoke resolution portability requires Slice 2."),
+        "{shared_error}"
     );
 
     graph_task.abort();

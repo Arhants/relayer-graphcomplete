@@ -40,7 +40,7 @@ The manifest includes the base commit, every changed non-evidence file hash, and
 an aggregate digest. Evidence-directory edits do not alter that source identity.
 
 - `npm run build`: passed on the final production source with pinned Node 22.23.2.
-- `npm run check`: passed. Vitest: 190 files passed, 2,483 tests passed,
+- `npm run check`: passed. Vitest: 203 files passed, 2,619 tests passed,
   3 skipped; separate secret-boundary suite: 2 passed. Rust workspace and crash
   reconciliation, Python, receipt lint, and PRD readability also passed.
 - The nine focused typed core cases passed, including rollback, frozen authority,
@@ -148,3 +148,14 @@ Human acceptance is pending, regardless of automated evidence.
 The separate retained launcher was qualified with native CUA typing and Shift+Enter,
 original and repaired-occurrence navigation, and service reopen. See
 [qualification](human-launcher-qualification.json) and the [human walkthrough](HUMAN-GATE.md).
+
+## Integration with main
+
+The PR integrates main at `ac7657e1`. The glossary conflict preserves both
+interaction-permission and immutable shared-snapshot terms. Automerged renderer
+theme/share changes are included in the final source manifest and desktop runs.
+Adversarial integration review found the new share-export path needed the same
+early Slice 2 refusal as ordinary export. The real graph-backed export test now
+checks both GET export and POST share-export; its share assertion first reproduced
+the generic invocation-shape error, then passed with the shared early guard.
+No network publication or public viewer change is claimed by this refusal fix.

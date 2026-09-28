@@ -29,5 +29,25 @@
       "accepted"
     ]
   ],
-  "initialLauncherFailure": "First startup used raw harnessConfigurationName, rejected by Product; repaired to public harnessId and qualified in a fresh directory."
+  "initialLauncherFailure": "First startup used raw harnessConfigurationName, rejected by Product; repaired to public harnessId and qualified in a fresh directory.",
+  "integratedVerification": {
+    "sourceSha256": "4da1aa4d7df66e198bf1cbf961a901f9fff0f540519b2fb0d77e95eb79ae7f78",
+    "nativeTypedText": "Integrated keyboard\nSecond line",
+    "shiftEnterDidNotSend": true,
+    "draftCleared": true,
+    "reopenedRetainedData": true,
+    "originalCompiledControlNavigatedToInteraction": 2,
+    "positiveInteractionRows": [
+      [
+        1,
+        "accepted"
+      ],
+      [
+        2,
+        "accepted"
+      ]
+    ],
+    "integratedSecondOccurrence": "gated-result.json",
+    "humanAcceptance": "pending"
+  }
 }

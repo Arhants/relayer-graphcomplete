@@ -125,8 +125,10 @@ not reject an otherwise intact bundle. The production Cargo-resolved source
 path is separately checked against the reviewed lbug version, crates.io
 checksum, and canonical full-package tree digest. The source-preparation path
 checks the same complete package tree after extracting the checksum-pinned
-crate; its only resolved-tree exclusion is Cargo's generated root `.cargo-ok`
-registry marker, which is absent from the crate archive. Re-review this native
+crate; its resolved-tree exclusions are Cargo's generated root `.cargo-ok`
+registry marker, which is absent from the crate archive, and lbug's generated
+crate-root `.cache` build directory. A file or symlink at `.cache`, and any
+nested source `.cache`, remain reviewed bytes. Re-review this native
 source contract before changing the lbug pin or any package source bytes. The manifest also
 carries a digest over every packaged file plus the library size, so a
 truncated include tree or a failed debug strip is rejected before any lane
@@ -302,7 +304,7 @@ successful verification into failure.
 The packaging restore adapter uses the pinned `@actions/cache` SDK in an isolated
 process so its otherwise swallowed service diagnostics are observable. It adds
 at most one 5–10 second jittered retry for an explicit 429/5xx, honors reported
-Retry-After up to 30 seconds, and falls back immediately for longer service waits,
+Retry-After up to 60 seconds, and falls back immediately for longer service waits,
 ordinary misses, authorization/unknown errors or a timed-out attempt. Each SDK
 attempt has a 120-second process bound; the SDK also has its own internal retries
 for some server failures. This policy does not retry build or verification errors.
@@ -315,3 +317,44 @@ quick and `check`; a deletion or non-file replacement remains full coverage.
 Mixed fixture edits retain fresh Vitest, and desktop edits retain packaging.
 Every other `docs/evidence/` path retains the conservative full-portfolio rule,
 including executable probes, qualification receipts and unknown documents.
+
+
+### Restore only what packaging needs
+
+Packaging computes its input identity before restoring Cargo. The workspace's
+locked `cargo metadata --no-deps --offline` query is tested with an empty Cargo
+home; it does not fetch registry dependencies. If identity is unavailable, the
+lane takes the ordinary fresh-build path.
+
+The lane restores the small release-runtime entry first, then verifies its
+receipt, every file digest/mode, and the exact two regular binaries. Only a
+verified entry skips the broad Cargo archive, Cargo fetch, and native-prefix
+restore. An Actions `cache-hit` value alone cannot skip those steps. The package
+builder rechecks the entry and licensing before reuse and always runs Electron
+and afterPack. If a verified entry disappears or changes before consumption,
+`RELAYER_PACKAGING_FETCH_ON_MISS=1` seeds locked dependencies before falling back
+to the offline native/Cargo build. Missing optional output metadata also takes
+the fresh path. Trusted saves only publish entries actually prepared by the job.
+
+The bounded retry accepts a reported reset through 60 seconds, including the
+observed 36-second response. Longer waits still fall back immediately; each
+restore gets at most two SDK attempts. Telemetry records the chosen delay or
+budget rejection. Retrying a service failure does not imply an incompatible or
+absent cache entry will become a hit.
+
+### Command resource profiles
+
+Rust lanes, Vitest and packaging opt into `RELAYER_CI_PROFILE_DIR`. The existing
+chapter/timed runners execute each command once through a Python resource
+collector and upload JSON profiles as optional 14-day artifacts, including on
+failure. Profiles report elapsed time, child user/system CPU, maximum child RSS,
+major page faults, block I/O counts and context switches. They preserve the
+command's result; unavailable Python or unwritable reports do not retry a
+command or change its result. Arguments and environment values are not recorded.
+
+These are process resource summaries, not CPU stack samples. Maximum child RSS
+is a wait4 maximum, not simultaneous process-tree memory; block counts are not
+bytes. Long-lived daemons outside the waited command are not attributed. Nested
+command totals overlap and must not be added together. Compare these summaries
+with existing Cargo unit/concurrency reports and Vitest file/case durations to
+choose a targeted profiler or integration setup/wait/teardown measurement.

@@ -119,7 +119,7 @@ export async function packagingIdentity({ repositoryRoot, cacheRoot, target, env
     overrides,
   };
   const native = digest(JSON.stringify({ version: 1, machine, inputs: await inputs(nativePaths) }));
-  const runtime = digest(JSON.stringify({ version: 1, native, profile: "release", features: "default", packages: ["relayer-app-server", "relayer-graph-server"], inputs: await inputs(rustPaths) }));
+  const runtime = digest(JSON.stringify({ version: 1, native, profile: "release", features: "default", packages: runtimeBinaryNames, inputs: await inputs(rustPaths) }));
   return { native, runtime };
 }
 
@@ -166,13 +166,21 @@ export async function cachedBuild({ cacheRoot, kind, identity, build, validate =
   }
 }
 
+export const runtimeBinaryNames = Object.freeze(["relayer-app-server", "relayer-graph-server"]);
+
+export async function validateRuntime(payload) {
+  if (JSON.stringify((await readdir(payload)).sort()) !== JSON.stringify(runtimeBinaryNames)) throw new Error("runtime binary inventory mismatch");
+  for (const name of runtimeBinaryNames) {
+    if (!(await lstat(join(payload, name))).isFile()) throw new Error("runtime binary is not a regular file");
+  }
+}
+
 export async function installRuntime(payload, outputDirectory) {
-  const expected = ["relayer-app-server", "relayer-graph-server"];
-  if (JSON.stringify((await readdir(payload)).sort()) !== JSON.stringify(expected)) throw new Error("runtime binary inventory mismatch");
+  await validateRuntime(payload);
   // Verify the complete payload before touching either installed binary.
   await inventory(payload);
   await mkdir(outputDirectory, { recursive: true });
-  for (const name of expected) {
+  for (const name of runtimeBinaryNames) {
     await cp(join(payload, name), join(outputDirectory, name));
     await chmod(join(outputDirectory, name), 0o755);
   }

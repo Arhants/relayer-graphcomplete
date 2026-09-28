@@ -43,6 +43,8 @@ app.commandLine.appendSwitch("disable-gpu");
 app.on("window-all-closed", () => {});
 
 function registerTestIpc() {
+  // This isolated fixture has no pending network publication attempts.
+  ipcMain.handle("relayer:share-pending", () => null);
   let composerDrafts = {};
   ipcMain.handle("relayer:composer-drafts-read", () => composerDrafts);
   ipcMain.handle("relayer:composer-drafts-write", (_event, value) => { composerDrafts = value; return value; });
@@ -63,6 +65,7 @@ function registerTestIpc() {
 
 function unregisterTestIpc() {
   for (const channel of [
+    "relayer:share-pending",
     "relayer:account-read",
     "relayer:provider-status",
     "relayer:tutorial-read",

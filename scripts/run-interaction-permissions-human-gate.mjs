@@ -24,6 +24,8 @@ let services;
 let closing = false;
 let window;
 function registerFixtureIpc() {
+  // This isolated fixture has no pending network publication attempts.
+  ipcMain.handle("relayer:share-pending", () => null);
   let composerDrafts = {};
   ipcMain.handle("relayer:composer-drafts-read", () => composerDrafts);
   ipcMain.handle("relayer:composer-drafts-write", (_event, value) => { composerDrafts = value; return value; });

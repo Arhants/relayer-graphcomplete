@@ -241,6 +241,14 @@ function assertSafeComponent(component, fragment, mounts) {
   }
 }
 
+function usesThemeScope(rules) {
+  return [...(rules ?? [])].some((rule) => (
+    (typeof rule.selectorText === "string"
+      && /\[\s*data-relayer-theme(?=[\s~|^$*=\]])/i.test(executableCssText(rule.selectorText)))
+    || usesThemeScope(rule.cssRules)
+  ));
+}
+
 function installStyles(shadow, document, authoredCss, runtimeCss) {
   const StyleSheet = document.defaultView?.CSSStyleSheet;
   if (typeof StyleSheet === "function"
@@ -251,7 +259,7 @@ function installStyles(shadow, document, authoredCss, runtimeCss) {
     const runtimeStyles = new StyleSheet();
     runtimeStyles.replaceSync(runtimeCss);
     shadow.adoptedStyleSheets = [authoredStyles, runtimeStyles];
-    return;
+    return usesThemeScope(authoredStyles.cssRules);
   }
   const authoredStyles = document.createElement("style");
   authoredStyles.dataset.nodeDetailAuthoredStyles = "";
@@ -260,6 +268,7 @@ function installStyles(shadow, document, authoredCss, runtimeCss) {
   runtimeStyles.dataset.nodeDetailRuntimeStyles = "";
   runtimeStyles.textContent = runtimeCss;
   shadow.append(authoredStyles, runtimeStyles);
+  return usesThemeScope(authoredStyles.sheet?.cssRules);
 }
 
 function applyLink(host, capability) {
@@ -481,6 +490,7 @@ export async function mountCompiledNodeDetail({
 }) {
   const assetReleases = [];
   const reviewControls = [];
+  let themeObserver;
   reviewSurfaces.delete(host);
   try {
     if (!host?.ownerDocument || typeof host.attachShadow !== "function") {
@@ -503,11 +513,26 @@ export async function mountCompiledNodeDetail({
     shadow.replaceChildren();
     const runtimeCss = `:host{display:block!important;position:relative!important;inline-size:100%!important;min-width:0!important;max-width:100%!important;contain:layout paint style!important;isolation:isolate!important;overflow:hidden!important;color:inherit;font:inherit;overflow-wrap:anywhere}
 *,*::before,*::after{box-sizing:border-box;min-inline-size:0}
+gc-detail-theme{display:contents}
 img{max-inline-size:100%}
 .relayer-asset-unavailable{background-image:none!important}`;
-    installStyles(shadow, host.ownerDocument, authoredCss, runtimeCss);
+    const themed = installStyles(shadow, host.ownerDocument, authoredCss, runtimeCss);
+    // Leave unthemed packages' DOM unchanged. Even display:contents would add
+    // an ancestor that legacy universal or structural selectors could match.
+    const page = themed ? host.ownerDocument.createElement("gc-detail-theme") : shadow;
+    if (themed) {
+      const documentRoot = host.ownerDocument.documentElement;
+      const syncTheme = () => {
+        page.setAttribute("data-relayer-theme", documentRoot.dataset.theme === "light" ? "light" : "dark");
+      };
+      // Patch appearance only: preserve the page, capabilities and input state.
+      syncTheme();
+      themeObserver = new host.ownerDocument.defaultView.MutationObserver(syncTheme);
+      themeObserver.observe(documentRoot, { attributes: true, attributeFilter: ["data-theme"] });
+      shadow.append(page);
+    }
     for (const template of preparedComponents) {
-      shadow.append(template.content.cloneNode(true));
+      page.append(template.content.cloneNode(true));
     }
 
     for (const [id, mount] of mounts) {
@@ -681,6 +706,7 @@ img{max-inline-size:100%}
         }
       },
       dispose() {
+        themeObserver?.disconnect();
         if (reviewSurfaces.get(host) === reviewControls) reviewSurfaces.delete(host);
         for (const release of assetReleases.splice(0)) {
           try { release(); } catch { /* The resolver owns release diagnostics. */ }
@@ -689,6 +715,7 @@ img{max-inline-size:100%}
       },
     });
   } catch (error) {
+    themeObserver?.disconnect();
     if (reviewSurfaces.get(host) === reviewControls) reviewSurfaces.delete(host);
     for (const release of assetReleases.splice(0)) {
       try { release(); } catch { /* Preserve the deterministic renderer fallback. */ }

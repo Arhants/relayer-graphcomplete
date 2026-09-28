@@ -12,8 +12,13 @@ export async function restoreWithRetry({ attempt, sleep = (ms) => new Promise((r
     if (result.key || number === 2 || !transientRestoreFailure(result.log ?? "")) return result.key ?? null;
     // Respect a longer service Retry-After by falling back, not retrying early.
     const retryAfter = /(?:retry.after|rate limit will reset in)[^\d]*(\d+)/i.exec(result.log ?? "");
-    if (retryAfter && Number(retryAfter[1]) > 30) return null;
-    await sleep(Math.max(5000 + Math.floor(random() * 5000), Number(retryAfter?.[1] ?? 0) * 1000));
+    if (retryAfter && Number(retryAfter[1]) > 60) {
+      emit({ attempt: number, fallback: "retry-after-exceeds-budget", retryAfterSeconds: Number(retryAfter[1]) });
+      return null;
+    }
+    const delayMs = Math.max(5000 + Math.floor(random() * 5000), Number(retryAfter?.[1] ?? 0) * 1000);
+    emit({ attempt: number, retryDelayMs: delayMs });
+    await sleep(delayMs);
   }
   return null;
 }

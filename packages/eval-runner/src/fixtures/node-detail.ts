@@ -37,6 +37,8 @@ export const nodeDetailHarnessConfiguration: HarnessConfiguration = {
 
 const SESSION_ID = "fixture.node-detail.session.v1";
 const FIXTURE_VISUAL = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120" role="img"><rect width="320" height="120" rx="18" fill="#172554"/><circle cx="62" cy="60" r="30" fill="#38bdf8"/><path d="M122 42h150v14H122zm0 28h104v10H122z" fill="#e0f2fe"/></svg>`;
+const FIXTURE_VISUAL_LIGHT = FIXTURE_VISUAL.replaceAll("#172554", "#e0f2fe")
+  .replaceAll("#38bdf8", "#0369a1").replace('fill="#e0f2fe"/></svg>', 'fill="#172554"/></svg>');
 
 export const NODE_DETAIL_EVAL_CASE_ID =
   "empty-project.visual-node-detail.single-turn";
@@ -159,6 +161,11 @@ class NodeDetailHarness implements Harness {
       });
 
       await milestone("asset-added");
+      const lightVisualAsset = await graph.visualAssets.add({
+        scope: visualAssetScope, name: "Accepted detail status illustration light", tagIds: [],
+        file: { name: "accepted-detail-status-light.svg", mediaType: "image/svg+xml",
+          async read() { return new TextEncoder().encode(FIXTURE_VISUAL_LIGHT); } },
+      });
       const expanded = new NodeObject(
         "panels-top-left",
         "Expanded implementation notes",
@@ -234,22 +241,40 @@ class NodeDetailHarness implements Harness {
         "primary",
         html`<section class="summary">
           <p class="eyebrow">Deterministic Eval fixture</p>
-          <h2>Accepted detail</h2>
+          <h2>Save the midday surplus</h2>
           <p>
-            This authored layout is compiled with the node and mounted by the
-            shared production runtime.
+            Battery storage moves available solar energy into the evening.
+            This illustrative day uses 3 kWh in the morning, 6 kWh at midday,
+            and 4 kWh from storage after sunset.
           </p>
         </section>`,
         css`
+          [data-relayer-theme="light"] {
+            display: block;
+            --detail-text: #182c34; --detail-muted: #50646d; --detail-surface: #fafbf9;
+            --detail-raised: #edf1ed; --detail-border: #a1b2b9; --detail-solar: #956009; --detail-store: #197864;
+            background-color: #fafbf9;
+          }
+          [data-relayer-theme="dark"] {
+            display: block;
+            --detail-text: #edf2f3; --detail-muted: #aebbc2; --detail-surface: #121619;
+            --detail-raised: #1b2227; --detail-border: #637580; --detail-solar: #f3c875; --detail-store: #84cfbd;
+            background-color: #121619;
+          }
+          section, aside, dl, figure, nav { color: var(--detail-text); }
+          button, input { color: var(--detail-text); background-color: var(--detail-raised); border: 1px solid var(--detail-border); border-radius: 0.5rem; padding: 0.5rem; }
+          button:hover:enabled { border-color: var(--detail-store); }
+          button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--detail-store); outline-offset: 2px; }
+          a { color: var(--detail-store); }
           .summary {
             display: grid;
             gap: 0.5rem;
             padding: 0.75rem;
-            border: 1px solid #94a3b8;
+            border: 1px solid var(--detail-border);
             border-radius: 0.75rem;
           }
           .eyebrow {
-            color: #475569;
+            color: var(--detail-muted);
             font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 0.08em;
@@ -275,9 +300,10 @@ class NodeDetailHarness implements Harness {
       );
       node.detailAuthoring.setComponent(
         "facts",
-        html`<dl>
-          <dt>Package</dt>
-          <dd>Accepted</dd>
+        html`<dl aria-label="Illustrative daily solar energy in kWh">
+          <dt>Morning</dt><dd><span class="chart-bar morning">3 kWh</span></dd>
+          <dt>Midday</dt><dd><span class="chart-bar midday">6 kWh</span></dd>
+          <dt>Evening</dt><dd><span class="chart-bar evening">4 kWh</span></dd>
         </dl>`,
         css`
           dl {
@@ -289,15 +315,21 @@ class NodeDetailHarness implements Harness {
           dd {
             margin: 0;
           }
+          .chart-bar { display: block; padding: 0.25rem; color: var(--detail-surface); background-color: var(--detail-solar); font-weight: 600; }
+          .morning { width: 50%; }
+          .midday { width: 100%; }
+          .evening { width: 67%; background-color: var(--detail-store); }
         `,
       );
       node.detailAuthoring.setComponent(
         "visual",
         html`<figure>
           <img
+            class="visual-dark"
             alt="Accepted detail status illustration"
             asset=${assetRef(visualAsset.id)}
           />
+          <img class="visual-light" alt="Accepted detail status illustration light" asset=${assetRef(lightVisualAsset.id)} />
           <figcaption>
             Pinned content resolved through the active Eval completion scope.
           </figcaption>
@@ -314,8 +346,11 @@ class NodeDetailHarness implements Harness {
             height: auto;
             border-radius: 0.75rem;
           }
+          .visual-light { display: none; }
+          [data-relayer-theme="light"] .visual-dark { display: none; }
+          [data-relayer-theme="light"] .visual-light { display: block; }
           figcaption {
-            color: #475569;
+            color: var(--detail-muted);
             font-size: 0.8rem;
           }
         `,
