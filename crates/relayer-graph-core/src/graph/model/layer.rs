@@ -10,6 +10,8 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphLayer {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_node_id: Option<NodeId>,
     pub id: LayerId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_key: Option<String>,
@@ -62,6 +64,8 @@ pub struct ResolvedLayer {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LayerDraft {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_node_id: Option<NodeId>,
     pub client_key: String,
     pub nodes: Vec<NodeId>,
     pub edges: Vec<EdgeId>,
@@ -101,6 +105,16 @@ impl LayerDraft {
     fn validate_shape(&self) -> Result<(), GraphError> {
         super::require_nonempty(&self.client_key, "clientKey")?;
         let mut issues = Vec::new();
+        if self
+            .default_node_id
+            .is_some_and(|id| !self.nodes.contains(&id))
+        {
+            issues.push(ValidationIssue::new(
+                "default_node_outside_layer",
+                "defaultNodeId",
+                "Choose the initial detail node from this layer's member nodes.",
+            ));
+        }
         if !(1..=8).contains(&self.nodes.len()) {
             issues.push(ValidationIssue::new(
                 "layer_node_count",

@@ -2662,6 +2662,7 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
         .unwrap();
     let layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: Some(answer.id),
             client_key: "root".into(),
             nodes: vec![answer.id],
             edges: vec![],
@@ -2672,6 +2673,7 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
         .unwrap();
     let nested_layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: Some(nested_node.id),
             client_key: "nested".into(),
             nodes: vec![nested_node.id],
             edges: vec![],
@@ -2682,6 +2684,7 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
         .unwrap();
     let reference_a = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "reference-a".into(),
             nodes: vec![reference_a_node.id],
             edges: vec![],
@@ -2692,6 +2695,7 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
         .unwrap();
     let reference_b = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "reference-b".into(),
             nodes: vec![reference_b_node.id],
             edges: vec![],
@@ -2953,6 +2957,15 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
     assert_eq!(first.text, "Review [project-path]");
     let accepted_view = first.accepted_view.as_ref().unwrap();
     assert_eq!(accepted_view.layers.len(), 4);
+    let root_layer = accepted_view
+        .layers
+        .iter()
+        .find(|resolved| resolved.layer.id == accepted_view.root_layer_id)
+        .unwrap();
+    assert_eq!(
+        root_layer.layer.default_node_id.as_ref(),
+        root_layer.layer.nodes.first()
+    );
     assert!(accepted_view.root_action.label.contains("[project-path]"));
     let exported_answer = accepted_view
         .layers

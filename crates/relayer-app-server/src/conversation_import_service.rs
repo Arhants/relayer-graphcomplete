@@ -535,6 +535,7 @@ fn import_turn(turn: ConversationExportTurn) -> ImportedTurn {
                 .into_iter()
                 .map(|resolved| ImportedResolvedLayer {
                     layer: ImportedLayer {
+                        default_node_id: resolved.layer.default_node_id,
                         id: resolved.layer.id,
                         client_key: resolved.layer.client_key,
                         nodes: resolved.layer.nodes,

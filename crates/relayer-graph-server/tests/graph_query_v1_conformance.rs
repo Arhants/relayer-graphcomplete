@@ -1508,6 +1508,7 @@ async fn acknowledged_completion_is_immediately_queryable_through_the_real_publi
         .unwrap();
     let layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: vec![node.id],
             edges: vec![],
