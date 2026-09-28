@@ -68,7 +68,8 @@ export function renderInteractionGraph(document, graph, selectedId, select) {
       return `${kinds.join(" and ")} ${source}`;
     });
     button.setAttribute("aria-label", `${label.textContent}. ${status.textContent}.${relationships.length ? ` ${relationships.join("; ")}.` : ""}`);
-    button.append(label, status); button.onclick = () => select(node);
+    button.disabled = node.completionStatus !== "accepted";
+    button.append(label, status); button.onclick = () => { if (!button.disabled) select(node); };
     root.append(button);
   }
   return root;

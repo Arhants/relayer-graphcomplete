@@ -428,6 +428,7 @@ pub(super) async fn project_interaction(
     interaction: Interaction,
     imported_thread: bool,
     projection_stale: bool,
+    graph_deadline: tokio::time::Instant,
 ) -> Result<InteractionResponse, ApiError> {
     let id = interaction.id.value();
     let thread_id = interaction.thread_id;
@@ -526,11 +527,12 @@ pub(super) async fn project_interaction(
         && let Some((runtime, graph_id)) = state.runtime.as_ref().zip(graph_node_id)
         && runtime.interaction_graph_enabled()
     {
-        let mut graph = super::interaction_graph::project(
+        let mut graph = super::interaction_graph::project_before(
             state,
             thread_id,
             graph_id,
             response.navigation_contexts(),
+            graph_deadline,
         )
         .await;
         if !context_projection_complete {
@@ -568,10 +570,20 @@ async fn project_interactions(
     imported_thread: bool,
     stale: &std::collections::HashSet<i64>,
 ) -> Result<Vec<InteractionResponse>, ApiError> {
+    let graph_deadline = super::interaction_graph::projection_deadline();
     let mut responses = Vec::with_capacity(interactions.len());
     for interaction in interactions {
         let is_stale = stale.contains(&interaction.id.value());
-        responses.push(project_interaction(state, interaction, imported_thread, is_stale).await?);
+        responses.push(
+            project_interaction(
+                state,
+                interaction,
+                imported_thread,
+                is_stale,
+                graph_deadline,
+            )
+            .await?,
+        );
     }
     Ok(responses)
 }

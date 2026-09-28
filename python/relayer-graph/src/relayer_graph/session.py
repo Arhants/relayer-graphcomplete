@@ -89,10 +89,9 @@ class GraphSession(RelayerGraphClient):
     async def replace_node_presentation(self, node: NodeReference, expected_revision: int,
                                         presentation: NodeObject) -> None:
         """Stage a compiled full replacement; never submit the semantic node envelope."""
-        authored_detail = await self.checkpoint_node_detail(presentation)
-        await self._request("POST", f"/api/graph/nodes/{_node_id(node)}/presentation", {
-            "expectedRevision": expected_revision, "authoredDetail": authored_detail,
-        })
+        payload = self._visual_payload("replace", presentation)
+        payload["replacement"] = {"nodeId": _node_id(node), "expectedRevision": expected_revision}
+        await self._visual_authoring("replace", presentation, payload)
 
     async def submit_node(self, node: NodeObject) -> GraphNode:
         key = node.detail_authoring

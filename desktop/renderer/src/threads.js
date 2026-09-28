@@ -817,6 +817,7 @@ export function selectTurnById(interactionId, { responseRoot = false, threadId =
     String(interaction.threadId) === String(viewState.currentThreadId)
     && String(interaction.id) === String(interactionId)
   ));
+  if (responseRoot && !target?.completionOutput?.rootLayer) return;
   if (!target || (!responseRoot && String(target.id) === String(viewState.currentInteractionId))) return;
   cancelAutomaticTurn();
   supersedePendingHistory({ presentationChanged: true });
@@ -835,6 +836,7 @@ export function selectTurnById(interactionId, { responseRoot = false, threadId =
 }
 
 async function selectInteractionGraphSource(threadId, interactionId) {
+  cancelAutomaticTurn();
   recordCurrentNavigation();
   const sourceLocationKey = navigationEntryKey(currentNavigationEntry());
   supersedePendingHistory({ presentationChanged: true });
@@ -850,6 +852,7 @@ async function selectInteractionGraphSource(threadId, interactionId) {
       ),
       layerCache: acceptedLayerCache,
     });
+    if (!resolved.interaction.completionOutput?.rootLayer) return false;
     if (!resolvedInvokeNavigationGate.isCurrent(requestToken)
       || !currentNavigationEntry()
       || navigationEntryKey(currentNavigationEntry()) !== sourceLocationKey) return false;

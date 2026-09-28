@@ -20,6 +20,25 @@ import { assetRef } from "../src/detail.js";
 describe("typed Node Detail authoring compiler", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("allows node-owned navigation only through replacement without seeding ordinary submission", async () => {
+    const node = new NodeObject("info", "Attached", "Fallback", "concept", "attached");
+    const graph = new RelayerGraphClient({ url: "http://graph.test", token: "test", nodeId: 1 });
+    const fetch = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    node.detailAuthoring.setComponent("main", html`<button gc=${detailCapability.reference("response", { kind: "navigate", relation: "reference", label: "Response", clientKey: "response", target: 9 })}>Response</button>`);
+    expect(() => node.detailAuthoring.checkpoint()).toThrow(DetailCompilationError);
+    await expect(graph.checkpointNodeDetail(node)).rejects.toBeInstanceOf(DetailCompilationError);
+    await expect(graph.submitNode(node)).rejects.toBeInstanceOf(DetailCompilationError);
+    expect(fetch).not.toHaveBeenCalled();
+    await graph.replaceNodePresentation(2, 3, node);
+    const [url, options] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://graph.test/api/graph/nodes/2/presentation");
+    expect(JSON.parse(options.body as string)).toMatchObject({ expectedRevision: 3, authoredDetail: { mounts: [{ capability: { action: { clientKey: "response", sourceNode: { clientKey: "attached" } } } }] } });
+    await expect(graph.checkpointNodeDetail(node)).rejects.toBeInstanceOf(DetailCompilationError);
+    await expect(graph.submitNode(node)).rejects.toBeInstanceOf(DetailCompilationError);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("compiles both product theme selectors but keeps general host access unavailable", () => {
     const node = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     node.setComponent("theme", html`<p>Same meaning</p>`, css`
@@ -1068,11 +1087,15 @@ async function checkpointWithHostAssets(node: NodeObject, assets: readonly unkno
   return new RelayerGraphClient({ url: "http://127.0.0.1:1", token: "host", nodeId: 1 }).checkpointNodeDetail(node);
 }
 
-it("compiles node-owned navigate bindings without source-layer provenance", () => {
+it("compiles attached replacement bindings without source-layer provenance", async () => {
   const node = new NodeObject("box", "Persistent", "Meaning", "concept", "persistent");
   const action = { kind: "navigate", relation: "reference", label: "Evidence", target: 77, clientKey: "evidence" } satisfies ActionObject;
   node.detailAuthoring.setComponent("main", html`<button gc=${detailCapability.reference("open", action)}>Evidence</button>`);
-  const compiled = node.detailAuthoring.checkpoint();
+  const transport = vi.fn(async () => Response.json({}));
+  vi.stubGlobal("fetch", transport);
+  const graph = new RelayerGraphClient({ url: "http://graph.test", token: "test", nodeId: 1 });
+  await graph.replaceNodePresentation(2, 0, node);
+  const compiled = JSON.parse((transport.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).authoredDetail;
   expect(compiled.mounts[0]).toMatchObject({ capability: { kind: "reference", action: { clientKey: "evidence", sourceNode: { clientKey: "persistent" } } } });
   expect(compiled.mounts[0]).not.toHaveProperty("capability.action.sourceLayer");
 });

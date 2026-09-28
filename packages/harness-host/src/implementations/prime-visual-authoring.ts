@@ -19,7 +19,8 @@ const template = z.object({ strings: z.array(z.string()).min(1).max(129), values
   .refine((value) => value.strings.length === value.values.length + 1, "Template must have one more string than bindings");
 const request = z.object({
   version: z.literal(1), objectId: identity, token: z.string(), nodeId: z.number().int().positive(),
-  operation: z.enum(["checkpoint", "submit"]),
+  operation: z.enum(["checkpoint", "submit", "replace"]),
+  replacement: z.object({ nodeId: z.number().int().positive(), expectedRevision: z.number().int().nonnegative() }).strict().optional(),
   node: z.object({ clientKey: identity, icon: z.string(), title: z.string(), detail: z.string(), kind: z.string() }).strict(),
   detail: z.object({ clear: z.boolean(), components: z.array(z.object({ id: identity, markup: template, styles: z.string() }).strict()).max(64) }).strict(),
 }).strict();
@@ -46,9 +47,10 @@ export class PrimeVisualAuthoring {
       return authoringFailure(error, false);
     }
     if (input.token !== capability.token || input.nodeId !== capability.nodeId) throw new Error("The graph session belongs to another run");
+    if ((input.operation === "replace") !== (input.replacement !== undefined)) return authoringFailure(new Error("Replacement target is required only for replacement operations"), false);
     const signature = JSON.stringify({ node: input.node, detail: input.detail });
     const existing = this.submissions.get(input.objectId);
-    if (existing !== undefined) {
+    if (existing !== undefined && input.operation !== "replace") {
       if (existing.signature !== signature) throw new Error("detail_finalized: create a fresh NodeObject to replace a draft");
       if (input.operation === "checkpoint") {
         const value = await existing.client.checkpointNodeDetail(existing.node);
@@ -78,6 +80,15 @@ export class PrimeVisualAuthoring {
       const strings = Object.assign([...component.markup.strings], { raw: [...component.markup.strings] });
       const styles = Object.assign([component.styles], { raw: [component.styles] });
       node.detailAuthoring.setComponent(component.id, html(strings, ...component.markup.values.map(makeBinding)), css(styles));
+    }
+    if (input.operation === "replace") {
+      try {
+        await new RelayerGraphClient(capability, { beforeRequest: active, signal }).replaceNodePresentation(input.replacement!.nodeId, input.replacement!.expectedRevision, node);
+        active();
+        return { ok: true, value: null, frozen: false };
+      } catch (error) {
+        return authoringFailure(error, false);
+      }
     }
     if (input.operation === "checkpoint") {
       try {

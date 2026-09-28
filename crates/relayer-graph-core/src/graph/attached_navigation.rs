@@ -25,7 +25,7 @@ pub(crate) async fn presentation(
         .await?;
     let revision = stored::revision(connection, node).await?;
     let actions = ActionTable::new(&mut *connection)
-        .for_source(scope, node, None, true)
+        .for_source(scope, node, None, false)
         .await?
         .into_iter()
         .map(|r| r.action)

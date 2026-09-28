@@ -6786,7 +6786,7 @@ mod attached_navigation_route_tests {
         action.source_node_id = node.id;
         action.target_layer_id = Some(response.id);
         action.relation = Some(NavigateRelation::Reference);
-        writer.add_action(&action).await.unwrap();
+        let pending_action = writer.add_action(&action).await.unwrap();
         let unrelated = database
             .create_interaction(ProjectId::new(1), ThreadId::new(3).unwrap(), "Unattached")
             .await
@@ -6871,7 +6871,16 @@ mod attached_navigation_route_tests {
         let read: Value =
             serde_json::from_slice(&to_bytes(read.into_body(), usize::MAX).await.unwrap()).unwrap();
         assert_eq!(read["revision"], 0);
-        assert_eq!(read["actions"], json!([]));
+        assert_eq!(read["actions"], json!([pending_action]));
+        assert!(
+            sw.get_layer(layer.id)
+                .await
+                .unwrap()
+                .actions
+                .iter()
+                .all(|action| action.id != pending_action.id),
+            "ordinary layer reads must not expose the caller's unpublished addition"
+        );
         let mut package = json!({"version":1,"components":[{"id":"main","order":0,"html":"<button data-gc-mount=\"open\">Context</button>","css":""}],"mounts":[{"id":"open","componentId":"main","host":"button","kind":"capability","capability":{"kind":"reference","action":{"clientKey":"reference","sourceNode":{"id":node.id}}}}],"assets":[]});
         package["integritySha256"] = format!(
             "{:x}",

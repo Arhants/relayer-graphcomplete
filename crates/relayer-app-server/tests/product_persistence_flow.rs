@@ -10406,3 +10406,82 @@ async fn interaction_graph_projects_layer_owners_and_invocation_with_scope_and_r
     graph_task.abort();
     harness_task.abort();
 }
+
+#[tokio::test]
+async fn interaction_graph_projection_shares_one_deadline_across_all_turns() {
+    let root = tempfile::tempdir().unwrap();
+    let database = root.path().join("product.sqlite3");
+    drop(open_app(&database, root.path()).await);
+    let pool = sqlite_pool(&database).await;
+    let thread = sqlx::query("INSERT INTO threads(title,created_at,updated_at,harness_configuration_name,permission_profile_id) VALUES ('Many turns','1','1','codex-basic','auto')")
+        .execute(&pool).await.unwrap().last_insert_rowid();
+    for sequence in 1..=20 {
+        sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,graph_node_id,completion_status,permission_profile_id) VALUES (?1,?2,'Turn','1',?2,'failed','auto')")
+            .bind(thread).bind(sequence).execute(&pool).await.unwrap();
+    }
+    pool.close().await;
+    let started = Arc::new(tokio::sync::Notify::new());
+    let reads = Arc::new(AtomicUsize::new(0));
+    let observed = reads.clone();
+    let notify = started.clone();
+    let graph = Router::new()
+        .route(
+            "/api/control/interaction-features",
+            axum::routing::get(|| async { axum::Json(json!({"interactionGraph":true})) }),
+        )
+        .route(
+            "/api/control/interactions/{id}",
+            axum::routing::get(move || {
+                let notify = notify.clone();
+                observed.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    notify.notify_one();
+                    std::future::pending::<StatusCode>().await
+                }
+            }),
+        );
+    let (graph_url, graph_task) = serve_test_app(graph).await;
+    let (harness_url, harness_task) = serve_test_app(Router::new()).await;
+    let catalog = root.path().join("catalog.json");
+    fs::write(&catalog, json!({"schemaVersion":1,"configurations":[{"configuration":{
+        "schemaVersion":1,"name":"codex-basic","implementation":"test","implementationVersion":1,"permissionBindings":{"auto":{}},"settings":{}
+    },"digest":"sha256:test"}]}).to_string()).unwrap();
+    let app =
+        open_app_with_runtime(&database, root.path(), &catalog, &graph_url, &harness_url).await;
+    for uri in [
+        format!("/api/threads/{thread}"),
+        format!("/api/state?threadId={thread}"),
+    ] {
+        reads.store(0, Ordering::SeqCst);
+        let pending = tokio::spawn(
+            app.clone()
+                .oneshot(api_request_with_token("GET", &uri, None, "review")),
+        );
+        started.notified().await;
+        tokio::time::pause();
+        tokio::time::advance(std::time::Duration::from_secs(5)).await;
+        tokio::time::resume();
+        let response = tokio::time::timeout(std::time::Duration::from_secs(2), pending)
+            .await
+            .expect("all turns must share one B3 deadline, not one timeout per turn")
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        let turns = body["interactions"].as_array().unwrap();
+        assert_eq!(turns.len(), 20);
+        for turn in turns {
+            assert_eq!(
+                turn["interactionGraph"],
+                json!({"enabled":true,"complete":false,"sources":[]})
+            );
+        }
+        assert_eq!(
+            reads.load(Ordering::SeqCst),
+            1,
+            "expired budget must start no later metadata requests"
+        );
+    }
+    graph_task.abort();
+    harness_task.abort();
+}

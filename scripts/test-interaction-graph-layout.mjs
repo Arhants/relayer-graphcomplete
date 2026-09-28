@@ -92,6 +92,19 @@ try {
   });
   await page.locator('#turnPickerButton').click();
   await check('wrapped-banner');
+  await page.evaluate(() => {
+    layoutFixture.turns[0].interactionGraph.sources.push({ interactionId: 99, threadId: 801, text: "Parent still working", completionStatus: "running", layers: [], invocationActionId: 99 });
+    layoutWorkspace.render();
+  });
+  const activeOrigin = page.locator('.interaction-graph-node[data-turn-id="99"]');
+  assert.equal(await activeOrigin.isDisabled(), true);
+  await activeOrigin.evaluate(element => element.click());
+  assert.equal(await page.evaluate(() => layoutFixture.selection.currentInteractionId), 5);
+  assert.equal(await page.locator('#turnPopover').isVisible(), true);
+  await activeOrigin.scrollIntoViewIfNeeded();
+  await check('active-origin-light');
+  await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
+  await check('active-origin-dark');
   await page.keyboard.press('Escape');
   await page.locator('#interactionContextPill').click();
   const contextBounds = () => page.locator('#interactionContextPopover').evaluate(element => ({ x: element.getBoundingClientRect().x, y: element.getBoundingClientRect().y, width: element.getBoundingClientRect().width, pickerPosition: getComputedStyle(document.querySelector('#turnPicker')).position }));
@@ -108,7 +121,7 @@ try {
   const legacy = await page.locator('#turnPopover').evaluate(element => ({ width: element.getBoundingClientRect().width, right: element.getBoundingClientRect().right, pickerRight: document.querySelector('#turnPicker').getBoundingClientRect().right, graph: element.classList.contains('interaction-graph-popover') }));
   assert.deepEqual(legacy, { width: 320, right: legacy.pickerRight, pickerRight: legacy.pickerRight, graph: false });
   await page.evaluate(() => layoutWorkspace.dispose());
-  console.log('PASS: graph bounds, resize/sidebar, scrolling/selection, dismissal, light theme, legacy placement');
+  console.log('PASS: graph bounds, resize/sidebar, scrolling/selection, dismissal, light theme, disabled active origin, legacy placement');
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));

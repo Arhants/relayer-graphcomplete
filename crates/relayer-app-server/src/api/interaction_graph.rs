@@ -5,7 +5,28 @@ use crate::product::ThreadId;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 
-pub(super) async fn project(
+// Bound only B3 enrichment; ordinary workspace projection keeps its existing semantics.
+pub(super) fn projection_deadline() -> tokio::time::Instant {
+    tokio::time::Instant::now() + std::time::Duration::from_secs(5)
+}
+
+pub(super) async fn project_before(
+    state: &ApiState,
+    thread_id: ThreadId,
+    viewer: i64,
+    contexts: Vec<(i64, i64)>,
+    deadline: tokio::time::Instant,
+) -> Value {
+    if tokio::time::Instant::now() < deadline
+        && let Ok(value) =
+            tokio::time::timeout_at(deadline, project(state, thread_id, viewer, contexts)).await
+    {
+        return value;
+    }
+    json!({"enabled":true,"complete":false,"sources":[]})
+}
+
+async fn project(
     state: &ApiState,
     thread_id: ThreadId,
     viewer: i64,

@@ -690,6 +690,15 @@ export function compileAuthenticatedNodeDetail(
   });
 }
 
+/** Dedicated replacement compilation; never retained in ordinary finalization state. @internal */
+export function compileAttachedNodeDetail(
+  program: AuthenticatedNodeDetailProgramSnapshot,
+  assets: readonly (ResolvedDetailAsset | null)[],
+): CompiledNodeDetail {
+  const resolved = new Map(program.logicalIds.map((id, index) => [id, assets[index] ?? undefined]));
+  return compileAuthoring(program, { missingAssetCode: "asset_unknown", resolve: (reference) => resolved.get(reference.logicalId) }, true);
+}
+
 /** @internal */
 export function freezeNodeDetailAuthoring(authoring: NodeDetailAuthoring, detail: CompiledNodeDetail): void {
   const state = authoringState(authoring);
@@ -754,6 +763,7 @@ function authoringStateError(code: string, message: string): Error & { code: str
 function compileAuthoring(
   program: AuthenticatedNodeDetailProgramSnapshot,
   assetResolver: DetailAssetResolver,
+  attachedReplacement = false,
 ): CompiledNodeDetail {
   const owner = program.owner;
   const mounts: CompiledDetailMount[] = [];
@@ -796,7 +806,7 @@ function compileAuthoring(
       return Object.freeze({
         id,
         order: component.order,
-        html: compileHtml(id, component.markup, mounts, assets, issues, assetResolver, owner, domIdentities),
+        html: compileHtml(id, component.markup, mounts, assets, issues, assetResolver, owner, domIdentities, attachedReplacement),
         css: compileCss(id, component.styles, issues),
       });
     }));
@@ -864,6 +874,7 @@ function compileHtml(
   assetResolver: DetailAssetResolver,
   owner: AuthenticatedNodeDetailOwnerSnapshot | undefined,
   domIdentities: ReadonlyMap<string, DomIdentityRecord>,
+  attachedReplacement: boolean,
 ): string {
   if (template.kind !== "html") return "";
   const source = bindingSource(componentId, template, issues);
@@ -899,7 +910,7 @@ function compileHtml(
         issues.push(sourceIssue("capability_invalid", componentId, element, "Invalid capability declaration: capability_invalid"));
         return;
       }
-      const validationCodes = safeCapabilityValidationCodes(materializedCapability, owner?.clientKey);
+      const validationCodes = safeCapabilityValidationCodes(materializedCapability, owner?.clientKey, attachedReplacement);
       const validCapability = validationCodes.length === 0;
       if (!validCapability) {
         for (const code of validationCodes) {
@@ -1424,7 +1435,7 @@ function normalizeCapabilityHost(
   if (element.tagName === "textarea") element.childNodes.splice(0, element.childNodes.length);
 }
 
-function capabilityValidationCodes(capability: MaterializedDetailCapability, ownerClientKey: string | undefined): readonly string[] {
+function capabilityValidationCodes(capability: MaterializedDetailCapability, ownerClientKey: string | undefined, attachedReplacement: boolean): readonly string[] {
   if (!isStableIdentity(capability.key)) return ["capability_invalid"];
   if (capability.kind !== "link") {
     const actionValue: unknown = capability.action;
@@ -1435,7 +1446,7 @@ function capabilityValidationCodes(capability: MaterializedDetailCapability, own
     const action = actionValue as Record<string, unknown>;
     if (!isStableIdentity(action.clientKey)) return ["capability_invalid"];
     if (action.sourceLayer === undefined) {
-      if (action.kind !== "navigate") return ["capability_invalid"];
+      if (!attachedReplacement || action.kind !== "navigate") return ["capability_invalid"];
     } else {
       if (!isMaterializedSourceLayer(action.sourceLayer) || !isStableIdentity(action.sourceLayer.clientKey)) return ["capability_invalid"];
       if (!action.sourceLayer.containsOwner) return ["capability_source_layer_mismatch"];
@@ -1514,9 +1525,10 @@ function capabilityValidationCodes(capability: MaterializedDetailCapability, own
 function safeCapabilityValidationCodes(
   capability: MaterializedDetailCapability,
   ownerClientKey: string | undefined,
+  attachedReplacement: boolean,
 ): readonly string[] {
   try {
-    return capabilityValidationCodes(capability, ownerClientKey);
+    return capabilityValidationCodes(capability, ownerClientKey, attachedReplacement);
   } catch {
     return ["capability_invalid"];
   }

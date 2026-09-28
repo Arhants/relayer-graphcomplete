@@ -77,22 +77,30 @@ async def run():
         print(json.dumps(payload))
         return {"ok": True, "value": {"compiled": True}}
     async def request(method, path, body=None):
-        assert method == "POST" and path == "/api/graph/nodes/2/presentation"
-        assert body == {"expectedRevision": 7, "authoredDetail": {"compiled": True}}
+        raise AssertionError("Replacement transport belongs to the host")
     graph._request = request
     sys.modules["rlm"] = types.SimpleNamespace(host_request=host_request)
     await graph.replace_node_presentation(2, 7, replacement)
 asyncio.run(run())
 `], { encoding: "utf8", env: { ...process.env, PYTHONPATH: resolve("python/relayer-graph/src") } }));
-    const { fetch } = graphTransport();
+    const { fetch, bodies } = graphTransport();
     const result = await new PrimeVisualAuthoring().execute(payload, capability, () => {}, signal());
-    expect(result).toMatchObject({ ok: true, frozen: false, value: { mounts: [
+    expect(result).toMatchObject({ ok: true, frozen: false, value: null });
+    expect(payload).toMatchObject({ operation: "replace", replacement: { nodeId: 2, expectedRevision: 7 } });
+    expect(fetch.mock.calls[0]![0]).toBe("http://graph.test/api/graph/nodes/2/presentation");
+    expect(bodies[0]).toMatchObject({ expectedRevision: 7, authoredDetail: { mounts: [
       { capability: { kind: "invoke", action: { clientKey: "old", sourceNode: { clientKey: "persistent" }, sourceLayer: { clientKey: "old-source" } } } },
       { capability: { kind: "reference", action: { clientKey: "response", sourceNode: { clientKey: "persistent" } } } },
     ] } });
-    const mounts = (result.value as { mounts: { capability: { action: object } }[] }).mounts;
+    const mounts = (bodies[0]!.authoredDetail as { mounts: { capability: { action: object } }[] }).mounts;
     expect(mounts[1]!.capability.action).not.toHaveProperty("sourceLayer");
-    expect(fetch).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    for (const operation of ["checkpoint", "submit"]) {
+      const ordinary = { ...payload, operation };
+      delete ordinary.replacement;
+      expect(await new PrimeVisualAuthoring().execute(ordinary, capability, () => {}, signal())).toMatchObject({ ok: false });
+    }
+    expect(fetch).toHaveBeenCalledTimes(1);
     const malformed = structuredClone(payload);
     delete malformed.detail.components[0].markup.values[0].action.sourceLayer;
     expect(await new PrimeVisualAuthoring().execute(malformed, capability, () => {}, signal())).toMatchObject({ ok: false });

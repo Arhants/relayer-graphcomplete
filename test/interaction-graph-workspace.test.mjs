@@ -10,7 +10,7 @@ it("discloses B3 only behind the gate and selects the current response with keyb
  window.document.body.innerHTML='<section id="threadView"></section>';
  const node={id:1,kind:"concept",icon:"box",title:"Response",detail:"Body"};
  const layer={layer:{id:91,nodes:[1],defaultNodeId:1},nodes:[node],edges:[],actions:[]};
- const turn={id:5,graphNodeId:50,threadId:801,text:"Question",completionStatus:"accepted",contexts:[],completionOutput:{rootLayer:layer},interactionGraph:{enabled:true,complete:true,sources:[]}};
+ const turn={id:5,graphNodeId:50,threadId:801,text:"Question",completionStatus:"accepted",contexts:[],completionOutput:{rootLayer:layer},interactionGraph:{enabled:true,complete:true,sources:[{interactionId:4,threadId:801,text:"Active origin",completionStatus:"running",layers:[],invocationActionId:9}]}};
  const state={status:"accepted",currentInteractionId:5,interactions:[turn],visibleLayer:layer,nodes:[node],actions:[],projects:[],permissionProfiles:[],modelSettings:{defaults:{harnessId:"fixture"},harnesses:[{id:"fixture",available:true}],providers:[],families:[]},modelCatalog:[],actionInvocations:[],pendingActionInvocations:[]};
  const selection={currentThreadId:801,currentInteractionId:5,selectedNodeId:null,layerPath:[]};
  const select=vi.fn();
@@ -22,6 +22,8 @@ it("discloses B3 only behind the gate and selects the current response with keyb
   expect(trigger.getAttribute("aria-label")).toContain("interaction graph");
   expect(window.document.querySelector("#previousTurn").classList.contains("hidden")).toBe(true);
   trigger.click();expect(popover.classList.contains("hidden")).toBe(false);
+  const active = window.document.querySelector('.interaction-graph-node[data-turn-id="4"]');
+  expect(active.disabled).toBe(true);active.click();expect(select).not.toHaveBeenCalled();
   window.document.dispatchEvent(new window.KeyboardEvent("keydown",{key:"Escape",bubbles:true}));
   expect(popover.classList.contains("hidden")).toBe(true);expect(window.document.activeElement).toBe(trigger);
   trigger.click();window.document.querySelector('.interaction-graph-node[data-turn-id="5"]').click();

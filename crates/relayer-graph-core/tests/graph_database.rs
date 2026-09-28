@@ -7635,10 +7635,19 @@ async fn attached_navigation_concurrent_replacements_preserve_controls_and_reope
             .await
             .is_err()
     );
-    let mut package = presentation_with_actions(
-        &persistent,
-        &[original.clone(), edits[0].2.clone(), edits[1].2.clone()],
+    let reread_actions: Vec<GraphAction> =
+        serde_json::from_value(current["actions"].clone()).unwrap();
+    assert_eq!(
+        reread_actions
+            .iter()
+            .map(|action| action.id)
+            .collect::<std::collections::HashSet<_>>(),
+        [original.id, edits[0].2.id, edits[1].2.id]
+            .into_iter()
+            .collect(),
+        "reread includes accepted and caller drafts, but not a concurrent caller's draft"
     );
+    let mut package = presentation_with_actions(&persistent, &reread_actions);
     let asset = PreparedDetailAsset {
         asset_id: "diagram".into(),
         digest_sha256: "a9ce00f55032b62526a3abfc5aa6019874beff5d18c90607d663840d14ed11f9".into(),

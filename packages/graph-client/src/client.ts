@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isProxy } from "node:util/types";
-import { DetailCompilationError, NodeDetailAuthoring, bindNodeDetailOwner, beginNodeDetailAuthoringFinalization, cancelNodeDetailAuthoringFinalization, compileAuthenticatedNodeDetail, finalizedNodeDetailAuthoring, freezeNodeDetailAuthoring, isNodeDetailAuthoringCleared, isNodeDetailAuthoringOwner, snapshotAuthoredNodeDetailProgram, snapshotRetainedCompiledNodeDetail, type AuthenticatedNodeDetailOwnerSnapshot, type AuthenticatedNodeDetailProgramSnapshot, type CompiledNodeDetail } from "./detail.js";
+import { DetailCompilationError, NodeDetailAuthoring, bindNodeDetailOwner, beginNodeDetailAuthoringFinalization, cancelNodeDetailAuthoringFinalization, compileAuthenticatedNodeDetail, compileAttachedNodeDetail, finalizedNodeDetailAuthoring, freezeNodeDetailAuthoring, isNodeDetailAuthoringCleared, isNodeDetailAuthoringOwner, snapshotAuthoredNodeDetailProgram, snapshotRetainedCompiledNodeDetail, type AuthenticatedNodeDetailOwnerSnapshot, type AuthenticatedNodeDetailProgramSnapshot, type CompiledNodeDetail } from "./detail.js";
 import { isRelayerIconName } from "./icons.js";
 import { applyAcceptedNodeResponse } from "./node-response.js";
 import { EdgeObject, LayerObject, NodeObject, actionId, edgeId, layerId, nodeId, type ActionObject, type ActionReference, type EdgeReference, type LayerReference, type NodeReference } from "./objects.js";
@@ -44,7 +44,10 @@ export class RelayerGraphClient {
 
   /** Stage a complete presentation only; the builder's title/detail never edit the persistent node. */
   async replaceNodePresentation(reference: NodeReference, expectedRevision: number, presentation: NodeObject): Promise<void> {
-    const authoredDetail = await this.checkpointNodeDetail(presentation);
+    this.bindSubmissionNode(presentation);
+    const envelope = materializeNodeSubmissionEnvelope(presentation);
+    const program = snapshotAuthoredNodeDetailProgram(envelope.detailAuthoring, envelope.owner);
+    const authoredDetail = compileAttachedNodeDetail(program, await this.resolveDetailAssets(program));
     await this.request(`/api/graph/nodes/${nodeId(reference)}/presentation`, {
       method: "POST", body: JSON.stringify({ expectedRevision, authoredDetail }),
     });

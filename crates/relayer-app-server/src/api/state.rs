@@ -160,6 +160,7 @@ pub(super) async fn product_state(
         .map(|view| view.thread.id.value())
         .collect::<std::collections::HashSet<_>>();
     let product_interactions = std::mem::take(&mut product_state.interactions);
+    let graph_deadline = super::interaction_graph::projection_deadline();
     let mut interactions = Vec::with_capacity(product_interactions.len());
     for interaction in product_interactions {
         let imported_thread = imported_thread_ids.contains(&interaction.thread_id.value());
@@ -170,6 +171,7 @@ pub(super) async fn product_state(
                 interaction,
                 imported_thread,
                 projection_stale,
+                graph_deadline,
             )
             .await?,
         );

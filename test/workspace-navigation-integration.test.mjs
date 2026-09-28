@@ -1642,11 +1642,36 @@ it("interaction graph cross-chat selection commits only a loaded response and pr
     expect(controller.appState.visibleLayer.layer.id).toBe(101);
     expect(location.href).toBe(url);
     fail = false;
+    target.completionStatus = "running";
+    const acceptedOutput = target.completionOutput;
+    target.completionOutput = null;
+    await expect(controller.selectTurnById(2, { responseRoot: true, threadId: 20 })).resolves.toBe(false);
+    expect(controller.viewState.currentThreadId).toBe(10);
+    expect(controller.appState.visibleLayer.layer.id).toBe(101);
+    expect(location.href).toBe(url);
+    target.completionStatus = "accepted";
+    target.completionOutput = acceptedOutput;
     await controller.selectTurnById(2, { responseRoot: true, threadId: 20 });
     expect(controller.viewState.currentThreadId).toBe(20);
     expect(controller.appState.visibleLayer.layer.id).toBe(201);
     await controller.navigateHistory(-1);
     expect(controller.viewState.currentThreadId).toBe(10);
     expect(controller.appState.visibleLayer.layer.id).toBe(101);
+  } finally { controller.cancelNavigationHistory(); }
+});
+
+it("keeps the workspace when a graph origin has current state but no response", async () => {
+  const current = rootLayer(101, 11);
+  const source = { ...interaction(1, 10, current), graphNodeId: 901, completionStatus: "running", completionOutput: null };
+  const state = productState([{ id: 10 }], [source]);
+  requestImplementation = vi.fn(async () => state);
+  const controller = await loadModules();
+  try {
+    await controller.loadThread(10);
+    controller.appState.visibleLayer = current;
+    controller.appState.currentProjections.set("901", { completionId: 901, headRevision: 1, lifecycle: "active", currentLayerId: 101 });
+    controller.selectTurnById(1, { responseRoot: true });
+    expect(controller.appState.visibleLayer).toEqual(current);
+    expect(controller.getNavigationHistory().canGoBack).toBe(false);
   } finally { controller.cancelNavigationHistory(); }
 });
