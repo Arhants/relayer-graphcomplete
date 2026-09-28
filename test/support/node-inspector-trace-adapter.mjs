@@ -122,11 +122,14 @@ export class NodeInspectorWorld {
     };
     this.#loadState();
     const world = this;
+    // The nodes the workspace reported as selected during the last step.
+    this.reported = [];
     this.workspace = createProductWorkspace({
       root: this.window.document,
       getState: () => this.state,
       getThread: () => this.thread,
       selection: this.selection,
+      onSelectionChange: (id) => { if (id != null) world.reported.push(specNode(id)); },
       showThread: () => {},
       showEmpty: () => {},
       resolveNodeDetailAsset: (_asset, { node }) => {
@@ -204,6 +207,7 @@ export class NodeInspectorWorld {
 
   async apply([name, ...args], before, after) {
     const $ = (selector) => this.window.document.querySelector(selector);
+    this.reported = [];
     switch (name) {
       case "Click": {
         const element = $(`[data-node="${NODE_ID[args[0]]}"]`);
@@ -320,6 +324,7 @@ export class NodeInspectorWorld {
       },
       dock: dockOpen ? { node: dockNode ?? "none", resolving: textarea.disabled } : { node: "none", resolving: false },
       srev: this.srev,
+      reported: [...this.reported],
     };
   }
 
@@ -343,7 +348,8 @@ const hasDraftHere = (model, node) => values(model.drafts)
 // the selected node's draft (renderNodeContextDock, WS:2587-2626). It is
 // re-rendered at the end of selectNode, not when the switch commits, so it
 // is compared only once the renderer is quiet.
-export function comparable(real, state) {
+export function comparable(observed, state) {
+  const { reported: _reported, ...real } = observed;
   const model = projectModelState(state);
   if (quiet(state)) return [real, model];
   const { dock: _realDock, ...realRest } = real;
@@ -372,6 +378,9 @@ export const PROMISES = {
     real.open === (real.sel !== "none")
     && (!real.open || (real.title.node === real.sel && real.detail.node === real.sel && real.detail.live))
   ),
+  // Only the newest request reports a selection: every node the workspace
+  // reported during the step is the one the user wants.
+  OnlyLatestRequestSelects: (real, model) => real.reported.every((node) => node === model.want),
   // The header shows the latest state the workspace rendered.
   InspectorIsCurrent: (real, model) => !quiet(model) || !real.open || real.title.rev === real.srev,
   LastRequestWins: (real, model) => !quiet(model) || real.sel === model.want,

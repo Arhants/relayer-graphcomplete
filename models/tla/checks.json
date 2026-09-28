@@ -73,7 +73,8 @@
       "MaxEditors": "3",
       "Slots": "{1, 2, 3}",
       "QueueWhileResolving": "TRUE",
-      "RefreshAfterResolve": "TRUE"
+      "RefreshAfterResolve": "TRUE",
+      "LatestRequestSupersedes": "TRUE"
     },
     "inspector-replay": {
       "Nodes": "{\"n1\", \"n2\"}",
@@ -81,7 +82,8 @@
       "MaxEditors": "6",
       "Slots": "{1, 2, 3, 4}",
       "QueueWhileResolving": "TRUE",
-      "RefreshAfterResolve": "TRUE"
+      "RefreshAfterResolve": "TRUE",
+      "LatestRequestSupersedes": "TRUE"
     },
     "input": {
       "MaxVal": "2",
@@ -432,10 +434,27 @@
         "LastRequestWins",
         "InspectorShowsSelection",
         "InspectorIsCurrent",
-        "DraftedSelectionHasEditor"
+        "DraftedSelectionHasEditor",
+        "OnlyLatestRequestSelects"
       ],
       "expect": "pass",
       "finding": "Input made while an annotation draft resolves waits and the latest proceeds (fixed; #514), the selection is re-rendered from the latest state once the draft resolves (fixed; #515), and a drafted node reopens its editor (PRD L2203)."
+    },
+    {
+      "id": "inspector-without-supersede",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "constants": {
+        "LatestRequestSupersedes": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "OnlyLatestRequestSelects"
+      ],
+      "expect": {
+        "violated": "OnlyLatestRequestSelects"
+      },
+      "finding": "Without superseding it, a switch waiting on a draft save commits its node, reporting it and recording it in history, before a click queued meanwhile replaces it (review of #514)."
     },
     {
       "id": "input-send-carries-answer",

@@ -1,7 +1,7 @@
 {
-  "scenario": "inspector-annotate-and-switch",
+  "scenario": "inspector-click-voids-waiting-close",
   "module": "NodeInspector",
-  "summary": "A node is annotated, the user switches to another node and back, and the draft's editor returns.",
+  "summary": "A Close waits on a draft flush, a new view drops that draft's editor, and the user clicks a node; when the flush returns, the older Close does not close the inspector.",
   "promises": [
     "InspectorShowsSelection",
     "LastRequestWins",
@@ -467,7 +467,7 @@
     },
     {
       "action": [
-        "EditDraft"
+        "Close"
       ],
       "state": {
         "attach": true,
@@ -486,7 +486,7 @@
         "editor": {
           "eid": 1,
           "node": "n1",
-          "resolving": false,
+          "resolving": true,
           "vid": 1
         },
         "eids": 1,
@@ -504,16 +504,16 @@
         },
         "open": true,
         "prep": {
-          "cur": false,
-          "eid": 0,
+          "cur": true,
+          "eid": 1,
           "fresh": false,
           "key": {
-            "1": "none",
-            "2": 0
+            "1": "n1",
+            "2": 1
           },
           "node": "none",
           "rev": 0,
-          "st": "free"
+          "st": "close"
         },
         "queued": {
           "kind": "none",
@@ -583,13 +583,12 @@
           }
         },
         "vid": 1,
-        "want": "n1"
+        "want": "none"
       }
     },
     {
       "action": [
-        "Click",
-        "n2"
+        "Close"
       ],
       "state": {
         "attach": true,
@@ -627,33 +626,33 @@
         "open": true,
         "prep": {
           "cur": false,
-          "eid": 0,
+          "eid": 1,
           "fresh": false,
           "key": {
-            "1": "none",
-            "2": 0
+            "1": "n1",
+            "2": 1
           },
           "node": "none",
           "rev": 0,
-          "st": "free"
+          "st": "close"
         },
         "queued": {
-          "kind": "none",
+          "kind": "close",
           "node": "none"
         },
         "sel": "n1",
         "slots": {
           "1": {
-            "cur": true,
-            "eid": 1,
+            "cur": false,
+            "eid": 0,
             "fresh": false,
             "key": {
-              "1": "n1",
-              "2": 1
+              "1": "none",
+              "2": 0
             },
-            "node": "n2",
-            "rev": 1,
-            "st": "saving"
+            "node": "none",
+            "rev": 0,
+            "st": "free"
           },
           "2": {
             "cur": false,
@@ -705,14 +704,259 @@
           }
         },
         "vid": 1,
-        "want": "n2"
+        "want": "none"
       }
     },
     {
       "action": [
-        "SaveReturns",
-        1,
-        "ok"
+        "StatePush",
+        "enter",
+        "n1",
+        "n2"
+      ],
+      "state": {
+        "attach": true,
+        "detail": {
+          "live": true,
+          "node": "n1",
+          "owned": false,
+          "slot": 1
+        },
+        "drafts": {
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
+        },
+        "editor": {
+          "eid": 0,
+          "node": "none",
+          "resolving": false,
+          "vid": 0
+        },
+        "eids": 1,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "none",
+        "op": {
+          "eid": 0,
+          "key": {
+            "1": "none",
+            "2": 0
+          }
+        },
+        "open": true,
+        "prep": {
+          "cur": false,
+          "eid": 1,
+          "fresh": false,
+          "key": {
+            "1": "n1",
+            "2": 1
+          },
+          "node": "none",
+          "rev": 0,
+          "st": "close"
+        },
+        "queued": {
+          "kind": "close",
+          "node": "none"
+        },
+        "sel": "n1",
+        "slots": {
+          "1": {
+            "cur": true,
+            "eid": 0,
+            "fresh": true,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
+            "node": "n1",
+            "rev": 2,
+            "st": "mounting"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 2,
+        "stray": false,
+        "title": {
+          "node": "n1",
+          "rev": 2
+        },
+        "unsaved": {
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
+        },
+        "vid": 2,
+        "want": "n1"
+      }
+    },
+    {
+      "action": [
+        "MountReturns",
+        1
+      ],
+      "state": {
+        "attach": true,
+        "detail": {
+          "live": true,
+          "node": "n1",
+          "owned": true,
+          "slot": 1
+        },
+        "drafts": {
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
+        },
+        "editor": {
+          "eid": 0,
+          "node": "none",
+          "resolving": false,
+          "vid": 0
+        },
+        "eids": 1,
+        "graph": {
+          "1": "n1",
+          "2": "n2"
+        },
+        "mounted": "n1",
+        "op": {
+          "eid": 0,
+          "key": {
+            "1": "none",
+            "2": 0
+          }
+        },
+        "open": true,
+        "prep": {
+          "cur": false,
+          "eid": 1,
+          "fresh": false,
+          "key": {
+            "1": "n1",
+            "2": 1
+          },
+          "node": "none",
+          "rev": 0,
+          "st": "close"
+        },
+        "queued": {
+          "kind": "close",
+          "node": "none"
+        },
+        "sel": "n1",
+        "slots": {
+          "1": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "2": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "3": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          },
+          "4": {
+            "cur": false,
+            "eid": 0,
+            "fresh": false,
+            "key": {
+              "1": "none",
+              "2": 0
+            },
+            "node": "none",
+            "rev": 0,
+            "st": "free"
+          }
+        },
+        "srev": 2,
+        "stray": false,
+        "title": {
+          "node": "n1",
+          "rev": 2
+        },
+        "unsaved": {
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
+        },
+        "vid": 2,
+        "want": "n1"
+      }
+    },
+    {
+      "action": [
+        "Click",
+        "n2"
       ],
       "state": {
         "attach": true,
@@ -750,15 +994,15 @@
         "open": true,
         "prep": {
           "cur": false,
-          "eid": 0,
+          "eid": 1,
           "fresh": false,
           "key": {
-            "1": "none",
-            "2": 0
+            "1": "n1",
+            "2": 1
           },
           "node": "none",
           "rev": 0,
-          "st": "free"
+          "st": "close"
         },
         "queued": {
           "kind": "none",
@@ -775,7 +1019,7 @@
               "2": 0
             },
             "node": "n2",
-            "rev": 1,
+            "rev": 2,
             "st": "mounting"
           },
           "2": {
@@ -815,14 +1059,19 @@
             "st": "free"
           }
         },
-        "srev": 1,
+        "srev": 2,
         "stray": false,
         "title": {
           "node": "n2",
-          "rev": 1
+          "rev": 2
         },
-        "unsaved": {},
-        "vid": 1,
+        "unsaved": {
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
+        },
+        "vid": 2,
         "want": "n2"
       }
     },
@@ -867,15 +1116,15 @@
         "open": true,
         "prep": {
           "cur": false,
-          "eid": 0,
+          "eid": 1,
           "fresh": false,
           "key": {
-            "1": "none",
-            "2": 0
+            "1": "n1",
+            "2": 1
           },
           "node": "none",
           "rev": 0,
-          "st": "free"
+          "st": "close"
         },
         "queued": {
           "kind": "none",
@@ -932,28 +1181,33 @@
             "st": "free"
           }
         },
-        "srev": 1,
+        "srev": 2,
         "stray": false,
         "title": {
           "node": "n2",
-          "rev": 1
+          "rev": 2
         },
-        "unsaved": {},
-        "vid": 1,
+        "unsaved": {
+          "1": {
+            "1": "n1",
+            "2": 1
+          }
+        },
+        "vid": 2,
         "want": "n2"
       }
     },
     {
       "action": [
-        "Click",
-        "n1"
+        "PrepareReturns",
+        "ok"
       ],
       "state": {
         "attach": true,
         "detail": {
           "live": true,
-          "node": "n1",
-          "owned": false,
+          "node": "n2",
+          "owned": true,
           "slot": 1
         },
         "drafts": {
@@ -963,12 +1217,12 @@
           }
         },
         "editor": {
-          "eid": 2,
-          "node": "n1",
+          "eid": 0,
+          "node": "none",
           "resolving": false,
-          "vid": 1
+          "vid": 0
         },
-        "eids": 2,
+        "eids": 1,
         "graph": {
           "1": "n1",
           "2": "n2"
@@ -998,18 +1252,18 @@
           "kind": "none",
           "node": "none"
         },
-        "sel": "n1",
+        "sel": "n2",
         "slots": {
           "1": {
             "cur": true,
             "eid": 0,
-            "fresh": true,
+            "fresh": false,
             "key": {
               "1": "none",
               "2": 0
             },
-            "node": "n1",
-            "rev": 1,
+            "node": "n2",
+            "rev": 2,
             "st": "mounting"
           },
           "2": {
@@ -1049,248 +1303,15 @@
             "st": "free"
           }
         },
-        "srev": 1,
+        "srev": 2,
         "stray": false,
         "title": {
-          "node": "n1",
-          "rev": 1
+          "node": "n2",
+          "rev": 2
         },
         "unsaved": {},
-        "vid": 1,
-        "want": "n1"
-      }
-    },
-    {
-      "action": [
-        "MountReturns",
-        1
-      ],
-      "state": {
-        "attach": true,
-        "detail": {
-          "live": true,
-          "node": "n1",
-          "owned": true,
-          "slot": 1
-        },
-        "drafts": {
-          "1": {
-            "1": "n1",
-            "2": 1
-          }
-        },
-        "editor": {
-          "eid": 2,
-          "node": "n1",
-          "resolving": false,
-          "vid": 1
-        },
-        "eids": 2,
-        "graph": {
-          "1": "n1",
-          "2": "n2"
-        },
-        "mounted": "n1",
-        "op": {
-          "eid": 0,
-          "key": {
-            "1": "none",
-            "2": 0
-          }
-        },
-        "open": true,
-        "prep": {
-          "cur": false,
-          "eid": 0,
-          "fresh": false,
-          "key": {
-            "1": "none",
-            "2": 0
-          },
-          "node": "none",
-          "rev": 0,
-          "st": "free"
-        },
-        "queued": {
-          "kind": "none",
-          "node": "none"
-        },
-        "sel": "n1",
-        "slots": {
-          "1": {
-            "cur": false,
-            "eid": 0,
-            "fresh": false,
-            "key": {
-              "1": "none",
-              "2": 0
-            },
-            "node": "none",
-            "rev": 0,
-            "st": "free"
-          },
-          "2": {
-            "cur": false,
-            "eid": 0,
-            "fresh": false,
-            "key": {
-              "1": "none",
-              "2": 0
-            },
-            "node": "none",
-            "rev": 0,
-            "st": "free"
-          },
-          "3": {
-            "cur": false,
-            "eid": 0,
-            "fresh": false,
-            "key": {
-              "1": "none",
-              "2": 0
-            },
-            "node": "none",
-            "rev": 0,
-            "st": "free"
-          },
-          "4": {
-            "cur": false,
-            "eid": 0,
-            "fresh": false,
-            "key": {
-              "1": "none",
-              "2": 0
-            },
-            "node": "none",
-            "rev": 0,
-            "st": "free"
-          }
-        },
-        "srev": 1,
-        "stray": false,
-        "title": {
-          "node": "n1",
-          "rev": 1
-        },
-        "unsaved": {},
-        "vid": 1,
-        "want": "n1"
-      }
-    },
-    {
-      "action": [
-        "Close"
-      ],
-      "state": {
-        "attach": true,
-        "detail": {
-          "live": true,
-          "node": "n1",
-          "owned": true,
-          "slot": 1
-        },
-        "drafts": {
-          "1": {
-            "1": "n1",
-            "2": 1
-          }
-        },
-        "editor": {
-          "eid": 0,
-          "node": "none",
-          "resolving": false,
-          "vid": 0
-        },
-        "eids": 2,
-        "graph": {
-          "1": "n1",
-          "2": "n2"
-        },
-        "mounted": "n1",
-        "op": {
-          "eid": 0,
-          "key": {
-            "1": "none",
-            "2": 0
-          }
-        },
-        "open": false,
-        "prep": {
-          "cur": false,
-          "eid": 0,
-          "fresh": false,
-          "key": {
-            "1": "none",
-            "2": 0
-          },
-          "node": "none",
-          "rev": 0,
-          "st": "free"
-        },
-        "queued": {
-          "kind": "none",
-          "node": "none"
-        },
-        "sel": "none",
-        "slots": {
-          "1": {
-            "cur": false,
-            "eid": 0,
-            "fresh": false,
-            "key": {
-              "1": "none",
-              "2": 0
-            },
-            "node": "none",
-            "rev": 0,
-            "st": "free"
-          },
-          "2": {
-            "cur": false,
-            "eid": 0,
-            "fresh": false,
-            "key": {
-              "1": "none",
-              "2": 0
-            },
-            "node": "none",
-            "rev": 0,
-            "st": "free"
-          },
-          "3": {
-            "cur": false,
-            "eid": 0,
-            "fresh": false,
-            "key": {
-              "1": "none",
-              "2": 0
-            },
-            "node": "none",
-            "rev": 0,
-            "st": "free"
-          },
-          "4": {
-            "cur": false,
-            "eid": 0,
-            "fresh": false,
-            "key": {
-              "1": "none",
-              "2": 0
-            },
-            "node": "none",
-            "rev": 0,
-            "st": "free"
-          }
-        },
-        "srev": 1,
-        "stray": false,
-        "title": {
-          "node": "n1",
-          "rev": 1
-        },
-        "unsaved": {},
-        "vid": 1,
-        "want": "none"
+        "vid": 2,
+        "want": "n2"
       }
     }
   ]

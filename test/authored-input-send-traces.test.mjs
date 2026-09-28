@@ -100,6 +100,17 @@ describe("Send after an answer did not save", () => {
     await world.click("#sendInteraction");
     expect(world.post).not.toBeNull();
   });
+
+  it("stops when that answer was all there was to send", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    await world.typePrompt("");
+    for (const step of [["Type", 1], ["Commit"]]) await world.apply(step);
+    await world.click("#closeInspector");
+    expect(world.window.document.querySelector("#sendInteraction").disabled).toBe(false);
+    await world.click("#sendInteraction");
+    for (const step of [["CommitFails"], ["CommitReturns"]]) await world.apply(step);
+    expect(world.post).toBeNull();
+  });
 });
 
 describe("A follow-up whose POST fails with a server error", () => {
@@ -126,6 +137,8 @@ describe("The draft-send warning", () => {
     const dialog = world.window.document.querySelector("#contextDraftSendWarning");
     dialog.showModal ??= function showModal() { this.open = true; };
     dialog.close ??= function close() { this.open = false; };
+    // No node is selected, so nothing re-renders the composer afterwards.
+    await world.click("#closeInspector");
     await world.click("#sendInteraction");
     expect(dialog.open).toBe(true);
     await world.newerTurnArrives();
@@ -133,5 +146,6 @@ describe("The draft-send warning", () => {
     await world.click("#cancelContextDraftSend");
     expect(world.post).toBeNull();
     expect(world.promptText).toBe("Here is my answer");
+    expect(world.window.document.querySelector("#sendInteraction").disabled).toBe(false);
   });
 });

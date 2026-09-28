@@ -31,6 +31,14 @@ CONSTANTS
                     \* the latest one then proceeds (WS awaitUserRequestTurn).
                     \* Before, it returned at once, and a dropped prepare
                     \* also cancelled a pending request
+  LatestRequestSupersedes, \* TRUE since review of #514: a user's newest
+                    \* request supersedes every earlier one. A click that
+                    \* waits for a resolving draft supersedes the switch in
+                    \* flight, as a waiting Close or turn change already did,
+                    \* and a request that proceeds at once voids any still
+                    \* waiting (WS userRequestTicket). Before, the switch
+                    \* committed its node first, and a waiting request could
+                    \* run after a newer one
   RefreshAfterResolve \* TRUE since #515: a switch continues from the latest
                     \* state, and a resolved draft re-renders the selection
                     \* unless a waiting request or the switch will. Before,
@@ -79,10 +87,11 @@ VARIABLES
   prep,         \* prepareNodeContextSelectionChange awaiting a save
   op,           \* the discard in flight: [editor identity, draft], or NoOp
   \* --- ghost ---
-  want          \* what the user last asked the inspector to show
+  want,         \* what the user last asked the inspector to show
+  stray         \* a request the user had superseded committed its node
 
 vars == <<srev, graph, vid, sel, open, title, detail, mounted, attach, editor, eids,
-          queued, drafts, unsaved, slots, prep, op, want>>
+          queued, drafts, unsaved, slots, prep, op, want, stray>>
 
 (* Operators below work on a record W of every variable, so that render() *)
 (* can compose the dock reconciliation, renderGraph, and selectNode in one *)
@@ -91,7 +100,7 @@ W == [srev |-> srev, graph |-> graph, vid |-> vid, sel |-> sel, open |-> open,
       title |-> title, detail |-> detail, mounted |-> mounted, attach |-> attach,
       editor |-> editor, eids |-> eids,
       queued |-> queued, drafts |-> drafts, unsaved |-> unsaved, slots |-> slots,
-      prep |-> prep, op |-> op, want |-> want]
+      prep |-> prep, op |-> op, want |-> want, stray |-> stray]
 
 Assign(w) ==
   /\ srev' = w.srev /\ graph' = w.graph /\ vid' = w.vid /\ sel' = w.sel
@@ -99,7 +108,7 @@ Assign(w) ==
   /\ mounted' = w.mounted /\ attach' = w.attach /\ editor' = w.editor
   /\ eids' = w.eids /\ queued' = w.queued /\ drafts' = w.drafts
   /\ unsaved' = w.unsaved /\ slots' = w.slots /\ prep' = w.prep /\ op' = w.op
-  /\ want' = w.want
+  /\ want' = w.want /\ stray' = w.stray
 
 Key(e) == <<e.node, e.vid>>
 HasDraft(w, n) == <<n, w.vid>> \in w.drafts
@@ -146,7 +155,8 @@ Continue(w, n, r) ==
 Select(w, n, r, user) ==
   IF w.editor.resolving
   THEN IF QueueWhileResolving /\ user
-       THEN [w EXCEPT !.queued = [kind |-> "select", node |-> n]]
+       THEN [IF LatestRequestSupersedes THEN Bump(w) ELSE w
+               EXCEPT !.queued = [kind |-> "select", node |-> n]]
        ELSE w
   ELSE LET w0 == Bump(w)
        IN IF n \notin w.graph THEN [w0 EXCEPT !.want = IF user THEN w.sel ELSE w.want]
@@ -260,14 +270,19 @@ Init ==
   /\ slots = [k \in Slots |-> FreeSlot]
   /\ prep = FreeSlot /\ op = NoOp
   /\ want = None
+  /\ stray = FALSE
 
 -----------------------------------------------------------------------------
 (* User actions.                                                          *)
 
+\* A new user request: under LatestRequestSupersedes, a request still
+\* waiting is void, whether this one waits too or proceeds at once.
+Newest(w) == IF LatestRequestSupersedes THEN NoRequest ELSE w.queued
+
 \* A click or Enter on a graph node (WS:4299-4316).
 Click(n) ==
   /\ n \in graph /\ Room(W)
-  /\ Assign(Select([W EXCEPT !.want = n], n, srev, TRUE))
+  /\ Assign(Select([W EXCEPT !.want = n, !.queued = Newest(W)], n, srev, TRUE))
 
 \* The attach-context control opens a durable draft for the selected node
 \* (openContextEditor, WS:2468-2508). The controller creates it unsaved and
@@ -282,7 +297,7 @@ Annotate ==
   /\ unsaved' = unsaved \cup {<<sel, vid>>}
   /\ want' = Keep(W)
   /\ UNCHANGED <<srev, graph, vid, sel, open, title, detail, mounted, attach, queued, slots,
-                 prep, op>>
+                 prep, op, stray>>
 
 \* Typing in the editor; the controller autosaves after 350 ms.
 EditDraft ==
@@ -290,7 +305,7 @@ EditDraft ==
   /\ unsaved' = unsaved \cup {Key(editor)}
   /\ want' = IF sel = editor.node THEN Keep(W) ELSE want
   /\ UNCHANGED <<srev, graph, vid, sel, open, title, detail, mounted, attach, editor, eids,
-                 queued, drafts, slots, prep, op>>
+                 queued, drafts, slots, prep, op, stray>>
 
 \* × discards the selected node's draft (WS:2704-2720). A saved draft needs
 \* a request (node-context-drafts.js:531-575); discarding a draft that was
@@ -301,18 +316,18 @@ Discard ==
   /\ op' = [eid |-> editor.eid, key |-> Key(editor)]
   /\ want' = IF sel = editor.node THEN Keep(W) ELSE want
   /\ UNCHANGED <<srev, graph, vid, sel, open, title, detail, mounted, attach, eids, queued,
-                 drafts, unsaved, slots, prep>>
+                 drafts, unsaved, slots, prep, stray>>
 
 \* The close button or Escape (WS:1863-1877). A second one while the first
 \* flushes is dropped, and it supersedes the first (WS:1625-1638).
 Close ==
   /\ open /\ (prep.st = "free" \/ editor.resolving) /\ Room(W)
-  /\ Assign(Prepare([W EXCEPT !.want = None], "close", graph))
+  /\ Assign(Prepare([W EXCEPT !.want = None, !.queued = Newest(W)], "close", graph))
 
 \* Previous or Next turn (WS:1893-1904) loads a turn with nodes g.
 NextTurn ==
   /\ (prep.st = "free" \/ editor.resolving) /\ NewState(W)
-  /\ \E g \in SUBSET Nodes : Assign(Prepare([W EXCEPT !.want = None], "turn", g))
+  /\ \E g \in SUBSET Nodes : Assign(Prepare([W EXCEPT !.want = None, !.queued = Newest(W)], "turn", g))
 
 -----------------------------------------------------------------------------
 (* Continuations of awaits. Each may replay a remembered request, which   *)
@@ -332,7 +347,10 @@ SaveReturns(k, ok) ==
          refused == ~stale /\ ~ok
          w1 == IF stale THEN w0
                ELSE IF refused THEN [w0 EXCEPT !.want = w0.sel]
-               ELSE Continue([w0 EXCEPT !.editor = NoEditor], s.node,
+               \* A switch that commits while a newer request waits reports a
+               \* node the user no longer wants.
+               ELSE Continue([w0 EXCEPT !.editor = NoEditor,
+                                        !.stray = w0.stray \/ w0.queued # NoRequest], s.node,
                              IF RefreshAfterResolve THEN w0.srev ELSE s.rev)
      IN \E g \in ReplayGraphs(w1) : Assign(Resume(w1, g))
 
@@ -353,7 +371,7 @@ MountReturns(k) ==
         /\ attach' = IF s.cur THEN TRUE ELSE attach
         /\ slots' = [slots EXCEPT ![k] = FreeSlot]
   /\ UNCHANGED <<srev, graph, vid, sel, open, title, editor, eids, queued, drafts,
-                 unsaved, prep, op, want>>
+                 unsaved, prep, op, want, stray>>
 
 \* The flush in prepareNodeContextSelectionChange returns (WS:1633-1645).
 PrepareReturns(ok) ==
@@ -391,7 +409,7 @@ Autosave(d) ==
   /\ d \in unsaved
   /\ unsaved' = unsaved \ {d}
   /\ UNCHANGED <<srev, graph, vid, sel, open, title, detail, mounted, attach, editor, eids,
-                 queued, drafts, slots, prep, op, want>>
+                 queued, drafts, slots, prep, op, want, stray>>
 
 \* renderThread() with newer state. Entering a new view (another layer or
 \* turn) may bring other nodes. A view change the user did not ask for
@@ -464,6 +482,10 @@ LastRequestWins == Quiet => sel = want
 
 \* "selecting a drafted node restores the same text and open editor"
 \* (PRD L2203).
+\* Only the latest request selects: a superseded one does not report its
+\* node through onSelectionChange or record it in navigation history.
+OnlyLatestRequestSelects == ~stray
+
 DraftedSelectionHasEditor ==
   Quiet /\ sel # None /\ <<sel, vid>> \in drafts => editor.node = sel
 

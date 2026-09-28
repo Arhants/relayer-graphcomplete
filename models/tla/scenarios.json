@@ -1138,7 +1138,8 @@
         "InspectorShowsSelection",
         "LastRequestWins",
         "DraftedSelectionHasEditor",
-        "InspectorIsCurrent"
+        "InspectorIsCurrent",
+        "OnlyLatestRequestSelects"
       ],
       "summary": "A node is annotated, the user switches to another node and back, and the draft's editor returns.",
       "steps": [
@@ -1190,7 +1191,8 @@
         "InspectorShowsSelection",
         "LastRequestWins",
         "DraftedSelectionHasEditor",
-        "InspectorIsCurrent"
+        "InspectorIsCurrent",
+        "OnlyLatestRequestSelects"
       ],
       "summary": "A click on another node while a draft discard is in flight waits for it and then opens that node.",
       "steps": [
@@ -1234,7 +1236,8 @@
         "InspectorShowsSelection",
         "LastRequestWins",
         "DraftedSelectionHasEditor",
-        "InspectorIsCurrent"
+        "InspectorIsCurrent",
+        "OnlyLatestRequestSelects"
       ],
       "summary": "Close pressed while a switch flushes the draft supersedes the switch and closes the inspector once the draft is saved.",
       "steps": [
@@ -1274,7 +1277,8 @@
         "InspectorShowsSelection",
         "LastRequestWins",
         "DraftedSelectionHasEditor",
-        "InspectorIsCurrent"
+        "InspectorIsCurrent",
+        "OnlyLatestRequestSelects"
       ],
       "summary": "A second Close while the first flushes the draft closes the inspector once the draft is saved.",
       "steps": [
@@ -1312,7 +1316,8 @@
         "InspectorShowsSelection",
         "LastRequestWins",
         "DraftedSelectionHasEditor",
-        "InspectorIsCurrent"
+        "InspectorIsCurrent",
+        "OnlyLatestRequestSelects"
       ],
       "summary": "A failed draft save refuses a switch and re-renders the kept node's Node Detail.",
       "steps": [
@@ -1361,7 +1366,8 @@
         "InspectorShowsSelection",
         "LastRequestWins",
         "DraftedSelectionHasEditor",
-        "InspectorIsCurrent"
+        "InspectorIsCurrent",
+        "OnlyLatestRequestSelects"
       ],
       "summary": "A refresh arrives while a draft save holds a node switch; once the save succeeds, the switched-to node shows the refreshed state.",
       "steps": [
@@ -1395,6 +1401,102 @@
         [
           "MountReturns",
           1
+        ]
+      ]
+    },
+    {
+      "id": "inspector-click-during-switch",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor",
+        "InspectorIsCurrent",
+        "OnlyLatestRequestSelects"
+      ],
+      "summary": "A click on another node arrives while a switch waits on a draft save; once the save succeeds, only the newer click selects.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "EditDraft"
+        ],
+        [
+          "Click",
+          "n2"
+        ],
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "SaveReturns",
+          1,
+          "ok"
+        ]
+      ]
+    },
+    {
+      "id": "inspector-click-voids-waiting-close",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor",
+        "InspectorIsCurrent",
+        "OnlyLatestRequestSelects"
+      ],
+      "summary": "A Close waits on a draft flush, a new view drops that draft's editor, and the user clicks a node; when the flush returns, the older Close does not close the inspector.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "Close"
+        ],
+        [
+          "Close"
+        ],
+        [
+          "StatePush",
+          "enter",
+          "n1",
+          "n2"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Click",
+          "n2"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "PrepareReturns",
+          "ok"
         ]
       ]
     },
@@ -1464,7 +1566,8 @@
         "InspectorShowsSelection",
         "LastRequestWins",
         "DraftedSelectionHasEditor",
-        "InspectorIsCurrent"
+        "InspectorIsCurrent",
+        "OnlyLatestRequestSelects"
       ],
       "summary": "A new view that keeps the selected node arrives while a draft discard is in flight; the inspector reopens on it once the discard resolves.",
       "steps": [

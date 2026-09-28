@@ -6,7 +6,8 @@
     "InspectorShowsSelection",
     "LastRequestWins",
     "DraftedSelectionHasEditor",
-    "InspectorIsCurrent"
+    "InspectorIsCurrent",
+    "OnlyLatestRequestSelects"
   ],
   "generatedBy": "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
   "steps": [
@@ -109,6 +110,7 @@
           }
         },
         "srev": 1,
+        "stray": false,
         "title": {
           "node": "none",
           "rev": 0
@@ -220,6 +222,7 @@
           }
         },
         "srev": 1,
+        "stray": false,
         "title": {
           "node": "n1",
           "rev": 1
@@ -331,6 +334,7 @@
           }
         },
         "srev": 1,
+        "stray": false,
         "title": {
           "node": "n1",
           "rev": 1
@@ -446,6 +450,7 @@
           }
         },
         "srev": 1,
+        "stray": false,
         "title": {
           "node": "n1",
           "rev": 1
@@ -567,6 +572,7 @@
           }
         },
         "srev": 1,
+        "stray": false,
         "title": {
           "node": "n1",
           "rev": 1
@@ -682,6 +688,7 @@
           }
         },
         "srev": 1,
+        "stray": false,
         "title": {
           "node": "n1",
           "rev": 1
@@ -798,6 +805,7 @@
           }
         },
         "srev": 1,
+        "stray": false,
         "title": {
           "node": "n1",
           "rev": 1
@@ -909,6 +917,7 @@
           }
         },
         "srev": 1,
+        "stray": false,
         "title": {
           "node": "n2",
           "rev": 1
@@ -1020,6 +1029,7 @@
           }
         },
         "srev": 1,
+        "stray": false,
         "title": {
           "node": "n2",
           "rev": 1

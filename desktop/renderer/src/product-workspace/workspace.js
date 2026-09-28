@@ -1656,18 +1656,22 @@ export function createProductWorkspace({
     return commit;
   };
   const pendingAuthoredInputCommits = (threadId) => authoredInputCommits.get(String(threadId))?.size ?? 0;
-  // Whether the answers on screen when Send was clicked saved. A failure
-  // stops this Send only if its Node Detail was the one open then; the input
-  // shows why, and a later Send is the user's choice.
+  // Whether the answers on screen when Send was clicked saved, and whether
+  // any answer failed. A failure stops this Send if its Node Detail was the
+  // one open then; the input shows why, and a later Send is the user's
+  // choice.
   const settleAuthoredInputCommits = async (threadId, detailOnScreen) => {
     const key = String(threadId);
     let commits;
     while ((commits = authoredInputCommits.get(key))?.size) {
       await Promise.allSettled([...commits]);
     }
-    const failed = failedAuthoredInputs.get(key);
+    const failures = [...(failedAuthoredInputs.get(key)?.values() ?? [])];
     failedAuthoredInputs.delete(key);
-    return ![...(failed?.values() ?? [])].some((runtime) => runtime === detailOnScreen);
+    return {
+      committed: !failures.some((runtime) => runtime === detailOnScreen),
+      failed: failures.length > 0,
+    };
   };
   const inputRailScroll = new Map();
   let inputFocusRequest = null;
@@ -1777,6 +1781,8 @@ export function createProductWorkspace({
       if (!await awaitUserRequestTurn()) return false;
       return prepareNodeContextSelectionChange();
     }
+    // A request that proceeds at once voids any still waiting.
+    userRequestTicket += 1;
     const editor = contextEditor;
     if (!editor?.durable) return true;
     const endResolution = beginEditorResolution(editor);
@@ -3356,7 +3362,10 @@ export function createProductWorkspace({
     sendWarningIntent = null;
     if (cancelAttempt) cancelSendAttempt();
     // A cancelled Send hands back text a newer turn left in its scope.
-    if (cancelled?.submission) restoreStrandedSubmission(cancelled.submission);
+    if (cancelled?.submission) {
+      restoreStrandedSubmission(cancelled.submission);
+      syncComposer();
+    }
     if (contextDraftSendWarning.open) contextDraftSendWarning.close();
     if (focusSend) send.focus({ preventScroll: true });
   };
@@ -3666,11 +3675,20 @@ export function createProductWorkspace({
         });
         intent = await selectInteractionSendIntentAfterInputReconciliation({
           awaitInputDraft: async () => {
-            if (!await settleAuthoredInputCommits(threadId, detailOnScreen)) {
-              // The answer the user entered did not save; the input shows why.
-              throw new Error("An answer in Node Details could not be saved, so the message was not sent.");
-            }
+            const unsaved = "An answer in Node Details could not be saved, so the message was not sent.";
+            const settled = await settleAuthoredInputCommits(threadId, detailOnScreen);
+            // The answer the user entered did not save; the input shows why.
+            if (!settled.committed) throw new Error(unsaved);
             if (inputDraftController) await ensureInputDraftLoaded(threadId);
+            // An answer that did not save may have been all there was to send.
+            if (settled.failed && !composerSubmissionReady(
+              sendRequest.freshIntent.promptValue,
+              false,
+              true,
+              sendRequest.freshIntent.contexts,
+              false,
+              inputDraftController?.current(threadId)?.attachments || [],
+            )) throw new Error(unsaved);
           },
           selectionIsCurrent: () => sendIntentIsCurrentThread(getThread()?.id, threadId)
             && sendAttempt === attempt,
@@ -5109,6 +5127,9 @@ export function createProductWorkspace({
       // A refresh is dropped: the resolution re-renders the selection when it
       // ends. A user's click waits its turn and uses the state it finds then.
       if (!userInitiated) return false;
+      // It supersedes the request in flight, such as a switch waiting on the
+      // draft save, so only the newest request selects.
+      nodeSelectionSequence += 1;
       const viewKey = graphViewKey;
       if (!await awaitUserRequestTurn()) return false;
       const latest = getState();
@@ -5121,6 +5142,8 @@ export function createProductWorkspace({
       return selectNode(latest, id, options);
     }
     const requestSequence = ++nodeSelectionSequence;
+    // A user's request that proceeds at once voids any still waiting.
+    if (userInitiated) userRequestTicket += 1;
     const sourceThread = getThread();
     const sourceThreadId = String(sourceThread?.id);
     const node = resolveInteractionContextNode(
