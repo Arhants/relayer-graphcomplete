@@ -1,0 +1,44 @@
+name: Merge freshness guard
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited, ready_for_review]
+  push:
+    branches: [main]
+
+# One writer for every trigger. Never cancel an in-flight expiration sweep.
+concurrency:
+  group: merge-freshness-writer
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  checks: write
+
+jobs:
+  refresh:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Privileged workflow: ONLY protected main, no PR checkout, npm install,
+      # PR scripts, downloaded executable artifacts, or interpolated PR text.
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const { sweep } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/ci/merge-freshness.mjs`);
+            const results = await sweep({ github, ...context.repo });
+            core.info(JSON.stringify(results));
