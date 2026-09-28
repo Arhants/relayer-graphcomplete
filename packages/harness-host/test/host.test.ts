@@ -1329,13 +1329,15 @@ describe("HarnessHost", () => {
       expect(release).not.toHaveBeenCalled();
       await expect(host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId)).resolves.toMatchObject({ output: completion });
       expect(acquire).toHaveBeenCalledOnce();
-      expect(release).not.toHaveBeenCalled();
+      // Access lives as long as the native turn: it is released once the turn settles.
+      await vi.waitFor(() => expect(release).toHaveBeenCalledOnce());
       accepted = false;
       await expect(host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId))
         .rejects.toThrow("invalid or expired");
+      // The owner's later release acknowledges the already-released access once.
       expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
-      expect(release).toHaveBeenCalledOnce();
       expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(false);
+      expect(release).toHaveBeenCalledOnce();
 
       accepted = false;
       const cancelled = await host.admitProviderExecution(1, model, new AbortController().signal);
@@ -1431,7 +1433,7 @@ describe("HarnessHost", () => {
         admission.executionLeaseId, policy, plan, "attempt-family-29",
       )).resolves.toMatchObject({ output: completion });
       expect(observedContext?.modelPlan).toEqual(admission.admittedPlan);
-      expect(releases).toEqual([]);
+      await vi.waitFor(() => expect(releases).toEqual(["anthropic-work", "openai-work"]));
       accepted = false;
       await expect(host.complete(
         1, 29, graph(), plan.orchestrator, undefined, undefined,
@@ -1508,8 +1510,9 @@ describe("HarnessHost", () => {
 
       expect(observedContext?.modelPlan).toEqual(admission.admittedPlan);
       expect(observedContext?.accessBundle?.byProviderId["openrouter-work"]?.adapterImplementationVersion).toBe("2");
-      // The child's leases stay held until the product releases them after settlement.
-      expect(releases).toEqual([]);
+      // The child's native run has ended, so its access is released without waiting for
+      // the product to settle the child; the product's later release only acknowledges it.
+      await vi.waitFor(() => expect(releases).toEqual(["openrouter-work"]));
       expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
       expect(releases).toEqual(["openrouter-work"]);
     } finally {
@@ -1684,7 +1687,7 @@ describe("HarnessHost", () => {
     }
   });
 
-  it("does not release a claimed lease on execution or terminal-ack timeouts", async () => {
+  it("holds a claimed lease for the whole native turn and releases it once the turn settles", async () => {
     vi.useFakeTimers();
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-lease-timeouts-"));
     const release = vi.fn();
@@ -1734,10 +1737,10 @@ describe("HarnessHost", () => {
 
       finishHarness();
       await running;
-      await vi.advanceTimersByTimeAsync(29_999);
-      expect(release).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(60_001);
-      expect(release).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(release).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(release).toHaveBeenCalledOnce();
       expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
       expect(release).toHaveBeenCalledOnce();
     } finally {
@@ -1747,7 +1750,7 @@ describe("HarnessHost", () => {
     }
   });
 
-  it("aborts and settles an active family completion on close without releasing before durable acknowledgement", async () => {
+  it("aborts an active family completion on close and releases its access once the turn settles", async () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-family-close-"));
     const release = vi.fn();
     let harnessStarted!: () => void;
@@ -1803,10 +1806,274 @@ describe("HarnessHost", () => {
       await started;
       await host.close();
       expect(await completionRun).toBeInstanceOf(Error);
-      expect(release).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(release).toHaveBeenCalledOnce());
       expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
       expect(release).toHaveBeenCalledOnce();
     } finally {
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a running turn's access when its owner releases it, cancels the turn, and releases on settle", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-release-live-turn-"));
+    const release = vi.fn();
+    let finishNative!: () => void;
+    const nativeFinished = new Promise<void>((resolve) => { finishNative = resolve; });
+    let nativeStarted!: () => void;
+    const started = new Promise<void>((resolve) => { nativeStarted = resolve; });
+    let observedSignal: AbortSignal | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ node: { id: 1, kind: "user-interaction", icon: "user", title: "Question", detail: "Question", state: "accepted" } }), { status: 200, headers: { "content-type": "application/json" } })));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire() {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+              adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
+            },
+            release,
+          };
+        } },
+        // Like Codex's turn/interrupt or Prime's quiescence wait: the native turn observes the
+        // cancellation but keeps running until it settles on its own.
+        implementations: { test: () => ({ async complete(_context, signal) {
+          observedSignal = signal;
+          nativeStarted();
+          await nativeFinished;
+        }, state: emptyState }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: {
+          ...testConfiguration,
+          modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      const model = { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" };
+      const admission = await host.admitProviderExecution(1, model, new AbortController().signal);
+      const running = host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId)
+        .catch(() => undefined);
+      await started;
+
+      // The product gives up on the turn (for example an approval persistence failure).
+      expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
+      expect(observedSignal?.aborted).toBe(true);
+      expect(release).not.toHaveBeenCalled();
+
+      finishNative();
+      await running;
+      await vi.waitFor(() => expect(release).toHaveBeenCalledOnce());
+    } finally {
+      finishNative();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("acknowledges released access to its provider only when the owner releases the lease", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-release-acknowledge-"));
+    const events: string[] = [];
+    let accepted = false;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? accepted
+        ? new Response(JSON.stringify(completion), { status: 200, headers: { "content-type": "application/json" } })
+        : new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ node: { id: 1, kind: "user-interaction", icon: "user", title: "Question", detail: "Question", state: "accepted" } }), { status: 200, headers: { "content-type": "application/json" } })));
+    let failAcknowledge = true;
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire() {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+              adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
+            },
+            release() { events.push("release"); },
+            acknowledge() {
+              events.push("acknowledge");
+              if (failAcknowledge) throw new Error("provider removal could not finish yet");
+            },
+          };
+        } },
+        implementations: { test: () => ({ async complete() { accepted = true; }, state: emptyState }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: {
+          ...testConfiguration,
+          modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      const model = { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" };
+      const admission = await host.admitProviderExecution(1, model, new AbortController().signal);
+      await host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId);
+      await vi.waitFor(() => expect(events).toEqual(["release"]));
+
+      // A failed acknowledgement is returned to the owner, which retries.
+      await expect(host.releaseProviderExecution(admission.executionLeaseId)).rejects.toThrow("could not finish yet");
+      failAcknowledge = false;
+      expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(true);
+      expect(events).toEqual(["release", "acknowledge", "acknowledge"]);
+      expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to claim an admission whose release failed and is being retried", async () => {
+    vi.useFakeTimers();
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-failed-release-claim-"));
+    const release = vi.fn(async () => { throw new Error("provider service is busy"); });
+    const complete = vi.fn(async () => undefined);
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ node: { id: 1, kind: "user-interaction", icon: "user", title: "Question", detail: "Question", state: "accepted" } }), { status: 200, headers: { "content-type": "application/json" } })));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire() {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+              adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
+            },
+            release,
+          };
+        } },
+        implementations: { test: () => ({ complete, state: emptyState }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: {
+          ...testConfiguration,
+          modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      const model = { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" };
+      const admission = await host.admitProviderExecution(1, model, new AbortController().signal);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(release).toHaveBeenCalledOnce();
+      await expect(host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId))
+        .rejects.toThrow("invalid or expired");
+      expect(complete).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("settles a lease only through the completion that claimed it", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-claim-owner-"));
+    const release = vi.fn();
+    let finishNative!: () => void;
+    const nativeFinished = new Promise<void>((resolve) => { finishNative = resolve; });
+    let nativeStarted!: () => void;
+    const started = new Promise<void>((resolve) => { nativeStarted = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ node: { id: 1, kind: "user-interaction", icon: "user", title: "Question", detail: "Question", state: "accepted" } }), { status: 200, headers: { "content-type": "application/json" } })));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire() {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+              adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
+            },
+            release,
+          };
+        } },
+        implementations: { test: () => ({ async complete() { nativeStarted(); await nativeFinished; }, state: emptyState }) },
+      });
+      await host.initialize();
+      for (const threadId of [1, 2]) {
+        await host.createSession({
+          threadId, permissionProfileId: "auto", workingDirectory: directory,
+          configuration: {
+            ...testConfiguration,
+            modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+            executionAccessContracts: ["secret@1"],
+          },
+        });
+      }
+      const model = { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" };
+      const admission = await host.admitProviderExecution(1, model, new AbortController().signal);
+      const running = host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId)
+        .catch(() => undefined);
+      await started;
+      // Another completion naming the same, already claimed lease is refused and must not
+      // release the access the running turn still uses.
+      await expect(host.complete(2, 2, graph(), model, undefined, undefined, admission.executionLeaseId))
+        .rejects.toThrow("invalid or expired");
+      expect(release).not.toHaveBeenCalled();
+      finishNative();
+      await running;
+      await vi.waitFor(() => expect(release).toHaveBeenCalledOnce());
+    } finally {
+      finishNative();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to claim an admission whose release has already started", async () => {
+    vi.useFakeTimers();
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-late-claim-"));
+    let finishRelease!: () => void;
+    const releaseFinished = new Promise<void>((resolve) => { finishRelease = resolve; });
+    const release = vi.fn(() => releaseFinished);
+    const complete = vi.fn(async () => undefined);
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ node: { id: 1, kind: "user-interaction", icon: "user", title: "Question", detail: "Question", state: "accepted" } }), { status: 200, headers: { "content-type": "application/json" } })));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire() {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+              adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
+            },
+            release,
+          };
+        } },
+        implementations: { test: () => ({ complete, state: emptyState }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: {
+          ...testConfiguration,
+          modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      const model = { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" };
+      const admission = await host.admitProviderExecution(1, model, new AbortController().signal);
+      // The admission timer fires and its release is still in flight when the claim arrives.
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(release).toHaveBeenCalledOnce();
+      await expect(host.complete(1, 1, graph(), model, undefined, undefined, admission.executionLeaseId))
+        .rejects.toThrow("invalid or expired");
+      expect(complete).not.toHaveBeenCalled();
+      finishRelease();
+    } finally {
+      vi.useRealTimers();
       vi.unstubAllGlobals();
       await rm(directory, { recursive: true, force: true });
     }

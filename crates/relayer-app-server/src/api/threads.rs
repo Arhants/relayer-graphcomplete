@@ -299,6 +299,7 @@ pub(super) async fn get(
     let stale = refresh_accepted_outputs(
         &state.product,
         state.runtime.as_ref(),
+        state.interaction_execution.as_ref(),
         &mut detail.interactions,
         &detail.action_invocations,
     )
@@ -369,6 +370,7 @@ pub(super) async fn list_interactions(
     let stale = refresh_accepted_outputs(
         &state.product,
         state.runtime.as_ref(),
+        state.interaction_execution.as_ref(),
         &mut detail.interactions,
         &detail.action_invocations,
     )
@@ -1063,7 +1065,13 @@ pub(super) async fn get_action_destination(
         .get_interaction_by_graph_node_id(layer_owner.owner_interaction_node_id)
         .await?;
     if is_reconciliation_pending(&destination) {
-        reconcile_quarantined_interaction(&state.product, runtime, &mut destination).await?;
+        reconcile_quarantined_interaction(
+            &state.product,
+            runtime,
+            state.interaction_execution.as_ref(),
+            &mut destination,
+        )
+        .await?;
     }
     if destination.completion_status != "accepted" {
         return Err(ApiError::invalid(
@@ -1101,6 +1109,7 @@ pub(super) async fn get_action_destination(
 pub(super) async fn refresh_accepted_outputs(
     product: &crate::product::ProductService,
     runtime: Option<&crate::runtime::RuntimeClient>,
+    execution: Option<&crate::product::InteractionExecutionService>,
     interactions: &mut [Interaction],
     action_invocations: &[crate::product::ActionInvocation],
 ) -> std::collections::HashSet<i64> {
@@ -1117,7 +1126,7 @@ pub(super) async fn refresh_accepted_outputs(
         if is_reconciliation_pending(interaction) {
             match runtime {
                 Some(runtime) => {
-                    if reconcile_quarantined_interaction(product, runtime, interaction)
+                    if reconcile_quarantined_interaction(product, runtime, execution, interaction)
                         .await
                         .is_err()
                     {
@@ -1170,7 +1179,25 @@ fn is_reconciliation_pending(interaction: &Interaction) -> bool {
             .is_some_and(|error| error.starts_with(RECONCILIATION_PENDING_PREFIX))
 }
 
+/// Settles a quarantined interaction from canonical graph state. Settling it also ends its
+/// attempt, which turns the attempt's provider lease into debt, so the one worker that owns
+/// that debt is woken rather than left until the next restart.
 async fn reconcile_quarantined_interaction(
+    product: &crate::product::ProductService,
+    runtime: &crate::runtime::RuntimeClient,
+    execution: Option<&crate::product::InteractionExecutionService>,
+    interaction: &mut Interaction,
+) -> Result<(), RuntimeError> {
+    let settled = settle_quarantined_interaction(product, runtime, interaction).await;
+    if settled.is_ok()
+        && let Some(execution) = execution
+    {
+        execution.schedule_execution_lease_reconciliation();
+    }
+    settled
+}
+
+async fn settle_quarantined_interaction(
     product: &crate::product::ProductService,
     runtime: &crate::runtime::RuntimeClient,
     interaction: &mut Interaction,
@@ -2444,8 +2471,8 @@ async fn cancel_if_terminal(
 }
 
 /// Ends a child's attempt once both its provider run has ended and its execution has
-/// settled, then releases the attempt's leases. Until then the provider keeps its leases,
-/// so provider removal waits for it.
+/// settled, then releases the attempt's leases. The harness host has already released the
+/// access when the provider run ended; provider removal waits for the attempt to end.
 async fn end_child_attempt(
     state: &ApiState,
     runtime: &crate::runtime::RuntimeClient,

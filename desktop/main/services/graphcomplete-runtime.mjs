@@ -204,6 +204,7 @@ export function createProviderExecutionAccessBroker(acquireProviderExecution) {
         throw new Error("Provider execution acquisition returned an invalid lease.");
       }
       const release = onceRelease(lease.release);
+      const acknowledge = typeof lease.acknowledge === "function" ? () => lease.acknowledge() : undefined;
       try {
         const { definition, descriptor, runtime } = lease;
         if (definition?.id !== selection.providerId
@@ -220,7 +221,7 @@ export function createProviderExecutionAccessBroker(acquireProviderExecution) {
         signal?.throwIfAborted();
         const resolved = await runtime.executionAccess({ signal });
         const access = validatedExecutionAccess(resolved, definition, descriptor);
-        return Object.freeze({ access, release });
+        return Object.freeze({ access, release, ...(acknowledge === undefined ? {} : { acknowledge }) });
       } catch (error) {
         try {
           await release();

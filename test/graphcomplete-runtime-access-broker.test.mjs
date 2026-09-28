@@ -41,6 +41,21 @@ function providerLease({
 }
 
 describe("desktop provider execution access broker", () => {
+  it("passes the owner's acknowledgement through to the provider lease", async () => {
+    const provider = providerLease({ providerId: "openai-work" });
+    const acknowledge = vi.fn(async () => {});
+    const broker = createProviderExecutionAccessBroker(async () => ({ ...provider.lease, acknowledge }));
+    const lease = await broker.acquire(
+      { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5" },
+      ["secret@1"],
+      new AbortController().signal,
+    );
+    await lease.release();
+    await lease.acknowledge();
+    expect(provider.release).toHaveBeenCalledOnce();
+    expect(acknowledge).toHaveBeenCalledOnce();
+  });
+
   it("keeps two definitions on one adapter isolated and releases each lease exactly once", async () => {
     const work = providerLease({ providerId: "openai-work" });
     const personal = providerLease({ providerId: "openai-personal" });

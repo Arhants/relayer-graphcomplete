@@ -809,6 +809,16 @@ interface CompletionTerminalError extends Error {
 <li>Every connected provider with eligible execution models exposes its product-managed family in both first-run onboarding and Settings without a separate family-construction step.</li>
 <li>Existing UI-authored harness rule overrides reset once to catalog defaults when their editor is removed.</li>
 </ul>
+<h4>Provider execution access</h4>
+<p>A turn holds its provider's execution access exactly as long as its native agent runs. The access ends when the native turn settles. It does not wait for Relayer to record the turn's outcome.</p>
+<ul>
+<li><strong>PROV-004:</strong> Provider access is never released while the native turn that uses it still runs. Remove, sign-out, and reconnect therefore never run under live native work.</li>
+<li>When Relayer gives up on a running turn, it cancels the turn. The access is released once the native turn settles.</li>
+<li>A turn cannot start on an admission whose release has already begun.</li>
+<li><strong>PROV-003:</strong> Removing a provider during a turn finishes without a restart once Relayer has recorded the turn's outcome.</li>
+<li>A native turn that ignores cancellation keeps its access until it ends, so Remove waits for it. A per-turn force-stop after two minutes is planned.</li>
+<li>Remove's waiting state for running turns and an explicit <strong>Stop turns and remove</strong> action are planned.</li>
+</ul>
 <h4>Exact managed-runtime preparation</h4>
 <p>Relayer Desktop owns one deep managed-runtime module. A caller requests one release-owned recipe identity. The module returns an immutable descriptor with runtime, recipe, target, version, installation identity, and absolute execution entrypoints. Download URLs, artifact locks, installer tools, caches, staging, receipts, and cleanup remain code-owned implementation details. Harness configurations continue to name only stable runtime identities.</p>
 <p>Each Desktop release maps its externally compatible managed-runtime version metadata to exact code-owned recipes. The current recipes are <code>codex@0.147.0</code> and <code>claude@0.3.250</code> for every currently supported macOS Apple Silicon, macOS Intel, and Windows x64 target. Preparation downloads only the exact reviewed HTTPS artifacts and verifies their recorded SHA-512 identities. It never queries a mutable <code>latest</code> selector, adopts an ambient executable, or accepts a provider-supplied URL, command, path, or lock.</p>
@@ -825,6 +835,8 @@ interface CompletionTerminalError extends Error {
 <tr><td><code>BRW-003</code> Unowned and pending present nothing</td><td>Account-session tests refuse a foreign state and a non-callback request without settling; the IPC test leaves a pending completion unpresented.</td><td>Real browser focus behaviour</td></tr>
 <tr><td><code>BRW-004</code> A failed handoff frees the name</td><td>Provider IPC test wires the real definition service, rejects the handoff, and proves the same provider name is readmitted on connect and reconnect.</td><td>Real openExternal failures</td></tr>
 <tr><td><code>BRW-005</code> A pending attempt has a main-process owner</td><td>Provider IPC test releases the attempt when the initiating renderer's contents are destroyed, then readmits the name. A change notification that throws leaves the settled connection and its return intact.</td><td>Real window teardown and reload</td></tr>
+<tr><td><code>PROV-004</code> Access lives exactly as long as the native turn</td><td>Harness-host tests release access when the native turn settles and defer an owner's release of a running turn. A late or foreign claim is refused. A product persistence test releases a quarantined attempt's lease when its thread is opened.</td><td>Real Codex and Prime processes that ignore interruption</td></tr>
+<tr><td><code>PROV-003</code> Removal during a turn finishes without a restart</td><td>Provider-service tests defer a tombstone the store refuses while an attempt runs. The owner's acknowledgement then finishes the removal.</td><td>Removal after an application restart</td></tr>
 <tr><td><code>MRT-375-1</code> Exact recipe identity and artifact lock</td><td>Public installer and resolver tests prove exact recipe selection, every supported target identity, digest mismatch rejection, and absence of mutable latest discovery.</td><td>Provider visibility and model discovery</td></tr>
 <tr><td><code>MRT-375-2</code> Isolated wheel-only assembly</td><td>A Prime-shaped fixture proves source-build rejection, absolute managed-tool inputs, closed environment redirects, and writes beneath one temporary managed root.</td><td>Production Prime assembly or a real Prime kernel</td></tr>
 <tr><td><code>MRT-375-3</code> Transactional activation and repair</td><td>Fixture scenarios prove concurrent deduplication, readiness before activation, failed preparation preserving the active descriptor, interrupted staging recovery, exact same-recipe repair, and frozen schema-v1 compatibility.</td><td>Updater download ordering</td></tr>

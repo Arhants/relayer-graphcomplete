@@ -1,6 +1,6 @@
 # TLA+ models
 
-These models find bugs in the two parts of Relayer with the most concurrent
+These models find bugs in the parts of Relayer with the most concurrent
 state. The method is model, counterexample, reproduce, fix:
 
 1. Model one race-prone state machine, citing the code each action abstracts.
@@ -21,7 +21,7 @@ npm run check:models
 Pass check ids to run a subset. The runner needs Java 11 or newer and the
 pinned `tla2tools.jar` (version and sha256 in `checks.json`). It never
 downloads the jar; place it at `~/.cache/tlaplus/tla2tools-1.8.0.jar` or set
-`TLA2TOOLS_JAR`. All checks and scenarios together take about 40 seconds.
+`TLA2TOOLS_JAR`. All checks and scenarios together take about 70 seconds.
 `--render` rewrites the scenario traces (see below).
 
 `check:models` is not part of `npm run check` yet. Adding it there requires a
@@ -34,10 +34,12 @@ known bug is recorded as an expected violation, so the runner stays green
 while the bug is open. The runner reads only the models, never the code, so
 the models must be kept in step with the code by hand.
 
-`CompletionCurrent` has one constant for each candidate fix:
+`CompletionCurrent` and `ExecutionLeases` have one constant for each
+candidate fix:
 
-- `completion-today` mirrors the code as it is.
-- `completion-fixed` enables every fix.
+- `completion-today` and `leases-today` mirror the code as it is.
+- `completion-fixed` enables every fix. Every `ExecutionLeases` fix has
+  landed, so `leases-today` is also its fixed preset.
 
 Each bug check starts from `completion-today`, switches every other bug's
 fix on, and leaves its own constant as the code has it. A violation of that
@@ -121,6 +123,8 @@ A bug fix follows these steps:
 With the code fix reverted, the replay fails at exactly the step the fix
 changes.
 
+`ExecutionLeases` has no scenarios or adapter yet.
+
 ## Verdicts
 
 The Verdict column is an independent read of the code for each
@@ -176,7 +180,7 @@ This model covers one recursive child from `complete()` to settlement:
 | `completion-clean-exit-reverted` | violated: shows why the fix is needed | Without the clean-exit check, a child whose provider exits cleanly without Return never settles. |
 | `completion-start-failure-reason` | Fixed; now passes | Before the fix: start-failure cleanup retried `fail_graph_completion("provider_start_failed")` every 250 ms, and the graph rejected that reason forever. `provider_start_failed`, `provider_attachment_persist_failed` and `graph_observation_failed` are now canonical failure reasons in `validate_terminal_reason`, so the graph and product rows share one reason. Scenario: `completion-start-failure`. `app_server_failure_reasons_are_canonical` in graph-core covers all three reasons. |
 | `completion-start-failure-terminal` | Fixed; now passes | Before the fix: if a stop before launch, or a Return after a lost start acknowledgement, terminated the current first, cleanup retried forever. Cleanup now stops at any terminal current and settles the product with that current's own outcome. It uses the same settlement as the semantic observer (`settle_terminal_recursive_child`). Scenarios: `completion-stop-before-failed-start`, `completion-return-after-lost-start`. |
-| `completion-child-admission-reverted` | violated: shows why the fix is needed | Before child admission, a selected child's provider ran with no admitted plan, attempt or held lease. Prime refused to run such a child. This check turns admission off and shows `ProviderRunsUnderLease` breaking. With admission on (`completion-today`), the safety checks include `ProviderRunsUnderLease`, `LeaseReleasedOnlyAfterSettlement` and `AttemptEndsOnlyAfterProvider`. A child's graph current can settle while its provider still runs, so its attempt ends, and its leases are released, only after both. `ClaimedChildSettles` now also requires the lease to be released. A refused admission fails the child with the host's reported category; the fake refuses with `model_unavailable`. Its cleanup skips the cancel, since no run was started: an unreachable host cannot hold a refused child active. Scenarios: `completion-admitted-start-failure`, `completion-admitted-return-after-lost-start`, `completion-admitted-returns-while-provider-runs`. |
+| `completion-child-admission-reverted` | violated: shows why the fix is needed | Before child admission, a selected child's provider ran with no admitted plan, attempt or held lease. Prime refused to run such a child. This check turns admission off and shows `ProviderRunsUnderLease` breaking. With admission on (`completion-today`), the safety checks include `ProviderRunsUnderLease`, `LeaseReleasedOnlyAfterSettlement`, `AccessReleasedOnlyAfterProviderRun` and `AttemptEndsOnlyAfterProvider`. A child's graph current can settle while its provider still runs, so its attempt ends only after both. The model separates the attempt's durable lease record (`lease`, which the adapter reads) from the host's provider access (`access`). The host releases the access as soon as the provider run ends (`HostAccessRelease`), without waiting for the attempt. The record is released only after the attempt ends, when Rust's release finds nothing left to free. `ClaimedChildSettles` requires both to be released. A refused admission fails the child with the host's reported category; the fake refuses with `model_unavailable`. Its cleanup skips the cancel, since no run was started: an unreachable host cannot hold a refused child active. Scenarios: `completion-admitted-start-failure`, `completion-admitted-return-after-lost-start`, `completion-admitted-returns-while-provider-runs`. |
 | `completion-restart` | passes | Restart reconciliation does not abort on a state the product produced. |
 | `completion-fixed-safety` | passes | With every candidate fix, every safety invariant holds. |
 | `completion-fixed-liveness` | passes | With every candidate fix, every claimed child settles. |
@@ -192,15 +196,69 @@ The candidate fixes are:
 
 A landed fix is on in `completion-today` as well.
 
-Fix 3 conflicts with the retryable activation path. That path restores the
-interaction to `submitted` for a retry, and resetting the execution to
-`reserved` is the alternative. Choosing between them is a product decision.
+The committed scenarios do not step `HostAccessRelease`, since the adapter
+has no such step. In their traces the access stays held until
+`LeaseReconcile`, which the model also allows.
+
+### `ExecutionLeases.tla`
+
+This model covers provider execution leases from admission to release:
+
+- **Rust:** the interaction execution task, from admission through the
+  attempt, `/complete`, terminal persistence and the inline release; the one
+  lease-debt reconciler; startup reconciliation after a restart.
+- **Harness host:** the pending access entry (admitted, claimed, settled,
+  released), its release timers, the owner's release and acknowledgement,
+  and close.
+- **Desktop main:** the provider lease count, the lease's acknowledgement,
+  removal and its finalize, the runtime, and `close()`.
+- **User:** removal, reading a quarantined interaction, quit and restart.
+
+There is one provider `P`. Each turn has one attempt, one lease and its own
+thread. Most checks use one turn and at most one restart; `leases-safety`
+and `leases-ideal` use two turns.
+
+Fault constants turn on the conditions the findings need:
+`AdmissionTimeout`, `RustCanAbandon`, `PersistCanFail`, `StartupQuarantine`
+and `HarnessCanHang`. Each fix has its own constant. The open findings have
+none yet, so the model follows today's code for them.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `leases-safety` | passes | With every fault on, a leased runtime stays open, a turn runs only under held access, access is never released while its turn runs (`AccessKeptWhileTurnRuns`), and the app always starts. |
+| `leases-ideal` | passes | With no faults, every lease is released, every lease debt is reconciled, every attempt whose turn ended becomes terminal, and a removal completes without a restart. |
+| `leases-abandon` | Fixed; now passes | Finding B. Before the fix: after Rust gave up on a running turn, its lease release freed the access while the native turn still ran. Removal could then close the runtime and delete its home under it. Now access lives as long as the native turn. An owner's release of a running turn cancels the turn and returns at once. The host releases the access as soon as the native turn ends, and keeps the entry until the owner's release (`HostReleasesOnSettle`). `leases-abandon-reverted` shows the old trace. |
+| `leases-timer-claim` | Fixed; now passes | Finding A, plausible: needs a 30 s stall. Before the fix: the admission timer's release could be in flight when the claim ran, and it then freed the access under the running turn. Once any release is decided for an admission, the claim refuses it, even if that release failed (`ClaimRejectsReleasing`). `leases-timer-claim-reverted` shows the old trace. `leases-claim-after-failed-release` covers a failed release. It turns A2's fix off, because a refused finalize is the only way the model has for a release to fail. |
+| `leases-removal-finalize` | Fixed in PR 1; now passes | Finding A2. The host releases the last lease when the native turn ends, before Rust ends the attempt, so the store refuses the removal finalize. The refusal now leaves `P` `removal_pending` instead of throwing. The owner's release, which Rust sends only once the attempt is terminal, acknowledges the lease, and the acknowledgement retries the finalize (`AckRetriesFinalize`). `leases-removal-finalize-reverted` shows removal waiting for a restart without it. |
+| `leases-view-debt` | Fixed; now passes | Finding D. Before the fix: settling a quarantined attempt (from the thread view or an invoke action's destination) made lease debt but did not wake the reconciler. The debt then waited for a restart. The settle now wakes it (`QuarantineSettleWakesReconciler`). `leases-view-debt-reverted` shows the old trace. |
+| `leases-persist-lease` | Fixed; now passes | Finding C, lease half. Before the fix: when a turn's terminal state could not be persisted, nothing released its lease. The host now releases it when the native turn ends. `leases-persist-lease-reverted` shows the old trace. |
+| `leases-restart-quarantine`, `leases-restart-persist` | Fixed; now pass | Finding E, startup half. A removal waited on a running attempt, and the user quit. At the next start, an interrupted submitted input was quarantined, or a failed persist had left it quarantined, so its attempt stayed `running`. `reconcileStartup`'s refused finalize then failed every start. A refused finalize now leaves `P` `removal_pending`, and the app starts. `leases-restart-quarantine-reverted` shows the old trace. |
+| `leases-restart-removal` | Confirmed, open, PR 2 | Finding E, removal half. After that restart, `P` stays `removal_pending` while the quarantined attempt runs. Once the thread view settles the attempt, the reconciler's release finds no host entry, because host memory is fresh after the restart. Nothing acknowledges, so the finalize is not retried until the next restart. |
+| `leases-persist-attempt` | Confirmed, open, PR 2 | Finding C, attempt half. When a turn's terminal state cannot be persisted, its attempt stays `running`, which blocks the provider tombstone. A harness approval that is aborted, expired or cancelled reaches this with no fault. |
+| `leases-hang` | Confirmed (missing feature), open | Finding G. A cancelled native turn that ignores the cancellation keeps its provider access forever, so removal waits forever. A per-turn force-stop is planned for a later PR. |
+
+The fixes are:
+
+1. The host releases access when the native turn ends, and an owner's
+   release of a running turn cancels it (`HostReleasesOnSettle`). Landed.
+2. The claim refuses an admission once a release was decided
+   (`ClaimRejectsReleasing`). Landed.
+3. A refused finalize leaves the provider `removal_pending`, and the owner's
+   acknowledgement retries it (`AckRetriesFinalize`). Landed.
+4. Settling a quarantined attempt wakes the reconciler
+   (`QuarantineSettleWakesReconciler`). Landed.
+
+The `*-reverted` checks turn one landed fix off and show its old trace. In
+them the acknowledgement call is attributed to `AckRetriesFinalize`, so a
+reverted `HostReleasesOnSettle` still acknowledges. The open findings C and
+E have no fix constants yet. Startup error isolation (L6) is not modeled.
 
 ## Limits
 
 - **Bounds:** one provider plus one new connection, one renderer, one lease,
-  and a single child at depth 1 with head revision at most 3. A bug that needs
-  more actors is out of reach.
+  and a single child at depth 1 with head revision at most 3. The lease model
+  has one provider, at most two turns and two restarts, and one turn per
+  thread. A bug that needs more actors is out of reach.
 - **Queue order:** the provider queue is FIFO for queued cancels, but requests
   that queue behind an interior await may start in either order.
 - **Not modeled:**
@@ -212,7 +270,10 @@ interaction to `submitted` for a retry, and resetting the execution to
   - Ladybug index crash recovery;
   - remint races in the graph server;
   - the parent's `/result` long poll;
-  - grandchildren.
+  - grandchildren;
+  - several turns on one harness session or thread;
+  - store errors other than a refused drain in the provider service, and
+    acknowledgement failures.
 - **Candidate fixes are modeled, not designed.** A fix still needs a product
   decision wherever the PRD is silent. One example is what the default family
   should become when its managed family is tombstoned.

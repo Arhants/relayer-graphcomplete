@@ -388,7 +388,9 @@ export class RelayerAppServerService {
         if (response.ok) return;
         let detail = null;
         try { detail = await response.json(); } catch { /* use status fallback */ }
-        throw new Error(detail?.error?.message || detail?.error || `Provider definition write failed (${response.status}).`);
+        const error = new Error(detail?.error?.message || detail?.error || `Provider definition write failed (${response.status}).`);
+        if (typeof detail?.error?.code === "string") error.code = detail.error.code;
+        throw error;
       },
       createWithCatalog: async (definition, catalog, { signal } = {}) => {
         const session = await this.start();

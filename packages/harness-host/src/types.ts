@@ -294,6 +294,11 @@ export type HarnessExecutionAccess =
 export interface HarnessExecutionAccessLease {
   readonly access: HarnessExecutionAccess;
   release(): void | Promise<void>;
+  /**
+   * Called after release once the lease's owner has durably recorded that the work using
+   * this access ended. A failure is returned to the owner, which retries.
+   */
+  acknowledge?(): void | Promise<void>;
 }
 
 /** One currently resolvable model-family member. Array order is family order. */
