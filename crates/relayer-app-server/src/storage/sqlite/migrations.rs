@@ -1,7 +1,7 @@
 use crate::storage::StorageError;
 use sqlx::{SqlitePool, migrate::Migrator};
 
-static MIGRATOR: Migrator = sqlx::migrate!("./src/storage/sqlite/migrations");
+pub(super) static MIGRATOR: Migrator = sqlx::migrate!("./src/storage/sqlite/migrations");
 
 pub(super) async fn run(pool: &SqlitePool) -> Result<(), StorageError> {
     MIGRATOR.run(pool).await?;
@@ -649,6 +649,7 @@ mod tests {
             execution_access_contracts: vec!["managed-runtime@1".into()],
             family_policy: None,
             runtime_available: true,
+            restore_prior_readiness: false,
             unavailable_reason: None,
         };
         store

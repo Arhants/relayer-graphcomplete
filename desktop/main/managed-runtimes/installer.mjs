@@ -1251,7 +1251,10 @@ export function createManagedRuntimeInstaller({
     const base = join(root, recipe.runtimeId, target.key);
     const receipt = await readActive(base);
     if (!receipt || receipt.runtimeId !== recipe.runtimeId || receipt.target !== target.key) {
-      throw new Error(`${recipe.runtimeId} managed runtime is not installed.`);
+      const error = new Error(`${recipe.runtimeId} managed runtime is not installed.`);
+      // Only an absent receipt means "never installed"; a corrupt one is reported as such.
+      const absent = await lstat(join(base, "active.json")).then(() => false, (cause) => cause?.code === "ENOENT");
+      throw absent ? Object.assign(error, { code: "managed_runtime_not_installed" }) : error;
     }
     const exactLegacy = receipt.schemaVersion === 1
       && ["codex", "claude"].includes(recipe.runtimeId)

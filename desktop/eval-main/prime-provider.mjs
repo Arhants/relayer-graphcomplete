@@ -56,7 +56,7 @@ export function createEvalManagedPrimeRuntime({ root, appRoot, pythonClientRoot,
 }
 
 export function createEvalPrimeProvider({ userDataDirectory, productServer, productSession,
-  runtimeSession, graphRuntime, managedPrimeRuntime, managedCodexRuntime,
+  runtimeSession, managedPrimeRuntime, managedCodexRuntime,
   fetchImpl = fetch, createComposition = createProviderComposition }) {
   const request = async (path, { method = "GET", body } = {}) => {
     const response = await fetchImpl(new URL(path, productSession.origin), {
@@ -76,10 +76,7 @@ export function createEvalPrimeProvider({ userDataDirectory, productServer, prod
     runtimeRequirements: HARNESS_MANAGED_RUNTIME_REQUIREMENTS,
     prepareRecipe: () => managedPrimeRuntime.prepare(),
     checkers: { "prime.agent": ({ runtime }) => checkPrimeManagedRuntime({ runtime }) },
-    publishAvailability: async (updates) => {
-      await productServer.publishHarnessReadiness(updates);
-      await graphRuntime.recordHarnessReadiness(updates);
-    },
+    publishAvailability: (updates) => productServer.publishHarnessReadiness(updates),
   });
   const entries = new Map();
   const credentialStore = {

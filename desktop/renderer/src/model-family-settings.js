@@ -29,7 +29,7 @@ import {
   refreshNewThreadModelPicker,
   resetNewThreadModelPicker,
 } from "./composer-model-picker.js";
-import { clearPermissionSelection, preparePermissionProfiles } from "./permission-profiles.js";
+import { preparePermissionProfiles } from "./permission-profiles.js";
 import { appState } from "./state.js";
 import { createLatestRequestGate } from "./navigation-history.js";
 import { $, $$, escapeHtml, escapeHtmlAttribute, toast } from "./ui.js";
@@ -563,25 +563,10 @@ async function persistDefault(field) {
     harnessNotice = field === "providerId"
       ? defaultHarnessChangeNotice(previous, saved, settings)
       : null;
-    // The save has committed. Reconcile the rest of the app with it even if a step fails, so a
-    // new thread never starts from the previous provider, harness, or permission profile.
-    let reconcileError = null;
-    if (harnessNotice) {
-      try {
-        applyPermissionProfiles = await preparePermissionProfiles(saved.harnessId);
-      } catch (error) {
-        reconcileError = error;
-        applyPermissionProfiles = clearPermissionSelection;
-      }
-    }
+    if (harnessNotice) applyPermissionProfiles = await preparePermissionProfiles(saved.harnessId);
     applyPermissionProfiles?.();
-    try {
-      await refreshModelSettings({ preserveEdit: true });
-    } catch (error) {
-      reconcileError ??= error;
-    }
+    await refreshModelSettings({ preserveEdit: true });
     resetNewThreadModelPicker();
-    if (reconcileError) throw reconcileError;
     setStatus(harnessNotice ?? "Saved", "success");
   } catch (error) {
     if (!saved) settings.defaults = previous;

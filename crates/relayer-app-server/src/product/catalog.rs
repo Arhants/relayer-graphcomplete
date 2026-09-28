@@ -98,6 +98,10 @@ pub(crate) struct RuntimeProductHarness {
     pub(crate) model_rules: Option<HarnessModelRules>,
     pub(crate) execution_access_contracts: Vec<String>,
     pub(crate) family_policy: Option<FamilyPolicyReference>,
+    /// For a readiness-coordinated harness, `runtime_available` says only that the local
+    /// runtime files validate. Startup then restores ready only from the app server's own
+    /// previous record for the same runtime configuration digest (PROV-006).
+    pub(crate) restore_prior_readiness: bool,
     pub(crate) runtime_available: bool,
     pub(crate) unavailable_reason: Option<UnavailableReason>,
 }

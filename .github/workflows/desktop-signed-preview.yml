@@ -172,9 +172,6 @@ jobs:
           export APPLE_API_KEY="$api_key_path"
           npm run desktop:dist:preview
 
-      - name: Install pinned telemetry upload client without credentials
-        run: npm install --no-save --package-lock=false @sentry/cli@3.7.0
-
       - name: Upload version-matched telemetry artifacts
         shell: bash
         env:
@@ -283,9 +280,6 @@ jobs:
           RELAYER_WINDOWS_CERTIFICATE_PROFILE: ${{ vars.RELAYER_WINDOWS_CERTIFICATE_PROFILE }}
           RELAYER_WINDOWS_PUBLISHER_NAME: ${{ vars.RELAYER_WINDOWS_PUBLISHER_NAME }}
         run: npm run desktop:dist:preview
-
-      - name: Install pinned telemetry upload client without credentials
-        run: npm install --no-save --package-lock=false @sentry/cli@3.7.0
 
       - name: Upload version-matched telemetry artifacts
         shell: pwsh

@@ -35,7 +35,7 @@ async function setup({ missingModel = false, rejectValidation = false, connectio
     productServer: { providerDefinitionStore: () => ({ load: async () => [] }), providerStatuses: async () => new Map() },
     productSession: { origin: "http://localhost:1234", cookie: { name: "session", value: "write-token" } },
     runtimeSession: { configurations: new Map(mixedReadiness ? [["prime-agent-deep", { implementation: "prime.agent" }]] : []), digestConfiguration: () => "digest" },
-    graphRuntime: {}, managedPrimeRuntime: {}, managedCodexRuntime: {},
+    managedPrimeRuntime: {}, managedCodexRuntime: {},
     createComposition: (options) => { dependencies = options; return composition; },
     fetchImpl: async (url, options) => {
       const path = new URL(url).pathname;
@@ -133,7 +133,7 @@ it.each([false, true])("uses production provider composition and credential reop
     },
     productSession: { origin: "http://localhost:1234", cookie: { name: "session", value: "write-token" } },
     runtimeSession: { configurations, digestConfiguration: digestHarnessConfiguration },
-    graphRuntime: { recordHarnessReadiness: async () => {} }, managedPrimeRuntime: { prepare }, managedCodexRuntime: {},
+    managedPrimeRuntime: { prepare }, managedCodexRuntime: {},
     fetchImpl: async (url, options) => {
       const path = new URL(url).pathname;
       const body = options.body ? JSON.parse(options.body) : undefined;
