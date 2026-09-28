@@ -308,12 +308,74 @@ impl SqliteProductStore {
         Ok(id)
     }
 
+    /// Relayer has stopped waiting on an attempt's native run. An attempt already ended is left
+    /// unchanged. If its interaction's outcome is already decided (failed or stopped, but not
+    /// pending canonical reconciliation), the attempt ends with that outcome. Otherwise its
+    /// outcome stays undecided for canonical reconciliation, and only the end of the wait is
+    /// recorded. Either way the attempt stops counting toward the provider removal drain, and
+    /// its execution lease becomes debt. Returns whether this call changed the attempt.
+    pub(crate) async fn end_attempt_native_wait(
+        &self,
+        attempt_id: i64,
+        timestamp: &str,
+    ) -> Result<bool, StorageError> {
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let interaction: Option<(String, Option<String>)> = sqlx::query_as(
+            "SELECT i.completion_status,i.completion_error FROM interaction_attempts a JOIN interactions i ON i.id=a.interaction_id WHERE a.id=?1 AND a.outcome='running' AND a.native_wait_ended_at IS NULL",
+        )
+        .bind(attempt_id)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let Some((status, error)) = interaction else {
+            return Ok(false);
+        };
+        let error = error.unwrap_or_default();
+        let pending = error.starts_with(crate::product::RECONCILIATION_PENDING_PREFIX);
+        let decided = match status.as_str() {
+            "stopped" if !pending => Some(("cancelled", "approval_cancelled")),
+            "failed" if !pending => Some((
+                "execution_failed",
+                if error.starts_with("Approval request expired") {
+                    "approval_expired"
+                } else if error.starts_with("Approval request was aborted") {
+                    "approval_aborted"
+                } else {
+                    "execution_failed"
+                },
+            )),
+            _ => None,
+        };
+        let changed = match decided {
+            Some((outcome, failure_category)) => sqlx::query(
+                "UPDATE interaction_attempts SET finished_at=?1,outcome=?2,failure_category=?3,effect_boundary='unknown' WHERE id=?4 AND outcome='running'",
+            )
+            .bind(timestamp)
+            .bind(outcome)
+            .bind(failure_category)
+            .bind(attempt_id),
+            None => sqlx::query(
+                "UPDATE interaction_attempts SET native_wait_ended_at=?1 WHERE id=?2 AND outcome='running' AND native_wait_ended_at IS NULL",
+            )
+            .bind(timestamp)
+            .bind(attempt_id),
+        }
+        .execute(&mut *transaction)
+        .await?
+        .rows_affected()
+            == 1;
+        transaction.commit().await?;
+        Ok(changed)
+    }
+
+    /// Lease debt: an attempt that no longer counts as running (it ended, or Relayer stopped
+    /// waiting on its native run while its outcome awaits reconciliation) and whose lease
+    /// release is unrecorded.
     pub(crate) async fn execution_lease_debt(
         &self,
         attempt_id: i64,
     ) -> Result<Option<ExecutionLeaseDebt>, StorageError> {
         let row: Option<(i64, i64, String)> = sqlx::query_as(
-            "SELECT a.id,i.thread_id,a.execution_lease_id FROM interaction_attempts a JOIN interactions i ON i.id=a.interaction_id WHERE a.id=?1 AND a.execution_lease_id IS NOT NULL AND a.execution_lease_reconciled_at IS NULL AND a.outcome!='running'",
+            "SELECT a.id,i.thread_id,a.execution_lease_id FROM interaction_attempts a JOIN interactions i ON i.id=a.interaction_id WHERE a.id=?1 AND a.execution_lease_id IS NOT NULL AND a.execution_lease_reconciled_at IS NULL AND (a.outcome!='running' OR a.native_wait_ended_at IS NOT NULL)",
         )
         .bind(attempt_id)
         .fetch_optional(&self.pool)
@@ -331,7 +393,7 @@ impl SqliteProductStore {
         &self,
     ) -> Result<Vec<ExecutionLeaseDebt>, StorageError> {
         let rows: Vec<(i64, i64, String)> = sqlx::query_as(
-            "SELECT a.id,i.thread_id,a.execution_lease_id FROM interaction_attempts a JOIN interactions i ON i.id=a.interaction_id WHERE a.execution_lease_id IS NOT NULL AND a.execution_lease_reconciled_at IS NULL AND a.outcome!='running' ORDER BY a.id",
+            "SELECT a.id,i.thread_id,a.execution_lease_id FROM interaction_attempts a JOIN interactions i ON i.id=a.interaction_id WHERE a.execution_lease_id IS NOT NULL AND a.execution_lease_reconciled_at IS NULL AND (a.outcome!='running' OR a.native_wait_ended_at IS NOT NULL) ORDER BY a.id",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -354,7 +416,7 @@ impl SqliteProductStore {
         timestamp: &str,
     ) -> Result<bool, StorageError> {
         let result = sqlx::query(
-            "UPDATE interaction_attempts SET execution_lease_reconciled_at=?1 WHERE id=?2 AND execution_lease_id=?3 AND execution_lease_reconciled_at IS NULL AND outcome!='running'",
+            "UPDATE interaction_attempts SET execution_lease_reconciled_at=?1 WHERE id=?2 AND execution_lease_id=?3 AND execution_lease_reconciled_at IS NULL AND (outcome!='running' OR native_wait_ended_at IS NOT NULL)",
         )
         .bind(timestamp)
         .bind(attempt_id)

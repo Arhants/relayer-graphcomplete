@@ -2551,11 +2551,59 @@ async fn finish_child_attempt(
     crate::app_server::reconcile_terminal_execution_lease(product, runtime, attempt_id).await
 }
 
-/// After the product server restarts, resumes waiting on each child that had settled while
-/// its provider was still unwinding. Its attempt ends, and its leases are released, only
-/// once the harness confirms the run ended. A harness that restarted too knows no such run
-/// and answers at once, while one that stayed up keeps the leases held until the run ends.
+/// Whether one immediate observation shows that a child's provider run has ended. Only the
+/// host's answer naming the child and not saying it runs, or the host's refusal (a restarted
+/// host knows no such run), counts as ended; a timeout, an unreachable host, or any other shape
+/// proves nothing.
+async fn provider_end_observed_now(
+    runtime: &crate::runtime::RuntimeClient,
+    thread_id: i64,
+    completion_id: i64,
+) -> bool {
+    match runtime
+        .probe_invoked_completion(thread_id, completion_id)
+        .await
+    {
+        Ok(observation) => {
+            observation["running"] != true
+                && observation["completionId"].as_i64() == Some(completion_id)
+        }
+        Err(error) => !error.is_timeout() && error.is_host_answer(),
+    }
+}
+
+/// How long startup waits, across all unwinding children together, before serving Desktop.
+/// Desktop allows the app server ten seconds to become ready, so this stays well inside it.
+const STARTUP_UNWINDING_BOUND: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// After the product server restarts, ends the attempt of each child that had settled while
+/// its provider was still unwinding, once the harness confirms the run ended. Every child is
+/// observed at once and concurrently. A child whose run already ended (a harness that
+/// restarted with the server knows no such run) normally has its attempt ended, and its
+/// leases released, before startup serves Desktop, so a provider removal finished at startup
+/// does not wait on it. Startup waits for finding and finishing them at most
+/// `STARTUP_UNWINDING_BOUND` in total; anything still running, unreported, or not yet read
+/// keeps going in the background, and a child keeps its leases until its run ends.
 pub(crate) async fn resume_unwinding_recursive_children(
+    product: crate::product::ProductService,
+    runtime: crate::runtime::RuntimeClient,
+    reconciler: Option<crate::app_server::ExecutionLeaseReconciler>,
+) {
+    // Dropping the handle when the bound expires detaches the task; it is not cancelled.
+    let resume = tokio::spawn(resume_unwinding_children_until_ended(
+        product, runtime, reconciler,
+    ));
+    if tokio::time::timeout(STARTUP_UNWINDING_BOUND, resume)
+        .await
+        .is_err()
+    {
+        eprintln!(
+            "recursive children still unwinding were not all resumed when startup continued; they finish in the background"
+        );
+    }
+}
+
+async fn resume_unwinding_children_until_ended(
     product: crate::product::ProductService,
     runtime: crate::runtime::RuntimeClient,
     reconciler: Option<crate::app_server::ExecutionLeaseReconciler>,
@@ -2571,18 +2619,27 @@ pub(crate) async fn resume_unwinding_recursive_children(
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     };
+    let mut children = tokio::task::JoinSet::new();
     for child in unwinding {
         let product = product.clone();
         let runtime = runtime.clone();
         let reconciler = reconciler.clone();
-        tokio::spawn(async move {
-            let _ = await_provider_end(
+        children.spawn(async move {
+            if !provider_end_observed_now(
                 &runtime,
                 child.thread_id.value(),
                 child.graph_completion_id,
-                PROVIDER_END_RETRY_STEP,
             )
-            .await;
+            .await
+            {
+                let _ = await_provider_end(
+                    &runtime,
+                    child.thread_id.value(),
+                    child.graph_completion_id,
+                    PROVIDER_END_RETRY_STEP,
+                )
+                .await;
+            }
             if !finish_child_attempt(&product, &runtime, child.interaction_id, child.attempt_id)
                 .await
                 && let Some(reconciler) = reconciler
@@ -2591,6 +2648,7 @@ pub(crate) async fn resume_unwinding_recursive_children(
             }
         });
     }
+    while children.join_next().await.is_some() {}
 }
 
 pub(super) async fn invoke_action(

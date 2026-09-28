@@ -1662,13 +1662,15 @@ async fn a_child_returned_while_its_provider_runs_exports_and_restarts_as_accept
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(world.observe().await["attempt"], "running");
 
-    // A harness that restarted with the server knows no such run, so the wait ends at once.
-    // The replay's own exit observer is still blocked on the live fake, so this proves the
-    // resumed wait ended the attempt and released its lease.
+    // A harness that restarted with the server knows no such run, so it answers the one
+    // startup observation with a refusal (after a moment). The replay's own exit observer is
+    // still blocked on the live fake, so this proves resuming ended the attempt and released
+    // its lease, and did so before it returned: startup orders it before serving Desktop.
     let restarted_harness = Router::new()
         .route(
             "/sessions/{id}/invoked-completions/{completion}",
             routing::get(|| async {
+                tokio::time::sleep(Duration::from_millis(200)).await;
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     axum::Json(serde_json::json!({"error":"Invoked completion is not registered"})),
@@ -1706,27 +1708,20 @@ async fn a_child_returned_while_its_provider_runs_exports_and_restarts_as_accept
     .await
     .unwrap();
     resume_unwinding_recursive_children(world.product.clone(), restarted_runtime, None).await;
-    let deadline = Instant::now() + Duration::from_secs(3);
-    let (outcome, boundary, reconciled): (String, String, Option<String>) = loop {
-        let row: (String, String, Option<String>) = sqlx::query_as(
-            "SELECT outcome,effect_boundary,execution_lease_reconciled_at FROM interaction_attempts WHERE interaction_id=?1",
-        )
-        .bind(world.child.id.value())
-        .fetch_one(&world.pool)
-        .await
-        .unwrap();
-        if row.2.is_some() || Instant::now() >= deadline {
-            break row;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    };
+    let (outcome, boundary, reconciled): (String, String, Option<String>) = sqlx::query_as(
+        "SELECT outcome,effect_boundary,execution_lease_reconciled_at FROM interaction_attempts WHERE interaction_id=?1",
+    )
+    .bind(world.child.id.value())
+    .fetch_one(&world.pool)
+    .await
+    .unwrap();
     assert_eq!(
         (outcome.as_str(), boundary.as_str()),
         ("accepted", "graph_write")
     );
     assert!(
         reconciled.is_some(),
-        "the lease is released once the run is confirmed ended"
+        "the lease is released once the run is confirmed ended, before resuming returns"
     );
     assert_eq!(world.observe().await["status"], "accepted");
     graph_task.abort();
