@@ -1178,6 +1178,34 @@
       ]
     },
     {
+      "id": "composer-cleared-send-stays-cleared",
+      "module": "TurnComposer",
+      "preset": "composer-replay",
+      "init": "view = \"A\"",
+      "promises": [
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain",
+        "SupersededStaysGone"
+      ],
+      "summary": "The user clears the composer while a follow-up is pending, and the server rejects it; the cleared text does not come back.",
+      "steps": [
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "Erase"
+        ],
+        [
+          "PostFails",
+          "A"
+        ]
+      ]
+    },
+    {
       "id": "inspector-annotate-and-switch",
       "module": "NodeInspector",
       "preset": "inspector-replay",

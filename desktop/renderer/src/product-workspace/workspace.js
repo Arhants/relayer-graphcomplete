@@ -3479,7 +3479,8 @@ export function createProductWorkspace({
       promptRevision: submission.prompt.revision,
     });
     inFlightSubmissions.set(String(submittedThreadId), inFlightSubmission);
-    prompt.disabled = true;
+    // The prompt stays editable while the send is pending (SCP-019); Send
+    // stays disabled, so one follow-up is in flight per thread.
     send.disabled = true;
     for (const control of $("#nodeInputActions").querySelectorAll("button, textarea")) {
       control.disabled = true;

@@ -185,7 +185,7 @@
           "2": 1
         },
         "cleared": 0,
-        "disabled": true,
+        "disabled": false,
         "drafts": {
           "<<\"A\", 1>>": {
             "rev": 1,

@@ -247,10 +247,9 @@ ClickSend ==
   /\ pc' = [pc EXCEPT ![view] = "post"]
   /\ owner' = view
   /\ intent' = [intent EXCEPT ![view] = [text |-> text, rev |-> rev, scope |-> active]]
-  /\ disabled' = TRUE
+  \* The prompt stays editable while the send is pending (SCP-019).
   /\ cleared' = 0
-  /\ UNCHANGED <<view, productVars, active, drafts, text, rev, persisted, fresh,
-                 sent, unsent>>
+  /\ UNCHANGED <<view, productVars, composerVars, fresh, sent, unsent>>
   /\ UNCHANGED holdVars
 
 \* Send waits before posting: an authored input commit is pending, so
@@ -267,15 +266,12 @@ ClickSendWaits ==
   /\ UNCHANGED <<view, productVars, composerVars, fresh, sent, unsent>>
   /\ UNCHANGED holdVars
 
-\* The wait ends on the same thread and attempt: submitInteraction begins
-\* and disables the prompt.
+\* The wait ends on the same thread and attempt: submitInteraction begins.
 Reconciled(t) ==
   /\ pc[t] = "reconcile" /\ view = t /\ owner = t
   /\ pc' = [pc EXCEPT ![t] = "post"]
-  /\ disabled' = TRUE
   /\ cleared' = 0
-  /\ UNCHANGED <<view, productVars, active, drafts, text, rev, persisted, owner,
-                 intent, fresh, sent, unsent>>
+  /\ UNCHANGED <<view, productVars, composerVars, owner, intent, fresh, sent, unsent>>
   /\ UNCHANGED holdVars
 
 \* The Send ends without posting: the thread or attempt changed, or an
