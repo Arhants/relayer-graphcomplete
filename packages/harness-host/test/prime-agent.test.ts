@@ -1055,6 +1055,197 @@ describe("PrimeAgentHarness", () => {
     });
   });
 
+  it("does not resume a saved conversation a force-stopped root turn was reopening", async () => {
+    const restored = primeSession("/tmp/saved.jsonl");
+    const fresh = primeSession("/tmp/fresh.jsonl");
+    const create = vi.fn(() => "fresh-manager");
+    const open = vi.fn(() => "saved-manager");
+    let creations = 0;
+    const createAgentSessionFromServices = vi.fn(async () => {
+      creations += 1;
+      if (creations === 1) return { session: restored };
+      if (creations === 2) throw new Error("native session creation failed");
+      // Reopening the saved conversation never finishes.
+      if (creations === 3) return new Promise<never>(() => undefined);
+      return { session: fresh };
+    });
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7, workingDirectory: "/tmp/project", ...fullPermission, configuration,
+      savedState: {
+        primeAgentSessionFile: "/tmp/saved.jsonl",
+        primeAgentSessionPersonalPresentationVersionId: 90,
+      },
+    }, { loadModule: async () => ({
+      ...runScopeApi(),
+      SessionManager: { create, open },
+      createHostRequestHandler: (handler: unknown) => handler,
+      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionFromServices,
+    }) as never });
+    expect(open).toHaveBeenCalledOnce();
+
+    // An unpinned turn rotates away from the restored session, but its new session fails,
+    // so no root session is left installed while the saved file stays resumable.
+    await expect(harness.complete({ ...runContext(100, "unpinned"), forceSignal: new AbortController().signal }))
+      .rejects.toThrow("native session creation failed");
+    expect(restored.disposeAsync).toHaveBeenCalledOnce();
+
+    // A turn pinned to 90 again reopens the saved conversation, which hangs.
+    const cancel = new AbortController();
+    const rootForce = new AbortController();
+    const stuck = harness.complete({ ...presentationRunContext(101, "stuck", 90), forceSignal: rootForce.signal }, cancel.signal);
+    await vi.waitFor(() => expect(creations).toBe(3));
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(open).toHaveBeenLastCalledWith("/tmp/saved.jsonl");
+    cancel.abort(new Error("cancelled"));
+    rootForce.abort(new Error("force-stopped after two minutes"));
+    await expect(stuck).rejects.toThrow("force-stopped after two minutes");
+    expect(harness.state()).toEqual({});
+
+    // The next pinned root turn starts a fresh conversation instead of resuming that file.
+    await harness.complete({ ...presentationRunContext(102, "next", 90), forceSignal: new AbortController().signal });
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(createAgentSessionFromServices).toHaveBeenLastCalledWith(expect.objectContaining({ sessionManager: "fresh-manager" }));
+    expect(fresh.promptAndWait).toHaveBeenCalledOnce();
+    expect(harness.state()).toEqual({
+      primeAgentSessionFile: "/tmp/fresh.jsonl",
+      primeAgentSessionPersonalPresentationVersionId: 90,
+    });
+  });
+
+  it("keeps the successor's presentation instructions when an abandoned reload later fails", async () => {
+    let resourceLoaderOptions: { appendSystemPromptOverride(base: string[]): string[] } | undefined;
+    const staleReload = deferred<void>();
+    const stuckRoot = primeSession("/tmp/stuck-root.jsonl", { reload: vi.fn(() => staleReload.promise) });
+    const successor = primeSession("/tmp/successor.jsonl", { reload: vi.fn(async () => undefined) });
+    const sessions = [stuckRoot, successor];
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7, workingDirectory: "/tmp/project", ...fullPermission, configuration,
+    }, { loadModule: async () => ({
+      ...runScopeApi(),
+      SessionManager: { create: vi.fn(() => "fresh-manager"), open: vi.fn() },
+      createHostRequestHandler: (handler: unknown) => handler,
+      createAgentSessionServices: vi.fn(async (options: { resourceLoaderOptions: typeof resourceLoaderOptions }) => {
+        resourceLoaderOptions = options.resourceLoaderOptions;
+        return {};
+      }),
+      createAgentSessionFromServices: vi.fn(async () => {
+        const session = sessions.shift();
+        if (session === undefined) throw new Error("unexpected Prime session creation");
+        return { session };
+      }),
+    }) as never });
+    const rootForce = new AbortController();
+
+    // The stuck turn's reload is abandoned while it still holds the previous (empty) instructions.
+    const stuck = harness.complete({ ...presentationRunContext(110, "stuck", 90), forceSignal: rootForce.signal });
+    await vi.waitFor(() => expect(stuckRoot.reload).toHaveBeenCalledOnce());
+    rootForce.abort(new Error("force-stopped after two minutes"));
+    await expect(stuck).rejects.toThrow("force-stopped after two minutes");
+    await harness.complete({ ...presentationRunContext(111, "successor", 90), forceSignal: new AbortController().signal });
+    expect(successor.promptAndWait).toHaveBeenCalledOnce();
+
+    staleReload.reject(new Error("stale reload failed"));
+    await settleMicrotasks();
+
+    expect(resourceLoaderOptions?.appendSystemPromptOverride(["base"]))
+      .toEqual(["base", expect.stringContaining("If you are the root agent")]);
+    await harness.complete({ ...presentationRunContext(112, "next", 90), forceSignal: new AbortController().signal });
+    expect(successor.reload).not.toHaveBeenCalled();
+    expect(successor.promptAndWait).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not create a session when an abandoned rotation's disposal settles after the successor started", async () => {
+    let resourceLoaderOptions: { appendSystemPromptOverride(base: string[]): string[] } | undefined;
+    const staleDisposal = deferred<void>();
+    const pinned = primeSession("/tmp/pinned.jsonl", {
+      reload: vi.fn(async () => undefined),
+      disposeAsync: vi.fn(() => staleDisposal.promise),
+    });
+    const successor = primeSession("/tmp/successor.jsonl", { reload: vi.fn(async () => undefined) });
+    const extra = primeSession("/tmp/extra.jsonl");
+    const sessions = [pinned, successor, extra];
+    const createAgentSessionFromServices = vi.fn(async () => {
+      const session = sessions.shift();
+      if (session === undefined) throw new Error("unexpected Prime session creation");
+      return { session };
+    });
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7, workingDirectory: "/tmp/project", ...fullPermission, configuration,
+    }, { loadModule: async () => ({
+      ...runScopeApi(),
+      SessionManager: { create: vi.fn(() => "fresh-manager"), open: vi.fn() },
+      createHostRequestHandler: (handler: unknown) => handler,
+      createAgentSessionServices: vi.fn(async (options: { resourceLoaderOptions: typeof resourceLoaderOptions }) => {
+        resourceLoaderOptions = options.resourceLoaderOptions;
+        return {};
+      }),
+      createAgentSessionFromServices,
+    }) as never });
+    await harness.complete({ ...presentationRunContext(120, "pinned", 90), forceSignal: new AbortController().signal });
+    const rootForce = new AbortController();
+
+    // An unpinned turn rotates; graceful disposal of the pinned session stalls.
+    const stuck = harness.complete({ ...runContext(121, "stuck"), forceSignal: rootForce.signal });
+    await vi.waitFor(() => expect(pinned.disposeAsync).toHaveBeenCalledOnce());
+    rootForce.abort(new Error("force-stopped after two minutes"));
+    await expect(stuck).rejects.toThrow("force-stopped after two minutes");
+    await harness.complete({ ...presentationRunContext(122, "successor", 90), forceSignal: new AbortController().signal });
+    expect(successor.promptAndWait).toHaveBeenCalledOnce();
+
+    staleDisposal.resolve();
+    await settleMicrotasks();
+
+    expect(createAgentSessionFromServices).toHaveBeenCalledTimes(2);
+    expect(resourceLoaderOptions?.appendSystemPromptOverride(["base"]))
+      .toEqual(["base", expect.stringContaining("If you are the root agent")]);
+    expect(harness.state()).toEqual({
+      primeAgentSessionFile: "/tmp/successor.jsonl",
+      primeAgentSessionPersonalPresentationVersionId: 90,
+    });
+  });
+
+  it("keeps the successor's presentation pin when an abandoned reload later succeeds", async () => {
+    const staleReload = deferred<void>();
+    const stuckRoot = primeSession("/tmp/stuck-root.jsonl", { reload: vi.fn(() => staleReload.promise) });
+    const successor = primeSession("/tmp/successor.jsonl");
+    const sessions = [stuckRoot, successor];
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7, workingDirectory: "/tmp/project", ...fullPermission, configuration,
+    }, { loadModule: async () => ({
+      ...runScopeApi(),
+      SessionManager: { create: vi.fn(() => "fresh-manager"), open: vi.fn() },
+      createHostRequestHandler: (handler: unknown) => handler,
+      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionFromServices: vi.fn(async () => {
+        const session = sessions.shift();
+        if (session === undefined) throw new Error("unexpected Prime session creation");
+        return { session };
+      }),
+    }) as never });
+    const rootForce = new AbortController();
+
+    const stuck = harness.complete({ ...presentationRunContext(130, "stuck", 90), forceSignal: rootForce.signal });
+    await vi.waitFor(() => expect(stuckRoot.reload).toHaveBeenCalledOnce());
+    rootForce.abort(new Error("force-stopped after two minutes"));
+    await expect(stuck).rejects.toThrow("force-stopped after two minutes");
+    await harness.complete({ ...presentationRunContext(131, "successor", 95), forceSignal: new AbortController().signal });
+    expect(harness.state()).toEqual({
+      primeAgentSessionFile: "/tmp/successor.jsonl",
+      primeAgentSessionPersonalPresentationVersionId: 95,
+    });
+
+    staleReload.resolve();
+    await settleMicrotasks();
+
+    expect(stuckRoot.promptAndWait).not.toHaveBeenCalled();
+    expect(harness.state()).toEqual({
+      primeAgentSessionFile: "/tmp/successor.jsonl",
+      primeAgentSessionPersonalPresentationVersionId: 95,
+    });
+  });
+
   it("maps an admitted family to isolated native providers and reuses the session across root changes", async () => {
     const scopes: ControlledRunScope[] = [];
     const providerRequests: Array<{ provider: string; modelId: string; apiKey: string | undefined }> = [];
@@ -2675,6 +2866,21 @@ async function createBoundedHarness(
     }) as never,
     createKernelBoundary: () => async () => ({ launch: vi.fn(), dispose: vi.fn(async () => undefined) }),
   });
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void; reject(error: unknown): void } {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((settle, fail) => {
+    resolve = settle;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+/** Lets every continuation queued behind an already-settled native promise run. */
+async function settleMicrotasks(): Promise<void> {
+  for (let round = 0; round < 3; round += 1) await new Promise((resolve) => setImmediate(resolve));
 }
 
 interface PrimeAgentSessionFixture {
