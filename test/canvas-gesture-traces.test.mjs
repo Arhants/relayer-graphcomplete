@@ -78,6 +78,17 @@ describe("A drag ends", () => {
     expect(world.observe().node).not.toBe(1);
   });
 
+  it("with no button pressed, and fits a layout that changed during the drag", async () => {
+    world = new CanvasGestureWorld({ initialPointer: 0 });
+    await world.apply(["Press"]);
+    await world.moveTo(1);
+    await world.apply(["RenderLayout"]);
+    expect(world.observe().at).not.toBe(0);
+    await world.hoverTo(1);
+    // The fit centers the node, as the fit after a drop does.
+    expect(world.observe().at).toBe(0);
+  });
+
   it("when a render cannot capture the pointer again", async () => {
     world = new CanvasGestureWorld({ initialPointer: 0 });
     await world.apply(["Press"]);

@@ -299,12 +299,12 @@ export class AuthoredInputSendWorld {
 
   // A turn created elsewhere in the thread, such as by an authored invoke,
   // arrives and becomes the latest.
-  async newerTurnArrives({ text = "Invoked", invoked = false } = {}) {
+  async newerTurnArrives({ text = "Invoked", invoked = false, id = 6 } = {}) {
     const [first] = this.state.interactions;
-    this.state.interactions = [...this.state.interactions, { ...first, id: 6, sequence: 2, text }];
-    if (invoked) this.state.actionInvocations = [...this.state.actionInvocations, { id: 1, resultInteractionId: 6 }];
-    this.state.currentInteractionId = 6;
-    this.selection.currentInteractionId = 6;
+    this.state.interactions = [...this.state.interactions, { ...first, id, sequence: this.state.interactions.length + 1, text }];
+    if (invoked) this.state.actionInvocations = [...this.state.actionInvocations, { id, resultInteractionId: id }];
+    this.state.currentInteractionId = id;
+    this.selection.currentInteractionId = id;
     this.workspace.render();
     await settle();
   }
@@ -312,6 +312,15 @@ export class AuthoredInputSendWorld {
   async loadAsset() {
     this.assetGate.resolve();
     await settle();
+  }
+
+  // Let the server detach the committed answer.
+  acceptDetach() {
+    this.detachRequests.mockImplementation(async () => {
+      this.server.val = 0;
+      this.server.rev += 1;
+      return this.#draft();
+    });
   }
 
   // The persisted record of the thread's send whose turn has not loaded.

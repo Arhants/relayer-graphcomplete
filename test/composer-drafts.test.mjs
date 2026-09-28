@@ -75,6 +75,25 @@ describe("composer draft persistence", () => {
     expect(sentThreadFollowup(3)).toBeNull();
   });
 
+  it("evicts send records that protect no draft before one that does", () => {
+    persistThreadFollowupDraft("t0:1", "retyped after Send");
+    persistSentThreadFollowup("t0", { scopeKey: "t0:1", originScopeKey: "t0:1", textDigest: "1:a", edited: true });
+    for (let index = 1; index <= 256; index += 1) {
+      persistSentThreadFollowup(`t${index}`, { scopeKey: `t${index}:1`, originScopeKey: `t${index}:1`, textDigest: "1:a", edited: false });
+    }
+    expect(sentThreadFollowup("t0")).toMatchObject({ edited: true });
+    expect(sentThreadFollowup("t1")).toBeNull();
+    expect(sentThreadFollowup("t256")).not.toBeNull();
+
+    const records = Object.fromEntries(Array.from({ length: 257 }, (_, index) => [`t${index}`, {
+      scopeKey: `t${index}:1`, originScopeKey: `t${index}:1`, textDigest: "1:a", edited: index === 0,
+    }]));
+    const normalized = normalizeComposerDrafts({ threadFollowups: { "t0:1": "retyped after Send" }, sentThreadFollowups: records });
+    expect(normalized.sentThreadFollowups.t0).toBeDefined();
+    expect(normalized.sentThreadFollowups.t1).toBeUndefined();
+    expect(Object.keys(normalized.sentThreadFollowups)).toHaveLength(256);
+  });
+
   it("digests the trimmed text, so a large sent message costs a few bytes", () => {
     expect(followupTextDigest(" sent ")).toBe(followupTextDigest("sent"));
     expect(followupTextDigest("sent")).not.toBe(followupTextDigest("sent!"));

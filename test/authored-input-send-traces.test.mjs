@@ -72,6 +72,20 @@ describe("A newer turn arriving while Send waits for an authored commit", () => 
     expect(world.promptText).toBe("");
   });
 
+  for (const typed of ["before", "after"]) {
+    it(`keeps the sent text retyped in the newer turn ${typed} the POST starts, once the sent turn loads`, async () => {
+      world = await new AuthoredInputSendWorld().ready();
+      for (const step of [["Type", 1], ["Commit"], ["ClickSend"]]) await world.apply(step);
+      if (typed === "after") for (const step of [["ServeCommit"], ["CommitReturns"]]) await world.apply(step);
+      await world.newerTurnArrives({ invoked: true });
+      await world.typePrompt(COMPOSED);
+      if (typed === "before") for (const step of [["ServeCommit"], ["CommitReturns"]]) await world.apply(step);
+      for (const step of [["ServeSend"], ["SendReturns"]]) await world.apply(step);
+      await world.newerTurnArrives({ text: COMPOSED, id: 7 });
+      expect(world.promptText).toBe(COMPOSED);
+    });
+  }
+
   it("keeps text typed since then, and does not restore the older text", async () => {
     world = await new AuthoredInputSendWorld().ready();
     for (const step of [["Type", 1], ["Commit"], ["ClickSend"]]) await world.apply(step);
@@ -136,6 +150,18 @@ describe("Send after an answer did not save", () => {
     await world.settled();
     await world.click("#sendInteraction");
     expect(world.post).toBeNull();
+  });
+
+  it("is not stopped by a refused answer once its input is detached", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    for (const step of [["Type", 1], ["Commit"], ["ServeCommit"], ["CommitReturns"], ["Type", 0]]) await world.apply(step);
+    world.input.dispatchEvent(new world.window.Event("change", { bubbles: true }));
+    await world.settled();
+    world.acceptDetach();
+    await world.click('[aria-label="Detach Your answer"]');
+    expect(world.detachRequests).toHaveBeenCalled();
+    await world.click("#sendInteraction");
+    expect(world.post).not.toBeNull();
   });
 
   it("is not stopped by a refused answer the user has since corrected and committed", async () => {

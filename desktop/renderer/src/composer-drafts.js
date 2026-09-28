@@ -97,10 +97,7 @@ function boundedState(value) {
   for (const staleKey of followupKeys.slice(0, -MAX_THREAD_FOLLOWUP_DRAFTS)) {
     delete bounded.threadFollowups[staleKey];
   }
-  const sentKeys = Object.keys(bounded.sentThreadFollowups ?? {});
-  for (const staleKey of sentKeys.slice(0, -MAX_THREAD_FOLLOWUP_DRAFTS)) {
-    delete bounded.sentThreadFollowups[staleKey];
-  }
+  bounded.sentThreadFollowups = boundedSentRecords(bounded.sentThreadFollowups ?? {}, bounded.threadFollowups);
   const dropOrphanRestorations = () => {
     for (const scopeKey of Object.keys(bounded.threadFollowupRestorations ?? {})) {
       if (!(scopeKey in bounded.threadFollowups)) delete bounded.threadFollowupRestorations[scopeKey];
@@ -114,6 +111,16 @@ function boundedState(value) {
     dropOrphanRestorations();
   }
   return bounded;
+}
+
+// Over the cap, records that protect no draft go first, oldest first.
+function boundedSentRecords(records, followups, max = MAX_THREAD_FOLLOWUP_DRAFTS) {
+  const keys = Object.keys(records);
+  if (keys.length <= max) return records;
+  const protects = (key) => records[key].edited && Object.hasOwn(followups, records[key].scopeKey);
+  const evicted = new Set([...keys.filter((key) => !protects(key)), ...keys.filter(protects)]
+    .slice(0, keys.length - max));
+  return Object.fromEntries(keys.filter((key) => !evicted.has(key)).map((key) => [key, records[key]]));
 }
 
 export async function initializeComposerDrafts() {

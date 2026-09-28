@@ -78,8 +78,15 @@ export function normalizeComposerDrafts(value) {
   for (const staleKey of followupKeys.slice(0, -MAX_FOLLOWUP_DRAFTS)) {
     delete normalized.threadFollowups[staleKey];
   }
-  for (const staleKey of Object.keys(normalized.sentThreadFollowups).slice(0, -MAX_FOLLOWUP_DRAFTS)) {
-    delete normalized.sentThreadFollowups[staleKey];
+  // Over the cap, records that protect no draft go first, oldest first.
+  const sentKeys = Object.keys(normalized.sentThreadFollowups);
+  if (sentKeys.length > MAX_FOLLOWUP_DRAFTS) {
+    const protects = (key) => normalized.sentThreadFollowups[key].edited
+      && Object.hasOwn(normalized.threadFollowups, normalized.sentThreadFollowups[key].scopeKey);
+    for (const staleKey of [...sentKeys.filter((key) => !protects(key)), ...sentKeys.filter(protects)]
+      .slice(0, sentKeys.length - MAX_FOLLOWUP_DRAFTS)) {
+      delete normalized.sentThreadFollowups[staleKey];
+    }
   }
   const dropOrphanRestorations = () => {
     for (const scopeKey of Object.keys(normalized.threadFollowupRestorations)) {

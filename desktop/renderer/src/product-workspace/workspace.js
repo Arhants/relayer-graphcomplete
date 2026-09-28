@@ -1774,6 +1774,9 @@ export function createProductWorkspace({
   // Keyed by the Node Detail's mount key as well, since mount IDs repeat
   // across Node Details.
   const refusedInputKey = (mountKey, mountId) => `refused\u0000${mountKey}\u0000${mountId}`;
+  // refusal key -> the input key of the occurrence it refused, so detaching
+  // that input clears it.
+  const refusedInputOccurrences = new Map();
   const trackAuthoredInputSubmit = (threadId, submitted, refusalKey) => {
     const key = String(threadId);
     const commits = authoredInputCommits.get(key) ?? new Set();
@@ -2816,6 +2819,9 @@ export function createProductWorkspace({
   // thread -> the scope and prompt revision of its submission in flight,
   // from the click on Send.
   const inFlightSubmissions = new Map();
+  // thread -> the scope typed in since its Send was clicked, before the POST
+  // wrote its send record; a newer turn may have moved the composer there.
+  const sendEditScopes = new Map();
   // Text left in a turn's scope was sent once a later turn of the thread
   // carries it, as after a send that failed with a network or server error
   // (SCP-019) or one interrupted by a restart. It is neither carried into a
@@ -3504,7 +3510,13 @@ export function createProductWorkspace({
           });
           try {
             await inputDraftController.detach(thread.id, attachment.occurrence);
-            failedAuthoredInputs.get(String(thread.id))?.delete(authoredInputKey(attachment.occurrence));
+            const detachedInputKey = authoredInputKey(attachment.occurrence);
+            failedAuthoredInputs.get(String(thread.id))?.delete(detachedInputKey);
+            for (const [refusalKey, inputKey] of refusedInputOccurrences) {
+              if (inputKey !== detachedInputKey) continue;
+              failedAuthoredInputs.get(String(thread.id))?.delete(refusalKey);
+              refusedInputOccurrences.delete(refusalKey);
+            }
             authoredInputErrors.delete(`${thread.id}\u0000${authoredInputKey(attachment.occurrence)}`);
             markInputCompositionChanged(thread.id);
             inputStages.delete(stageKey);
@@ -3727,13 +3739,17 @@ export function createProductWorkspace({
       }
       : null;
     if (sentRecord) {
-      // An edit made while Send waited for input commits already counts.
+      // An edit made while Send waited for input commits already counts, in
+      // the scope it was made in.
+      const editScopeKey = sendEditScopes.get(String(submittedThreadId));
       const scopeRevision = composerDraftScopeState.activeScopeKey === submission.scopeKey
         ? composerPromptRevision
         : composerDraftScopeState.drafts.get(submission.scopeKey)?.promptRevision;
       persistSentThreadFollowup(submittedThreadId, {
         ...sentRecord,
-        edited: scopeRevision !== undefined && scopeRevision !== submission.prompt.revision,
+        scopeKey: editScopeKey ?? submission.scopeKey,
+        edited: editScopeKey != null
+          || (scopeRevision !== undefined && scopeRevision !== submission.prompt.revision),
       });
     }
     const ownsSentRecord = () => {
@@ -3937,7 +3953,10 @@ export function createProductWorkspace({
       scopeKey: sendRequest.draftScopeKey,
       promptRevision: sendRequest.promptRevision,
     });
-    if (clickSubmission) inFlightSubmissions.set(attempt.threadId, clickSubmission);
+    if (clickSubmission) {
+      inFlightSubmissions.set(attempt.threadId, clickSubmission);
+      sendEditScopes.delete(attempt.threadId);
+    }
     send.setAttribute("aria-busy", "true");
     for (const control of $("#nodeInputActions").querySelectorAll("button, textarea")) {
       control.disabled = true;
@@ -4069,16 +4088,19 @@ export function createProductWorkspace({
       });
       composerDraftScopeState = { ...composerDraftScopeState, drafts };
     }
+    // Typing while a Send's turn has not loaded is an edit after that Send
+    // (SCP-018), in whichever scope the composer is in: a newer turn may have
+    // moved it on.
+    const typingThreadId = String(getThread()?.id);
+    if (inFlightSubmissions.has(typingThreadId)) sendEditScopes.set(typingThreadId, activeScopeKey);
+    const sentRecord = sentThreadFollowup(typingThreadId);
+    if (sentRecord && (!sentRecord.edited || sentRecord.scopeKey !== activeScopeKey)) {
+      persistSentThreadFollowup(typingThreadId, { ...sentRecord, scopeKey: activeScopeKey, edited: true });
+    }
     // An empty value is kept as a tombstone only when it clears restored
     // retry text that was shown. Clearing a draft that kept a restoration
     // out leaves no draft, so the retry text returns, after a restart too
     // (SCP-020).
-    // Typing in the scope of a Send whose turn has not loaded is an edit after
-    // that Send (SCP-018).
-    const sentRecord = sentThreadFollowup(getThread()?.id);
-    if (sentRecord && !sentRecord.edited && sentRecord.scopeKey === composerDraftScopeState.activeScopeKey) {
-      persistSentThreadFollowup(getThread()?.id, { ...sentRecord, edited: true });
-    }
     const shownRestorationId = composerDraftScopeState.drafts
       .get(composerDraftScopeState.activeScopeKey)?.restoredDraftInteractionId ?? null;
     const restorationShown = shownRestorationId != null;
@@ -5843,7 +5865,15 @@ export function createProductWorkspace({
         const layerId = currentLayerId(state, thread);
         // A refused answer throws, so the runtime shows why and reports it.
         const issue = validateInputStage(action, value);
-        if (issue) throw new Error(issue.message);
+        if (issue) {
+          if (interactionNodeId != null && layerId != null) {
+            refusedInputOccurrences.set(
+              refusedInputKey(authoredDetailMountKey, context.mountId),
+              authoredInputKey(createInputOccurrence(interactionNodeId, layerId, action.id)),
+            );
+          }
+          throw new Error(issue.message);
+        }
         if (!inputDraftController || interactionNodeId == null || layerId == null) {
           authoredDetailRuntime?.updateCapability(context.mountId, { disabled: true });
           throw new Error("Input editing is unavailable in this view.");
