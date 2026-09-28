@@ -497,7 +497,9 @@ again, but it skips a harness whose runtime was never installed on this machine;
 route waits for Connect or Repair, so an upgrade never installs Prime by itself. The next committed result for the harness clears the mark, so it runs once per
 changed digest; a start before the commit tries again. Migration 0039 also marks
 every loaded route startup left in `harness_readiness_pending`. The recipe trigger is
-Desktop memory only, so a quit before its result commits drops it.
+Desktop memory only, so a quit before its result commits drops it. The evaluation runs
+once per process with the models already published, and a recipe change the update did
+not stage and activate marks nothing; those routes wait for the next start or Repair.
 
 Repair, app-update staging and post-update activation reuse an installation only
 when it passes the same layout validation as startup: exact receipt, ownership

@@ -423,6 +423,17 @@ describe("injectable production provider composition", () => {
       readiness, updatesDue: async () => { throw failure; }, routes: () => composition.readinessRoutes(), onError: reported,
     }).evaluation).resolves.toBeNull();
     expect(reported).toHaveBeenCalledWith(failure);
+    // Without the installed-recipe check it refuses, rather than skipping every harness.
+    const unchecked = createHarnessReadinessCoordinator({
+      configurations, digestConfiguration: ({ name }) => name, runtimeRequirements: {},
+      prepareRecipe, checkers: { "codex.basic": async () => ({ available: true }), "claude.basic": async () => ({ available: true }) },
+      publishAvailability,
+    });
+    const refused = vi.fn();
+    await startPostUpgradeReadiness({
+      readiness: unchecked, updatesDue: async () => ["codex-basic"], routes: () => composition.readinessRoutes(), onError: refused,
+    }).evaluation;
+    expect(refused).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringMatching(/installed-recipe check/) }));
     await composition.close();
   });
 
@@ -438,6 +449,7 @@ describe("injectable production provider composition", () => {
     expect(step).toContain("updatesDue: () => productServer.harnessReadinessUpdatesDue()");
     expect(step).toContain("recipeUpdates: activation.recipeUpdates");
     expect(step).toContain("routes: () => providerComposition.readinessRoutes()");
+    expect(source).toContain("recipeInstalled: (recipeId) => managedRecipeInstalled(managedRuntimeResolver, recipeId)");
     expect(source).not.toMatch(/await\s+startPostUpgradeReadiness/);
   });
 });

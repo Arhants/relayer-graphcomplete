@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createManagedRuntimeInstaller as createExactManagedRuntimeInstaller } from "../desktop/main/managed-runtimes/installer.mjs";
 import { createDefaultRuntimeProbes } from "../desktop/main/managed-runtimes/probes.mjs";
+import { managedRecipeInstalled } from "../desktop/main/managed-runtimes/resolver.mjs";
 
 function deferred() {
   let resolve;
@@ -352,6 +353,37 @@ describe("managed runtime installer", () => {
       expect(probe).not.toHaveBeenCalled();
       await expect(installer.validate("claude-fixture@0.3.250"))
         .rejects.toMatchObject({ code: "managed_runtime_not_installed" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  // #556: the post-upgrade evaluation repairs an installation that exists but never makes a
+  // first installation. This is the production check it uses, against the real installer.
+  it("counts a broken or mismatched installation as installed, and an absent one as not", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
+    const outside = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-outside-"));
+    try {
+      const { installer } = exactClaudeInstaller(root, "installed-check");
+      await expect(managedRecipeInstalled(installer, "claude-fixture@0.3.250")).resolves.toBe(false);
+      await expect(managedRecipeInstalled(
+        createExactManagedRuntimeInstaller({ root, platform: "darwin", architecture: "arm64" }),
+        "prime@0.8.1-unknown",
+      )).resolves.toBe(false);
+      const prepared = await installer.prepare("claude-fixture@0.3.250");
+      await expect(managedRecipeInstalled(installer, "claude-fixture@0.3.250")).resolves.toBe(true);
+
+      // Another recipe is active: validation fails as a mismatch, which is installed.
+      const other = exactClaudeInstaller(root, "installed-check-other").installer;
+      await expect(other.validate("claude-fixture@0.3.250")).rejects.toThrow(/does not match/);
+      await expect(managedRecipeInstalled(other, "claude-fixture@0.3.250")).resolves.toBe(true);
+
+      await layoutBreaks[2][1](prepared, outside);
+      await expect(installer.validate("claude-fixture@0.3.250")).rejects.toThrow();
+      await expect(managedRecipeInstalled(installer, "claude-fixture@0.3.250")).resolves.toBe(true);
+      await expect(managedRecipeInstalled({ validate() { throw new Error("no validation"); } }, "x"))
+        .resolves.toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
       await rm(outside, { recursive: true, force: true });

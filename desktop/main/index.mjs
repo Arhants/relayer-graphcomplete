@@ -58,7 +58,7 @@ import {
 } from "./services/desktop-account-service.mjs";
 import { createDesktopUpdater, resolveUpdateChannel } from "./services/updater.mjs";
 import { createManagedRuntimeInstaller } from "./managed-runtimes/installer.mjs";
-import { createManagedRuntimeResolver } from "./managed-runtimes/resolver.mjs";
+import { createManagedRuntimeResolver, managedRecipeInstalled } from "./managed-runtimes/resolver.mjs";
 import { createHarnessReadinessCoordinator, startPostUpgradeReadiness } from "./services/harness-readiness.mjs";
 import { confirmManagedRuntimeQuit } from "./managed-runtimes/quit-guard.mjs";
 import { claimPrimaryDesktopInstance } from "./single-instance.mjs";
@@ -503,12 +503,7 @@ if (primaryInstance) {
       },
       // The app server's record is the only readiness record (PROV-006).
       publishAvailability: (updates) => productServer.publishHarnessReadiness(updates),
-      // A broken or mismatched installation counts: the post-upgrade evaluation repairs it.
-      recipeInstalled: (recipeId) => managedRuntimeResolver.validate(recipeId).then(
-        () => true,
-        (error) => error?.code !== "managed_runtime_not_installed"
-          && error?.code !== "managed_runtime_unsupported_target",
-      ),
+      recipeInstalled: (recipeId) => managedRecipeInstalled(managedRuntimeResolver, recipeId),
       diagnostics: providerDiagnostics,
     });
     const publishCatalog = (snapshot, { signal, connectionGeneration, connectionEvent } = {}) => (

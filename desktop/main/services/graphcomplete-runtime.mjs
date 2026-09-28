@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 import { terminateChildProcess } from "./child-process.mjs";
+import { MANAGED_RUNTIME_ABSENT_CODES } from "../managed-runtimes/resolver.mjs";
 import { startGraphOperationRecorder } from "./graph-operation-recorder.mjs";
 import {
   acquireAuthenticatedErrorCapability,
@@ -417,7 +418,7 @@ export class GraphCompleteRuntimeService {
           } catch (error) {
             // A runtime that was never installed, or has no recipe for this target, is the
             // normal state of an unused harness.
-            if (error?.code !== "managed_runtime_not_installed" && error?.code !== "managed_runtime_unsupported_target") {
+            if (!MANAGED_RUNTIME_ABSENT_CODES.has(error?.code)) {
               try { await this.onHarnessRuntimeValidationFailure(configuration, error); } catch { /* diagnostics cannot block startup */ }
             }
           }

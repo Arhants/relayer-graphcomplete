@@ -453,7 +453,9 @@ next start then restores the old ready record, because the digest did not
 change. Migration 0039 also marks every loaded route startup left pending.
 The model starts after that migration, so it does not cover the backfill.
 The automatic evaluation skips a harness whose runtime was never
-installed; the model has one harness whose runtime starts installed. The installer test "stages and activates the
+installed; the model has one harness whose runtime starts installed.
+In the code it runs once per process with the models published so far,
+and a recipe change the update did not stage marks nothing. The installer test "stages and activates the
 exact incoming recipe" covers which activations count. A mark stays set
 when its evaluation found no provider with a route. The next start looks
 again, but it prepares nothing until a provider has a route.

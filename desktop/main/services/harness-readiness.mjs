@@ -44,9 +44,9 @@ export function createHarnessReadinessCoordinator({
   prepareRecipe,
   checkers,
   publishAvailability,
-  // Whether a recipe has an installation on disk, valid or not. Only the post-upgrade
-  // evaluation asks; without it, that evaluation assumes none is installed.
-  recipeInstalled = async () => false,
+  // Whether a recipe has an installation on disk, valid or not (managedRecipeInstalled).
+  // Only the post-upgrade evaluation asks, and it refuses to run without it.
+  recipeInstalled = null,
   diagnostics = null,
 }) {
   if (!(configurations instanceof Map) || typeof digestConfiguration !== "function"
@@ -167,6 +167,9 @@ export function createHarnessReadinessCoordinator({
   // It never makes a first installation: a harness whose runtime was never installed
   // waits for Connect or Repair, as on a first launch.
   async function evaluateRecipeUpdate({ updatesDue = [], recipeUpdates = [], providers = [] }) {
+    if (typeof recipeInstalled !== "function") {
+      throw new Error("The post-upgrade readiness evaluation requires an installed-recipe check.");
+    }
     const due = new Set(updatesDue);
     const activated = new Set(recipeUpdates);
     const harnessIds = [];
