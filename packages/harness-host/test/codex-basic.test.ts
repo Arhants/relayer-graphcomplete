@@ -446,6 +446,37 @@ describe("CodexBasicHarness", () => {
     }
   });
 
+  it.each([undefined, "layered-navigation-v1", "layered-navigation-multi-agent-v1"] as const)(
+    "keeps attached follow-up guidance consistent with temporal publication in %s",
+    async (promptProfile) => {
+      let prompt = "";
+      const { promptProfile: _defaultProfile, ...settings } = codexBasicConfiguration.settings;
+      const harness = new CodexBasicHarness({
+        threadId: 1,
+        permissionProfileId: "auto",
+        permissionBinding: codexBasicConfiguration.permissionBindings.auto!,
+        workingDirectory: process.cwd(),
+        configuration: { ...codexBasicConfiguration, settings: promptProfile === undefined ? settings : { ...settings, promptProfile } },
+      }, { codexPathOverride: "/managed/codex", runAppServerTurn: async (options) => {
+        prompt = options.prompt;
+        return { threadId: "attached-follow-up", turnId: "turn-1", status: "completed" };
+      } });
+      await harness.complete(attachedRunContext(1, "token"));
+      expect(prompt).toContain('"title": "First target"');
+      expect(prompt).toContain('"interactionPermissions": {\n    "version": "2",\n    "enabled": true');
+      expect(prompt).toContain('"nodeId": 20');
+      expect(prompt).toContain("await graph.advanceCurrent(");
+      expect(prompt).toContain("every distinct attached native node must receive a NEW navigate action");
+      expect(prompt).toContain("Version-1 descriptions grant ability only");
+      expect(prompt).toContain("Only an exact frozen attached-node navigation grant permits the exception");
+      expect(prompt).toContain("graph.replaceNodePresentation(nodeId, revision, presentationBuilder)");
+      expect(prompt).not.toContain("Reused accepted nodes cannot take new actions.");
+      expect(prompt).not.toContain("Do not add actions or edit published nodes afterward;");
+      expect(prompt).toContain("title/detail edits, topology edits, or changes to other nodes");
+      expect(prompt).toContain("never after Advance");
+    },
+  );
+
   it("selects the layered-navigation prompt only for the opt-in profile", async () => {
     let submittedPrompt = "";
     const harness = new CodexBasicHarness({
@@ -1608,6 +1639,7 @@ function attachedRunContext(id: number, token: string): HarnessRunContext {
   return {
     ...context,
     interactionInput: {
+      interactionPermissions: { version: "2", enabled: true, permissions: [{ kind: "navigate.add", nodeId: 20 }, { kind: "navigate.add", nodeId: 21 }] },
       interaction: context.inputGraph,
       contexts: [
         {

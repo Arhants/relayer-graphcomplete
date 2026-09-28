@@ -4314,6 +4314,7 @@ mod tests {
         let target = InteractionInputNode::from(target_node.clone());
         let runtime = RuntimeContextInput {
             input: InteractionInput {
+                interaction_permissions: None,
                 interaction: InteractionInputNode::from(GraphNode {
                     id: NodeId::new(10).unwrap(),
                     client_key: None,

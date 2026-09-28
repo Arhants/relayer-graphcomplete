@@ -1,0 +1,12 @@
+{
+  "base": "c1db3d10825183c5ab7209b3abd22ef2ef7bbd97",
+  "scope": "Popover delta atop required-response f600ad0cbda6dea61cf49a0d414819b6d6dfabd4af000b24be7898c345e914c4",
+  "files": {
+    "desktop/renderer/src/product-workspace/workspace.js": "a516628b2b12b7c5c6b09050e496044848e7f1805172d895e5853639bc8df1a3",
+    "desktop/renderer/styles.css": "54175b23827e4f62158f36fb2cced3422171629eec7392f95a528655baba7cfe",
+    "docs/evidence/issue-517-attached-navigation/README.md": "523c87acb889fed76db364c5d343f47495469dd800b8c073f2f3c246e5dc7138",
+    "package.json": "3b8f32ae8e1bce12f7451add5f3006510b130d855b7e3704ce390953a498a4f4",
+    "scripts/fixtures/interaction-graph-layout.js": "ab2d6df13dcf630385a4bec2ca8ced620a66e8a5ded5322def593e9e6a1c9ebe",
+    "scripts/test-interaction-graph-layout.mjs": "f02903df113a2ffe312dda02539fdd9547eab0943aff8d5661a1330b672584cd"
+  }
+}

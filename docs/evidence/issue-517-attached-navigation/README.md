@@ -1,5 +1,21 @@
 # Attached navigation qualification ledger
 
+## Current state — September 28, 2026, PR 560 finalization
+
+The later user decision supersedes the original optional-link proposal: newly prepared version-2 interactions require a new usable navigate control from every distinct attached native node to that interaction's exact response root. Version-1, absent and disabled descriptions retain their previous semantics. [PRD §7.2B](../../prd/index.html) and [ADR 0011](../../decisions/0011-attached-navigation.md) are the current product contract. Rich details must preserve existing controls and bind additions; an unbound retained presentation fails acceptance and can be repaired with a full replacement.
+
+Current evidence is split between [required-response policy and results](required-response-2026-09-28/README.md), [popover bounds and checks](popover-bounds-2026-09-28/README.md), and [consolidated merge-readiness verification](merge-readiness-2026-09-28/README.md). The user explicitly accepted the navigation-button flow and refreshed desktop popover fix; [human signoff](popover-bounds-2026-09-28/human-signoff.md) is separate from agent capture. Native CUA capture remains blocked, and earlier automated Product/Eval/reopen failures remain recorded. The merge-readiness ledger owns new final-candidate results; older passes do not certify it.
+
+| Current checkpoint | Current mapping |
+| --- | --- |
+| AN-007 — harness policy delivery | [Required-response seam map](required-response-2026-09-28/README.md): actual Codex profiles, shared input serialization and frozen read-only description. |
+| AN-008 — mandatory response links | [Required-response seam map](required-response-2026-09-28/README.md): version compatibility, omission/wrong-target rejection and repair, distinct sources, terminal-only atomic enforcement. |
+| AN-006 — B3 responsive disclosure | [Popover seam map](popover-bounds-2026-09-28/README.md): real renderer bounds, scrolling, selection, resize and legacy placement. |
+
+## Historical qualification status and base-slice evidence
+
+The following status, “Current proof,” and “undecided” statements describe earlier snapshots before the superseding decision and human signoff. They are preserved as historical evidence, not current readiness or product-policy claims.
+
 Status: **implemented, default off, awaiting draft-PR review and human/product gates**. Full production-source check/build and independent reviews passed. Three live root attempts were accepted; the third used actual Desktop temporal flags and a supported complete trace export. Fresh canonical readback and production-renderer capture passed. Native keyboard/account and human acceptance remain unclaimed.
 
 Current proof is separated into [compatibility replay](compatibility-replay-2026-09-28/README.md), [actual Desktop root generation and capture](desktop-root-live-2026-09-28/README.md), and [deterministic desktop qualification](current-heavy-2026-09-28/README.md). Historical failures and their exact sources remain in the dated directories. The rich-detail/no-replacement policy below remains undecided.
@@ -15,7 +31,7 @@ PRD 7.2B and ADR 0011 define the approved slice. The compiled-rich-detail/no-rep
 | AN-003 | Presentation read/stage/revision and asset storage; compiled binding schema/client; renderer resolver | `attached_navigation_concurrent_replacements_preserve_controls_and_reopen_occurrences` observes stale repair, concurrent controls, parsed mounts, nonempty asset reopen, forced transaction rollback, consumed accepted staging and terminal-stop cleanup; HTTP staging fixture; graph-client detail compilation and compiled Eval runtime |
 | AN-004 | Affected-closure search publication and export refusal | `attached_navigation_publication_matches_rebuild_without_widening_thread_scope` uses real Ladybug and reopen; add-only original/reused/mutating closure marker assertions; `portable_export_rejects_persistent_mutation_closures` exercises the guard shared by export and share |
 | AN-005 | Trusted runtime feature projection and Product canonical owner/invocation grouping | `interaction_graph_projects_layer_owners_and_invocation_with_scope_and_read_failures` observes canonical owner distinct from presenter, grouped layers/nodes, invocation provenance, scope denial, mismatched layer identity, metadata/context failures, default-off |
-| AN-006 | B3 disclosure/card rendering, CSS, accessible relationships, Product selection/history controller | `interaction-graph.test.mjs`, `interaction-graph-workspace.test.mjs`, and B3 scenarios in `workspace-navigation-integration.test.mjs`; actual gated/default Electron first-message journey |
+| AN-006 | B3 disclosure/card rendering, CSS, accessible relationships, Product selection/history controller | `interaction-graph.test.mjs`, `interaction-graph-workspace.test.mjs`, and B3 scenarios in `workspace-navigation-integration.test.mjs`; `npm run test:desktop:interaction-graph-layout` observes actual production CSS/workspace bounds, responsive refitting, graph scrolling and legacy placement; actual gated/default Electron first-message journey |
 
 Secondary seams include optional source-layer compiled capability bindings, Codex authoring guidance, Eval fixture validation, and the first-message runner's gated selector expectations. Packaged renderer and Rust module inventories and the immutable share-viewer resource list must include the new modules; the public viewer must load with B3 absent/default-off. `desktop-telemetry-module-inventory.test.mjs`, `public-share-viewer-artifact.test.mjs`, and the real ProductWorkspace boot in `public-share-viewer.test.mjs` observe those boundaries. The declared `evidence:public-share-viewer` runner checks nested navigation, turn selection, reload, mobile pan and loopback-only requests. Existing input/invoke source-layer requirements remain intact. No test has been deleted or retired. The snapshot/reopen test protects persistence and concurrency; the separate Advance/cycle fixture protects terminal acceptance; the route test protects the wire boundary.
 

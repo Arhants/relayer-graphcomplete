@@ -219,7 +219,10 @@ impl CompletionPlan {
         connection: &mut GraphConnection,
         scope: &InteractionScope,
     ) -> Result<(), GraphError> {
-        super::super::attached_navigation::validate(connection, scope).await?;
+        let mut missing = crate::storage::sqlite::permissions::read(connection, scope.root_node_id)
+            .await?
+            .map(|snapshot| snapshot.required_response_sources())
+            .unwrap_or_default();
         let ids =
             crate::storage::sqlite::attached_navigation::draft_actions(connection, scope).await?;
         for id in ids {
@@ -241,6 +244,9 @@ impl CompletionPlan {
             let target = action
                 .target_layer_id
                 .ok_or_else(|| GraphError::Internal("Missing attached target.".into()))?;
+            if target == self.root_layer {
+                missing.retain(|node| *node != action.source_node_id);
+            }
             let layer = LayerTable::new(&mut *connection)
                 .visible(scope, target)
                 .await?;
@@ -261,6 +267,22 @@ impl CompletionPlan {
             }
             self.actions.insert(id);
         }
+        if !missing.is_empty() {
+            return Err(GraphError::validation(
+                "attached_response_navigation_required",
+                "interaction.context",
+                format!(
+                    "Add a new navigate action from each attached node [{}] to this interaction's response layer {}. Expose each addition through a usable control; preserve and rebind existing rich controls in a full presentation replacement. Repair the drafts and retry terminal submission.",
+                    missing
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    self.root_layer
+                ),
+            ));
+        }
+        super::super::attached_navigation::validate(connection, scope).await?;
         Ok(())
     }
 

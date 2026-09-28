@@ -26,3 +26,19 @@ presentation payloads while accepted mutation provenance remains available. Expo
 B3 is a read projection of canonical context-layer owners and immutable invocation origins.
 No chronology edge or second stored graph is introduced. It replaces only gated banner navigation,
 starts closed, and selection loads the response root through the normal navigation controller.
+
+## Required response navigation for new preparations
+
+New gated native preparations use frozen description version 2. Its existing exact
+native attachment grants also identify the distinct nodes obligated to receive a new
+usable navigation control targeting this completion's exact response root. Permission
+remains ability; the versioned acceptance policy supplies the obligation without new
+authority or caller-supplied lists. Multiple occurrences require one persistent addition.
+Terminal submit and Return reject missing sources with repairable IDs before publication;
+Advance remains independent. Existing binding, revision, and atomic publication checks apply.
+Version 1, absent descriptions, and disabled snapshots retain prior semantics. Recovery
+never upgrades an existing preparation. Imports and Eval behavior are unchanged; the
+qualification gate applies to graph preparation, not a caller-asserted Product origin.
+
+Normalized interaction input exposes the canonical frozen description read-only to all
+harnesses. This supports pre-submission authoring and never accepts caller-supplied grants.

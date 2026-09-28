@@ -4,6 +4,8 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+import { RelayerGraphClient, NodeObject, LayerObject, LayerLayoutObject, NodePlacementObject, detailCapability, html } from "@relayer/graph-client";
+
 import { taskSystemFixtureFactory } from "@relayer/eval-runner";
 
 import { startModelCatalogRefreshServer } from "../desktop/main/models/model-catalog-refresh-server.mjs";
@@ -220,6 +222,64 @@ function pressEnter(webContents, modifiers = [], { insertText = false } = {}) {
   webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter", modifiers });
 }
 
+const attachedResponseText = "Explain the attached results store.";
+let attachedFixtureRejectedOmission = false;
+let attachedFixtureFailure = null;
+function requiredNavigationFixtureFactory(configuration) {
+  const harness = taskSystemFixtureFactory(configuration);
+  const ordinaryComplete = harness.complete.bind(harness);
+  harness.complete = async (context) => {
+    if (context.inputGraph.detail !== attachedResponseText) return ordinaryComplete(context);
+    try {
+    const graph = new RelayerGraphClient(context.graph.acquireCapability());
+    const input = await graph.getInteractionInput();
+    if (input.interactionPermissions?.version !== "2" || !input.interactionPermissions.enabled || input.contexts.length !== 1) {
+      throw new Error("Required navigation fixture did not receive exact frozen V2 input.");
+    }
+    const source = input.contexts[0].targetNode;
+    const before = await graph.getNodePresentation(source.id);
+    if (before.actions.length !== 1 || before.actions[0].kind !== "navigate") throw new Error("Fixture expected one preserved resolved control.");
+    const answer = new NodeObject("info", "Attached response", "The results store retains completed work.", "concept", "attached-answer");
+    await graph.submitNode(answer);
+    const response = new LayerObject([answer], [], new LayerLayoutObject([new NodePlacementObject(answer, .5, .5)]), "attached-response");
+    await graph.submitLayer(response);
+    await graph.addAction(context.inputGraph.id, {kind:"navigate",relation:"expand",label:"Response",target:response,clientKey:"response"});
+    try {
+      await graph.submit(context.inputGraph.id);
+      throw new Error("Response-only completion unexpectedly accepted.");
+    } catch (error) {
+      if (error.code !== "attached_response_navigation_required") throw error;
+      attachedFixtureRejectedOmission = true;
+    }
+    const addition = {kind:"navigate",relation:"reference",label:"Open attached response",target:response,clientKey:"required-response"};
+    await graph.addAction(source.id, addition);
+    const old = before.actions[0];
+    const presentation = new NodeObject(source.icon, source.title, source.detail, before.node.kind, before.node.clientKey);
+    // Reconstruct exact binding provenance only; this layer is never submitted.
+    const sourceLayer = new LayerObject([presentation], [], new LayerLayoutObject([new NodePlacementObject(presentation, .5, .5)]), old.sourceLayerClientKey);
+    const preserved = {kind:"invoke",label:old.label,interactionText:"Propose the most useful next improvement to this task system.",clientKey:old.clientKey,sourceLayer};
+    presentation.detailAuthoring.setComponent("continuation", html`<p>Completed tasks remain in the results store.</p><button gc=${detailCapability.invoke("preserved", preserved)}>Plan the next improvement</button><button gc=${detailCapability.reference("required", addition)}>Open attached response</button>`);
+    await graph.replaceNodePresentation(source.id, before.revision, presentation);
+    await graph.submit(context.inputGraph.id);
+    } catch (error) { attachedFixtureFailure = `${error.stack ?? error} ${JSON.stringify(error.issues ?? [])}`; throw error; }
+  };
+  return harness;
+}
+
+async function activateRequiredResponse(contents, sourceInteractionId, nodeId, responseNodeId, responseLayerId, evidenceName) {
+  await waitFor("required response workspace initialization", () => contents.executeJavaScript(`document.querySelectorAll("#turnPopover .interaction-graph-node").length === 5 && document.querySelectorAll(".graph-node").length > 0`));
+  await contents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${sourceInteractionId}))`);
+  await waitFor("attached source node", () => contents.executeJavaScript(`Boolean(document.querySelector('[data-node="${nodeId}"]'))`));
+  await contents.executeJavaScript(`document.querySelector('[data-node="${nodeId}"]').click()`);
+  const buttonExpression = `[...document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelectorAll("button") || []].find(button => button.textContent === "Open attached response")`;
+  await waitFor("visible required response button", () => contents.executeJavaScript(`(() => { const button=${buttonExpression}; const rect=button?.getBoundingClientRect(); return Boolean(button && !button.disabled && rect.width>0 && rect.height>0 && getComputedStyle(button).visibility!=="hidden" && getComputedStyle(button).display!=="none"); })()`));
+  const capture = await captureEvidence(contents, evidenceName);
+  await contents.executeJavaScript(`(${buttonExpression}).click()`);
+  await waitFor("exact attached response destination", () => contents.executeJavaScript(`import("./src/state.js").then(({appState}) => String(appState.visibleLayer?.layer?.id) === "${responseLayerId}" && Boolean(document.querySelector('[data-node="${responseNodeId}"]')))`));
+  process.stdout.write(`RELAYER_REQUIRED_RESPONSE_CONTROL ${JSON.stringify({stage:evidenceName,sourceNodeId:nodeId,responseNodeId,responseLayerId,visible:true,navigated:true,capture})}\n`);
+  return capture;
+}
+
 async function run() {
   process.stdout.write("Electron application ready.\n");
   registerTestIpc();
@@ -232,7 +292,7 @@ async function run() {
     interactionPermissions: process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1",
     graphServerBinary: join(repositoryRoot, "target", "debug", "relayer-graph-server"),
     configurationPaths: [configurationPath],
-    additionalImplementations: { "fixture.task-system": taskSystemFixtureFactory },
+    additionalImplementations: { "fixture.task-system": requiredNavigationFixtureFactory },
     acquireProviderExecution: async (providerId) => ({
       definition: { id: providerId, adapterId: "codex-subscription", accessContract: "managed-runtime@1" },
       descriptor: { adapterId: "codex-subscription", accessContract: "managed-runtime@1", implementationVersion: "1" },
@@ -629,6 +689,8 @@ async function run() {
     show: false,
     backgroundColor: "#0b0c0d",
     webPreferences: {
+      // Keep Eval's read-only cookie out of the Product window's session.
+      partition: "required-navigation-eval",
       preload: join(repositoryRoot, "desktop", "preload", "eval-review.cjs"),
       additionalArguments: ["--relayer-eval-execution=navigation-smoke"],
       contextIsolation: true,
@@ -760,7 +822,25 @@ async function run() {
     redockedContained: nodesAreContained(evalRedockedInspector),
   };
 
+  let requiredResponseJourney = null;
   if (typedPermissions) {
+    const created = await productRequest(productSession, `/api/threads/${threadId}/interactions`, {
+      method:"POST", body:JSON.stringify({text:attachedResponseText,inputId:"required-response-fixture",contexts:[{target:{nodeId:invokeAction.sourceNodeId,sourceInteractionNodeId:sourceInteraction.graphNodeId,sourceLayerId:canonicalSource.completionOutput.rootLayer.layer.id},annotations:["Explain this attached source"]}]})
+    });
+    const completed = await waitFor("required response acceptance after repair", async () => {
+      const detail=await productRequest(productSession, `/api/threads/${threadId}`);
+      const interaction=detail.interactions.find(value=>value.id===created.id);
+      if (interaction?.completionStatus === "failed") throw new Error(attachedFixtureFailure ?? JSON.stringify(interaction));
+      return interaction?.completionStatus === "accepted" ? interaction : false;
+    });
+    if (!attachedFixtureRejectedOmission) throw new Error("Missing response-only rejection receipt.");
+    const responseNodeId=completed.completionOutput.rootLayer.nodes[0].id;
+    const responseLayerId=completed.completionOutput.rootLayer.layer.id;
+    await window.loadURL(`${productSession.origin}/?threadId=${threadId}`);
+    const productCapture=await activateRequiredResponse(webContents,sourceInteraction.id,invokeAction.sourceNodeId,responseNodeId,responseLayerId,"12-required-product-button");
+    await evalWindow.loadURL(`${productSession.origin}/?threadId=${threadId}&review=1`);
+    const evalCapture=await activateRequiredResponse(evalContents,sourceInteraction.id,invokeAction.sourceNodeId,responseNodeId,responseLayerId,"13-required-eval-button");
+    requiredResponseJourney={responseNodeId,responseLayerId,productCapture,evalCapture,rejectedOmission:true};
     evalWindow.destroy();
     window.destroy();
     await product.close();
@@ -775,7 +855,7 @@ async function run() {
     await window.loadURL(`${reopenedProductSession.origin}/?threadId=${threadId}`);
     const reopenedContents = window.webContents;
     reopenedContents.setBackgroundThrottling(false);
-    await waitFor("reopened thread", () => reopenedContents.executeJavaScript(`${turnReady(4, 4)}`));
+    await waitFor("reopened thread", () => reopenedContents.executeJavaScript(`${turnReady(5, 5)}`));
     await reopenedContents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${sourceInteraction.id}))`);
     // Select the other occurrence through the source's queue expansion.
     const queueAction = canonicalSource.completionOutput.rootLayer.actions.find((action) => action.kind === "navigate" && action.id !== invokeAction.id);
@@ -789,12 +869,17 @@ async function run() {
     await reopenedContents.executeJavaScript(`document.querySelector("[data-node-detail-runtime]").shadowRoot.querySelector("button").click()`);
     await waitFor("reopened compiled navigation destination", () => reopenedContents.executeJavaScript(`document.querySelector("#interactionText")?.textContent === "Propose the most useful next improvement to this task system."`));
     const afterNavigation = await productRequest(reopenedProductSession, `/api/threads/${threadId}`);
-    if (afterNavigation.interactions.length !== 4) throw new Error("Reopened compiled navigation launched execution.");
+    if (afterNavigation.interactions.length !== 5) throw new Error("Reopened compiled navigation launched execution.");
     invokeEvidencePaths.reopenedDestination = await captureEvidence(reopenedContents, "08-reopened-destination");
+    requiredResponseJourney.reopenedCapture=await activateRequiredResponse(reopenedContents,sourceInteraction.id,invokeAction.sourceNodeId,requiredResponseJourney.responseNodeId,requiredResponseJourney.responseLayerId,"14-required-reopened-button");
+    const afterRequired=await productRequest(reopenedProductSession, `/api/threads/${threadId}`);
+    if (afterRequired.interactions.length !== 5) throw new Error("Required navigation launched execution.");
+    requiredResponseJourney.reopenedNavigationPassed=true;
   }
 
   const result = {
     typedPermissions,
+    requiredResponseJourney,
     nativeKeyboardVerified: process.env.RELAYER_INVOKE_EVIDENCE_SKIP_NATIVE_KEYBOARD !== "1",
     passed: ancillaryFailures.length === 0,
     typedPermissionJourneyPassed: typedPermissions,

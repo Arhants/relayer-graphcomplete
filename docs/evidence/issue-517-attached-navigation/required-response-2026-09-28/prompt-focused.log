@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete
+
+
+ Test Files  4 passed (4)
+      Tests  133 passed (133)
+   Start at  12:52:48
+   Duration  2.29s (transform 566ms, setup 0ms, import 897ms, tests 2.11s, environment 0ms)
+

@@ -62,7 +62,7 @@ pub(crate) async fn prepare(
                 .ok_or_else(|| GraphError::Internal("Invalid context identity".into()))?,
         });
     }
-    let description = serde_json::to_string(&InteractionPermissions::V1 {
+    let description = serde_json::to_string(&InteractionPermissions::V2 {
         enabled,
         permissions,
     })

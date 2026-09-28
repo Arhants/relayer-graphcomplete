@@ -6553,7 +6553,7 @@ async fn typed_permissions_freeze_exact_combined_authority_and_reject_false_prov
         .unwrap();
     assert_eq!(
         frozen,
-        Some(InteractionPermissions::V1 {
+        Some(InteractionPermissions::V2 {
             enabled: true,
             permissions: vec![
                 permission.clone(),
@@ -6632,6 +6632,13 @@ async fn typed_permissions_freeze_exact_combined_authority_and_reject_false_prov
     };
     assert!(writer.add_action(&draft).await.is_err());
     root_expand(&writer, &interaction, &layer).await;
+    for context in &contexts {
+        let mut backlink = draft.clone();
+        backlink.client_key = format!("response-{}", context.target.node_id);
+        backlink.source_node_id = context.target.node_id;
+        backlink.source_layer_id = None;
+        writer.add_action(&backlink).await.unwrap();
+    }
     writer.complete(interaction.id).await.unwrap();
     assert!(
         helper
@@ -6648,7 +6655,7 @@ async fn typed_permissions_freeze_exact_combined_authority_and_reject_false_prov
     );
     // Caller payloads cannot describe additional variants or future versions.
     for json in [
-        r#"{"version":"2","enabled":true,"permissions":[]}"#,
+        r#"{"version":"future","enabled":true,"permissions":[]}"#,
         r#"{"version":"1","enabled":true,"permissions":[{"kind":"node.edit","nodeId":1}]}"#,
         r#"{"version":"1","enabled":true,"permissions":[{"kind":"navigate.add","nodeId":1,"invoke":true}]}"#,
     ] {
@@ -7347,6 +7354,10 @@ async fn attached_navigation_without_replacement_preserves_plain_detail_and_refe
             .is_empty(),
         "draft additions do not invalidate accepted roots"
     );
+    let mut backlink = draft.clone();
+    backlink.client_key = "response-link".into();
+    backlink.target_layer_id = Some(response.id);
+    writer.add_action(&backlink).await.unwrap();
     writer.complete(interaction.id).await.unwrap();
     let mut affected = database
         .attached_navigation_roots(&candidates)
@@ -7387,7 +7398,7 @@ async fn attached_navigation_without_replacement_preserves_plain_detail_and_refe
         action.id
     );
     let updated = source_writer.get_layer(source_layer.id).await.unwrap();
-    assert_eq!(updated.actions.len(), 1);
+    assert_eq!(updated.actions.len(), 2);
     assert_eq!(updated.actions[0].id, action.id);
     assert_eq!(updated.nodes[0].authored_detail, None);
     assert_eq!(updated.nodes[0].title, persistent.title);
@@ -7879,6 +7890,11 @@ async fn attached_navigation_advance_is_inert_and_terminal_cycles_are_atomic() {
             .is_empty()
     );
     root_expand(&writer, &interaction, &response).await;
+    let mut backlink = draft.clone();
+    backlink.client_key = "required-response-link".into();
+    backlink.relation = Some(NavigateRelation::Reference);
+    backlink.target_layer_id = Some(response.id);
+    writer.add_action(&backlink).await.unwrap();
     assert!(matches!(
         writer.complete(interaction.id).await,
         Err(GraphError::Validation {
@@ -8101,6 +8117,380 @@ async fn attached_navigation_reference_targets_keep_reference_authoring_restrict
         assert_eq!(
             writer.get_layer(response.id).await.unwrap().layer.state,
             RecordState::Accepted
+        );
+    }
+}
+
+#[tokio::test]
+async fn required_attached_navigation_rejects_response_only_then_repairs_after_reopen() {
+    for advance in [false, true] {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let database = GraphDatabase::open(file.path()).await.unwrap();
+        database
+            .set_interaction_permissions_enabled(true)
+            .await
+            .unwrap();
+        database
+            .set_temporal_features(TemporalFeatureConfig {
+                schema_read: true,
+                root_current_write: true,
+                ..TemporalFeatureConfig::default()
+            })
+            .await
+            .unwrap();
+        let source = database
+            .create_interaction(Some(project(1)), thread(1), "Sky")
+            .await
+            .unwrap();
+        let sw = database.writer_for_subgraph(source.id).await.unwrap();
+        let persistent = node(&sw, "sky").await;
+        let original = single_node_layer(&sw, "sky-layer", &persistent).await;
+        root_expand(&sw, &source, &original).await;
+        sw.complete(source.id).await.unwrap();
+        let (interaction, _) = database
+            .create_interaction_with_context(
+                Some(project(1)),
+                thread(2),
+                "Rayleigh?",
+                &[InteractionContextDraft {
+                    target: InteractionContextTarget {
+                        node_id: persistent.id,
+                        source_interaction_node_id: source.id,
+                        source_layer_id: original.id,
+                    },
+                    annotations: vec!["I thought this had something to do with Rayleigh".into()],
+                }],
+            )
+            .await
+            .unwrap();
+        let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+        let delivered = serde_json::to_value(writer.interaction_input().await.unwrap()).unwrap();
+        assert_eq!(delivered["interactionPermissions"]["version"], "2");
+        assert_eq!(
+            delivered["interactionPermissions"]["permissions"][0]["nodeId"],
+            persistent.id.value()
+        );
+        let answer = node(&writer, "rayleigh").await;
+        let response = single_node_layer(&writer, "response", &answer).await;
+        root_expand(&writer, &interaction, &response).await;
+        if advance {
+            writer
+                .transition_current(
+                    0,
+                    "advance",
+                    CurrentTransition::Advance {
+                        layer_id: response.id,
+                    },
+                )
+                .await
+                .unwrap();
+        }
+        let error = writer.complete(interaction.id).await.unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                GraphError::Validation {
+                    code: "attached_response_navigation_required",
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+        assert!(error.to_string().contains(&persistent.id.to_string()));
+        assert!(writer.completion_output().await.unwrap().is_none());
+        assert!(sw.get_layer(original.id).await.unwrap().actions.is_empty());
+        assert_eq!(
+            writer.get_layer(response.id).await.unwrap().layer.state,
+            if advance {
+                RecordState::Accepted
+            } else {
+                RecordState::Draft
+            }
+        );
+        drop(writer);
+        drop(sw);
+        database.close().await;
+        let database = GraphDatabase::open(file.path()).await.unwrap();
+        // Changing the process gate cannot erase the frozen acceptance obligation.
+        database
+            .set_interaction_permissions_enabled(false)
+            .await
+            .unwrap();
+        let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+        let mut action = ActionDraft {
+            client_key: "response-link".into(),
+            source_node_id: persistent.id,
+            source_layer_id: None,
+            kind: ActionKind::Navigate,
+            relation: Some(NavigateRelation::Reference),
+            label: "Rayleigh explanation".into(),
+            variant: ActionVariant::default(),
+            icon: None,
+            description: None,
+            target_layer_id: Some(original.id),
+            interaction_text: None,
+            input: None,
+        };
+        let wrong = writer.add_action(&action).await.unwrap();
+        assert!(matches!(
+            writer.complete(interaction.id).await,
+            Err(GraphError::Validation {
+                code: "attached_response_navigation_required",
+                ..
+            })
+        ));
+        action.target_layer_id = Some(response.id);
+        assert_eq!(writer.add_action(&action).await.unwrap().id, wrong.id);
+        writer.complete(interaction.id).await.unwrap();
+        let sw = database.writer_for_subgraph(source.id).await.unwrap();
+        let visible = sw.get_layer(original.id).await.unwrap();
+        assert_eq!(visible.actions.len(), 1);
+        assert_eq!(visible.actions[0].target_layer_id, Some(response.id));
+    }
+}
+
+#[tokio::test]
+async fn required_attached_navigation_covers_distinct_nodes_and_rich_controls() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    database
+        .set_interaction_permissions_enabled(true)
+        .await
+        .unwrap();
+    let source = database
+        .create_interaction(Some(project(1)), thread(1), "Sources")
+        .await
+        .unwrap();
+    let sw = database.writer_for_subgraph(source.id).await.unwrap();
+    let plain = node(&sw, "plain").await;
+    let rich = node(&sw, "rich").await;
+    let package = presentation_with_actions(&rich, &[]);
+    sw.submit_node_with_authored_detail(
+        &NodeDraft {
+            client_key: "rich".into(),
+            kind: "concept".into(),
+            icon: "box".into(),
+            title: "rich".into(),
+            detail: "detail rich".into(),
+        },
+        Some(&package),
+    )
+    .await
+    .unwrap();
+    let edge = sw
+        .create_edge(&EdgeDraft {
+            client_key: "sources".into(),
+            endpoints: [plain.id, rich.id],
+        })
+        .await
+        .unwrap();
+    let original = sw
+        .submit_layer(&LayerDraft {
+            client_key: "sources".into(),
+            nodes: vec![plain.id, rich.id],
+            edges: vec![edge.id],
+            layout: authored_layout([plain.id, rich.id]),
+            size_justification: None,
+            default_node_id: None,
+        })
+        .await
+        .unwrap();
+    root_expand(&sw, &source, &original).await;
+    sw.complete(source.id).await.unwrap();
+    let reuse = database
+        .create_interaction(Some(project(1)), thread(2), "Reuse")
+        .await
+        .unwrap();
+    let rw = database.writer_for_subgraph(reuse.id).await.unwrap();
+    let reused = single_node_layer(&rw, "reused", &plain).await;
+    root_expand(&rw, &reuse, &reused).await;
+    rw.complete(reuse.id).await.unwrap();
+    let contexts = [
+        (plain.id, source.id, original.id),
+        (rich.id, source.id, original.id),
+        (plain.id, reuse.id, reused.id),
+    ]
+    .map(
+        |(node_id, source_interaction_node_id, source_layer_id)| InteractionContextDraft {
+            target: InteractionContextTarget {
+                node_id,
+                source_interaction_node_id,
+                source_layer_id,
+            },
+            annotations: vec![],
+        },
+    );
+    let duplicate = database
+        .create_interaction_with_context(Some(project(1)), thread(3), "Explain", &contexts)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        duplicate,
+        GraphError::Validation {
+            code: "duplicate_context_target",
+            ..
+        }
+    ));
+    let (interaction, _) = database
+        .create_interaction_with_context(Some(project(1)), thread(3), "Explain", &contexts[..2])
+        .await
+        .unwrap();
+    let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+    let answer = node(&writer, "answer").await;
+    let response = single_node_layer(&writer, "response", &answer).await;
+    root_expand(&writer, &interaction, &response).await;
+    let mut draft = ActionDraft {
+        client_key: "response".into(),
+        source_node_id: plain.id,
+        source_layer_id: Some(original.id),
+        kind: ActionKind::Navigate,
+        relation: Some(NavigateRelation::Reference),
+        label: "Response".into(),
+        variant: Default::default(),
+        icon: None,
+        description: None,
+        target_layer_id: Some(response.id),
+        interaction_text: None,
+        input: None,
+    };
+    writer.add_action(&draft).await.unwrap();
+    let error = writer.complete(interaction.id).await.unwrap_err();
+    assert!(matches!(
+        &error,
+        GraphError::Validation {
+            code: "attached_response_navigation_required",
+            ..
+        }
+    ));
+    assert!(
+        error.to_string().contains(&format!("[{}]", rich.id)),
+        "{error}"
+    );
+    draft.source_node_id = rich.id;
+    let addition = writer.add_action(&draft).await.unwrap();
+    assert!(matches!(
+        writer.complete(interaction.id).await,
+        Err(GraphError::Validation {
+            code: "attached_action_binding_required",
+            ..
+        })
+    ));
+    assert!(sw.get_layer(original.id).await.unwrap().actions.is_empty());
+    assert_eq!(
+        writer.get_layer(response.id).await.unwrap().layer.state,
+        RecordState::Draft
+    );
+    writer
+        .stage_node_presentation(
+            rich.id,
+            0,
+            &presentation_with_actions(&rich, &[addition]),
+            &[],
+        )
+        .await
+        .unwrap();
+    writer.complete(interaction.id).await.unwrap();
+    let visible = sw.get_layer(original.id).await.unwrap();
+    assert_eq!(
+        visible.actions.len(),
+        2,
+        "one new action per persistent source, across reused occurrences"
+    );
+    assert_eq!(rw.get_layer(reused.id).await.unwrap().actions.len(), 1);
+}
+
+#[tokio::test]
+async fn required_attached_navigation_preserves_old_and_disabled_preparations() {
+    for version in ["1", "disabled", "absent"] {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let database = GraphDatabase::open(file.path()).await.unwrap();
+        let source = database
+            .create_interaction(Some(project(1)), thread(1), "Source")
+            .await
+            .unwrap();
+        let sw = database.writer_for_subgraph(source.id).await.unwrap();
+        let persistent = node(&sw, "source").await;
+        let original = single_node_layer(&sw, "source", &persistent).await;
+        root_expand(&sw, &source, &original).await;
+        sw.complete(source.id).await.unwrap();
+        database
+            .set_interaction_permissions_enabled(version != "disabled")
+            .await
+            .unwrap();
+        let (interaction, _) = database
+            .create_interaction_with_context(
+                Some(project(1)),
+                thread(2),
+                "Legacy",
+                &[InteractionContextDraft {
+                    target: InteractionContextTarget {
+                        node_id: persistent.id,
+                        source_interaction_node_id: source.id,
+                        source_layer_id: original.id,
+                    },
+                    annotations: vec![],
+                }],
+            )
+            .await
+            .unwrap();
+        // Storage fixture recreates an old frozen preparation; public callers cannot rewrite it.
+        let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", file.path().display()))
+            .await
+            .unwrap();
+        if version == "1" {
+            sqlx::query("DROP TRIGGER interaction_permissions_immutable")
+                .execute(&pool)
+                .await
+                .unwrap();
+            sqlx::query(
+                "UPDATE interaction_permissions SET description=?1 WHERE interaction_node_id=?2",
+            )
+            .bind(
+                serde_json::to_string(&InteractionPermissions::V1 {
+                    enabled: true,
+                    permissions: vec![InteractionPermission::NavigateAdd {
+                        node_id: persistent.id,
+                    }],
+                })
+                .unwrap(),
+            )
+            .bind(interaction.id.value())
+            .execute(&pool)
+            .await
+            .unwrap();
+        } else if version == "absent" {
+            sqlx::query("DROP TRIGGER interaction_permissions_no_delete")
+                .execute(&pool)
+                .await
+                .unwrap();
+            sqlx::query("DELETE FROM interaction_permissions WHERE interaction_node_id=?1")
+                .bind(interaction.id.value())
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        pool.close().await;
+        drop(sw);
+        database.close().await;
+        let database = GraphDatabase::open(file.path()).await.unwrap();
+        database
+            .set_interaction_permissions_enabled(true)
+            .await
+            .unwrap();
+        let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+        let answer = node(&writer, "answer").await;
+        let response = single_node_layer(&writer, "response", &answer).await;
+        root_expand(&writer, &interaction, &response).await;
+        writer.complete(interaction.id).await.unwrap();
+        assert!(
+            database
+                .writer_for_subgraph(source.id)
+                .await
+                .unwrap()
+                .get_layer(original.id)
+                .await
+                .unwrap()
+                .actions
+                .is_empty()
         );
     }
 }

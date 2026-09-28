@@ -2282,11 +2282,27 @@ export function createProductWorkspace({
     $("#turnPopover").classList.add("hidden");
     $("#turnPickerButton").setAttribute("aria-expanded", "false");
   };
+  const fitInteractionGraphPopover = () => {
+    const popover = $("#turnPopover");
+    if (!turnPopoverOpen || !popover.classList.contains("interaction-graph-popover")) return;
+    const banner = $("#interactionBanner").getBoundingClientRect();
+    const picker = $("#turnPicker").getBoundingClientRect();
+    popover.style.setProperty("--interaction-graph-available-width", `${Math.max(0, picker.right - banner.left - 1)}px`);
+    const available = graphDocument.documentElement.clientHeight - popover.getBoundingClientRect().top - 12;
+    popover.style.setProperty("--interaction-graph-available-height", `${Math.max(0, available)}px`);
+  };
+  // The banner changes size when the sidebar toggles or its text wraps.
+  const interactionBannerObserver = graphDocument.defaultView.ResizeObserver
+    ? new graphDocument.defaultView.ResizeObserver(fitInteractionGraphPopover)
+    : null;
+  interactionBannerObserver?.observe($("#interactionBanner"));
+  graphDocument.defaultView.addEventListener("resize", fitInteractionGraphPopover);
   const openTurnPopover = () => {
     if ($("#turnPickerButton").disabled) return;
     turnPopoverOpen = true;
     $("#turnPopover").classList.remove("hidden");
     $("#turnPickerButton").setAttribute("aria-expanded", "true");
+    fitInteractionGraphPopover();
     const current = $("#turnPopover [aria-current='true']");
     current?.scrollIntoView?.({ block: "nearest" });
     current?.focus?.({ preventScroll: true });
@@ -3681,6 +3697,7 @@ export function createProductWorkspace({
       if (focusedTurnId !== null) [...$("#turnPopover").querySelectorAll("[data-turn-id]")].find((row) => row.dataset.turnId === focusedTurnId)?.focus({ preventScroll: true });
       $("#turnPopover").classList.toggle("hidden", !turnPopoverOpen);
       pickerButton.setAttribute("aria-expanded", String(turnPopoverOpen));
+      fitInteractionGraphPopover();
       return;
     }
     $("#turnPicker .turn-stepper").setAttribute("aria-label", "Turn navigation");
@@ -5258,6 +5275,8 @@ export function createProductWorkspace({
     contextDraftLoadRetryAttempts.clear();
     inputDraftLoadRetries?.dispose();
     graphDocument.defaultView.removeEventListener("resize", repositionContextDraftSendWarning);
+    graphDocument.defaultView.removeEventListener("resize", fitInteractionGraphPopover);
+    interactionBannerObserver?.disconnect();
     cancelInspectorFit();
     graphDocument.removeEventListener("pointerdown", blurGraphFromOutsidePointer, true);
     graphDocument.removeEventListener("pointerdown", closeTurnPopoverFromOutside, true);

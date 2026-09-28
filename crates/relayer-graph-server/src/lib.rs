@@ -6783,7 +6783,7 @@ mod attached_navigation_route_tests {
         writer.add_action(&action).await.unwrap();
         action.client_key = "reference".into();
         action.source_node_id = node.id;
-        action.target_layer_id = Some(layer.id);
+        action.target_layer_id = Some(response.id);
         action.relation = Some(NavigateRelation::Reference);
         writer.add_action(&action).await.unwrap();
         let state = ServerState::new(database, "control");
