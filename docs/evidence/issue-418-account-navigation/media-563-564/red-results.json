@@ -1,0 +1,534 @@
+{
+  "sourceCommit": "bf477e8c02053c09c4c5cb20215d54157e59ab30",
+  "sourceTree": "331e3d3fe48cb6eccda3a75aac7fec3b1e316c95",
+  "renderer": "production app server + renderer; Playwright Chromium; no DOM/CSS mutation",
+  "widthTurn": 375,
+  "widthSidebar": 960,
+  "height": 640,
+  "turnIds": [
+    "1",
+    "2",
+    "3",
+    "4"
+  ],
+  "projectIds": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13"
+  ],
+  "chatIds": [
+    "1",
+    "2",
+    "3"
+  ],
+  "turnMetrics": {
+    "rect": {
+      "left": 42,
+      "right": 362,
+      "top": 133.09375,
+      "bottom": 291.09375,
+      "width": 320,
+      "height": 158
+    },
+    "pane": {
+      "left": 210,
+      "right": 375,
+      "top": 0,
+      "bottom": 640,
+      "width": 165,
+      "height": 640
+    },
+    "viewport": {
+      "width": 375,
+      "height": 640
+    },
+    "clip": {
+      "left": 210,
+      "top": 0,
+      "right": 375,
+      "bottom": 640
+    },
+    "clippingAncestors": [
+      {
+        "className": "workspace-layout",
+        "overflowX": "auto",
+        "overflowY": "auto",
+        "rect": {
+          "left": 210,
+          "right": 375,
+          "top": 0,
+          "bottom": 640,
+          "width": 165,
+          "height": 640
+        }
+      },
+      {
+        "className": "",
+        "overflowX": "hidden",
+        "overflowY": "hidden",
+        "rect": {
+          "left": 0,
+          "right": 375,
+          "top": 0,
+          "bottom": 640,
+          "width": 375,
+          "height": 640
+        }
+      },
+      {
+        "className": "",
+        "overflowX": "hidden",
+        "overflowY": "hidden",
+        "rect": {
+          "left": 0,
+          "right": 375,
+          "top": 0,
+          "bottom": 640,
+          "width": 375,
+          "height": 640
+        }
+      }
+    ],
+    "overflowY": "auto",
+    "scrollHeight": 208,
+    "clientHeight": 156,
+    "scrollWidth": 318,
+    "clientWidth": 318,
+    "rows": [
+      {
+        "id": "1",
+        "current": false,
+        "rect": {
+          "left": 43,
+          "right": 361,
+          "top": 82.09375,
+          "bottom": 134.09375,
+          "width": 318,
+          "height": 52
+        },
+        "sequence": {
+          "left": 53,
+          "right": 101,
+          "top": 102.09375,
+          "bottom": 113.09375,
+          "width": 48,
+          "height": 11
+        },
+        "prompt": {
+          "left": 110,
+          "right": 342,
+          "top": 101.09375,
+          "bottom": 114.09375,
+          "width": 232,
+          "height": 13
+        },
+        "promptScrollWidth": 232,
+        "promptClientWidth": 232,
+        "metadata": null,
+        "status": null,
+        "statusText": "",
+        "focused": false
+      },
+      {
+        "id": "2",
+        "current": false,
+        "rect": {
+          "left": 43,
+          "right": 361,
+          "top": 134.09375,
+          "bottom": 186.09375,
+          "width": 318,
+          "height": 52
+        },
+        "sequence": {
+          "left": 53,
+          "right": 101,
+          "top": 154.09375,
+          "bottom": 165.09375,
+          "width": 48,
+          "height": 11
+        },
+        "prompt": {
+          "left": 110,
+          "right": 342,
+          "top": 153.09375,
+          "bottom": 166.09375,
+          "width": 232,
+          "height": 13
+        },
+        "promptScrollWidth": 325,
+        "promptClientWidth": 232,
+        "metadata": null,
+        "status": null,
+        "statusText": "",
+        "focused": false
+      },
+      {
+        "id": "3",
+        "current": false,
+        "rect": {
+          "left": 43,
+          "right": 361,
+          "top": 186.09375,
+          "bottom": 238.09375,
+          "width": 318,
+          "height": 52
+        },
+        "sequence": {
+          "left": 53,
+          "right": 101,
+          "top": 206.09375,
+          "bottom": 217.09375,
+          "width": 48,
+          "height": 11
+        },
+        "prompt": {
+          "left": 110,
+          "right": 342,
+          "top": 205.09375,
+          "bottom": 218.09375,
+          "width": 232,
+          "height": 13
+        },
+        "promptScrollWidth": 327,
+        "promptClientWidth": 232,
+        "metadata": null,
+        "status": null,
+        "statusText": "",
+        "focused": false
+      },
+      {
+        "id": "4",
+        "current": true,
+        "rect": {
+          "left": 43,
+          "right": 361,
+          "top": 238.09375,
+          "bottom": 290.09375,
+          "width": 318,
+          "height": 52
+        },
+        "sequence": {
+          "left": 53,
+          "right": 101,
+          "top": 258.59375,
+          "bottom": 269.59375,
+          "width": 48,
+          "height": 11
+        },
+        "prompt": {
+          "left": 110,
+          "right": 342,
+          "top": 257.59375,
+          "bottom": 270.59375,
+          "width": 232,
+          "height": 13
+        },
+        "promptScrollWidth": 1075,
+        "promptClientWidth": 232,
+        "metadata": null,
+        "status": null,
+        "statusText": "",
+        "focused": true
+      }
+    ]
+  },
+  "sidebarMetrics": {
+    "sidebar": {
+      "left": 0,
+      "right": 210,
+      "top": 0,
+      "bottom": 640,
+      "width": 210,
+      "height": 640
+    },
+    "content": {
+      "left": 9,
+      "right": 200,
+      "top": 78,
+      "bottom": 588,
+      "width": 191,
+      "height": 510
+    },
+    "footer": {
+      "left": 9,
+      "right": 200,
+      "top": 588,
+      "bottom": 631,
+      "width": 191,
+      "height": 43
+    },
+    "contentOverflowY": "visible",
+    "scrollTop": 0,
+    "scrollHeight": 631,
+    "clientHeight": 510,
+    "footerOutsideScroller": true,
+    "footerInsideSidebar": true,
+    "footerVisible": true,
+    "projects": [
+      {
+        "id": "1",
+        "text": "relayer-stop-38PZff",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 269.015625,
+          "bottom": 299.015625,
+          "width": 191,
+          "height": 30
+        }
+      },
+      {
+        "id": "2",
+        "text": "Sidebar project 02",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 303.015625,
+          "bottom": 333.015625,
+          "width": 191,
+          "height": 30
+        }
+      },
+      {
+        "id": "3",
+        "text": "Sidebar project 03",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 337.015625,
+          "bottom": 367.015625,
+          "width": 191,
+          "height": 30
+        }
+      },
+      {
+        "id": "4",
+        "text": "Sidebar project 04",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 371.015625,
+          "bottom": 401.015625,
+          "width": 191,
+          "height": 30
+        }
+      },
+      {
+        "id": "5",
+        "text": "Sidebar project 05",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 405.015625,
+          "bottom": 435.015625,
+          "width": 191,
+          "height": 30
+        }
+      },
+      {
+        "id": "6",
+        "text": "Sidebar project 06",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 439.015625,
+          "bottom": 469.015625,
+          "width": 191,
+          "height": 30
+        }
+      },
+      {
+        "id": "7",
+        "text": "Sidebar project 07",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 473.015625,
+          "bottom": 503.015625,
+          "width": 191,
+          "height": 30
+        }
+      },
+      {
+        "id": "8",
+        "text": "Sidebar project 08",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 507.015625,
+          "bottom": 537.015625,
+          "width": 191,
+          "height": 30
+        }
+      },
+      {
+        "id": "9",
+        "text": "Sidebar project 09",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 541.015625,
+          "bottom": 571.015625,
+          "width": 191,
+          "height": 30
+        }
+      },
+      {
+        "id": "10",
+        "text": "Sidebar project 10",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 575.015625,
+          "bottom": 605.015625,
+          "width": 191,
+          "height": 30
+        }
+      },
+      {
+        "id": "11",
+        "text": "Sidebar project 11",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 609.015625,
+          "bottom": 639.015625,
+          "width": 191,
+          "height": 30
+        }
+      },
+      {
+        "id": "12",
+        "text": "Sidebar project 12",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 643.015625,
+          "bottom": 673.015625,
+          "width": 191,
+          "height": 30
+        }
+      },
+      {
+        "id": "13",
+        "text": "Sidebar project 13",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 677.015625,
+          "bottom": 707.015625,
+          "width": 191,
+          "height": 30
+        }
+      }
+    ],
+    "chats": [
+      {
+        "id": "3",
+        "text": "◌\naccept sidebar chat 2",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 162.296875,
+          "bottom": 195.296875,
+          "width": 191,
+          "height": 33
+        }
+      },
+      {
+        "id": "2",
+        "text": "◌\naccept sidebar chat 1",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 197.296875,
+          "bottom": 230.296875,
+          "width": 191,
+          "height": 33
+        }
+      },
+      {
+        "id": "1",
+        "text": "◌\naccept long turn zero · sidebar fixture",
+        "rect": {
+          "left": 9,
+          "right": 200,
+          "top": 232.296875,
+          "bottom": 265.296875,
+          "width": 191,
+          "height": 33
+        }
+      }
+    ],
+    "lastProject": {
+      "text": "Sidebar project 13",
+      "rect": {
+        "left": 9,
+        "right": 200,
+        "top": 677.015625,
+        "bottom": 707.015625,
+        "width": 191,
+        "height": 30
+      }
+    },
+    "expectedProjectIds": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13"
+    ],
+    "viewport": {
+      "width": 960,
+      "height": 640
+    },
+    "documentScrollHeight": 640,
+    "scrollBeforeWheel": 0,
+    "scrollAfterWheel": 0
+  },
+  "failures": [
+    {
+      "seam": "turn-popover-pane-containment",
+      "expected": "menu wholly within main pane and effective clipping ancestors",
+      "actual": {
+        "left": 42,
+        "right": 362,
+        "top": 133.09375,
+        "bottom": 291.09375,
+        "width": 320,
+        "height": 158
+      }
+    },
+    {
+      "seam": "sidebar-populated-content-scroll",
+      "expected": "bounded user-scrollable content pane above fixed footer",
+      "actual": {
+        "overflowY": "visible",
+        "scrollHeight": 631,
+        "clientHeight": 510
+      }
+    }
+  ],
+  "pageErrors": [],
+  "reproduced": true,
+  "productionCheckpointPassed": false
+}

@@ -1,0 +1,84 @@
+{
+  "sourceTree": "37be64cdfac01fad4301bdba717621bafe757341",
+  "pre": {
+    "head": "f764dd44d350f4e01827dfd69722af1309c6a3ca",
+    "indexTree": "37be64cdfac01fad4301bdba717621bafe757341",
+    "worktreeDiffSha256": "a6048dfa211f68fc41bc48663d0f44b5d96f3b3a8d83c0375dbc2c2dcb7c2cd1",
+    "stagedDiffSha256": "a6048dfa211f68fc41bc48663d0f44b5d96f3b3a8d83c0375dbc2c2dcb7c2cd1",
+    "status": "M  desktop/renderer/styles.css\nM  docs/evidence/issue-418-account-navigation/README.md\nM  scripts/test-desktop-narrow-sidebar.mjs"
+  },
+  "post": {
+    "head": "f764dd44d350f4e01827dfd69722af1309c6a3ca",
+    "indexTree": "37be64cdfac01fad4301bdba717621bafe757341",
+    "worktreeDiffSha256": "a6048dfa211f68fc41bc48663d0f44b5d96f3b3a8d83c0375dbc2c2dcb7c2cd1",
+    "stagedDiffSha256": "a6048dfa211f68fc41bc48663d0f44b5d96f3b3a8d83c0375dbc2c2dcb7c2cd1",
+    "status": "M  desktop/renderer/styles.css\nM  docs/evidence/issue-418-account-navigation/README.md\nM  scripts/test-desktop-narrow-sidebar.mjs"
+  },
+  "sourceUnchanged": true,
+  "steps": [
+    {
+      "name": "check",
+      "command": [
+        "/Users/vishal/.nvm/versions/node/v22.23.2/bin/npm",
+        "run",
+        "check"
+      ],
+      "log": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/canonical-mac-1/check.log",
+      "exitCode": 1,
+      "timedOut": false,
+      "processGroupClean": true,
+      "elapsedSeconds": 417.612,
+      "grantOwner": "01a0cebb-1c78-7312-9eb5-b1b42401cf8d",
+      "cutoffAt": "2026-09-28T15:52:32.315484+00:00"
+    },
+    {
+      "name": "build",
+      "command": [
+        "/Users/vishal/.nvm/versions/node/v22.23.2/bin/npm",
+        "run",
+        "build"
+      ],
+      "log": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/canonical-mac-1/build.log",
+      "exitCode": 0,
+      "timedOut": false,
+      "processGroupClean": true,
+      "elapsedSeconds": 4.782,
+      "grantOwner": "01a0cebb-1c78-7312-9eb5-b1b42401cf8d",
+      "cutoffAt": "2026-09-28T15:52:32.315484+00:00"
+    }
+  ],
+  "allStepsPassed": false,
+  "processGroupClean": true,
+  "runError": null,
+  "receivedSignal": null,
+  "gateGrantSnapshots": [
+    {
+      "status": "reserved",
+      "owner": "01a0cebb-1c78-7312-9eb5-b1b42401cf8d",
+      "change": "563-564",
+      "worktree": "/Volumes/2T-SSD/worktrees/factory-418",
+      "sourceTree": "37be64cdfac01fad4301bdba717621bafe757341",
+      "cutoffAt": "2026-09-28T15:52:32.315484+00:00",
+      "remainingAtCheckSeconds": 882.458,
+      "checkedAt": "2026-09-28T15:37:49.857102+00:00"
+    },
+    {
+      "status": "reserved",
+      "owner": "01a0cebb-1c78-7312-9eb5-b1b42401cf8d",
+      "change": "563-564",
+      "worktree": "/Volumes/2T-SSD/worktrees/factory-418",
+      "sourceTree": "37be64cdfac01fad4301bdba717621bafe757341",
+      "cutoffAt": "2026-09-28T15:52:32.315484+00:00",
+      "remainingAtCheckSeconds": 464.782,
+      "checkedAt": "2026-09-28T15:44:47.533110+00:00"
+    }
+  ],
+  "elapsedSeconds": 422.768,
+  "startedAt": "2026-09-28T15:37:49.653176+00:00",
+  "finishedAt": "2026-09-28T15:44:52.423674+00:00",
+  "absoluteCoordinatorCutoff": "2026-09-28T15:52:32.315484+00:00",
+  "grantOwner": "01a0cebb-1c78-7312-9eb5-b1b42401cf8d",
+  "grantChange": "563-564",
+  "nodeVersion": "v22.23.2",
+  "exitCode": 1
+}

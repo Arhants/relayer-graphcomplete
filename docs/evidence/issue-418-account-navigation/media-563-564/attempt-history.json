@@ -1,0 +1,142 @@
+{
+  "attempts": [
+    {
+      "directory": "red-1",
+      "sourceCommit": "bf477e8c02053c09c4c5cb20215d54157e59ab30",
+      "verdict": "setup-failure",
+      "exitCode": 1,
+      "details": "Next interaction submitted before initial accepted fixture interaction finished;422interaction_in_progress; no layout metric obtained."
+    },
+    {
+      "directory": "red-2",
+      "sourceCommit": "bf477e8c02053c09c4c5cb20215d54157e59ab30",
+      "verdict": "navigation-failure-before-independent-geometry",
+      "exitCode": 1,
+      "details": "Projects section-label intercepted actual thread click in populated sidebar for30s. No turn-popup or independent sidebar geometry verdict. No forced click used."
+    },
+    {
+      "directory": "red-3",
+      "sourceCommit": "bf477e8c02053c09c4c5cb20215d54157e59ab30",
+      "verdict": "both-layout-boundaries-reproduced",
+      "exitCode": 1,
+      "details": [
+        {
+          "seam": "turn-popover-pane-containment",
+          "expected": "menu wholly within main pane and effective clipping ancestors",
+          "actual": {
+            "left": 42,
+            "right": 362,
+            "top": 133.09375,
+            "bottom": 291.09375,
+            "width": 320,
+            "height": 158
+          }
+        },
+        {
+          "seam": "sidebar-populated-content-scroll",
+          "expected": "bounded user-scrollable content pane above fixed footer",
+          "actual": {
+            "overflowY": "visible",
+            "scrollHeight": 631,
+            "clientHeight": 510
+          }
+        }
+      ]
+    },
+    {
+      "directory": "green-1",
+      "sourceCommit": "bf477e8c02053c09c4c5cb20215d54157e59ab30",
+      "workspaceDiffSha256": "1e7c06de94d433d98a1dc1ff7071b7a031d37dab1b611fac2bfb16f770ac8d23",
+      "verdict": "original geometry/scroll checkpoints pass; candidate UX rejected",
+      "exitCode": 0,
+      "limits": "Root image review shows unrestricted prompt makes row taller than popup. SPEC also found metadata cascade/wrapping and direct button shrinking. Not final native/feature acceptance."
+    },
+    {
+      "directory": "green-2",
+      "sourceCommit": "bf477e8c02053c09c4c5cb20215d54157e59ab30",
+      "workspaceDiffSha256": "d8d964341d9490ae3cc79d98e9dacedabfa9b204e5471f671e3b56d1268adcfc",
+      "verdict": "focused browser geometry and wheel pass; native follow-up pending",
+      "exitCode": 0,
+      "limits": "4 accepted rows52px; no live status, annotations, keyboard proof. Superseded by wider boundary correction and native checkpoint source."
+    },
+    {
+      "directory": "native-1",
+      "sourceTree": "1a3fb76552ca05ca01120934c813e7b2d6751d82",
+      "base": "f764dd44d350f4e01827dfd69722af1309c6a3ca",
+      "verdict": "setup-stalled then terminated by owner",
+      "exitCode": -15,
+      "sourceUnchanged": true,
+      "details": "Build completed; original59 checkpoints recorded in phases/screenshots, no final inner result. Follow-up five interactions created but UI remained Running after native Stop click; raw aborted.promise had no timeout. Read-only CUA inspection, no intervention. Owner terminated ownPGID82546; cleanup complete. Newmain missing layer-selection IPC handler logged, also repaired in subsequent fixture."
+    },
+    {
+      "directory": "native-2",
+      "sourceTree": "4fb94a8298ac72b700db24249d3cc1fa11940591",
+      "verdict": "failed keyboard project-action visibility assertion during reveal transition",
+      "exitCode": 1,
+      "sourceUnchanged": true,
+      "completedCheckpoints": 62,
+      "details": "Turn popup layout, pointer/wheel/Escape, stopped keyboard draft retention, populated sidebar bounds/footer and wheel all completed. First project action focused, computed checkVisibilityfalse before120ms CSS opacity transition; failure screenshot after doubleRAF shows exact focused action visible and contained. Corrected runner waits up to1500ms for focused action to finish reveal, retains visibility/clipping assertions."
+    },
+    {
+      "directory": "native-3",
+      "sourceTree": "7a24930de19208d8bffef84bf50e9f486b8bea8a",
+      "verdict": "native window occluded and animation frames suspended before new checkpoints",
+      "exitCode": 1,
+      "sourceUnchanged": true,
+      "completedCheckpoints": 15,
+      "details": "Old Models familycardwait timedout.14:59:00.574Z nativefocused/visible rendererRAF282; failure14:59:15.619Z nativeunfocused rendererhidden RAF288 age14944ms. Failurecapture doubleRAF also failed. Zero renderererrors. No changed checkpoint reached. One unchanged infrastructure retry requested; no runtimepass."
+    },
+    {
+      "directory": "native-4",
+      "sourceTree": "7a24930de19208d8bffef84bf50e9f486b8bea8a",
+      "verdict": "single unchanged infrastructure retry also interrupted by native occlusion",
+      "exitCode": 1,
+      "sourceUnchanged": true,
+      "details": "Old suite executeJavaScript timedout10sec; rendererhidden/nativeunfocused with RAF262 age11943ms; doubleRAF capture alsofailed2sec. No new checkpoints reached. No further unchanged retry; driver subsequently changes explicit test scheduling and focus controls."
+    },
+    {
+      "directory": "native-5",
+      "sourceTree": "dfda73e854075e502b209cb7df4e8697c9ed537b",
+      "verdict": "failed final return-wheel setup used stale pre-resize sidebar coordinates",
+      "exitCode": 1,
+      "sourceUnchanged": true,
+      "completedCheckpoints": 64,
+      "details": "Full sidebar keyboard, nested chat, project compose, Settings Back and narrow Settings passed assertions before final draft-return setup. Screenshot shows sidebar correctly collapsed after narrow trip; oldpointx104outside58pxrail. Runner now reads actual current content bounds again before trustedwheel. Zero renderererrors. Schedulingoverride keptRAFactive, no backgroundfailure."
+    },
+    {
+      "directory": "native-6",
+      "sourceTree": "3fd5280abc2063baeec333dfaa0ab62058b8800b",
+      "verdict": "failed draft assertion before asynchronous return-thread hydration",
+      "exitCode": 1,
+      "sourceUnchanged": true,
+      "details": "Driver waited currentThreadId only. ProductionloadThread sets it beforeawaitrefreshState, thenhydrateWorkspace setsinteraction andrenderThread restoresdraft synchronously. FailurePNGaftertwoRAF visiblycontains exactexpecteddrafttext. Corrected readiness waits exactthread+latestinteraction beforeunchangeddraftassert; no production/persistencepolicychange."
+    },
+    {
+      "directory": "native-7",
+      "sourceTree": "145657379a2092493d2a5718e225b55d6bee8522",
+      "verdict": "65 mapped native scenarios pass; independent screenshot review found separate annotation occlusion gap",
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "completedCheckpoints": 65,
+      "details": "483expanded background root-layer comment pencil overlaps Turn2. Bounding and clipping assertions missed stacking context interference. New exact-overlap hit-test/native selection checkpoint and conditional open-popup banner stacking added; prior run does not certify new correction. Scheduling override preserved; no physical input/background proof."
+    },
+    {
+      "directory": "native-8",
+      "sourceTree": "37be64cdfac01fad4301bdba717621bafe757341",
+      "verdict": "supervisor refused before launch: less than90seconds grant remained",
+      "exitCode": 1,
+      "details": "Empty output directory only; no heavy child launched."
+    },
+    {
+      "directory": "native-8b",
+      "sourceTree": "37be64cdfac01fad4301bdba717621bafe757341",
+      "verdict": "65 native groups pass including new annotation occlusion boundary",
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "completedCheckpoints": 65,
+      "details": "Exact overlap244,170 hit turn-number; native pointer selectedTurn2 interaction4. Closed layerbadge visible enabled and owns hit. Corrected screenshot independently reviewed. Test-only foreground scheduling and hardware input limitations retained; canonical and video pending."
+    }
+  ],
+  "unusedGrant": "Between attempts, invalid descendant selectors discovered before execution. Grant released without launching.",
+  "driverArchiveLimit": "First two external driver revisions were not separately copied; launch receipts retain their hashes, logs and source identities. Subsequent runs archive their exact driver."
+}

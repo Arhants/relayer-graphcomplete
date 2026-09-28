@@ -1,0 +1,17 @@
+{
+  "status": "reserved",
+  "owner": "01a0cebb-1c78-7312-9eb5-b1b42401cf8d",
+  "change": "563-564",
+  "worktree": "/Volumes/2T-SSD/worktrees/factory-418",
+  "sourceTree": "37be64cdfac01fad4301bdba717621bafe757341",
+  "cutoffAt": "2026-09-28T15:52:32.315484+00:00",
+  "remainingAtCheckSeconds": 882.471,
+  "checkedAt": "2026-09-28T15:37:49.844108+00:00",
+  "launchBudgetSeconds": 882.471,
+  "totalCapSeconds": 900,
+  "cleanupReserveSeconds": 30,
+  "steps": [
+    "npm run check",
+    "npm run build"
+  ]
+}

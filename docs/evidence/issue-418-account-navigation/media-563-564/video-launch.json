@@ -1,0 +1,18 @@
+{
+  "pid": 92486,
+  "processGroup": 92486,
+  "command": [
+    "/Volumes/2T-SSD/worktrees/factory-418/node_modules/.bin/electron",
+    "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/navigation-video-runner.mjs"
+  ],
+  "startedAt": "2026-09-28T15:28:27.509150+00:00",
+  "absoluteCoordinatorCutoff": "2026-09-28T15:31:20.293565+00:00",
+  "grantOwner": "01a0cebb-1c78-7312-9eb5-b1b42401cf8d",
+  "grantSourceTree": "37be64cdfac01fad4301bdba717621bafe757341",
+  "grantChange": "563-564",
+  "launchBudgetSeconds": 172.787,
+  "cleanupReserveSeconds": 15,
+  "driverSha256": "8c4d692f3b452386b7666a110392a233e496ec64d9e77cf74da86bd91ad2534f",
+  "sourceTree": "37be64cdfac01fad4301bdba717621bafe757341",
+  "sourceRunnerSha256": "20c130f8ebaaa70a4c470aff03a3d856bac55d525f64591ea00fd6006cdfb15a"
+}

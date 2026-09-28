@@ -1,0 +1,13 @@
+{
+  "runnerPid": 76352,
+  "childProcessGroup": 76359,
+  "command": [
+    "npm",
+    "run",
+    "test:desktop:narrow-sidebar"
+  ],
+  "driverSha256": "20c130f8ebaaa70a4c470aff03a3d856bac55d525f64591ea00fd6006cdfb15a",
+  "startedAt": "2026-09-28T15:27:09.844277+00:00",
+  "cutoff": "2026-09-28T15:29:56.747460+00:00",
+  "budgetSeconds": 166.903183
+}

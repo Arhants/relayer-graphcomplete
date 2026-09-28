@@ -1,0 +1,32 @@
+[
+  {
+    "name": "check",
+    "command": [
+      "/Users/vishal/.nvm/versions/node/v22.23.2/bin/npm",
+      "run",
+      "check"
+    ],
+    "log": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/canonical-mac-1/check.log",
+    "exitCode": 1,
+    "timedOut": false,
+    "processGroupClean": true,
+    "elapsedSeconds": 417.612,
+    "grantOwner": "01a0cebb-1c78-7312-9eb5-b1b42401cf8d",
+    "cutoffAt": "2026-09-28T15:52:32.315484+00:00"
+  },
+  {
+    "name": "build",
+    "command": [
+      "/Users/vishal/.nvm/versions/node/v22.23.2/bin/npm",
+      "run",
+      "build"
+    ],
+    "log": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/canonical-mac-1/build.log",
+    "exitCode": 0,
+    "timedOut": false,
+    "processGroupClean": true,
+    "elapsedSeconds": 4.782,
+    "grantOwner": "01a0cebb-1c78-7312-9eb5-b1b42401cf8d",
+    "cutoffAt": "2026-09-28T15:52:32.315484+00:00"
+  }
+]

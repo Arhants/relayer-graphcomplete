@@ -1,0 +1,37 @@
+{
+  "sourceTree": "37be64cdfac01fad4301bdba717621bafe757341",
+  "ffprobe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1280,
+        "height": 640,
+        "avg_frame_rate": "4250/423",
+        "nb_frames": "170",
+        "side_data_list": [
+          {}
+        ]
+      }
+    ],
+    "format": {
+      "duration": "16.920000",
+      "size": "516133"
+    }
+  },
+  "rootInspectedEncodedFrames": [
+    {
+      "seconds": 8.6,
+      "file": "encoded-turn.png",
+      "observation": "483expanded turn popup readable; background layer pencil does not overlay Turn2"
+    },
+    {
+      "seconds": 14.5,
+      "file": "encoded-sidebar.png",
+      "observation": "Late project and nested chat visible; footer controls remain at bottom"
+    }
+  ],
+  "timing": "169 measured capture frames plus one explicitly declared terminal repeat; 16.92 second encoded duration",
+  "limits": "Native window capture and browser/native-routed synthetic inputs; foreground scheduling override. No physical hardware/background behavior proof."
+}

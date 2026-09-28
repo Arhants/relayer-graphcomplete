@@ -1,0 +1,6 @@
+{
+  "head": "f764dd44d350f4e01827dfd69722af1309c6a3ca",
+  "tree": "7a24930de19208d8bffef84bf50e9f486b8bea8a",
+  "diffSha256": "7f86a0685ba4976628a5e0486a1807bd6253f5c7aa63c63cc7801c5f9a80f2e9",
+  "status": "M  desktop/renderer/styles.css\nM  docs/evidence/issue-418-account-navigation/README.md\nM  scripts/test-desktop-narrow-sidebar.mjs"
+}

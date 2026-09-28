@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /Volumes/2T-SSD/worktrees/factory-418
+
+
+ Test Files  5 passed (5)
+      Tests  25 passed (25)
+   Start at  11:26:07
+   Duration  621ms (transform 278ms, setup 0ms, import 282ms, tests 378ms, environment 0ms)
+

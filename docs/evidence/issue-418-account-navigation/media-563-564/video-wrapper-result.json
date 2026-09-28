@@ -1,0 +1,19 @@
+{
+  "processExitCode": 0,
+  "timedOut": false,
+  "processGroupClean": true,
+  "runError": null,
+  "receivedSignal": null,
+  "sourceUnchanged": true,
+  "elapsedSeconds": 36.314,
+  "finishedAt": "2026-09-28T15:29:03.636941+00:00",
+  "absoluteCoordinatorCutoff": "2026-09-28T15:31:20.293565+00:00",
+  "grantOwner": "01a0cebb-1c78-7312-9eb5-b1b42401cf8d",
+  "innerPassed": true,
+  "nativeScenarioGroups": 65,
+  "video": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-turn-sidebar-journey.mp4",
+  "frameCount": 169,
+  "meanCaptureFps": 9.974416290145438,
+  "videoBytes": 516133,
+  "exitCode": 0
+}

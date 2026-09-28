@@ -1,0 +1,1638 @@
+{
+  "reason": "completed",
+  "frameCount": 169,
+  "targetIntervalMs": 100,
+  "frames": [
+    {
+      "filename": "frame-00000.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00000.jpg",
+      "elapsedMs": 28.670500000000175,
+      "capturedAtUtc": "2026-09-28T15:28:46.025Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00001.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00001.jpg",
+      "elapsedMs": 124.76704199999949,
+      "capturedAtUtc": "2026-09-28T15:28:46.120Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00002.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00002.jpg",
+      "elapsedMs": 209.73208299999897,
+      "capturedAtUtc": "2026-09-28T15:28:46.205Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00003.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00003.jpg",
+      "elapsedMs": 316.4338749999988,
+      "capturedAtUtc": "2026-09-28T15:28:46.312Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00004.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00004.jpg",
+      "elapsedMs": 419.63395799999853,
+      "capturedAtUtc": "2026-09-28T15:28:46.415Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00005.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00005.jpg",
+      "elapsedMs": 518.8758329999982,
+      "capturedAtUtc": "2026-09-28T15:28:46.514Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00006.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00006.jpg",
+      "elapsedMs": 624.359375,
+      "capturedAtUtc": "2026-09-28T15:28:46.619Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00007.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00007.jpg",
+      "elapsedMs": 712.4945420000004,
+      "capturedAtUtc": "2026-09-28T15:28:46.709Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00008.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00008.jpg",
+      "elapsedMs": 813.0922919999975,
+      "capturedAtUtc": "2026-09-28T15:28:46.808Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00009.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00009.jpg",
+      "elapsedMs": 919.1882079999996,
+      "capturedAtUtc": "2026-09-28T15:28:46.914Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00010.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00010.jpg",
+      "elapsedMs": 1019.7446249999994,
+      "capturedAtUtc": "2026-09-28T15:28:47.015Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00011.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00011.jpg",
+      "elapsedMs": 1119.9360830000005,
+      "capturedAtUtc": "2026-09-28T15:28:47.115Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00012.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00012.jpg",
+      "elapsedMs": 1218.238957999998,
+      "capturedAtUtc": "2026-09-28T15:28:47.213Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00013.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00013.jpg",
+      "elapsedMs": 1310.7452080000003,
+      "capturedAtUtc": "2026-09-28T15:28:47.306Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00014.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00014.jpg",
+      "elapsedMs": 1410.7035419999993,
+      "capturedAtUtc": "2026-09-28T15:28:47.406Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00015.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00015.jpg",
+      "elapsedMs": 1510.4298329999983,
+      "capturedAtUtc": "2026-09-28T15:28:47.506Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00016.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00016.jpg",
+      "elapsedMs": 1609.7168749999983,
+      "capturedAtUtc": "2026-09-28T15:28:47.605Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00017.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00017.jpg",
+      "elapsedMs": 1720.833416999998,
+      "capturedAtUtc": "2026-09-28T15:28:47.716Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00018.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00018.jpg",
+      "elapsedMs": 1821.3219580000004,
+      "capturedAtUtc": "2026-09-28T15:28:47.817Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00019.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00019.jpg",
+      "elapsedMs": 1909.903041999998,
+      "capturedAtUtc": "2026-09-28T15:28:47.905Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00020.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00020.jpg",
+      "elapsedMs": 2010.6209170000002,
+      "capturedAtUtc": "2026-09-28T15:28:48.006Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00021.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00021.jpg",
+      "elapsedMs": 2113.290333000001,
+      "capturedAtUtc": "2026-09-28T15:28:48.109Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00022.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00022.jpg",
+      "elapsedMs": 2236.4852919999976,
+      "capturedAtUtc": "2026-09-28T15:28:48.232Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00023.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00023.jpg",
+      "elapsedMs": 2335.3359170000003,
+      "capturedAtUtc": "2026-09-28T15:28:48.332Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00024.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00024.jpg",
+      "elapsedMs": 2413.037207999998,
+      "capturedAtUtc": "2026-09-28T15:28:48.409Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00025.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00025.jpg",
+      "elapsedMs": 2515.3886249999996,
+      "capturedAtUtc": "2026-09-28T15:28:48.511Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00026.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00026.jpg",
+      "elapsedMs": 2617.0857499999984,
+      "capturedAtUtc": "2026-09-28T15:28:48.613Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00027.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00027.jpg",
+      "elapsedMs": 2730.225542,
+      "capturedAtUtc": "2026-09-28T15:28:48.725Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00028.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00028.jpg",
+      "elapsedMs": 2809.6773329999996,
+      "capturedAtUtc": "2026-09-28T15:28:48.805Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00029.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00029.jpg",
+      "elapsedMs": 2915.7345829999977,
+      "capturedAtUtc": "2026-09-28T15:28:48.911Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00030.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00030.jpg",
+      "elapsedMs": 3018.584749999998,
+      "capturedAtUtc": "2026-09-28T15:28:49.014Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00031.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00031.jpg",
+      "elapsedMs": 3119.599875,
+      "capturedAtUtc": "2026-09-28T15:28:49.121Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00032.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00032.jpg",
+      "elapsedMs": 3234.9678749999985,
+      "capturedAtUtc": "2026-09-28T15:28:49.230Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00033.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00033.jpg",
+      "elapsedMs": 3333.8705420000006,
+      "capturedAtUtc": "2026-09-28T15:28:49.329Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00034.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00034.jpg",
+      "elapsedMs": 3425.348249999999,
+      "capturedAtUtc": "2026-09-28T15:28:49.421Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00035.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00035.jpg",
+      "elapsedMs": 3508.2559999999976,
+      "capturedAtUtc": "2026-09-28T15:28:49.504Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00036.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00036.jpg",
+      "elapsedMs": 3614.5212919999976,
+      "capturedAtUtc": "2026-09-28T15:28:49.610Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00037.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00037.jpg",
+      "elapsedMs": 3719.783625,
+      "capturedAtUtc": "2026-09-28T15:28:49.715Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00038.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00038.jpg",
+      "elapsedMs": 3819.773083,
+      "capturedAtUtc": "2026-09-28T15:28:49.815Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00039.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00039.jpg",
+      "elapsedMs": 3920.868291999999,
+      "capturedAtUtc": "2026-09-28T15:28:49.916Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00040.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00040.jpg",
+      "elapsedMs": 4019.9113749999997,
+      "capturedAtUtc": "2026-09-28T15:28:50.015Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00041.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00041.jpg",
+      "elapsedMs": 4112.554207999998,
+      "capturedAtUtc": "2026-09-28T15:28:50.108Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00042.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00042.jpg",
+      "elapsedMs": 4213.151167,
+      "capturedAtUtc": "2026-09-28T15:28:50.208Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00043.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00043.jpg",
+      "elapsedMs": 4321.1943329999995,
+      "capturedAtUtc": "2026-09-28T15:28:50.316Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00044.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00044.jpg",
+      "elapsedMs": 4420.048500000001,
+      "capturedAtUtc": "2026-09-28T15:28:50.415Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00045.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00045.jpg",
+      "elapsedMs": 4519.06625,
+      "capturedAtUtc": "2026-09-28T15:28:50.514Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00046.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00046.jpg",
+      "elapsedMs": 4608.7755,
+      "capturedAtUtc": "2026-09-28T15:28:50.604Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00047.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00047.jpg",
+      "elapsedMs": 4710.135416999998,
+      "capturedAtUtc": "2026-09-28T15:28:50.705Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00048.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00048.jpg",
+      "elapsedMs": 4809.277707999998,
+      "capturedAtUtc": "2026-09-28T15:28:50.804Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00049.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00049.jpg",
+      "elapsedMs": 4907.817999999999,
+      "capturedAtUtc": "2026-09-28T15:28:50.903Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00050.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00050.jpg",
+      "elapsedMs": 5009.897083,
+      "capturedAtUtc": "2026-09-28T15:28:51.005Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00051.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00051.jpg",
+      "elapsedMs": 5109.248707999999,
+      "capturedAtUtc": "2026-09-28T15:28:51.104Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00052.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00052.jpg",
+      "elapsedMs": 5210.964874999998,
+      "capturedAtUtc": "2026-09-28T15:28:51.206Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00053.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00053.jpg",
+      "elapsedMs": 5309.430333,
+      "capturedAtUtc": "2026-09-28T15:28:51.305Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00054.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00054.jpg",
+      "elapsedMs": 5409.768708,
+      "capturedAtUtc": "2026-09-28T15:28:51.405Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00055.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00055.jpg",
+      "elapsedMs": 5550.2123329999995,
+      "capturedAtUtc": "2026-09-28T15:28:51.550Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00056.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00056.jpg",
+      "elapsedMs": 5661.700624999998,
+      "capturedAtUtc": "2026-09-28T15:28:51.660Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00057.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00057.jpg",
+      "elapsedMs": 5725.445208000001,
+      "capturedAtUtc": "2026-09-28T15:28:51.721Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00058.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00058.jpg",
+      "elapsedMs": 5824.840749999999,
+      "capturedAtUtc": "2026-09-28T15:28:51.821Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00059.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00059.jpg",
+      "elapsedMs": 5924.768916999998,
+      "capturedAtUtc": "2026-09-28T15:28:51.920Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00060.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00060.jpg",
+      "elapsedMs": 6025.143625000001,
+      "capturedAtUtc": "2026-09-28T15:28:52.020Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00061.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00061.jpg",
+      "elapsedMs": 6124.834041999999,
+      "capturedAtUtc": "2026-09-28T15:28:52.120Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00062.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00062.jpg",
+      "elapsedMs": 6225.452207999999,
+      "capturedAtUtc": "2026-09-28T15:28:52.221Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00063.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00063.jpg",
+      "elapsedMs": 6326.38625,
+      "capturedAtUtc": "2026-09-28T15:28:52.322Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00064.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00064.jpg",
+      "elapsedMs": 6425.284250000001,
+      "capturedAtUtc": "2026-09-28T15:28:52.421Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00065.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00065.jpg",
+      "elapsedMs": 6512.613792,
+      "capturedAtUtc": "2026-09-28T15:28:52.508Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00066.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00066.jpg",
+      "elapsedMs": 6640.974291999999,
+      "capturedAtUtc": "2026-09-28T15:28:52.637Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00067.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00067.jpg",
+      "elapsedMs": 6724.595375000001,
+      "capturedAtUtc": "2026-09-28T15:28:52.720Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00068.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00068.jpg",
+      "elapsedMs": 6824.596833,
+      "capturedAtUtc": "2026-09-28T15:28:52.820Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00069.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00069.jpg",
+      "elapsedMs": 6928.0952499999985,
+      "capturedAtUtc": "2026-09-28T15:28:52.923Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00070.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00070.jpg",
+      "elapsedMs": 7033.544875,
+      "capturedAtUtc": "2026-09-28T15:28:53.029Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00071.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00071.jpg",
+      "elapsedMs": 7133.978082999998,
+      "capturedAtUtc": "2026-09-28T15:28:53.129Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00072.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00072.jpg",
+      "elapsedMs": 7210.586041999999,
+      "capturedAtUtc": "2026-09-28T15:28:53.206Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00073.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00073.jpg",
+      "elapsedMs": 7332.836124999998,
+      "capturedAtUtc": "2026-09-28T15:28:53.328Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00074.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00074.jpg",
+      "elapsedMs": 7428.454582999999,
+      "capturedAtUtc": "2026-09-28T15:28:53.424Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00075.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00075.jpg",
+      "elapsedMs": 7525.058042000001,
+      "capturedAtUtc": "2026-09-28T15:28:53.520Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00076.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00076.jpg",
+      "elapsedMs": 7626.6005829999995,
+      "capturedAtUtc": "2026-09-28T15:28:53.623Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00077.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00077.jpg",
+      "elapsedMs": 7729.820416999999,
+      "capturedAtUtc": "2026-09-28T15:28:53.726Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00078.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00078.jpg",
+      "elapsedMs": 7826.836208000001,
+      "capturedAtUtc": "2026-09-28T15:28:53.823Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00079.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00079.jpg",
+      "elapsedMs": 7929.058207999999,
+      "capturedAtUtc": "2026-09-28T15:28:53.924Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00080.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00080.jpg",
+      "elapsedMs": 8026.372374999999,
+      "capturedAtUtc": "2026-09-28T15:28:54.022Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00081.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00081.jpg",
+      "elapsedMs": 8129.141082999999,
+      "capturedAtUtc": "2026-09-28T15:28:54.125Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00082.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00082.jpg",
+      "elapsedMs": 8228.181625000001,
+      "capturedAtUtc": "2026-09-28T15:28:54.224Z",
+      "width": 966,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00083.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00083.jpg",
+      "elapsedMs": 8328.537124999999,
+      "capturedAtUtc": "2026-09-28T15:28:54.325Z",
+      "width": 966,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00084.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00084.jpg",
+      "elapsedMs": 8428.3695,
+      "capturedAtUtc": "2026-09-28T15:28:54.425Z",
+      "width": 966,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00085.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00085.jpg",
+      "elapsedMs": 8527.260458,
+      "capturedAtUtc": "2026-09-28T15:28:54.524Z",
+      "width": 966,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00086.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00086.jpg",
+      "elapsedMs": 8628.175374999999,
+      "capturedAtUtc": "2026-09-28T15:28:54.625Z",
+      "width": 966,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00087.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00087.jpg",
+      "elapsedMs": 8729.912582999998,
+      "capturedAtUtc": "2026-09-28T15:28:54.726Z",
+      "width": 966,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00088.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00088.jpg",
+      "elapsedMs": 8828.595125,
+      "capturedAtUtc": "2026-09-28T15:28:54.825Z",
+      "width": 966,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00089.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00089.jpg",
+      "elapsedMs": 8928.623,
+      "capturedAtUtc": "2026-09-28T15:28:54.926Z",
+      "width": 966,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00090.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00090.jpg",
+      "elapsedMs": 9028.830249999999,
+      "capturedAtUtc": "2026-09-28T15:28:55.025Z",
+      "width": 966,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00091.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00091.jpg",
+      "elapsedMs": 9143.059042,
+      "capturedAtUtc": "2026-09-28T15:28:55.139Z",
+      "width": 966,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00092.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00092.jpg",
+      "elapsedMs": 9241.481917000001,
+      "capturedAtUtc": "2026-09-28T15:28:55.241Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00093.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00093.jpg",
+      "elapsedMs": 9340.505333000001,
+      "capturedAtUtc": "2026-09-28T15:28:55.340Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00094.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00094.jpg",
+      "elapsedMs": 9428.750124999999,
+      "capturedAtUtc": "2026-09-28T15:28:55.428Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00095.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00095.jpg",
+      "elapsedMs": 9529.033583,
+      "capturedAtUtc": "2026-09-28T15:28:55.528Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00096.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00096.jpg",
+      "elapsedMs": 9628.699166999999,
+      "capturedAtUtc": "2026-09-28T15:28:55.628Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00097.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00097.jpg",
+      "elapsedMs": 9726.301124999998,
+      "capturedAtUtc": "2026-09-28T15:28:55.725Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00098.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00098.jpg",
+      "elapsedMs": 9842.064583,
+      "capturedAtUtc": "2026-09-28T15:28:55.841Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00099.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00099.jpg",
+      "elapsedMs": 9942.503207999998,
+      "capturedAtUtc": "2026-09-28T15:28:55.942Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00100.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00100.jpg",
+      "elapsedMs": 10025.78875,
+      "capturedAtUtc": "2026-09-28T15:28:56.021Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00101.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00101.jpg",
+      "elapsedMs": 10124.554,
+      "capturedAtUtc": "2026-09-28T15:28:56.120Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00102.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00102.jpg",
+      "elapsedMs": 10224.250207999998,
+      "capturedAtUtc": "2026-09-28T15:28:56.220Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00103.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00103.jpg",
+      "elapsedMs": 10311.712416999999,
+      "capturedAtUtc": "2026-09-28T15:28:56.308Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00104.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00104.jpg",
+      "elapsedMs": 10411.734083,
+      "capturedAtUtc": "2026-09-28T15:28:56.407Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00105.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00105.jpg",
+      "elapsedMs": 10521.467207999998,
+      "capturedAtUtc": "2026-09-28T15:28:56.517Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00106.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00106.jpg",
+      "elapsedMs": 10616.300292,
+      "capturedAtUtc": "2026-09-28T15:28:56.612Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00107.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00107.jpg",
+      "elapsedMs": 10715.915833,
+      "capturedAtUtc": "2026-09-28T15:28:56.711Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00108.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00108.jpg",
+      "elapsedMs": 10811.494749999998,
+      "capturedAtUtc": "2026-09-28T15:28:56.807Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00109.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00109.jpg",
+      "elapsedMs": 10934.53425,
+      "capturedAtUtc": "2026-09-28T15:28:56.930Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00110.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00110.jpg",
+      "elapsedMs": 11035.969666999998,
+      "capturedAtUtc": "2026-09-28T15:28:57.032Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00111.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00111.jpg",
+      "elapsedMs": 11148.236541999999,
+      "capturedAtUtc": "2026-09-28T15:28:57.149Z",
+      "width": 2560,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00112.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00112.jpg",
+      "elapsedMs": 11262.751499999998,
+      "capturedAtUtc": "2026-09-28T15:28:57.263Z",
+      "width": 2560,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00113.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00113.jpg",
+      "elapsedMs": 11342.502582999998,
+      "capturedAtUtc": "2026-09-28T15:28:57.342Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00114.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00114.jpg",
+      "elapsedMs": 11440.202042,
+      "capturedAtUtc": "2026-09-28T15:28:57.439Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00115.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00115.jpg",
+      "elapsedMs": 11529.106042,
+      "capturedAtUtc": "2026-09-28T15:28:57.528Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00116.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00116.jpg",
+      "elapsedMs": 11627.691749999998,
+      "capturedAtUtc": "2026-09-28T15:28:57.626Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00117.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00117.jpg",
+      "elapsedMs": 11728.120332999999,
+      "capturedAtUtc": "2026-09-28T15:28:57.728Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00118.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00118.jpg",
+      "elapsedMs": 11828.094083,
+      "capturedAtUtc": "2026-09-28T15:28:57.827Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00119.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00119.jpg",
+      "elapsedMs": 11926.010999999999,
+      "capturedAtUtc": "2026-09-28T15:28:57.925Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00120.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00120.jpg",
+      "elapsedMs": 12028.961875,
+      "capturedAtUtc": "2026-09-28T15:28:58.028Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00121.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00121.jpg",
+      "elapsedMs": 12142.202874999999,
+      "capturedAtUtc": "2026-09-28T15:28:58.142Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00122.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00122.jpg",
+      "elapsedMs": 12237.496958,
+      "capturedAtUtc": "2026-09-28T15:28:58.236Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00123.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00123.jpg",
+      "elapsedMs": 12335.738792,
+      "capturedAtUtc": "2026-09-28T15:28:58.334Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00124.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00124.jpg",
+      "elapsedMs": 12435.372832999998,
+      "capturedAtUtc": "2026-09-28T15:28:58.434Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00125.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00125.jpg",
+      "elapsedMs": 12536.174457999998,
+      "capturedAtUtc": "2026-09-28T15:28:58.535Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00126.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00126.jpg",
+      "elapsedMs": 12636.066749999998,
+      "capturedAtUtc": "2026-09-28T15:28:58.634Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00127.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00127.jpg",
+      "elapsedMs": 12736.004874999999,
+      "capturedAtUtc": "2026-09-28T15:28:58.734Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00128.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00128.jpg",
+      "elapsedMs": 12836.779542,
+      "capturedAtUtc": "2026-09-28T15:28:58.836Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00129.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00129.jpg",
+      "elapsedMs": 12937.53775,
+      "capturedAtUtc": "2026-09-28T15:28:58.940Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00130.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00130.jpg",
+      "elapsedMs": 13035.482,
+      "capturedAtUtc": "2026-09-28T15:28:59.034Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00131.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00131.jpg",
+      "elapsedMs": 13135.747875000001,
+      "capturedAtUtc": "2026-09-28T15:28:59.134Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00132.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00132.jpg",
+      "elapsedMs": 13235.826167,
+      "capturedAtUtc": "2026-09-28T15:28:59.234Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00133.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00133.jpg",
+      "elapsedMs": 13335.8445,
+      "capturedAtUtc": "2026-09-28T15:28:59.334Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00134.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00134.jpg",
+      "elapsedMs": 13434.319541999997,
+      "capturedAtUtc": "2026-09-28T15:28:59.433Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00135.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00135.jpg",
+      "elapsedMs": 13536.474083000001,
+      "capturedAtUtc": "2026-09-28T15:28:59.535Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00136.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00136.jpg",
+      "elapsedMs": 13636.049082999998,
+      "capturedAtUtc": "2026-09-28T15:28:59.635Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00137.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00137.jpg",
+      "elapsedMs": 13735.871707999999,
+      "capturedAtUtc": "2026-09-28T15:28:59.734Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00138.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00138.jpg",
+      "elapsedMs": 13836.746875,
+      "capturedAtUtc": "2026-09-28T15:28:59.836Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00139.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00139.jpg",
+      "elapsedMs": 13936.517832999998,
+      "capturedAtUtc": "2026-09-28T15:28:59.936Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00140.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00140.jpg",
+      "elapsedMs": 14021.557957999998,
+      "capturedAtUtc": "2026-09-28T15:29:00.020Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00141.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00141.jpg",
+      "elapsedMs": 14136.884583,
+      "capturedAtUtc": "2026-09-28T15:29:00.136Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00142.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00142.jpg",
+      "elapsedMs": 14235.735792,
+      "capturedAtUtc": "2026-09-28T15:29:00.235Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00143.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00143.jpg",
+      "elapsedMs": 14342.359166999999,
+      "capturedAtUtc": "2026-09-28T15:29:00.343Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00144.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00144.jpg",
+      "elapsedMs": 14423.569375,
+      "capturedAtUtc": "2026-09-28T15:29:00.422Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00145.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00145.jpg",
+      "elapsedMs": 14530.337958,
+      "capturedAtUtc": "2026-09-28T15:29:00.530Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00146.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00146.jpg",
+      "elapsedMs": 14643.469292000002,
+      "capturedAtUtc": "2026-09-28T15:29:00.642Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00147.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00147.jpg",
+      "elapsedMs": 14728.261082999998,
+      "capturedAtUtc": "2026-09-28T15:29:00.727Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00148.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00148.jpg",
+      "elapsedMs": 14822.715457999999,
+      "capturedAtUtc": "2026-09-28T15:29:00.821Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00149.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00149.jpg",
+      "elapsedMs": 14922.654499999997,
+      "capturedAtUtc": "2026-09-28T15:29:00.921Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00150.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00150.jpg",
+      "elapsedMs": 15020.53325,
+      "capturedAtUtc": "2026-09-28T15:29:01.019Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00151.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00151.jpg",
+      "elapsedMs": 15122.035292,
+      "capturedAtUtc": "2026-09-28T15:29:01.121Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00152.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00152.jpg",
+      "elapsedMs": 15222.047707999998,
+      "capturedAtUtc": "2026-09-28T15:29:01.220Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00153.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00153.jpg",
+      "elapsedMs": 15323.457792000001,
+      "capturedAtUtc": "2026-09-28T15:29:01.322Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00154.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00154.jpg",
+      "elapsedMs": 15420.980375,
+      "capturedAtUtc": "2026-09-28T15:29:01.420Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00155.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00155.jpg",
+      "elapsedMs": 15521.779125000001,
+      "capturedAtUtc": "2026-09-28T15:29:01.520Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00156.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00156.jpg",
+      "elapsedMs": 15623.462124999998,
+      "capturedAtUtc": "2026-09-28T15:29:01.619Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00157.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00157.jpg",
+      "elapsedMs": 15723.456041999998,
+      "capturedAtUtc": "2026-09-28T15:29:01.718Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00158.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00158.jpg",
+      "elapsedMs": 15825.434291999998,
+      "capturedAtUtc": "2026-09-28T15:29:01.821Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00159.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00159.jpg",
+      "elapsedMs": 15909.962249999997,
+      "capturedAtUtc": "2026-09-28T15:29:01.905Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00160.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00160.jpg",
+      "elapsedMs": 16007.961750000002,
+      "capturedAtUtc": "2026-09-28T15:29:02.003Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00161.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00161.jpg",
+      "elapsedMs": 16110.346417,
+      "capturedAtUtc": "2026-09-28T15:29:02.106Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00162.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00162.jpg",
+      "elapsedMs": 16217.602375000002,
+      "capturedAtUtc": "2026-09-28T15:29:02.213Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00163.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00163.jpg",
+      "elapsedMs": 16320.147167000003,
+      "capturedAtUtc": "2026-09-28T15:29:02.315Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00164.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00164.jpg",
+      "elapsedMs": 16420.870667000003,
+      "capturedAtUtc": "2026-09-28T15:29:02.416Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00165.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00165.jpg",
+      "elapsedMs": 16522.509667,
+      "capturedAtUtc": "2026-09-28T15:29:02.518Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00166.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00166.jpg",
+      "elapsedMs": 16619.709917,
+      "capturedAtUtc": "2026-09-28T15:29:02.615Z",
+      "width": 750,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00167.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00167.jpg",
+      "elapsedMs": 16720.887000000002,
+      "capturedAtUtc": "2026-09-28T15:29:02.720Z",
+      "width": 1920,
+      "height": 1280
+    },
+    {
+      "filename": "frame-00168.jpg",
+      "path": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video-frames/frame-00168.jpg",
+      "elapsedMs": 16843.090875,
+      "capturedAtUtc": "2026-09-28T15:29:02.841Z",
+      "width": 1920,
+      "height": 1280
+    }
+  ],
+  "marks": [
+    {
+      "label": "capture-started-before-scope-interaction",
+      "elapsedMs": 0.0982079999994312,
+      "markedAtUtc": "2026-09-28T15:28:45.993Z",
+      "holdMs": 650
+    },
+    {
+      "label": "scope-menu-open-and-populated",
+      "elapsedMs": 720.5176250000004,
+      "markedAtUtc": "2026-09-28T15:28:46.713Z",
+      "holdMs": 650
+    },
+    {
+      "label": "scope-first-choice-visible",
+      "elapsedMs": 1488.8505829999995,
+      "markedAtUtc": "2026-09-28T15:28:47.481Z",
+      "holdMs": 650
+    },
+    {
+      "label": "scope-last-project-choice-visible",
+      "elapsedMs": 2733.0312080000003,
+      "markedAtUtc": "2026-09-28T15:28:48.726Z",
+      "holdMs": 650
+    },
+    {
+      "label": "late-project-scope-selected",
+      "elapsedMs": 3432.058249999998,
+      "markedAtUtc": "2026-09-28T15:28:49.425Z",
+      "holdMs": 650
+    },
+    {
+      "label": "no-folder-selected-by-keyboard",
+      "elapsedMs": 4165.990374999998,
+      "markedAtUtc": "2026-09-28T15:28:50.158Z",
+      "holdMs": 650
+    },
+    {
+      "label": "turn-picker-open-375-expanded",
+      "elapsedMs": 5767.465749999999,
+      "markedAtUtc": "2026-09-28T15:28:51.760Z",
+      "holdMs": 650
+    },
+    {
+      "label": "first-turn-selected-by-pointer",
+      "elapsedMs": 6699.169666999998,
+      "markedAtUtc": "2026-09-28T15:28:52.692Z",
+      "holdMs": 650
+    },
+    {
+      "label": "turn-picker-open-375-collapsed",
+      "elapsedMs": 7450.082707999998,
+      "markedAtUtc": "2026-09-28T15:28:53.443Z",
+      "holdMs": 650
+    },
+    {
+      "label": "turn-picker-open-483-expanded",
+      "elapsedMs": 8283.412832999998,
+      "markedAtUtc": "2026-09-28T15:28:54.276Z",
+      "holdMs": 650
+    },
+    {
+      "label": "turn-history-keyboard-selection-start",
+      "elapsedMs": 9298.403332999998,
+      "markedAtUtc": "2026-09-28T15:28:55.291Z",
+      "holdMs": 650
+    },
+    {
+      "label": "first-turn-selected-by-keyboard",
+      "elapsedMs": 10099.562041999998,
+      "markedAtUtc": "2026-09-28T15:28:56.092Z",
+      "holdMs": 650
+    },
+    {
+      "label": "populated-sidebar-at-960x640",
+      "elapsedMs": 11470.942667,
+      "markedAtUtc": "2026-09-28T15:28:57.463Z",
+      "holdMs": 650
+    },
+    {
+      "label": "late-sidebar-project-action-selected",
+      "elapsedMs": 14721.087207999997,
+      "markedAtUtc": "2026-09-28T15:29:00.714Z",
+      "holdMs": 650
+    },
+    {
+      "label": "settings-back-returned-to-new-thread",
+      "elapsedMs": 15999.272167000003,
+      "markedAtUtc": "2026-09-28T15:29:01.992Z",
+      "holdMs": 650
+    }
+  ],
+  "captureError": null,
+  "elapsedMs": 16902.025374999997,
+  "startedAtUtc": "2026-09-28T15:28:45.992Z",
+  "finishedAtUtc": "2026-09-28T15:29:02.895Z",
+  "sourceTree": "37be64cdfac01fad4301bdba717621bafe757341",
+  "sourceRunnerSha256": "20c130f8ebaaa70a4c470aff03a3d856bac55d525f64591ea00fd6006cdfb15a",
+  "inputKind": "Continuous capturePage frames from the real production Electron BrowserWindow during product-renderer input; not OS/hardware input",
+  "encoderTerminalFrame": "The final frame is repeated for the median measured interval only to encode the concat demuxer terminal duration.",
+  "video": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-turn-sidebar-journey.mp4",
+  "concatFile": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/video/output-37be64-1/native/navigation-video.ffconcat",
+  "measuredFrameIntervals": [
+    0.09609654199999931,
+    0.08496504099999948,
+    0.10670179199999984,
+    0.10320008299999972,
+    0.09924187499999972,
+    0.10548354200000176,
+    0.08813516700000036,
+    0.10059774999999718,
+    0.10609591600000204,
+    0.10055641699999979,
+    0.10019145800000115,
+    0.09830287499999758,
+    0.09250625000000218,
+    0.09995833399999901,
+    0.09972629099999904,
+    0.09928704199999992,
+    0.11111654199999975,
+    0.10048854100000244,
+    0.08858108399999765,
+    0.1007178750000021,
+    0.10266941600000064,
+    0.12319495899999675,
+    0.09885062500000276,
+    0.07770129099999758,
+    0.10235141700000168,
+    0.10169712499999878,
+    0.11313979200000177,
+    0.07945179099999951,
+    0.10605724999999802,
+    0.1028501670000005,
+    0.10101512500000172,
+    0.11536799999999857,
+    0.09890266700000211,
+    0.09147770799999853,
+    0.08290774999999849,
+    0.10626529200000004,
+    0.1052623330000024,
+    0.09998945800000002,
+    0.10109520899999916,
+    0.09904308300000048,
+    0.09264283299999806,
+    0.10059695900000225,
+    0.10804316599999947,
+    0.09885416700000133,
+    0.09901774999999907,
+    0.08970924999999988,
+    0.10135991699999795,
+    0.09914229100000012,
+    0.0985402920000015,
+    0.10207908300000054,
+    0.09935162499999933,
+    0.10171616699999868,
+    0.0984654580000024,
+    0.10033837499999936,
+    0.14044362499999988,
+    0.11148829199999818,
+    0.06374458300000332,
+    0.09939554199999838,
+    0.09992816699999821,
+    0.100374708000003,
+    0.09969041699999798,
+    0.1006181660000002,
+    0.10093404200000078,
+    0.09889800000000105,
+    0.0873295419999995,
+    0.12836049999999888,
+    0.08362108300000182,
+    0.10000145799999882,
+    0.10349841699999889,
+    0.1054496250000011,
+    0.10043320799999855,
+    0.07660795900000085,
+    0.122250082999999,
+    0.09561845800000082,
+    0.09660345900000175,
+    0.10154254099999889,
+    0.10321983399999954,
+    0.09701579100000163,
+    0.10222199999999794,
+    0.09731416700000045,
+    0.10276870799999961,
+    0.09904054200000247,
+    0.10035549999999785,
+    0.09983237500000178,
+    0.09889095799999996,
+    0.10091491699999824,
+    0.10173720799999865,
+    0.09868254200000229,
+    0.10002787499999977,
+    0.10020724999999947,
+    0.1142287920000017,
+    0.0984228750000002,
+    0.099023416,
+    0.08824479199999768,
+    0.1002834580000017,
+    0.09966558399999849,
+    0.09760195799999928,
+    0.11576345800000126,
+    0.10043862499999887,
+    0.08328554200000145,
+    0.09876525000000037,
+    0.09969620799999757,
+    0.08746220900000116,
+    0.10002166600000055,
+    0.10973312499999884,
+    0.09483308400000169,
+    0.09961554099999921,
+    0.0955789169999989,
+    0.12303950000000259,
+    0.10143541699999696,
+    0.11226687500000117,
+    0.11451495799999975,
+    0.0797510829999992,
+    0.09769945900000311,
+    0.08890399999999864,
+    0.0985857079999987,
+    0.10042858300000079,
+    0.09997375000000101,
+    0.09791691699999865,
+    0.10295087500000227,
+    0.11324099999999816,
+    0.09529408300000068,
+    0.09824183400000037,
+    0.09963404099999752,
+    0.10080162500000006,
+    0.09989229200000045,
+    0.09993812500000059,
+    0.1007746670000015,
+    0.10075820799999928,
+    0.09794425000000047,
+    0.10026587500000096,
+    0.10007829199999833,
+    0.10001833299999999,
+    0.09847504199999821,
+    0.10215454100000351,
+    0.0995749999999971,
+    0.09982262500000069,
+    0.10087516700000197,
+    0.09977095799999734,
+    0.08504012499999954,
+    0.11532662500000151,
+    0.09885120900000038,
+    0.10662337499999922,
+    0.08121020800000042,
+    0.10676858300000094,
+    0.11313133400000151,
+    0.08479179099999601,
+    0.09445437500000116,
+    0.09993904199999816,
+    0.0978787500000035,
+    0.10150204200000007,
+    0.10001241599999776,
+    0.10141008400000283,
+    0.09752258299999812,
+    0.10079875000000174,
+    0.10168299999999726,
+    0.09999391699999978,
+    0.10197825000000012,
+    0.08452795799999877,
+    0.09799950000000536,
+    0.10238466699999844,
+    0.10725595800000155,
+    0.10254479200000059,
+    0.10072350000000006,
+    0.10163899999999558,
+    0.09720025000000168,
+    0.10117708300000232,
+    0.12220387499999924
+  ],
+  "meanCaptureFps": 9.974416290145438,
+  "canvas": {
+    "width": 1280,
+    "height": 640,
+    "scale": "preserve aspect ratio without upscaling; centered letterbox"
+  },
+  "ffmpegStderr": ""
+}

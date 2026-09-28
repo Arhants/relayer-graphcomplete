@@ -1,0 +1,10 @@
+{
+  "node": "v22.23.2",
+  "nodePath": "/Users/vishal/.nvm/versions/node/v22.23.2/bin/node",
+  "npmPath": "/Users/vishal/.nvm/versions/node/v22.23.2/bin/npm",
+  "CARGO_TARGET_DIR": "/Volumes/2T-SSD/worktrees/factory-418/target",
+  "CARGO_BUILD_JOBS": 2,
+  "RUST_TEST_THREADS": 2,
+  "VITEST_MAX_WORKERS": 2,
+  "TMPDIR": "/Volumes/2T-SSD/evidence/temp/factory-418-navigation-repair/canonical-mac-1/tmp"
+}
