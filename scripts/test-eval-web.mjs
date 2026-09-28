@@ -210,11 +210,13 @@ try {
     await writeFile(process.env.RELAYER_EVAL_WEB_SCREENSHOT, await readFile(join(opened.session.artifactDirectoryFor(shot.screenshot.screenshotId), `${shot.screenshot.screenshotId}-001.png`)));
   }
   const initial = await opened.session.state();
+  // Opening a layer may already select its default node (PRD NDT-003).
   const nodeControl = initial.controls.find((control) => control.kind === "node" && !control.disabled
     && control.elementRef !== `node-${initial.selectedNodeId}`);
   assert.ok(nodeControl, "The review fixture must expose a different selectable node");
   await opened.session.interact({ elementRef: nodeControl.elementRef, activate: true });
   const selected = await opened.session.state();
+  assert.ok(selected.selectedNodeId);
   assert.notEqual(selected.selectedNodeId, initial.selectedNodeId);
   assert.equal(`node-${selected.selectedNodeId}`, nodeControl.elementRef);
   const nextTurn = (await opened.session.state()).controls.find((control) => control.kind === "turn" && !control.disabled);
