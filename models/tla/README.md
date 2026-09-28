@@ -236,8 +236,10 @@ With the fix on, `PROV006_RestoreOnlyFromRecord` restates the `Restart`
 action and `ReadinessRecordsAgree` compares Rust with itself. They guard
 against a regression in the model, not in the code. The weight is carried by
 `PROV006_AdmitOnlyLatestReady`, `PROV005_NeverOverNewer`, and liveness. The
-model starts with no ready row, so it does not cover a row made ready before
-this fix, or the JSON field that marks a coordinated harness.
+model starts with no ready row, so it does not cover the JSON field that
+marks a coordinated harness. A row made ready before this fix is cleared once
+by migration 0034, which `first_launch_after_upgrade_reverifies_a_route_an_older_build_left_ready`
+covers.
 
 The generation guard lives in app-server memory. Electron restarts its
 counter with each process, and the desktop quits when the app server stops.

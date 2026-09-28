@@ -2996,6 +2996,61 @@ mod provider_definition_tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// PROV-006 upgrade: a row that was ready before this rule may not come from an
+    /// evaluation, so the first launch after the upgrade verifies every route again.
+    #[tokio::test]
+    async fn first_launch_after_upgrade_reverifies_a_route_an_older_build_left_ready() {
+        let root = readiness_root("upgrade");
+        let catalog = root.join("harness-configurations.json");
+        let database = root.join("product.sqlite3");
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                sqlx::sqlite::SqliteConnectOptions::new()
+                    .filename(&database)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        let before_rule = sqlx::migrate::Migrator {
+            migrations: std::borrow::Cow::Owned(
+                super::super::migrations::MIGRATOR
+                    .iter()
+                    .filter(|migration| migration.version <= 33)
+                    .cloned()
+                    .collect(),
+            ),
+            ..sqlx::migrate::Migrator::DEFAULT
+        };
+        before_rule.run(&pool).await.unwrap();
+        // An older build left the route ready, for example restored from the JSON catalog.
+        sqlx::query("UPDATE product_harnesses SET available=1,unavailable_reason_code=NULL,unavailable_reason_message=NULL,runtime_configuration_digest='sha256:d1' WHERE configuration_name='codex-basic'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        let store = SqliteProductStore::open(&database).await.unwrap();
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (false, Some("harness_readiness_pending".to_owned())),
+            "the first launch after the upgrade waits for an evaluation"
+        );
+
+        // The re-verification happens once: an evaluated ready survives later restarts.
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        store.pool.close().await;
+        let reopened = SqliteProductStore::open(&database).await.unwrap();
+        assert_eq!(start_app_server(&reopened, &catalog).await, (true, None));
+        reopened.pool.close().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// PROV-006: startup restores ready only from the app server's own ready record for
     /// the same digest, and only while the runtime files validate.
     #[tokio::test]

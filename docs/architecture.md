@@ -411,7 +411,9 @@ configuration it records only whether cheap local validation passed: the
 exact managed receipt, owned real state directory, installation marker, and
 entrypoints whose resolved targets remain inside that exact installation.
 Rust then restores a ready route only when its own previous row said ready
-for the same configuration digest and that validation passed. Each app-server
+for the same configuration digest and that validation passed. Migration 0034
+clears every ready row once, because a row from an older build may not come
+from an evaluation; each route then waits for its next evaluation. Each app-server
 process starts a new readiness ordering epoch. The desktop never restarts the
 app server alone; if it did, the restored row stays the record and the
 coordinator's generations keep increasing. Startup does not download, prepare,
