@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { appendFile, mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createWindowFactory } from "../desktop/main/window.mjs";
@@ -24,6 +24,9 @@ let channel = "stable";
 let drafts = { pendingNewThread: null, threadFollowups: {} };
 const results = [];
 const rendererErrors = [];
+let lastPhase = { label: "startup", at: new Date().toISOString() };
+const EXECUTE_JAVASCRIPT_TIMEOUT_MS = 10_000;
+const SETTLE_RAF_TIMEOUT_MS = 2_000;
 const updateStatus = () => ({ phase: "idle", channel, currentVersion: "0.0.0-evidence" });
 const account = { status: "signed-in", channel: "stable", subject: "auth0|native-evidence" };
 const tutorial = { status: "dismissed", automaticEligible: false };
@@ -50,20 +53,109 @@ const handlers = {
   }),
 };
 for (const [name, handler] of Object.entries(handlers)) ipcMain.handle(`relayer:${name}`, handler);
-const evaluate = (source) => window.webContents.executeJavaScript(source);
-async function settle() {
-  await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+function withTimeout(promise, timeoutMs, message) {
+  let timer;
+  const timed = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeoutMs); });
+  return Promise.race([promise, timed]).finally(() => clearTimeout(timer));
+}
+async function recordPhase(label, details = {}) {
+  const native = { windowFocused: false, windowVisible: false, windowMinimized: false, webContentsFocused: false, webContentsLoading: null };
+  try {
+    if (window && !window.isDestroyed()) {
+      native.windowFocused = window.isFocused();
+      native.windowVisible = window.isVisible();
+      native.windowMinimized = window.isMinimized();
+      native.webContentsFocused = window.webContents.isFocused();
+      native.webContentsLoading = window.webContents.isLoading();
+    }
+  } catch (error) { native.error = String(error); }
+  let renderer = null;
+  if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+    try {
+      renderer = await withTimeout(
+        window.webContents.executeJavaScript(`({hidden:document.hidden,visibilityState:document.visibilityState,innerWidth,innerHeight,rafCount:window.__nativeRafCount||0,rafAt:window.__nativeRafAt||null,rafAgeMs:window.__nativeRafAt?performance.now()-window.__nativeRafAt:null})`),
+        750,
+        "Renderer phase snapshot timed out",
+      );
+    } catch (error) { renderer = { error: String(error) }; }
+  }
+  lastPhase = { label, at: new Date().toISOString(), native, renderer, details };
+  await appendFile(join(evidence, "native-phases.jsonl"), `${JSON.stringify(lastPhase)}\n`);
+  return lastPhase;
+}
+const evaluate = async (source) => {
+  const phase = lastPhase.label;
+  try {
+    return await withTimeout(
+      window.webContents.executeJavaScript(source),
+      EXECUTE_JAVASCRIPT_TIMEOUT_MS,
+      `executeJavaScript timed out after ${EXECUTE_JAVASCRIPT_TIMEOUT_MS}ms; last phase: ${phase}`,
+    );
+  } catch (error) {
+    await recordPhase("executeJavaScript:failed", { lastPhase: phase, error: String(error), sourceLength: source.length });
+    throw error;
+  }
+};
+async function settle(label = "settle") {
+  await recordPhase(`${label}:double-raf:begin`);
+  try {
+    await withTimeout(
+      window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))"),
+      SETTLE_RAF_TIMEOUT_MS,
+      `Double requestAnimationFrame did not settle within ${SETTLE_RAF_TIMEOUT_MS}ms (${label})`,
+    );
+  } catch (error) {
+    await recordPhase(`${label}:double-raf:failed`, { error: String(error) });
+    throw error;
+  }
+  await recordPhase(`${label}:double-raf:complete`);
 }
 async function capture(name) {
-  await settle();
+  await settle(`capture:${name}`);
   await writeFile(join(evidence, `${name}.png`), (await window.webContents.capturePage()).toPNG());
 }
+async function pointerClick(selector) {
+  const point = await evaluate(`(() => {const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing pointer target '+${JSON.stringify(selector)});const r=e.getBoundingClientRect();return {x:Math.round((r.left+r.right)/2),y:Math.round((r.top+r.bottom)/2)};})()`);
+  window.webContents.sendInputEvent({type:'mouseDown',x:point.x,y:point.y,button:'left',clickCount:1});
+  window.webContents.sendInputEvent({type:'mouseUp',x:point.x,y:point.y,button:'left',clickCount:1});
+}
+async function dispatchBrowserWheel(point, deltaY) {
+  // CDP's Input.dispatchMouseEvent sends a browser input event in viewport CSS
+  // pixels. Positive deltaY scrolls down; verify its trusted WheelEvent receipt
+  // and resulting scroll position on the same production BrowserWindow.
+  assert.equal(window.webContents.debugger.isAttached(), false, 'browser-wheel proof owns an unattached debugger session');
+  window.webContents.debugger.attach('1.3');
+  try {
+    await withTimeout(
+      window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
+        type: 'mouseWheel', x: point.x, y: point.y, deltaX: 0, deltaY,
+      }),
+      1_500,
+      'CDP browser-wheel dispatch timed out',
+    );
+  } finally {
+    if (window.webContents.debugger.isAttached()) window.webContents.debugger.detach();
+  }
+}
+async function captureScopeOption(name, selector) {
+  await settle(`capture-scope:${name}`);
+  const state = await evaluate(`(() => {const e=document.querySelector(${JSON.stringify(selector)}),m=document.querySelector('#scopeMenu');if(!e||!m)throw Error('Missing scope capture target '+${JSON.stringify(selector)});const r=e.getBoundingClientRect(),b=m.getBoundingClientRect();return {scope:e.dataset.scope,project:e.dataset.project||null,visible:e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}),rect:{left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height},menu:{left:b.left,right:b.right,top:b.top,bottom:b.bottom},scrollTop:m.scrollTop};})()`);
+  assert.ok(state.visible&&state.rect.width>0&&state.rect.height>0&&state.rect.left>=state.menu.left-.5&&state.rect.right<=state.menu.right+.5&&state.rect.top>=state.menu.top-.5&&state.rect.bottom<=state.menu.bottom+.5,`${name}: capture shows intended scope option fully inside menu ${JSON.stringify(state)}`);
+  await writeFile(join(evidence, `${name}.png`), (await window.webContents.capturePage()).toPNG());
+  return state;
+}
 async function resize(width) {
+  await recordPhase(`resize:${width}:begin`);
   window.setSize(width, 640);
+  await recordPhase(`resize:${width}:setSize-returned`);
+  await recordPhase(`resize:${width}:innerWidth-wait:begin`);
   await waitFor(`native width ${width}`, () => evaluate(`innerWidth === ${width}`));
-  await settle();
+  await recordPhase(`resize:${width}:innerWidth-wait:complete`);
+  await settle(`resize:${width}`);
+  await recordPhase(`resize:${width}:complete`);
 }
 async function shell(name, expanded) {
+  await recordPhase(`shell:${name}:begin`, { expanded });
   const state = await evaluate(`(() => {
     const box = s => { const e=document.querySelector(s),r=e?.getBoundingClientRect(); return r && {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height,visible:e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})}; };
     return {inner:[innerWidth,innerHeight],collapsed:document.body.classList.contains('sidebar-collapsed'),sidebar:box('.sidebar'),main:box('.main-area'),toggle:box('#collapseSidebar'),account:box('#desktopAccountButton'),settings:box('#settingsButton'),scrollWidth:document.documentElement.scrollWidth};
@@ -165,11 +257,122 @@ async function shell(name, expanded) {
   results.at(-1).composerControls=composerControls;
   await capture(`${name}-composer-scrolled`);
   await evaluate("document.querySelector('.workspace-layout').scrollTop=0");
+  await recordPhase(`shell:${name}:complete`, { expanded });
 }
 
-async function auditNewThreadComposer(name, threadId) {
+async function auditNewThreadComposer(name, threadId, scopeProjects) {
   await evaluate("document.querySelector('#newThread').click()");
   await waitFor(`${name}: New Thread view`,()=>evaluate("!document.querySelector('#newThreadView').classList.contains('hidden')"));
+  await evaluate("document.querySelector('#newThreadPrompt').value='keep this draft while choosing a project';document.querySelector('#newThreadPrompt').dispatchEvent(new Event('input',{bubbles:true}))");
+  const threadCountBeforeScope = (await fixture.request('/api/state')).threads.length;
+  await pointerClick('#scopeButton');
+  await waitFor(`${name}: scope menu opens after native pointer input`,()=>evaluate("document.querySelector('#scopeButton').getAttribute('aria-expanded')==='true'"),1500);
+  assert.equal(await evaluate("document.querySelector('#scopeButton').getAttribute('aria-expanded')"),'true',`${name}: scope menu open state is exposed accessibly`);
+  await evaluate(`(() => {window.__scopeWheelReceipts=[];document.addEventListener('wheel',event=>{const hit=document.elementFromPoint(event.clientX,event.clientY);window.__scopeWheelReceipts.push({isTrusted:event.isTrusted,deltaX:event.deltaX,deltaY:event.deltaY,clientX:event.clientX,clientY:event.clientY,target:event.target?.tagName||null,targetId:event.target?.id||null,hit:hit?.tagName||null,hitId:hit?.id||null,insideMenu:Boolean(hit?.closest('#scopeMenu')),scrollTop:document.querySelector('#scopeMenu')?.scrollTop});},{capture:true,passive:true});})()`);
+  const scopeMutations = await evaluate(`(() => {
+    const m=document.querySelector('#scopeMenu'),oldMax=m.style.maxBlockSize;
+    const read=()=>{const r=m.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height,viewport:innerHeight,scrollTop:m.scrollTop,scrollHeight:m.scrollHeight,clientHeight:m.clientHeight,overflowY:getComputedStyle(m).overflowY}};
+    m.style.maxBlockSize='none';const uncapped=read();const capWouldReject=uncapped.top<40||uncapped.bottom>innerHeight;m.style.maxBlockSize=oldMax;
+    m.style.overflowY='hidden';const hiddenStart=read();
+    return {uncapped,capWouldReject,hiddenStart};
+  })()`);
+  assert.ok(scopeMutations.capWouldReject,`${name}: removing the height cap is detected independently ${JSON.stringify(scopeMutations)}`);
+  const hiddenStart=scopeMutations.hiddenStart.scrollTop;
+  const hiddenBounds=await evaluate("document.querySelector('#scopeMenu').getBoundingClientRect().toJSON()");
+  const hiddenPoint={x:Math.round((hiddenBounds.left+hiddenBounds.right)/2),y:Math.round((hiddenBounds.top+hiddenBounds.bottom)/2)};
+  const hiddenHit=await evaluate(`(() => {const point=${JSON.stringify(hiddenPoint)},hit=document.elementFromPoint(point.x,point.y);return {point,hit:hit?.tagName||null,hitId:hit?.id||null,insideMenu:Boolean(hit?.closest('#scopeMenu')),menu:document.querySelector('#scopeMenu').getBoundingClientRect().toJSON(),scrollTop:document.querySelector('#scopeMenu').scrollTop};})()`);
+  assert.ok(hiddenHit.insideMenu,`${name}: overflow mutant input point hits the actual scope menu ${JSON.stringify(hiddenHit)}`);
+  window.focus();
+  await waitFor(`${name}: window focus for native wheel`,()=>window.isFocused()&&window.webContents.isFocused(),1500);
+  const focusAtWheel={window:window.isFocused(),webContents:window.webContents.isFocused()};
+  await dispatchBrowserWheel(hiddenPoint, 900);
+  let hiddenReceiptWaitError=null;
+  try { await waitFor(`${name}: hidden overflow wheel receipt`,()=>evaluate("window.__scopeWheelReceipts.length>=1"),1500); } catch(error) { hiddenReceiptWaitError=String(error); }
+  const hiddenReceipt=await evaluate("window.__scopeWheelReceipts[0]||null");
+  await writeFile(join(evidence,'scope-wheel-diagnostic.json'),JSON.stringify({stage:'hidden-overflow-mutant',scopeMenuBounds:hiddenBounds,hiddenHit,focusAtWheel,hiddenReceipt,hiddenReceiptWaitError},null,2));
+  await settle();
+  const hiddenAfter=await evaluate("({scrollTop:document.querySelector('#scopeMenu').scrollTop,overflowY:getComputedStyle(document.querySelector('#scopeMenu')).overflowY})");
+  assert.ok(hiddenReceipt?.isTrusted&&hiddenReceipt.insideMenu&&hiddenReceipt.deltaY>0,`${name}: positive browser wheel event reaches menu as a trusted downward wheel ${JSON.stringify(hiddenReceipt)}`);
+  assert.equal(hiddenAfter.overflowY,'hidden',`${name}: overflow:hidden mutant was applied`);
+  assert.equal(hiddenAfter.scrollTop,hiddenStart,`${name}: overflow:hidden mutant rejects real wheel input ${JSON.stringify(hiddenAfter)}`);
+  await evaluate("(() => {const m=document.querySelector('#scopeMenu');m.style.maxBlockSize='';m.style.overflowY='';})()");
+  const scopeMenu = await evaluate(`(() => {
+    const menu=document.querySelector('#scopeMenu'),r=menu.getBoundingClientRect(),style=getComputedStyle(menu);
+    const projects=[...menu.querySelectorAll('[data-scope="project"]')];
+    const options=[...menu.querySelectorAll('[data-scope]')].map(e=>{const b=e.getBoundingClientRect();return {scope:e.dataset.scope,project:e.dataset.project||null,left:b.left,right:b.right,top:b.top,bottom:b.bottom,width:b.width,height:b.height};});
+    const textWidths=[...menu.querySelectorAll('button,button>span,button>small')].map(e=>({tag:e.tagName,text:e.textContent,scrollWidth:e.scrollWidth,clientWidth:e.clientWidth}));
+    const w=document.querySelector('.main-area').getBoundingClientRect();
+    return {rect:{left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height},workspace:{left:w.left,right:w.right,top:w.top,bottom:w.bottom},viewport:{width:innerWidth,height:innerHeight},overflowY:style.overflowY,scrollTop:menu.scrollTop,scrollHeight:menu.scrollHeight,clientHeight:menu.clientHeight,scrollWidth:menu.scrollWidth,clientWidth:menu.clientWidth,textWidths,projectIds:projects.map(e=>e.dataset.project),options};
+  })()`);
+  assert.deepEqual([...scopeMenu.projectIds].sort(), scopeProjects.map(project=>String(project.id)).sort(), `${name}: each real project choice appears exactly once`);
+  assert.equal(scopeMenu.options.filter(option=>option.scope==='standalone').length,1,`${name}: one No folder choice`);
+  assert.equal(scopeMenu.options.filter(option=>option.scope==='folder').length,1,`${name}: one Open another folder choice`);
+  assert.ok(scopeMenu.rect.left>=scopeMenu.workspace.left-.5&&scopeMenu.rect.right<=scopeMenu.workspace.right+.5&&scopeMenu.rect.left>=0&&scopeMenu.rect.right<=scopeMenu.viewport.width&&scopeMenu.rect.top>=40&&scopeMenu.rect.bottom<=scopeMenu.viewport.height,`${name}: scope popup fits the remaining workspace, viewport, and titlebar inset ${JSON.stringify(scopeMenu)}`);
+  assert.ok(scopeMenu.rect.width>0&&scopeMenu.rect.height>0&&scopeMenu.scrollHeight>scopeMenu.clientHeight&&['auto','scroll'].includes(scopeMenu.overflowY),`${name}: populated scope popup offers native vertical scrolling ${JSON.stringify(scopeMenu)}`);
+  assert.ok(scopeMenu.scrollWidth<=scopeMenu.clientWidth+1,`${name}: long project paths wrap without horizontal menu overflow ${JSON.stringify(scopeMenu)}`);
+  assert.ok(scopeMenu.textWidths.every(item=>item.scrollWidth<=item.clientWidth+1),`${name}: each project title and path fits its menu row ${JSON.stringify(scopeMenu.textWidths.filter(item=>item.scrollWidth>item.clientWidth+1))}`);
+  assert.ok(scopeMenu.options.every(({left,right,width,height})=>left>=scopeMenu.rect.left-.5&&right<=scopeMenu.rect.right+.5&&width>0&&height>0),`${name}: options stay within menu's horizontal viewport`);
+  await captureScopeOption(`${name}-scope-first`, '#scopeMenu [data-scope="standalone"]');
+  // Use an actual wheel input over the menu so overflow:hidden cannot pass by
+  // merely allowing programmatic scrollIntoView or setting scrollTop.
+  const wheelX=Math.round((scopeMenu.rect.left+scopeMenu.rect.right)/2),wheelY=Math.round((scopeMenu.rect.top+scopeMenu.rect.bottom)/2);
+  const wheelHit=await evaluate(`(() => {const hit=document.elementFromPoint(${wheelX},${wheelY});return {x:${wheelX},y:${wheelY},hit:hit?.tagName||null,hitId:hit?.id||null,insideMenu:Boolean(hit?.closest('#scopeMenu'))};})()`);
+  assert.ok(wheelHit.insideMenu,`${name}: real wheel pointer resolves inside the scope menu ${JSON.stringify(wheelHit)}`);
+  await dispatchBrowserWheel({x:wheelX,y:wheelY}, Math.max(800,scopeMenu.scrollHeight));
+  let scrollWaitError=null;
+  try { await waitFor(`${name}: native downward wheel scroll`,()=>evaluate("document.querySelector('#scopeMenu').scrollTop>0"),1500); } catch(error) { scrollWaitError=String(error); }
+  const wheelReach = await evaluate(`(() => {const m=document.querySelector('#scopeMenu'),last=[...m.querySelectorAll('[data-scope="project"]')].at(-1),r=last.getBoundingClientRect(),receipts=window.__scopeWheelReceipts||[];return {scrollTop:m.scrollTop,scrollHeight:m.scrollHeight,clientHeight:m.clientHeight,rect:{left:r.left,right:r.right,top:r.top,bottom:r.bottom},wheelReceipts:receipts,scrollWaitError:${JSON.stringify(scrollWaitError)}};})()`);
+  await writeFile(join(evidence,'scope-wheel-diagnostic.json'),JSON.stringify({stage:'downward-wheel',scopeMenu,wheelHit,hiddenHit,focusAtWheel,hiddenReceipt,hiddenReceiptWaitError,hiddenAfter,wheelReach},null,2));
+  assert.ok(wheelReach.wheelReceipts.length>=2&&wheelReach.wheelReceipts.at(-1).isTrusted&&wheelReach.wheelReceipts.at(-1).insideMenu&&wheelReach.wheelReceipts.at(-1).deltaY>0,`${name}: positive browser wheel event reaches scope menu as a trusted downward wheel ${JSON.stringify(wheelReach.wheelReceipts)}`);
+  assert.ok(wheelReach.scrollTop>0,`${name}: native wheel scroll changes the menu scroll position ${JSON.stringify(wheelReach)}`);
+  assert.ok(wheelReach.rect.left>=scopeMenu.rect.left-.5&&wheelReach.rect.right<=scopeMenu.rect.right+.5&&wheelReach.rect.top>=scopeMenu.rect.top-.5&&wheelReach.rect.bottom<=scopeMenu.rect.bottom+.5,`${name}: last project is reachable within effective menu clip ${JSON.stringify(wheelReach)}`);
+  const focusedItems=[];
+  for(let index=0;index<scopeMenu.options.length;index++) {
+    window.webContents.sendInputEvent({type:'keyDown',keyCode:'TAB'});
+    window.webContents.sendInputEvent({type:'keyUp',keyCode:'TAB'});
+    await settle();
+    const focused=await evaluate(`(() => {const e=document.activeElement,m=document.querySelector('#scopeMenu'),r=e.getBoundingClientRect();let clip={left:0,top:0,right:innerWidth,bottom:innerHeight};for(let p=e.parentElement;p;p=p.parentElement){const s=getComputedStyle(p),b=p.getBoundingClientRect();if(['auto','scroll','hidden','clip'].includes(s.overflowX)){clip.left=Math.max(clip.left,b.left+p.clientLeft);clip.right=Math.min(clip.right,b.left+p.clientLeft+p.clientWidth)}if(['auto','scroll','hidden','clip'].includes(s.overflowY)){clip.top=Math.max(clip.top,b.top+p.clientTop);clip.bottom=Math.min(clip.bottom,b.top+p.clientTop+p.clientHeight)}}return {scope:e.dataset.scope||null,project:e.dataset.project||null,label:e.innerText||'',visible:e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}),rect:{left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height},clip,scrollTop:m.scrollTop};})()`);
+    const expected=scopeMenu.options[index];
+    assert.equal(focused.scope,expected.scope,`${name}: keyboard focus order at option ${index}`);
+    assert.equal(focused.project,expected.project,`${name}: keyboard focus uses exact project id at option ${index}`);
+    assert.ok(focused.visible&&focused.rect.width>0&&focused.rect.height>0&&focused.rect.left>=focused.clip.left-.5&&focused.rect.right<=focused.clip.right+.5&&focused.rect.top>=focused.clip.top-.5&&focused.rect.bottom<=focused.clip.bottom+.5,`${name}: focused option ${index} is visibly reachable ${JSON.stringify(focused)}`);
+    focusedItems.push({scope:focused.scope,project:focused.project,scrollTop:focused.scrollTop});
+    if(expected.scope==='project'&&expected.project===String(scopeProjects.at(-1).id)) await captureScopeOption(`${name}-scope-last`, '#scopeMenu [data-scope="project"]:nth-last-child(2)');
+  }
+  assert.ok(focusedItems.at(-1).scrollTop>focusedItems[0].scrollTop,`${name}: tab traversal scrolls through the menu`);
+  const menuButton = await evaluate(`(() => {const e=[...document.querySelectorAll('#scopeMenu [data-scope="project"]')].at(-1),r=e.getBoundingClientRect();return {x:Math.round((r.left+r.right)/2),y:Math.round((r.top+r.bottom)/2)};})()`);
+  window.webContents.sendInputEvent({type:'mouseDown',x:menuButton.x,y:menuButton.y,button:'left',clickCount:1});
+  window.webContents.sendInputEvent({type:'mouseUp',x:menuButton.x,y:menuButton.y,button:'left',clickCount:1});
+  await waitFor(`${name}: selected late project`,()=>evaluate(`import('./src/state.js').then(m=>m.viewState.selectedScope.kind==='project'&&String(m.viewState.selectedScope.projectId)===${JSON.stringify(String(scopeProjects.at(-1).id))})`));
+  assert.equal(await evaluate("document.querySelector('#newThreadPrompt').value"),'keep this draft while choosing a project',`${name}: scope selection keeps the composer draft`);
+  assert.equal(await evaluate("document.querySelector('#scopeButton').getAttribute('aria-expanded')"),'false',`${name}: selecting a project closes the menu`);
+  assert.equal(await evaluate("document.querySelector('#scopeLabel').textContent"),scopeProjects.at(-1).name,`${name}: project scope label reflects the selected project`);
+  assert.equal((await fixture.request('/api/state')).threads.length,threadCountBeforeScope,`${name}: selecting scope does not create a thread before Send`);
+  await pointerClick('#scopeButton');
+  await waitFor(`${name}: scope menu reopens after native pointer input`,()=>evaluate("document.querySelector('#scopeButton').getAttribute('aria-expanded')==='true'"),1500);
+  window.webContents.sendInputEvent({type:'keyDown',keyCode:'TAB'});
+  window.webContents.sendInputEvent({type:'keyUp',keyCode:'TAB'});
+  await settle();
+  const standalone = await evaluate(`(() => {const e=document.activeElement,m=document.querySelector('#scopeMenu'),r=e.getBoundingClientRect(),b=m.getBoundingClientRect();return {scope:e.dataset.scope||null,visible:e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}),rect:{left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height},menu:{left:b.left,right:b.right,top:b.top,bottom:b.bottom}};})()`);
+  assert.equal(standalone.scope,'standalone',`${name}: reopening the menu tabs to No folder`);
+  assert.ok(standalone.visible&&standalone.rect.width>0&&standalone.rect.height>0&&standalone.rect.left>=standalone.menu.left-.5&&standalone.rect.right<=standalone.menu.right+.5&&standalone.rect.top>=standalone.menu.top-.5&&standalone.rect.bottom<=standalone.menu.bottom+.5,`${name}: No folder is keyboard-reachable inside the menu ${JSON.stringify(standalone)}`);
+  await evaluate("(() => {window.__scopeEnterReceipts=[];for(const type of ['keydown','keypress','keyup'])document.addEventListener(type,event=>{if(event.key==='Enter'||event.key==='\\r')window.__scopeEnterReceipts.push({type,key:event.key,code:event.code,isTrusted:event.isTrusted,target:event.target?.dataset?.scope||event.target?.tagName||null});},{capture:true});})()");
+  window.webContents.sendInputEvent({type:'keyDown',keyCode:'ENTER'});
+  // Electron's keyDown input is rawKeyDown; the separate char event generates
+  // the trusted keypress used by the browser's native button activation.
+  window.webContents.sendInputEvent({type:'char',keyCode:'ENTER'});
+  window.webContents.sendInputEvent({type:'keyUp',keyCode:'ENTER'});
+  await waitFor(`${name}: trusted native Enter key sequence`,()=>evaluate("window.__scopeEnterReceipts.some(event=>event.type==='keydown')&&window.__scopeEnterReceipts.some(event=>event.type==='keypress')&&window.__scopeEnterReceipts.some(event=>event.type==='keyup')"),1500);
+  const enterReceipt=await evaluate("window.__scopeEnterReceipts");
+  assert.deepEqual(enterReceipt.map(event=>event.type),['keydown','keypress','keyup'],`${name}: Enter produces the native keydown/keypress/keyup sequence ${JSON.stringify(enterReceipt)}`);
+  assert.ok(enterReceipt.every(event=>event.isTrusted),`${name}: Enter sequence is trusted browser input ${JSON.stringify(enterReceipt)}`);
+  await waitFor(`${name}: standalone scope`,()=>evaluate("import('./src/state.js').then(m=>m.viewState.selectedScope.kind==='standalone')"));
+  assert.equal(await evaluate("document.querySelector('#newThreadPrompt').value"),'keep this draft while choosing a project',`${name}: No folder keeps the composer draft`);
+  assert.equal(await evaluate("document.querySelector('#scopeLabel').textContent"),'No folder',`${name}: No folder label is restored`);
+  assert.equal(await evaluate("document.querySelector('#folderSummary').classList.contains('hidden')"),true,`${name}: standalone selection clears project path summary`);
+  assert.equal(await evaluate("document.querySelector('#scopeButton').getAttribute('aria-expanded')"),'false',`${name}: Enter closes the No folder menu`);
+  assert.equal((await fixture.request('/api/state')).threads.length,threadCountBeforeScope,`${name}: No folder does not create a thread before Send`);
+  results.push({name:`${name}-scope-menu`,scopeMenu,scopeMutations:{uncapped:scopeMutations.uncapped,capWouldReject:scopeMutations.capWouldReject,overflowHiddenStart:hiddenStart,overflowHiddenAfter:hiddenAfter,overflowHiddenBlocksWheel:hiddenAfter.scrollTop===hiddenStart},wheelReach,focusedItems,enterReceipt,selectedProjectId:String(scopeProjects.at(-1).id),selectedStandalone:true,threadCountBeforeScope});
   const controls=await evaluate(`(async()=>{
     const selectors=['#newThreadPrompt','#scopeButton','#permissionButton','#newModelControl [data-model-picker-trigger]','#createThread'];
     const result=[];
@@ -270,10 +473,12 @@ async function settingsPanel(tab, label, familyEditing = false) {
 }
 async function main() {
   await mkdir(evidence, { recursive: true });
+  await recordPhase("main:evidence-directory-ready");
   fixture = await stopRunFixture();
   const projectDirectory = join(fixture.directory, 'Project "quoted" & names');
   await mkdir(projectDirectory);
   const project = await fixture.request("/api/projects", { method: "POST", body: JSON.stringify({ path: projectDirectory }) });
+  const scopeProjects=[project];
   const thread = await fixture.create("codex", 'accept native "sidebar" evidence');
   await waitFor("accepted graph", async () => (await fixture.request(`/api/threads/${thread.id}`)).interactions[0]?.completionStatus === "accepted");
   window = await createWindowFactory({ BrowserWindow, desktopDirectory: resolve("desktop"), getAppearance: () => appearance, updater: { status: () => ({ phase: "development" }) }, openExternal: async () => { throw new Error("Unexpected external navigation"); }, onWindowCreated: created => {
@@ -281,7 +486,10 @@ async function main() {
     window.webContents.on("console-message", (_event, level, message) => { if (level >= 3) rendererErrors.push(message); });
   } })(fixture.session);
   window.show(); window.focus();
+  await recordPhase("window:shown-and-focused");
   await waitFor("native shell ready", () => evaluate("document.querySelector('#appShell')?.checkVisibility() && !document.body.classList.contains('desktop-account-pending')"));
+  await evaluate("(() => {if(window.__nativeRafHeartbeatStarted)return;window.__nativeRafHeartbeatStarted=true;window.__nativeRafCount=0;const beat=()=>{window.__nativeRafCount++;window.__nativeRafAt=performance.now();requestAnimationFrame(beat);};requestAnimationFrame(beat);})()");
+  await recordPhase("window:native-shell-ready");
   await evaluate(`import('./src/threads.js').then(m=>m.loadThread(${thread.id}))`);
   assert.deepEqual(window.getMinimumSize(), [375, 640]);
   const preferences = window.webContents.getLastWebPreferences();
@@ -292,7 +500,6 @@ async function main() {
     await shell(`native-${width}-collapsed`, false);
     await evaluate("document.querySelector('#collapseSidebar').click()");
     await shell(`native-${width}-expanded`, true);
-    if(width===375) await auditNewThreadComposer("native-375-expanded-new-thread",thread.id);
     await resize(width + 1);
     if (width < 760) await shell(`native-${width + 1}-preserved`, true);
     await resize(761);
@@ -363,6 +570,19 @@ async function main() {
   assert.ok(evalAx.nodes.some(n => !n.ignored && n.role?.value === "button" && n.name?.value === evalName), "Collapsed Eval destinations retain their accessible name");
   await writeFile(join(evidence, "eval-accessibility.json"), JSON.stringify(evalAx, null, 2));
   window.webContents.debugger.detach();
+  // Keep the existing sparse-project checkpoints above independent; populate
+  // the real project list only for this explicit overflow/reachability audit.
+  for(let i=0;i<12;i++) {
+    const path=join(fixture.directory,`scope-long-unbroken-${String(i+1).padStart(2,'0')}-${'deep'.repeat(8)}`);
+    await mkdir(path,{recursive:true});
+    scopeProjects.push(await fixture.request('/api/projects',{method:'POST',body:JSON.stringify({name:`Project ${String(i+1).padStart(2,'0')} with a deliberately long spaced title for menu wrapping`,path})}));
+  }
+  await evaluate("import('./src/threads.js').then(m=>m.refreshState())");
+  await waitFor('populated scope projects reach production renderer',()=>evaluate(`import('./src/state.js').then(m=>m.appState.projects.filter(p=>${JSON.stringify(scopeProjects.map(project=>String(project.id)))}.includes(String(p.id))).length===${scopeProjects.length})`));
+  await evaluate("(async()=>{const {viewState}=await import('./src/state.js');viewState.evalContext=null;(await import('./src/navigation.js')).renderSidebar();})()");
+  await resize(375);
+  if(await evaluate("document.body.classList.contains('sidebar-collapsed')")) await evaluate("document.querySelector('#collapseSidebar').click()");
+  await auditNewThreadComposer("native-375-expanded-new-thread",thread.id,scopeProjects);
   assert.deepEqual(rendererErrors, [], "No renderer error messages");
   await writeFile(join(evidence, "result.json"), JSON.stringify({ passed: true, platform: process.platform, inference: false, productionWindowFactory: true, results }, null, 2));
   console.log(JSON.stringify({ passed: true, evidence, scenarios: results.length }));

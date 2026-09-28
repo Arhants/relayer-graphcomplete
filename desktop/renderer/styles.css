@@ -259,6 +259,9 @@ html[data-theme="light"] .annotation-panel{background:#fafaf9;box-shadow:0 18px 
 
 @media(max-width:760px){
   .scope-menu,.permission-menu,.model-picker-popover{position:fixed;left:calc(var(--sidebar) + 8px);right:8px;bottom:72px;width:auto;max-width:calc(100vw - var(--sidebar) - 16px)}
+  /* The popup stays 72px above the viewport bottom; keep 44px for the sidebar's native titlebar inset. */
+  .scope-menu{max-block-size:max(0px,calc(100dvh - 116px));overflow-y:auto;overscroll-behavior:contain}
+  .scope-menu button>span,.scope-menu button>small{min-width:0;max-width:100%;overflow-wrap:anywhere}
 }
 
 .send-button.stop-button{position:relative;flex-shrink:0;padding:0}

@@ -256,3 +256,46 @@ replace the combined-source canonical gates.
 
 
 The subsequent integration includes completion-client parity and locked release-tool dependencies from main `92a89d6a`. The web Eval fixture previously activated the first node after NDT-003 had already opened that default, so the review adapter correctly rejected a no-op. Its checkpoint now activates a different enabled node and asserts the exact changed selection; the production review adapter remains unchanged. Prior native project-draft restart failure, one passing unchanged retry, the Mac capture wrapper's 120-second timeout (direct capture passed in 153.44 seconds), and Linux's missing `zip` prerequisite remain distinct external receipts. The derived Linux image adds distro `zip`/`unzip` for the new freshness test; it does not change tests or source. New final-source results are pending.
+
+## Populated scope-menu viewport repair
+
+Later review found that the sparse scope-menu capture did not establish reachability
+with existing projects. At commit `695b6fa9`, a production-renderer reproduction
+created twelve temporary projects through the authenticated product API. At
+375×640 with the sidebar expanded, the menu measured 149px wide and 2,031px tall,
+with its top at −1,463px. Its vertical overflow was `visible`, leaving early
+choices outside the non-scrolling document. The first run used system Node 25;
+the unchanged reproduction also failed under supported Node 22.23.2. Both inner
+exit codes were 1. The outer wrapper's status capture is not a passing result.
+Logs and screenshots are retained under
+`/Volumes/2T-SSD/evidence/temp/factory-418-scope-menu/`.
+
+The changed production seams are scope-popup height, user scrolling, and text
+wrapping at the existing ≤760px breakpoint. The cap reserves the existing 72px
+bottom offset and 44px above the popup. Only scope-menu rules change; project
+selection, permission menus, model pickers, and backend authority remain intact.
+
+ACC-008's no-clipped-controls promise maps to the populated scenario in
+`scripts/test-desktop-narrow-sidebar.mjs`, reached by the existing declared
+`npm run test:desktop:narrow-sidebar` entry point. Its real product fixture adds
+long-name and long-path projects after the sparse fixture checkpoints. It checks
+exact option IDs and the two non-project choices, four-edge popup containment,
+horizontal text containment, actual wheel scrolling, and keyboard traversal of
+every option within its effective clipping ancestors. Wheel input is browser-routed
+through CDP in the production Electron window, with trusted event receipts and
+observed scrolling; it does not certify OS or physical-device wheel delivery. First and last option
+screenshots are checked at capture time. Selecting a late project must preserve
+its exact stable ID and the draft, close the menu, and create no thread before
+Send. Keyboard selection of No folder must preserve the draft and remain
+standalone. These checks observe existing scope behavior without adding a new
+selection policy or claiming filesystem-dialog or Git-worktree proof.
+
+Cap-removal and disabled-user-scrolling probes protect different failure
+boundaries: a menu must fit the viewport, and its off-screen contents must be
+reachable through user input. Programmatic `scrollIntoView` alone is insufficient
+for the latter. The earlier sparse capture and unrelated native scenarios remain
+useful for their own boundaries, but do not certify this populated case. Fresh
+source-bound native evidence, applicable deterministic checks, canonical
+check/build, and independent review are required before this repair is declared
+verified. Results belong to their recorded source snapshots; this section records
+the mapping and failed baseline, not a passing repair claim.
