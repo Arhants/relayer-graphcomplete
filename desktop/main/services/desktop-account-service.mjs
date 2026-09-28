@@ -435,7 +435,26 @@ export function createDesktopAccountService({
         });
         shareRefresh = operation;
       }
-      try { await shareRefresh.promise; } catch { return null; }
+      try {
+        await shareRefresh.promise;
+      } catch (error) {
+        if (error instanceof InvalidRefreshError) {
+          await queueControlOperation(async () => {
+            // A newer login/logout/channel transition owns the account once
+            // the generation changes. Only retire the credential rejected by
+            // this exact share refresh.
+            if (generation !== atGeneration) return;
+            generation += 1;
+            credential = null;
+            idToken = null;
+            idTokenExpiresAt = 0;
+            await projectTelemetryIdentity(null, { retire: true });
+            await removeCredential();
+            transition(publicState(currentChannel, "signed-out"));
+          });
+        }
+        return null;
+      }
     }
     if (generation !== atGeneration || state.status !== "signed-in" || !credential
       || !idToken || idTokenExpiresAt <= now()) return null;

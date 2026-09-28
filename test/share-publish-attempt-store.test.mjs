@@ -162,4 +162,25 @@ describe("durable share publish attempt store", () => {
     expect(loaded.find((value) => value.reference === references[0])?.title).toBe("Updated existing attempt");
     expect(loaded.some((value) => value.reference === "SHR-CAP99999")).toBe(false);
   });
+
+  it("scopes the thirty-two-attempt limit per owner while retaining a bounded device limit", async () => {
+    const root = await temporaryRoot();
+    const store = createSharePublishAttemptStore({ directory: root });
+    const ownerA = Array.from({ length: 32 }, (_, index) => ({
+      ...record(`SHR-OWNA${String(index).padStart(4, "0")}`),
+      ownerKey: "owner-a",
+    }));
+    await Promise.all(ownerA.map((value) => store.save(value)));
+
+    await expect(store.save({ ...record("SHR-OWNB0000"), ownerKey: "owner-b" })).resolves.toBeUndefined();
+    await expect(store.save({ ...record("SHR-OWNA9999"), ownerKey: "owner-a" })).rejects.toThrow("capacity");
+
+    const remainingOwnerB = Array.from({ length: 31 }, (_, index) => ({
+      ...record(`SHR-OWNB${String(index + 1).padStart(4, "0")}`),
+      ownerKey: "owner-b",
+    }));
+    await Promise.all(remainingOwnerB.map((value) => store.save(value)));
+    await expect(store.save({ ...record("SHR-OWNC0000"), ownerKey: "owner-c" })).rejects.toThrow("capacity");
+    await expect(store.load()).resolves.toHaveLength(64);
+  });
 });

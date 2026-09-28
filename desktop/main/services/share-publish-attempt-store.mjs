@@ -3,7 +3,8 @@ import { chmod, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "no
 import { join } from "node:path";
 
 const VERSION = 1;
-const MAX_ATTEMPTS = 32;
+const MAX_ATTEMPTS_PER_OWNER = 32;
+const MAX_ATTEMPTS_GLOBAL = 64;
 const MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024;
 const MAX_RECORD_BYTES = 24 * 1024 * 1024;
 const RECORD_NAME = /^[a-f0-9]{64}\.json$/u;
@@ -212,8 +213,21 @@ export function createSharePublishAttemptStore({ directory, readFileImpl = readF
         await chmod(directory, 0o700);
         const name = filename(envelope.reference);
         const names = await recordNames();
-        if (!names.includes(name) && names.length >= MAX_ATTEMPTS) {
-          throw new Error("Share publish attempt capacity is exhausted.");
+        if (!names.includes(name)) {
+          // Keep a hard device bound without materializing every possible
+          // 16 MiB snapshot at once. Owner counting is sequential for the same
+          // reason; loadRecord also repairs malformed entries as it visits.
+          if (names.length >= MAX_ATTEMPTS_GLOBAL) {
+            throw new Error("Share publish attempt capacity is exhausted.");
+          }
+          let ownerAttempts = 0;
+          for (const candidate of names) {
+            const existing = await loadRecord(candidate);
+            if (existing?.ownerKey === envelope.ownerKey) ownerAttempts += 1;
+            if (ownerAttempts >= MAX_ATTEMPTS_PER_OWNER) {
+              throw new Error("Share publish attempt capacity is exhausted.");
+            }
+          }
         }
         const path = join(directory, name);
         const temporary = join(directory, `${name}.${process.pid}.${randomUUID()}.tmp`);

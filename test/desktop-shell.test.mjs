@@ -2623,6 +2623,7 @@ describe("desktop skeleton", () => {
     expect(releaseWorkflow).toContain("RELAYER_DESKTOP_CANDIDATE_ARTIFACT_ID: ${{ fromJSON(needs.validate.outputs.candidate_artifacts)[matrix.target].id }}");
     expect(releaseWorkflow).toContain("RELAYER_DESKTOP_CANDIDATE_ARTIFACT_DIGEST: ${{ fromJSON(needs.validate.outputs.candidate_artifacts)[matrix.target].digest }}");
     expect(releaseWorkflow).toContain("if: ${{ github.event_name == 'workflow_dispatch' }}");
+    expect(releaseWorkflow).not.toMatch(/required=\([\s\S]*RELAYER_SHARE_SERVICE_ENDPOINT[\s\S]*\)/u);
     expect(releaseWorkflow).toContain("uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca");
     expect(releaseWorkflow).toContain("subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}");
     expect(releaseWorkflow).toContain("AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}");

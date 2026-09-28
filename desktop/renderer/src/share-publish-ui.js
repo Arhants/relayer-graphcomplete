@@ -325,10 +325,24 @@ export function createSharePublishController({
       || normalizedAccount(currentAccount) !== "signed-in") return "stale";
     accountSubject = typeof currentAccount?.subject === "string" ? currentAccount.subject : null;
     recoveryThreadKey = threadKey;
-    const pending = await share.pending(threadId).catch(() => null);
+    let pending;
+    try {
+      pending = await share.pending(threadId);
+    } catch {
+      // A failed lookup is not evidence that no durable attempt exists. Do
+      // not cache the thread so a later render can retry recovery.
+      recoveryThreadKey = null;
+      return "failed";
+    }
     if (disposed || phase !== "closed" || operation !== operationVersion
       || String(getThread()?.id) !== threadKey) return "stale";
-    if (!pending) return "absent";
+    if (!pending) {
+      // Main intentionally closes transient store/account failures to null.
+      // Recheck on a later render rather than allowing a new publication to
+      // bypass a durable attempt that was temporarily unavailable.
+      recoveryThreadKey = null;
+      return "absent";
+    }
     result = pending;
     attemptResult = true;
     failureOrigin = "attempt";

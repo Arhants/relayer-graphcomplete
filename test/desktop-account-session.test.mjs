@@ -231,7 +231,9 @@ describe.sequential("desktop direct Auth0 account authority", () => {
     expect(Object.keys(service)).not.toContain("shareSession");
 
     await service.logout();
-    await expect(service.shareSession()).resolves.toBeNull();
+    const [first, second] = await Promise.all([service.shareSession(), service.shareSession()]);
+    expect(first).toBeNull();
+    expect(second).toBeNull();
     await service.close();
   });
 
@@ -254,6 +256,40 @@ describe.sequential("desktop direct Auth0 account authority", () => {
     expect(first.authorization).not.toBe(original.authorization);
     expect(second).toEqual(first);
     expect(auth0.requests.filter(({ body }) => body.get("grant_type") === "refresh_token")).toHaveLength(1);
+    await service.close();
+  });
+
+  it("retires a refresh credential rejected while acquiring share authority", async () => {
+    let clock = 1_900_000_000_000;
+    const auth0 = await fakeAuth0({ tokenHandler: ({ body, issuer, privateKey }) => (
+      body.get("grant_type") === "refresh_token"
+        ? { status: 400, json: { error: "invalid_grant" } }
+        : { json: {
+          token_type: "Bearer", expires_in: 120, refresh_token: "rotated-refresh-token",
+          id_token: idToken({ privateKey, issuer, clientId: "desktop-client", expiresAt: Math.floor(clock / 1000) + 120 }),
+        } }
+    ) });
+    const telemetry = { retireIdentity: vi.fn(async () => {}), transitionIdentity: vi.fn(async () => {}) };
+    const events = [];
+    let launchUrl;
+    const { service, directory } = await fixture({
+      auth0,
+      now: () => clock,
+      openExternal: async (value) => { launchUrl = value; },
+      telemetry,
+      emit: (value) => events.push(value),
+    });
+    await service.start();
+    await service.login();
+    await callbackFromLauncher(launchUrl);
+    await service.waitForIdle();
+    clock += 121_000;
+
+    await expect(service.shareSession()).resolves.toBeNull();
+    await expect(service.account()).resolves.toEqual({ status: "signed-out", channel: "stable" });
+    expect(telemetry.retireIdentity).toHaveBeenCalledOnce();
+    expect(events.at(-1)).toEqual({ status: "signed-out", channel: "stable" });
+    await expect(readFile(join(directory, "account.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     await service.close();
   });
 

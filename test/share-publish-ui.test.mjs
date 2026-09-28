@@ -222,6 +222,34 @@ describe("share publish renderer boundary", () => {
     controller.dispose();
   });
 
+  it("retries pending recovery after a transient closed failure", async () => {
+    const test = fixture();
+    test.controller.dispose();
+    test.share.pending
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        status: "created",
+        attemptReferenceId: "SHR-RECOVER2",
+        url: "https://share.example.test/t/recovered-after-transient-failure",
+      });
+    const controller = createSharePublishController({
+      root: test.window.document,
+      getThread: () => test.thread,
+      getInteractions: () => test.interactions,
+      account: test.account,
+      share: test.share,
+      clipboard: test.clipboard,
+    });
+
+    controller.render();
+    await vi.waitFor(() => expect(test.share.pending).toHaveBeenCalledTimes(1));
+    controller.render();
+    await vi.waitFor(() => expect(test.window.document.querySelector('[aria-label="Share link"]')?.value)
+      .toBe("https://share.example.test/t/recovered-after-transient-failure"));
+    expect(test.share.pending).toHaveBeenCalledTimes(2);
+    controller.dispose();
+  });
+
   it("clears a recovered URL when the signed-in account is replaced", async () => {
     const test = fixture();
     test.controller.dispose();
