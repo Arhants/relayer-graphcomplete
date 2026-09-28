@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -258,6 +258,17 @@ export function productTemporalFeatures(environment = process.env) {
     : RECURSIVE_TEMPORAL_FEATURES;
 }
 
+async function writeFileAtomically(path, contents) {
+  const temporaryPath = `${path}.${randomBytes(8).toString("hex")}.tmp`;
+  try {
+    await writeFile(temporaryPath, contents, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    await rename(temporaryPath, path);
+  } catch (error) {
+    await rm(temporaryPath, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
 export class GraphCompleteRuntimeService {
   constructor({
     userDataDirectory,
@@ -336,6 +347,12 @@ export class GraphCompleteRuntimeService {
     this.deferredCleanupFences = new Set();
   }
 
+  #coordinatesReadiness(configuration) {
+    return typeof this.coordinateHarnessReadiness === "function"
+      ? this.coordinateHarnessReadiness(configuration) === true
+      : this.coordinateHarnessReadiness === true;
+  }
+
   async start() {
     if (this.session) return this.session;
     if (this.closing) throw runtimeClosingError();
@@ -379,44 +396,42 @@ export class GraphCompleteRuntimeService {
           diagnostics: unavailable.diagnostics,
         }));
       const catalogPath = join(runtimeDirectory, "harness-configurations.json");
-      let previousCatalog = null;
-      try {
-        const parsed = JSON.parse(await this.#awaitStartupOperation(readFile(catalogPath, "utf8")));
-        if (parsed?.schemaVersion === 1 && Array.isArray(parsed.configurations)) previousCatalog = parsed;
-      } catch { /* first startup or corrupt local catalog starts unavailable */ }
+      // The app server's persisted row is the only readiness record (PROV-006). This file
+      // carries configurations to it and is never read back. A coordinated entry reports
+      // only whether its local runtime files validate (no probe); the app server restores
+      // ready from its own record for the same digest. runtimeAvailable stays false so a
+      // reader that ignores appServerReadiness fails closed.
       const configurationEntries = await Promise.all([...configurations.values()].map(async (configuration) => {
         const digest = digestHarnessConfiguration(configuration);
-        const prior = previousCatalog?.configurations.find((entry) => (
-          entry?.configuration?.name === configuration.name
-          && entry.digest === digest
-          && entry.runtimeAvailable === true
-        ));
-        let runtimeAvailable = false;
-        if (this.coordinateHarnessReadiness && prior && typeof this.validateHarnessRuntime === "function") {
+        if (!this.#coordinatesReadiness(configuration)) return { configuration, digest };
+        let runtimeFilesValid = false;
+        if (typeof this.validateHarnessRuntime === "function") {
           try {
-            runtimeAvailable = await this.#awaitStartupOperation(this.validateHarnessRuntime(configuration)) === true;
+            runtimeFilesValid = await this.#awaitStartupOperation(this.validateHarnessRuntime(configuration)) === true;
           } catch (error) {
-            try { await this.onHarnessRuntimeValidationFailure(configuration, error); } catch { /* diagnostics cannot block startup */ }
+            // A runtime that was never installed, or has no recipe for this target, is the
+            // normal state of an unused harness.
+            if (error?.code !== "managed_runtime_not_installed" && error?.code !== "managed_runtime_unsupported_target") {
+              try { await this.onHarnessRuntimeValidationFailure(configuration, error); } catch { /* diagnostics cannot block startup */ }
+            }
           }
         }
         return {
           configuration,
           digest,
-          ...(this.coordinateHarnessReadiness ? {
-            runtimeAvailable,
-            unavailableReason: runtimeAvailable ? null : {
-              code: "harness_readiness_pending",
-              message: "This execution configuration is currently unavailable.",
-            },
-            readinessGeneration: 0,
-          } : {}),
+          runtimeAvailable: false,
+          unavailableReason: {
+            code: "harness_readiness_pending",
+            message: "This execution configuration is currently unavailable.",
+          },
+          appServerReadiness: { runtimeFilesValid },
         };
       }));
-      await this.#awaitStartupOperation(writeFile(catalogPath, `${JSON.stringify({
+      await this.#awaitStartupOperation(writeFileAtomically(catalogPath, `${JSON.stringify({
         schemaVersion: 1,
         configurations: configurationEntries,
         unavailableConfigurations,
-      }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 }));
+      }, null, 2)}\n`));
 
       const graphControlToken = randomBytes(32).toString("hex");
       const harnessControlToken = randomBytes(32).toString("hex");
@@ -546,30 +561,6 @@ export class GraphCompleteRuntimeService {
       if (cancellationRequested) throw runtimeClosingError(error);
       throw error;
     }
-  }
-
-  async recordHarnessReadiness(updates) {
-    if (!this.session || !Array.isArray(updates)) throw new Error("GraphComplete runtime is not ready.");
-    const catalog = JSON.parse(await readFile(this.session.catalogPath, "utf8"));
-    if (catalog?.schemaVersion !== 1 || !Array.isArray(catalog.configurations)) {
-      throw new Error("Harness configuration catalog is invalid.");
-    }
-    const byName = new Map(updates.map((update) => [update.harnessId, update]));
-    catalog.configurations = catalog.configurations.map((entry) => {
-      const update = byName.get(entry.configuration?.name);
-      if (!update || update.configurationDigest !== entry.digest
-        || !Number.isSafeInteger(update.generation)
-        || update.generation < (entry.readinessGeneration ?? 0)) return entry;
-      return {
-        ...entry,
-        runtimeAvailable: update.available === true,
-        unavailableReason: update.available === true ? null : update.unavailableReason,
-        readinessGeneration: update.generation,
-      };
-    });
-    const temporaryPath = `${this.session.catalogPath}.${randomBytes(8).toString("hex")}.tmp`;
-    await writeFile(temporaryPath, `${JSON.stringify(catalog, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
-    await rename(temporaryPath, this.session.catalogPath);
   }
 
   async exportCandidateTrace(productInteractionId, targetDirectory, correlation) {

@@ -24,6 +24,9 @@ impl SqliteProductStore {
         &self,
         updates: &[HarnessRuntimeAvailabilityUpdate],
     ) -> Result<(), StorageError> {
+        // Held through the commit, so a check and its write cannot interleave with another
+        // publication (PROV-005).
+        let mut accepted_generations = self.harness_readiness_generations.lock().await;
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let mut seen = HashSet::new();
         for update in updates {
@@ -31,6 +34,15 @@ impl SqliteProductStore {
                 return Err(StorageError::Catalog(CatalogError::invalid(
                     "harness_readiness_invalid",
                     "Harness readiness updates require unique harnesses and a positive generation.",
+                )));
+            }
+            if accepted_generations
+                .get(&update.harness_id)
+                .is_some_and(|accepted| update.generation < *accepted)
+            {
+                return Err(StorageError::Catalog(CatalogError::invalid(
+                    "harness_readiness_superseded",
+                    "Harness readiness came from an older readiness evaluation than one already published.",
                 )));
             }
             let reason = match (update.available, update.unavailable_reason.as_ref()) {
@@ -65,6 +77,9 @@ impl SqliteProductStore {
             }
         }
         transaction.commit().await?;
+        for update in updates {
+            accepted_generations.insert(update.harness_id.clone(), update.generation);
+        }
         Ok(())
     }
 
@@ -284,6 +299,15 @@ impl SqliteProductStore {
             }
         }
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        // The app server's own row is the only readiness record (PROV-006). Read which
+        // runtime configurations it last recorded ready before the reset below.
+        let prior_ready: HashSet<(String, String)> = sqlx::query_as(
+            "SELECT configuration_name,runtime_configuration_digest FROM product_harnesses WHERE available=1 AND product_visible=1",
+        )
+        .fetch_all(&mut *transaction)
+        .await?
+        .into_iter()
+        .collect();
         sqlx::query(
             "UPDATE product_harnesses SET available=0,unavailable_reason_code='harness_unavailable',unavailable_reason_message='The harness runtime is unavailable.',runtime_configuration_digest='sha256:not-loaded'",
         )
@@ -307,6 +331,7 @@ impl SqliteProductStore {
                 execution_access_contracts: Vec::new(),
                 family_policy: None,
                 runtime_available: false,
+                restore_prior_readiness: false,
                 unavailable_reason: Some(UnavailableReason {
                     code: "harness_unavailable".into(),
                     message: "The harness runtime is unavailable.".into(),
@@ -315,7 +340,20 @@ impl SqliteProductStore {
         }
         harnesses.sort_by(|left, right| left.id.cmp(&right.id));
         harnesses.dedup_by(|left, right| left.id == right.id);
-        for harness in harnesses {
+        for mut harness in harnesses {
+            if harness.restore_prior_readiness
+                && harness.runtime_available
+                && !prior_ready
+                    .contains(&(harness.id.clone(), harness.configuration_digest.clone()))
+            {
+                // Valid runtime files alone never make a route ready: a new or changed
+                // digest, or a route last recorded unavailable, waits for an evaluation.
+                harness.runtime_available = false;
+                harness.unavailable_reason = Some(UnavailableReason {
+                    code: "harness_readiness_pending".into(),
+                    message: "This execution configuration is currently unavailable.".into(),
+                });
+            }
             let runtime_present = harness.runtime_available;
             let model_selecting =
                 harness.model_rules.is_some() || !harness.model_compatibility.is_empty();
@@ -2898,6 +2936,7 @@ mod provider_definition_tests {
             execution_access_contracts: Vec::new(),
             family_policy: None,
             runtime_available: true,
+            restore_prior_readiness: false,
             unavailable_reason: None,
         }
     }
@@ -2986,6 +3025,292 @@ mod provider_definition_tests {
             "the stale batch must roll back its earlier row"
         );
         std::fs::remove_file(path).unwrap();
+    }
+
+    /// Desktop startup writes this catalog shape for a harness whose readiness the app
+    /// server owns (`desktop/main/services/graphcomplete-runtime.mjs`; the desktop-shell
+    /// test "hands startup readiness to the app server record" asserts the same shape).
+    fn coordinated_catalog(path: &std::path::Path, digest: &str, files_valid: bool) {
+        std::fs::write(
+            path,
+            serde_json::json!({
+                "schemaVersion": 1,
+                "configurations": [{
+                    "configuration": {
+                        "schemaVersion": 1, "name": "codex-basic", "implementation": "test",
+                        "implementationVersion": 1, "permissionBindings": {"auto": {}},
+                        "settings": {}
+                    },
+                    "digest": digest,
+                    "runtimeAvailable": false,
+                    "unavailableReason": {
+                        "code": "harness_readiness_pending",
+                        "message": "This execution configuration is currently unavailable."
+                    },
+                    "appServerReadiness": { "runtimeFilesValid": files_valid }
+                }],
+                "unavailableConfigurations": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    /// One app-server startup: the real catalog reader, then the real catalog
+    /// initialization. Returns the harness row's availability and reason code.
+    async fn start_app_server(
+        store: &SqliteProductStore,
+        catalog: &std::path::Path,
+    ) -> (bool, Option<String>) {
+        let runtime = crate::runtime::RuntimeClient::open(
+            "http://127.0.0.1:1",
+            "http://127.0.0.1:2",
+            "graph-control".into(),
+            "harness-control".into(),
+            catalog,
+        )
+        .await
+        .unwrap();
+        store
+            .initialize_model_catalog("codex-basic", &runtime.product_harnesses())
+            .await
+            .unwrap();
+        sqlx::query_as(
+            "SELECT available,unavailable_reason_code FROM product_harnesses WHERE configuration_name='codex-basic'",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .unwrap()
+    }
+
+    fn readiness(
+        digest: &str,
+        generation: u64,
+        available: bool,
+    ) -> HarnessRuntimeAvailabilityUpdate {
+        HarnessRuntimeAvailabilityUpdate {
+            harness_id: "codex-basic".into(),
+            configuration_digest: digest.into(),
+            generation,
+            available,
+            unavailable_reason: (!available).then(|| UnavailableReason {
+                code: "runtime_probe_failed".into(),
+                message: "This execution configuration is currently unavailable.".into(),
+            }),
+        }
+    }
+
+    fn readiness_root(label: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "relayer-readiness-{label}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    /// PROV-006, finding R1: the app server last recorded the route unavailable, then
+    /// the app restarted with runtime files that still validate. The restart must not
+    /// bring back an older "ready".
+    #[tokio::test]
+    async fn restart_keeps_the_app_server_record_of_an_unavailable_route() {
+        let root = readiness_root("r1");
+        let catalog = root.join("harness-configurations.json");
+        let store = SqliteProductStore::open(root.join("product.sqlite3"))
+            .await
+            .unwrap();
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        start_app_server(&store, &catalog).await;
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 2, false)])
+            .await
+            .unwrap();
+
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        let (available, _) = start_app_server(&store, &catalog).await;
+        assert!(
+            !available,
+            "startup restored ready although the app server last recorded unavailable"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// PROV-006 upgrade: a row that was ready before this rule may not come from an
+    /// evaluation, so the first launch after the upgrade verifies every route again.
+    #[tokio::test]
+    async fn first_launch_after_upgrade_reverifies_a_route_an_older_build_left_ready() {
+        let root = readiness_root("upgrade");
+        let catalog = root.join("harness-configurations.json");
+        let database = root.join("product.sqlite3");
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                sqlx::sqlite::SqliteConnectOptions::new()
+                    .filename(&database)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        let before_rule = sqlx::migrate::Migrator {
+            migrations: std::borrow::Cow::Owned(
+                super::super::migrations::MIGRATOR
+                    .iter()
+                    .filter(|migration| migration.version <= 33)
+                    .cloned()
+                    .collect(),
+            ),
+            ..sqlx::migrate::Migrator::DEFAULT
+        };
+        before_rule.run(&pool).await.unwrap();
+        // An older build left the route ready, for example restored from the JSON catalog.
+        let left_ready = sqlx::query("UPDATE product_harnesses SET available=1,unavailable_reason_code=NULL,unavailable_reason_message=NULL,runtime_configuration_digest='sha256:d1' WHERE configuration_name='codex-basic'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(left_ready.rows_affected(), 1);
+        pool.close().await;
+
+        let store = SqliteProductStore::open(&database).await.unwrap();
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (false, Some("harness_readiness_pending".to_owned())),
+            "the first launch after the upgrade waits for an evaluation"
+        );
+
+        // The re-verification happens once: an evaluated ready survives later restarts.
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        store.pool.close().await;
+        let reopened = SqliteProductStore::open(&database).await.unwrap();
+        assert_eq!(start_app_server(&reopened, &catalog).await, (true, None));
+        reopened.pool.close().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// PROV-006: startup restores ready only from the app server's own ready record for
+    /// the same digest, and only while the runtime files validate.
+    #[tokio::test]
+    async fn startup_restores_ready_only_from_the_app_server_record() {
+        let root = readiness_root("restore");
+        let catalog = root.join("harness-configurations.json");
+        let store = SqliteProductStore::open(root.join("product.sqlite3"))
+            .await
+            .unwrap();
+        let pending = Some("harness_readiness_pending".to_owned());
+
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (false, pending.clone()),
+            "a new digest starts pending"
+        );
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (true, None),
+            "the app server's ready record restores for the same digest"
+        );
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (true, None),
+            "a restored record stays the record"
+        );
+
+        coordinated_catalog(&catalog, "sha256:d1", false);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (false, pending.clone()),
+            "runtime files that no longer validate withhold the restore"
+        );
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (false, pending.clone()),
+            "a withheld restore is recorded; only an evaluation makes it ready again"
+        );
+
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        coordinated_catalog(&catalog, "sha256:d2", true);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (false, pending),
+            "a changed digest starts pending"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// PROV-005, finding R3: within one app-server process, a readiness result from an
+    /// older evaluation is never published over a newer one.
+    #[tokio::test]
+    async fn readiness_rejects_an_older_generation_within_a_process() {
+        let root = readiness_root("r3");
+        let catalog = root.join("harness-configurations.json");
+        let store = SqliteProductStore::open(root.join("product.sqlite3"))
+            .await
+            .unwrap();
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        start_app_server(&store, &catalog).await;
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 3, true)])
+            .await
+            .unwrap();
+
+        let older = store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 2, false)])
+            .await
+            .unwrap_err();
+        assert!(
+            older.to_string().contains("older readiness evaluation"),
+            "{older}"
+        );
+        let available: bool = sqlx::query_scalar(
+            "SELECT available FROM product_harnesses WHERE configuration_name='codex-basic'",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+        assert!(available, "the older result must not replace the newer one");
+
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 3, true)])
+            .await
+            .unwrap();
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 4, false)])
+            .await
+            .unwrap();
+
+        // A new app-server process starts a fresh epoch: a restarted Electron coordinator
+        // counts from 1 again, and its first result is accepted.
+        store.pool.close().await;
+        let restarted = SqliteProductStore::open(root.join("product.sqlite3"))
+            .await
+            .unwrap();
+        start_app_server(&restarted, &catalog).await;
+        restarted
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        restarted.pool.close().await;
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]
@@ -3573,6 +3898,7 @@ mod provider_definition_tests {
             execution_access_contracts: vec!["managed-runtime@1".into()],
             family_policy: None,
             runtime_available: true,
+            restore_prior_readiness: false,
             unavailable_reason: None,
         };
         store
@@ -3639,6 +3965,7 @@ mod provider_definition_tests {
                 "codex-basic",
                 &[RuntimeProductHarness {
                     runtime_available: false,
+                    restore_prior_readiness: false,
                     unavailable_reason: Some(UnavailableReason {
                         code: "prime_agent_boundary_unsupported".into(),
                         message: "Choose another available harness on this device.".into(),
@@ -3890,6 +4217,7 @@ mod provider_definition_tests {
                         execution_access_contracts: vec!["managed-runtime@1".into()],
                         family_policy: None,
                         runtime_available: true,
+                        restore_prior_readiness: false,
                         unavailable_reason: None,
                     },
                     RuntimeProductHarness {
@@ -3904,6 +4232,7 @@ mod provider_definition_tests {
                             version: 1,
                         }),
                         runtime_available: true,
+                        restore_prior_readiness: false,
                         unavailable_reason: None,
                     },
                 ],
@@ -4093,6 +4422,7 @@ mod provider_definition_tests {
                     execution_access_contracts: Vec::new(),
                     family_policy: None,
                     runtime_available: true,
+                    restore_prior_readiness: false,
                     unavailable_reason: None,
                 }],
             )
@@ -4145,6 +4475,7 @@ mod provider_definition_tests {
                         execution_access_contracts: vec!["secret@1".into()],
                         family_policy: None,
                         runtime_available: true,
+                        restore_prior_readiness: false,
                         unavailable_reason: None,
                     },
                     RuntimeProductHarness {
@@ -4156,6 +4487,7 @@ mod provider_definition_tests {
                         execution_access_contracts: vec!["managed-runtime@1".into()],
                         family_policy: None,
                         runtime_available: true,
+                        restore_prior_readiness: false,
                         unavailable_reason: None,
                     },
                     RuntimeProductHarness {
@@ -4174,6 +4506,7 @@ mod provider_definition_tests {
                         execution_access_contracts: vec!["secret@1".into()],
                         family_policy: None,
                         runtime_available: true,
+                        restore_prior_readiness: false,
                         unavailable_reason: None,
                     },
                 ],
