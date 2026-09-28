@@ -61,6 +61,7 @@ pub(crate) use catalog::validate_family;
 pub(crate) use catalog::validate_harness_model_rules;
 pub(crate) use catalog::validate_stable_id;
 pub(crate) use catalog::{HarnessRuntimeAvailabilityUpdate, RuntimeProductHarness};
+pub(crate) use catalog::{ProviderConnectionEvent, ProviderConnectionStamp};
 pub(crate) use context_drafts::{
     NodeContextDraftConfirmationError, NodeContextDraftConfirmationService,
 };

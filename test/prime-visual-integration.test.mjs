@@ -39,7 +39,7 @@ it.each(["prime-agent-basic", "prime-agent-deep"])("%s accepts Python authored a
     product = new RelayerAppServerService(productOptions);
     let session = await product.start();
     await product.providerDefinitionStore().save([{ id: 'openai-work', adapterId: 'openai-api', label: 'Fixture', endpoint: 'https://unused.invalid/v1', accessContract: 'secret@1', credentialReference: 'fixture', lifecycleState: 'active', removedAt: null }]);
-    await product.publishProviderCatalog({ providerId: 'openai-work', label: 'Fixture', connected: true,
+    await product.seedProviderCatalog({ providerId: 'openai-work', label: 'Fixture', connected: true,
       models: [{ id: 'fixture-model', label: 'Fixture', order: 0, visible: true, available: true, providerDefault: true, metadata: {} }],
       systemFamily: { key: 'fixture', name: 'Fixture', modelIds: ['fixture-model'] },
     });

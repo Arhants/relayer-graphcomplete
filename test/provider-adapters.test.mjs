@@ -1058,6 +1058,7 @@ describe("managed subscription isolation", () => {
     };
     const create = vi.fn(() => replacementRuntime);
     const removed = vi.fn(async () => {});
+    const ready = vi.fn(async () => {});
     const service = new ProviderDefinitionService({
       registry: createProviderAdapterRegistry([{
         adapterId: "fake-managed", implementationVersion: "1", label: "Managed", accessContract: "managed-runtime@1",
@@ -1066,6 +1067,7 @@ describe("managed subscription isolation", () => {
       definitionStore: { async load() { return [definition]; } },
       credentialStore: {},
       initialRuntimes: new Map([[definition.id, failedRuntime]]),
+      onRuntimeReady: ready,
       onRuntimeRemoved: removed,
       publishCatalog: vi.fn(async () => {}),
     });
@@ -1073,7 +1075,13 @@ describe("managed subscription isolation", () => {
     await expect(service.reconnect(definition.id)).resolves.toMatchObject({ status: "pending" });
     await expect(service.completeConnection(definition.id)).rejects.toThrow("managed account check failed");
     expect(failedRuntime.close).toHaveBeenCalledOnce();
-    expect(removed).toHaveBeenCalledWith(expect.objectContaining({ id: definition.id }));
+    // The active provider keeps a catalog adapter: a fresh runtime replaces the closed one (F4).
+    expect(removed).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledOnce();
+    expect(ready).toHaveBeenCalledWith(expect.objectContaining({ id: definition.id }), replacementRuntime);
+    await expect(service.list()).resolves.toEqual([expect.objectContaining({
+      id: definition.id, connected: false, unavailableReason: expect.objectContaining({ code: "provider_logged_out" }),
+    })]);
 
     await expect(service.reconnect(definition.id)).resolves.toMatchObject({
       status: "pending", connectionId: definition.id,
@@ -1495,18 +1503,39 @@ describe("provider definition lifecycle", () => {
     await expect(service.list()).resolves.toEqual([]);
   });
 
-  it("compensates runtime registration before a failed staged create and leaves no active definition", async () => {
+  it("registers the catalog adapter only after the staged create commits (PROV-007)", async () => {
+    const fixture = serviceFixture();
+    const order = [];
+    const createWithCatalog = fixture.service.definitionStore.createWithCatalog;
+    fixture.service.definitionStore.createWithCatalog = async (...args) => {
+      order.push("commit");
+      return createWithCatalog(...args);
+    };
+    fixture.service.onRuntimeReady = async ({ id }) => { order.push(`register ${id}`); };
+    await fixture.service.connect({ adapterId: "fake-api", label: "Ordered", fields: { "api-key": "opaque" } });
+    expect(order).toEqual(["commit", "register provider-1"]);
+  });
+
+  it("keeps a committed provider and its recovery adapter when runtime registration fails", async () => {
     const fixture = serviceFixture();
     const unregistered = [];
+    const unavailable = [];
     fixture.service.onRuntimeReady = async () => { throw new Error("runtime registration failed"); };
     fixture.service.onRuntimeRemoved = async ({ id }) => { unregistered.push(id); };
+    fixture.service.onRuntimeUnavailable = async ({ id }) => { unavailable.push(id); };
+    // The definition committed, so the connection stands; like a failed startup activation,
+    // the provider keeps its recovery adapter.
     await expect(fixture.service.connect({
       adapterId: "fake-api", label: "Broken registration", fields: { "api-key": "opaque" },
-    })).rejects.toThrow("runtime registration failed");
-    expect(fixture.definitions()).toEqual([]);
-    expect(fixture.credentials.size).toBe(0);
+    })).resolves.toMatchObject({ status: "connected", providerDefinition: { id: "provider-1" } });
+    expect(fixture.definitions()).toEqual([expect.objectContaining({ id: "provider-1", lifecycleState: "active" })]);
+    expect([...fixture.credentials.keys()]).toEqual(["provider:provider-1"]);
     expect(fixture.closes).toEqual(["provider-1"]);
-    expect(unregistered).toEqual(["provider-1"]);
+    expect(unregistered).toEqual([]);
+    expect(unavailable).toEqual(["provider-1"]);
+    await expect(fixture.service.list()).resolves.toEqual([expect.objectContaining({
+      id: "provider-1", unavailableReason: expect.objectContaining({ code: "provider_activation_failed" }),
+    })]);
   });
 
   it("joins authoritative connection state into generic provider listings", async () => {
@@ -1733,9 +1762,10 @@ describe("provider definition lifecycle", () => {
     expect(close).not.toHaveBeenCalled();
   });
 
-  it("does not persist or destroy credentials after managed runtime registration fails", async () => {
+  it("keeps a committed managed provider when its runtime registration fails", async () => {
     let stored = [];
     const removed = [];
+    const unavailable = [];
     const closed = vi.fn(async () => {});
     const service = new ProviderDefinitionService({
       registry: createProviderAdapterRegistry([{
@@ -1761,12 +1791,15 @@ describe("provider definition lifecycle", () => {
       idGenerator: () => "managed-failed",
       onRuntimeReady: async () => { throw new Error("registration failed"); },
       onRuntimeRemoved: async ({ id }) => { removed.push(id); },
+      onRuntimeUnavailable: async ({ id }) => { unavailable.push(id); },
     });
     const pending = await service.connect({ adapterId: "failed-managed", label: "Failed" });
-    await expect(service.completeConnection(pending.connectionId)).rejects.toThrow("registration failed");
-    expect(stored).toEqual([]);
+    // Registration follows the commit (PROV-007), so its failure cannot undo the connection.
+    await expect(service.completeConnection(pending.connectionId)).resolves.toMatchObject({ status: "connected" });
+    expect(stored).toEqual([expect.objectContaining({ id: "managed-failed", lifecycleState: "active" })]);
     expect(closed).toHaveBeenCalledOnce();
-    expect(removed).toEqual(["managed-failed"]);
+    expect(removed).toEqual([]);
+    expect(unavailable).toEqual(["managed-failed"]);
   });
 
 

@@ -104,7 +104,7 @@ describe("conversation export to Eval end to end", () => {
     });
     services.push(product);
     let productSession = await product.start();
-    await product.publishProviderCatalog(fixtureCatalog());
+    await product.seedProviderCatalog(fixtureCatalog());
 
     const project = await productRequest(productSession, "/api/projects", {
       method: "POST",

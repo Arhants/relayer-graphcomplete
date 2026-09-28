@@ -100,6 +100,8 @@ describe("Eval managed Codex runtime", () => {
     const close = vi.fn(async () => undefined);
     const credentialEnvironments = [];
     const requests = [];
+    // The app server owns each provider's connection generation; the synced Codex row is at 4.
+    let definitions = [{ id: "eval-openrouter", adapterId: "openrouter", connectionGeneration: 1 }];
     const fetchImpl = vi.fn(async (url, options = {}) => {
       const request = {
         url: String(url),
@@ -107,12 +109,17 @@ describe("Eval managed Codex runtime", () => {
         ...(options.body === undefined ? {} : { body: JSON.parse(options.body) }),
       };
       requests.push(request);
+      if (request.url.endsWith("/api/internal/provider-definitions") && request.method === "PUT") {
+        definitions = request.body.map((definition) => ({
+          ...definition, connectionGeneration: definition.id === "codex" ? 4 : 1,
+        }));
+      }
       return {
         ok: true,
         json: async () => request.url.endsWith("/api/model-settings")
           ? { defaults: { harnessId: "fixture-task-system" }, families: [] }
           : request.url.endsWith("/api/internal/provider-definitions") && request.method === "GET"
-            ? [{ id: "eval-openrouter", adapterId: "openrouter" }] : {},
+            ? structuredClone(definitions) : {},
       };
     });
     const provision = createEvalCodexCatalogProvisioner({
@@ -143,7 +150,7 @@ describe("Eval managed Codex runtime", () => {
       provision("codex-layered-personal-presentation-v1"),
     ]);
 
-    expect(fetchImpl).toHaveBeenCalledTimes(6);
+    expect(fetchImpl).toHaveBeenCalledTimes(7);
     expect(requests[0]).toMatchObject({
       url: "http://127.0.0.1:43123/api/model-settings", method: "GET",
       headers: { Cookie: "relayer_session=write-token" },
@@ -158,10 +165,17 @@ describe("Eval managed Codex runtime", () => {
       body: [{ id: "eval-openrouter", adapterId: "openrouter" }, { id: "codex", adapterId: "codex-subscription", accessContract: "managed-runtime@1" }],
     });
     expect(requests[4]).toMatchObject({
-      url: "http://127.0.0.1:43123/api/internal/provider-catalog", method: "PUT",
-      body: { providerId: "codex", connected: true, models: [{ id: "gpt-5.6-sol", providerDefault: true }] },
+      url: "http://127.0.0.1:43123/api/internal/provider-definitions", method: "GET",
     });
+    // The publish names the generation the sync left (PROV-002).
     expect(requests[5]).toMatchObject({
+      url: "http://127.0.0.1:43123/api/internal/provider-catalog", method: "PUT",
+      body: {
+        providerId: "codex", connected: true, connectionGeneration: 4,
+        models: [{ id: "gpt-5.6-sol", providerDefault: true }],
+      },
+    });
+    expect(requests[6]).toMatchObject({
       url: "http://127.0.0.1:43123/api/model-settings/defaults", method: "PUT",
       body: { harnessId: "fixture-task-system" },
     });
