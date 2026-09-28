@@ -3797,6 +3797,150 @@ mod provider_definition_tests {
     }
 
     #[tokio::test]
+    async fn managed_catalog_refresh_preserves_a_separately_chosen_default_provider() {
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-explicit-provider-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
+        let store = SqliteProductStore::open(&path).await.unwrap();
+        store
+            .initialize_model_catalog(
+                "codex-basic",
+                &[RuntimeProductHarness {
+                    model_rules: Some(HarnessModelRules {
+                        allow: vec![HarnessModelRule {
+                            adapter_id: "codex-subscription".into(),
+                            model_id_exact: None,
+                            model_id_regex: Some(".*".into()),
+                        }],
+                        deny: Vec::new(),
+                    }),
+                    execution_access_contracts: vec!["managed-runtime@1".into()],
+                    ..runtime_harness("codex-basic")
+                }],
+            )
+            .await
+            .unwrap();
+        let mut named = definition("work-codex");
+        named.adapter_id = "codex-subscription".into();
+        named.access_contract = "managed-runtime@1".into();
+        named.endpoint = None;
+        named.credential_reference = None;
+        store
+            .sync_provider_definitions(&[named.clone()])
+            .await
+            .unwrap();
+        let snapshot = |provider_id: ProviderId| ProviderCatalogSnapshot {
+            label: provider_id.as_str().into(),
+            provider_id,
+            connected: true,
+            unavailable_reason: None,
+            models: vec![crate::product::CatalogModelSnapshot {
+                id: "model-one".into(),
+                label: "Model One".into(),
+                order: 0,
+                visible: true,
+                available: true,
+                unavailable_reason: None,
+                provider_default: true,
+                replacement_model_id: None,
+                metadata: serde_json::json!({}),
+            }],
+            system_family: Some(SystemFamilySnapshot {
+                key: "ignored".into(),
+                name: "Managed models".into(),
+                model_ids: vec!["model-one".into()],
+            }),
+        };
+        let codex = snapshot(ProviderId::parse("codex").unwrap());
+        let work = snapshot(named.id.clone());
+        let policy = FamilyPolicyReference {
+            id: "codex-default-family".into(),
+            version: 1,
+        };
+        for catalog in [&codex, &work] {
+            store
+                .publish_provider_catalog(
+                    catalog,
+                    ProviderConnectionStamp::refresh(1),
+                    Some(&policy),
+                    "1",
+                )
+                .await
+                .unwrap();
+        }
+        let prior = store.load_model_settings().await.unwrap().defaults;
+        assert_eq!(prior.provider_id.as_str(), "codex");
+        let chosen = store
+            .update_model_settings_defaults(
+                &UpdateModelSettingsDefaultsCommand {
+                    harness_id: None,
+                    provider_id: Some(named.id.clone()),
+                    family_id: None,
+                },
+                "codex-basic",
+                &HashSet::from(["codex-basic".into()]),
+            )
+            .await
+            .unwrap();
+        assert_eq!(chosen.provider_id, named.id);
+        assert_ne!(chosen.family_id, prior.family_id);
+        // A provider-only save brings its managed family. Refreshing either
+        // provider must preserve that explicit pair (PROV-008).
+        for catalog in [&codex, &work] {
+            store
+                .publish_provider_catalog(
+                    catalog,
+                    ProviderConnectionStamp::refresh(1),
+                    Some(&policy),
+                    "2",
+                )
+                .await
+                .unwrap();
+        }
+        let refreshed = store.load_model_settings().await.unwrap().defaults;
+        assert_eq!(refreshed.provider_id, named.id);
+        assert_eq!(refreshed.family_id, chosen.family_id);
+        // Migrating an unrelated provider cannot change the chosen pair.
+        let next_policy = FamilyPolicyReference {
+            version: 2,
+            ..policy
+        };
+        store
+            .publish_provider_catalog(
+                &codex,
+                ProviderConnectionStamp::refresh(1),
+                Some(&next_policy),
+                "3",
+            )
+            .await
+            .unwrap();
+        let unrelated = store.load_model_settings().await.unwrap().defaults;
+        assert_eq!(unrelated.provider_id, named.id);
+        assert_eq!(unrelated.family_id, chosen.family_id);
+        // Migrating the chosen provider advances its family and keeps the pair.
+        store
+            .publish_provider_catalog(
+                &work,
+                ProviderConnectionStamp::refresh(1),
+                Some(&next_policy),
+                "4",
+            )
+            .await
+            .unwrap();
+        let migrated = store.load_model_settings().await.unwrap().defaults;
+        assert_eq!(migrated.provider_id, named.id);
+        assert_ne!(migrated.family_id, chosen.family_id);
+        store.pool.close().await;
+        let reopened = SqliteProductStore::open(&path).await.unwrap();
+        let restored = reopened.load_model_settings().await.unwrap().defaults;
+        assert_eq!(restored.provider_id, named.id);
+        assert_eq!(restored.family_id, migrated.family_id);
+        reopened.pool.close().await;
+    }
+
+    #[tokio::test]
     async fn declarative_policy_retires_and_moves_a_legacy_system_default_atomically() {
         let temporary = tempfile::Builder::new()
             .prefix("relayer-legacy-managed-family-")

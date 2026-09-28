@@ -1,5 +1,10 @@
+import { createEvalProviderSetup } from "./provider-setup.mjs";
+import { createEvalCredentialStore } from "./credential-store.mjs";
+import { createManagedRuntimeInstaller } from "../main/managed-runtimes/installer.mjs";
+import { managedRuntimeRequirementForHarness } from "../shared/managed-runtime-requirements.mjs";
+import { HumanTaskService } from "./human-task-service.mjs";
 import { homedir } from "node:os";
-import { createEvalDashboard, openHumanReview } from "./web-host.mjs";
+import { createEvalDashboard, openHumanReview, createHumanTaskSurface, createSettingsSurface } from "./web-host.mjs";
 import { createJudgeBrowser, openBrowserReview } from "./browser-review.mjs";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -44,13 +49,7 @@ import {
 } from "../main/services/graphcomplete-runtime.mjs";
 import { inspectCodexBrowserMcpRuntime } from "../main/services/codex-browser-mcp-runtime.mjs";
 import { RelayerAppServerService } from "../main/services/relayer-app-server.mjs";
-import {
-  createEvalCodexExecutionLease,
-  createEvalCodexCatalogProvisioner,
-  createEvalManagedCodexRuntime,
-} from "./managed-codex-runtime.mjs";
-
-import { createEvalManagedPrimeRuntime, createEvalPrimeProvider, loadEvalPrimeProfile } from "./prime-provider.mjs";
+import { loadEvalPrimeProfile } from "./prime-provider.mjs";
 
 const desktopDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(desktopDirectory, "..");
@@ -75,26 +74,16 @@ const externalCatalog = process.env.RELAYER_EVAL_CATALOG_ROOT
   : null;
 process.env.PYTHONPATH = [join(repositoryRoot, "python", "relayer-graph", "src"), process.env.PYTHONPATH].filter(Boolean).join(delimiter);
 const codexBrowserMcpInspection = await inspectCodexBrowserMcpRuntime({ executable: process.execPath, packageRoot: join(repositoryRoot, "node_modules", "chrome-devtools-mcp") });
-const managedCodexRuntime = createEvalManagedCodexRuntime({
-  root: join(userDataDirectory, "managed-runtimes"),
-  developmentExecutable: process.env.RELAYER_CODEX_BINARY ? resolve(process.env.RELAYER_CODEX_BINARY) : undefined,
-});
-const acquireEvalProviderExecution = createEvalCodexExecutionLease(
-  () => managedCodexRuntime.resolve(),
-);
-
+let providerSetup;
 const primeProfile = await loadEvalPrimeProfile();
 const primePythonClientRoot = join(repositoryRoot, "python", "relayer-graph", "src");
 process.env.RELAYER_PRIME_PYTHON_CLIENT_ROOT = primePythonClientRoot;
-const managedPrimeRuntime = createEvalManagedPrimeRuntime({
-  root: join(userDataDirectory, "managed-runtimes"), appRoot: repositoryRoot,
-  pythonClientRoot: primePythonClientRoot,
-});
-let primeProvider;
 let dashboard;
 const reviewSurfaces = new Set();
 const judgeBrowser = createJudgeBrowser();
 const evalStateFile = join(userDataDirectory, "eval-data", "test-runs.json");
+// Validation only: startup checks local bytes, never prepares or probes runtimes.
+const runtimeFileValidator = createManagedRuntimeInstaller({ root: join(userDataDirectory, "managed-runtimes") });
 const graphRuntime = new GraphCompleteRuntimeService({
   userDataDirectory,
   graphServerBinary,
@@ -105,16 +94,15 @@ const graphRuntime = new GraphCompleteRuntimeService({
     "fixture.graph-memory": graphMemoryFixtureFactory,
   },
   ...(codexBrowserMcpInspection.available ? { codexBrowserMcpRuntime: codexBrowserMcpInspection } : {}),
-  resolveCodexRuntime: () => managedCodexRuntime.resolve(),
-  resolvePrimeRuntime: () => managedPrimeRuntime.resolve(),
-  // Prime has an explicit readiness path, so it starts unavailable until the Eval
-  // provider evaluates it. Fixture and existing Codex startup stay unchanged.
-  coordinateHarnessReadiness: ({ implementation }) => implementation === "prime.agent",
-  acquireProviderExecution: (providerId) => providerId === "codex"
-    ? acquireEvalProviderExecution(providerId)
-    : primeProvider
-      ? primeProvider.acquireExecution(providerId)
-      : Promise.reject(new Error("Eval has no connected provider for this execution.")),
+  resolveCodexRuntime: () => providerSetup.resolveCodexRuntime(),
+  resolveClaudeRuntime: () => providerSetup.resolveClaudeRuntime(),
+  resolvePrimeRuntime: () => providerSetup.resolvePrimeRuntime(),
+  acquireProviderExecution: (providerId) => providerSetup.acquireExecution(providerId),
+  coordinateHarnessReadiness: ({ implementation }) => ["codex.basic", "claude.basic", "prime.agent"].includes(implementation),
+  validateHarnessRuntime: async ({ implementation }) => {
+    await runtimeFileValidator.validate(managedRuntimeRequirementForHarness(implementation).recipeId);
+    return true;
+  },
   // Eval keeps the temporal substrate coherent for every matrix cell. The selected
   // harness configuration independently controls whether agent-authored Complete is
   // exposed, so control and treatment can share one production-faithful runtime.
@@ -133,9 +121,15 @@ const graphRuntime = new GraphCompleteRuntimeService({
 });
 let productServer;
 let evalService;
+let humanTasks;
 let stopPromise;
 let stopping = false;
 function requireRunning() { if (stopping) throw new Error("Eval is stopping."); }
+function evalIsBusy() {
+  return (humanTasks?.list() || []).some((task) => ["active", "preparing", "finishing"].includes(task.status))
+    || Boolean(evalService?.running.size)
+    || (evalService?.listRuns() || []).some((run) => ["queued", "running"].includes(run.status));
+}
 let ownsProfileLock = false;
 const profileLock = join(userDataDirectory, "eval-web.lock");
 let localAutorunStarted = false;
@@ -200,28 +194,24 @@ async function start() {
   });
   const productSession = await productServer.start();
   requireRunning();
-  if (primeProfile) {
-    primeProvider = createEvalPrimeProvider({
-      userDataDirectory, productServer, productSession, runtimeSession,
-      managedPrimeRuntime, managedCodexRuntime,
-    });
-    try { await primeProvider.start(primeProfile); }
-    finally { primeProfile.apiKey = undefined; }
-  }
-  requireRunning();
-  const ensureEvalCodexCatalog = createEvalCodexCatalogProvisioner({
-    productSession,
-    resolveRuntime: () => managedCodexRuntime.resolve(),
+  providerSetup = createEvalProviderSetup({
+    userDataDirectory, productServer, productSession, runtimeSession, graphRuntime,
+    appRoot: repositoryRoot, pythonClientRoot: primePythonClientRoot, isBusy: evalIsBusy,
+    credentialStore: createEvalCredentialStore({ userDataDirectory }),
+    secretsPersisted: process.platform === "darwin",
   });
+  try { await providerSetup.start(primeProfile); }
+  finally { if (primeProfile) primeProfile.apiKey = undefined; }
+  requireRunning();
   const resolveLiveModelRoute = createLiveModelRouteResolver({
     readModelSettings: () => productRequest(productSession, "/api/model-settings"),
     readDefaultModelSelection: (harnessId) => productRequest(productSession,
       `/api/model-selection/default?harnessId=${encodeURIComponent(harnessId)}`),
-    ensureCodexModelCatalog: ensureEvalCodexCatalog,
-    selectPrimeModel: primeProvider ? (harnessId) => primeProvider.select(harnessId) : null,
+    ensureCodexModelCatalog: () => providerSetup.settingsOpened(),
+    selectPrimeModel: (harnessId) => providerSetup.select(harnessId),
   });
   const simulatedUserJudgeRunner = createLocalSimulatedUserJudgeRunner({
-    resolveCodexRuntime: () => managedCodexRuntime.resolve(),
+    resolveCodexRuntime: () => providerSetup.resolveCodexJudgeRuntime(),
     loadLayer: ({ threadId, turnId, layerId }) => productRequest(productSession, (
       `/api/threads/${encodeURIComponent(threadId)}`
       + `/interactions/${encodeURIComponent(turnId)}`
@@ -244,22 +234,78 @@ async function start() {
       graphRuntime.candidateTracePersonalPresentationVersionId(productInteractionId)
     ),
     candidateTraceRequired: true,
-    ensureModelCatalog: ensureEvalCodexCatalog,
-    selectPrimeModel: primeProvider ? (harnessId) => primeProvider.select(harnessId) : null,
-    primeModelAvailability: primeProvider ? (harnessId) => primeProvider.availability(harnessId) : null,
-    validateLiveCredential: createLiveCredentialValidator({
-      resolveCodexRuntime: () => managedCodexRuntime.resolve(),
-      resolveModelRoute: resolveLiveModelRoute,
-    }),
+    selectModel: (harnessId) => providerSetup.select(harnessId),
+    selectPrimeModel: (harnessId) => providerSetup.select(harnessId),
+    primeModelAvailability: (harnessId) => providerSetup.availability(harnessId),
+    validateLiveCredential: async (configuration, credentialReference) => {
+      let selectedRoute;
+      let lease;
+      const validate = createLiveCredentialValidator({
+        resolveModelRoute: async (candidate) => {
+          selectedRoute = await resolveLiveModelRoute(candidate);
+          return selectedRoute;
+        },
+        resolveCodexRuntime: async () => {
+          if (!selectedRoute.selectedModel) return providerSetup.resolveCodexJudgeRuntime();
+          lease = await providerSetup.acquireExecution(selectedRoute.provider.id);
+          const access = await lease.runtime.executionAccess();
+          if (access.kind !== "managed-runtime" || access.runtimeId !== "codex") throw new Error("Selected provider has no Codex execution access.");
+          return { ...await providerSetup.resolveCodexRuntime(), environment: access.environment };
+        },
+      });
+      try { return await validate(configuration, credentialReference); }
+      finally { await lease?.release(); }
+    },
     conversationImportEnabled: true,
     annotationSnapshotLoader: (threadIds) => loadAnnotationSnapshots(productSession, threadIds),
     targetKey: evalTarget.key,
 
   }).open();
   requireRunning();
+  humanTasks = await new HumanTaskService({
+    stateFile: join(dirname(evalStateFile), "human-tasks.json"), evalService, productSession,
+    annotator: { id: `local:${userInfo().username}`, displayName: userInfo().username },
+    annotationSnapshotLoader: (threadIds) => loadAnnotationSnapshots(productSession, threadIds),
+  }).open();
   dashboard = await createEvalDashboard({
-    service: evalService, rendererDirectory: evalRendererDirectory,
-    refreshCatalog: () => primeProvider?.refreshAvailability(), openReview: createReview,
+    service: evalService, rendererDirectory: evalRendererDirectory, humanTasks,
+    openSettings: async () => {
+      requireRunning();
+      const pending = createSettingsSurface({ productSession, providerSetup, isBusy: evalIsBusy });
+      reviewSurfaces.add(pending);
+      pending.catch(() => reviewSurfaces.delete(pending));
+      return (await pending).url;
+    },
+    openHumanTask: async (sessionId) => {
+      requireRunning();
+      if (humanTasks.get(sessionId).status !== "active") throw new Error("This task has ended. Open its review instead.");
+      const pending = createHumanTaskSurface({ tasks: humanTasks, sessionId, productSession, assertRunning: requireRunning,
+        registerAnnotations: (session, scope) => controlProductRequest(session, "/api/internal/annotation-sessions", {
+          method: "POST", body: { ...scope, authorId: `local:${userInfo().username}`, authorDisplayName: userInfo().username },
+        }),
+      });
+      reviewSurfaces.add(pending);
+      return (await pending).url;
+    },
+    reviewHumanTask: async (sessionId) => {
+      const task = humanTasks.get(sessionId);
+      if (task.status === "active") throw new Error("Finish the task before reviewing it.");
+      const pending = openHumanReview({
+        executionId: sessionId, assertRunning: requireRunning, productSession: async () => productSession,
+        humanGrading: {
+          task: () => humanTasks.get(sessionId),
+          grade: (input) => humanTasks.grade(sessionId, input),
+          annotate: (input) => humanTasks.annotate(sessionId, input),
+        },
+        reviewContext: () => ({ readOnly: true, selectedExecutionId: sessionId, harnessConfigurationName: task.prepared.execution.harnessConfigurationName, cases: [{ executionId: sessionId, name: task.prepared.name, status: task.status, threadIds: task.threadIds, threads: task.threadIds.map((id, index) => ({ id, name: task.prepared.plan[index]?.name || `Step ${index + 1}` })) }] }),
+        registerAnnotations: (session, scope) => controlProductRequest(session, "/api/internal/annotation-sessions", {
+          method: "POST", body: { ...scope, authorId: `local:${userInfo().username}`, authorDisplayName: userInfo().username },
+        }),
+      });
+      reviewSurfaces.add(pending);
+      return (await pending).url;
+    },
+    refreshCatalog: () => providerSetup.refreshAvailability(), openReview: createReview,
     loadScreenshot: (input) => loadJudgeScreenshotArtifact({ ...input, stateFile: evalStateFile }),
   });
   if (stopping) { await dashboard.close(); requireRunning(); }
@@ -518,7 +564,7 @@ async function captureInputGroundingRating({ session, context, interaction, comm
         }));
     });
     const imagePaths = groundingImages.map(({ path }) => path);
-    const runtime = await managedCodexRuntime.resolve();
+    const runtime = await providerSetup.resolveCodexJudgeRuntime();
     return await runInputGroundingJudge({
       submittedInput: commits.length === 1
         ? commits[0].value
@@ -579,7 +625,6 @@ function stop() {
   stopPromise ??= (async () => {
     const errors = [];
     const attempt = async (operation) => { try { await operation(); } catch (error) { errors.push(error); } };
-    const cancellation = Promise.all([attempt(() => managedCodexRuntime.cancelAll()), attempt(() => managedPrimeRuntime.installer.cancelAll())]);
     await attempt(() => dashboard?.close());
     await attempt(() => productServer?.close());
     for (const pending of reviewSurfaces) {
@@ -587,9 +632,8 @@ function stop() {
       if (surface) await attempt(() => surface.close());
     }
     await attempt(() => judgeBrowser.close());
-    await cancellation;
     await attempt(() => graphRuntime.close());
-    await attempt(() => primeProvider?.close());
+    await attempt(() => providerSetup?.close());
     if (ownsProfileLock) await attempt(() => unlink(profileLock));
     if (errors.length) throw new AggregateError(errors, "Relayer Eval services did not stop cleanly.");
   })();
