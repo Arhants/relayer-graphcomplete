@@ -18,7 +18,7 @@ A newer main commit does not
 immediately invalidate otherwise recent evidence. A rerun cannot extend the
 original window. Update the branch to create fresh PR CI when it expires.
 
-`Merge freshness guard` refreshes a separate `merge-freshness` check at minutes
+`Merge freshness guard` refreshes a separate `merge-freshness-status` commit status at minutes
 7, 22, 37, and 52, on CI completion, relevant PR changes, and main pushes. Manual
 dispatch on main is also available. It never reruns expensive CI or merges PRs.
 Only the latest CI run associated with this PR and its exact current head can qualify; its current
@@ -26,20 +26,20 @@ attempt must have a successful `check` job. A matching plan artifact from an
 earlier attempt of that same immutable run is allowed because re-running only
 failed jobs does not repeat a successful plan. This never renews the window.
 Missing/expired evidence, conflicts, unknown mergeability, and per-PR API or
-artifact errors fail closed when the sweep can publish a check. Older PRs
+artifact errors fail closed when the sweep can publish a status. Older PRs
 without the new artifact must run fresh CI after rollout.
 Receipt generation and upload are non-blocking plan steps. Their failures remain
 visible, but do not skip application tests or affected-module planning. Missing
-or invalid evidence still fails the separately required `merge-freshness` check.
+or invalid evidence still fails the separately required `merge-freshness-status` status.
 
 This is **scheduled, not atomic, expiration**. GitHub can delay or drop cron
-jobs. A failed list request or check-write request, disabled workflow, rate
+jobs. A failed list request or status-write request, disabled workflow, rate
 limit, or timeout can leave a previous success visible until a later sweep.
-There is no maximum-lateness guarantee. The sweep first publishes an in-progress
-check before reading evidence, rechecks the head before completing it, and uses
+There is no maximum-lateness guarantee. The sweep first publishes a pending commit status before reading evidence,
+rechecks the head before completing it, and uses
 one non-cancelling concurrency group to prevent overlapping stale writers.
 Brief pending checks during refresh are expected.
-PR-specific read and check-write failures are isolated: the sweep continues with
+PR-specific read and publication failures are isolated: the sweep continues with
 later PRs and reports unpublished results without including raw API errors.
 After processing all PRs, unpublished results fail the workflow for operator attention.
 
@@ -51,16 +51,47 @@ stdout. GitHub API run/job/commit identities are checked independently. As with
 existing CI, reviewed PR workflow code is a trust root for the correctness of
 the actual tests and receipt generation; this is not an attestation against a
 malicious rewrite of the CI workflow. Its token can read Actions, content and PRs
-and write checks, but cannot merge, write source, deploy, or access cloud secrets.
+and write commit statuses and legacy checks, but cannot merge, write source, deploy, or access cloud secrets.
 
-Rollout: merge the workflow through normal reviewed CI, exercise real valid and
-expired/missing evidence and fork PR metadata, then add `merge-freshness` from
-the GitHub Actions app (15368) to the existing main ruleset. Retain required
-`check`; keep strict freshness disabled. Do not claim enforcement until that
-ruleset change and a real scheduled sweep are verified. The checked-in ruleset
-is the intended end state, not proof of activation. Release/tag/environment
-protections are unchanged. Rollback removes only the new required context and
-restores strict freshness before disabling the guard, with operator approval.
+The required result is a commit status, independent of Actions workflow suites.
+GitHub can attach API-created checks to the first workflow suite on a head even
+when later PR metadata events create a newer suite selected by the merge box.
+A green check in the API rollup therefore does not prove merge enforcement.
+The old `merge-freshness` check remains dual-published during migration. Both
+revocations are attempted independently before evidence IO; either publication
+failure remains an operator-visible failure. The names intentionally differ:
+GitHub requires both results when a check and status share a required name.
+
+[GitHub caps commit statuses](https://docs.github.com/en/rest/commits/statuses#create-a-commit-status)
+at 1,000 per SHA/context (case-insensitive). After writing pending,
+the guard counts this context's history and refuses success at 990 entries.
+It publishes failure requiring a new head, retaining capacity for revocation.
+Further refreshes can exhaust writes only in a non-success state. History-read
+errors fail closed after pending; they cannot preserve an earlier success.
+
+Rollout (requires operator approval for publishing and the live ruleset change):
+
+1. Merge the dual-publishing guard through reviewed CI while the legacy
+   `merge-freshness` requirement remains active. Do not remove that requirement
+   to get the repair merged.
+2. Verify `merge-freshness-status` from the GitHub Actions publisher satisfies a
+   required context on a controlled hosted PR targeting `main` (or an isolated
+   repository with `main`); other base branches are rejected by the guard. Cover valid and expired or
+   missing evidence, and a metadata edit plus scheduled refresh on the same head.
+   Inspect the actual merge box/rule evaluation, not only the check/status API.
+   Confirm fork metadata separately; no PR code may run in the privileged guard.
+3. On main, verify the new status exists on current PR heads. Derive a minimal
+   update from the freshly read existing ruleset: replace only the required
+   `merge-freshness` context with `merge-freshness-status`, retaining app 15368,
+   required `check`, strict freshness disabled, and every unrelated protection.
+4. After the approved update, inspect the real merge gate (including PR #477 if
+   still open), the read-only authority audit, and a scheduled expiration sweep.
+   The checked-in template and deterministic tests alone do not certify activation.
+
+The legacy publisher stays until a separately reviewed cleanup after migration.
+Rollback may restore the legacy context only if its actual enforcement is proven;
+otherwise restore strict freshness with operator approval before disabling the
+guard. Release/tag/environment protections remain unchanged.
 
 Checkpoint mapping (no product runtime behavior changes):
 
@@ -73,6 +104,9 @@ Checkpoint mapping (no product runtime behavior changes):
 | Failed/missing/latest CI, conflicts, malformed evidence | rejection scenarios |
 | Expiration, evidence API failure, changing head | fake GitHub sweep journey |
 | PR read/create/update failure isolation and visible partial failure | two-PR sweep scenarios and workflow contract |
+| Status publication independent of old check-suite assignment; unchanged-head refresh and expiration | repeated production sweep with commit-status API fixture; hosted merge recognition remains a separate gate |
+| Both publications revoked on partial failure; failed final write remains non-success | dual-publication failure journeys |
+| Status history unavailable or capacity near 1,000 cannot strand success | status-history failure and capacity boundary scenarios |
 | Shared head SHA does not select another PR's run or an older success | PR-specific run selection scenario |
 | Artifact bytes never executed or extracted | real ZIP decoder scenarios |
 | Trusted checkout, permissions, schedule and required contexts | workflow/ruleset contract scenario |

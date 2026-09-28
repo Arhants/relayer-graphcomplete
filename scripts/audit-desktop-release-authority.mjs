@@ -108,7 +108,7 @@ export function evaluateDesktopReleaseAuthority(snapshot, { windowsCandidateEnab
   );
   record(
     requiredChecks?.strict_required_status_checks_policy === false &&
-      ["check", "merge-freshness"].every((context) =>
+      ["check", "merge-freshness-status"].every((context) =>
         requiredChecks?.required_status_checks?.some((check) => check.context === context && check.integration_id === 15368)),
     "main requires GitHub Actions CI and scheduled merge freshness",
   );
