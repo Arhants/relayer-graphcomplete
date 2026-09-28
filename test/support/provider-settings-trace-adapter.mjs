@@ -92,7 +92,15 @@ export class ProviderSettingsWorld {
         world.prepares.set(specId(providerDefinition.id), hold);
         return hold.promise;
       },
-      publishCatalog: async () => { world.sql.connected = true; },
+      // A sign-out publishes a disconnected catalog; its outcome is the spec's Logout argument.
+      publishCatalog: async (catalog) => {
+        if (catalog?.provider?.status !== "disconnected") {
+          world.sql.connected = true;
+          return;
+        }
+        if (!world.logoutRefreshes) throw new Error("catalog publication failed");
+        world.sql.connected = false;
+      },
       onRuntimeReady: () => {
         if (!world.holdRuntimeReady) return undefined;
         world.holdRuntimeReady = false;

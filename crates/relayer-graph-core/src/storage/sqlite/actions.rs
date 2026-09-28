@@ -49,6 +49,43 @@ macro_rules! action_projection {
 }
 
 impl<'connection> ActionTable<'connection> {
+    pub(crate) async fn accepted_owned_invokes_in_layer(
+        &mut self,
+        layer: LayerId,
+        owner: NodeId,
+    ) -> Result<Vec<ActionId>, GraphError> {
+        let ids: Vec<i64> = sqlx::query_scalar(
+            "SELECT a.id FROM actions a JOIN layer_nodes n ON n.node_id=a.source_node_id WHERE n.layer_id=?1 AND a.owner_interaction_id=?2 AND a.kind='invoke' AND a.state='accepted' ORDER BY a.id",
+        )
+        .bind(layer.value())
+        .bind(owner.value())
+        .fetch_all(&mut *self.connection)
+        .await?;
+        ids.into_iter()
+            .map(|id| {
+                ActionId::new(id)
+                    .ok_or_else(|| GraphError::Internal("Invalid accepted invoke identity".into()))
+            })
+            .collect()
+    }
+
+    pub(crate) async fn converted_action_for_interaction(
+        &mut self,
+        interaction: NodeId,
+    ) -> Result<Option<ActionId>, GraphError> {
+        let id: Option<i64> = sqlx::query_scalar(
+            "SELECT action_id FROM invoke_resolution_transitions WHERE interaction_node_id=?1",
+        )
+        .bind(interaction.value())
+        .fetch_optional(&mut *self.connection)
+        .await?;
+        id.map(|id| {
+            ActionId::new(id)
+                .ok_or_else(|| GraphError::Internal("Invalid converted action identity".into()))
+        })
+        .transpose()
+    }
+
     pub(crate) fn new(connection: &'connection mut SqliteConnection) -> Self {
         Self { connection }
     }

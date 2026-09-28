@@ -3593,7 +3593,8 @@ mod tests {
         let server = tokio::spawn(async move {
             axum::serve(listener, fake).await.unwrap();
         });
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
         let graph = GraphDatabase::open(file.path()).await.unwrap();
         let state = ServerState::new(graph.clone(), "control");
         let app = router(state.clone());

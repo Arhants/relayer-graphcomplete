@@ -215,17 +215,12 @@ pub(crate) async fn transition(
             publication,
             crate::publication_targets(scope.project_id, scope.thread_id),
         )];
-        let converted: Option<i64> = sqlx::query_scalar(
-            "SELECT action_id FROM invoke_resolution_transitions WHERE interaction_node_id=?1",
-        )
-        .bind(scope.root_node_id.value())
-        .fetch_optional(&mut *transaction)
-        .await?;
+        let converted = crate::storage::sqlite::actions::ActionTable::new(&mut transaction)
+            .converted_action_for_interaction(scope.root_node_id)
+            .await?;
         if let Some(action_id) = converted {
             // Match rebuild semantics: each presenting closure publishes only to
             // its own project/thread. Do not mix source and result entitlements.
-            let action_id = crate::ActionId::new(action_id)
-                .ok_or_else(|| GraphError::Internal("Invalid converted action identity".into()))?;
             let currents = CurrentTable::new(&mut transaction)
                 .published_currents_for_action(action_id)
                 .await?;

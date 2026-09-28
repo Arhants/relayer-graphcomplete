@@ -40,7 +40,7 @@ export function createWindowFactory({
     const window = new BrowserWindow({
       width: 1420,
       height: 900,
-      minWidth: 960,
+      minWidth: 375,
       minHeight: 640,
       titleBarStyle: "hiddenInset",
       backgroundColor: getAppearance() === "light" ? "#fafafa" : "#0b0c0d",

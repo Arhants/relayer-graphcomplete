@@ -1,3 +1,4 @@
+import { createWorkspaceLayout } from "./workspace-layout.js";
 import { preferredLayerNode, rememberedLayerSelection, rememberLayerSelection } from "./layer-selection.js";
 import { escapeHtml, toast } from "../ui.js";
 import { actionCanRetry, actionWasInvoked, actionReviewKind } from "../action-invocation-state.js";
@@ -151,6 +152,37 @@ export async function renderProductNodeDetail({
     return Object.freeze({ authored: false, mountKey, host, ...runtime });
   }
   return Object.freeze({ authored: true, mountKey, host, ...runtime });
+}
+
+export function observeAutomaticGraphFitOnResize({
+  graphStage,
+  graphWindow,
+  getCameraRevision,
+  getGraphNodes,
+  hasActiveGesture,
+  refit,
+}) {
+  const Observer = graphWindow?.ResizeObserver;
+  if (!Observer) return { flush: () => {}, dispose: () => {} };
+  const initialRect = graphStage.getBoundingClientRect();
+  let previousSize = { width: initialRect.width, height: initialRect.height };
+  let pending = false;
+  let disposed = false;
+  const flush = () => {
+    if (disposed || !pending || hasActiveGesture()) return;
+    pending = false;
+    if (getGraphNodes().length > 0 && getCameraRevision() === 0) refit();
+  };
+  const observer = new Observer(() => {
+    if (disposed) return;
+    const { width, height } = graphStage.getBoundingClientRect();
+    const changed = Math.abs(width - previousSize.width) > 0.5 || Math.abs(height - previousSize.height) > 0.5;
+    previousSize = { width, height };
+    pending ||= changed;
+    flush();
+  });
+  observer.observe(graphStage);
+  return { flush, dispose: () => { disposed = true; pending = false; observer.disconnect(); } };
 }
 
 const GRAPH_NODE_HALF_WIDTH = 82;
@@ -1353,6 +1385,30 @@ export function compiledNodeDetailCoversActions(detail, actions, node) {
   return (actions ?? []).every((action) => boundActionIds.has(String(action.id)));
 }
 
+export function graphCameraForView({
+  cachedView,
+  cachedLayoutMatches,
+  enteringView,
+  nodes,
+  bounds,
+  currentCamera,
+  currentCameraRevision,
+}) {
+  if (cachedView && cachedLayoutMatches) {
+    if (cachedView.cameraRevision === 0) {
+      return { camera: fitGraphCamera(nodes, bounds), cameraRevision: 0 };
+    }
+    return {
+      camera: { ...cachedView.camera },
+      cameraRevision: cachedView.cameraRevision,
+    };
+  }
+  if (enteringView || !cachedLayoutMatches) {
+    return { camera: fitGraphCamera(nodes, bounds), cameraRevision: 0 };
+  }
+  return { camera: currentCamera, cameraRevision: currentCameraRevision };
+}
+
 export function captureGraphViewState(
   nodes,
   camera,
@@ -1482,6 +1538,7 @@ export function createProductWorkspace({
   onSelectTurn = () => {},
   onSelectTurnById,
   onSelectionChange = () => {},
+  onOpenReadyResult = () => {},
   layerSelectionMemoryOwner = globalThis.window,
   onExportConversation = null,
   shareApi = null,
@@ -1801,6 +1858,8 @@ export function createProductWorkspace({
   };
   graphDocument.addEventListener("pointerdown", closeSettingsMenuFromOutside, true);
   graphDocument.addEventListener("keydown", closeSettingsMenuOnEscape, true);
+  const readingLayout = createWorkspaceLayout(root, graphWindow);
+  $("#openReadyResult").onclick = () => onOpenReadyResult();
   const narrowInspectorMedia = graphWindow?.matchMedia?.("(max-width: 760px)");
   let inspectorUsesOverlay = narrowInspectorMedia?.matches
     ?? (graphWindow?.innerWidth ?? 0) <= 760;
@@ -1858,6 +1917,12 @@ export function createProductWorkspace({
       ?? (graphWindow?.innerWidth ?? 0) <= 760;
     inspector.classList.remove("hidden");
     const viewportWidth = graphWindow?.innerWidth ?? 0;
+    // Layer changes can hide and reopen details within one render, leaving no
+    // net resize for ResizeObserver. Fit automatic cameras to the final pane
+    // only after selectNode has passed its selection/draft-save guards.
+    if (!wasOpen && cameraRevision === 0 && graphNodes.length > 0) {
+      updateCamera(fitGraphCamera(graphNodes, graphStage.getBoundingClientRect()), false);
+    }
     if (shouldFitInspectorOpen(wasOpen, true, viewportWidth)) scheduleInspectorFit();
     return {
       inspector,
@@ -2338,6 +2403,15 @@ export function createProductWorkspace({
     drawGraph();
   }
 
+  const automaticGraphFit = observeAutomaticGraphFitOnResize({
+    graphStage,
+    graphWindow,
+    getCameraRevision: () => cameraRevision,
+    getGraphNodes: () => graphNodes,
+    hasActiveGesture: () => Boolean(dragging || panning || pinching),
+    refit: () => updateCamera(fitGraphCamera(graphNodes, graphStage.getBoundingClientRect()), false),
+  });
+
   function zoomAt(zoom, anchor = {
     x: graphStage.getBoundingClientRect().width / 2,
     y: graphStage.getBoundingClientRect().height / 2,
@@ -2415,6 +2489,7 @@ export function createProductWorkspace({
       panning = null;
     }
     if (!panning && !pinching) graphStage.classList.remove("panning");
+    automaticGraphFit.flush();
   };
   graphStage.onpointerup = finishPan;
   graphStage.onpointercancel = finishPan;
@@ -3859,6 +3934,7 @@ export function createProductWorkspace({
       });
     }
     if (renderedThreadId !== null && renderedThreadId !== threadId) {
+      readingLayout.closeEnvironment();
       nodeSelectionSequence += 1;
       releaseSendAttempt();
       if (contextDraftSendWarning.open) {
@@ -3926,6 +4002,16 @@ export function createProductWorkspace({
     $("#threadScope").textContent = threadScope;
     $("#threadTitle").title = threadScope;
     renderEnvironment(state.environment, project);
+    const pendingTurn = state.pendingTurn;
+    const showPending = pendingTurn && String(pendingTurn.threadId) === String(thread.id)
+      && String(pendingTurn.interactionId) !== String(state.currentInteractionId);
+    $("#pendingTurnNotice").classList.toggle("hidden", !showPending);
+    if (showPending) {
+      const pendingInteraction = state.interactions.find((item) => String(item.id) === String(pendingTurn.interactionId));
+      const label = pendingTurn.readyLayer ? "Result ready" : turnStatusPresentation(pendingTurn.status).label;
+      $("#pendingTurnText").textContent = `Turn ${pendingInteraction?.sequence ?? ""} · ${label}`;
+      $("#openReadyResult").classList.toggle("hidden", !pendingTurn.readyLayer);
+    }
     const interaction = interactionForThread(state, thread);
     updateCountBadge($("#threadAnnotationBadge"), subjectAnchor("thread", {}, state, thread));
     updateCountBadge($("#turnAnnotationBadge"), subjectAnchor("turn", {}, state, thread));
@@ -4426,8 +4512,9 @@ export function createProductWorkspace({
           graphWindow?.setTimeout?.(() => { suppressClickAfterDrag = false; }, 0);
         }
         dragging = null;
+        automaticGraphFit.flush();
       };
-      element.onpointercancel = () => { dragging = null; };
+      element.onpointercancel = () => { dragging = null; automaticGraphFit.flush(); };
     });
     const projected = projectLayerNodePositions(state.visibleLayer, graphNodes);
     for (const node of graphNodes) {
@@ -4462,15 +4549,21 @@ export function createProductWorkspace({
       selection.selectedNodeId = preferredLayerNode(state.visibleLayer ?? { nodes: responseNodes }, selection.selectedNodeId,
         rememberedLayerSelection(thread?.id, state.currentInteractionId, state.visibleLayer?.layer?.id, layerSelectionMemoryOwner));
       if (selection.selectedNodeId != null && String(previousSelection) !== String(selection.selectedNodeId)) {
-        onSelectionChange(selection.selectedNodeId);
+        onSelectionChange(selection.selectedNodeId, { automatic: true });
       }
     }
-    if (cachedView && cachedLayoutMatches) {
-      camera = { ...cachedView.camera };
-      cameraRevision = cachedView.cameraRevision;
-    } else if (enteringView || !cachedLayoutMatches) {
-      camera = fitGraphCamera(graphNodes, graphStage.getBoundingClientRect());
-    }
+    const restoredCamera = graphCameraForView({
+      cachedView,
+      cachedLayoutMatches,
+      enteringView,
+      nodes: graphNodes,
+      bounds: graphStage.getBoundingClientRect(),
+      currentCamera: camera,
+      currentCameraRevision: cameraRevision,
+    });
+    camera = restoredCamera.camera;
+    cameraRevision = restoredCamera.cameraRevision;
+
     drawGraph();
   }
 
@@ -5229,10 +5322,12 @@ export function createProductWorkspace({
     contextDraftLoadRetryAttempts.clear();
     inputDraftLoadRetries?.dispose();
     graphDocument.defaultView.removeEventListener("resize", repositionContextDraftSendWarning);
+    automaticGraphFit.dispose();
     cancelInspectorFit();
     graphDocument.removeEventListener("pointerdown", blurGraphFromOutsidePointer, true);
     graphDocument.removeEventListener("pointerdown", closeTurnPopoverFromOutside, true);
     graphDocument.removeEventListener("pointerdown", closeSettingsMenuFromOutside, true);
+    readingLayout.dispose();
     graphDocument.removeEventListener("keydown", closeTurnPopoverOnEscape, true);
     graphDocument.removeEventListener("keydown", closeSettingsMenuOnEscape, true);
     graphDocument.removeEventListener("keydown", closeInspectorOnEscape, true);

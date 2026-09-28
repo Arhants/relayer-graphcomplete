@@ -2,6 +2,11 @@
 
 ## Current integration status
 
+The final integration onto main `18d6f23b` is recorded in
+[the 2026-09-28 merge ledger](main-integration-2026-09-28/README.md), including
+preserved failures, source-bound reviews and the final local qualification.
+The entries below describe earlier snapshots and do not supersede that ledger.
+
 The user approved the live gate at `dd7e5a18`: "okay i've verified myself that it works good job".
 That acceptance applies to the pre-integration source; it is not fresh live proof
 of this merge. Integration with main `17b50d95` is recorded separately in

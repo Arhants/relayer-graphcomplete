@@ -99,6 +99,7 @@ pub(super) async fn product_state(
     let stale = super::threads::refresh_accepted_outputs(
         &state.product,
         state.runtime.as_ref(),
+        state.interaction_execution.as_ref(),
         &mut product_state.interactions,
         &product_state.action_invocations,
         &product_state

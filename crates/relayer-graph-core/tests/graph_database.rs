@@ -2209,7 +2209,8 @@ async fn accept_single_node(
 
 #[tokio::test]
 async fn personal_presentation_attachment_is_control_owned_one_shot_and_hidden_from_completion() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     let version = personal_presentation_interaction(
         &database,
@@ -2868,7 +2869,8 @@ async fn product_identifiers_are_external_inputs() {
 
 #[tokio::test]
 async fn current_advance_is_atomic_durable_and_idempotent() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     let interaction = database
         .create_interaction(Some(project(1)), thread(1), "Publish useful work")
@@ -3144,7 +3146,8 @@ async fn projection_outbox_preserves_each_revision_and_terminal_current() {
 
 #[tokio::test]
 async fn temporal_rollout_flags_default_off_and_enforce_stage_dependencies() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     assert_eq!(
         database.temporal_features().await.unwrap(),
@@ -5511,7 +5514,8 @@ async fn accepted_layers_keep_their_original_action_snapshot() {
 
 #[tokio::test]
 async fn accepted_completion_survives_database_reopen() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     let interaction = database
         .create_interaction(Some(project(1)), thread(1), "Persist this answer")
@@ -5533,7 +5537,8 @@ async fn accepted_completion_survives_database_reopen() {
 
 #[tokio::test]
 async fn accepted_authored_detail_survives_caller_mutation_and_database_reopen() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     let interaction = database
         .create_interaction(Some(project(1)), thread(1), "Show the architecture")
@@ -5878,7 +5883,8 @@ async fn authored_detail_rejects_rehashed_noncanonical_asset_schema() {
 async fn coordinate_free_accepted_history_remains_readable_after_restart() {
     use sqlx::{Connection, SqliteConnection};
 
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     let interaction = database
         .create_interaction(Some(project(1)), thread(1), "Read legacy history")
@@ -5913,7 +5919,8 @@ async fn coordinate_free_accepted_history_remains_readable_after_restart() {
 
 #[tokio::test]
 async fn different_threads_can_write_through_the_same_pool() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     let first = database
         .create_interaction(Some(project(1)), thread(1), "First thread")
@@ -6126,7 +6133,8 @@ async fn lease_issuance_rejects_invalid_authority_kind_and_scope() {
 
 #[tokio::test]
 async fn reused_action_snapshot_leases_once_concurrently_and_replays_after_reopen() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     let source_interaction = database
         .create_interaction(Some(project(1)), thread(1), "Source")
@@ -6227,7 +6235,8 @@ async fn typed_leased_completion_atomically_resolves_invoke_once_and_survives_re
 async fn leased_completion_atomically_resolves_invoke_once_and_survives_reopen_fixture(
     typed: bool,
 ) {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     database
         .set_interaction_permissions_enabled(typed)
@@ -6424,7 +6433,8 @@ async fn typed_leased_completion_storage_failure_rolls_back_closure_and_resoluti
 }
 
 async fn leased_completion_storage_failure_rolls_back_closure_and_resolution_fixture(typed: bool) {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     database
         .set_interaction_permissions_enabled(typed)
@@ -6737,7 +6747,8 @@ async fn typed_invoke_rejects_expand_cycle_atomically_and_stop_revokes_authority
 
 #[tokio::test]
 async fn typed_permission_storage_is_immutable_and_unknown_versions_fail_closed() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     database
         .set_interaction_permissions_enabled(true)
@@ -6921,7 +6932,8 @@ async fn typed_conversion_updates_legacy_occurrences_atomically() {
 }
 
 async fn invoke_occurrences_fixture(source_typed: bool) {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     database
         .set_interaction_permissions_enabled(source_typed)
@@ -7085,7 +7097,8 @@ async fn invoke_occurrences_fixture(source_typed: bool) {
 
 #[tokio::test]
 async fn typed_imported_invoke_cannot_gain_authority_through_writable_occurrence() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     database
         .set_interaction_permissions_enabled(true)
@@ -7201,7 +7214,8 @@ async fn typed_imported_invoke_cannot_gain_authority_through_writable_occurrence
 
 #[tokio::test]
 async fn default_node_is_member_validated_and_survives_publication_and_reopen() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     let interaction = database
         .create_interaction(None, thread(901), "Choose a starting detail")

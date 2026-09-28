@@ -14,11 +14,12 @@ and observes `refs/heads/main`; the base parent must equal that observation.
 The event's base SHA can lag GitHub's synthetic merge and is not the checkout
 authority. The actual merge SHA must match `GITHUB_SHA`, and its second parent
 must match the event's exact PR head. A different observed main fails closed.
-All ordinary CI jobs use the same event merge SHA. A newer main commit does not
+All ordinary CI checkouts explicitly pin the same immutable event merge SHA.
+A newer main commit does not
 immediately invalidate otherwise recent evidence. A rerun cannot extend the
 original window. Update the branch to create fresh PR CI when it expires.
 
-`Merge freshness guard` refreshes a separate `merge-freshness` check at minutes
+`Merge freshness guard` refreshes a separate `merge-freshness-status` commit status at minutes
 7, 22, 37, and 52, on CI completion, relevant PR changes, and main pushes. Manual
 dispatch on main is also available. It never reruns expensive CI or merges PRs.
 Only the latest CI run associated with this PR and its exact current head can qualify; its current
@@ -26,17 +27,20 @@ attempt must have a successful `check` job. A matching plan artifact from an
 earlier attempt of that same immutable run is allowed because re-running only
 failed jobs does not repeat a successful plan. This never renews the window.
 Missing/expired evidence, conflicts, unknown mergeability, and per-PR API or
-artifact errors fail closed when the sweep can publish a check. Older PRs
+artifact errors fail closed when the sweep can publish a status. Older PRs
 without the new artifact must run fresh CI after rollout.
+Receipt generation and upload are non-blocking plan steps. Their failures remain
+visible, but do not skip application tests or affected-module planning. Missing
+or invalid evidence still fails the separately required `merge-freshness-status` status.
 
 This is **scheduled, not atomic, expiration**. GitHub can delay or drop cron
-jobs. A failed list request or check-write request, disabled workflow, rate
+jobs. A failed list request or status-write request, disabled workflow, rate
 limit, or timeout can leave a previous success visible until a later sweep.
-There is no maximum-lateness guarantee. The sweep first publishes an in-progress
-check before reading evidence, rechecks the head before completing it, and uses
+There is no maximum-lateness guarantee. The sweep first publishes a pending commit status before reading evidence,
+rechecks the head before completing it, and uses
 one non-cancelling concurrency group to prevent overlapping stale writers.
 Brief pending checks during refresh are expected.
-PR-specific read and check-write failures are isolated: the sweep continues with
+PR-specific read and publication failures are isolated: the sweep continues with
 later PRs and reports unpublished results without including raw API errors.
 After processing all PRs, unpublished results fail the workflow for operator attention.
 
@@ -48,27 +52,84 @@ stdout. GitHub API run/job/commit identities are checked independently. As with
 existing CI, reviewed PR workflow code is a trust root for the correctness of
 the actual tests and receipt generation; this is not an attestation against a
 malicious rewrite of the CI workflow. Its token can read Actions, content and PRs
-and write checks, but cannot merge, write source, deploy, or access cloud secrets.
+and write commit statuses and legacy checks, but cannot merge, write source, deploy, or access cloud secrets.
 
-Rollout: merge the workflow through normal reviewed CI, exercise real valid and
-expired/missing evidence and fork PR metadata, then add `merge-freshness` from
-the GitHub Actions app (15368) to the existing main ruleset. Retain required
-`check`; keep strict freshness disabled. Do not claim enforcement until that
-ruleset change and a real scheduled sweep are verified. The checked-in ruleset
-is the intended end state, not proof of activation. Release/tag/environment
-protections are unchanged. Rollback removes only the new required context and
-restores strict freshness before disabling the guard, with operator approval.
+The required result is a commit status, independent of Actions workflow suites.
+GitHub can attach API-created checks to the first workflow suite on a head even
+when later PR metadata events create a newer suite selected by the merge box.
+A green check in the API rollup therefore does not prove merge enforcement.
+Both publication APIs are scoped to the head SHA, while receipts belong to a PR.
+Before success, the guard re-lists open main-targeting PRs and rejects any shared
+head. Use a unique head commit for each open PR. Listing failure fails closed;
+PR changes after this check remain subject to the scheduled refresh limitation.
+Close and retarget-away events revoke both results for the PR's current head,
+before listing open PRs. This prevents indefinite success after closure, including
+when the listing fails. Revocation still depends on asynchronous event delivery;
+a delayed, dropped, or failed close workflow can leave stale success visible.
+PR event triggers therefore allow every base branch; the workflow always checks
+out protected `main`, and only open main-targeting PRs can receive success.
+[GitHub's current `pull_request_target` behavior](https://github.blog/changelog/2025-11-07-actions-pull_request_target-and-environment-branch-protections-changes/)
+uses the default branch workflow and `GITHUB_REF` regardless of the PR base,
+so the job's main-ref restriction remains in place for retarget-away events.
+Previously successful historical heads are not revoked by this current-head
+handler. Reusing those SHAs remains subject to the opening sweep's delay.
+The old `merge-freshness` check remains dual-published during migration. Both
+revocations are attempted independently before evidence IO; either publication
+failure remains an operator-visible failure. The names intentionally differ:
+GitHub requires both results when a check and status share a required name.
+
+[GitHub caps commit statuses](https://docs.github.com/en/rest/commits/statuses#create-a-commit-status)
+at 1,000 per SHA/context (case-insensitive). After writing pending,
+the guard counts this context's history and refuses success at 990 entries.
+It publishes failure requiring a new head, retaining capacity for revocation.
+Further refreshes can exhaust writes only in a non-success state. History-read
+errors fail closed after pending; they cannot preserve an earlier success.
+
+Rollout (requires operator approval for publishing and the live ruleset change):
+
+1. Merge the dual-publishing guard through reviewed CI while the legacy
+   `merge-freshness` requirement remains active. Do not remove that requirement
+   to get the repair merged.
+2. Verify `merge-freshness-status` from the GitHub Actions publisher satisfies a
+   required context on a controlled hosted PR targeting `main` (or an isolated
+   repository with `main`); other base branches are rejected by the guard. Cover valid and expired or
+   missing evidence, and a metadata edit plus scheduled refresh on the same head.
+   Inspect the actual merge box/rule evaluation, not only the check/status API.
+   Confirm fork metadata separately; no PR code may run in the privileged guard.
+3. On main, verify the new status exists on current PR heads. Derive a minimal
+   update from the freshly read existing ruleset: replace only the required
+   `merge-freshness` context with `merge-freshness-status`, retaining app 15368,
+   required `check`, strict freshness disabled, and every unrelated protection.
+   The audit rejects the legacy requirement in active rulesets explicitly targeting
+   `main` or the default branch. Inspect wildcard rulesets separately.
+4. After the approved update, inspect the real merge gate (including PR #477 if
+   still open), the read-only authority audit, and a scheduled expiration sweep.
+   The checked-in template and deterministic tests alone do not certify activation.
+
+The legacy publisher stays until a separately reviewed cleanup after migration.
+Rollback may restore the legacy context only if its actual enforcement is proven;
+otherwise restore strict freshness with operator approval before disabling the
+guard. Release/tag/environment protections remain unchanged.
 
 Checkpoint mapping (no product runtime behavior changes):
 
 | Boundary | Deterministic checkpoint |
 | --- | --- |
 | Exact head, actual main merge, run and attempt identity | `test/ci-merge-freshness.test.mjs`: real Git stale-event-base and remote-main mismatch scenarios, plus receipt policy |
+| Stale PR base metadata, wrong event merge/head, all-job immutable source | real Git receipt scenario and CI checkout contract |
+| Receipt failure does not stop test planning; missing proof still blocks merge | non-blocking receipt-step contract and missing-receipt rejection |
 | 12-hour edge, future/invalid time, reruns | policy clock scenarios |
 | Failed/missing/latest CI, conflicts, malformed evidence | rejection scenarios |
 | Expiration, evidence API failure, changing head | fake GitHub sweep journey |
 | PR read/create/update failure isolation and visible partial failure | two-PR sweep scenarios and workflow contract |
+| Status publication independent of old check-suite assignment; unchanged-head refresh and expiration | repeated production sweep with commit-status API fixture; hosted merge recognition remains a separate gate |
+| Both publications revoked on partial failure; failed final write remains non-success | dual-publication failure journeys |
+| Status history unavailable or capacity near 1,000 cannot strand success | status-history failure and capacity boundary scenarios |
 | Shared head SHA does not select another PR's run or an older success | PR-specific run selection scenario |
+| Shared-head publications cannot lend one PR's evidence to another | both PR orderings, newly shared head after evidence IO, and failed re-list journeys |
+| A closed PR's current head does not remain successful after its close handler runs | success/close/reuse journey and closure revocation before failed open-PR listing |
+| Retargeting away from main revokes current-head success | retarget/revoke journey with failed listing; all-base event trigger and protected-main checkout assertions |
+| Migration cannot retain the obsolete required context | authority audit rejects legacy alongside replacement while allowing unrelated checks |
 | Artifact bytes never executed or extracted | real ZIP decoder scenarios |
 | Trusted checkout, permissions, schedule and required contexts | workflow/ruleset contract scenario |
 | Existing release authority remains configured | desktop-shell release-authority audit scenario |
@@ -365,8 +426,8 @@ unsupported compiler overrides and target directories disable reuse. The
 reviewed build scripts/configuration in `scripts/ci/packaging-input-contract.json`
 name the input-contract boundary: changing or adding one disables reuse until its
 external inputs have been reviewed and the contract updated. Never update those
-digests mechanically to obtain a hit. Signed release compilation is unchanged:
-its debug profile and dSYM evidence need a separate artifact contract.
+digests mechanically to obtain a hit. Development entries cannot supply signed
+release compilation; the separate signed-profile contract below owns that reuse.
 
 A miss or rejected entry builds fresh. Concurrent cache writers fall back; failed
 compilation is not retried or published. License readiness and the actual ASAR,
@@ -415,6 +476,54 @@ observed 36-second response. Longer waits still fall back immediately; each
 restore gets at most two SDK attempts. Telemetry records the chosen delay or
 budget rejection. Retrying a service failure does not imply an incompatible or
 absent cache entry will become a hit.
+
+## Signed Preview native compilation cache
+
+The manual macOS arm64 signed-candidate job opts into a separate
+`relayer.signed-native-cache/v1` workflow artifact. It contains only the two
+unsigned Rust release binaries (`CARGO_PROFILE_RELEASE_DEBUG=1`, default
+features), their dSYMs, and a manifest. Development/CI Ladybug and runtime entries
+are never accepted as signed-profile output. A verified runtime hit avoids the
+entire Rust/Ladybug/OpenSSL compilation and Cargo fetch; a miss fetches the locked
+dependency closure and uses the existing pinned offline native build.
+
+Input identity reuses the reviewed packaging input contract and binds all crate,
+native-source and packaging bytes, repository/cache paths, target, toolchains,
+SDK, feature/profile settings, symbol tools, signed build/telemetry implementation
+and signed workflow. Unsupported ambient build settings disable reuse. Native
+content can be reused across commits with identical inputs; the current
+candidate still requires its own exact-source main CI and fresh release metadata.
+
+Restore searches at most five pages of 100 recent workflow artifacts and considers up to five
+matching identities. Each entry requires GitHub API provenance for this repository,
+this manual main signed workflow, a completed successful run and successful
+macOS arm64 package job in the named attempt. Artifact name and receipt bind run,
+attempt and source commit. Download uses the immutable artifact ID and requires
+its API SHA-256 archive digest before extraction. ZIP extraction accepts only the
+fixed binary/dSYM/manifest inventory, rejects links, duplicates and extra paths,
+and bounds compressed and expanded bytes to 2 GiB. GitHub normalizes ZIP modes;
+the extractor reinstates only code-owned binary executable modes before comparing
+the sealed inventory. A post-download metadata check rejects a changed attempt.
+
+Sealing generates symbols while Cargo objects exist, rejects dsymutil warning or
+error diagnostics, and requires compilation units, valid DWARF and matching
+arm64 UUIDs. Restore verifies every file hash and mode. Installation and telemetry
+retain and recheck the authenticated inventory, including copied destination
+bytes. Telemetry consumes these dSYMs instead of trying to reconstruct them from
+bare cached binaries, then still correlates them with the freshly signed package.
+This is structural symbol validation, not proof of live Sentry symbolication.
+
+Restoration, rejection, eviction and cache-save failures are logged and fall back
+to fresh compilation or already-built output. Compiler failures propagate without
+retry. Only fresh native outputs are uploaded (30-day retention); a hit does not
+republish its producer's receipt. Set `RELAYER_SIGNED_NATIVE_CACHE=0` to disable
+this acceleration. Local builds remain fresh by default. Licensing, Electron
+assembly, afterPack, signing, notarization, exact-source verification, current
+source maps, telemetry upload and immutable candidate/publication gates remain
+fresh and mandatory. No test result or release acceptance is cached.
+
+Checkpoint mappings, local results and the outstanding authorized signed-run
+proof gate are recorded in [signed cache evidence](../evidence/signed-native-cache/README.md).
 
 ### Command resource profiles
 

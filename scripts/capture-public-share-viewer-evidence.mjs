@@ -25,6 +25,7 @@ const sourceFiles = [
   "desktop/renderer/src/product-workspace/model.js",
   "desktop/renderer/src/product-workspace/view.js",
   "desktop/renderer/src/product-workspace/workspace.js",
+  "desktop/renderer/src/product-workspace/workspace-layout.js",
   "desktop/renderer/assets/relayer-logo.svg",
   "desktop/renderer/assets/relayer-share-og.svg",
   "desktop/renderer/vendor/lucide.min.js",
@@ -341,6 +342,9 @@ async function reloadToFirstTurn(viewer) {
 }
 
 async function capture(window, file, viewport) {
+  // A hidden window can have complete DOM geometry before its compositor paints.
+  window.showInactive();
+  await settlePaint(window);
   const image = await window.webContents.capturePage();
   const size = image.getSize();
   const output = size.width === viewport.width && size.height === viewport.height

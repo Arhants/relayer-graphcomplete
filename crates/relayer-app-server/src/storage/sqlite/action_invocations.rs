@@ -491,14 +491,11 @@ mod tests {
 
     #[tokio::test]
     async fn one_shot_invocation_is_atomic_idempotent_and_durable() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-action-invocation-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-action-invocation-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_model_selection(&store).await;
         let model_selection = InteractionModelSelection {
@@ -621,19 +618,15 @@ mod tests {
                 .unwrap()
         );
         reopened.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn recursive_invocations_can_bind_concurrent_children_while_the_parent_is_active() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-recursive-action-invocation-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-recursive-action-invocation-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         for (key, node_id, layer_id) in [
             ("personal-presentation-v1", 501, 601),
@@ -811,19 +804,15 @@ mod tests {
         );
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn reused_project_action_is_deduplicated_across_sources_and_concurrent_requests() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-project-action-dedupe-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-project-action-dedupe-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_model_selection(&store).await;
         let (project, _) = store
@@ -911,19 +900,15 @@ mod tests {
         assert_eq!(interaction_count, 3);
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn standalone_threads_do_not_share_action_invocation_dedupe_scope() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-standalone-action-scope-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-standalone-action-scope-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_model_selection(&store).await;
         let model_selection = InteractionModelSelection {
@@ -967,19 +952,15 @@ mod tests {
         assert_ne!(result_ids[0], result_ids[1]);
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn interrupted_leased_result_stays_recoverable_and_keeps_its_binding() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-invoke-binding-recovery-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-invoke-binding-recovery-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_model_selection(&store).await;
         let model_selection = InteractionModelSelection {
@@ -1049,19 +1030,15 @@ mod tests {
         }
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn migrated_source_without_model_selection_preserves_action_execution() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-legacy-action-invocation-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-legacy-action-invocation-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
@@ -1101,19 +1078,15 @@ mod tests {
         assert_eq!(store.list_interactions(thread.id).await.unwrap().len(), 2);
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn configuration_owned_source_can_invoke_without_a_model_selection() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-configuration-action-invocation-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-configuration-action-invocation-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
@@ -1144,19 +1117,15 @@ mod tests {
         assert_eq!(interaction.model_selection, None);
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn historical_action_requires_a_current_family() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-deleted-family-action-invocation-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-deleted-family-action-invocation-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_model_selection(&store).await;
         sqlx::query("INSERT INTO model_families(id,name,kind,enabled,position) VALUES (2,'Historical','custom',1,1)")
@@ -1203,19 +1172,15 @@ mod tests {
         }
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn historical_action_cannot_reuse_a_hidden_model() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-hidden-model-action-invocation-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-hidden-model-action-invocation-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_model_selection(&store).await;
         let model_selection = InteractionModelSelection {
@@ -1269,19 +1234,15 @@ mod tests {
         }
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn action_uses_the_last_successful_catalog_snapshot() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-stale-catalog-action-invocation-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-stale-catalog-action-invocation-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_model_selection(&store).await;
         let model_selection = InteractionModelSelection {
@@ -1314,19 +1275,15 @@ mod tests {
         assert_eq!(store.list_interactions(thread.id).await.unwrap().len(), 2);
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn active_turn_blocks_a_second_action_interaction() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-active-turn-action-invocation-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-active-turn-action-invocation-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_model_selection(&store).await;
         let model_selection = InteractionModelSelection {
@@ -1365,19 +1322,15 @@ mod tests {
         assert_eq!(store.list_interactions(thread.id).await.unwrap().len(), 2);
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn hidden_available_model_is_blocked_for_new_historical_actions() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-hidden-model-action-invocation-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-hidden-model-action-invocation-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_model_selection(&store).await;
         let model_selection = InteractionModelSelection {
@@ -1414,7 +1367,6 @@ mod tests {
         }
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     async fn seed_test_model_selection(store: &SqliteProductStore) {

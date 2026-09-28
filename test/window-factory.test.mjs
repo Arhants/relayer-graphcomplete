@@ -9,7 +9,8 @@ describe("createWindowFactory", () => {
     let releaseCookie;
     const cookiePending = new Promise((resolve) => { releaseCookie = resolve; });
     class FakeBrowserWindow {
-      constructor() {
+      constructor(options) {
+        this.options = options;
         this.webContents = {
           on: vi.fn(),
           setWindowOpenHandler: vi.fn(),
@@ -33,6 +34,10 @@ describe("createWindowFactory", () => {
       cookie: { name: "session", value: "private" },
     });
     expect(exposedWindow).toBeInstanceOf(FakeBrowserWindow);
+    expect(exposedWindow.options).toMatchObject({
+      minWidth: 375, minHeight: 640, titleBarStyle: "hiddenInset",
+      webPreferences: { preload: "/immutable-desktop/preload/index.cjs", contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
     expect(exposedWindow.webContents.session.cookies.set).toHaveBeenCalledOnce();
     expect(exposedWindow.loadURL).not.toHaveBeenCalled();
 

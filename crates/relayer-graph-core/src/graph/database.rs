@@ -114,10 +114,7 @@ impl GraphDatabase {
         enabled: bool,
     ) -> Result<(), GraphError> {
         let mut transaction = self.storage.begin_write().await?;
-        sqlx::query("UPDATE interaction_permission_config SET enabled=?1 WHERE singleton=1")
-            .bind(enabled)
-            .execute(&mut *transaction)
-            .await?;
+        crate::storage::sqlite::permissions::set_enabled(&mut transaction, enabled).await?;
         transaction.commit().await?;
         Ok(())
     }
@@ -433,12 +430,9 @@ impl GraphDatabase {
             read_only: false,
             authority_epoch: None,
         };
-        let initialized: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM completion_states WHERE interaction_node_id=?1)",
-        )
-        .bind(node.id.value())
-        .fetch_one(&mut *transaction)
-        .await?;
+        let initialized = CurrentTable::new(&mut transaction)
+            .is_initialized(node.id)
+            .await?;
         if initialized {
             let stored = ContextTable::new(&mut transaction).actions(&scope).await?;
             let stored = stored
@@ -902,23 +896,9 @@ impl GraphDatabase {
             ));
         }
         let mut connection = self.storage.acquire().await?;
-        let ids: Vec<i64> = completion_ids.iter().map(|id| id.value()).collect();
-        let rows: Vec<i64> = sqlx::query_scalar(
-            "SELECT DISTINCT c.interaction_node_id FROM json_each(?1) requested
-             JOIN completions c ON c.interaction_node_id=requested.value
-             JOIN nodes owner ON owner.id=c.interaction_node_id
-             JOIN actions root ON root.id=c.root_action_id
-             JOIN layer_actions membership ON membership.layer_id=root.target_layer_id
-             JOIN invoke_resolution_transitions receipt ON receipt.action_id=membership.action_id
-             WHERE NOT EXISTS(SELECT 1 FROM graph_imports imported WHERE imported.thread_id=owner.thread_id)")
-            .bind(serde_json::to_string(&ids).map_err(|error|GraphError::Internal(error.to_string()))?)
-            .fetch_all(&mut *connection).await?;
-        rows.into_iter()
-            .map(|id| {
-                NodeId::new(id)
-                    .ok_or_else(|| GraphError::Internal("invalid completion identity".into()))
-            })
-            .collect()
+        crate::storage::sqlite::completions::CompletionTable::new(&mut connection)
+            .resolved_invoke_roots(completion_ids)
+            .await
     }
 
     pub async fn current_projection_page(

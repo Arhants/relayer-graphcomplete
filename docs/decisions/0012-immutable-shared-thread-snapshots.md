@@ -73,3 +73,35 @@ authentication, cache, and transport fakes; it is not deployed-service evidence.
   public evidence.
 - Deployment, IAM, live Auth0, live Sentry, and full-size network proof remain
   separately authorized Gate C work.
+
+## Embedded presentation (issue #558)
+
+The accepted embed design reuses this reader and ProductWorkspace. An explicit
+server-owned `presentation: "embed"` option changes only public shell chrome and
+layout; standalone remains the default. Embed callers supply a validated canonical
+`sharePath` (`/t/<32 lowercase hex characters>`) for Open full graph. Neither
+snapshot content nor browser query parameters supplies host configuration. The
+link opens a new tab at the ordinary first accepted turn. This is not a state
+transfer or deep-link interface.
+
+The local first slice provides compact attribution instead of the download card,
+wide equal graph/details columns, and the same read-only navigation. It preserves
+`publicViewerCsp()` and the versioned hosted artifact contract unchanged. Only the
+synthetic loopback fixture server sets an HTTP framing exception for its own
+parent. The hosted service must explicitly route/configure an embed surface and
+admit only the two approved website origins in a later, separately authorized
+slice. No publication, live policy change, network capability, or parent messaging
+is introduced here. PRD section 8.4.1 records the complete accepted design and
+remaining slices; local source/fixture proof is not hosted acceptance.
+
+
+Slices 2–5 extend the embed shell with bounded responsive reading, explicit
+wheel zoom, native lazy iframes, and server-owned system/light/dark theme selection.
+The private embed route admits the two PRD origins while retaining the standalone
+artifact CSP. Exact pinned template support is declared by the hash-verified
+PUBLIC_VIEWER_EMBED_VERSION=1 export; an older or unavailable artifact returns the
+compact unavailable state. Publication of a new share after deployment is required
+to opt into a newer renderer. Existing share records and frozen bytes are not migrated.
+The website preserves standalone links in print/PDF output. Real example shares
+and deployed framing require their own observed evidence; local fixtures cannot
+substitute for that acceptance.

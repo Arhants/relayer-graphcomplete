@@ -78,14 +78,16 @@ VARIABLES
   \* --- child admission (THR admit_recursive_child) ---
   selected,     \* the child inherited a model selection, so it is admitted
   attempt,      \* interaction_attempts row: none | running | terminal
-  lease,        \* host execution lease: none | held | released
-  cleanKey      \* the start-failure cleanup's operation: start | admit
+  lease,        \* the attempt's durable lease record: none | held | released
+                \* (released = execution_lease_reconciled_at is set)
+  cleanKey,     \* the start-failure cleanup's operation: start | admit
+  access        \* the host's provider access for the child: none | held | released
 
 vars == <<life, head, why, receipt, auth, phase, status, execWhy, prov, launches,
           appUp, lpc, semPc, exitPc, cleanPc, stopPc, stopSeen, stopReport,
-          restartPc, selected, attempt, lease, cleanKey>>
+          restartPc, selected, attempt, lease, cleanKey, access>>
 graphVars == <<life, head, why, receipt>>
-admissionVars == <<selected, attempt, lease, cleanKey>>
+admissionVars == <<selected, attempt, lease, cleanKey, access>>
 actorVars == <<lpc, semPc, exitPc, cleanPc, stopPc, stopSeen, stopReport,
                restartPc>>
 
@@ -103,6 +105,7 @@ Init ==
   /\ restartPc = "none"
   /\ selected \in BOOLEAN
   /\ attempt = "none" /\ lease = "none" /\ cleanKey = "start"
+  /\ access = "none"
 
 -----------------------------------------------------------------------------
 (* Trusted-control termination (RT:1555-1624, CUR:21-233).                *)
@@ -194,15 +197,15 @@ LaunchAdmit(l, ok) ==
   /\ appUp /\ lpc[l] = "admit"
   /\ IF selected /\ ChildAdmission
      THEN IF ok
-          THEN /\ attempt' = "running" /\ lease' = "held"
+          THEN /\ attempt' = "running" /\ lease' = "held" /\ access' = "held"
                /\ lpc' = [lpc EXCEPT ![l] = "start"]
                /\ UNCHANGED <<cleanPc, cleanKey>>
           ELSE /\ lpc' = [lpc EXCEPT ![l] = "done"]
                /\ cleanPc' = "fail" /\ cleanKey' = "admit"
-               /\ UNCHANGED <<attempt, lease>>
+               /\ UNCHANGED <<attempt, lease, access>>
      ELSE /\ ok
           /\ lpc' = [lpc EXCEPT ![l] = "start"]
-          /\ UNCHANGED <<cleanPc, cleanKey, attempt, lease>>
+          /\ UNCHANGED <<cleanPc, cleanKey, attempt, lease, access>>
   /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, prov, launches, appUp,
                  semPc, exitPc, stopPc, stopSeen, stopReport, restartPc, selected>>
 
@@ -221,7 +224,8 @@ LaunchStart(l, outcome) ==                            \* THR:1479-1506
         /\ lpc' = [lpc EXCEPT ![l] = "done"]  \* acknowledgement was lost (THR :3229)
         /\ prov' = "running" /\ launches' = launches + 1
   /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, appUp, semPc, exitPc,
-                 stopPc, stopSeen, stopReport, restartPc, selected, attempt, lease>>
+                 stopPc, stopSeen, stopReport, restartPc, selected, attempt, lease,
+                 access>>
 
 \* attach, then spawn both observers regardless (THR:1508-1532). A failed
 \* attach cancels the provider and tries Fail(attachment_persist_failed).
@@ -276,7 +280,8 @@ SemFinalize ==
                /\ semPc' = "done"
           ELSE UNCHANGED <<phase, execWhy, status, semPc, attempt>>
   /\ UNCHANGED <<graphVars, auth, prov, launches, appUp, lpc, exitPc, cleanPc,
-                 stopPc, stopSeen, stopReport, restartPc, selected, attempt, lease, cleanKey>>
+                 stopPc, stopSeen, stopReport, restartPc, selected, attempt, lease, cleanKey,
+                 access>>
 
 \* Twenty consecutive projection errors: cancel, then Fail(graph_observation_failed).
 SemObservationFault ==
@@ -352,7 +357,8 @@ CleanFinalize ==
           /\ execWhy' = IF TerminalReadSettlesCleanup THEN why ELSE "provider_start_failed"
      ELSE UNCHANGED <<phase, execWhy, status, cleanPc, attempt>>
   /\ UNCHANGED <<graphVars, auth, prov, launches, appUp, lpc, semPc, exitPc,
-                 stopPc, stopSeen, stopReport, restartPc, selected, attempt, lease, cleanKey>>
+                 stopPc, stopSeen, stopReport, restartPc, selected, attempt, lease, cleanKey,
+                 access>>
 
 CleanDiscard ==
   /\ appUp /\ cleanPc = "discard"
@@ -406,6 +412,7 @@ Crash ==
   /\ semPc' = "dead" /\ exitPc' = "dead" /\ cleanPc' = "dead"
   /\ stopPc' = IF stopPc = "done" THEN "done" ELSE "dead"
   /\ restartPc' = "reconcile"
+  /\ access' = IF access = "held" THEN "released" ELSE access   \* the host restarts too
   /\ UNCHANGED <<graphVars, phase, execWhy, status, launches, stopSeen, stopReport,
                  selected, attempt, lease, cleanKey>>
 
@@ -419,7 +426,7 @@ AppRestart ==
   /\ stopPc' = IF stopPc = "done" THEN "done" ELSE "dead"
   /\ restartPc' = "reconcile"
   /\ UNCHANGED <<graphVars, auth, prov, phase, execWhy, status, launches, stopSeen,
-                 stopReport, selected, attempt, lease, cleanKey>>
+                 stopReport, selected, attempt, lease, cleanKey, access>>
 
 \* A launched row maps the graph lifecycle into the product; an active one
 \* is failed with application_restart first. Any error aborts startup (`?`).
@@ -442,7 +449,7 @@ RestartReconcile ==
      ELSE /\ restartPc' = "aborted"
           /\ UNCHANGED <<graphVars, phase, execWhy, status, appUp, attempt>>
   /\ UNCHANGED <<auth, prov, launches, lpc, semPc, exitPc, cleanPc, stopPc,
-                 stopSeen, stopReport, selected, lease, cleanKey>>
+                 stopSeen, stopReport, selected, lease, cleanKey, access>>
 
 \* The exit observer, or start-failure cleanup, ends a settled child's attempt
 \* only once its provider run has ended (THR end_child_attempt).
@@ -450,7 +457,7 @@ AttemptEnd ==
   /\ appUp /\ attempt = "running" /\ phase = "settled" /\ prov /= "running"
   /\ attempt' = "terminal"
   /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, prov, launches, appUp,
-                 actorVars, selected, lease, cleanKey>>
+                 actorVars, selected, lease, cleanKey, access>>
 
 \* Whoever waits for a stopped or failed child's provider (the exit observer,
 \* or the wait resumed after restart) cancels it again on every poll while it
@@ -463,12 +470,27 @@ CancelTerminal ==
                  admissionVars>>
 
 \* The lease-debt reconciler releases a terminal attempt's provider leases
-\* (app_server reconcile_terminal_execution_lease).
+\* (app_server reconcile_terminal_execution_lease): it DELETEs the lease and
+\* records the release. The host releases access it still holds, which is
+\* access whose run never started (HH releaseProviderExecution); access whose
+\* run ended was already released (HostAccessRelease), so the DELETE finds
+\* nothing and is acknowledged.
 LeaseReconcile ==
   /\ appUp /\ attempt = "terminal" /\ lease = "held"
   /\ lease' = "released"
+  /\ access' = IF access = "held" THEN "released" ELSE access
   /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, prov, launches, appUp,
                  actorVars, selected, attempt, cleanKey>>
+
+\* The harness host releases a child's provider access as soon as its provider
+\* run ends, without waiting for the attempt to end (HH runCompletion ->
+\* settleExecutionAccess, host.ts:1186-1188, 973-982). The host runs beside
+\* the product server, so this does not wait for appUp.
+HostAccessRelease ==
+  /\ access = "held" /\ prov \in {"exited_ok", "exited_err", "cancelled"}
+  /\ access' = "released"
+  /\ UNCHANGED <<graphVars, auth, phase, execWhy, status, prov, launches, appUp,
+                 actorVars, selected, attempt, lease, cleanKey>>
 
 -----------------------------------------------------------------------------
 LaunchAdmitAny(l) == \E ok \in BOOLEAN : LaunchAdmit(l, ok)
@@ -489,6 +511,7 @@ SystemStep ==
   \/ AttemptEnd
   \/ CancelTerminal
   \/ LeaseReconcile
+  \/ HostAccessRelease
 
 Next ==
   \/ SystemStep
@@ -517,6 +540,7 @@ Fairness ==
   /\ WF_vars(AttemptEnd)
   /\ WF_vars(CancelTerminal)
   /\ WF_vars(LeaseReconcile)
+  /\ WF_vars(HostAccessRelease)
   /\ WF_vars(ProviderExitAny)
 
 (* A scenario step is a tuple naming one action and its arguments, as the  *)
@@ -552,6 +576,7 @@ Act(s) ==
     [] n = "RestartReconcile" -> RestartReconcile
     [] n = "AttemptEnd" -> AttemptEnd
     [] n = "LeaseReconcile" -> LeaseReconcile
+    [] n = "HostAccessRelease" -> HostAccessRelease
 
 Spec == Init /\ [][Next]_vars
 FairSpec == Spec /\ Fairness
@@ -565,6 +590,8 @@ TypeOK ==
   /\ phase \in {"none", "reserved", "launching", "attached", "settled"}
   /\ status \in {"submitted", "running", "accepted", "failed"}
   /\ prov \in {"none", "running", "exited_ok", "exited_err", "cancelled"}
+  /\ lease \in {"none", "held", "released"}
+  /\ access \in {"none", "held", "released"}
 
 \* "claim_launching is the only transition that authorizes a provider
 \* launch" (CEX:107).
@@ -592,10 +619,16 @@ SettledExecutionAgreesWithGraph ==
 \* Startup never aborts on a state the product itself produced.
 RestartNeverAborts == restartPc /= "aborted"
 
-\* A lease is released only once the attempt it belongs to is terminal, so a
-\* running child keeps its providers (terminal acknowledgement).
+\* The durable lease record is released only once the attempt it belongs to
+\* is terminal: Rust DELETEs only terminal lease debt (attempts.rs, outcome
+\* != 'running'). The trace adapter reads this record.
 LeaseReleasedOnlyAfterSettlement ==
   lease = "released" => attempt = "terminal"
+
+\* Provider access lives as long as the provider run that uses it: the host
+\* releases it only once the run has ended, whether or not the attempt has.
+AccessReleasedOnlyAfterProviderRun ==
+  access = "released" => prov /= "running"
 
 \* An admitted child's provider runs only under a held lease, settled or not,
 \* so provider removal waits for the run itself (architecture.md drain rule).
@@ -611,6 +644,7 @@ AttemptEndsOnlyAfterProvider ==
 Settled == life /= "active" /\ phase = "settled" /\ status \in {"accepted", "failed"}
 LaunchedChildSettles == (launches > 0) ~> Settled
 ClaimedChildSettles ==
-  (phase = "launching") ~> (phase = "settled" /\ life /= "active" /\ lease /= "held")
+  (phase = "launching")
+    ~> (phase = "settled" /\ life /= "active" /\ lease /= "held" /\ access /= "held")
 
 =============================================================================

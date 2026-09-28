@@ -284,7 +284,7 @@ async function startServices() {
   });
   const runtimeSession = await runtime.start();
   catalogRefreshServer = await startModelCatalogRefreshServer({
-    refresh: () => product.publishProviderCatalog(catalogSnapshot),
+    refresh: () => product.seedProviderCatalog(catalogSnapshot),
   });
   product = new RelayerAppServerService({
     userDataDirectory: dataDirectory,
@@ -296,7 +296,7 @@ async function startServices() {
     defaultHarnessConfiguration: "fixture-task-system",
   });
   productSession = await product.start();
-  await product.publishProviderCatalog(catalogSnapshot);
+  await product.seedProviderCatalog(catalogSnapshot);
 }
 
 async function stopServices() {
@@ -982,7 +982,17 @@ async function run() {
 
   await setValue("#threadPrompt", SUCCESS_MESSAGE);
   await click("#sendInteraction");
-  await waitForAcceptedInteractions(thread.id, 3);
+  const successfulDetail = await waitForAcceptedInteractions(thread.id, 3);
+  const successfulNodeIds = successfulDetail.interactions.at(-1).completionOutput.rootLayer.nodes
+    .map(({ id }) => String(id)).sort();
+  // Durable acceptance precedes the renderer's next refresh. The prior turn's historical
+  // context must stay visible until first-ready navigation actually commits.
+  await waitFor("accepted follow-up layer to become the visible turn", () => evaluate(`(() => {
+    const visibleNodeIds = [...document.querySelectorAll('.graph-node[data-node]')]
+      .map((node) => node.dataset.node).sort();
+    return document.querySelector('#turnPickerButton')?.textContent === 'Turn 3 of 3'
+      && JSON.stringify(visibleNodeIds) === ${JSON.stringify(JSON.stringify(successfulNodeIds))};
+  })()`));
   await waitFor("next composer to become available", () => evaluate(`
     !document.querySelector('#threadPrompt')?.disabled
   `));

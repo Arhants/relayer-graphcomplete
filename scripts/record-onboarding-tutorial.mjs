@@ -426,7 +426,7 @@ async function run() {
   const modelCatalogRefreshServer = await startModelCatalogRefreshServer({
     refresh: async () => {
       if (discoverLiveCatalog) catalogSnapshot = await discoverLiveCatalog();
-      return product.publishProviderCatalog(catalogSnapshot);
+      return product.seedProviderCatalog(catalogSnapshot);
     },
   });
   services.push(modelCatalogRefreshServer);
@@ -441,7 +441,7 @@ async function run() {
   });
   services.push(product);
   const productSession = await product.start();
-  await product.publishProviderCatalog(catalogSnapshot);
+  await product.seedProviderCatalog(catalogSnapshot);
 
   const createWindow = createWindowFactory({
     BrowserWindow,

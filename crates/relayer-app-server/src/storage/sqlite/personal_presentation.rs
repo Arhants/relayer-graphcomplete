@@ -373,7 +373,8 @@ mod tests {
 
     #[tokio::test]
     async fn hidden_profile_versions_publish_once_and_pin_interactions_immutably() {
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
         let store = SqliteProductStore::open(file.path()).await.unwrap();
 
         assert!(store.list_threads().await.unwrap().is_empty());
@@ -588,7 +589,8 @@ mod tests {
 
     #[tokio::test]
     async fn retired_versions_preserve_historical_threads_and_pins() {
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
         let store = SqliteProductStore::open(file.path()).await.unwrap();
         let version = store
             .publish_personal_presentation_version(

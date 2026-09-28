@@ -1,23 +1,18 @@
 use serde_json::Value;
 use std::{
-    fs,
     io::{BufRead, BufReader, Write},
     process::{Command, Stdio},
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 #[test]
 fn reads_private_control_token_from_stdin_and_exits_with_desktop_parent() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "relayer-graph-server-parent-exit-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-graph-server-parent-exit-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
 
     let executable = option_env!("CARGO_BIN_EXE_relayer-graph-server")
         .map(std::path::PathBuf::from)
@@ -67,5 +62,4 @@ fn reads_private_control_token_from_stdin_and_exits_with_desktop_parent() {
         thread::sleep(Duration::from_millis(10));
     };
     assert!(exit_status.success());
-    fs::remove_dir_all(root).unwrap();
 }

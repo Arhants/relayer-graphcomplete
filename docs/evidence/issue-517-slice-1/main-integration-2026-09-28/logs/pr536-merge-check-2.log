@@ -1,0 +1,25 @@
+
+> relayer-graphcomplete@0.0.0 precheck
+> npm run prepare:renderer
+
+
+> relayer-graphcomplete@0.0.0 prepare:renderer
+> node scripts/prepare-renderer-vendor.mjs
+
+
+> relayer-graphcomplete@0.0.0 check
+> cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace && npm run check:graph-crash-reconciliation && cargo build -p relayer-app-server -p relayer-graph-server && npm run build:packages && tsc --noEmit && npm run check --workspaces --if-present && vitest run && npm run test:codex-secret-boundary && PYTHONPATH=python/relayer-graph/src python3 -m unittest discover -s python/relayer-graph/tests && npm run lint:ladybug-receipt && npm run prd:check-readability
+
+    Checking relayer-graph-core v0.0.0 (/Users/vishaltandale/.codex/worktrees/permissions-merge-ready/relayer-graphcomplete/crates/relayer-graph-core)
+    Checking relayer-graph-server v0.0.0 (/Users/vishaltandale/.codex/worktrees/permissions-merge-ready/relayer-graphcomplete/crates/relayer-graph-server)
+    Checking relayer-app-server v0.0.0 (/Users/vishaltandale/.codex/worktrees/permissions-merge-ready/relayer-graphcomplete/crates/relayer-app-server)
+error[E0609]: no field `execution` on type `api::ApiState`
+    --> crates/relayer-app-server/src/api/threads.rs:4013:37
+     |
+4013 |                 Some(&fixture.state.execution),
+     |                                     ^^^^^^^^^ unknown field
+     |
+     = note: available fields are: `product`, `authenticator`, `runtime`, `interaction_execution`, `context_draft_confirmation` ... and 13 others
+
+For more information about this error, try `rustc --explain E0609`.
+error: could not compile `relayer-app-server` (lib test) due to 1 previous error

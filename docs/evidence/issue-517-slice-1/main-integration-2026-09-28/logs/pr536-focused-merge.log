@@ -1,0 +1,64 @@
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/permissions-merge-ready/relayer-graphcomplete
+
+ ❯ |isolated| test/graphcomplete-runtime-temporal-features.test.mjs (6 tests | 3 failed) 15ms
+     × enables typed interaction preparation only for an explicit trusted runtime option 9ms
+     × passes the enabled chain to the graph server it starts 2ms
+     × starts the graph server with no temporal switch when the chain is disabled 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |isolated| test/graphcomplete-runtime-temporal-features.test.mjs > product recursion enable path > enables typed interaction preparation only for an explicit trusted runtime option
+AssertionError: expected [Function] to throw error including 'startup is not exercised' but got 'Failed to resolve entry for package "…'
+
+Expected: "startup is not exercised"
+Received: "Failed to resolve entry for package "@relayer/harness-host". The package may have incorrect main/module/exports specified in its package.json."
+
+ ❯ test/graphcomplete-runtime-temporal-features.test.mjs:68:36
+     66|     ]) {
+     67|       const { service, spawned } = spawnedGraphArguments({}, runtimeOp…
+     68|       await expect(service.start()).rejects.toThrow("startup is not ex…
+       |                                    ^
+     69|       expect(spawned[0].includes("--interaction-permissions")).toBe(en…
+     70|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |isolated| test/graphcomplete-runtime-temporal-features.test.mjs > product recursion enable path > passes the enabled chain to the graph server it starts
+AssertionError: expected [Function] to throw error including 'startup is not exercised' but got 'Failed to resolve entry for package "…'
+
+Expected: "startup is not exercised"
+Received: "Failed to resolve entry for package "@relayer/harness-host". The package may have incorrect main/module/exports specified in its package.json."
+
+ ❯ test/graphcomplete-runtime-temporal-features.test.mjs:78:34
+     76|     );
+     77|
+     78|     await expect(service.start()).rejects.toThrow("startup is not exer…
+       |                                  ^
+     79|
+     80|     expect(spawned[0]).toEqual(expect.arrayContaining([
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |isolated| test/graphcomplete-runtime-temporal-features.test.mjs > product recursion enable path > starts the graph server with no temporal switch when the chain is disabled
+AssertionError: expected [Function] to throw error including 'startup is not exercised' but got 'Failed to resolve entry for package "…'
+
+Expected: "startup is not exercised"
+Received: "Failed to resolve entry for package "@relayer/harness-host". The package may have incorrect main/module/exports specified in its package.json."
+
+ ❯ test/graphcomplete-runtime-temporal-features.test.mjs:94:34
+     92|     );
+     93|
+     94|     await expect(service.start()).rejects.toThrow("startup is not exer…
+       |                                  ^
+     95|
+     96|     expect(spawned[0].filter((argument) => argument.startsWith("--temp…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  3 failed | 48 passed (51)
+   Start at  15:04:38
+   Duration  857ms (transform 53ms, setup 0ms, import 127ms, tests 689ms, environment 0ms)
+

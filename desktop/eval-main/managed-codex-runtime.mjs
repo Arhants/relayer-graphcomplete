@@ -137,9 +137,12 @@ export function createEvalCodexCatalogProvisioner({
               removedAt: null,
             }],
           });
+          // Publish at the generation the definition sync just left (PROV-002).
+          const codex = (await internalProductRequest(fetchImpl, productSession, "/api/internal/provider-definitions") ?? [])
+            .find(({ id }) => id === "codex");
           await internalProductRequest(fetchImpl, productSession, "/api/internal/provider-catalog", {
             method: "PUT",
-            body: toProductCatalogSnapshot(catalog),
+            body: { ...toProductCatalogSnapshot(catalog), connectionGeneration: codex?.connectionGeneration ?? 1 },
           });
         } finally {
           if (bootstrapManagedFamily && typeof originalHarnessId === "string") {

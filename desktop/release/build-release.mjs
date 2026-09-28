@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { appendFile, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,6 +19,10 @@ import {
   withPinnedLadybugPackagingEnvironment,
 } from "../packaging/pinned-ladybug-build.mjs";
 
+import { packagingBuildEnvironment } from "../packaging/build-cache.mjs";
+import { installSignedNative, sealSignedNative, signedArtifactName, signedCacheProducer, signedNativeIdentity } from "../packaging/signed-native-cache.mjs";
+import { restoreSignedNative } from "../packaging/signed-native-transport.mjs";
+
 function run(command, args, options) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, { ...options, stdio: "inherit" });
@@ -37,13 +41,41 @@ export async function buildReleaseRustServers({
   prepareLadybug = preparePinnedLadybugForPackaging,
   repositoryRoot,
   verifyLadybugDistributionLicense = requireLadybugDistributionLicenseReady,
+  identify = signedNativeIdentity,
+  restore = restoreSignedNative,
+  capture,
+  generateSymbols,
 }) {
   const target = { key: contract.targetKey, rustTarget: contract.rustTarget };
   if (target.key !== "macos-arm64") {
     throw new Error(`Ladybug release packaging is not qualified for ${target.key}.`);
   }
   await verifyLadybugDistributionLicense();
-  return withPinnedLadybugPackagingEnvironment({ environment, target, prepareLadybug }, async (
+  let cache;
+  if (environment.RELAYER_SIGNED_NATIVE_CACHE === "1") {
+    try {
+      const producer = signedCacheProducer(environment);
+      if (producer.sourceCommit !== contract.sourceCommit) throw Error("candidate/cache source mismatch");
+      environment = packagingBuildEnvironment(environment);
+      const identity = await identify({ repositoryRoot, environment, target });
+      const directory = resolve(repositoryRoot, ".relayer/signed-native-cache-v1");
+      cache = { identity, producer, directory };
+      const payload = await restore({ identity, directory, environment, capture });
+      if (payload) {
+        await installSignedNative(payload, resolve(repositoryRoot, "target", target.rustTarget, "release"), capture);
+        return payload;
+      }
+    } catch (error) {
+      console.log(`Signed native cache: unavailable/rejected (${error.message}); compiling fresh`);
+      cache = undefined;
+    }
+  }
+  // Fetch only on an actual miss, including rejected entries. A runtime hit
+  // requires neither native preparation nor the broad Cargo dependency closure.
+  if (environment.GITHUB_ACTIONS === "true" || environment.RELAYER_SIGNED_NATIVE_CACHE === "1") {
+    await execute("cargo", ["fetch", "--locked", "--target", target.rustTarget], { cwd: repositoryRoot, env: environment });
+  }
+  await withPinnedLadybugPackagingEnvironment({ environment, target, prepareLadybug }, async (
     buildEnvironment,
     cargoIntegrityArguments,
   ) => execute("cargo", [
@@ -56,6 +88,21 @@ export async function buildReleaseRustServers({
     cwd: repositoryRoot,
     env: { ...buildEnvironment, CARGO_PROFILE_RELEASE_DEBUG: "1" },
   }));
+  if (cache) {
+    try {
+      const payload = await sealSignedNative({ ...cache, outputDirectory: resolve(repositoryRoot, "target", target.rustTarget, "release"),
+        generateSymbols, capture });
+      if (environment.GITHUB_OUTPUT) await appendFile(environment.GITHUB_OUTPUT,
+        `native_artifact=${signedArtifactName(cache.identity, cache.producer)}\nnative_directory=${cache.directory}\n`);
+      console.log("Signed native cache: sealed fresh binaries and matching dSYMs");
+      return payload;
+    } catch (error) {
+      // Cache storage/symbol preparation is optional. Keep the successful Cargo
+      // build; ordinary telemetry generation remains the release symbol gate.
+      console.log(`Signed native cache: save unavailable (${error.message}); using fresh Cargo output`);
+    }
+  }
+  return null;
 }
 
 export async function buildDesktopRelease({
@@ -76,7 +123,7 @@ export async function buildDesktopRelease({
   };
   const contract = await loadDesktopReleaseContract({ environment: releaseEnvironment, desktopRoot });
 
-  await buildReleaseRustServers({
+  const nativeDebugArtifacts = await buildReleaseRustServers({
     contract,
     environment: releaseEnvironment,
     prepareLadybug,
@@ -108,6 +155,7 @@ export async function buildDesktopRelease({
     repositoryRoot,
     outputRoot: resolve(distRoot, "telemetry"),
     packagedApplication: appPath,
+    nativeDebugArtifacts,
   });
   await writeDesktopReleaseEvidence({ distRoot, contract });
   return verifyDesktopReleaseEvidence({ distRoot, contract });

@@ -148,7 +148,7 @@ async function run() {
     systemFamily: { key: "codex", name: "Codex", modelIds: ["fixture-model"] },
   };
   const modelCatalogRefreshServer = await startModelCatalogRefreshServer({
-    refresh: () => product.publishProviderCatalog(catalogSnapshot),
+    refresh: () => product.seedProviderCatalog(catalogSnapshot),
   });
   services.push(modelCatalogRefreshServer);
   let productSession;
@@ -164,7 +164,7 @@ async function run() {
     });
     services.push(product);
     productSession = await product.start();
-    await product.publishProviderCatalog(catalogSnapshot);
+    await product.seedProviderCatalog(catalogSnapshot);
   };
   await startProduct();
   await productRequest(productSession, "/api/model-families", {
@@ -221,7 +221,21 @@ async function run() {
     webContents.sendInputEvent({ type: "mouseMove", ...point });
     await waitFor(`project action ${projectId} to reveal`, () => evaluate(`(
       getComputedStyle(document.querySelector(${JSON.stringify(selector)})).opacity === '1'
-    )`));
+    )`)).catch(async (error) => {
+      try {
+        process.stderr.write(`Project hover failure: ${await evaluate(`JSON.stringify((() => {
+          const action = document.querySelector(${JSON.stringify(selector)});
+          const row = action?.closest('[data-project-row]');
+          const rect = action?.getBoundingClientRect();
+          return { point: ${JSON.stringify(point)}, rect: rect?.toJSON(), opacity: action ? getComputedStyle(action).opacity : null,
+            rowHover: row?.matches(':hover'), actionHover: action?.matches(':hover'),
+            hit: document.elementFromPoint(${point.x}, ${point.y})?.outerHTML,
+            viewport: [innerWidth, innerHeight], scroll: [scrollX, scrollY] };
+        })())`)}\n`);
+      } finally {
+        throw error;
+      }
+    });
     webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...point });
     webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...point });
   };

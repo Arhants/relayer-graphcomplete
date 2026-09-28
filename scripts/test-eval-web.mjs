@@ -96,6 +96,22 @@ try {
   await page.goto(host.url);
   await page.locator("#emptyNewRun").click();
   await page.locator('input[name="cases"]').first().waitFor();
+  const catalog = await rpc(host.url, "catalog", []);
+  if (process.env.RELAYER_EVAL_REQUIRE_EXTERNAL_CATALOG === "1") {
+    assert.ok(catalog.suites.length > 0, "configured external catalog exposes a suite");
+    for (const suite of catalog.suites) {
+      assert.equal(suite.available, true, `external suite unavailable: ${suite.unavailableReason}`);
+      console.log(`EXTERNAL_SUITE ${JSON.stringify({ suiteId: suite.suiteId, suiteDigest: suite.suiteDigest, memberIds: suite.members.map(({ caseId }) => caseId) })}`);
+      const selectedInput = page.locator(`input[name="suites"][value="${suite.suiteId}"]`);
+      await selectedInput.waitFor();
+      assert.equal(await selectedInput.isDisabled(), false);
+      await selectedInput.check();
+      const selectedCases = await page.locator('input[name="cases"]:checked').evaluateAll((inputs) => inputs.map(({ value }) => value));
+      assert.deepEqual(selectedCases.sort(), suite.members.map(({ caseId }) => caseId).sort());
+      await page.locator('input[name="cases"]').first().click();
+      assert.equal(await selectedInput.isChecked(), false);
+    }
+  }
   await page.locator('input[name="cases"]').evaluateAll((inputs) => inputs.forEach((input) => { input.checked = input.value === "empty-project.task-system.two-turn"; }));
   await page.locator('input[name="harness"]').evaluateAll((inputs) => inputs.forEach((input) => { input.checked = input.value === "fixture-task-system"; }));
   // Execute only the deterministic fixture through the real dashboard transport.
@@ -194,10 +210,15 @@ try {
     await writeFile(process.env.RELAYER_EVAL_WEB_SCREENSHOT, await readFile(join(opened.session.artifactDirectoryFor(shot.screenshot.screenshotId), `${shot.screenshot.screenshotId}-001.png`)));
   }
   const initial = await opened.session.state();
-  const nodeControl = initial.controls.find((control) => control.kind === "node" && !control.disabled);
-  assert.ok(nodeControl);
+  // Opening a layer may already select its default node (PRD NDT-003).
+  const nodeControl = initial.controls.find((control) => control.kind === "node" && !control.disabled
+    && control.elementRef !== `node-${initial.selectedNodeId}`);
+  assert.ok(nodeControl, "The review fixture must expose a different selectable node");
   await opened.session.interact({ elementRef: nodeControl.elementRef, activate: true });
-  assert.ok((await opened.session.state()).selectedNodeId);
+  const selected = await opened.session.state();
+  assert.ok(selected.selectedNodeId);
+  assert.notEqual(selected.selectedNodeId, initial.selectedNodeId);
+  assert.equal(`node-${selected.selectedNodeId}`, nodeControl.elementRef);
   const nextTurn = (await opened.session.state()).controls.find((control) => control.kind === "turn" && !control.disabled);
   assert.ok(nextTurn);
   await opened.session.interact({ elementRef: nextTurn.elementRef, activate: true });

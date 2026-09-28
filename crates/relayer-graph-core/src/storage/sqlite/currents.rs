@@ -95,6 +95,15 @@ struct TemporalFeatureRow {
 }
 
 impl<'connection> CurrentTable<'connection> {
+    pub(crate) async fn is_initialized(&mut self, interaction: NodeId) -> Result<bool, GraphError> {
+        Ok(sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM completion_states WHERE interaction_node_id=?1)",
+        )
+        .bind(interaction.value())
+        .fetch_one(&mut *self.connection)
+        .await?)
+    }
+
     pub(crate) fn new(connection: &'connection mut SqliteConnection) -> Self {
         Self { connection }
     }

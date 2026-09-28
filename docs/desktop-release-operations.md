@@ -114,6 +114,24 @@ The audit checks environment branch policies, target-required secret and variabl
 
 A lightweight tag, a malformed or repeated `Candidate-Run` annotation, or a run from another attempt, workflow, event, repository, branch, commit, or artifact set fails closed. Never move or recreate a tag to repair that failure. If the tag annotation is wrong, leave the tag and version unpublished and prepare a new version. A workflow retry is valid only while it remains pinned to the same candidate run attempt and artifact identity; immutable-object and publication-receipt checks still reject different bytes.
 
+### Native cache proof for future candidates
+
+The macOS arm64 manual candidate job may reuse a separately authenticated native
+build artifact described in [the CI contract](agents/ci.md#signed-preview-native-compilation-cache).
+A native cache hit means both unsigned servers and their matching debug symbols
+passed provenance, input identity and byte verification. npm-cache success is not
+native-cache evidence. Every candidate still signs, notarizes, verifies, and
+prepares its own release/telemetry evidence. A rejected or absent native entry
+falls back to the pinned source build. Cache artifacts grant no publication
+permission and never substitute for the manual candidate artifact pinned in a tag.
+
+First rollout requires separately authorized cold and compatible-hit Preview
+runs. Record both producer run/attempt and artifact ID/digest, restored native
+hashes/UUIDs, skipped Cargo/native stages, and the fresh signed candidate checks.
+Verify the actual telemetry symbol upload and signed package UUID correlation.
+Until those runs exist, deterministic fixtures and local symbol probes establish
+only the implementation boundary, not a hosted cache hit or release acceptance.
+
 ### First Intel rollout
 
 Intel macOS initially lacked an older compliant signed-DMG Preview that could seed an updater canary. Workflow `32334546660` published Apple Silicon `0.2.7`, but Intel packaging failed after successful signing and notarization. Electron-builder used `desktop/dist/mac/Relayer.app`; the release finalizer expected `desktop/dist/mac-x64/Relayer.app`. Intel `0.2.7` therefore has no sealed artifact or Preview receipt.
