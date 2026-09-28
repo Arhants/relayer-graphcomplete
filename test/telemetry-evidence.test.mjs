@@ -50,7 +50,7 @@ describe("deterministic telemetry evidence portfolio", () => {
         status: "not-run",
         context: "invoke-npm-run-evidence-telemetry-for-production-portfolio",
       });
-      expect(artifact.checkpoints.releaseSymbols.inspected).toHaveLength(4);
+      expect(artifact.checkpoints.releaseSymbols.inspected).toHaveLength(7);
       expect(artifactText).not.toContain("privacy-sentinel");
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -70,6 +70,7 @@ describe("deterministic telemetry evidence portfolio", () => {
     ]);
     expect(invocations[1][1]).toContain("test/desktop-renderer-error-reporting.test.mjs");
     expect(invocations[1][1]).toContain("test/desktop-telemetry-release-artifacts.test.mjs");
+    expect(invocations[1][1]).toContain("test/signed-native-cache.test.mjs");
     expect(result).toMatchObject({
       status: "pass",
       fidelity: "deterministic-adapters-and-shared-rust-seam",
