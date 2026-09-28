@@ -104,7 +104,7 @@
     "vitest-prerequisites": {
       "job": "vitest",
       "authorities": ["typescript-root-build"],
-      "prerequisites": ["typescript-packages"]
+      "prerequisites": ["renderer-prepare", "typescript-packages"]
     },
     "vitest": {
       "job": "vitest",

@@ -1,0 +1,194 @@
+# Shared-thread Gate B implementation Kanban
+
+Source baseline: `origin/main` at `73c3d9f279e6ee36bb0803574d6d7eff08aeac2c`.
+UX reference only: `prototype/share-slice-1` at
+`b7449a1a246abc2e87ecc175a0c56d7c2bd14062`.
+
+This board tracks local production implementation for issues #462-#467. It does
+not authorize deployment, publication, IAM changes, live Auth0 changes, live
+Sentry submission, or promotion of prototype code.
+
+## Ownership reconciled locally
+
+- [x] `SHR-SPLIT-1` Keep the versioned snapshot/HTTP contract, Rust exporter,
+  main-owned desktop client, and production viewer in this public product
+  repository.
+- [x] `SHR-SPLIT-2` Remove the hosted service implementation and AWS template
+  from this repository; the private `vishaltandale00/Relayer` repository now
+  owns those modules and their deployment authority.
+- [x] `SHR-SPLIT-3` Replace the public end-to-end test's backend import with a
+  deterministic protocol fixture while retaining the real exporter, frozen
+  retry bytes/identity, parser, and viewer template.
+- [x] `SHR-SPLIT-4` Produce an immutable viewer artifact manifest bound to the
+  public commit, aggregate/file digests, builder, supported snapshot versions,
+  CSP, and transitive resources.
+- [x] `SHR-SPLIT-5` Resolve the share origin inside Electron main: packaged
+  Preview and Stable are pinned to production, and only non-packaged
+  Development permits an explicit private-preview override.
+- [x] `SHR-SPLIT-6` Private preview stack: deterministic AWS adapters, Lambda
+  composition, exact artifact verification, isolated template, and a manual
+  protected-environment workflow.
+- [x] `SHR-SPLIT-7` Run cross-repository conformance against exact clean public
+  and private commits, then obtain fresh adversarial reviews of both snapshots.
+  Exact reviewed pair before Slice 3: public
+  `f6d43884085890ab5904696d19aafc60e0e5ab2d`, private
+  `8ce3bee4a6119fe058700cf01cf843c8a15f788a`.
+
+## Done locally
+
+- [x] `SHR-465-1` Reconcile the merged template, open PR #459, owner/attempt/quota
+  storage needs, cache invalidation, and the 16 MiB staged-upload/streamed-page
+  design. Proof: `cfn-lint`, local template assertions, and a written gap list;
+  no live AWS command.
+- [x] `SHR-466-1` Freeze the coordinator contract shared by exporter and service:
+  immutable bytes, owner-bound attempt/reference identity, closed progress and
+  failure states, and renderer-without-network-authority. Proof: contract tests
+  beside the main/preload boundary.
+- [x] `SHR-466-2` Persist the frozen attempt before upload with atomic local
+  writes, strict validation, bounded non-evicting capacity, original-owner and
+  source-thread scope, and durable handled-failure keys. Proof: production-store
+  reopen/corruption/size tests plus coordinator persistence-failure tests.
+- [x] `SHR-466-3` Reopen Retry/Close only while the original source thread and
+  owner are active; never re-export on retry. Replace successful snapshot bytes
+  and title with a lightweight URL receipt until Link ready closes. Proof:
+  coordinator, safe IPC, and renderer recovery/dismissal tests.
+- [x] `SHR-466-4` Cross a real process boundary with the production coordinator
+  and attempt store. Proof: `npm run evidence:share-publish-restart` launches two
+  Node processes and verifies identical attempt/bytes, same URL, one quota
+  charge, two requests, no re-export, and final receipt cleanup. This is process
+  restart proof, not packaged Electron restart evidence.
+- [x] `SHR-467-1` Admit only export/upload/service/oversize handled failures from
+  a verified account generation through Electron main. Proof: extend the real
+  authenticated-error-gateway tests with local transport and account fakes.
+- [x] `SHR-467-2` Deduplicate on attempt + stage + closed code while allowing a
+  changed stage/code. Proof: deterministic gateway/queue tests across retry and
+  reconstructed attempt identity.
+- [x] `SHR-467-3` Allow only reference ID, stage, code, optional byte size, and
+  existing safe diagnostics; reject title, project, content, credentials, raw
+  errors, and request data. Proof: versioned privacy-corpus fixtures through the
+  real validator and queue seam.
+- [x] `SHR-467-4` Exclude cancellation, sign-in requirement, quota, viewer
+  telemetry, and telemetry-recursion effects. Proof: admission-negative tests
+  plus viewer inventory assertion.
+
+## Implemented checkpoints
+
+- [x] `SHR-462-1` Refuse imported threads and threads with no accepted
+  completion. Proof: Rust production-service fixture.
+- [x] `SHR-462-2` Freeze only accepted history at Create link, preserving nested
+  layers, action provenance, Node Details, and export-local references. Proof:
+  Rust persisted-product fixture with pending work and shared/nested targets.
+- [x] `SHR-462-3` Strip permission/execution/configuration receipts and admitted
+  model plans while retaining completion status, model selection, and harness
+  configuration name. Proof: exact decoded JSONL assertions.
+- [x] `SHR-462-4` Redact known secrets, PEM/JWT shapes, home paths, and fragmented
+  rich-detail paths, including values reassembled by rendered HTML text nodes,
+  while preserving the chosen title and project display name. Omit public
+  layer/node/action client keys and retain reference identity through portable
+  IDs. Proof: Rust redaction fixtures and the production HTTP export journey.
+- [x] `SHR-462-5` Emit conversation-export V1 for asset-free accepted history and
+  V2 for accepted authored Node Details with digest-pinned visual content,
+  replace only the published title, preserve ordinary export behavior, and
+  reject over 16 MiB without truncation using a closed error. Proof:
+  production exporter/viewer journey, boundary size tests, and the unchanged
+  ordinary-export suite.
+- [x] `SHR-463-1` Parse V1 and V2 into the production ProductWorkspace adapter
+  with nested navigation, Node Details, and strict inline visual-asset
+  validation. Canonical base64 may expand an allowed 8 MiB decoded asset beyond
+  the generic string limit while the total snapshot remains bounded. Proof:
+  realistic reader fixtures and the real production journey.
+- [x] `SHR-463-2` Start/reload at the first accepted turn and keep the location
+  URL unchanged during turn/layer navigation. Proof: browser-host test observing
+  history/location calls.
+- [x] `SHR-463-3` Keep execution controls inert and open ordinary web links in a
+  new tab. Proof: ProductWorkspace public-host action tests.
+- [x] `SHR-463-4` Safely embed snapshot/title/project data with escaping, CSP
+  `connect-src 'none'`, no third-party scripts, noindex, static OG metadata, and
+  no client telemetry. Proof: template/inventory tests with adversarial strings.
+- [x] `SHR-463-5` Preserve the accepted desktop-aligned shell while omitting the
+  desktop-only Environment panel, keep the compact top-right download card,
+  inline turn navigation, mobile pan/details behavior, and render-failure
+  Reload state. Proof: source-bound Electron fixture evidence at 1440x1000 and
+  375x812 plus structural tests.
+- [x] `SHR-464-1` Verify Auth0 ID tokens via JWKS and derive a domain-separated
+  owner identity server-side. Proof: handler tests with valid, invalid, expired,
+  wrong-audience, wrong-issuer, and foreign-owner fake JWKS cases.
+- [x] `SHR-464-2` Reserve/upload/finalize exact V1/V2 bytes using 128-bit IDs,
+  versioned object keys, an atomic active-reservation bound, bounded
+  size/line/JSON validation, and exact staged object identity. Proof: handlers
+  with fake S3/DynamoDB adapters, including concurrent reservation admission.
+- [x] `SHR-464-3` Make owner-scoped attempt retries and concurrent finalization
+  return one immutable URL and one quota charge. Proof: deterministic concurrent
+  attempt test including lost-response replay.
+- [x] `SHR-464-4` Enforce 20 successful creations per UTC day atomically, return
+  reset time, and charge neither failures nor duplicates. Proof: concurrency,
+  failure, and UTC-rollover adapter tests.
+- [x] `SHR-464-5` Enforce owner isolation and identical unknown/deleted 404s;
+  retain source-thread association and immutable metadata. Proof: foreign-owner
+  and 404-parity handler tests.
+- [x] `SHR-464-6` Serve/count public pages and install redirects without visitor
+  identity, and pin viewer assets per publication. Proof: fake counter/cache and
+  template-manifest tests.
+
+## Review gate
+
+- [x] Replace the split seam portfolio with one durable local exporter -> main
+  authority -> private fake-backed service -> production viewer journey.
+  `RELAYER_PRODUCT_ROOT=<public-checkout> npm run test:joined-production-journey`
+  from the private `share-service` package runs
+  the real Rust exporter, Electron-main coordinator and HTTP client, signed
+  fake-JWKS authentication, service router, immutable fake storage, lost-finalize
+  retry, and production viewer renderer in one test.
+- [x] Wire #468's production renderer controls through preload-safe IPC to the
+  main-owned coordinator and reserve/upload/finalize client. Proof: focused
+  eligibility, preflight, sign-in, title, pending, success, error, quota,
+  retry, account-generation, IPC, and bearer-containment tests. This alignment
+  does not claim #468's later Shared-links management surface.
+- [x] Run focused checkpoints, declared heavy evidence, `npm run check`, and
+  `npm run build`; record exact commands and failures separately from the plan.
+- [x] GPT-6 Astra adversarial review of semantic/UX/authority boundaries against
+  the exact reconciled public/private pair above passed with no blocking finding.
+  It remains non-certifying until recorded durably in a PR. Slice 3 changes need
+  their own exact-source review before handoff.
+
+## Gate C / approval required
+
+- [ ] Real AWS provisioning or changes, IAM changes, deployment/publication,
+  CloudFront invalidation, live Auth0 mutation, live Sentry submission, and
+  full-size live ingress/egress evidence.
+
+## Evidence notes
+
+- Exact public/private commits and artifact/package digests are recorded in the
+  handoff; no real user export is part of either repository or package.
+- Joined journey: `test/conversation-export-eval-e2e.test.mjs`, when invoked by
+  the private `test:joined-production-journey` runner, drives real Rust graph/app
+  servers, Electron-main coordination and HTTP transport, signed fake-JWKS
+  authentication, the real private service router, immutable fake storage,
+  lost-response retry, served-byte parsing, and the production
+  `bootPublicViewer`/`ProductWorkspace`. The ordinary public-only invocation
+  retains its protocol fixture, and the private runner fails closed when the
+  selected public checkout lacks the joined hook.
+- Reconciled Gate B verification before Slice 3: public `npm run check` passed
+  with 192 test files passing and one skipped, 2,445 tests passing and three
+  skipped, secret-boundary 2/2, Python 29/29, and all Rust/Ladybug/PRD chapters
+  green. Public `npm run build`, private 54/54 service tests plus TypeScript, the
+  joined journey, package smoke, and exact artifact/package verification passed.
+- `SHR-463-5` is backed by the opt-in production Electron capture and its
+  source/viewport/image hashes; the fixture is synthetic and makes no network
+  or live-infrastructure claim.
+- Slice 3 focused proof covers durable reopen, owner/thread isolation,
+  persistence-before-publish, lost response, reporting deduplication, successful
+  receipt recovery, dismissal, and a two-process restart. Post-Slice-3
+  `npm run check` completed every chapter with 194 Vitest files passing and one
+  skipped, 2,465 tests passing and three skipped, secret-boundary 2/2, Python
+  29/29, and green Rust, Ladybug, and PRD checks. `npm run build` passed. The
+  exact-source Slice 3 adversarial review passed on its recorded commit.
+- Merge-ready reviewer repairs preserve V1 for asset-free shares, add V2 for
+  asset-bearing shares, reject secrets and paths reassembled by rendered rich
+  detail, and suppress handled-failure reporting when durable deduplication
+  cannot be saved. Public `npm run check` passed with 195 Vitest files passing
+  and one skipped, 2,489 tests passing and three skipped, secret-boundary 2/2,
+  Python 29/29, and green Rust, Ladybug, and PRD checks. `npm run build` and the
+  exact public/private joined production journey passed. Exact-source
+  adversarial review of this repair commit remains required before merge.

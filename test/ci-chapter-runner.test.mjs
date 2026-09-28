@@ -66,7 +66,10 @@ describe("CI chapter runner", () => {
     for (const chapter of ["typescript", "vitest-prerequisites"]) {
       writeFileSync(trace, "");
       const calls = run(chapter, { npmBuildWorkspaces: workspaces, npmWorkspaces: [], rootTypeScript: false });
-      expect(calls).toEqual(workspaces.map((workspace) => `npm:run build -w ${workspace}`));
+      expect(calls).toEqual([
+        ...(chapter === "vitest-prerequisites" ? ["npm:run prepare:renderer"] : []),
+        ...workspaces.map((workspace) => `npm:run build -w ${workspace}`),
+      ]);
     }
   });
 

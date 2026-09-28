@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 
 import { compareNumericVersions, isNumericVersion } from "./numeric-version.mjs";
 import { DESKTOP_UPDATE_BASE_URL } from "../shared/release-metadata.mjs";
+import { PRODUCTION_SHARE_SERVICE_ENDPOINT } from "../main/services/share-service-endpoint.mjs";
 import {
   desktopTargetByKey,
   desktopTargetFromEnvironment,
@@ -255,6 +256,7 @@ export function resolveDesktopReleaseContract({
     providerChannel: channel.providerChannel,
     manifestName: channel.manifestName,
     updateBaseUrl,
+    shareServiceEndpoint: PRODUCTION_SHARE_SERVICE_ENDPOINT,
     sourceCommit: normalizedCommit,
     candidateWorkflowRunId: candidateWorkflowRunId || null,
     candidateWorkflowRunAttempt: candidateWorkflowRunAttempt || null,
