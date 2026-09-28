@@ -77,6 +77,17 @@
       "RequestCanOutliveClient": "TRUE",
       "RustIsReadinessRecord": "TRUE",
       "RustRejectsOlderGeneration": "TRUE"
+    },
+    "readiness-repair-today": {
+      "Providers": "{chatgpt, openrouter}",
+      "Evals": "{e1, e2}",
+      "MaxRestarts": "1",
+      "MaxTampers": "1",
+      "UpgradeCanChangeDigest": "TRUE",
+      "UpgradeCanChangeRecipe": "TRUE",
+      "StartsPreRule": "FALSE",
+      "RepairRevalidates": "TRUE",
+      "UpgradeEvaluates": "TRUE"
     }
   },
   "checks": [
@@ -1332,6 +1343,146 @@
         "violated": "AdapterOnlyForDefinition"
       },
       "finding": "Registering the catalog adapter before the commit gives a provider an adapter before its definition exists."
+    },
+    {
+      "id": "repair-validated",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "invariants": [
+        "TypeOK",
+        "ReadyOnlyForValidatedRuntime"
+      ],
+      "expect": "pass",
+      "finding": "Preparation reuses an installation only when it passes startup's full validation, so readiness is never published for an installation the next start rejects (fixed R1)."
+    },
+    {
+      "id": "repair-validated-reverted",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "RepairRevalidates": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyOnlyForValidatedRuntime"
+      ],
+      "expect": {
+        "violated": "ReadyOnlyForValidatedRuntime"
+      },
+      "finding": "When reuse checks only that the entrypoints execute, a Repair after the private state, ownership marker or entrypoint confinement broke publishes ready for an installation startup rejects (R1, the behavior before the fix)."
+    },
+    {
+      "id": "repair-survives-restart",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "invariants": [
+        "TypeOK",
+        "RepairSurvivesRestart"
+      ],
+      "expect": "pass",
+      "finding": "A route an evaluation made ready survives a restart that changes neither digest nor recipe (fixed R1)."
+    },
+    {
+      "id": "repair-survives-restart-reverted",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "RepairRevalidates": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "RepairSurvivesRestart"
+      ],
+      "expect": {
+        "violated": "RepairSurvivesRestart"
+      },
+      "finding": "Before the fix, Repair republished ready on a broken layout, and the next unchanged restart dropped it again, so Repair never stuck (R1)."
+    },
+    {
+      "id": "repair-records",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "invariants": [
+        "TypeOK",
+        "PROV006_RestoreRule",
+        "PROV005_LatestWins",
+        "DueOnlyWhilePending"
+      ],
+      "expect": "pass",
+      "finding": "With both fixes, startup still restores only from the app server's record (PROV-006), the latest evaluation still wins (PROV-005), and a route marked due is never ready, across two restarts.",
+      "constants": {
+        "MaxRestarts": "2"
+      }
+    },
+    {
+      "id": "repair-records-prerule",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "StartsPreRule": "TRUE",
+        "MaxRestarts": "2"
+      },
+      "invariants": [
+        "TypeOK",
+        "PROV006_RestoreRule",
+        "PROV005_LatestWins",
+        "DueOnlyWhilePending"
+      ],
+      "expect": "pass",
+      "finding": "The same holds from a row an older build left ready, which migration 0034 verifies again once."
+    },
+    {
+      "id": "upgrade-evaluated",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "MaxRestarts": "2"
+      },
+      "fair": true,
+      "properties": [
+        "UpgradeEvaluatedWithoutRepair"
+      ],
+      "expect": "pass",
+      "finding": "An upgrade that changes the digest gets one committed evaluation without a Repair, also when the app restarts before it commits (fixed #556). The model assumes a connected provider publishes a route; without one the mark waits."
+    },
+    {
+      "id": "upgrade-evaluated-reverted",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "UpgradeEvaluates": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "UpgradeEvaluatedWithoutRepair"
+      ],
+      "expect": {
+        "violated": "UpgradeEvaluatedWithoutRepair"
+      },
+      "finding": "Without the automatic evaluation, a changed digest leaves both providers pending until someone presses Repair (#556, the behavior before the fix)."
+    },
+    {
+      "id": "repair-liveness",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "fair": true,
+      "properties": [
+        "EvaluationsSettle"
+      ],
+      "expect": "pass",
+      "finding": "Every started evaluation, automatic or not, settles."
+    },
+    {
+      "id": "shared-route-witness",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "invariants": [
+        "NoCrossProviderRestore"
+      ],
+      "expect": {
+        "violated": "NoCrossProviderRestore"
+      },
+      "finding": "Witness, not a bug: readiness is per harness, so an evaluation not started for a provider (another provider's Repair, or the automatic one) makes its shared route ready too."
     }
   ]
 }

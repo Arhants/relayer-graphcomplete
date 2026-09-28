@@ -408,6 +408,56 @@ If the app server alone restarted, its restored row would stay the record.
 It would accept the coordinator's next generation, and the coordinator's
 counter only grows.
 
+### `ReadinessRepair.tla`
+
+This model covers readiness across Repair, restart and upgrade for two
+providers that share one harness. ChatGPT and OpenRouter both run through
+`codex-basic`. It adds three things to `HarnessReadiness`:
+
+- **Two runtime predicates:** `files` is what startup's cheap validation
+  checks, and `execs` is what the version probe checks. External damage
+  can break either one.
+- **Upgrades:** a restart may change the configuration digest, or leave the
+  runtime on an older recipe.
+- **The automatic evaluation:** the app server's upgrade mark, Desktop's one
+  background evaluation, and the commit that clears the mark.
+
+`readiness-repair-today` mirrors the code, and each `-reverted` check turns
+one fix off. Two constants hold the fixes:
+
+- `RepairRevalidates` (R1): Repair, app-update staging and post-update
+  activation reuse an installation only when it passes startup's full
+  validation, then the probe. Otherwise they reinstall.
+- `UpgradeEvaluates` (#556): an upgrade that changes the digest marks the
+  route due in the app server. After startup, Desktop runs one background
+  evaluation through the `recipe-update` trigger. The next committed result
+  clears the mark.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `repair-validated` | Fixed; now passes | Before the fix (R1): reuse checked only that the entrypoints were regular files and that the probe passed, and `stat` follows symlinks. Startup also checks the ownership marker, the owned private state and entrypoint confinement. So Repair published ready for an installation the next start rejected. Regressions: the installer tests "repairs an installation startup rejects because …", "stages a fresh app-update generation when the active one is unusable because …" and "does not activate a pending generation startup would reject because …" fail on the old code. |
+| `repair-validated-reverted` | Confirmed | With the probe alone, a Repair after the layout broke publishes ready for an installation startup rejects. |
+| `repair-survives-restart` | Fixed; now passes | A route an evaluation made ready survives a restart that changes nothing. |
+| `repair-survives-restart-reverted` | Confirmed | Before the fix, the next unchanged restart withdrew the ready that Repair had published, so Repair never stuck. |
+| `repair-records` | passes | With both fixes, startup restores only from the app server's record (PROV-006), and the latest evaluation wins (PROV-005). A route marked due is never ready, across two restarts. Leaving the mark set after a publish breaks this check. |
+| `repair-records-prerule` | passes | The same holds from a row an older build left ready. |
+| `upgrade-evaluated` | Fixed; now passes | Before the fix (#556): a changed digest left both providers pending until someone pressed Repair. Now each changed digest gets one committed evaluation without a Repair, even across a restart before the commit. The model assumes a connected provider publishes a route; without one, the mark waits. Regressions: `an_upgraded_digest_is_due_one_automatic_evaluation`, `one_post_upgrade_evaluation_restores_both_providers_sharing_a_route`, the migration test `the_update_migration_marks_routes_an_earlier_upgrade_left_pending`, and the provider-composition test "evaluates an upgraded shared route once after startup". |
+| `upgrade-evaluated-reverted` | Confirmed | Without the automatic evaluation, the upgraded route stays pending while nobody presses Repair. |
+| `repair-liveness` | passes | Every started evaluation, automatic or not, settles. |
+| `shared-route-witness` | Witness, expected violation | Readiness is per harness, so an evaluation not started for a provider makes that provider's shared route ready too. This is why one Repair restored both providers in #556. |
+
+The model checks the digest trigger only. A newly activated recipe also
+starts the automatic evaluation, but that trigger lives in Desktop memory,
+so the model leaves it out. A quit before its result commits loses it; the
+next start then restores the old ready record, because the digest did not
+change. Migration 0037 also marks every loaded route startup left pending.
+The model starts after that migration, so it does not cover the backfill.
+The automatic evaluation skips a harness whose runtime was never
+installed; the model has one harness whose runtime starts installed. The installer test "stages and activates the
+exact incoming recipe" covers which activations count. A mark stays set
+when its evaluation found no provider with a route. The next start looks
+again, but it prepares nothing until a provider has a route.
+
 ## Limits
 
 - **Bounds:** one provider plus one new connection, one renderer, one lease,
