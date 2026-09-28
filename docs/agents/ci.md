@@ -61,6 +61,12 @@ Both publication APIs are scoped to the head SHA, while receipts belong to a PR.
 Before success, the guard re-lists open main-targeting PRs and rejects any shared
 head. Use a unique head commit for each open PR. Listing failure fails closed;
 PR changes after this check remain subject to the scheduled refresh limitation.
+Close events explicitly revoke both results for the closed PR's current head,
+before listing open PRs. This prevents indefinite success after closure, including
+when the listing fails. Revocation still depends on asynchronous event delivery;
+a delayed, dropped, or failed close workflow can leave stale success visible.
+Previously successful historical heads are not revoked by this current-head
+handler. Reusing those SHAs remains subject to the opening sweep's delay.
 The old `merge-freshness` check remains dual-published during migration. Both
 revocations are attempted independently before evidence IO; either publication
 failure remains an operator-visible failure. The names intentionally differ:
@@ -115,6 +121,7 @@ Checkpoint mapping (no product runtime behavior changes):
 | Status history unavailable or capacity near 1,000 cannot strand success | status-history failure and capacity boundary scenarios |
 | Shared head SHA does not select another PR's run or an older success | PR-specific run selection scenario |
 | Shared-head publications cannot lend one PR's evidence to another | both PR orderings, newly shared head after evidence IO, and failed re-list journeys |
+| A closed PR's current head does not remain successful after its close handler runs | success/close/reuse journey and closure revocation before failed open-PR listing |
 | Migration cannot retain the obsolete required context | authority audit rejects legacy alongside replacement while allowing unrelated checks |
 | Artifact bytes never executed or extracted | real ZIP decoder scenarios |
 | Trusted checkout, permissions, schedule and required contexts | workflow/ruleset contract scenario |

@@ -144,6 +144,39 @@ describe("scheduled merge freshness", () => {
     expect((await sweep(fake.options))[0].conclusion).toBe("success");
   });
 
+  it("revokes a closed PR before listing open PRs, so a later PR cannot inherit success", async () => {
+    const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
+    expect((await sweep(fake.options))[0].conclusion).toBe("success");
+    f.pr.state = "closed";
+    fake.api.paginate = async (method, args) => {
+      if (method === fake.api.rest.pulls.list) {
+        expect(fake.statuses[0].state).toBe("failure");
+        return [];
+      }
+      return paginate(method, args);
+    };
+    expect((await sweep({ ...fake.options, pullNumber: 42 }))[0]).toMatchObject({ conclusion: "failure", published: true });
+    expect(fake.outputs.at(-1).conclusion).toBe("failure");
+    // The same SHA is reused by a later PR without its own receipt.
+    f.pr.number = 99; f.pr.state = "open";
+    fake.api.paginate = paginate;
+    expect(fake.statuses[0].state).toBe("failure");
+    expect((await sweep(fake.options))[0].conclusion).toBe("failure");
+  });
+
+  it("revokes a closed event head even if the open-PR listing subsequently fails", async () => {
+    const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
+    await sweep(fake.options);
+    f.pr.state = "closed";
+    fake.api.paginate = async (method, args) => {
+      if (method === fake.api.rest.pulls.list) throw new Error("list unavailable");
+      return paginate(method, args);
+    };
+    await expect(sweep({ ...fake.options, pullNumber: 42 })).rejects.toThrow("list unavailable");
+    expect(fake.statuses[0].state).toBe("failure");
+    expect(fake.outputs.at(-1).conclusion).toBe("failure");
+  });
+
   it("selects the current PR's latest run even when other PRs share its head SHA", async () => {
     const f = fixture(), fake = fakeGitHub(f), paginate = fake.api.paginate;
     const ownRun = { ...f.run, pull_requests: [{ number: 42, head: { sha: head } }] };
@@ -342,6 +375,7 @@ describe("scheduled merge freshness", () => {
     const workflow = parse(await read(".github/workflows/merge-freshness.yml"));
     expect(workflow.on.schedule).toEqual([{ cron: "7,22,37,52 * * * *" }]);
     expect(workflow.on.workflow_run).toEqual({ workflows: ["CI"], types: ["completed"] });
+    expect(workflow.on.pull_request_target.types).toContain("closed");
     expect(workflow.concurrency).toEqual({ group: "merge-freshness-writer", "cancel-in-progress": false });
     expect(workflow.permissions).toEqual({ contents: "read", actions: "read", "pull-requests": "read", checks: "write", statuses: "write" });
     expect(workflow.jobs.refresh.if).toBe("github.ref == 'refs/heads/main'");
@@ -349,6 +383,7 @@ describe("scheduled merge freshness", () => {
     expect(workflow.jobs.refresh.steps).toHaveLength(2);
     for (const step of workflow.jobs.refresh.steps) expect(step.uses).toMatch(/@[a-f0-9]{40}$/);
     expect(workflow.jobs.refresh.steps[1].with.script).toContain("result.published === false");
+    expect(workflow.jobs.refresh.steps[1].with.script).toContain("pullNumber: context.payload.pull_request?.number");
     expect(workflow.jobs.refresh.steps[1].with.script).toContain("core.setFailed(");
     const ci = parse(await read(".github/workflows/ci.yml"));
     for (const job of Object.values(ci.jobs)) {
