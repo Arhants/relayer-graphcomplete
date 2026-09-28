@@ -1538,11 +1538,27 @@ class EffectObservingTraceSink implements HarnessTraceSink {
 export async function startHarnessHost(options: HarnessHostOptions): Promise<RunningHarnessHost> {
   const host = new HarnessHost(options);
   await host.initialize();
-  const server = createServer((request, response) => void route(host, options, request, response));
-  const sockets = new Set<Socket>();
+  // Graceful close ends each connection itself once nothing is in flight on it. Node's
+  // closeIdleConnections() skips a keep-alive connection that has not sent its first request
+  // (the graph server's pooled client opens those), and a response that finishes after close()
+  // still offers keep-alive, so either would hold server.close() past the runtime's deadline.
+  // A request whose headers are still arriving when close begins is reset, not served.
+  const connections = new Map<Socket, Set<ServerResponse>>();
+  let closing = false;
+  const server = createServer((request, response) => {
+    const socket = request.socket;
+    const inFlight = connections.get(socket);
+    inFlight?.add(response);
+    if (closing) response.shouldKeepAlive = false;
+    response.once("close", () => {
+      inFlight?.delete(response);
+      if (closing && inFlight?.size === 0 && !socket.destroyed) socket.end(() => socket.destroy());
+    });
+    void route(host, options, request, response);
+  });
   server.on("connection", (socket) => {
-    sockets.add(socket);
-    socket.once("close", () => sockets.delete(socket));
+    connections.set(socket, new Set());
+    socket.once("close", () => connections.delete(socket));
   });
   await listen(server, options.port ?? 0, options.host ?? "127.0.0.1");
   const address = server.address();
@@ -1561,15 +1577,21 @@ export async function startHarnessHost(options: HarnessHostOptions): Promise<Run
         if (forceError !== undefined) throw forceError;
       });
       server.close();
-      for (const socket of sockets) socket.destroy();
+      for (const socket of connections.keys()) socket.destroy();
       server.closeAllConnections();
       return runningForceClosePromise;
     },
     close: () => {
       if (runningForceClosePromise !== undefined) return runningForceClosePromise;
       if (runningClosePromise !== undefined) return runningClosePromise;
+      closing = true;
       const closingServer = close(server);
-      server.closeIdleConnections();
+      for (const [socket, inFlight] of connections) {
+        if (inFlight.size === 0) socket.destroy();
+        // Only the newest response closes the connection, so pipelined earlier ones still reply.
+        const newest = [...inFlight].at(-1);
+        if (newest !== undefined && !newest.headersSent) newest.shouldKeepAlive = false;
+      }
       runningClosePromise = host.close().finally(() => closingServer);
       return runningClosePromise;
     },
