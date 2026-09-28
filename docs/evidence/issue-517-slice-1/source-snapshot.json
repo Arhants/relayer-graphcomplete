@@ -1,7 +1,7 @@
 {
   "baseCommit": "ac7657e1223ff744064c1d71b7281aa9cf7881fa",
   "integratedPreviousHead": "17ed1e1f30a8b35ffc54fdf15523a1ef77f40c9c",
-  "changedSourceSha256": "94192d26e3a9897664e79bc811ef02d1e5cd7c4b83e768169bc666d361b4b2d0",
+  "changedSourceSha256": "c1eeb827dc4453d5efe6fdd53e679085b9bcf1523e31e5a525afb82983f2a7bf",
   "method": "Sorted repository-relative path + NUL + file bytes + NUL; excludes evidence directory",
   "files": {
     "CONTEXT.md": "1b08c47a07cdcc6f652e677a766aff0883d2d0d26cca5052e9269ab929f543e7",
@@ -37,10 +37,11 @@
     "crates/relayer-graph-server/src/search_index.rs": "ffe10932cb88a0e53a0dfe57d084607ea8eb9fbe7f2bd46afa001389f6d6e390",
     "crates/relayer-graph-server/src/search_index/interaction_permissions_tests.rs": "65c884e3bb02b515f72aa2985db5d1cb1add2104da6fb0d126ba8c430bb27034",
     "crates/relayer-graph-server/src/search_index/schema.rs": "53edeb8ea75d97f4bcfab8c46600f6aa37174966566dc47ee16cdce1ed9fd0ed",
+    "desktop/main/index.mjs": "abe79de24a79bf7c8d60b7a61b237e796fd60af2c18e4c2b4e42f53482bacbaf",
     "desktop/main/services/graphcomplete-runtime.mjs": "6280a2e39ea03c94c7d3a8d1323ea11641cc184132858863cf39e6e930ed3e89",
     "desktop/renderer/src/product-workspace/node-detail-runtime.js": "adf3fd96dec5221100e59cd1a5fdf9d53f8c32d1a55b876dc67d62de5ddc5c3d",
     "desktop/renderer/src/product-workspace/workspace.js": "c3f198788c383506fb55f0e0a2989c52ce598263eb0ac830e90627115a8be6ef",
-    "desktop/renderer/src/threads.js": "3175ab9c30aca83f2460d3a66994a1208cf8818f30b2ad1f11e8799d761f9a1d",
+    "desktop/renderer/src/threads.js": "12b8d03c33fe89dad57c19e1ad0553626b5f15e4b3c7c86ffe5ba9473ad5c8e9",
     "desktop/shared/telemetry-module-inventory.mjs": "7fe3c78a7336158b032d658343da7a69d4c40bc397bbdac846c7b24f354ee5e7",
     "docs/architecture.md": "ee1e122c82fc6ce736cf6dfa36a30cf53732870878520fea3d3b632b6b75bbc7",
     "docs/decisions/0005-layered-navigation-contract.md": "a76baf5dcab44c55191af6a8705e0f71896db10dcd8085097c9375aac4972dbf",
@@ -51,8 +52,9 @@
     "packages/graph-client/src/types.ts": "349d4ca8169847a46b6be9c21a1b6632ef673d4bad43253d7c1dc1dd473e772d",
     "scripts/run-interaction-permissions-human-gate.mjs": "6075197b7b65358181850cfc38558d23c497a3f46da7b328a1a4574670aeeeb4",
     "scripts/test-desktop-first-message.mjs": "df614b509cc2b5635b89ce61ad42a5908c723bf77b1a45101f718a82dd228fc4",
+    "test/graphcomplete-runtime-temporal-features.test.mjs": "721bb91590d31a491fb1d625d310fc8aca65f150340941fdae9553b81d7df5c0",
     "test/node-detail-runtime.test.mjs": "ab9ce9ced78021ffe64edd330488c37daad72c1bdb0174fb735cc13424a14537",
     "test/workspace-actions.test.mjs": "0281491a60f214bdf5eb58d79672299fdbc0a1208023dcf21d8b909e56142266",
-    "test/workspace-navigation-integration.test.mjs": "4ac2edcd5fad7ffd0c79c94ac49cafbc5739156b0ae88a43f38aa7fcc327b392"
+    "test/workspace-navigation-integration.test.mjs": "708e0ddf470f10be7aee5ecb3eb177ed807a81ed5800e5399751ba6846cf09dd"
   }
 }

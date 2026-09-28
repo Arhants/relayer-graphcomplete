@@ -1,4 +1,6 @@
-# PR 536 hands-on gate
+# PR 536 historical deterministic fixture
+
+This fixture is superseded as the final human gate by the [live-model walkthrough](LIVE-GATE.md). Its data and steps remain historical deterministic evidence.
 
 Human acceptance is **pending**. Automated and agent-operated qualification do not
 constitute the user's acceptance. This is the production Product renderer and local

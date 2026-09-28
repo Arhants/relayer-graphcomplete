@@ -31,7 +31,8 @@ while the cycle case protects semantic rejection before acknowledgement.
 - After build, run `electron scripts/test-desktop-first-message.mjs` with
   `RELAYER_INVOKE_EVIDENCE_DIR` for default-off evidence and with
   `RELAYER_TEST_INTERACTION_PERMISSIONS=1` for gated evidence.
-- Paid inference, signed binaries, and release proof are outside this context.
+- Scoped live inference is explicitly authorized for the final gate described below.
+  Signed binaries and release proof are outside this context.
 
 ## Actual results
 
@@ -40,9 +41,15 @@ The manifest includes the base commit, every changed non-evidence file hash, and
 an aggregate digest. Evidence-directory edits do not alter that source identity.
 
 - `npm run build`: passed on the final production source with pinned Node 22.23.2.
-- `npm run check`: passed. Vitest: 203 files passed, 2,624 tests passed,
-  3 skipped; separate secret-boundary suite: 2 passed. Rust workspace and crash
-  reconciliation, Python, receipt lint, and PRD readability also passed.
+- Current `npm run check` retry: main Vitest 203 files and 2,629 tests passed,
+  3 skipped; Rust workspace, crash reconciliation, and package checks passed.
+  The outer command failed during final isolated secret-boundary cleanup
+  (`ENOTEMPTY`). An unchanged focused retry passed both secret-boundary tests.
+  The first full attempt instead timed out in an unchanged managed-runtime
+  cancellation test, which passed on its focused retry. Both failures are retained
+  in [live-verification.json](live-verification.json); no outer full-pass claim is made.
+  The remaining chain ran separately: Python 43 tests, receipt lint, and PRD
+  readability all passed.
 - The nine focused typed core cases passed, including rollback, frozen authority,
   temporal/child isolation, same-completion occurrences, and atomic cycle rejection.
 - The real Ladybug publication/reopen fixture passed. It compares canonical and
@@ -57,7 +64,7 @@ an aggregate digest. Evidence-directory edits do not alter that source identity.
 - Both Electron runs used `RELAYER_INVOKE_EVIDENCE_SKIP_NATIVE_KEYBOARD=1` and clicked
   production Send. Native keyboard/focus proof is excluded from those automated runs, explicitly recorded as
   `nativeKeyboardVerified: false`. Test windows disable background throttling;
-  background-throttled behavior is not claimed. No paid inference ran.
+  background-throttled behavior is not claimed. No paid inference ran in these automated journeys.
 
 The existing broad runner required setup repairs for current IPC/provider contracts,
 visible-navigation waits, and Electron's all-windows-closed lifecycle. Earlier runs
@@ -78,7 +85,8 @@ canonical-layout checks. The final results contain no ancillary failures.
 - [Reopened navigation destination](gated/08-reopened-destination.png)
 
 [Review-fix run summary](review-fixes-verification.json) records the red observations
-and final verification outcomes for the refreshed source snapshot.
+and verification outcomes for the prior review-fix snapshot at `57b3afaa`.
+Current live-gate verification is in [live-verification.json](live-verification.json).
 
 ## PR 536 review fixes
 
@@ -190,8 +198,34 @@ navigation to Turn 2 of 2 on the final repaired source.
 Visual inspection caught an earlier reopened screenshot without its inspector, even
 though the hidden compiled control satisfied the old wait. Its precise cause was
 not established. The runner now requires a selected node, visible inspector, and
-visible enabled control. The final image was inspected and shows all three. Review
+visible enabled control. The image at the earlier review-fix snapshot was inspected and showed all three.
+The current live-display rerun image 07 shows the nested layer without its inspector
+despite the DOM wait passing. That image is non-certifying for control visibility;
+its limitation is preserved in live-verification.json. Review
 also removed a redundant temporal read; focused tests cover single-read temporal
 reconciliation and a newer selection during an ordinary pending descendant read.
 The prior full check passed its main portfolio but failed isolated secret-boundary
 temporary-directory cleanup with `ENOTEMPTY`; that failure is retained separately.
+
+## Live-model final gate
+
+The user rejected the visually repetitive fixture as the final gate and explicitly
+authorized scoped real-model validation. The retained fixture remains historical
+evidence; it is not the current acceptance scenario. See [LIVE-GATE.md](LIVE-GATE.md).
+The production Desktop entry point now forwards the trusted qualification option
+only for development launches with `RELAYER_TEST_INTERACTION_PERMISSIONS=1`.
+Packaged/default launches remain off. This maps to IP-001 frozen preparation and
+IP-004 default-off behavior. The existing runtime suite observes actual spawn
+arguments for omitted, string, and boolean options; only boolean true enables it.
+No provider execution, authentication, catalog, readiness, or IPC is mocked in
+the live gate. Production setup discovers the real Codex subscription and model.
+Conversation/graph data and managed binaries are isolated; existing native login
+is used through the supported `RELAYER_CODEX_HOME` path without copying secrets.
+
+The live run exposed an automatic result-display bug hidden by repetitive fixture
+content. The selected turn ID represented pending intent while its visible source
+layer belonged to the prior hydrated interaction. `refreshState` now uses the
+hydrated owner. `shows the invoked result distinct root` exercises the real
+controller across normal, recovered, already-accepted, and deliberate Back paths.
+This maps to IP-003 destination presentation without inventing a new graph action.
+The initial live failure remains recorded in [LIVE-GATE.md](LIVE-GATE.md).

@@ -883,6 +883,56 @@ describe("workspace navigation integration", () => {
     }
   });
 
+  it.each([["created", false], ["response-loss", false], ["already-accepted", false], ["created", true]])("shows the distinct invoke result without overriding explicit source navigation (%s, back=%s)", async (outcome, backToSource) => {
+    const sourceRoot = rootLayer(7, 22);
+    const action = { id: 6, kind: "invoke", sourceNodeId: 22, targetLayerId: null, interactionText: "Prepare launch" };
+    sourceRoot.actions = [action];
+    const source = interaction(1, 10, sourceRoot);
+    const resultRoot = rootLayer(8, 26);
+    resultRoot.nodes.push({ id: 27, title: "Observe" }, { id: 28, title: "Decide" });
+    const result = { ...interaction(2, 10, resultRoot, 2), completionStatus: "running", completionOutput: null };
+    const state = productState([{ id: 10, title: "Launch" }], [source]);
+    let invoked = false;
+    let accepted = false;
+    requestImplementation = vi.fn(async (path) => {
+      if (path.startsWith("/api/state?threadId=10")) {
+        if (!invoked) return state;
+        return { ...state, interactions: [source, accepted ? interaction(2, 10, resultRoot, 2) : result],
+          actionInvocations: [{ sourceInteractionId: 1, actionId: 6, resultInteractionId: 2,
+            resultCompletionStatus: accepted ? "accepted" : "running" }] };
+      }
+      if (path === "/api/threads/10/interactions/1/actions/6/invoke") {
+        invoked = true;
+        if (outcome === "response-loss") throw new Error("response lost after durable creation");
+        if (outcome === "already-accepted") accepted = true;
+        return { created: true, interaction: accepted ? interaction(2, 10, resultRoot, 2) : result,
+          invocation: { sourceInteractionId: 1, actionId: 6, resultInteractionId: 2, resultCompletionStatus: "running" } };
+      }
+      if (path.endsWith("/layers/7")) return sourceRoot;
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const controller = await loadModules();
+    await controller.loadThread(10);
+    controller.replaceCurrentSelection(22);
+    expect(controller.viewState.layerPath.map(({ layerId }) => layerId)).toEqual([7]);
+    await controller.invokeAction(action);
+    expect(controller.viewState.currentInteractionId).toBe(2);
+    if (backToSource) controller.selectTurnById(1);
+    accepted = true;
+    sourceRoot.actions = [{ ...action, kind: "navigate", relation: "expand", targetLayerId: 8,
+      resolvedInvokeInteractionId: 25, interactionText: null, state: "accepted" }];
+    await controller.refreshState(10);
+    expect(controller.appState.status).toBe("accepted");
+    expect(controller.viewState.currentInteractionId).toBe(backToSource ? 1 : 2);
+    expect(controller.appState.visibleLayer.layer.id).toBe(backToSource ? 7 : 8);
+    expect(controller.viewState.layerPath.map(({ layerId }) => layerId)).toEqual([backToSource ? 7 : 8]);
+    expect(controller.appState.nodes.map(({ id }) => id)).toEqual(backToSource ? [22] : [26, 27, 28]);
+    expect(controller.viewState.selectedNodeId).toBeNull();
+    controller.selectTurnById(1);
+    expect(controller.appState.visibleLayer.layer.id).toBe(7);
+    expect(controller.appState.actions[0]).toMatchObject({ id: 6, kind: "navigate", targetLayerId: 8 });
+  });
+
   it("retries a project-visible submitted invocation through the same source action", async () => {
     vi.useFakeTimers();
     try {

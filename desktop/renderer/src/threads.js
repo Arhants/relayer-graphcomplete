@@ -462,7 +462,9 @@ export async function refreshState(
     !refreshGate.isCurrent(refreshToken)
     || (requestedThreadId && String(viewState.currentThreadId) !== String(requestedThreadId))
   ) return false;
-  const previousInteractionId = viewState.currentInteractionId;
+  // The visible layer belongs to the hydrated presentation, not a pending
+  // turn-selection intent (invoke advances that intent before this refresh).
+  const previousInteractionId = appState.currentInteractionId;
   const previousLiveInteraction = latestInteractionForThread(appState.interactions, threadId);
   const previousProjectId = activeProjectId();
   const previousVisibleLayer = appState.visibleLayer;

@@ -53,5 +53,31 @@
     "verdict": "No unresolved findings",
     "mode": "Static adversarial review of final receipt/cache delta; independent full execution not claimed",
     "unresolved": []
+  },
+  {
+    "reviewer": "authority_review",
+    "scope": "Live qualification development-only production Desktop gate",
+    "sourceSha256": "8ea2922bad0bf7bea804eb79b139f3d8d61169ae2547f5c158b7388762b8a359",
+    "files": [
+      "desktop/main/index.mjs",
+      "desktop/main/services/graphcomplete-runtime.mjs",
+      "test/graphcomplete-runtime-temporal-features.test.mjs"
+    ],
+    "verdict": "No unresolved findings",
+    "mode": "Static packaged/default-off review plus actual runtime spawn-option boundary test; packaged live execution not claimed",
+    "unresolved": []
+  },
+  {
+    "reviewer": "final_boundary_review",
+    "scope": "Live invoke result presentation ownership correction",
+    "sourceSha256": "4f87baf557bcd28c885132064cb4be47053a593499103a9916e15c3237ad2976",
+    "files": [
+      "desktop/renderer/src/threads.js",
+      "test/workspace-navigation-integration.test.mjs"
+    ],
+    "verdict": "No unresolved findings",
+    "mode": "Static adversarial review; actual controller red/green observed by implementer; live run separately verified",
+    "unresolved": [],
+    "continuity": "Supersedes prior receipt/cache review for threads.js and workspace-navigation-integration.test.mjs only; other previously reviewed source unchanged."
   }
 ]
