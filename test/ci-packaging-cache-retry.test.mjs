@@ -1,3 +1,4 @@
+import { parse } from "yaml";
 import { expect, test, vi } from "vitest";
 import { restoreWithRetry, transientRestoreFailure } from "../scripts/ci/cache-restore-policy.mjs";
 
@@ -8,6 +9,14 @@ test("retries the observed SDK 429 once, then restores the matching archive", as
   expect(attempt).toHaveBeenCalledTimes(2);
   expect(sleep).toHaveBeenCalledWith(5000);
 });
+test("honors the observed 36-second reset, with one bounded retry", async () => {
+  const log = "You've hit a rate limit, your rate limit will reset in 36 seconds\nFailed to restore: (429) Too Many Requests";
+  const attempt = vi.fn().mockResolvedValueOnce({ log }).mockResolvedValueOnce({ key: "exact" });
+  const sleep = vi.fn();
+  expect(await restoreWithRetry({ attempt, sleep, random: () => 0 })).toBe("exact");
+  expect(sleep).toHaveBeenCalledWith(36_000);
+  expect(attempt).toHaveBeenCalledTimes(2);
+});
 test.each(["", "::warning::Failed to restore: (403) denied", "bad tar archive", "unclassified failure"])("does not retry an ordinary miss or unclassified failure: %s", async (log) => {
   const attempt = vi.fn(async () => ({ log }));
   expect(await restoreWithRetry({ attempt })).toBeNull();
@@ -17,7 +26,7 @@ test("bounds repeated service failure and respects a long Retry-After", async ()
   const attempt = vi.fn(async () => ({ log: "Failed to restore: (503) service unavailable" }));
   expect(await restoreWithRetry({ attempt, sleep: async () => {} })).toBeNull();
   expect(attempt).toHaveBeenCalledTimes(2);
-  attempt.mockClear().mockResolvedValue({ log: "You've hit a rate limit, your rate limit will reset in 60 seconds\nFailed to restore: (429)" });
+  attempt.mockClear().mockResolvedValue({ log: "You've hit a rate limit, your rate limit will reset in 61 seconds\nFailed to restore: (429)" });
   expect(await restoreWithRetry({ attempt })).toBeNull();
   expect(attempt).toHaveBeenCalledTimes(1);
   expect(transientRestoreFailure("normal miss: key 529")).toBe(false);
@@ -50,11 +59,21 @@ test("workflow retries the original Cargo archive and sealed caches without givi
   const chapter = source.slice(start, source.indexOf("\n  check:", start));
   expect(chapter.match(/uses: \.\/\.github\/actions\/restore-packaging-cache/g)).toHaveLength(3);
   expect(chapter).toContain("rust-packaging-${{ matrix.target }}");
-  // Offline metadata needs the locked registry closure even on an empty runner.
-  const fetchIndex = chapter.indexOf("Seed the locked Cargo dependency closure");
   const identityIndex = chapter.indexOf("Identify sealed packaging cache inputs");
-  expect(fetchIndex).toBeGreaterThanOrEqual(0);
-  expect(identityIndex).toBeGreaterThan(fetchIndex);
+  const runtimeIndex = chapter.indexOf("Restore sealed release runtime");
+  const verifyIndex = chapter.indexOf("Verify restored release runtime");
+  const cargoIndex = chapter.indexOf("Restore packaging Rust compilation acceleration");
+  expect(identityIndex).toBeGreaterThanOrEqual(0);
+  expect(runtimeIndex).toBeGreaterThan(identityIndex);
+  expect(verifyIndex).toBeGreaterThan(runtimeIndex);
+  expect(cargoIndex).toBeGreaterThan(verifyIndex);
+  const steps = parse(source).jobs.packaging.steps;
+  for (const name of ["Identify Rust cache inputs", "Start Rust cache timing", "Restore packaging Rust compilation acceleration", "Record packaging Rust cache status", "Seed the locked Cargo dependency closure", "Restore pinned native preparation"]) {
+    expect(steps.find((step) => step.name === name).if).toContain("steps.runtime-ready.outputs.ready != 'true'");
+  }
+  const build = steps.find((step) => step.name === "Build and inspect the actual target ASAR");
+  expect(build.if).toBeUndefined();
+  expect(build.env.RELAYER_PACKAGING_FETCH_ON_MISS).toContain("steps.runtime-ready.outputs.ready == 'true'");
   expect(chapter).toContain("github.event_name == 'push' && success()");
   const action = await readFile(new URL("../.github/actions/restore-packaging-cache/action.yml", import.meta.url), "utf8");
   expect(action).toContain("using: node24");

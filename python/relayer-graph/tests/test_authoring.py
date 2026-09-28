@@ -20,14 +20,29 @@ from relayer_graph import (APIError, CompletionCurrentSnapshot, CompletionInputG
 class Handler(BaseHTTPRequestHandler):
     requests = []
     next_id = 10
+    # interactionNode -> (status, error) the broker answers when asked to start that child.
+    # Bytes are sent as a raw non-JSON body.
+    refused_starts = {
+        86: (400, "x" * 200),
+        87: (400, "The child was refused.\x7f"),
+        88: (502, b"<html><body>502 Bad Gateway: /private/runtime/provider-secret</body></html>"),
+        93: (409, "The harness configuration changed while this child was launching."),
+        94: (422, "The source interaction has no model selection to inherit."),
+        95: (500, "/private/runtime/provider-secret"),
+        97: (400, "The child was refused.\nInjected: a second line"),
+        98: (400, "x" * 201),
+        # 101 characters but 202 UTF-16 units, which is how the TypeScript client measures it.
+        99: (400, "\U0001F6AB" * 101),
+    }
 
     def log_message(self, *args):
         pass
 
     def _reply(self, value, status=200):
-        encoded = json.dumps(value).encode()
+        raw = isinstance(value, bytes)
+        encoded = value if raw else json.dumps(value).encode()
         self.send_response(status)
-        self.send_header("content-type", "application/json")
+        self.send_header("content-type", "text/html" if raw else "application/json")
         self.send_header("content-length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
@@ -36,8 +51,9 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers.get("content-length", "0"))) or b"{}")
         Handler.requests.append((self.path, dict(self.headers), body))
         Handler.next_id += 1
-        if self.path == "/api/completions" and body["interactionNode"] == 93:
-            self._reply({"error": "The harness configuration changed while this child was launching."}, 409)
+        if self.path == "/api/completions" and body["interactionNode"] in Handler.refused_starts:
+            status, error = Handler.refused_starts[body["interactionNode"]]
+            self._reply(error if isinstance(error, bytes) else {"error": error}, status)
         elif self.path == "/api/completions":
             self._reply({"completionId": body["interactionNode"]}, 201)
         elif self.path == "/api/completions/91/stop":
@@ -85,7 +101,15 @@ class Handler(BaseHTTPRequestHandler):
             "completionId": 92, "lifecycle": lifecycle, "headRevision": revision,
             "currentLayerId": 5, "finalLayerId": None,
         }
-        if self.path == "/api/completions/92/result":
+        if self.path.startswith("/api/completions/96/result"):
+            self._reply({"error": "completion does not belong to this execution"}, 400)
+        elif self.path.startswith("/api/completions/89/result"):
+            # A graph runtime conflict passes through without a current.
+            self._reply({"error": {
+                "code": "idempotency_conflict",
+                "message": "This operation key is committed with a different transition request digest.",
+            }}, 409)
+        elif self.path == "/api/completions/92/result":
             self._reply({"current": child_92(3)}, 202)
         elif self.path == "/api/completions/92/result?afterRevision=3":
             # The first wait outlasts the broker's hold and comes back unchanged.
@@ -456,6 +480,59 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
             os.environ.clear()
             os.environ.update(previous)
 
+    async def test_a_refused_child_launch_keeps_the_brokers_safe_detail(self):
+        previous = os.environ.copy()
+        try:
+            os.environ["RELAYER_COMPLETE_URL"] = self.url + "/api/completions"
+            os.environ["RELAYER_COMPLETE_TOKEN"] = "broker-token"
+            for node, message in (
+                (94, "HTTP 422: The source interaction has no model selection to inherit."),
+                # Exactly the longest detail the broker's message may have.
+                (86, "HTTP 400: " + "x" * 200),
+            ):
+                with self.subTest(node=node):
+                    with self.assertRaises(TransportError) as raised:
+                        await complete(CompletionInputGraph(node)).result
+                    self.assertEqual(str(raised.exception), f"completion broker returned {message}")
+        finally:
+            os.environ.clear()
+            os.environ.update(previous)
+
+    async def test_a_refused_child_launch_withholds_broker_detail_that_is_not_safe_to_repeat(self):
+        previous = os.environ.copy()
+        try:
+            os.environ["RELAYER_COMPLETE_URL"] = self.url + "/api/completions"
+            os.environ["RELAYER_COMPLETE_TOKEN"] = "broker-token"
+            # Server failures (one without a JSON body), control characters, and overlong messages.
+            for node, status in ((95, 500), (88, 502), (97, 400), (87, 400), (98, 400), (99, 400)):
+                with self.subTest(node=node):
+                    with self.assertRaises(TransportError) as raised:
+                        await complete(CompletionInputGraph(node)).result
+                    self.assertEqual(str(raised.exception), f"completion broker returned HTTP {status}")
+        finally:
+            os.environ.clear()
+            os.environ.update(previous)
+
+    async def test_a_refused_observation_keeps_the_brokers_safe_detail(self):
+        previous = os.environ.copy()
+        try:
+            os.environ["RELAYER_COMPLETE_URL"] = self.url + "/api/completions"
+            os.environ["RELAYER_COMPLETE_TOKEN"] = "broker-token"
+            for node, message in (
+                (96, "HTTP 400: completion does not belong to this execution"),
+                # A refusal whose error is not a string names only its status.
+                (89, "HTTP 409"),
+            ):
+                handle = complete(CompletionInputGraph(node))
+                for name, observe in (("result", lambda: handle.result), ("next", handle.current.next)):
+                    with self.subTest(node=node, observe=name):
+                        with self.assertRaises(TransportError) as raised:
+                            await observe()
+                        self.assertEqual(str(raised.exception), f"completion broker returned {message}")
+        finally:
+            os.environ.clear()
+            os.environ.update(previous)
+
     @staticmethod
     def _held_children():
         """Children whose next() calls stay open until the test resolves or fails them by id:after_revision."""
@@ -580,7 +657,10 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
             [(child, error)] = await watch.changes()
             self.assertIs(child, refused)
             self.assertIsInstance(error, TransportError)
-            self.assertEqual(str(error), "completion broker returned HTTP 409")
+            self.assertEqual(
+                str(error),
+                "completion broker returned HTTP 409: The harness configuration changed while this child was launching.",
+            )
 
             later = asyncio.ensure_future(watch.changes())
             await asyncio.sleep(0)
