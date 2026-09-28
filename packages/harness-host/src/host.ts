@@ -1183,7 +1183,7 @@ export class HarnessHost {
     let claimedExecutionLeaseId: string | undefined;
     let harnessStarted = false;
     /** Set when the force-stop fired before the native turn settled: how that turn ended. */
-    let forceStoppedNativeOutcome: string | undefined;
+    let forceStoppedNativeOutcome: { readonly kind: ForceStoppedNativeOutcome; readonly detail?: string } | undefined;
     try {
       const acceptedContracts = session.descriptor.configuration.executionAccessContracts;
       if (executionLeaseId !== undefined) {
@@ -1256,10 +1256,12 @@ export class HarnessHost {
       onNativeExecution?.(isNativeExecutionHandle(native) ? native : undefined);
       await settledOrForceStopped(native, forceSignal);
       // Checked at once: the timer may still fire during later cleanup, after a natural settle.
-      if (forceSignal.aborted) forceStoppedNativeOutcome = "settled";
+      if (forceSignal.aborted) forceStoppedNativeOutcome = { kind: "settled" };
     } catch (error) {
       if (forceSignal.aborted && harnessStarted) {
-        forceStoppedNativeOutcome = errorMessage(error);
+        forceStoppedNativeOutcome = error instanceof ForceStoppedTurnDidNotSettle
+          ? { kind: "did not settle within ten seconds" }
+          : { kind: "rejected", detail: errorMessage(error) };
       } else if (!signal.aborted || (error !== signal.reason && !(error instanceof NativeExecutionCancelled))) {
         // Adapters may reject with this exact AbortSignal reason before native work
         // starts. Distinct abort, quiescence, or cleanup errors remain failures.
@@ -1280,12 +1282,24 @@ export class HarnessHost {
     }
     const forceStopped = forceStoppedNativeOutcome !== undefined;
     if (forceStoppedNativeOutcome !== undefined) {
-      // A force-stop only follows a cancellation, so the turn settles exactly as that
-      // cancellation does, whether the harness resolved or rejected while being stopped: a
-      // user's Stop stays stopped. The force-stop and the native outcome are diagnostics only.
+      // A force-stop only follows a cancellation, so the turn settles as a settled
+      // cancellation, whether the harness resolved or rejected while being stopped: a user's
+      // Stop stays stopped. The force-stop and the native outcome are diagnostics only. The
+      // product log carries no provider text; the trace, when one is kept, adds the detail.
+      console.warn(`Force-stopped harness completion ${interactionNodeId} on thread ${threadId}`, {
+        threadId,
+        completionId: interactionNodeId,
+        origin: origin.kind,
+        ...(traceContext === undefined ? {} : { productInteractionId: traceContext.productInteractionId }),
+        nativeOutcome: forceStoppedNativeOutcome.kind,
+      });
       traceSink.emit({
         type: "warning",
-        data: { message: FORCE_STOPPED_TURN_MESSAGE, forceStopped: true, nativeOutcome: forceStoppedNativeOutcome },
+        data: {
+          message: FORCE_STOPPED_TURN_MESSAGE,
+          forceStopped: true,
+          nativeOutcome: forceStoppedNativeOutcome.detail ?? forceStoppedNativeOutcome.kind,
+        },
       });
     }
     if (completionError !== undefined) {
@@ -2513,6 +2527,12 @@ function captureHarnessState(harness: Harness): HarnessSessionState {
  * FORCE_STOPPED_TURN_SETTLE_MS more and then rejects, so the host can release the turn's
  * access even if the harness never settles. A later settlement is ignored.
  */
+type ForceStoppedNativeOutcome = "settled" | "rejected" | "did not settle within ten seconds";
+
+class ForceStoppedTurnDidNotSettle extends Error {
+  constructor() { super("The force-stopped turn did not settle within ten seconds"); }
+}
+
 async function settledOrForceStopped(native: PromiseLike<void>, forceSignal: AbortSignal): Promise<void> {
   const settled = Promise.resolve(native);
   void settled.catch(() => undefined);
@@ -2520,7 +2540,7 @@ async function settledOrForceStopped(native: PromiseLike<void>, forceSignal: Abo
   let detach = () => {};
   const abandoned = new Promise<never>((_resolve, reject) => {
     const expire = () => {
-      timer = setTimeout(() => reject(forceSignal.reason), FORCE_STOPPED_TURN_SETTLE_MS);
+      timer = setTimeout(() => reject(new ForceStoppedTurnDidNotSettle()), FORCE_STOPPED_TURN_SETTLE_MS);
       timer.unref?.();
     };
     if (forceSignal.aborted) {

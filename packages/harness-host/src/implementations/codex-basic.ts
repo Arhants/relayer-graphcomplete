@@ -331,8 +331,9 @@ export class CodexBasicHarness implements Harness {
         onServerRequest: (method, params) => traceCodexAppServerNotification(context, method, params, traceState),
       });
     } finally {
+      // Nothing is forgotten here: forceTurn already did, and a later root turn may have
+      // stored its own thread by the time this killed turn settles.
       context.forceSignal?.removeEventListener("abort", forceTurn);
-      if (context.forceSignal?.aborted === true) forgetForcedRootThread();
       this.activeForceShutdowns.delete(forceShutdown);
       closeIncompleteCollaborationSpans(traceState);
     }

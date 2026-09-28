@@ -925,6 +925,49 @@ describe("PrimeAgentHarness", () => {
     await childTurn;
   });
 
+  it("force-disposes an invoked child session created after its turn was force-stopped", async () => {
+    let releaseCreation!: () => void;
+    const creationGate = new Promise<void>((resolve) => { releaseCreation = resolve; });
+    const root = primeSession("/tmp/root.jsonl");
+    // Graceful disposal of the late child would stall forever.
+    const lateChild = primeSession("/tmp/late-child.jsonl", { disposeAsync: vi.fn(() => new Promise<void>(() => undefined)) });
+    const lateChildNativeDispose = lateChild.dispose;
+    let creations = 0;
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7,
+      workingDirectory: "/tmp/project",
+      ...fullPermission,
+      configuration,
+    }, { loadModule: async () => ({
+      ...runScopeApi(),
+      SessionManager: { create: vi.fn(() => "fresh"), open: vi.fn() },
+      createHostRequestHandler: (handler: unknown) => handler,
+      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionFromServices: vi.fn(async () => {
+        creations += 1;
+        if (creations === 1) return { session: root };
+        await creationGate;
+        return { session: lateChild };
+      }),
+    }) as never });
+    const force = new AbortController();
+
+    const child = harness.complete({ ...invokedRunContext(runContext(81, "late"), 181), forceSignal: force.signal });
+    await vi.waitFor(() => expect(creations).toBe(2));
+    force.abort(new Error("force-stopped after two minutes"));
+    await expect(child).rejects.toThrow("force-stopped after two minutes");
+
+    releaseCreation();
+    await vi.waitFor(() => expect(lateChildNativeDispose).toHaveBeenCalledOnce());
+    expect(lateChild.abort).toHaveBeenCalledOnce();
+    expect(lateChild.promptAndWait).not.toHaveBeenCalled();
+    expect(lateChild.disposeAsync).not.toHaveBeenCalled();
+    expect(root.abort).not.toHaveBeenCalled();
+    // Nothing is retained: disposing the harness does not wait on the stalled child.
+    await harness.dispose();
+    expect(root.disposeAsync).toHaveBeenCalledOnce();
+  });
+
   it("lets a root turn force-stopped while acquiring its session finish before the next root turn acquires one", async () => {
     let releaseReload!: () => void;
     const reloadGate = new Promise<void>((resolve) => { releaseReload = resolve; });

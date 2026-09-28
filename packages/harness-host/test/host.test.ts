@@ -2068,8 +2068,9 @@ describe("HarnessHost", () => {
     }
   });
 
-  it.each(["resolves", "rejects"] as const)("settles a Stop the harness %s while being force-stopped as one stop", async (ending) => {
+  it.each(["resolves", "rejects", "never settles"] as const)("settles a Stop the harness %s after a force-stop as one stop and logs it", async (ending) => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-force-stop-outcome-"));
     let started = false;
     vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
@@ -2092,7 +2093,7 @@ describe("HarnessHost", () => {
             return new Promise<void>((resolve, reject) => {
               context.forceSignal?.addEventListener("abort", () => {
                 if (ending === "resolves") resolve();
-                else reject(new Error("native process killed"));
+                else if (ending === "rejects") reject(new Error("native process killed"));
               }, { once: true });
             });
           },
@@ -2107,6 +2108,7 @@ describe("HarnessHost", () => {
 
       expect(host.cancel(1)).toBe(true);
       await vi.advanceTimersByTimeAsync(120_000);
+      if (ending === "never settles") await vi.advanceTimersByTimeAsync(10_000);
 
       const outcome = await running;
       expect(outcome).not.toBeInstanceOf(HarnessExecutionFailure);
@@ -2118,8 +2120,21 @@ describe("HarnessHost", () => {
       });
       const events = await readFile(join(exported, "events.jsonl"), "utf8");
       expect(events).toContain("was force-stopped");
-      expect(events).toContain(ending === "resolves" ? '"nativeOutcome":"settled"' : '"nativeOutcome":"native process killed"');
+      expect(events).toContain({
+        resolves: '"nativeOutcome":"settled"',
+        rejects: '"nativeOutcome":"native process killed"',
+        "never settles": '"nativeOutcome":"did not settle within ten seconds"',
+      }[ending]);
+      // The product log records the force-stop even without a trace store, and no provider text.
+      expect(warn).toHaveBeenCalledWith("Force-stopped harness completion 1 on thread 1", {
+        threadId: 1,
+        completionId: 1,
+        origin: "root",
+        productInteractionId: 41,
+        nativeOutcome: { resolves: "settled", rejects: "rejected", "never settles": "did not settle within ten seconds" }[ending],
+      });
     } finally {
+      warn.mockRestore();
       vi.useRealTimers();
       vi.unstubAllGlobals();
       await rm(directory, { recursive: true, force: true });

@@ -333,6 +333,64 @@ describe("CodexBasicHarness", () => {
     });
   });
 
+  it("keeps the next root turn's thread when a force-stopped root turn settles late", async () => {
+    let releaseKilledProcess!: () => void;
+    const killedProcessExited = new Promise<void>((resolve) => { releaseKilledProcess = resolve; });
+    const submissions: CodexAppServerTurnOptions[] = [];
+    const harness = new CodexBasicHarness({
+      ...context("auto"),
+      savedState: { codexThreadId: "root-thread", codexThreadPersonalPresentationVersionId: null },
+    }, {
+      codexPathOverride: "/managed/codex",
+      runAppServerTurn: async (options) => {
+        submissions.push(options);
+        const threadId = options.savedThreadId ?? `fresh-thread-${submissions.length}`;
+        await options.onThreadId(threadId);
+        if (submissions.length === 1) {
+          // The killed process takes longer than the host's wait to exit.
+          await new Promise<void>((resolve) => options.forceSignal?.addEventListener("abort", () => resolve(), { once: true }));
+          await killedProcessExited;
+          throw new Error("killed app-server exited");
+        }
+        return { threadId, turnId: `turn-${submissions.length}`, status: "completed" };
+      },
+    });
+    const force = new AbortController();
+
+    const stuck = harness.complete({ ...runContext(1, "stuck-token"), forceSignal: force.signal });
+    await vi.waitFor(() => expect(submissions).toHaveLength(1));
+    force.abort(new Error("force-stopped after two minutes"));
+    // The host has given up waiting, so the user's next root turn runs and stores its thread.
+    await harness.complete({ ...runContext(2, "next-token"), forceSignal: new AbortController().signal });
+    releaseKilledProcess();
+    await expect(stuck).rejects.toThrow("killed app-server exited");
+
+    expect(harness.state()).toEqual({
+      codexThreadId: "fresh-thread-2",
+      codexThreadPersonalPresentationVersionId: null,
+    });
+  });
+
+  it("does not keep a thread a force-stopped root turn reports after the force", async () => {
+    const harness = new CodexBasicHarness(context("auto"), {
+      codexPathOverride: "/managed/codex",
+      runAppServerTurn: async (options) => {
+        await new Promise<void>((resolve) => options.forceSignal?.addEventListener("abort", () => resolve(), { once: true }));
+        // A thread identity that arrives only after the kill must not be resumed.
+        await options.onThreadId("late-thread");
+        throw new Error("killed app-server exited");
+      },
+    });
+    const force = new AbortController();
+
+    const stuck = harness.complete({ ...runContext(1, "stuck-token"), forceSignal: force.signal });
+    await new Promise((resolve) => setImmediate(resolve));
+    force.abort(new Error("force-stopped after two minutes"));
+    await expect(stuck).rejects.toThrow("killed app-server exited");
+
+    expect(harness.state()).toEqual({});
+  });
+
   it("rejects an unsupported implementation version", () => {
     expect(() => new CodexBasicHarness({
       threadId: 1,

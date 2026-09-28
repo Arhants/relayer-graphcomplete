@@ -389,10 +389,18 @@ class PrimeTurnForceStop {
 
   /**
    * Binds the session this turn is about to run on. A turn force-stopped before then does
-   * not run, and stops nothing: a later root turn may already be using that root session.
+   * not run. It stops a session only this turn owns (an invoked child's), so that session is
+   * not left to a graceful disposal that may stall. It never stops the shared root session:
+   * a later root turn may already be using it.
    */
-  bind(stopSession: () => void): void {
-    this.signal?.throwIfAborted();
+  bind(stopSession: () => void, ownedByTurn: boolean): void {
+    if (this.signal?.aborted) {
+      if (ownedByTurn) {
+        this.stopSession = stopSession;
+        this.stop();
+      }
+      this.signal.throwIfAborted();
+    }
     this.stopSession = stopSession;
   }
 
@@ -663,7 +671,7 @@ export class PrimeAgentHarness implements Harness {
     forceStop.bind(() => {
       if (handle !== undefined) this.forceStopRootSession(handle);
       else void session.abort().catch(() => undefined);
-    });
+    }, false);
     if (signal.aborted) {
       await session.abort();
       signal.throwIfAborted();
@@ -700,7 +708,7 @@ export class PrimeAgentHarness implements Harness {
         ? { ok: false, error: new Error("Prime Agent harness is shutting down") }
         : await operationOutcome(() => {
           // A force-stop ends this child's own session only: never the root or a sibling.
-          forceStop.bind(() => lifecycle.forceShutdown());
+          forceStop.bind(() => lifecycle.forceShutdown(), true);
           return this.executeOn(lifecycle.session, context, signal);
         });
     } finally {
