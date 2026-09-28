@@ -122,10 +122,22 @@ struct World {
     /// it starts at the trace's first cleanup step.
     pending_cleanup: Option<(PreparedInteraction, LaunchFailure, Option<i64>)>,
     pool: sqlx::SqlitePool,
+    tasks: ServerTasks,
     /// Owns the world's database, catalog, and workspaces; removed on drop, even when a
-    /// trace panics.
+    /// trace panics. Declared last so every field holding the database drops first.
     root: tempfile::TempDir,
-    tasks: Vec<tokio::task::JoinHandle<Result<(), std::io::Error>>>,
+}
+
+/// The fake graph and harness servers, aborted on drop so a panicking trace does not leave
+/// them holding the database after the world's directory is removed.
+struct ServerTasks(Vec<tokio::task::JoinHandle<Result<(), std::io::Error>>>);
+
+impl Drop for ServerTasks {
+    fn drop(&mut self) {
+        for task in &self.0 {
+            task.abort();
+        }
+    }
 }
 
 async fn serve(app: Router) -> (String, tokio::task::JoinHandle<Result<(), std::io::Error>>) {
@@ -563,8 +575,8 @@ impl World {
             pending_cleanup: None,
             attachment: None,
             pool,
+            tasks: ServerTasks(vec![graph_task, harness_task]),
             root,
-            tasks: vec![graph_task, harness_task],
         }
     }
 
@@ -961,10 +973,14 @@ impl World {
         })
     }
 
-    fn finish(self) {
-        for task in self.tasks {
+    /// Stops the servers and waits until they have released the database, so the
+    /// world's directory can be removed even where open files cannot be deleted.
+    async fn finish(mut self) {
+        for task in std::mem::take(&mut self.tasks.0) {
             task.abort();
+            let _ = task.await;
         }
+        self.pool.close().await;
     }
 }
 
@@ -1084,7 +1100,7 @@ async fn replay(trace: &Value) {
             "{scenario}: {promise} is broken at the end, in {last}"
         );
     }
-    world.finish();
+    world.finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1461,7 +1477,7 @@ async fn a_child_whose_attempt_cannot_be_recorded_releases_its_leases() {
         "leases no attempt records are released"
     );
     assert_eq!(world.observe().await["attempt"], "none");
-    world.finish();
+    world.finish().await;
 }
 
 /// A harness-policy revision that lands after the child was prepared would split its
@@ -1506,7 +1522,7 @@ async fn a_child_whose_harness_policy_changed_since_prepare_is_refused() {
     );
     assert!(world.harness.granted.lock().unwrap().is_empty());
     assert_eq!(world.observe().await["attempt"], "none");
-    world.finish();
+    world.finish().await;
 }
 
 /// A child that returned while its provider still runs is accepted, and its attempt stays
@@ -1712,7 +1728,7 @@ async fn a_child_returned_while_its_provider_runs_exports_and_restarts_as_accept
     assert_eq!(world.observe().await["status"], "accepted");
     graph_task.abort();
     harness_task.abort();
-    world.finish();
+    world.finish().await;
 }
 
 /// A child whose graph is already stopped has no work left, but the one cancel sent for it
@@ -1868,7 +1884,7 @@ async fn a_child_stopped_by_a_cancelled_approval_settles_and_ends_its_attempt() 
             .await
             .unwrap();
     assert_eq!(outcome, "cancelled");
-    world.finish();
+    world.finish().await;
 }
 
 /// A product-server restart that finds a child still launching fails its graph, since the
@@ -1907,7 +1923,7 @@ async fn a_restart_keeps_a_launching_childs_leases_held() {
         "its attempt stays held: {state}"
     );
     assert_eq!(state["lease"], "held", "and so do its leases: {state}");
-    world.finish();
+    world.finish().await;
 }
 
 /// A failed start fails and settles its child before cancelling, so a harness that cannot
@@ -1945,5 +1961,5 @@ async fn a_failed_start_settles_while_its_cancel_cannot_reach_the_harness() {
         state["attempt"], "running",
         "its attempt stays held until the run is confirmed ended: {state}"
     );
-    world.finish();
+    world.finish().await;
 }

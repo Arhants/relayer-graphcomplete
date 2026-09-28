@@ -3353,7 +3353,6 @@ mod tests {
         state: ApiState,
         product: ProductService,
         thread: Thread,
-        _root: tempfile::TempDir,
         starts: Arc<AtomicUsize>,
         headers: HeaderMap,
         current: Arc<Mutex<Value>>,
@@ -3366,6 +3365,8 @@ mod tests {
         _lease: CompletionBrokerLease,
         graph_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
         harness_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
+        /// Declared last so every field holding the database drops before its directory.
+        _root: tempfile::TempDir,
     }
 
     impl BrokerFixture {

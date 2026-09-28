@@ -8763,13 +8763,14 @@ fn test_execution_admission(body: &Value, lease_id: &str, version: &str) -> Valu
 
 struct QuarantinedTurn {
     app: Router,
-    _root: tempfile::TempDir,
     database: std::path::PathBuf,
     thread_id: i64,
     graph_healthy: Arc<AtomicBool>,
     lease_deletes: Arc<AtomicUsize>,
     graph_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
     harness_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
+    /// Declared last so every field holding the database drops before its directory.
+    _root: tempfile::TempDir,
 }
 
 async fn attempt_lease_rows(database: &Path) -> Vec<(i64, String, Option<String>, Option<String>)> {
