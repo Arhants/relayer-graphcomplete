@@ -844,6 +844,22 @@ describe("compiled Node Detail product runtime", () => {
       await window.happyDOM.waitUntilComplete();
       expect(window.document.querySelector("#detailTitle").textContent).toBe("Detail 2");
       expect(window.document.querySelector("#inspector").classList.contains("hidden")).toBe(false);
+      // The pending turn's status stays visible while the accepted detail is retained.
+      state.interactions.push({ id: 6, threadId: 801, sequence: 2, text: "Follow-up", completionStatus: "running" });
+      for (const status of ["running", "failed", "stopped"]) {
+        state.pendingTurn = { threadId: 801, interactionId: 6, status, readyLayer: null };
+        workspace.render();
+        await window.happyDOM.waitUntilComplete();
+        expect(window.document.querySelector("#pendingTurnNotice").classList.contains("hidden")).toBe(false);
+        expect(window.document.querySelector("#pendingTurnText").textContent.toLowerCase()).toContain(status);
+        expect(window.document.querySelector("#detailTitle").textContent).toBe("Detail 2");
+      }
+      state.pendingTurn.readyLayer = child;
+      workspace.render();
+      expect(window.document.querySelector("#openReadyResult").classList.contains("hidden")).toBe(false);
+      state.pendingTurn = null;
+      state.interactions.pop();
+      workspace.render();
       window.document.querySelector('[data-node="1"]').click();
       await window.happyDOM.waitUntilComplete();
       const input = window.document.querySelector(".node-input-text");

@@ -1,3 +1,4 @@
+import { createWorkspaceLayout } from "./workspace-layout.js";
 import { preferredLayerNode, rememberedLayerSelection, rememberLayerSelection } from "./layer-selection.js";
 import { escapeHtml, toast } from "../ui.js";
 import { actionCanRetry, actionWasInvoked, actionReviewKind } from "../action-invocation-state.js";
@@ -1536,6 +1537,7 @@ export function createProductWorkspace({
   onSelectTurn = () => {},
   onSelectTurnById,
   onSelectionChange = () => {},
+  onOpenReadyResult = () => {},
   layerSelectionMemoryOwner = globalThis.window,
   onExportConversation = null,
   shareApi = null,
@@ -1855,6 +1857,8 @@ export function createProductWorkspace({
   };
   graphDocument.addEventListener("pointerdown", closeSettingsMenuFromOutside, true);
   graphDocument.addEventListener("keydown", closeSettingsMenuOnEscape, true);
+  const readingLayout = createWorkspaceLayout(root, graphWindow);
+  $("#openReadyResult").onclick = () => onOpenReadyResult();
   const narrowInspectorMedia = graphWindow?.matchMedia?.("(max-width: 760px)");
   let inspectorUsesOverlay = narrowInspectorMedia?.matches
     ?? (graphWindow?.innerWidth ?? 0) <= 760;
@@ -3923,6 +3927,7 @@ export function createProductWorkspace({
       });
     }
     if (renderedThreadId !== null && renderedThreadId !== threadId) {
+      readingLayout.closeEnvironment();
       nodeSelectionSequence += 1;
       releaseSendAttempt();
       if (contextDraftSendWarning.open) {
@@ -3990,6 +3995,16 @@ export function createProductWorkspace({
     $("#threadScope").textContent = threadScope;
     $("#threadTitle").title = threadScope;
     renderEnvironment(state.environment, project);
+    const pendingTurn = state.pendingTurn;
+    const showPending = pendingTurn && String(pendingTurn.threadId) === String(thread.id)
+      && String(pendingTurn.interactionId) !== String(state.currentInteractionId);
+    $("#pendingTurnNotice").classList.toggle("hidden", !showPending);
+    if (showPending) {
+      const pendingInteraction = state.interactions.find((item) => String(item.id) === String(pendingTurn.interactionId));
+      const label = pendingTurn.readyLayer ? "Result ready" : turnStatusPresentation(pendingTurn.status).label;
+      $("#pendingTurnText").textContent = `Turn ${pendingInteraction?.sequence ?? ""} · ${label}`;
+      $("#openReadyResult").classList.toggle("hidden", !pendingTurn.readyLayer);
+    }
     const interaction = interactionForThread(state, thread);
     updateCountBadge($("#threadAnnotationBadge"), subjectAnchor("thread", {}, state, thread));
     updateCountBadge($("#turnAnnotationBadge"), subjectAnchor("turn", {}, state, thread));
@@ -4527,7 +4542,7 @@ export function createProductWorkspace({
       selection.selectedNodeId = preferredLayerNode(state.visibleLayer ?? { nodes: responseNodes }, selection.selectedNodeId,
         rememberedLayerSelection(thread?.id, state.currentInteractionId, state.visibleLayer?.layer?.id, layerSelectionMemoryOwner));
       if (selection.selectedNodeId != null && String(previousSelection) !== String(selection.selectedNodeId)) {
-        onSelectionChange(selection.selectedNodeId);
+        onSelectionChange(selection.selectedNodeId, { automatic: true });
       }
     }
     const restoredCamera = graphCameraForView({
@@ -5299,6 +5314,7 @@ export function createProductWorkspace({
     graphDocument.removeEventListener("pointerdown", blurGraphFromOutsidePointer, true);
     graphDocument.removeEventListener("pointerdown", closeTurnPopoverFromOutside, true);
     graphDocument.removeEventListener("pointerdown", closeSettingsMenuFromOutside, true);
+    readingLayout.dispose();
     graphDocument.removeEventListener("keydown", closeTurnPopoverOnEscape, true);
     graphDocument.removeEventListener("keydown", closeSettingsMenuOnEscape, true);
     graphDocument.removeEventListener("keydown", closeInspectorOnEscape, true);

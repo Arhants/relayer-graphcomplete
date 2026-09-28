@@ -280,7 +280,8 @@ describe("workspace navigation integration", () => {
     completionPersistence.resolve(true);
     await expect(submitting).resolves.toEqual(followup);
     expect(stateReads).toBe(2);
-    expect(controller.viewState.currentInteractionId).toBe(2);
+    expect(controller.viewState.currentInteractionId).toBe(1);
+    expect(controller.appState.pendingTurn).toMatchObject({ interactionId: 2, status: "submitted" });
   });
 
   it("submits annotation-only context with stable occurrence identity", async () => {
@@ -323,7 +324,8 @@ describe("workspace navigation integration", () => {
       { providerId: "openai", modelId: "gpt-5" },
       contexts,
     )).resolves.toEqual(followup);
-    expect(controller.viewState.currentInteractionId).toBe(2);
+    expect(controller.viewState.currentInteractionId).toBe(1);
+    expect(controller.appState.pendingTurn).toMatchObject({ interactionId: 2, status: "submitted" });
   });
 
   it("lets a newer turn choice cancel a slower history restoration", async () => {
@@ -914,7 +916,7 @@ describe("workspace navigation integration", () => {
 
   it.each([
     ["submitted", false, 1],
-    ["running", true, 100],
+    ["running", true, 1],
   ])("advances the invoke tutorial only for a non-retryable %s result", async (
     resultCompletionStatus,
     shouldAdvance,

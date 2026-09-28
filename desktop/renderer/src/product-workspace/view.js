@@ -17,10 +17,12 @@ export function productWorkspaceMarkup() {
             <button class="conversation-export" id="exportConversation" type="button" role="menuitem" data-review-ref="export-conversation" data-review-kind="conversation-export">Export conversation…</button>
           </div>
         </div>
+        <button id="environmentToggle" class="environment-toggle" type="button" aria-expanded="false" aria-controls="environmentPanel">Environment</button>
         <button class="share-conversation-button hidden" id="shareConversation" type="button" data-review-ref="share-conversation" data-review-kind="conversation-share" aria-label="Share thread">Share</button>
       </div>
     </header>
     <div class="share-dialog-backdrop hidden" id="shareDialog"></div>
+    <div class="pending-turn-notice hidden" id="pendingTurnNotice" role="status"><span id="pendingTurnText"></span><button id="openReadyResult" type="button" class="hidden">Result ready</button></div>
     <div class="interaction-banner" id="interactionBanner">
           <span class="interaction-icon">›_</span>
           <div class="interaction-copy">
@@ -40,8 +42,8 @@ export function productWorkspaceMarkup() {
           </div>
           <span class="interaction-status" id="interactionStatus" role="status"></span>
     </div>
-    <aside class="environment-panel" id="environmentPanel" aria-labelledby="environmentTitle">
-      <div class="environment-header"><h2 id="environmentTitle">Environment</h2><span class="environment-observed" id="environmentObserved"></span></div>
+    <aside class="environment-panel hidden" role="dialog" id="environmentPanel" aria-labelledby="environmentTitle">
+      <div class="environment-header"><h2 id="environmentTitle">Environment</h2><span class="environment-observed" id="environmentObserved"></span><button id="closeEnvironment" class="icon-button" type="button" aria-label="Close Environment">×</button></div>
       <div class="environment-body" id="environmentBody" aria-busy="false">
         <div class="environment-loading" id="environmentLoading"><span class="environment-spinner" aria-hidden="true"></span><span>Loading project context…</span></div>
         <dl class="environment-facts hidden" id="environmentFacts">
@@ -114,6 +116,7 @@ export function productWorkspaceMarkup() {
           </dialog>
         </div>
       </div>
+      <div id="workspaceDivider" class="workspace-divider" role="separator" tabindex="0" aria-label="Resize graph and node details" aria-orientation="vertical" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50"></div>
       <aside class="inspector hidden" id="inspector" aria-label="Selected node detail">
         <div class="inspector-header"><span>Node details</span><div class="inspector-header-actions"><button class="icon-button hidden" id="attachNodeContext" type="button" title="Connect node to next message" aria-label="Connect node to next message">+</button><button class="icon-button" id="closeInspector" data-review-ref="close-node-detail" aria-label="Close node details">×</button></div></div>
         <div class="inspector-content" id="inspectorContent" data-review-capture="node-detail" role="region" aria-label="Selected node detail content">

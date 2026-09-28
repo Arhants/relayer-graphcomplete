@@ -224,3 +224,14 @@ html[data-theme="light"] .public-share-error {
     grid-row: 4;
   }
 }
+
+/* Keep branding above the shared reading panes without occupying the divider. */
+@media(min-width:1101px){
+ .public-share-shell .workspace-layout{grid-template-rows:auto auto auto minmax(0,1fr)}
+ .public-share-shell .public-share-download-card{grid-column:1 / -1;grid-row:1;margin:0 0 8px;justify-self:end}
+ .public-share-shell .thread-header{grid-column:1 / -1;grid-row:2}
+ .public-share-shell .interaction-banner{grid-column:1;grid-row:3}
+ .public-share-shell .graph-column{grid-column:1;grid-row:4}
+ .public-share-shell .workspace-divider{grid-row:3 / 5}
+ .public-share-shell .inspector{grid-column:3;grid-row:3 / 5}
+}
