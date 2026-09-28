@@ -202,6 +202,12 @@ if (chapter === "quick") {
       "--noEmit",
     ]);
 } else if (chapter === "vitest-prerequisites") {
+  runPrerequisite(
+    "renderer-prepare",
+    "Prepare generated renderer vendors",
+    "npm",
+    ["run", "prepare:renderer"],
+  );
   for (const workspace of npmBuildOrder.filter((name) =>
     plan.npmBuildWorkspaces.includes(name),
   )) {

@@ -2042,5 +2042,6 @@ export function detailAuthoringReference() {
     cssAtRules: [...SAFE_CSS_AT_RULES],
     cssPseudoClasses: [...SAFE_CSS_PSEUDO_CLASSES],
     cssPseudoElements: [...SAFE_CSS_PSEUDO_ELEMENTS],
+    themeSelectors: ['[data-relayer-theme="light"]', '[data-relayer-theme="dark"]'],
   });
 }

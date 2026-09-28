@@ -1538,11 +1538,42 @@ class EffectObservingTraceSink implements HarnessTraceSink {
 export async function startHarnessHost(options: HarnessHostOptions): Promise<RunningHarnessHost> {
   const host = new HarnessHost(options);
   await host.initialize();
-  const server = createServer((request, response) => void route(host, options, request, response));
-  const sockets = new Set<Socket>();
+  // Graceful close ends each connection itself once nothing is in flight on it. Node's
+  // closeIdleConnections() skips a keep-alive connection that has not sent its first request
+  // (the graph server's pooled client opens those), and a response that finishes after close()
+  // still offers keep-alive, so either would hold server.close() past the runtime's deadline.
+  // A request whose headers are still arriving when close begins is reset, not served.
+  const connections = new Map<Socket, Set<ServerResponse>>();
+  const lastResponses = new WeakSet<ServerResponse>();
+  let closing = false;
+  // Only the connection's final response may close it, so earlier pipelined responses still reply.
+  const closeConnectionAfter = (response: ServerResponse) => {
+    if (response.headersSent) return;
+    response.shouldKeepAlive = false;
+    lastResponses.add(response);
+  };
+  const server = createServer((request, response) => {
+    const socket = request.socket;
+    const inFlight = connections.get(socket);
+    const previous = inFlight === undefined ? undefined : [...inFlight].at(-1);
+    inFlight?.add(response);
+    response.once("close", () => {
+      inFlight?.delete(response);
+      if (closing && inFlight?.size === 0 && !socket.destroyed) socket.end(() => socket.destroy());
+    });
+    if (!closing) return void route(host, options, request, response);
+    // A request that arrives while the host closes is refused without routing, so it has no
+    // effect that its caller could miss when the connection closes.
+    if (previous !== undefined && lastResponses.has(previous) && !previous.headersSent) {
+      previous.shouldKeepAlive = true;
+      lastResponses.delete(previous);
+    }
+    closeConnectionAfter(response);
+    reply(response, 503, { error: "harness_host_closing" });
+  });
   server.on("connection", (socket) => {
-    sockets.add(socket);
-    socket.once("close", () => sockets.delete(socket));
+    connections.set(socket, new Set());
+    socket.once("close", () => connections.delete(socket));
   });
   await listen(server, options.port ?? 0, options.host ?? "127.0.0.1");
   const address = server.address();
@@ -1561,15 +1592,20 @@ export async function startHarnessHost(options: HarnessHostOptions): Promise<Run
         if (forceError !== undefined) throw forceError;
       });
       server.close();
-      for (const socket of sockets) socket.destroy();
+      for (const socket of connections.keys()) socket.destroy();
       server.closeAllConnections();
       return runningForceClosePromise;
     },
     close: () => {
       if (runningForceClosePromise !== undefined) return runningForceClosePromise;
       if (runningClosePromise !== undefined) return runningClosePromise;
+      closing = true;
       const closingServer = close(server);
-      server.closeIdleConnections();
+      for (const [socket, inFlight] of connections) {
+        const newest = [...inFlight].at(-1);
+        if (newest === undefined) socket.destroy();
+        else closeConnectionAfter(newest);
+      }
       runningClosePromise = host.close().finally(() => closingServer);
       return runningClosePromise;
     },

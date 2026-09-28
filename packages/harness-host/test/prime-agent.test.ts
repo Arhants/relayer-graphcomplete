@@ -554,6 +554,12 @@ describe("PrimeAgentHarness", () => {
     // A stopped or failed child raises from child.result, so the root must catch it to integrate the rest.
     expect(prompts[0]!.text).toContain("A stopped or failed child raises CompletionTerminalError there instead");
     expect(prompts[0]!.text).toContain("catch it and integrate the work its error.current still retains");
+    // A child the watch can no longer observe arrives as an error change, not a raise, so the loop keeps its siblings.
+    expect(prompts[0]!.text).toContain("Each change is a (child, current) pair, or (child, error) with the exception in place of the current once the watch can no longer observe that child");
+    // Both shapes are tuples, so the root needs the test that tells them apart.
+    expect(prompts[0]!.text).toContain("check isinstance(current, Exception) before reading it");
+    // Such a child's result may raise a plain exception; the root must neither invent its findings nor leak the error.
+    expect(prompts[0]!.text).toContain("If child.result raises any other exception, as it may for a child reported with an error, you cannot read that child's work; present that part as not done, without quoting the error or inventing findings.");
     expect(prompts[1]!.text).not.toContain("prepare_complete");
     expect(prompts[1]!.text).not.toContain("from relayer_graph import complete");
     expect(prompts[0]!.text).toContain("exactly one NodePlacementObject(node, x, y) per member node");
@@ -2595,11 +2601,19 @@ function expectGraphAuthoringRules(prompt: string): void {
   expect(prompt).toContain("Only a card accepts description, and a card requires one.");
   // Graph core exempts the interaction root before enforcing draft ownership, so the rule states that exception.
   expect(prompt).toContain("Apart from the interaction node's one root expand action, add actions only on draft nodes created for this interaction");
-  expect(prompt).toContain("the next current layer must keep a navigation path back to it");
+  expect(prompt).toContain("The first current layer may contain visible accepted nodes");
+  expect(prompt).toContain("when no prior current exists, it needs no new draft carrier");
+  expect(prompt).toContain("Reuse an existing valid path when one already exists");
+  expect(prompt).toContain("every later current layer and the root of your final graph.submit must retain a navigation path back");
   expect(prompt).toContain('current["currentLayerId"], relation="reference", source_layer=new_layer');
-  // Graph core checks the same path on the final submit's Return, and only a draft node takes the action.
-  expect(prompt).toContain("to the root layer of your final graph.submit");
-  expect(prompt).toContain("every layer you make current needs at least one new draft node to carry that reference");
+  expect(prompt).toContain("Give each distinct logical advance_current transition its own stable operation key");
+  expect(prompt).toContain("After submitting the complete closure and registering all its actions, publish it with await graph.advance_current(");
+  expect(prompt).toContain("An exact retry reuses all three unchanged");
+  expect(prompt).toContain("After a successful nonterminal advance_current, refresh with current = await graph.get_current()");
+  expect(prompt).toContain("Use a different stable key for that next transition");
+  expect(prompt).toContain("A successful terminal graph.submit ends graph access: do not call get_current");
+  expect(prompt).not.toContain("every layer you make current needs at least one new draft node");
+  expect(prompt).not.toContain("a-stable-operation-key");
 }
 
 const pythonExecutable = process.platform === "win32" ? "python" : "python3";
