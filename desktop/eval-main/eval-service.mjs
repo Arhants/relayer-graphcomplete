@@ -1,3 +1,4 @@
+import { interactiveTripCase } from "./interactive-trip-case.mjs";
 import { evalSelectionRequiresLiveAuthorization, validateExternalLiveAuthorization } from "../eval-renderer/eval-live-authorization.js";
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -64,6 +65,7 @@ import {
 import { GRAPH_SEARCH_EVAL_TARGET } from "./configuration-paths.mjs";
 
 export const evalCases = Object.freeze([
+  interactiveTripCase,
   Object.freeze({
     id: graphMemoryEvalCaseId,
     name: "Graph memory · prior accepted reference",
@@ -942,6 +944,7 @@ export class EvalService {
     candidateTraceAttributionLoader = null,
     candidateTraceRequired = false,
     ensureModelCatalog = async () => {},
+    selectModel = null,
     validateLiveCredential = null,
     selectPrimeModel = null,
     primeModelAvailability = null,
@@ -979,8 +982,9 @@ export class EvalService {
     this.candidateTraceAttributionLoader = candidateTraceAttributionLoader;
     this.candidateTraceRequired = candidateTraceRequired;
     this.ensureModelCatalog = ensureModelCatalog;
+    this.selectModel = selectModel;
+    this.selectPrimeModel = selectPrimeModel ?? selectModel;
     this.validateLiveCredential = validateLiveCredential;
-    this.selectPrimeModel = selectPrimeModel;
     this.primeModelAvailability = primeModelAvailability;
     this.conversationImportEnabled = conversationImportEnabled;
     this.conversationImportMaxBytes = conversationImportMaxBytes;
@@ -2409,7 +2413,70 @@ export class EvalService {
     return { ...executed, threadDefinition: null, workspaceChecks: new Map() };
   }
 
-  async #executeProjectCase(execution, definition) {
+  async prepareHumanTask({ testCaseId, harnessConfigurationName, sessionId }) {
+    if (this.externalCases.has(testCaseId)) throw new Error("External catalog human tasks require budget and credential approval, which Human Grader does not yet support.");
+    const definition = evalCases.find((item) => item.id === testCaseId);
+    const configuration = this.configurations.get(harnessConfigurationName);
+    if (!definition || !configuration) throw new Error("Choose a known case and harness.");
+    if (configuration.graphCapabilityProfile?.search === "query-v1" && this.targetKey !== GRAPH_SEARCH_EVAL_TARGET) {
+      throw new Error("Graph-search Eval is qualified only for macOS Apple Silicon.");
+    }
+    const execution = {
+      id: sessionId, testRunId: sessionId, testCaseId,
+      harnessConfigurationName, harnessConfiguration: copy(configuration),
+      harnessConfigurationDigest: sha256(canonicalJson(configuration)),
+      caseSnapshotDigest: definition.caseSnapshotDigest || null,
+      caseSnapshot: copy(definition.caseSnapshot || null), threadIds: [],
+    };
+    let plan;
+    if (projectCaseIds.has(testCaseId)) {
+      if (this.platform !== "darwin") throw new Error("Pinned project cases are local Mac only.");
+      await this.#prepareProjectFixture(execution, definition);
+      plan = definition.threads.map((item) => ({
+        ...copy(item), permissionProfileId: resolveH3PermissionProfile(configuration, item.permissionProfileId).effectiveProfileId,
+      }));
+    } else {
+      plan = [{ id: testCaseId, name: definition.name, prompts: resolveEvalCasePrompts(definition, sessionId), permissionProfileId: selectEvalPermissionProfile(configuration) }];
+    }
+    return { execution, name: definition.name, description: definition.description, humanBrief: definition.humanBrief || null, humanRubric: definition.humanRubric || null, plan, casePlanDigest: sha256(canonicalJson(definition.humanBrief ? { plan, humanBrief: definition.humanBrief, humanRubric: definition.humanRubric } : plan)) };
+  }
+
+  async createHumanTaskThread(prepared, step) {
+    const item = prepared.plan[step];
+    if (!item) throw new Error("Unknown case step.");
+    // A session's first route owns every case thread, including persisted sessions
+    // written before pinnedModelResolution was introduced.
+    if (prepared.execution.pinnedModelResolution === undefined && prepared.execution.modelResolution !== undefined) {
+      prepared.execution.pinnedModelResolution = copy(prepared.execution.modelResolution);
+    }
+    const thread = await this.#createProductThread({
+      execution: prepared.execution, title: `${prepared.name} · human · ${item.name}`,
+      prompt: item.prompts[0], projectId: prepared.execution.projectId ?? null,
+      permissionProfileId: item.permissionProfileId,
+    });
+    prepared.execution.pinnedModelResolution ??= copy(prepared.execution.modelResolution);
+    return thread;
+  }
+
+  async gradeHumanTaskStep(prepared, step) {
+    const execution = prepared.execution;
+    if (!execution.fixture) return { status: "not_run", reason: "Original scripted graph checks do not certify an adaptive human trajectory." };
+    const workspaceDirectory = join(dirname(this.stateFile), "runs", encodeURIComponent(execution.testRunId), "executions", encodeURIComponent(execution.id), "workspace");
+    const definition = evalCases.find((item) => item.id === execution.testCaseId);
+    const result = h3CaseIds.has(definition.id)
+      ? await this.workspaceGrader({ workspaceDirectory, grade: prepared.plan[step].workspaceGrade })
+      : calibrationAutonomousCaseIds.has(definition.id)
+        ? await this.calibrationWorkspaceGrader({ caseId: definition.id, workspaceDirectory, baseRevision: execution.fixture.seededCommit })
+        : await this.frontierWorkspaceGrader({ caseId: definition.id, workspaceDirectory });
+    try {
+      const artifact = await captureTurnArtifactSnapshot(execution, workspaceDirectory, `human-step-${step + 1}-${randomUUID()}`);
+      return { status: "recorded", result, artifact };
+    } catch (error) {
+      return { status: "partial", result, artifact: null, artifactError: error.message };
+    }
+  }
+
+  async #prepareProjectFixture(execution, definition) {
     const executionDirectory = join(
       dirname(this.stateFile),
       "runs",
@@ -2461,6 +2528,11 @@ export class EvalService {
     });
     execution.projectId = project.id;
     execution.fixture = copy(fixture);
+    return { project, fixture, workspaceDirectory, isH3, isCalibration, external };
+  }
+
+  async #executeProjectCase(execution, definition) {
+    const { project, fixture, workspaceDirectory, isH3, isCalibration, external } = await this.#prepareProjectFixture(execution, definition);
     execution.permissionProfileResolutions = definition.threads.map((threadDefinition) => ({
       threadDefinitionId: threadDefinition.id,
       ...resolveH3PermissionProfile(execution.harnessConfiguration, threadDefinition.permissionProfileId),
@@ -2507,12 +2579,22 @@ export class EvalService {
     }
   }
 
-  async #createAndRunThread({ execution, title, prompts, projectId = null, permissionProfileId = "auto", afterTurn = async () => {} }) {
-    if (!Array.isArray(prompts) || prompts.length === 0) throw new Error(`Eval thread ${title} has no prompts.`);
+  async #createProductThread({ execution, title, prompt, projectId = null, permissionProfileId = "auto" }) {
     let selectedModel = execution.pinnedModelResolution?.selectedModel;
     let productModelSelection = execution.pinnedModelResolution?.productModelSelection;
+    const configurationOwned = execution.pinnedModelResolution === undefined && this.selectModel
+      && harnessUsesConfigurationModel(await this.#productRequest("/api/model-settings"), execution.harnessConfigurationName);
     if (execution.pinnedModelResolution !== undefined) {
-      // The treatment cell uses the control cell's exact provider/model resolution.
+      // The treatment cell or human session retains its exact starting route.
+    } else if (configurationOwned) {
+      selectedModel = null;
+      productModelSelection = false;
+    } else if (this.selectModel && !execution.harnessConfiguration.implementation.startsWith("fixture.")) {
+      selectedModel = await this.selectModel(execution.harnessConfigurationName);
+      productModelSelection = true;
+      if (!selectedModel?.familyId || !selectedModel.providerId || !selectedModel.modelId) {
+        throw new Error("Eval requires an explicit validated model selection.");
+      }
     } else if (execution.harnessConfiguration.implementation === "prime.agent") {
       if (!this.selectPrimeModel) throw new Error("Prime Eval has no execution adapter.");
       selectedModel = await this.selectPrimeModel(execution.harnessConfigurationName);
@@ -2554,7 +2636,7 @@ export class EvalService {
       method: "POST",
       body: {
         title,
-        initialMessage: prompts[0],
+        initialMessage: prompt,
         harnessConfigurationName: execution.harnessConfigurationName,
         permissionProfileId,
         ...evalModelSelectionRequest(selectedModel, productModelSelection),
@@ -2562,16 +2644,24 @@ export class EvalService {
       },
     });
     execution.threadIds.push(thread.id);
+    return thread;
+  }
+
+  async #createAndRunThread({ execution, title, prompts, projectId = null, permissionProfileId = "auto", afterTurn = async () => {} }) {
+    if (!Array.isArray(prompts) || prompts.length === 0) throw new Error(`Eval thread ${title} has no prompts.`);
+    const thread = await this.#createProductThread({ execution, title, prompt: prompts[0], projectId, permissionProfileId });
+    const { selectedModel, productModelSelection } = execution.modelResolution;
     const humanInteractionIds = [thread.rootInteractionId];
     const rootInteraction = await this.#waitForInteraction(execution, thread.id, thread.rootInteractionId);
     await this.#captureCandidateTrace(execution, rootInteraction);
     let settled = await this.#waitForSemanticChildren(execution, thread.id, humanInteractionIds);
     await afterTurn(thread.rootInteractionId, 0);
     for (const [offset, prompt] of prompts.slice(1).entries()) {
-      if (execution.harnessConfiguration.implementation === "prime.agent") {
-        const nextSelection = await this.selectPrimeModel(execution.harnessConfigurationName);
+      if (productModelSelection && ((this.selectModel && !execution.harnessConfiguration.implementation.startsWith("fixture."))
+        || execution.harnessConfiguration.implementation === "prime.agent")) {
+        const nextSelection = await (this.selectModel ?? this.selectPrimeModel)(execution.harnessConfigurationName);
         if (!sameJson(evalModelSelectionRequest(nextSelection), evalModelSelectionRequest(selectedModel))) {
-          throw new Error("Prime Eval model selection changed between product turns.");
+          throw new Error("Eval model selection changed between product turns.");
         }
       }
       const interaction = await this.#productRequest(`/api/threads/${thread.id}/interactions`, {
