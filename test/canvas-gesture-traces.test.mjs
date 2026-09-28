@@ -41,7 +41,8 @@ describe("CanvasGesture traces replay against the Product workspace canvas", () 
         if (action) await world.apply(action);
         const real = world.observe();
         const where = `step ${index} (${describeStep(action)})`;
-        expect(real, `${where}: real canvas diverges from the model`).toEqual(projectModelState(state, L));
+        const { at: _at, ...compared } = real;
+        expect(compared, `${where}: real canvas diverges from the model`).toEqual(projectModelState(state, L));
         for (const promise of trace.promises) {
           expect(PROMISES[promise](real, state, L), `${where}: ${promise} is broken`).toBe(true);
         }

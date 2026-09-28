@@ -392,7 +392,7 @@ created elsewhere to keep the per-promise checks fast; `composer-fixed` and
 | `composer-without-carry` | Records the bug | With `CarryUnsentDraft` off, text typed during a send is stranded. |
 | `composer-settlement-erases-edit` | Fixed; now passes | Before the fix (#513): re-entering a scope with persisted text assigned `currentPromptRevision + 1`, which could repeat a revision the scope already had. An edit after Send could then reach the submitted revision, and settlement cleared the prompt and deleted the persisted draft. A scope's revision now only moves forward. Scenario: `composer-settlement-erases-edit`. |
 | `composer-sent-text-lingers` | Fixed; now passes | Before the fix (#513): re-entering a scope during a send bumped its revision though the text was unchanged, so settlement no longer recognized the sent text and left it in an enabled composer. Unchanged text now keeps its revision. Scenario: `composer-sent-text-lingers`. |
-| `composer-one-send-per-thread` | passes | One follow-up per thread is in flight at a time, and every send releases its thread's Send button. |
+| `composer-one-send-per-thread` | passes | Every send releases its thread's Send button. The model has one send slot per thread, so it cannot attempt a second Send; a test in `test/turn-composer-traces.test.mjs` forces one while the first is in flight, after leaving and returning to the thread, and checks it does not post. |
 | `composer-invoked-turns` | Fixed; now passes | Before the fix (review of #512): the submission was held only once `submitInteraction` began, after Send had waited for authored input commits. A turn created elsewhere that arrived during the wait carried the text into its scope, and the Send then posted it and cleared only the older scope, so the sent text stayed. The submission is now held from the click. A Send that ends without posting hands back text a newer turn left in its scope into the empty prompt, as a rejected POST does; text typed since wins. One thread, three turns. Regression tests: the "newer turn arriving while Send waits" cases in `test/authored-input-send-traces.test.mjs`, since only that world holds a Send on an authored commit. The draft-send warning, which the model leaves out, also holds the text while open and hands it back when cancelled; a test in the same file covers it. |
 | `composer-without-click-hold` | Records the bug | With `HoldFromClick` off, the text is carried away while Send waits. |
 | `composer-without-uncertain-hold` | Records the bug | With `HoldUncertain` off, the text of a POST that failed after the server recorded it is carried into the turn it created, and could be sent again (SCP-019). The renderer recognizes that turn by the text: any draft whose text a later turn of the thread carries was sent, which also holds after a restart. A turn an invoke action created does not count, so a definitely rejected send still comes back. An unrelated turn, or a POST that never reached the server, still carries the text forward. A retry refused after the turn arrived does not hand the text back. Scenarios: `composer-uncertain-send-stays-put`, `composer-retry-of-landed-send`. |
@@ -433,7 +433,10 @@ The model does not restart the app. After a restart, text an earlier session
 left in an older turn's scope, such as one closed while a send was in
 flight, is carried into the newest turn unless a later turn with that text
 shows it was sent, and text restored after a restart is not carried into
-a turn with that text that arrives later. Tests in
+a turn with that text that arrives later. Text a later turn shows was sent
+is also deleted from storage (SCP-016); the model deletes an uncertain
+send's draft once its turn lands, and leaves a send in flight to its
+settlement. Tests in
 `test/turn-composer-traces.test.mjs` cover these cases.
 
 `CarryUnsentDraft` recognizes the in-flight submission by its revision, so
@@ -492,6 +495,11 @@ mutates one `appState` in place, so a stale state would not show there
 today; the replay would still catch code that continues from a stale state.
 Scenario: `inspector-switch-sees-refresh`.
 
+✓ (confirm) resolves like × in the model. The replay drives the real
+confirm button and holds its request, so a request queued behind a
+confirmation is checked on the real workspace. Scenario:
+`inspector-click-during-confirm`.
+
 Entering a view selects a node unless the user closed Node Details
 (#542): the model keeps a node still in the view and otherwise selects the
 layer's first node, and tracks the host's `nodeDetailsClosed` as `closed`.
@@ -540,7 +548,10 @@ follow-up Send:
 Send waits rather than being disabled during the commit, because disabling it
 would swallow the click that caused the blur. The composer's committed-input
 pills lock from the click, so an answer the Send will reserve cannot be
-detached while it waits; a test covers it.
+detached while it waits; a test covers it. The replay observes whether the
+authored input is locked (its own commit busy, or a Send in flight), and
+reads whether a Send stopped by a failed commit released the Send button
+from the real button.
 
 The ghost `intended` is the answer in the field when Send is clicked. The
 model first recorded the committed value when no commit was in flight, which
@@ -588,7 +599,11 @@ have their own tests (`test/graph-camera.test.mjs`,
 `test/graph-layout.test.mjs`).
 
 A fit centers the graph, which the model writes as `Fit`: the one node at
-location 0. The replay reads locations and camera offsets modulo `L`.
+location 0. The replay reads locations and camera offsets modulo `L`, and
+`FitCentersNode` checks, unreduced, that whenever the camera is a fit of the
+node (the ghost `fitted`) the real node is exactly where the first fit put
+it. The replay also observes the selection, so a moved drag must not select
+the node on release. Scenario: `canvas-click-selects`.
 
 ### `HarnessReadiness.tla`
 

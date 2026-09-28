@@ -111,7 +111,7 @@ EnterScope(next) ==
         nt == IF changed THEN stored ELSE text
         nr == IF changed THEN rev + 1 ELSE rev
     IN [drafts |-> [drafts EXCEPT ![next] = [text |-> nt, rev |-> nr]],
-        text |-> nt, rev |-> nr, carried |-> FALSE, prior |-> next]
+        text |-> nt, rev |-> nr, carried |-> FALSE, prior |-> next, retired |-> FALSE]
   ELSE
     LET saved == [drafts EXCEPT ![active] = [text |-> text, rev |-> rev]]
         \* The newest older scope of this thread that holds text.
@@ -124,11 +124,15 @@ EnterScope(next) ==
         \* send that may have been sent.
         inFlight == IF HoldFromClick THEN pc[next[1]] # "idle"
                     ELSE pc[next[1]] \notin {"idle", "reconcile"}
-        submitting == \/ inFlight /\ intent[next[1]].scope = prior
-                         /\ saved[prior].rev = intent[next[1]].rev
-                      \/ HoldUncertain /\ saved[prior] # NoDraft
-                         /\ \E h \in held : h.scope = prior /\ h.rev = saved[prior].rev
-                                          /\ h.landedAt # 0 /\ next[2] >= h.landedAt
+        landed == HoldUncertain /\ saved[prior] # NoDraft
+                  /\ \E h \in held : h.scope = prior /\ h.rev = saved[prior].rev
+                                   /\ h.landedAt # 0 /\ next[2] >= h.landedAt
+        settling == inFlight /\ intent[next[1]].scope = prior
+                    /\ saved[prior].rev = intent[next[1]].rev
+        submitting == settling \/ landed
+        \* A draft its landed turn shows was sent is deleted (SCP-016); the
+        \* submission in flight is left to its settlement.
+        retired == landed /\ ~settling /\ prior # next
         carried == CarryUnsentDraft /\ older # {} /\ ~submitting
         base == IF StableScopeRevision /\ saved[next] # NoDraft
                 THEN Max(saved[next].rev, rev) ELSE rev
@@ -145,8 +149,9 @@ EnterScope(next) ==
           ELSE IF saved[next] = NoDraft
           THEN [saved EXCEPT ![next] = [text |-> 0, rev |-> rev + 1]]
           ELSE saved
-    IN [drafts |-> entered, text |-> entered[next].text, rev |-> entered[next].rev,
-        carried |-> stored = Null /\ empty /\ carried, prior |-> prior]
+        final == IF retired THEN [entered EXCEPT ![prior] = NoDraft] ELSE entered
+    IN [drafts |-> final, text |-> final[next].text, rev |-> final[next].rev,
+        carried |-> stored = Null /\ empty /\ carried, prior |-> prior, retired |-> retired]
 
 \* render() for thread t (WS:3749-3938): the scope transition, then
 \* renderInteractionState sets prompt.disabled from the latest turn's status
@@ -161,6 +166,7 @@ EnterScopeEffect(next, isRunning) ==
   /\ disabled' = isRunning
   /\ persisted' = IF e.carried
                   THEN [persisted EXCEPT ![next] = e.text, ![e.prior] = Null]
+                  ELSE IF e.retired THEN [persisted EXCEPT ![e.prior] = Null]
                   ELSE persisted
 
 Render(t, isRunning) == EnterScopeEffect(Scope(t), isRunning)

@@ -159,6 +159,7 @@ export class TurnComposerWorld {
   // A fake threads.submitInteraction: the thread comes from the view when it
   // is called, as in TH:741.
   #submit(text) {
+    this.submits = (this.submits ?? 0) + 1;
     const thread = this.view;
     const call = { text, post: deferred(), refresh: deferred(), settle: deferred(), phase: "post" };
     this.calls[thread] = call;

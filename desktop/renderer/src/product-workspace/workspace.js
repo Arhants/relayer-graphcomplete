@@ -4270,11 +4270,26 @@ export function createProductWorkspace({
       turns.slice(0, -1).forEach((turn, index) => {
         const scopeKey = composerDraftScopeKey(threadId, turn.id);
         const text = drafts.has(scopeKey) ? null : threadFollowupDraft(scopeKey);
-        if (!text || sentByLaterTurn(threadId, scopeKey, text)) return;
+        if (!text) return;
+        // Sent text is not kept (SCP-016).
+        if (sentByLaterTurn(threadId, scopeKey, text)) {
+          clearThreadFollowupDraft(scopeKey);
+          return;
+        }
         drafts.set(scopeKey, { promptValue: text, promptRevision: -1, restoredDraftInteractionId: null });
       });
       composerDraftScopeState = { ...composerDraftScopeState, drafts };
     }
+    // Drafts in older scopes that a later turn shows were sent.
+    const sentDrafts = turns.slice(0, -1).flatMap((turn) => {
+      const scopeKey = composerDraftScopeKey(threadId, turn.id);
+      const draft = scopeKey === composerDraftScopeState.activeScopeKey
+        ? { promptValue: prompt.value, promptRevision: composerPromptRevision }
+        : composerDraftScopeState.drafts.get(scopeKey);
+      return draft && sentByLaterTurn(threadId, scopeKey, draft.promptValue)
+        ? [{ scopeKey, promptRevision: draft.promptRevision }]
+        : [];
+    });
     const draftTransition = transitionComposerDraftScope(composerDraftScopeState, {
       threadId,
       interactionId: latestInteraction?.id,
@@ -4294,17 +4309,23 @@ export function createProductWorkspace({
             promptRevision: sendWarningIntent.submission?.prompt?.revision,
           }
           : null),
-      sentDrafts: turns.slice(0, -1).flatMap((turn) => {
-        const scopeKey = composerDraftScopeKey(threadId, turn.id);
-        const draft = scopeKey === composerDraftScopeState.activeScopeKey
-          ? { promptValue: prompt.value, promptRevision: composerPromptRevision }
-          : composerDraftScopeState.drafts.get(scopeKey);
-        return draft && sentByLaterTurn(threadId, scopeKey, draft.promptValue)
-          ? [{ scopeKey, promptRevision: draft.promptRevision }]
-          : [];
-      }),
+      sentDrafts,
     });
     composerDraftScopeState = draftTransition.state;
+    // A draft a later turn shows was sent is deleted, in memory and storage
+    // (SCP-016). The submission in flight is left to its settlement.
+    const settling = inFlightSubmissions.get(threadId);
+    const sentBehind = sentDrafts.filter(({ scopeKey, promptRevision }) => (
+      scopeKey !== composerDraftScopeState.activeScopeKey
+      && !(settling?.scopeKey === scopeKey && Object.is(settling.promptRevision, promptRevision))));
+    if (sentBehind.length) {
+      const drafts = new Map(composerDraftScopeState.drafts);
+      for (const { scopeKey } of sentBehind) {
+        drafts.delete(scopeKey);
+        clearThreadFollowupDraft(scopeKey);
+      }
+      composerDraftScopeState = { ...composerDraftScopeState, drafts };
+    }
     prompt.value = draftTransition.promptValue;
     composerPromptRevision = draftTransition.promptRevision;
     if (draftTransition.carriedFromScopeKey) {

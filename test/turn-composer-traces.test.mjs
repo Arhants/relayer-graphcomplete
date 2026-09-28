@@ -75,6 +75,7 @@ describe("After a restart, text an earlier session left in an older turn", () =>
     expect(world.prompt.value).toBe("sent before");
     await world.turnArrivesWithText("sent before");
     expect(world.prompt.value).toBe("");
+    expect(world.persistedDraft(1)).toBeNull();
   });
 
   it("is not carried when a later turn shows it was sent", async () => {
@@ -84,5 +85,24 @@ describe("After a restart, text an earlier session left in an older turn", () =>
       persisted: { 1: "left behind" },
     }).ready();
     expect(world.prompt.value).toBe("");
+    expect(world.persistedDraft(1)).toBeNull();
+  });
+});
+
+// TurnComposer.tla's one scalar send per thread assumes a second Send away;
+// this replays one against the real workspace.
+describe("A second Send while the thread's follow-up is in flight", () => {
+  it("does not post, even after the thread was left and shown again", async () => {
+    world = await new TurnComposerWorld({ maxText: 3, maxTurns: 2 }).ready();
+    for (const step of [["Type"], ["ClickSend"], ["SwitchThread", "B"], ["SwitchThread", "A"], ["Type"]]) {
+      await world.apply(step);
+    }
+    expect(world.send.disabled).toBe(true);
+    // Force the click past the disabled button, as a keyboard shortcut or a
+    // stale event could.
+    world.send.disabled = false;
+    world.send.click();
+    await world.apply(["BackgroundRender"]);
+    expect(world.submits).toBe(1);
   });
 });

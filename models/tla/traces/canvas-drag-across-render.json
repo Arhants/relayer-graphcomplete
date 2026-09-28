@@ -4,7 +4,8 @@
   "summary": "A render while a node is dragged; the node keeps following the pointer and stays where it is dropped.",
   "promises": [
     "DragFollowsPointer",
-    "DropStays"
+    "DropStays",
+    "FitCentersNode"
   ],
   "generatedBy": "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
   "steps": [
@@ -13,6 +14,7 @@
       "state": {
         "cache": {
           "cam": 0,
+          "fitted": false,
           "layout": 0,
           "pinned": false,
           "unfitted": false,
@@ -27,6 +29,7 @@
         },
         "dropped": 4,
         "fitDue": false,
+        "fitted": true,
         "gen": 1,
         "layout": 1,
         "pan": {
@@ -50,6 +53,7 @@
       "state": {
         "cache": {
           "cam": 0,
+          "fitted": false,
           "layout": 0,
           "pinned": false,
           "unfitted": false,
@@ -64,6 +68,7 @@
         },
         "dropped": 4,
         "fitDue": false,
+        "fitted": true,
         "gen": 1,
         "layout": 1,
         "pan": {
@@ -88,6 +93,7 @@
       "state": {
         "cache": {
           "cam": 0,
+          "fitted": false,
           "layout": 0,
           "pinned": false,
           "unfitted": false,
@@ -102,6 +108,7 @@
         },
         "dropped": 1,
         "fitDue": false,
+        "fitted": false,
         "gen": 1,
         "layout": 1,
         "pan": {
@@ -125,6 +132,7 @@
       "state": {
         "cache": {
           "cam": 0,
+          "fitted": false,
           "layout": 0,
           "pinned": false,
           "unfitted": false,
@@ -139,6 +147,7 @@
         },
         "dropped": 1,
         "fitDue": false,
+        "fitted": false,
         "gen": 2,
         "layout": 1,
         "pan": {
@@ -163,6 +172,7 @@
       "state": {
         "cache": {
           "cam": 0,
+          "fitted": false,
           "layout": 0,
           "pinned": false,
           "unfitted": false,
@@ -177,6 +187,7 @@
         },
         "dropped": 2,
         "fitDue": false,
+        "fitted": false,
         "gen": 2,
         "layout": 1,
         "pan": {
@@ -200,6 +211,7 @@
       "state": {
         "cache": {
           "cam": 0,
+          "fitted": false,
           "layout": 0,
           "pinned": false,
           "unfitted": false,
@@ -214,6 +226,7 @@
         },
         "dropped": 2,
         "fitDue": false,
+        "fitted": false,
         "gen": 2,
         "layout": 1,
         "pan": {
@@ -237,6 +250,7 @@
       "state": {
         "cache": {
           "cam": 0,
+          "fitted": false,
           "layout": 0,
           "pinned": false,
           "unfitted": false,
@@ -251,6 +265,7 @@
         },
         "dropped": 2,
         "fitDue": false,
+        "fitted": false,
         "gen": 3,
         "layout": 1,
         "pan": {

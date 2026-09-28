@@ -457,6 +457,9 @@ Act(s) ==
     [] n = "MountReturns" -> MountReturns(s[2])
     [] n = "PrepareReturns" -> PrepareReturns(s[2] = "ok")
     [] n = "DiscardReturns" -> DiscardReturns(s[2] = "ok")
+    \* ✓ resolves like × in this model: the draft leaves and its editor closes.
+    [] n = "Confirm" -> Discard
+    [] n = "ConfirmReturns" -> DiscardReturns(s[2] = "ok")
     [] n = "Autosave" -> Autosave(<<s[2], vid>>)
     [] n = "StatePush" -> IF s[2] = "same" THEN StatePushTo(FALSE, graph)
                           ELSE StatePushTo(TRUE, {s[i] : i \in 3..Len(s)})

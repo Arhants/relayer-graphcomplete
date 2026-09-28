@@ -224,9 +224,10 @@ export class AuthoredInputSendWorld {
         else put.response.reject(Object.assign(new Error("This interaction-input draft changed."), {
           status: 409, code: "input_draft_revision_conflict",
         }));
-        // The model stops a Send waiting on a failed commit; if the real one
-        // posts anyway, the POST shows up and the replay diverges.
-        if (put.result !== "ok") this.clicked = false;
+        // Whether a Send still waits is read from the real Send button once
+        // the renderer settles (below): a Send stopped by the failed commit
+        // must release it, and one that posts anyway shows up as a POST.
+        this.readSendAfterSettle = put.result !== "ok";
         break;
       }
       case "SendReturns": {
@@ -248,6 +249,10 @@ export class AuthoredInputSendWorld {
         throw new Error(`Unreplayed AuthoredInputSend action ${name}`);
     }
     await settle();
+    if (this.readSendAfterSettle) {
+      this.readSendAfterSettle = false;
+      this.clicked = !this.post && this.window.document.querySelector("#sendInteraction").disabled;
+    }
   }
 
   // A turn created elsewhere in the thread, such as by an authored invoke,
@@ -297,6 +302,9 @@ export class AuthoredInputSendWorld {
       srvOther: this.server.other,
       active: this.server.active,
       field: valueOf(this.input?.value ?? ""),
+      // The authored input is locked while its commit is busy or a Send is
+      // in flight, so the reserved revision cannot race an edit.
+      locked: Boolean(this.input?.disabled),
       put,
       send,
     };
@@ -315,6 +323,7 @@ export function projectModelState(state) {
     srvOther: state.srvOther,
     active: state.active,
     field: state.field,
+    locked: state.put.st !== "none" || state.send.st !== "idle",
     put: { st: state.put.st, expected: state.put.expected, val: state.put.val },
     send: { st: state.send.st, expected: state.send.expected },
   };

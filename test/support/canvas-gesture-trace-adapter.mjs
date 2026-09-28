@@ -82,7 +82,12 @@ export class CanvasGestureWorld {
       pendingActionInvocations: [],
     };
     this.#show(this.home);
-    this.selection = { currentThreadId: 3, currentInteractionId: 5, selectedNodeId: null, layerPath: [] };
+    // Node Details start closed, as the spec's initial state has nothing
+    // selected; the host marks them closed when no node is reported, as
+    // threads.js does.
+    this.selection = {
+      currentThreadId: 3, currentInteractionId: 5, selectedNodeId: null, layerPath: [], nodeDetailsClosed: true,
+    };
     this.workspace = createProductWorkspace({
       root: this.window.document,
       getState: () => this.state,
@@ -90,6 +95,7 @@ export class CanvasGestureWorld {
       selection: this.selection,
       showThread: () => {},
       showEmpty: () => {},
+      onSelectionChange: (id) => { this.selection.nodeDetailsClosed = id == null; },
     });
     this.workspace.render();
     const origin = this.#nodePoint();
@@ -252,6 +258,9 @@ export class CanvasGestureWorld {
     return {
       node: point === null ? "off" : ring(location),
       cam: this.#node ? ring(offset) : "away",
+      // Where N is drawn in steps from where the first fit put it, unreduced.
+      at: point === null ? "off" : location,
+      sel: this.#node ? String(this.selection.selectedNodeId) === String(NODE) : "away",
       pressed: this.pressed,
     };
   }
@@ -265,6 +274,7 @@ export class CanvasGestureWorld {
 export function projectModelState(state, L) {
   const screen = (state.w + state.cam) % L;
   return {
+    sel: state.view === "home" ? state.sel : "away",
     node: state.view === "home" ? screen : "off",
     cam: state.view === "home" ? state.cam : "away",
     pressed: state.pressed,
@@ -277,6 +287,9 @@ export const PROMISES = {
     && model.view === "home") || real.node === model.ptr,
   // The fit after the drop is observed as the camera the model says.
   DropFitsNewLayout: (_real, model) => !(model.pressed === "none" && model.view === "home" && model.unfitted),
+  // A fit centers N, where the first fit put it: compared unreduced, so a
+  // camera off by whole turns of the ring cannot pass for a fit.
+  FitCentersNode: (real, model) => model.view !== "home" || !model.fitted || real.at === 0,
   DropStays: (real, model, L) => model.dropped === L + 1 || model.view !== "home"
     || model.pressed !== "none" || real.node === (model.dropped + model.cam) % L,
 };

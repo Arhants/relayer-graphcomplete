@@ -1359,6 +1359,54 @@
       ]
     },
     {
+      "id": "inspector-click-during-confirm",
+      "module": "NodeInspector",
+      "preset": "inspector-replay",
+      "promises": [
+        "InspectorShowsSelection",
+        "LastRequestWins",
+        "DraftedSelectionHasEditor",
+        "InspectorIsCurrent",
+        "OnlyLatestRequestSelects"
+      ],
+      "summary": "A click on another node while a draft is being confirmed waits for the confirmation and then opens that node.",
+      "steps": [
+        [
+          "Click",
+          "n1"
+        ],
+        [
+          "MountReturns",
+          1
+        ],
+        [
+          "Annotate"
+        ],
+        [
+          "EditDraft"
+        ],
+        [
+          "Autosave",
+          "n1"
+        ],
+        [
+          "Confirm"
+        ],
+        [
+          "Click",
+          "n2"
+        ],
+        [
+          "ConfirmReturns",
+          "ok"
+        ],
+        [
+          "MountReturns",
+          1
+        ]
+      ]
+    },
+    {
       "id": "inspector-close-during-flush",
       "module": "NodeInspector",
       "preset": "inspector-replay",
@@ -1777,13 +1825,38 @@
       ]
     },
     {
+      "id": "canvas-click-selects",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "init": "ptr = 0",
+      "promises": [
+        "DragFollowsPointer",
+        "DropStays",
+        "DropFitsNewLayout",
+        "FitCentersNode"
+      ],
+      "summary": "A press and release on the node without moving selects it; a render keeps the selection.",
+      "steps": [
+        [
+          "Press"
+        ],
+        [
+          "Release"
+        ],
+        [
+          "RenderSame"
+        ]
+      ]
+    },
+    {
       "id": "canvas-drag-across-render",
       "module": "CanvasGesture",
       "preset": "canvas",
       "init": "ptr = 0",
       "promises": [
         "DragFollowsPointer",
-        "DropStays"
+        "DropStays",
+        "FitCentersNode"
       ],
       "summary": "A render while a node is dragged; the node keeps following the pointer and stays where it is dropped.",
       "steps": [
@@ -1817,7 +1890,8 @@
       "promises": [
         "DragFollowsPointer",
         "DropStays",
-        "DropFitsNewLayout"
+        "DropFitsNewLayout",
+        "FitCentersNode"
       ],
       "summary": "The accepted layout changes while a node is dragged; the node stays with the pointer, the view fits the new layout once it is dropped, and the drop holds.",
       "steps": [
@@ -1851,7 +1925,8 @@
       "promises": [
         "DragFollowsPointer",
         "DropStays",
-        "DropFitsNewLayout"
+        "DropFitsNewLayout",
+        "FitCentersNode"
       ],
       "summary": "The layout changes while a node is dragged, and the user leaves the view before dropping it; returning shows the new layout fitted.",
       "steps": [
@@ -1883,7 +1958,8 @@
       "init": "ptr = 0",
       "promises": [
         "DragFollowsPointer",
-        "DropStays"
+        "DropStays",
+        "FitCentersNode"
       ],
       "summary": "A dropped node stays put when the user leaves the view and returns.",
       "steps": [
@@ -1912,7 +1988,8 @@
       "init": "ptr = 1",
       "promises": [
         "DragFollowsPointer",
-        "DropStays"
+        "DropStays",
+        "FitCentersNode"
       ],
       "summary": "A render while the stage is panned; the camera keeps following the pointer.",
       "steps": [
@@ -1941,7 +2018,8 @@
       "init": "ptr = 0",
       "promises": [
         "DragFollowsPointer",
-        "DropStays"
+        "DropStays",
+        "FitCentersNode"
       ],
       "summary": "The view changes during a drag; returning shows the node where it was dragged.",
       "steps": [

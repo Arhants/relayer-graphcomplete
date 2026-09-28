@@ -129,6 +129,7 @@ export class NodeInspectorWorld {
     this.visible = Object.keys(NODE_ID);
     this.saves = [];
     this.discards = [];
+    this.confirms = [];
     this.assets = [];
     this.slotAssets = new Map();
     this.draftRevision = 0;
@@ -188,6 +189,13 @@ export class NodeInspectorWorld {
         discard: () => {
           const request = { response: deferred() };
           world.discards.push(request);
+          return request.response.promise;
+        },
+        // Confirm resolves like discard in the spec: the draft leaves the
+        // draft set and its editor closes.
+        confirm: (_threadId, draft) => {
+          const request = { draft, response: deferred() };
+          world.confirms.push(request);
           return request.response.promise;
         },
       },
@@ -290,6 +298,27 @@ export class NodeInspectorWorld {
         const ok = (name === "SaveReturns" ? args[1] : args[0]) === "ok";
         await until(() => this.saves.length > 0, "the draft save request");
         this.#respond(this.saves, name, ok, this.#savedDraft());
+        break;
+      }
+      case "Confirm": {
+        const button = $('#nodeContextDock [aria-label="Confirm annotation"]');
+        if (!button || button.disabled) throw new Error("Confirm: ✓ is unavailable");
+        button.click();
+        break;
+      }
+      case "ConfirmReturns": {
+        await until(() => this.confirms.length > 0, "the confirm request");
+        const request = this.confirms.shift();
+        if (args[0] === "ok") {
+          request.response.resolve({
+            draftId: request.draft.id,
+            target: request.draft.target,
+            targetNode: request.draft.targetNode,
+            annotation: request.draft.text,
+          });
+        } else {
+          request.response.reject(Object.assign(new Error("Confirm failed"), { status: 503 }));
+        }
         break;
       }
       case "DiscardReturns": {
