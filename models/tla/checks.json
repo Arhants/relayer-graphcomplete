@@ -134,12 +134,10 @@
       "preset": "providers",
       "invariants": [
         "TypeOK",
-        "DefaultFamilyIsLive"
+        "DefaultFamilyIsLiveOrAwaitsModels"
       ],
-      "expect": {
-        "violated": "DefaultFamilyIsLive"
-      },
-      "finding": "Open product question: a catalog refresh reporting no eligible models tombstones the default family until a later refresh reactivates it. No PRD promise covers this."
+      "expect": "pass",
+      "finding": "The default family is live, or P's managed family while P stays active, as after a no-eligible refresh (decided; PROV-008 Q15). Custom defaults are never broken."
     },
     {
       "id": "completion-safety-holds",

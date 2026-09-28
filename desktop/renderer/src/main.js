@@ -39,6 +39,7 @@ import {
 } from "./model-family-settings.js";
 import { createReviewPresentationAdapter } from "./review-tools.js";
 import { initializeProviderSettings, refreshProviderSettings } from "./provider-settings.js";
+import { setProviderModelsRefreshedHandler } from "./provider-models-refresh.js";
 import {
   installOnboardingTutorialController,
   onboardingTutorialController,
@@ -407,6 +408,12 @@ async function boot() {
     updateCreateThreadAvailability();
     updateTutorialAvailability();
     await refreshDesktopAccountUi({ offerOnboarding: true });
+  });
+  // A Refresh models action for a default family that needs model setup reloads the provider
+  // cards, Settings, both composers and the open thread (PROV-008).
+  setProviderModelsRefreshedHandler(async () => {
+    await refreshProviderSettings();
+    await refreshProviderModelUi();
   });
   const account = await refreshAccount();
   await initializeProviderSettings();

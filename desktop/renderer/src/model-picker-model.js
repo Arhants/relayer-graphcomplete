@@ -1,5 +1,9 @@
 export const NO_MODELS_FOR_HARNESS = "No available models for this harness";
 
+// A refresh that finds no eligible models tombstones the provider's managed family. The
+// app server keeps it as the default and refuses Send with this code (PROV-008).
+export const MODEL_SETUP_RECOVERY_CODE = "provider_no_eligible_execution_models";
+
 const MODEL_SELECTION_CATALOG_ERRORS = new Set([
   "harness_unknown",
   "harness_not_product_visible",
@@ -10,12 +14,43 @@ const MODEL_SELECTION_CATALOG_ERRORS = new Set([
   "model_hidden",
   "model_unavailable",
   "model_family_disabled",
+  "model_family_removed",
+  "model_family_unresolvable",
+  MODEL_SETUP_RECOVERY_CODE,
   "harness_model_incompatible",
   "model_not_in_family",
 ]);
 
 export function isModelSelectionCatalogError(error) {
   return MODEL_SELECTION_CATALOG_ERRORS.has(error?.code);
+}
+
+// A managed family kept selected while its provider has no eligible models, as the default or a
+// thread's last selection, and the exact-provider refresh that restores it. Null otherwise.
+export function familyModelSetup(settings, familyId) {
+  if (familyId == null) return null;
+  const recovery = [settings?.defaultFamilyRecovery, ...(settings?.familiesNeedingModelSetup ?? [])]
+    .find((candidate) => (
+      candidate?.reason?.code === MODEL_SETUP_RECOVERY_CODE
+      && String(candidate.familyId) === String(familyId)
+    ));
+  if (!recovery) return null;
+  const provider = settings.providers?.find((item) => String(item.id) === String(recovery.providerId));
+  const providerLabel = provider?.label ?? recovery.providerId;
+  return {
+    familyId: recovery.familyId,
+    familyName: recovery.familyName,
+    providerId: recovery.providerId,
+    providerLabel,
+    label: "Needs model setup",
+    message: `${recovery.familyName} needs model setup. ${providerLabel} has no models eligible for agent execution.`,
+    actionLabel: "Refresh models",
+    actionName: `Refresh models for ${providerLabel}`,
+  };
+}
+
+export function defaultFamilyModelSetup(settings) {
+  return familyModelSetup(settings, settings?.defaults?.familyId);
 }
 
 function harnessFor(settings, harnessId) {

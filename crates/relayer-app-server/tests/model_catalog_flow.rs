@@ -730,6 +730,253 @@ async fn a_catalog_result_from_a_superseded_connection_generation_has_no_effect(
     assert_eq!(state().await, (true, 4, "active".to_owned()));
 }
 
+// PROV-008 (Q15): a refresh reporting provider_no_eligible_execution_models tombstones the
+// provider's managed family. When that family is the default, it stays selected and Send is
+// refused with the provider's recovery reason, not as a family the user disabled or removed.
+// A later eligible refresh restores it; after a policy upgrade the successor family restores.
+#[tokio::test]
+async fn a_default_family_without_eligible_models_needs_model_setup_until_a_refresh_restores_it() {
+    const RECOVERY: &str = "provider_no_eligible_execution_models";
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-default-family-recovery-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
+    let database = root.join("product.sqlite3");
+    let app = open_app(&database, &root).await;
+    configure_codex_policy(&database).await;
+    let send = |method: &str, uri: &str, body: Option<Value>| {
+        let request = if uri.starts_with("/api/internal/") {
+            bearer_request(method, uri, body)
+        } else {
+            cookie_request(method, uri, body)
+        };
+        let app = app.clone();
+        async move { app.oneshot(request).await.unwrap() }
+    };
+    let publish = |snapshot: Value| {
+        let response = send("PUT", "/api/internal/provider-catalog", Some(snapshot));
+        async move {
+            assert_eq!(response.await.status(), StatusCode::NO_CONTENT);
+        }
+    };
+    let settings = || {
+        let response = send("GET", "/api/model-settings", None);
+        async move { response_json(response.await).await }
+    };
+    let validate = |family_id: i64, model_id: &str| {
+        send(
+            "POST",
+            "/api/model-selection/validate",
+            Some(json!({
+                "harnessId": "codex-basic",
+                "familyId": family_id,
+                "providerId": "codex",
+                "modelId": model_id,
+            })),
+        )
+    };
+    let assert_needs_model_setup = |response: Response<Body>| async move {
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = response_json(response).await;
+        assert_eq!(body["code"], RECOVERY, "{body}");
+        assert!(
+            body["error"].as_str().unwrap().contains("Refresh"),
+            "{body}"
+        );
+    };
+    let zero_eligible = || {
+        let mut snapshot = provider_snapshot(None);
+        for model in snapshot["models"].as_array_mut().unwrap() {
+            model["providerDefault"] = json!(false);
+        }
+        snapshot.as_object_mut().unwrap().remove("systemFamily");
+        snapshot
+    };
+
+    publish(provider_snapshot(None)).await;
+    // A second provider with its own managed family, which must not take over the default.
+    let pool = sqlite_pool(&database).await;
+    for statement in [
+        "UPDATE product_harnesses SET available=1,unavailable_reason_code=NULL,unavailable_reason_message=NULL WHERE configuration_name='codex-basic'",
+        "INSERT INTO model_providers(id,label,connected,refreshed_at,adapter_id,access_contract,lifecycle_state) VALUES('work','Work',1,'1','codex-subscription','managed-runtime@1','active')",
+        "INSERT INTO harness_provider_compatibility(harness_configuration_name,provider_id,all_models) VALUES ('codex-basic','work',1)",
+    ] {
+        sqlx::query(statement).execute(&pool).await.unwrap();
+    }
+    pool.close().await;
+    publish(provider_snapshot_for("work", "Work", None)).await;
+    let before = settings().await;
+    let default_family = before["defaults"]["familyId"].as_i64().unwrap();
+    assert_eq!(before["defaults"]["providerId"], "codex");
+    assert_eq!(before["defaultFamilyRecovery"], Value::Null);
+    assert_eq!(
+        validate(default_family, "gpt-5.6-sol").await.status(),
+        StatusCode::OK
+    );
+    // A family the user disabled keeps its own code.
+    let custom = response_json(
+        send(
+            "POST",
+            "/api/model-families",
+            Some(json!({
+                "name": "hidden",
+                "enabled": false,
+                "members": [{ "providerId": "codex", "modelId": "gpt-5.6-sol" }],
+            })),
+        )
+        .await,
+    )
+    .await;
+    let hidden_family = custom["id"].as_i64().unwrap();
+
+    // The refresh reports no eligible models. The default stays selected, and Settings still
+    // names it, in its recovery state.
+    publish(zero_eligible()).await;
+    // Another provider's refresh during recovery never takes over the default either.
+    publish(provider_snapshot_for("work", "Work", None)).await;
+    let recovering = settings().await;
+    assert_eq!(recovering["defaults"]["familyId"], default_family);
+    assert_eq!(recovering["defaults"]["providerId"], "codex");
+    assert_eq!(
+        recovering["defaultFamilyRecovery"]["familyId"],
+        default_family
+    );
+    assert_eq!(recovering["defaultFamilyRecovery"]["providerId"], "codex");
+    assert_eq!(
+        recovering["defaultFamilyRecovery"]["familyName"],
+        before["families"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|family| family["id"] == default_family)
+            .unwrap()["name"]
+    );
+    assert_eq!(
+        recovering["defaultFamilyRecovery"]["reason"]["code"],
+        RECOVERY
+    );
+    // The renderer tests read this exact response as their fixture.
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../test/fixtures/model-settings-default-family-recovery.json");
+    if std::env::var_os("RELAYER_WRITE_FIXTURES").is_some() {
+        std::fs::write(
+            &fixture,
+            serde_json::to_string_pretty(&recovering).unwrap() + "\n",
+        )
+        .unwrap();
+    }
+    assert_eq!(
+        serde_json::from_str::<Value>(&std::fs::read_to_string(&fixture).unwrap()).unwrap(),
+        recovering,
+        "regenerate {} with RELAYER_WRITE_FIXTURES=1",
+        fixture.display()
+    );
+
+    // Validate and thread creation both give the provider's recovery reason.
+    assert_needs_model_setup(validate(default_family, "gpt-5.6-sol").await).await;
+    assert_needs_model_setup(
+        send(
+            "POST",
+            "/api/threads",
+            Some(json!({
+                "initialMessage": "Blocked until the models are set up",
+                "harnessId": "codex-basic",
+                "modelSelection": {
+                    "familyId": default_family,
+                    "providerId": "codex",
+                    "modelId": "gpt-5.6-sol",
+                },
+            })),
+        )
+        .await,
+    )
+    .await;
+    // A harness-only default save is refused with the same reason and moves nothing.
+    assert_needs_model_setup(
+        send(
+            "PUT",
+            "/api/model-settings/defaults",
+            Some(json!({ "harnessId": "codex-basic" })),
+        )
+        .await,
+    )
+    .await;
+    let unchanged = settings().await;
+    assert_eq!(unchanged["defaults"], recovering["defaults"]);
+    let disabled = response_json(validate(hidden_family, "gpt-5.6-sol").await).await;
+    assert_eq!(disabled["code"], "model_family_disabled");
+
+    // A later eligible refresh restores the same family.
+    publish(provider_snapshot(None)).await;
+    let restored = settings().await;
+    assert_eq!(restored["defaults"]["familyId"], default_family);
+    assert_eq!(restored["defaultFamilyRecovery"], Value::Null);
+    assert_eq!(
+        validate(default_family, "gpt-5.6-sol").await.status(),
+        StatusCode::OK
+    );
+
+    // After a policy upgrade, the successor managed family is what restores.
+    publish(zero_eligible()).await;
+    let pool = sqlite_pool(&database).await;
+    sqlx::query("UPDATE product_harnesses SET family_policy_version=2 WHERE configuration_name='codex-basic'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+    publish(provider_snapshot(None)).await;
+    let upgraded = settings().await;
+    let successor = upgraded["defaults"]["familyId"].as_i64().unwrap();
+    assert_ne!(successor, default_family);
+    assert_eq!(upgraded["defaults"]["providerId"], "codex");
+    assert_eq!(upgraded["defaultFamilyRecovery"], Value::Null);
+    let first_member = upgraded["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|family| family["id"] == successor)
+        .unwrap()["members"][0]["modelId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        validate(successor, &first_member).await.status(),
+        StatusCode::OK
+    );
+
+    // The user may explicitly choose another default provider during recovery. The family that
+    // needs model setup is still reported, and a thread still selecting it gets the same code.
+    // Policy version 2 names its models, so this refresh hides them all to leave none eligible.
+    let mut none_visible = zero_eligible();
+    for model in none_visible["models"].as_array_mut().unwrap() {
+        model["visible"] = json!(false);
+    }
+    publish(none_visible).await;
+    let moved = response_json(
+        send(
+            "PUT",
+            "/api/model-settings/defaults",
+            Some(json!({ "providerId": "work" })),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(moved["providerId"], "work");
+    let chosen = settings().await;
+    assert_eq!(chosen["defaultFamilyRecovery"], Value::Null);
+    assert_eq!(
+        chosen["familiesNeedingModelSetup"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|family| family["familyId"].as_i64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![successor]
+    );
+    assert_needs_model_setup(validate(successor, &first_member).await).await;
+}
+
 fn provider_snapshot(unavailable: Option<&str>) -> Value {
     provider_snapshot_for("codex", "Codex", unavailable)
 }

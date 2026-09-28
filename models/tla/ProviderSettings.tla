@@ -490,7 +490,9 @@ Remove ==
 \* provider_no_eligible_execution_models reason, which tombstones P's
 \* managed families without consulting product_model_preferences. A later
 \* publish with eligible models reactivates the same family id
-\* (replace_system_family, CAT:2455-2478).
+\* (replace_system_family, CAT:2455-2478). SQLite keeps P connected after a
+\* no_eligible refresh; the model clears sqlConnected instead, because Rust
+\* admission refuses the tombstoned family with the recovery code (PROV-008).
 CatalogRefresh(outcome) ==
   /\ defs["P"] = "active" /\ ~closed
   /\ sqlConnected' = (outcome = "models")
@@ -646,10 +648,15 @@ PendingAttemptIsOwned ==
 CloseLeavesNoOpenRuntime ==
   closed => \A r \in RuntimeIds : rt[r] /= "open"
 
-\* The default family is always a live, enabled family. Disable, delete,
-\* and provider removal all refuse to break it (CAT:803-861, 2656-2706).
-\* The PRD states no such promise; this checks the guards' shared intent.
-DefaultFamilyIsLive ==
-  fam[defaultFamily].state = "active" /\ fam[defaultFamily].enabled
+\* PROV-008 (Q15): the default family is a live, enabled family, or P's
+\* managed family while P stays active. A refresh reporting no eligible
+\* models tombstones that family, and it stays the default in a recovery
+\* state. Disable, delete and provider removal all refuse to break the
+\* default (CAT:803-861, 2656-2706), so P stays active meanwhile. The
+\* invariant does not name the refresh outcome; in this model only the
+\* no_eligible refresh tombstones managedP while P is active.
+DefaultFamilyIsLiveOrAwaitsModels ==
+  \/ fam[defaultFamily].state = "active" /\ fam[defaultFamily].enabled
+  \/ defaultFamily = "managedP" /\ defs["P"] = "active"
 
 =============================================================================

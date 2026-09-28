@@ -3,6 +3,7 @@ import { escapeHtml, toast } from "../ui.js";
 import { actionCanRetry, actionWasInvoked, actionReviewKind } from "../action-invocation-state.js";
 import { setControlActivationCompletion } from "../control-activation.js";
 import {
+  composerSendTitle,
   createModelPicker,
   selectionForNextInteraction,
 } from "../model-picker.js";
@@ -1542,6 +1543,7 @@ export function createProductWorkspace({
   onSubmitInteraction = async () => {},
   onStopInteraction = async () => {},
   onOpenSettings = () => {},
+  onRefreshModels = null,
   onNavigateLayer = async () => {},
   onNavigateResolvedInvoke = async () => {},
   onInvokeAction = async () => {},
@@ -3242,9 +3244,11 @@ export function createProductWorkspace({
       Boolean(contextEditor),
       inputAttachments,
     ));
-    send.title = modelPicker?.isReady()
-      ? "Send"
-      : "Choose an available model in Settings before sending";
+    send.title = composerSendTitle({
+      ready: modelPicker?.isReady() ?? false,
+      modelSetup: modelPicker?.modelSetup() ?? null,
+      readyTitle: "Send",
+    });
   };
   const releaseSendAttempt = () => {
     sendAttempt = null;
@@ -3586,6 +3590,7 @@ export function createProductWorkspace({
       settings: getState().modelSettings,
       onSelectionChange: syncComposer,
       onOpenSettings,
+      onRefreshModels,
     });
   }
   prompt.oninput = () => {

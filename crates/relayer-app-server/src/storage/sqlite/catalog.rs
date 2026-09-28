@@ -1,8 +1,8 @@
 use super::SqliteProductStore;
 use crate::product::{
     CatalogError, CompleteProviderOnboardingCommand, CreateModelFamilyCommand,
-    ExecutionHarnessPolicy, ExecutionModelPlan, ExecutionModelRoute, FamilyPolicyReference,
-    HarnessModelCompatibility, HarnessModelRule, HarnessModelRules,
+    ExecutionHarnessPolicy, ExecutionModelPlan, ExecutionModelRoute, FamilyModelSetup,
+    FamilyPolicyReference, HarnessModelCompatibility, HarnessModelRule, HarnessModelRules,
     HarnessRuntimeAvailabilityUpdate, ManagedFamilyPolicy, ModelFamily, ModelFamilyId,
     ModelFamilyKind, ModelFamilyMember, ModelSettings, ModelSettingsDefaults, ProductHarness,
     Provider, ProviderCatalogSnapshot, ProviderConnectionStamp, ProviderDefinition, ProviderId,
@@ -18,6 +18,21 @@ use crate::storage::StorageError;
 use sha2::{Digest, Sha256};
 use sqlx::{Row, SqliteConnection, SqlitePool, sqlite::SqliteRow};
 use std::collections::{HashMap, HashSet};
+
+/// A refresh that reports no eligible execution models tombstones the provider's managed family
+/// (PROV-008). A selection of that family, often the default, is refused with this recovery
+/// reason. It is not a family the user disabled or removed, and a later eligible refresh
+/// restores it or its successor.
+const MODEL_SETUP_RECOVERY_CODE: &str = "provider_no_eligible_execution_models";
+const MODEL_SETUP_RECOVERY_MESSAGE: &str = "This model family needs model setup. Its provider has no models eligible for agent execution. Refresh the provider's models.";
+
+/// SQL over a `model_families` row aliased `f`: true for a provider's latest managed family while
+/// it is tombstoned and its connected provider reports no eligible execution models.
+macro_rules! family_needs_model_setup_sql {
+    () => {
+        "(f.kind='system' AND f.managed_provider_id IS NOT NULL AND f.lifecycle_state='tombstoned' AND EXISTS(SELECT 1 FROM model_providers owner WHERE owner.id=f.managed_provider_id AND owner.lifecycle_state='active' AND owner.connected=1 AND owner.unavailable_reason_code='provider_no_eligible_execution_models') AND NOT EXISTS(SELECT 1 FROM model_families newer WHERE newer.managed_provider_id=f.managed_provider_id AND newer.id>f.id))"
+    };
+}
 
 impl SqliteProductStore {
     pub(crate) async fn update_harness_runtime_availability(
@@ -505,6 +520,12 @@ impl SqliteProductStore {
         let mut harnesses = load_harnesses(&mut transaction).await?;
         let mut providers = load_providers(&mut transaction).await?;
         let families = load_families(&mut transaction).await?;
+        let families_needing_model_setup =
+            load_families_needing_model_setup(&mut transaction).await?;
+        let default_family_recovery = families_needing_model_setup
+            .iter()
+            .find(|family| Some(family.family_id) == defaults.family_id)
+            .cloned();
         project_harness_usability_on(&mut transaction, &mut harnesses).await?;
         for provider in &mut providers {
             if !provider.connected
@@ -556,6 +577,8 @@ impl SqliteProductStore {
             harnesses,
             providers,
             families,
+            default_family_recovery,
+            families_needing_model_setup,
         })
     }
 
@@ -708,6 +731,14 @@ impl SqliteProductStore {
             if let Some(family_id) = family_id.filter(|_| !configuration_owned)
                 && !family_resolves_on(&mut transaction, &harness_id, family_id).await?
             {
+                // The default family waits for its provider's models. The harness change is
+                // refused with that reason, and the default family is never moved silently.
+                if family_needs_model_setup_on(&mut transaction, family_id).await? {
+                    return Err(StorageError::Catalog(CatalogError::invalid(
+                        MODEL_SETUP_RECOVERY_CODE,
+                        MODEL_SETUP_RECOVERY_MESSAGE,
+                    )));
+                }
                 return Err(StorageError::Catalog(CatalogError::invalid(
                     "default_family_unresolvable",
                     "The default family must contain a model resolvable by the default harness.",
@@ -1700,9 +1731,11 @@ pub(super) async fn validate_model_selection_on(
     connection: &mut SqliteConnection,
     command: &ValidateModelSelectionCommand,
 ) -> Result<(), StorageError> {
-    let row = sqlx::query(
-            "SELECT h.product_visible AS harness_visible,h.available AS harness_available,h.model_rules_present,h.execution_access_contracts_json,p.connected AS provider_connected,p.lifecycle_state='active' AS provider_active,p.adapter_id,p.access_contract,m.visible AS model_visible,m.available AS model_available,f.enabled AS family_enabled,EXISTS(SELECT 1 FROM harness_provider_compatibility c WHERE c.harness_configuration_name=h.configuration_name AND c.provider_id=p.id AND (c.all_models=1 OR EXISTS(SELECT 1 FROM harness_model_compatibility cm WHERE cm.harness_configuration_name=c.harness_configuration_name AND cm.provider_id=c.provider_id AND cm.model_id=m.model_id))) AS compatible,EXISTS(SELECT 1 FROM model_family_members fm WHERE fm.family_id=f.id AND fm.provider_id=p.id AND fm.model_id=m.model_id) AS member FROM product_harnesses h JOIN model_providers p ON p.id=?2 JOIN provider_models m ON m.provider_id=p.id AND m.model_id=?3 JOIN model_families f ON f.id=?4 WHERE h.configuration_name=?1",
-        )
+    let row = sqlx::query(concat!(
+            "SELECT h.product_visible AS harness_visible,h.available AS harness_available,h.model_rules_present,h.execution_access_contracts_json,p.connected AS provider_connected,p.lifecycle_state='active' AS provider_active,p.adapter_id,p.access_contract,m.visible AS model_visible,m.available AS model_available,f.enabled AS family_enabled,",
+            family_needs_model_setup_sql!(),
+            " AS family_needs_model_setup,EXISTS(SELECT 1 FROM harness_provider_compatibility c WHERE c.harness_configuration_name=h.configuration_name AND c.provider_id=p.id AND (c.all_models=1 OR EXISTS(SELECT 1 FROM harness_model_compatibility cm WHERE cm.harness_configuration_name=c.harness_configuration_name AND cm.provider_id=c.provider_id AND cm.model_id=m.model_id))) AS compatible,EXISTS(SELECT 1 FROM model_family_members fm WHERE fm.family_id=f.id AND fm.provider_id=p.id AND fm.model_id=m.model_id) AS member FROM product_harnesses h JOIN model_providers p ON p.id=?2 JOIN provider_models m ON m.provider_id=p.id AND m.model_id=?3 JOIN model_families f ON f.id=?4 WHERE h.configuration_name=?1",
+        ))
         .bind(&command.harness_id)
         .bind(command.provider_id.as_str())
         .bind(&command.model_id)
@@ -1736,6 +1769,11 @@ pub(super) async fn validate_model_selection_on(
             row.get::<bool, _>("provider_active"),
             "provider_removal_pending",
             "The selected provider is unavailable for new interactions.",
+        ),
+        (
+            !row.get::<bool, _>("family_needs_model_setup"),
+            MODEL_SETUP_RECOVERY_CODE,
+            MODEL_SETUP_RECOVERY_MESSAGE,
         ),
         (
             row.get::<bool, _>("model_visible"),
@@ -1787,9 +1825,11 @@ pub(super) async fn validate_execution_model_selection_on(
         provider_id: selection.provider_id.clone(),
         model_id: selection.model_id.clone(),
     };
-    let row = sqlx::query(
-        "SELECT h.product_visible AS harness_visible,h.available AS harness_available,h.model_rules_present,h.execution_access_contracts_json,p.connected AS provider_connected,p.lifecycle_state='active' AS provider_active,p.adapter_id,p.access_contract,m.visible AS model_visible,m.available AS model_available,f.enabled AS family_enabled,f.lifecycle_state='active' AS family_active,EXISTS(SELECT 1 FROM model_family_members fm WHERE fm.family_id=f.id AND fm.provider_id=p.id AND fm.model_id=m.model_id) AS member,EXISTS(SELECT 1 FROM harness_provider_compatibility c WHERE c.harness_configuration_name=h.configuration_name AND c.provider_id=p.id AND (c.all_models=1 OR EXISTS(SELECT 1 FROM harness_model_compatibility cm WHERE cm.harness_configuration_name=c.harness_configuration_name AND cm.provider_id=c.provider_id AND cm.model_id=m.model_id))) AS compatible FROM product_harnesses h JOIN model_providers p ON p.id=?2 JOIN provider_models m ON m.provider_id=p.id AND m.model_id=?3 JOIN model_families f ON f.id=?4 WHERE h.configuration_name=?1",
-    )
+    let row = sqlx::query(concat!(
+        "SELECT h.product_visible AS harness_visible,h.available AS harness_available,h.model_rules_present,h.execution_access_contracts_json,p.connected AS provider_connected,p.lifecycle_state='active' AS provider_active,p.adapter_id,p.access_contract,m.visible AS model_visible,m.available AS model_available,f.enabled AS family_enabled,f.lifecycle_state='active' AS family_active,",
+        family_needs_model_setup_sql!(),
+        " AS family_needs_model_setup,EXISTS(SELECT 1 FROM model_family_members fm WHERE fm.family_id=f.id AND fm.provider_id=p.id AND fm.model_id=m.model_id) AS member,EXISTS(SELECT 1 FROM harness_provider_compatibility c WHERE c.harness_configuration_name=h.configuration_name AND c.provider_id=p.id AND (c.all_models=1 OR EXISTS(SELECT 1 FROM harness_model_compatibility cm WHERE cm.harness_configuration_name=c.harness_configuration_name AND cm.provider_id=c.provider_id AND cm.model_id=m.model_id))) AS compatible FROM product_harnesses h JOIN model_providers p ON p.id=?2 JOIN provider_models m ON m.provider_id=p.id AND m.model_id=?3 JOIN model_families f ON f.id=?4 WHERE h.configuration_name=?1",
+    ))
     .bind(harness_id)
     .bind(selection.provider_id.as_str())
     .bind(&selection.model_id)
@@ -1823,6 +1863,11 @@ pub(super) async fn validate_execution_model_selection_on(
             row.get::<bool, _>("provider_active"),
             "provider_removal_pending",
             "The selected provider is unavailable for new interactions.",
+        ),
+        (
+            !row.get::<bool, _>("family_needs_model_setup"),
+            MODEL_SETUP_RECOVERY_CODE,
+            MODEL_SETUP_RECOVERY_MESSAGE,
         ),
         (
             row.get::<bool, _>("model_visible"),
@@ -2421,6 +2466,47 @@ async fn load_families(
     Ok(families)
 }
 
+async fn family_needs_model_setup_on(
+    connection: &mut SqliteConnection,
+    family_id: ModelFamilyId,
+) -> Result<bool, StorageError> {
+    Ok(sqlx::query_scalar(concat!(
+        "SELECT EXISTS(SELECT 1 FROM model_families f WHERE f.id=?1 AND ",
+        family_needs_model_setup_sql!(),
+        ")"
+    ))
+    .bind(family_id.value())
+    .fetch_one(&mut *connection)
+    .await?)
+}
+
+/// Tombstoned managed families whose provider has no eligible models. The default family and a
+/// thread's last selection can still name one, so Settings and both composers can show it and
+/// offer its provider's refresh (PROV-008).
+async fn load_families_needing_model_setup(
+    connection: &mut SqliteConnection,
+) -> Result<Vec<FamilyModelSetup>, StorageError> {
+    let rows = sqlx::query_as::<_, (i64, String, String)>(concat!(
+        "SELECT f.id,f.name,f.managed_provider_id FROM model_families f WHERE ",
+        family_needs_model_setup_sql!(),
+        " ORDER BY f.id"
+    ))
+    .fetch_all(&mut *connection)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(family_id, family_name, provider_id)| FamilyModelSetup {
+            family_id: ModelFamilyId::from_database(family_id),
+            family_name,
+            provider_id: ProviderId::from_database(provider_id),
+            reason: UnavailableReason {
+                code: MODEL_SETUP_RECOVERY_CODE.into(),
+                message: MODEL_SETUP_RECOVERY_MESSAGE.into(),
+            },
+        })
+        .collect())
+}
+
 async fn load_family(
     connection: &mut SqliteConnection,
     id: ModelFamilyId,
@@ -2966,6 +3052,107 @@ mod provider_definition_tests {
             restore_prior_readiness: false,
             unavailable_reason: None,
         }
+    }
+
+    // PROV-008: execution of a managed family that a zero-eligible refresh tombstoned reports the
+    // provider's recovery reason, not model_family_removed.
+    #[tokio::test]
+    async fn execution_of_a_family_awaiting_eligible_models_reports_the_recovery_reason() {
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-family-recovery-execution-")
+            .tempdir()
+            .unwrap();
+        let store = SqliteProductStore::open(&temporary.path().join("product.sqlite3"))
+            .await
+            .unwrap();
+        store
+            .initialize_model_catalog("codex-basic", &[runtime_harness("codex-basic")])
+            .await
+            .unwrap();
+        for statement in [
+            "UPDATE product_harnesses SET available=1,unavailable_reason_code=NULL,unavailable_reason_message=NULL WHERE configuration_name='codex-basic'",
+            "INSERT OR IGNORE INTO harness_provider_compatibility(harness_configuration_name,provider_id,all_models) VALUES ('codex-basic','codex',1)",
+        ] {
+            sqlx::query(statement).execute(&store.pool).await.unwrap();
+        }
+        let policy = FamilyPolicyReference {
+            id: "codex-default-family".into(),
+            version: 1,
+        };
+        let snapshot = |recovery: Option<&str>| ProviderCatalogSnapshot {
+            provider_id: ProviderId::parse("codex").unwrap(),
+            label: "Codex".into(),
+            connected: true,
+            unavailable_reason: recovery.map(|code| UnavailableReason {
+                code: code.into(),
+                message: "No eligible models.".into(),
+            }),
+            models: vec![crate::product::CatalogModelSnapshot {
+                id: "gpt".into(),
+                label: "GPT".into(),
+                order: 0,
+                visible: true,
+                available: true,
+                unavailable_reason: None,
+                provider_default: true,
+                replacement_model_id: None,
+                metadata: serde_json::json!({}),
+            }],
+            system_family: recovery.is_none().then(|| SystemFamilySnapshot {
+                key: "codex".into(),
+                name: "Codex defaults".into(),
+                model_ids: vec!["gpt".into()],
+            }),
+        };
+        let publish = |recovery| {
+            let snapshot = snapshot(recovery);
+            let store = &store;
+            let policy = &policy;
+            async move {
+                store
+                    .publish_provider_catalog(
+                        &snapshot,
+                        ProviderConnectionStamp::refresh(1),
+                        Some(policy),
+                        "1",
+                    )
+                    .await
+                    .unwrap();
+            }
+        };
+        publish(None).await;
+        let selection = crate::product::InteractionModelSelection {
+            family_id: store
+                .load_model_settings()
+                .await
+                .unwrap()
+                .defaults
+                .family_id
+                .unwrap(),
+            provider_id: ProviderId::parse("codex").unwrap(),
+            model_id: "gpt".into(),
+        };
+        store
+            .validate_execution_model_selection("codex-basic", &selection)
+            .await
+            .unwrap();
+
+        publish(Some("provider_no_eligible_execution_models")).await;
+        match store
+            .validate_execution_model_selection("codex-basic", &selection)
+            .await
+        {
+            Err(StorageError::Catalog(error)) => {
+                assert_eq!(error.code(), "provider_no_eligible_execution_models")
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        publish(None).await;
+        store
+            .validate_execution_model_selection("codex-basic", &selection)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

@@ -1,4 +1,4 @@
-import { harnessUsesConfigurationModel } from "./model-picker-model.js";
+import { defaultFamilyModelSetup, harnessUsesConfigurationModel } from "./model-picker-model.js";
 
 export const MAX_MODELS_PER_FAMILY = 5;
 
@@ -170,6 +170,8 @@ export function defaultHarnessError(settings) {
   if (selected.available === false) {
     return unavailableReasonMessage(selected.unavailableReason) || "No available models for this harness.";
   }
+  // The default family waiting for its provider's models is shown as that recovery instead.
+  if (defaultFamilyModelSetup(settings)) return null;
   if (selected.usableNow !== true
     && !harnessUsesConfigurationModel(settings, selected.id)) {
     return "No currently connected provider and eligible model can use this harness.";
@@ -178,6 +180,20 @@ export function defaultHarnessError(settings) {
     return "No eligible model in the default family can use this harness.";
   }
   return null;
+}
+
+// The Settings default section's recovery state for a default family that needs model setup
+// (PROV-008). Its action refreshes that exact provider.
+export function defaultFamilyRecoveryPresentation(settings) {
+  const modelSetup = defaultFamilyModelSetup(settings);
+  if (!modelSetup) return null;
+  return {
+    providerId: modelSetup.providerId,
+    title: modelSetup.label,
+    message: modelSetup.message,
+    actionLabel: modelSetup.actionLabel,
+    actionName: modelSetup.actionName,
+  };
 }
 
 export function usableDefaultHarnesses(settings) {

@@ -6,6 +6,7 @@ import {
   defaultHarnessChangeNotice,
   defaultHarnessIsSelectable,
   defaultHarnessError,
+  defaultFamilyRecoveryPresentation,
   defaultProviderChoices,
   defaultProviderHint,
   MAX_MODELS_PER_FAMILY,
@@ -30,6 +31,7 @@ import {
   resetNewThreadModelPicker,
 } from "./composer-model-picker.js";
 import { preparePermissionProfiles } from "./permission-profiles.js";
+import { providerModelsRefreshAction, refreshProviderModels } from "./provider-models-refresh.js";
 import { appState } from "./state.js";
 import { createLatestRequestGate } from "./navigation-history.js";
 import { $, $$, escapeHtml, escapeHtmlAttribute, toast } from "./ui.js";
@@ -43,6 +45,7 @@ let loading = false;
 let savingFamily = false;
 let savingOrder = false;
 let savingDefaults = false;
+let refreshingDefaultFamily = false;
 const familyVisibilityGate = createFamilyVisibilityGate();
 const settingsRefreshGate = createLatestRequestGate();
 
@@ -172,9 +175,14 @@ export async function refreshModelSettings({ preserveIndex = true, preserveEdit 
   return true;
 }
 
-function harnessOptions() {
+function harnessOptions(recovery) {
   const selectable = usableDefaultHarnesses(settings);
   const selected = settings.harnesses.find((harness) => harness.id === settings.defaults.harnessId);
+  // While the default family needs model setup, the server refuses a harness change, so the
+  // saved harness is shown as it is rather than as unavailable.
+  if (recovery) {
+    return `<option value="${escapeHtmlAttribute(settings.defaults.harnessId)}" selected>${escapeHtml(selected?.label ?? settings.defaults.harnessId)}</option>`;
+  }
   const invalidDefault = defaultHarnessIsSelectable(settings, settings.defaults.harnessId)
     ? ""
     : `<option value="${escapeHtmlAttribute(settings.defaults.harnessId)}" selected disabled>${escapeHtml(selected?.label ?? settings.defaults.harnessId)} (unavailable)</option>`;
@@ -301,13 +309,22 @@ function familySlide(family, index) {
 
 function render() {
   if (!settings) return;
-  $("#defaultHarnessSelect").innerHTML = harnessOptions();
+  const recovery = defaultFamilyRecoveryPresentation(settings);
+  $("#defaultHarnessSelect").innerHTML = harnessOptions(recovery);
   $("#defaultProviderSelect").innerHTML = defaultProviderOptions();
-  $("#defaultHarnessSelect").disabled = savingDefaults;
+  $("#defaultHarnessSelect").disabled = savingDefaults || Boolean(recovery);
   $("#defaultProviderSelect").disabled = savingDefaults;
   const providerHint = defaultProviderHint(defaultProviderChoices(settings), settings.defaults?.providerId);
   $("#defaultProviderHint").textContent = providerHint ?? "";
   $("#defaultProviderHint").classList.toggle("hidden", !providerHint);
+  $("#defaultFamilyRecovery").classList.toggle("hidden", !recovery);
+  $("#defaultFamilyRecoveryTitle").textContent = recovery?.title ?? "";
+  $("#defaultFamilyRecoveryMessage").textContent = recovery?.message ?? "";
+  const refreshButton = $("#refreshDefaultFamilyModels");
+  refreshButton.textContent = refreshingDefaultFamily ? "Refreshing…" : recovery?.actionLabel ?? "Refresh models";
+  refreshButton.setAttribute("aria-label", recovery?.actionName ?? "Refresh models");
+  refreshButton.classList.toggle("hidden", !providerModelsRefreshAction());
+  refreshButton.setAttribute("aria-disabled", String(refreshingDefaultFamily || savingDefaults));
   const harnessError = defaultHarnessError(settings);
   $("#defaultHarnessError").textContent = harnessError ?? "";
   $("#defaultHarnessError").classList.toggle("hidden", !harnessError);
@@ -578,7 +595,29 @@ async function persistDefault(field) {
   }
 }
 
+async function refreshDefaultFamilyModels() {
+  const recovery = defaultFamilyRecoveryPresentation(settings);
+  if (!recovery || refreshingDefaultFamily || savingDefaults) return;
+  refreshingDefaultFamily = true;
+  render();
+  setStatus("Refreshing provider models…");
+  try {
+    await refreshProviderModels(recovery.providerId);
+    const remaining = defaultFamilyRecoveryPresentation(settings);
+    setStatus(remaining ? remaining.message : "Provider models refreshed.", remaining ? "" : "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    refreshingDefaultFamily = false;
+    render();
+    // The button is kept, not re-created, so focus stays on it; once the family is restored it
+    // hides, and focus moves to the provider choice beside it.
+    if ($("#defaultFamilyRecovery").classList.contains("hidden")) $("#defaultProviderSelect").focus();
+  }
+}
+
 function bindStaticEvents() {
+  $("#refreshDefaultFamilyModels").onclick = () => void refreshDefaultFamilyModels();
   $("#defaultHarnessSelect").onchange = () => persistDefault("harnessId");
   $("#defaultProviderSelect").onchange = () => persistDefault("providerId");
   $("#previousFamily").onclick = () => chooseFamily(selectedFamilyIndex - 1);
