@@ -18,7 +18,9 @@
     ],
     "verdict": "No unresolved findings",
     "mode": "Static adversarial review; independent execution not claimed",
-    "unresolved": []
+    "unresolved": [],
+    "reviewedCommit": "1e9dad0d2fe0138f2bfe3a40b621c334e8045d36",
+    "continuity": "Historical integrated review; final_boundary_review covers subsequent executable changes"
   },
   {
     "reviewer": "renderer_review",
@@ -34,6 +36,22 @@
     ],
     "verdict": "No unresolved findings",
     "mode": "Static adversarial review; independent execution not claimed",
+    "unresolved": [],
+    "reviewedCommit": "1e9dad0d2fe0138f2bfe3a40b621c334e8045d36",
+    "continuity": "Historical integrated review; final_boundary_review covers subsequent executable changes"
+  },
+  {
+    "reviewer": "final_boundary_review",
+    "sourceSha256": "fb93e93b93f8412e58c4d16c3b1bae955e302284a447eeb02dc42a716491c042",
+    "files": [
+      "crates/relayer-graph-core/src/storage/sqlite/migrations/0023_invoke_resolution_immutability.sql",
+      "crates/relayer-graph-core/tests/graph_database.rs",
+      "desktop/renderer/src/threads.js",
+      "scripts/test-desktop-first-message.mjs",
+      "test/workspace-navigation-integration.test.mjs"
+    ],
+    "verdict": "No unresolved findings",
+    "mode": "Static adversarial review of final receipt/cache delta; independent full execution not claimed",
     "unresolved": []
   }
 ]

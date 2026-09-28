@@ -6288,6 +6288,28 @@ async fn leased_completion_atomically_resolves_invoke_once_and_survives_reopen_f
         Some(root_layer.id)
     );
 
+    if typed {
+        // The conversion receipt is durable authority provenance, not an editable
+        // cache: removing or redirecting it must not erase the typed identity.
+        let fixture = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(SqliteConnectOptions::new().filename(file.path()))
+            .await
+            .unwrap();
+        for statement in [
+            "UPDATE invoke_resolution_transitions SET target_layer_id=target_layer_id WHERE action_id=?1",
+            "DELETE FROM invoke_resolution_transitions WHERE action_id=?1",
+        ] {
+            let error = sqlx::query(statement)
+                .bind(unresolved.id.value())
+                .execute(&fixture)
+                .await
+                .expect_err("conversion receipts must be immutable");
+            assert!(error.to_string().contains("immutable_invoke_resolution"));
+        }
+        fixture.close().await;
+    }
+
     drop(writer);
     drop(first_writer);
     drop(second_writer);

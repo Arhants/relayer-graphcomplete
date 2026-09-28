@@ -93,6 +93,6 @@
     "revisited": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/default-off/05-revisited-source.png",
     "evalCrossInteraction": "/Users/vishaltandale/.codex/worktrees/interaction-permissions/relayer-graphcomplete/docs/evidence/issue-517-slice-1/default-off/06-eval-cross-interaction-destination.png"
   },
-  "sourceSha256": "4da1aa4d7df66e198bf1cbf961a901f9fff0f540519b2fb0d77e95eb79ae7f78",
+  "sourceDigest": "94192d26e3a9897664e79bc811ef02d1e5cd7c4b83e768169bc666d361b4b2d0",
   "backgroundThrottling": false
 }

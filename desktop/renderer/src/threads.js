@@ -488,6 +488,7 @@ export async function refreshState(
   let temporalSelectedNodeId;
   let temporalCurrent = viewState.temporalCurrent;
   let temporalProjectionFailed = false;
+  let canonicalVisibleLayerRead = false;
   const projectionPage = state.currentProjection;
   const projectionState = projectionPage?.states?.find((projection) => (
     String(projection.completionId) === String(selected?.graphNodeId)
@@ -564,6 +565,7 @@ export async function refreshState(
           currentNodeIds: currentLayer.nodes.map(({ id }) => id),
         });
         refreshedVisibleLayer = currentLayer;
+        canonicalVisibleLayerRead = true;
         temporalSelectedNodeId = reconciled.view.selectedNodeId;
         temporalCurrent = {
           completionId: projectionState.completionId,
@@ -581,7 +583,12 @@ export async function refreshState(
   if (
     selected
     && visibleLayerId != null
-    && layerContainsRefreshableInvokedAction(refreshedVisibleLayer, nextActionInvocations)
+    // A successful temporal read already supplies this exact canonical layer.
+    // Do not add another await after reconciling its node selection.
+    && !canonicalVisibleLayerRead
+    && ((selected.completionStatus === "accepted"
+      && String(visibleLayerId) !== String(selected.completionOutput?.rootLayer?.layer?.id))
+      || layerContainsRefreshableInvokedAction(refreshedVisibleLayer, nextActionInvocations))
   ) {
     const identity = {
       threadId: nextThreadId,
@@ -589,6 +596,9 @@ export async function refreshState(
       layerId: visibleLayerId,
     };
     try {
+      // Accepted descendant membership may gain a resolved invoke absent from
+      // its old snapshot. Revalidate only the visible layer on an existing refresh.
+      acceptedLayerCache.delete(identity);
       const canonicalLayer = validateResolvedLayer(identity, await request(
         `/api/threads/${encodeURIComponent(identity.threadId)}/interactions/${encodeURIComponent(identity.turnId)}/layers/${encodeURIComponent(identity.layerId)}`,
       ));
@@ -896,6 +906,9 @@ export async function navigateLayer(layerId, navigation = {}) {
   };
   let ownedNavigation = false;
   try {
+    // User navigation must observe canonical membership, including legacy
+    // occurrences that omitted the invoke before its atomic conversion.
+    if (String(rootLayer?.layer?.id) !== String(layerId)) acceptedLayerCache.delete(identity);
     const layer = String(rootLayer?.layer?.id) === String(layerId)
       ? rootLayer
       : await acceptedLayerCache.getOrLoad(identity, async () => validateResolvedLayer(
@@ -1149,6 +1162,9 @@ export async function navigateHistory(deltaOrDirection, { beforeCommit } = {}) {
   let committed = false;
   try {
     renderThread();
+    // Keep ancestor caching, but revalidate the selected descendant on entry.
+    const destination = descendantLayerIdentities(transition.entry).at(-1);
+    if (destination) acceptedLayerCache.delete(destination);
     const resolved = await resolveNavigationPresentation(transition.entry, {
       loadThread: (threadId) => request(`/api/threads/${encodeURIComponent(threadId)}`),
       loadLayer: ({ threadId, turnId, layerId }) => request(

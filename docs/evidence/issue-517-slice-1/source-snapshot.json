@@ -1,7 +1,7 @@
 {
   "baseCommit": "ac7657e1223ff744064c1d71b7281aa9cf7881fa",
   "integratedPreviousHead": "17ed1e1f30a8b35ffc54fdf15523a1ef77f40c9c",
-  "changedSourceSha256": "4da1aa4d7df66e198bf1cbf961a901f9fff0f540519b2fb0d77e95eb79ae7f78",
+  "changedSourceSha256": "94192d26e3a9897664e79bc811ef02d1e5cd7c4b83e768169bc666d361b4b2d0",
   "method": "Sorted repository-relative path + NUL + file bytes + NUL; excludes evidence directory",
   "files": {
     "CONTEXT.md": "1b08c47a07cdcc6f652e677a766aff0883d2d0d26cca5052e9269ab929f543e7",
@@ -28,9 +28,10 @@
     "crates/relayer-graph-core/src/storage/sqlite/currents.rs": "eb3241bc08f8c0ef71703d597b6bfba07444375fa4f62b7c94512c2167eac291",
     "crates/relayer-graph-core/src/storage/sqlite/migrations/0021_interaction_permissions.sql": "10dcff2a6ce9184686542da98d5548a31a1698d49d40afb23028ba3fc3ea5bfc",
     "crates/relayer-graph-core/src/storage/sqlite/migrations/0022_permission_delete_guard.sql": "3182ec580a1fbfba0a29f64a5571f5439b8b664bb06233c888d971783e5ecdec",
+    "crates/relayer-graph-core/src/storage/sqlite/migrations/0023_invoke_resolution_immutability.sql": "3a6154f19cd831090f31b28b2c43da7983b31e2ae6b99fa3f77530f22506872f",
     "crates/relayer-graph-core/src/storage/sqlite/nodes.rs": "b7f6620a70765099d0175e22f14b568442424b6c12688d54a6cb6f7f89e4a4d7",
     "crates/relayer-graph-core/src/storage/sqlite/permissions.rs": "37043761f719e3d96d8b043e5ac68ad548527099ebf0f7f12e85d6634855892b",
-    "crates/relayer-graph-core/tests/graph_database.rs": "1ae4031e70df38267ecf5ad5122cf3662ce506a9efbd3c76d4474cb87286d407",
+    "crates/relayer-graph-core/tests/graph_database.rs": "8420e0d3e26d3ef48243bc326daf8b76c89afe6b2deb14958994dd249dfeec16",
     "crates/relayer-graph-server/src/lib.rs": "83281491fcb0cacea2565d2b7a46ddcfe1990c084c9e53620a646620cf83612c",
     "crates/relayer-graph-server/src/main.rs": "73e109a42c7986a3a8b2cd11fe742001c371557bc531ed5b61f6f8739cc0c5b0",
     "crates/relayer-graph-server/src/search_index.rs": "ffe10932cb88a0e53a0dfe57d084607ea8eb9fbe7f2bd46afa001389f6d6e390",
@@ -39,7 +40,7 @@
     "desktop/main/services/graphcomplete-runtime.mjs": "6280a2e39ea03c94c7d3a8d1323ea11641cc184132858863cf39e6e930ed3e89",
     "desktop/renderer/src/product-workspace/node-detail-runtime.js": "adf3fd96dec5221100e59cd1a5fdf9d53f8c32d1a55b876dc67d62de5ddc5c3d",
     "desktop/renderer/src/product-workspace/workspace.js": "c3f198788c383506fb55f0e0a2989c52ce598263eb0ac830e90627115a8be6ef",
-    "desktop/renderer/src/threads.js": "d71e277540904230d5055568bb92f42c6050d4c088edb8937b732be8d2a7980e",
+    "desktop/renderer/src/threads.js": "3175ab9c30aca83f2460d3a66994a1208cf8818f30b2ad1f11e8799d761f9a1d",
     "desktop/shared/telemetry-module-inventory.mjs": "7fe3c78a7336158b032d658343da7a69d4c40bc397bbdac846c7b24f354ee5e7",
     "docs/architecture.md": "ee1e122c82fc6ce736cf6dfa36a30cf53732870878520fea3d3b632b6b75bbc7",
     "docs/decisions/0005-layered-navigation-contract.md": "a76baf5dcab44c55191af6a8705e0f71896db10dcd8085097c9375aac4972dbf",
@@ -49,8 +50,9 @@
     "packages/eval-runner/src/fixtures/task-system.ts": "c8e24159fe94bbebd25603631efd5576feaa89d9975248324c0707fb37fbb446",
     "packages/graph-client/src/types.ts": "349d4ca8169847a46b6be9c21a1b6632ef673d4bad43253d7c1dc1dd473e772d",
     "scripts/run-interaction-permissions-human-gate.mjs": "6075197b7b65358181850cfc38558d23c497a3f46da7b328a1a4574670aeeeb4",
-    "scripts/test-desktop-first-message.mjs": "aaea4366ef0b7e3e2ff1d620b1aaf1cb93b83ddc03dd70fa0bd006540c53ca54",
+    "scripts/test-desktop-first-message.mjs": "df614b509cc2b5635b89ce61ad42a5908c723bf77b1a45101f718a82dd228fc4",
     "test/node-detail-runtime.test.mjs": "ab9ce9ced78021ffe64edd330488c37daad72c1bdb0174fb735cc13424a14537",
-    "test/workspace-actions.test.mjs": "0281491a60f214bdf5eb58d79672299fdbc0a1208023dcf21d8b909e56142266"
+    "test/workspace-actions.test.mjs": "0281491a60f214bdf5eb58d79672299fdbc0a1208023dcf21d8b909e56142266",
+    "test/workspace-navigation-integration.test.mjs": "4ac2edcd5fad7ffd0c79c94ac49cafbc5739156b0ae88a43f38aa7fcc327b392"
   }
 }

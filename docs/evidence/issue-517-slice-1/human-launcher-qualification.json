@@ -49,5 +49,27 @@
     ],
     "integratedSecondOccurrence": "gated-result.json",
     "humanAcceptance": "pending"
+  },
+  "finalReceiptCacheVerification": {
+    "sourceDigest": "98841616043a5a4bae0fa992b7f8caee4ea4f162a2ce98e556a15edbf122f9c2",
+    "recordedAt": "2026-09-28T02:58:15.634574+00:00",
+    "retainedDirectory": "/tmp/relayer-pr536-human-qualification-2",
+    "nativeTypedValue": "Final keyboard check\nSecond line",
+    "shiftEnterDidNotSend": true,
+    "draftCleared": true,
+    "reopenedPreviousData": true,
+    "nestedCompiledNavigation": "Turn 1 \u2192 Incoming queue \u2192 Results store \u2192 Plan the next improvement \u2192 Turn 2 of 2",
+    "humanAcceptance": "pending"
+  },
+  "finalVerification": {
+    "sourceDigest": "94192d26e3a9897664e79bc811ef02d1e5cd7c4b83e768169bc666d361b4b2d0",
+    "recordedAt": "2026-09-28T03:03:25.229125+00:00",
+    "retainedDirectory": "/tmp/relayer-pr536-human-qualification-2",
+    "nativeTypedValue": "Ready for review\nSecond line",
+    "shiftEnterDidNotSend": true,
+    "draftCleared": true,
+    "reopenedPreviousData": true,
+    "compiledNavigation": "Turn 1 Results store button \u2192 Turn 2 of 2",
+    "humanAcceptance": "pending"
   }
 }

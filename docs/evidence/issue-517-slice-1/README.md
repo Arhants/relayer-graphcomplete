@@ -40,7 +40,7 @@ The manifest includes the base commit, every changed non-evidence file hash, and
 an aggregate digest. Evidence-directory edits do not alter that source identity.
 
 - `npm run build`: passed on the final production source with pinned Node 22.23.2.
-- `npm run check`: passed. Vitest: 203 files passed, 2,619 tests passed,
+- `npm run check`: passed. Vitest: 203 files passed, 2,624 tests passed,
   3 skipped; separate secret-boundary suite: 2 passed. Rust workspace and crash
   reconciliation, Python, receipt lint, and PRD readability also passed.
 - The nine focused typed core cases passed, including rollback, frozen authority,
@@ -159,3 +159,39 @@ early Slice 2 refusal as ordinary export. The real graph-backed export test now
 checks both GET export and POST share-export; its share assertion first reproduced
 the generic invocation-shape error, then passed with the shared early guard.
 No network publication or public viewer change is claimed by this refusal fix.
+
+## Final review: receipt integrity and visited descendants
+
+Migration 0023 blocks UPDATE and DELETE of exact invoke-conversion receipts. The
+existing `typed_leased_completion_atomically_resolves_invoke_once_and_survives_reopen`
+fixture attempts both operations after real
+acceptance, then verifies durable identity and replay after reopen. The UPDATE
+assertion failed before the guard and passed afterward. This maps to IP-002
+replay/provenance continuity, IP-003 compiled identity, and IP-004 export refusal.
+
+The root receipt selector remains root-only because completion output contains only
+the root layer. Descendant layers are read through their canonical layer endpoint.
+The final review separately identified an in-memory cache gap for previously visited
+legacy descendants whose old membership omitted the converted action. The renderer
+revalidates the selected descendant on navigation/history entry and existing state
+refresh, including without local invocation records. It reads only the visible or
+requested layer, adds no polling, and leaves unrelated history untouched. This maps
+to IP-003 occurrence continuity. The controller regression
+`revalidates an omitted legacy descendant action on %s without invocation metadata`
+covers refresh, navigation, and history separately. The tradeoff is one canonical layer read per such
+entry or refresh. The required full checks and both desktop modes apply again.
+
+The first final desktop run failed with Electron `UnknownVizError` during capture
+after the source/revisit screenshots. One unchanged retry passed, followed by the
+default-off run. This capture failure is retained in the verification JSON. Native
+CUA then repeated typing, Shift+Enter without Send, and reopened descendant-button
+navigation to Turn 2 of 2 on the final repaired source.
+
+Visual inspection caught an earlier reopened screenshot without its inspector, even
+though the hidden compiled control satisfied the old wait. Its precise cause was
+not established. The runner now requires a selected node, visible inspector, and
+visible enabled control. The final image was inspected and shows all three. Review
+also removed a redundant temporal read; focused tests cover single-read temporal
+reconciliation and a newer selection during an ordinary pending descendant read.
+The prior full check passed its main portfolio but failed isolated secret-boundary
+temporary-directory cleanup with `ENOTEMPTY`; that failure is retained separately.

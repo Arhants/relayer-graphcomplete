@@ -606,6 +606,84 @@ describe("workspace navigation integration", () => {
     expect(controller.viewState.layerPath.map(({ layerId }) => layerId)).toEqual([101, 102]);
   });
 
+  it("does not reread a canonical temporal descendant after reconciling selection", async () => {
+    const root = rootLayer(101, 11);
+    const child = rootLayer(102, 12);
+    const turn = { ...interaction(1, 10, root), graphNodeId: 901 };
+    const state = productState([{ id: 10, title: "Temporal" }], [turn]);
+    state.currentProjection = { cursor: 1, hasMore: false, events: [], states: [{
+      completionId: 901, headRevision: 1, lifecycle: "succeeded", currentLayerId: 102,
+      finalLayerId: 102, safeReason: null, temporalFeatures: { projectionUi: true },
+    }] };
+    requestImplementation = vi.fn(async (path) => {
+      if (path.startsWith("/api/state?threadId=10")) return state;
+      if (path.endsWith("/layers/102")) return child;
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const controller = await loadModules();
+    await controller.loadThread(10);
+    expect(controller.appState.visibleLayer).toBe(child);
+    expect(requestImplementation.mock.calls.filter(([path]) => path.endsWith("/layers/102"))).toHaveLength(1);
+  });
+
+  it("preserves a newer node selection while a canonical descendant refresh is pending", async () => {
+    const root = rootLayer(101, 11);
+    root.actions = [{ id: 501, kind: "navigate", sourceNodeId: 11, targetLayerId: 102 }];
+    const child = rootLayer(102, 12);
+    const turn = interaction(1, 10, root);
+    const state = productState([{ id: 10, title: "Source" }], [turn]);
+    const pending = deferred();
+    let reads = 0;
+    requestImplementation = vi.fn(async (path) => {
+      if (path.startsWith("/api/state?threadId=10")) return state;
+      if (path.endsWith("/layers/102")) return ++reads === 1 ? child : pending.promise;
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const controller = await loadModules();
+    await controller.loadThread(10);
+    await controller.navigateLayer(102, { action: root.actions[0], sourceNode: root.nodes[0] });
+    const refresh = controller.refreshState(10);
+    await vi.waitFor(() => expect(reads).toBe(2));
+    controller.replaceCurrentSelection(12);
+    pending.resolve(child);
+    await refresh;
+    expect(controller.viewState.selectedNodeId).toBe(12);
+    expect(controller.appState.visibleLayer).toBe(child);
+  });
+
+  it.each(["refresh", "navigation", "history"])("revalidates an omitted legacy descendant action on %s without invocation metadata", async (entry) => {
+    const root = rootLayer(101, 11);
+    root.actions = [{ id: 501, kind: "navigate", relation: "reference", sourceNodeId: 11, targetLayerId: 102 }];
+    const staleChild = rootLayer(102, 12);
+    const canonicalChild = rootLayer(102, 12);
+    canonicalChild.actions = [{ id: 777, kind: "navigate", relation: "expand", sourceNodeId: 12,
+      targetLayerId: 303, resolvedInvokeInteractionId: 99, state: "accepted" }];
+    const turn = interaction(1, 10, root);
+    const state = productState([{ id: 10, title: "Source" }], [turn]);
+    let layerReads = 0;
+    requestImplementation = vi.fn(async (path) => {
+      if (path.startsWith("/api/state?threadId=10")) return state;
+      if (path === "/api/threads/10") return { thread: state.threads[0], interactions: [turn], actionInvocations: [] };
+      if (path.endsWith("/layers/102")) return ++layerReads === 1 ? staleChild : canonicalChild;
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const controller = await loadModules();
+    await controller.loadThread(10);
+    const navigation = { action: root.actions[0], sourceNode: root.nodes[0] };
+    await controller.navigateLayer(102, navigation);
+    expect(controller.appState.visibleLayer.actions).toEqual([]);
+    if (entry === "refresh") {
+      await controller.refreshState(10);
+    } else {
+      await controller.navigateLayer(101, { restore: true, pathIndex: 0 });
+      if (entry === "history") await controller.navigateHistory("back");
+      else await controller.navigateLayer(102, navigation);
+    }
+    expect(controller.appState.visibleLayer.actions).toEqual(canonicalChild.actions);
+    expect(layerReads).toBe(2);
+    expect(controller.appState.actionInvocations).toEqual([]);
+  });
+
   it("refreshes an already-open nested invoke when a project-visible lease resolves", async () => {
     const root = rootLayer(101, 11);
     root.actions = [{ id: 501, kind: "navigate", sourceNodeId: 11, targetLayerId: 102 }];
@@ -1101,7 +1179,7 @@ describe("workspace navigation integration", () => {
     expect(controller.appState.visibleLayer.layer.id).toBe(201);
   });
 
-  it("reuses a descendant loaded by direct navigation when Back restores it", async () => {
+  it("revalidates a descendant loaded by direct navigation when Back restores it", async () => {
     const root = rootLayer(101, 11);
     root.actions = [{ id: 501, kind: "navigate", sourceNodeId: 11, targetLayerId: 102 }];
     const child = rootLayer(102, 12);
@@ -1130,7 +1208,7 @@ describe("workspace navigation integration", () => {
 
     expect(controller.appState.visibleLayer.layer.id).toBe(102);
     expect(requestImplementation.mock.calls.filter(([path]) => path.endsWith("/layers/102")))
-      .toHaveLength(1);
+      .toHaveLength(2);
   });
 
   it("rolls back the presentation without advancing the cursor when application fails", async () => {
