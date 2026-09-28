@@ -419,12 +419,18 @@ root turns:
   has a rollout only in the `CODEX_HOME` whose `turn/start` was accepted on it.
   `thread/resume` without one fails with "no rollout found", as the pinned
   Codex 0.147.0 binary does.
-- **Provider definitions:** two, each with its own `CODEX_HOME`.
-- **Interruptions:** Stop, the per-turn force-stop, and a thread saved by an
-  earlier release, whose provider is unknown and whose rollout may be missing.
+- **Provider definitions:** two, each standing for one Codex home. In
+  production the Codex subscription has its own `CODEX_HOME`. API-key providers
+  get no runtime, so they share Codex's default home. The model does not
+  represent two providers sharing a home; there the provider binding is only
+  conservative.
+- **Interruptions:** Stop, the per-turn force-stop and force shutdown, and a
+  thread saved by an earlier release, whose provider is unknown and whose
+  rollout may be missing. A force marks the turn, and the kill lands later
+  (`Kill`), so a `turn/start` answer already in flight can still arrive.
 
 `codex-thread-today` mirrors the code, and each `-reverted` check turns one fix
-off. Three constants hold the fixes:
+off. Six constants hold the fixes:
 
 - `CommitAtTurnStart`: the thread is saved when `turn/start` is accepted
   (`onTurnId`), not when `thread/start` answers.
@@ -432,6 +438,25 @@ off. Three constants hold the fixes:
   a turn on another provider starts a fresh thread.
 - `RecoverMissingRollout`: a `thread/resume` that finds no rollout forgets the
   saved thread and starts a fresh one in the same turn.
+- `ForceForgets`: a force-stop or force shutdown of a root turn that sent
+  `turn/start` forgets the saved thread.
+- `CommitChecksForce`: a `turn/start` answer that arrives after the force is not
+  saved (`onTurnId` checks the force signal).
+- `ForgetOnlyAfterTurnStart`: a turn forced before it sent `turn/start` wrote
+  nothing, so the saved thread is kept.
+
+The properties are:
+
+- `NoDeadResume`: a root turn never fails on a thread Codex cannot resume.
+- `ResumeOnlyMaterialized`: only a thread with a rollout in the turn's home is
+  offered for resume, except one saved by an earlier release.
+- `NoForcedResume`: a thread a forced turn may have left mid-write is never
+  resumed (PRD, Provider execution access).
+- `NoNeedlessForget`: after a root turn on a home finishes, or is stopped once
+  running, the next root turn on that home resumes its thread. Only a later
+  forced conversation or a provider switch lifts this.
+- `NeverResumes`: a witness, expected to be violated, that a real resume is
+  reachable.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
@@ -439,12 +464,20 @@ off. Three constants hold the fixes:
 | `codex-thread-provider-reverted` | violated: shows why the fix is needed | A follow-up on another provider resumes the first provider's thread. |
 | `codex-thread-commit-reverted` | violated: shows why the fix is needed | A Stop before `turn/start` leaves a saved thread with no rollout. |
 | `codex-thread-recovery-reverted` | violated: shows why the fix is needed | A thread saved by an earlier release, with no rollout in the turn's home, fails the turn. It is still offered for resume, so that existing conversations keep their thread. |
+| `codex-thread-force-reverted` | violated: shows why the fix is needed | A force that keeps the saved thread lets the next root turn resume the killed conversation. |
+| `codex-thread-late-commit-reverted` | violated: shows why the fix is needed | A `turn/start` answer that arrives after the force saves the forced thread again. |
+| `codex-thread-forget-unwritten-reverted` | violated: shows why the fix is needed | Found in review: a force during `thread/resume`, before `turn/start`, forgot a thread nothing wrote. Now kept. Regressions: the two "before its turn/start" cases in `codex-root-thread.test.ts`. |
+| `codex-thread-resume-witness` | violated: witness | A real resume is reachable. |
+
+In review, three mutants of this model and `HarnessPrimeRoot` passed every
+property then shipped: `Commit` always clearing the saved thread, `Force`
+keeping it, and force close forgetting an idle Prime session. They now violate
+`NoNeedlessForget`, `NoForcedResume` and Prime's `NoNeedlessForget`.
 
 `ResumeOnlyMaterialized` exempts the earlier release's thread by design: its
 provider is unknown, so the harness tries it once and binds it on success.
-In the model, `Force` ends the turn, so no `turn/start` answer can arrive after
-a force. The `codex-basic.test.ts` case "does not keep a thread a force-stopped
-root turn reports after the force" owns that boundary.
+`NoNeedlessForget` gives up continuity on a provider switch, as the product
+does: a follow-up on another provider starts a fresh thread.
 
 ### `HarnessPrimeRoot.tla`
 
@@ -457,12 +490,15 @@ This model covers the harness host and Prime Agent's persistent root session:
 - **Turns:** two root turns and one invoked child, which only captures state.
 
 `prime-root-today` mirrors the code, and each `-reverted` check turns one fix
-off. Four constants hold the fixes:
+off. Five constants hold the fixes:
 
 - `ForcePersists`: the host records the harness state as soon as a per-turn
   force-stop fires, not when the host run ends up to ten seconds later.
 - `ForceShutdownForgets`: force shutdown forgets the root session while a root
-  turn is active, as a per-turn force-stop does.
+  conversation runs on it, as a per-turn force-stop does.
+- `ForgetOnlyRunning`: only when an unforced root turn is bound to that
+  session. A turn still acquiring its session wrote nothing, and a turn
+  already force-stopped dropped its session then.
 - `ForceClosePersists`: force close captures and persists that state, although
   it skips close's final persist.
 - `SessionScopedInstructions`: each session reads its own presentation
@@ -477,9 +513,11 @@ off. Four constants hold the fixes:
 | `prime-root-capture-reverted` | violated: shows why the fix is needed | Without recording at the force-stop, the close persists the stopped session. |
 | `prime-root-restart-close` | Fixed; now passes | Before the fix: a turn force-stopped after close had persisted was restored after the restart. |
 | `prime-root-restart-close-reverted` | violated: shows why the fix is needed | Same trace with the force-stop recorded only at the end of the host run. |
-| `prime-root-force-close` | Fixed; now passes | Before the fix (H2): quitting while a root turn ran ended in force close. Force shutdown kept the root session (Codex kept its thread), and nothing persisted, so the restart resumed the killed conversation. Regressions: `host-root-session-force.test.ts` (Codex through the real host, restarted) and the Prime force-shutdown test in `prime-agent.test.ts`. |
+| `prime-root-force-close` | Fixed; now passes | Before the fix (H2): quitting while a root turn ran ended in force close. Force shutdown kept the root session (Codex kept its thread), and nothing persisted, so the restart resumed the killed conversation. The check also holds `NoNeedlessForget`: an idle session, or one a turn is still acquiring, is kept. Regressions: `host-root-session-force.test.ts` (Codex through the real host, restarted) and the Prime force-shutdown test in `prime-agent.test.ts`. |
 | `prime-root-force-close-forget-reverted` | violated: shows why the fix is needed | Force close persists the killed conversation it did not forget. |
 | `prime-root-force-close-persist-reverted` | violated: shows why the fix is needed | The previously saved killed conversation survives. |
+| `prime-root-forget-running-reverted` | violated: shows why the fix is needed | Found in review: forgetting whenever a root turn is in flight forgets a session a turn was still acquiring. `NoNeedlessForget` now also covers an idle session. Regression: "keeps the root session when force shutdown ends a root turn still acquiring it". |
+| `prime-root-keep-witness` | violated: witness | An idle session survives a force close and the restart. |
 | `prime-root-crash` | Open, narrowed | A crash after a per-turn force-stop but before its state write lands restores the stopped conversation. The write now starts when the force fires. Before, it waited for the host run to end. Regression for the new timing: "records a force-stopped root turn's forgotten session before its host run ends". |
 | `prime-root-instructions` | Fixed; now passes | Before the fix (H3): a rotated root session was built from the loader's cache, which held the previous version's instructions, because `createAgentSessionFromServices` does not reload it (PPG-003). Regression: `prime-agent-native-instructions.test.ts` with the real Prime SDK 0.8.1 and no inference; it also covers invoked children, which the model leaves out. |
 | `prime-root-instructions-reverted` | violated: shows why the fix is needed | With the shared cache, a rotated root session runs with stale instructions. |

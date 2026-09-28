@@ -84,7 +84,10 @@
       "LegacyState": "TRUE",
       "CommitAtTurnStart": "TRUE",
       "ThreadRecordsProvider": "TRUE",
-      "RecoverMissingRollout": "TRUE"
+      "RecoverMissingRollout": "TRUE",
+      "ForceForgets": "TRUE",
+      "CommitChecksForce": "TRUE",
+      "ForgetOnlyAfterTurnStart": "TRUE"
     },
     "prime-root-today": {
       "CanForceClose": "TRUE",
@@ -92,6 +95,7 @@
       "CanClose": "TRUE",
       "ForcePersists": "TRUE",
       "ForceShutdownForgets": "TRUE",
+      "ForgetOnlyRunning": "TRUE",
       "ForceClosePersists": "TRUE",
       "SessionScopedInstructions": "TRUE"
     },
@@ -1358,10 +1362,12 @@
       "invariants": [
         "TypeOK",
         "NoDeadResume",
-        "ResumeOnlyMaterialized"
+        "ResumeOnlyMaterialized",
+        "NoForcedResume",
+        "NoNeedlessForget"
       ],
       "expect": "pass",
-      "finding": "A root turn never fails on a thread Codex cannot resume, and only a thread saved by an earlier release is ever offered where it has no rollout (fixed; was: a provider switch or a Stop before turn/start pinned an unresumable thread, and every later root turn failed with \"no rollout found\", even across restart)."
+      "finding": "A root turn never fails on a thread Codex cannot resume, never resumes a thread a forced turn may have left mid-write, and keeps a thread nothing forced (fixed; was: a provider switch or a Stop before turn/start pinned an unresumable thread, and every later root turn failed with \"no rollout found\", even across restart)."
     },
     {
       "id": "codex-thread-provider-reverted",
@@ -1410,6 +1416,66 @@
         "violated": "NoDeadResume"
       },
       "finding": "Without the missing-rollout recovery, a thread saved by an earlier release that has no rollout in the turn's home fails the root turn."
+    },
+    {
+      "id": "codex-thread-force-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "ForceForgets": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoForcedResume"
+      ],
+      "expect": {
+        "violated": "NoForcedResume"
+      },
+      "finding": "If a force-stop or force shutdown keeps the saved thread, the next root turn resumes the conversation the killed turn may have left mid-write."
+    },
+    {
+      "id": "codex-thread-late-commit-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "CommitChecksForce": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoForcedResume"
+      ],
+      "expect": {
+        "violated": "NoForcedResume"
+      },
+      "finding": "If onTurnId saves a thread whose turn/start answer arrives after the force, the forced conversation is saved again and resumed."
+    },
+    {
+      "id": "codex-thread-forget-unwritten-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "ForgetOnlyAfterTurnStart": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoNeedlessForget"
+      ],
+      "expect": {
+        "violated": "NoNeedlessForget"
+      },
+      "finding": "If a force before turn/start also forgets the saved thread, the next root turn starts fresh although nothing wrote the thread."
+    },
+    {
+      "id": "codex-thread-resume-witness",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "invariants": [
+        "NeverResumes"
+      ],
+      "expect": {
+        "violated": "NeverResumes"
+      },
+      "finding": "Witness: a root turn really resumes a saved thread, so the resume properties are not vacuous."
     },
     {
       "id": "prime-root-serialized",
@@ -1499,10 +1565,11 @@
       "module": "HarnessPrimeRoot",
       "preset": "prime-root-today",
       "invariants": [
-        "RestartNotTainted"
+        "RestartNotTainted",
+        "NoNeedlessForget"
       ],
       "expect": "pass",
-      "finding": "Quitting while a root turn runs (force close) does not leave the killed conversation resumable after the restart (fixed; was: force shutdown kept the root session and nothing persisted the change)."
+      "finding": "Quitting while a root turn runs (force close) does not leave the killed conversation resumable after the restart, and an idle root session, or one a root turn is still acquiring, is kept (fixed; was: force shutdown kept the root session and nothing persisted the change)."
     },
     {
       "id": "prime-root-force-close-forget-reverted",
@@ -1533,6 +1600,33 @@
         "violated": "RestartNotTainted"
       },
       "finding": "If force close does not persist, the previously saved killed conversation is resumed after the restart."
+    },
+    {
+      "id": "prime-root-forget-running-reverted",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "constants": {
+        "ForgetOnlyRunning": "FALSE"
+      },
+      "invariants": [
+        "NoNeedlessForget"
+      ],
+      "expect": {
+        "violated": "NoNeedlessForget"
+      },
+      "finding": "If force shutdown forgets the root session whenever a root turn is in flight, a force close during that turn's session acquisition forgets a session nothing ran on."
+    },
+    {
+      "id": "prime-root-keep-witness",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "invariants": [
+        "NeverKeptAcrossForceClose"
+      ],
+      "expect": {
+        "violated": "NeverKeptAcrossForceClose"
+      },
+      "finding": "Witness: an idle root session survives a force close and the restart, so NoNeedlessForget is not vacuous."
     },
     {
       "id": "prime-root-crash",

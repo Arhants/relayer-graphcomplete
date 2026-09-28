@@ -10,12 +10,15 @@
 (* root turn's native conversation ran on it (PRD, Provider execution      *)
 (* access: such a conversation is not resumed).                            *)
 (*                                                                         *)
-(* Four constants hold the fixes; each -reverted check turns one off:      *)
+(* Five constants hold the fixes; each -reverted check turns one off:      *)
 (*   ForcePersists         the host persists the harness state as soon as  *)
 (*                         a per-turn force-stop fires (host.ts            *)
 (*                         recordForcedState), not when its run ends.      *)
 (*   ForceShutdownForgets  force shutdown forgets the root session while   *)
-(*                         a root turn is active (prime-agent.ts).         *)
+(*                         a root turn's conversation runs (prime-agent.ts)*)
+(*   ForgetOnlyRunning     ... only when an unforced root turn is bound to *)
+(*                         that session; not while a turn is still         *)
+(*                         acquiring it, nor for a turn already forced.    *)
 (*   ForceClosePersists    force close captures and persists that state    *)
 (*                         although close's final persist is skipped.      *)
 (*   SessionScopedInstructions  each session reads its own presentation    *)
@@ -26,7 +29,8 @@
 EXTENDS Naturals, FiniteSets, Sequences
 
 CONSTANTS CanForceClose, CanCrash, CanClose,
-          ForcePersists, ForceShutdownForgets, ForceClosePersists, SessionScopedInstructions
+          ForcePersists, ForceShutdownForgets, ForgetOnlyRunning, ForceClosePersists,
+          SessionScopedInstructions
 
 R == {1, 2}                \* two root turns on one thread
 Files == 1..4
@@ -49,12 +53,14 @@ VARIABLES
   \* host (host.ts)
   lock, savedF, savedV, writes, persistedF, persistedV, childDone,
   closing, closeStep, abandoned,
-  restarted, resumedTainted
+  restarted, resumedTainted,
+  \* force close forgot a session no running, unforced root conversation was on
+  needless
 
 primeVars == <<handle, ver, resumable, gen, pending, cur, shutdown, nextF, fstate, taint, lcache, sinstr>>
 turnVars == <<pc, tv, tgen, tsess, tprev, tfile, forced, hostDone, queuedOrder>>
 hostVars == <<lock, savedF, savedV, writes, persistedF, persistedV, childDone,
-              closing, closeStep, abandoned, restarted, resumedTainted>>
+              closing, closeStep, abandoned, restarted, resumedTainted, needless>>
 vars == <<primeVars, turnVars, hostVars>>
 
 \* PrimeAgentHarness.state()
@@ -75,7 +81,7 @@ Init ==
   /\ lock = 0 /\ savedF = 1 /\ savedV = 1 /\ writes = 0
   /\ persistedF = 1 /\ persistedV = 1 /\ childDone = FALSE
   /\ closing = FALSE /\ closeStep = "none" /\ abandoned = FALSE
-  /\ restarted = FALSE /\ resumedTainted = FALSE
+  /\ restarted = FALSE /\ resumedTainted = FALSE /\ needless = FALSE
 
 Live == ~restarted
 
@@ -105,7 +111,7 @@ TakeLock(r) ==
   /\ pc' = [pc EXCEPT ![r] = "start"]
   /\ UNCHANGED <<primeVars, tv, tgen, tsess, tprev, tfile, forced, hostDone, queuedOrder,
                  savedF, savedV, writes, persistedF, persistedV, childDone, closing, closeStep,
-                 abandoned, restarted, resumedTainted>>
+                 abandoned, restarted, resumedTainted, needless>>
 
 (* executeRoot + sessionFor. A turn force-stopped before start never starts. *)
 Start(r) ==
@@ -230,7 +236,7 @@ Force(r) ==
        ELSE UNCHANGED <<savedF, savedV, writes>>
   /\ UNCHANGED <<cur, shutdown, nextF, lcache, sinstr, pc, tv, tgen, tsess, tprev, tfile,
                  hostDone, queuedOrder, lock, persistedF, persistedV, childDone, closing,
-                 closeStep, abandoned, restarted, resumedTainted>>
+                 closeStep, abandoned, restarted, resumedTainted, needless>>
 
 (* runCompletion end: capture state, persist, release lock. The Prime race settles at
    once on force-stop. *)
@@ -243,7 +249,7 @@ HostEnd(r) ==
   /\ hostDone' = [hostDone EXCEPT ![r] = TRUE]
   /\ UNCHANGED <<primeVars, pc, tv, tgen, tsess, tprev, tfile, forced, queuedOrder,
                  persistedF, persistedV, childDone, closing, closeStep, abandoned,
-                 restarted, resumedTainted>>
+                 restarted, resumedTainted, needless>>
 
 (* An invoked child's runCompletion also captures and persists, without the lock. It
    never touches the root session. *)
@@ -253,7 +259,7 @@ ChildEnd ==
   /\ savedF' = StateF /\ savedV' = StateV
   /\ writes' = writes + 1
   /\ UNCHANGED <<primeVars, turnVars, lock, persistedF, persistedV, closing, closeStep,
-                 abandoned, restarted, resumedTainted>>
+                 abandoned, restarted, resumedTainted, needless>>
 
 \* persist(): serialized, reads this.saved when its turn comes
 Write ==
@@ -261,7 +267,7 @@ Write ==
   /\ writes' = writes - 1
   /\ persistedF' = savedF /\ persistedV' = savedV
   /\ UNCHANGED <<primeVars, turnVars, lock, savedF, savedV, childDone, closing, closeStep,
-                 abandoned, restarted, resumedTainted>>
+                 abandoned, restarted, resumedTainted, needless>>
 
 (* Graceful close: abort active completions, wait for the tail at most 5 s (either
    outcome), capture, dispose, persist unless abandoned. *)
@@ -269,14 +275,14 @@ Close ==
   /\ Live /\ CanClose /\ ~closing
   /\ closing' = TRUE /\ closeStep' = "waiting"
   /\ UNCHANGED <<primeVars, turnVars, lock, savedF, savedV, writes, persistedF, persistedV,
-                 childDone, abandoned, restarted, resumedTainted>>
+                 childDone, abandoned, restarted, resumedTainted, needless>>
 
 CloseCapture ==
   /\ Live /\ closeStep = "waiting"
   /\ closeStep' = "captured"
   /\ savedF' = StateF /\ savedV' = StateV
   /\ UNCHANGED <<primeVars, turnVars, lock, writes, persistedF, persistedV, childDone,
-                 closing, abandoned, restarted, resumedTainted>>
+                 closing, abandoned, restarted, resumedTainted, needless>>
 
 \* PrimeAgentHarness.dispose may stall; persist after it.
 ClosePersist ==
@@ -286,14 +292,17 @@ ClosePersist ==
   /\ writes' = IF abandoned THEN writes ELSE writes + 1
   /\ UNCHANGED <<handle, ver, resumable, gen, pending, cur, nextF, fstate, taint, lcache, sinstr,
                  turnVars, lock, savedF, savedV, persistedF, persistedV, childDone, closing,
-                 abandoned, restarted, resumedTainted>>
+                 abandoned, restarted, resumedTainted, needless>>
 
 (* forceClose -> PrimeAgentHarness.forceShutdown: aborts and force-disposes the root
    session. Before the fix it kept sessionHandle, so state() still named it, and nothing
    persisted: closeAbandoned suppresses closeInternal's final persist. *)
 ForceClose ==
   /\ Live /\ CanForceClose /\ ~abandoned
-  /\ LET rootActive == \E r \in R : pc[r] \in ActiveStates
+  /\ LET running == \E r \in R : pc[r] = "running" /\ tsess[r] = handle /\ ~forced[r]
+         \* Before the review fix: any root turn in flight, acquiring or already forced.
+         inFlight == \E r \in R : pc[r] \in ActiveStates
+         rootActive == IF ForgetOnlyRunning THEN handle # 0 /\ running ELSE inFlight
          forget == ForceShutdownForgets /\ rootActive
          h2 == IF forget THEN 0 ELSE handle
          v2 == IF forget THEN U ELSE ver
@@ -305,6 +314,7 @@ ForceClose ==
                   taint[handle] \/ \E r \in R : pc[r] = "running" /\ tsess[r] = handle]
            ELSE UNCHANGED <<fstate, taint>>
         /\ handle' = h2 /\ ver' = v2
+        /\ needless' = (needless \/ (forget /\ handle # 0 /\ ~running))
         /\ resumable' = IF forget THEN 0 ELSE resumable
         /\ IF ForceClosePersists
              THEN /\ savedF' = IF h2 = 0 \/ v2 = U THEN 0 ELSE h2
@@ -325,7 +335,7 @@ Restart ==
   /\ restarted' = TRUE
   /\ resumedTainted' = (persistedF # 0 /\ taint[persistedF])
   /\ UNCHANGED <<primeVars, turnVars, lock, savedF, savedV, writes, persistedF, persistedV,
-                 childDone, closing, closeStep, abandoned>>
+                 childDone, closing, closeStep, abandoned, needless>>
 
 Next ==
   \/ \E r \in R : Queue(r) \/ TakeLock(r) \/ Start(r) \/ ReloadDone(r) \/ RotDisposed(r)
@@ -375,6 +385,14 @@ RestartNotTainted == ~resumedTainted
 \* PPG-003: a running root turn's session carries its own pinned version's instructions.
 RootSessionHasOwnInstructions ==
   \A r \in R : pc[r] = "running" => sinstr[tsess[r]] = Instr(tv[r])
+
+\* Continuity: force close keeps a session no running, unforced root conversation was on,
+\* such as an idle one or one a root turn was still acquiring.
+NoNeedlessForget == ~needless
+
+\* Witness, expected to be violated: a session survives a force close and the restart, so
+\* NoNeedlessForget is not vacuous.
+NeverKeptAcrossForceClose == ~(abandoned /\ restarted /\ persistedF # 0)
 
 \* Liveness: a force-stopped turn's host run ends, freeing the lock.
 ForcedReleasesLock == \A r \in R : [](forced[r] => <>(hostDone[r]))
