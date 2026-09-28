@@ -270,9 +270,25 @@ impl SqliteProductStore {
         recursive: bool,
     ) -> Result<ActionInvocationInsertOutcome, StorageError> {
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
-        if let Some((invocation, interaction)) =
+        if let Some((mut invocation, interaction)) =
             existing_for_action_scope(&mut transaction, source_interaction_id, action_id).await?
         {
+            // An older build recorded an agent's child without the marker. The agent's retry of
+            // the same recursive invocation establishes its origin, unless the product already
+            // runs the result as a user's own invoke.
+            if recursive && !invocation.agent_invoked {
+                let marked = sqlx::query(
+                    "UPDATE action_invocations SET agent_invoked=1
+                     WHERE result_interaction_id=?1 AND authoritative=1 AND agent_invoked=0
+                       AND (EXISTS(SELECT 1 FROM completion_executions WHERE interaction_id=?1)
+                            OR EXISTS(SELECT 1 FROM interactions WHERE id=?1
+                                      AND completion_status IN ('not_started','submitted')))",
+                )
+                .bind(interaction.id.value())
+                .execute(&mut *transaction)
+                .await?;
+                invocation.agent_invoked = marked.rows_affected() == 1;
+            }
             if recursive {
                 validate_inherited_personal_presentation(
                     &mut transaction,
@@ -1534,6 +1550,87 @@ mod tests {
                 "result {result}"
             );
         }
+        store.pool.close().await;
+    }
+
+    /// An older build recorded an agent's child without the marker. The agent's exact retry
+    /// of the same recursive invocation establishes its origin, so it marks the row.
+    #[tokio::test]
+    async fn a_recursive_retry_marks_an_unmarked_child_as_an_agents() {
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-recursive-retry-marks-")
+            .tempdir()
+            .unwrap();
+        let store = SqliteProductStore::open(temporary.path().join("product.sqlite3"))
+            .await
+            .unwrap();
+        seed_test_model_selection(&store).await;
+        let model_selection = InteractionModelSelection {
+            family_id: ModelFamilyId::from_database(1),
+            provider_id: ProviderId::parse("codex").unwrap(),
+            model_id: "test-model".into(),
+        };
+        let thread = store
+            .insert_thread_with_initial_interaction(NewThreadRecord {
+                title: "Legacy child",
+                project_id: None,
+                initial_message: "Root",
+                harness_configuration_name: "codex-basic",
+                permission_profile_id: "auto",
+                model_selection: Some(&model_selection),
+                timestamp: "1",
+            })
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE interactions SET completion_status='accepted',graph_node_id=701 WHERE id=?1",
+        )
+        .bind(thread.root_interaction_id.value())
+        .execute(&store.pool)
+        .await
+        .unwrap();
+        let child = match store
+            .insert_recursive_action_invocation(thread.root_interaction_id, 41, "Child")
+            .await
+            .unwrap()
+        {
+            ActionInvocationInsertOutcome::Created { interaction, .. } => interaction,
+            _ => panic!("the child is new"),
+        };
+        sqlx::query("UPDATE action_invocations SET agent_invoked=0")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+
+        let retry = store
+            .insert_recursive_action_invocation(thread.root_interaction_id, 41, "Child")
+            .await
+            .unwrap();
+        assert!(matches!(
+            retry,
+            ActionInvocationInsertOutcome::Existing { .. }
+        ));
+        assert!(store.is_agent_invoked_child(child.id).await.unwrap());
+
+        // A user's own invoke that the product already runs keeps its origin.
+        let user = match store
+            .insert_action_invocation(thread.root_interaction_id, 42, "User action")
+            .await
+            .unwrap()
+        {
+            ActionInvocationInsertOutcome::Created { interaction, .. } => interaction,
+            _ => panic!("the user's result is new"),
+        };
+        sqlx::query("UPDATE interactions SET completion_status='running' WHERE id=?1")
+            .bind(user.id.value())
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        store
+            .insert_recursive_action_invocation(thread.root_interaction_id, 42, "User action")
+            .await
+            .unwrap();
+        assert!(!store.is_agent_invoked_child(user.id).await.unwrap());
         store.pool.close().await;
     }
 

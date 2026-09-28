@@ -2647,3 +2647,114 @@ async fn a_duplicate_launchs_refusal_leaves_the_claiming_launch_its_child() {
     assert_eq!(world.child_row().await.completion_status, "running");
     world.finish().await;
 }
+
+/// A start that cannot read a refused child's graph current keeps it marked and retries it in
+/// the background, rather than leaving its current active until another restart.
+#[tokio::test]
+async fn a_refused_child_whose_graph_read_fails_at_startup_is_retried() {
+    let world = World::unprepared("refused-graph-retry").await;
+    assert!(
+        world
+            .product
+            .claim_interaction_preparing(world.child.id)
+            .await
+            .unwrap()
+    );
+    assert!(
+        world
+            .product
+            .fail_unlaunched_recursive_child(
+                world.child.id,
+                world.completion_id,
+                HARNESS,
+                "preparation_failed",
+                true,
+                "1",
+            )
+            .await
+            .unwrap()
+    );
+    world.faults.fail_current_reads.store(1, Ordering::SeqCst);
+    world.restart().await;
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while world.observe().await["life"] == "active" && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let state = world.observe().await;
+    assert_eq!(
+        state["life"], "failed",
+        "the graph half is retried: {state}"
+    );
+    assert_eq!(state["why"], "preparation_failed", "{state}");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while world.graph_failure_pending().await && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(!world.graph_failure_pending().await, "and then unmarked");
+    world.finish().await;
+}
+
+/// An unbound child whose thread's harness configuration left the catalog is still located
+/// through its graph occurrence and failed in both stores: finding it needs no live harness.
+#[tokio::test]
+async fn a_restart_fails_an_unbound_child_whose_harness_left_the_catalog() {
+    let world = World::unprepared("restart-harness-gone").await;
+    assert!(
+        world
+            .product
+            .claim_interaction_preparing(world.child.id)
+            .await
+            .unwrap()
+    );
+    sqlx::query("UPDATE threads SET harness_configuration_name='retired-harness' WHERE id=?1")
+        .bind(world.thread.id.value())
+        .execute(&world.pool)
+        .await
+        .unwrap();
+    world.set_parent_status("failed").await;
+    world.restart().await;
+
+    let state = world.observe().await;
+    assert_eq!(state["life"], "failed", "{state}");
+    assert_eq!(state["why"], "application_restart", "{state}");
+    assert_eq!(state["status"], "failed", "{state}");
+    assert_eq!(
+        world.child_row().await.graph_node_id,
+        Some(world.completion_id)
+    );
+    world.finish().await;
+}
+
+/// A deterministic startup failure followed by a transient graph error while failing the
+/// child keeps the child for the background retry, which then ends it in both stores. The
+/// product row is never made terminal while its graph current is still active.
+#[tokio::test]
+async fn a_transient_error_while_ending_a_child_keeps_it_for_retry() {
+    let world = World::new("restart-deterministic-then-transient", false).await;
+    world.set_parent_status("running").await;
+    world
+        .faults
+        .refuse_invalidation
+        .store(true, Ordering::SeqCst);
+    world.faults.fail_current_reads.store(1, Ordering::SeqCst);
+    world.restart().await;
+    let kept = world.observe().await;
+    assert!(
+        !(kept["status"] == "failed" && kept["life"] == "active"),
+        "the product row is not terminal while the graph is active: {kept}"
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let state = loop {
+        let state = world.observe().await;
+        if state["status"] == "failed" || Instant::now() >= deadline {
+            break state;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_eq!(state["life"], "failed", "{state}");
+    assert_eq!(state["why"], "application_restart", "{state}");
+    assert_eq!(state["status"], "failed", "{state}");
+    world.finish().await;
+}

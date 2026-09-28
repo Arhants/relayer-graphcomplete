@@ -1470,26 +1470,6 @@ async fn launch_prepared_child(
         }
     }
 
-    // A child that already ended is reported, not launched again: the parent then observes
-    // its terminal current through this same occurrence.
-    if matches!(
-        outcome.interaction.completion_status.as_str(),
-        "accepted" | "failed" | "stopped"
-    ) {
-        if outcome.interaction.graph_node_id == Some(input.interaction_node) {
-            return Ok((
-                StatusCode::OK,
-                Json(CompletePreparedChildResponse {
-                    completion_id: input.interaction_node,
-                }),
-            ));
-        }
-        return Err(ApiError::conflict(
-            "recursive_completion_ended",
-            "This recursive completion already ended.",
-        ));
-    }
-
     // Only the launch that claims the child's preparation may fail it after a refusal. A
     // concurrent duplicate that finds it claimed and fails on its own must not end a child the
     // claiming launch is still running.
@@ -1521,8 +1501,33 @@ async fn launch_prepared_child(
             refused(&state, thread, outcome.interaction);
             return Err(error);
         }
+        // Another launch owns the child, or it can no longer be prepared. A child that ended,
+        // including one a refused launch's cleanup failed with no execution row, is reported
+        // rather than launched again: the parent then observes its terminal current through
+        // this same occurrence. The row is read again here, after ownership was lost.
         Ok(Preparation::NotOwned) => {
             for attempt in 0..10 {
+                let current = state
+                    .product
+                    .get_interaction(outcome.interaction.id)
+                    .await?;
+                if matches!(
+                    current.completion_status.as_str(),
+                    "accepted" | "failed" | "stopped"
+                ) {
+                    if current.graph_node_id == Some(input.interaction_node) {
+                        return Ok((
+                            StatusCode::OK,
+                            Json(CompletePreparedChildResponse {
+                                completion_id: input.interaction_node,
+                            }),
+                        ));
+                    }
+                    return Err(ApiError::conflict(
+                        "recursive_completion_ended",
+                        "This recursive completion already ended.",
+                    ));
+                }
                 if let Some(existing) = state
                     .product
                     .completion_execution(outcome.interaction.id)
