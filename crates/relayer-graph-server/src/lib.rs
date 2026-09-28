@@ -2177,6 +2177,8 @@ async fn submit_layer(
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LayerDraftRequest {
+    #[serde(default)]
+    default_node_id: Option<NodeId>,
     client_key: String,
     nodes: Vec<NodeId>,
     edges: Vec<relayer_graph_core::EdgeId>,
@@ -2208,6 +2210,7 @@ struct NodePlacementRequest {
 impl From<LayerDraftRequest> for LayerDraft {
     fn from(input: LayerDraftRequest) -> Self {
         Self {
+            default_node_id: input.default_node_id,
             client_key: input.client_key,
             nodes: input.nodes,
             edges: input.edges,
@@ -4003,6 +4006,7 @@ mod tests {
             .unwrap();
         let layer = writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "abandoned-layer".into(),
                 nodes: vec![node.id],
                 edges: vec![],
@@ -4160,6 +4164,7 @@ mod tests {
             .unwrap();
         let layer = version_writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "root".into(),
                 nodes: vec![preference.id],
                 edges: vec![],
@@ -4280,6 +4285,7 @@ mod tests {
             .unwrap();
         let layer = source_writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "root".into(),
                 nodes: vec![target.id],
                 edges: vec![],
@@ -4750,6 +4756,7 @@ mod tests {
             .unwrap();
         let layer = writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "current".into(),
                 nodes: vec![source.id],
                 edges: vec![],
@@ -5064,6 +5071,7 @@ mod tests {
             .unwrap();
         let layer = writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "root".into(),
                 nodes: vec![source.id],
                 edges: vec![],
@@ -5197,6 +5205,7 @@ mod tests {
             .unwrap();
         let result_layer = result_writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "result-root".into(),
                 nodes: vec![result_node.id],
                 edges: vec![],
@@ -5731,6 +5740,7 @@ mod tests {
             .unwrap();
         let source_layer = writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "source-layer".into(),
                 nodes: vec![source.id],
                 edges: vec![],
@@ -5971,6 +5981,7 @@ mod tests {
             .unwrap();
         let layer = writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "root-layer".into(),
                 nodes: vec![answer.id],
                 edges: vec![],
@@ -6081,6 +6092,7 @@ mod tests {
             .unwrap();
         let layer = writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "root".into(),
                 nodes: vec![answer.id],
                 edges: vec![],
@@ -6225,6 +6237,7 @@ mod tests {
             .unwrap();
         let layer = writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "root".into(),
                 nodes: vec![source.id],
                 edges: vec![],

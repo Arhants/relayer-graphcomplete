@@ -2222,7 +2222,7 @@ describe("desktop skeleton", () => {
     expect(failures.map((failure) => failure.label)).toEqual(expect.arrayContaining([
       "environment desktop-production-windows has required variable names",
       "an active ruleset targets main",
-      "main requires the current GitHub Actions check job",
+      "main requires GitHub Actions CI and scheduled merge freshness",
     ]));
   });
 

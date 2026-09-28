@@ -65,6 +65,7 @@ async fn build_and_complete(database: &GraphDatabase) -> NodeId {
         .unwrap();
     let child = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "child".into(),
             nodes: vec![worker.id],
             edges: vec![],
@@ -79,6 +80,7 @@ async fn build_and_complete(database: &GraphDatabase) -> NodeId {
         .unwrap();
     let reference_child = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "reference-child".into(),
             nodes: vec![queue.id],
             edges: vec![],
@@ -93,6 +95,7 @@ async fn build_and_complete(database: &GraphDatabase) -> NodeId {
         .unwrap();
     let root = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: vec![queue.id, worker.id],
             edges: vec![edge.id],
@@ -209,6 +212,7 @@ fn imported_conversation(project_id: Option<ProjectId>) -> ImportedConversation 
                 root_layer_id: "layer-1".into(),
                 layers: vec![ImportedResolvedLayer {
                     layer: ImportedLayer {
+                        default_node_id: None,
                         id: "layer-1".into(),
                         client_key: None,
                         nodes: vec!["node-1".into()],
@@ -912,6 +916,7 @@ async fn an_import_referenced_by_another_thread_is_not_removed_from_either_store
         .unwrap();
     let root = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: vec![answer.id],
             edges: vec![],

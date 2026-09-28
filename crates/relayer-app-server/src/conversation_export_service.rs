@@ -1592,6 +1592,10 @@ fn export_layer(
         .collect::<Result<Vec<_>, _>>()?;
     Ok(ExportResolvedLayer {
         layer: ExportLayer {
+            default_node_id: resolved
+                .layer
+                .default_node_id
+                .map(|id| ids.node(id.value())),
             id: ids.layer(resolved.layer.id.value()),
             client_key: if redactor.is_share() {
                 None

@@ -211,6 +211,7 @@ export class RelayerGraphClient {
       body: JSON.stringify({
         clientKey: layer.clientKey,
         nodes: layer.nodes.map(nodeId),
+        defaultNodeId: layer.defaultNode == null ? undefined : nodeId(layer.defaultNode),
         edges: layer.edges.map(edgeId),
         layout: {
           version: layer.layout.version,

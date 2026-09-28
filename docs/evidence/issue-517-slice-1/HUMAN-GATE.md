@@ -1,5 +1,11 @@
 # PR 536 historical deterministic fixture
 
+**Historical dd7e5a18 profile only.** Do not run the commands below from the
+current integrated checkout. The old profile uses unpublished migration IDs that
+conflict with main's layer-default migration. Reopen requires the matching dd7
+source/runtime; retained data is untouched and migration checksums must not be
+overridden. See [current integration evidence](integration-verification.json).
+
 This fixture is superseded as the final human gate by the [live-model walkthrough](LIVE-GATE.md). Its data and steps remain historical deterministic evidence.
 
 Human acceptance is **pending**. Automated and agent-operated qualification do not

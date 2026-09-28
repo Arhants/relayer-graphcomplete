@@ -37,6 +37,7 @@ export const APPROVED_TELEMETRY_MODULES = Object.freeze({
     "desktop/renderer/src/product-workspace/graph-layout.js",
     "desktop/renderer/src/product-workspace/icons.js",
     "desktop/renderer/src/product-workspace/index.js",
+    "desktop/renderer/src/product-workspace/layer-selection.js",
     "desktop/renderer/src/product-workspace/markdown.js",
     "desktop/renderer/src/product-workspace/model.js",
     "desktop/renderer/src/product-workspace/node-detail-runtime.js",

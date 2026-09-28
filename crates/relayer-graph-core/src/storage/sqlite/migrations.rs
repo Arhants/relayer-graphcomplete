@@ -129,6 +129,59 @@ mod tests {
     use std::borrow::Cow;
 
     #[tokio::test]
+    async fn schema_21_default_selection_survives_permission_migration_without_backfill() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let url = format!("sqlite://{}", file.path().display());
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .unwrap();
+        let main_schema = Migrator {
+            migrations: Cow::Owned(
+                MIGRATOR
+                    .iter()
+                    .filter(|migration| migration.version <= 21)
+                    .cloned()
+                    .collect(),
+            ),
+            ..Migrator::DEFAULT
+        };
+        main_schema.run(&pool).await.unwrap();
+        sqlx::raw_sql("INSERT INTO nodes(id,thread_id,kind,icon,title,detail,state,owner_interaction_id,client_key) VALUES (1,1,'user-interaction','user','Legacy','Legacy','accepted',NULL,NULL),(2,1,'concept','box','Default','Default','accepted',1,'default'); INSERT INTO layers(id,thread_id,state,owner_interaction_id,client_key,default_node_id) VALUES (1,1,'accepted',1,'root',2); INSERT INTO layer_nodes(layer_id,node_id,position) VALUES (1,2,0);")
+            .execute(&pool).await.unwrap();
+        pool.close().await;
+
+        let database = GraphDatabase::open(file.path()).await.unwrap();
+        let restored = database
+            .writer_for_subgraph(NodeId::new(1).unwrap())
+            .await
+            .unwrap()
+            .get_layer(LayerId::new(1).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            restored.layer.default_node_id,
+            Some(NodeId::new(2).unwrap())
+        );
+        database.close().await;
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .unwrap();
+        let state: (i64, i64, i64) = sqlx::query_as("SELECT enabled, (SELECT COUNT(*) FROM interaction_permissions), (SELECT COUNT(*) FROM invoke_resolution_transitions) FROM interaction_permission_config")
+            .fetch_one(&pool).await.unwrap();
+        assert_eq!(state, (0, 0, 0));
+        pool.close().await;
+        GraphDatabase::open(file.path())
+            .await
+            .unwrap()
+            .close()
+            .await;
+    }
+
+    #[tokio::test]
     async fn schema_16_nodes_reopen_without_an_authored_detail_package() {
         let file = tempfile::NamedTempFile::new().unwrap();
         let url = format!("sqlite://{}", file.path().display());
@@ -226,6 +279,7 @@ mod tests {
             .unwrap();
         let root = writer
             .submit_layer(&LayerDraft {
+                default_node_id: None,
                 client_key: "root".into(),
                 nodes: vec![preference.id],
                 edges: vec![],

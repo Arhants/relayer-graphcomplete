@@ -824,6 +824,54 @@ describe("compiled Node Detail product runtime", () => {
     expect(runtime.shadowRoot.textContent.indexOf("First")).toBeLessThan(runtime.shadowRoot.textContent.indexOf("After"));
   });
 
+  it("automatically mounts the chosen detail and restores a different selection when returning to a layer", async () => {
+    const window = new Window({ url: "http://127.0.0.1:3000" });
+    vi.stubGlobal("document", window.document);
+    vi.stubGlobal("window", window);
+    vi.stubGlobal("lucide", new Proxy({ Circle: {}, createElement: () => window.document.createElement("svg") }, { get: (target, key) => target[key] ?? {} }));
+    window.document.body.innerHTML = '<section id="threadView"></section>';
+    const nodes = [1, 2].map((id) => ({ id, kind: "concept", icon: "box", title: `Detail ${id}`, detail: `Body ${id}` }));
+    const layer = { layer: { id: 91, nodes: [1, 2], defaultNodeId: 2, layout: { version: 1, placements: [{ nodeId: 1, x: 0.25, y: 0.5 }, { nodeId: 2, x: 0.75, y: 0.5 }] } }, nodes, edges: [], actions: [] };
+    layer.actions = [{ id: 71, clientKey: "editable", kind: "input", sourceNodeId: 1, sourceLayerId: 91, label: "Answer", control: "text", prompt: "Draft answer" }];
+    const child = { layer: { id: 92, nodes: [2], defaultNodeId: 2 }, nodes: [nodes[1]], edges: [], actions: [] };
+    const thread = { id: 801, rootInteractionId: 5, title: "Thread", harnessId: "fixture" };
+    const state = { status: "accepted", currentInteractionId: 5, interactions: [{ id: 5, graphNodeId: 50, threadId: 801, text: "Question", completionStatus: "accepted", completionOutput: { rootLayer: layer } }], visibleLayer: layer, nodes, actions: layer.actions, projects: [], permissionProfiles: [], modelSettings: { defaults: { harnessId: "fixture" }, harnesses: [{ id: "fixture", available: true }], providers: [], families: [] }, modelCatalog: [], actionInvocations: [], pendingActionInvocations: [] };
+    const onSelectionChange = vi.fn();
+    const selection = { currentThreadId: 801, currentInteractionId: 5, selectedNodeId: null, layerPath: [] };
+    const workspace = createProductWorkspace({ root: window.document, getState: () => state, getThread: () => thread, selection, onSelectionChange, showThread() {}, showEmpty() {}, inputDraftApi: { get: async () => ({ threadId: 801, revision: 0, attachments: [], updatedAt: "2026-09-27T00:00:00Z" }) } });
+    try {
+      workspace.render();
+      await window.happyDOM.waitUntilComplete();
+      expect(window.document.querySelector("#detailTitle").textContent).toBe("Detail 2");
+      expect(window.document.querySelector("#inspector").classList.contains("hidden")).toBe(false);
+      window.document.querySelector('[data-node="1"]').click();
+      await window.happyDOM.waitUntilComplete();
+      const input = window.document.querySelector(".node-input-text");
+      expect(input).not.toBeNull();
+      input.value = "Uncommitted edit";
+      input.dispatchEvent(new window.Event("input", { bubbles: true }));
+      onSelectionChange.mockClear();
+      state.visibleLayer = child; state.nodes = child.nodes; state.actions = []; selection.selectedNodeId = 2;
+      workspace.render();
+      await window.happyDOM.waitUntilComplete();
+      expect(window.document.querySelector("#detailTitle").textContent).toBe("Detail 2");
+      state.visibleLayer = layer; state.nodes = nodes; state.actions = layer.actions; selection.selectedNodeId = 1;
+      workspace.render();
+      await window.happyDOM.waitUntilComplete();
+      expect(window.document.querySelector("#detailTitle").textContent).toBe("Detail 1");
+      expect(window.document.querySelector(".node-input-text").value).toBe("");
+      // Restoring a navigation selection must not emit a new user intent and cancel history.
+      expect(onSelectionChange).not.toHaveBeenCalled();
+      state.visibleLayer = child; state.nodes = child.nodes; state.actions = [];
+      selection.selectedNodeId = null; selection.nodeDetailsClosed = true;
+      workspace.render();
+      await window.happyDOM.waitUntilComplete();
+      expect(selection.selectedNodeId).toBeNull();
+      expect(window.document.querySelector("#inspector").classList.contains("hidden")).toBe(true);
+      expect(onSelectionChange).not.toHaveBeenCalled();
+    } finally { workspace.dispose(); }
+  });
+
   it("resolves context-preview images from their original presenting interaction and layer", async () => {
     const window = new Window({ url: "http://127.0.0.1:3000" });
     vi.stubGlobal("document", window.document);

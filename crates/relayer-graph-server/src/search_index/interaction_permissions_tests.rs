@@ -5,6 +5,7 @@ use std::sync::Arc;
 async fn layer(writer: &GraphWriter, key: &str, node: &GraphNode) -> GraphLayer {
     writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: key.into(),
             nodes: vec![node.id],
             edges: vec![],

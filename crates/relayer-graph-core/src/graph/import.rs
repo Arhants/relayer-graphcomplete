@@ -129,6 +129,8 @@ pub struct ImportedResolvedLayer {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportedLayer {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_node_id: Option<String>,
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_key: Option<String>,
@@ -525,10 +527,11 @@ impl crate::GraphDatabase {
                         .bind(owner).bind(&edge.id).execute(&mut *tx).await?;
                     edge_ids.insert(edge.id.clone(), result.last_insert_rowid());
                 }
-                let result = sqlx::query("INSERT INTO layers(project_id,thread_id,layout_schema_version,state,owner_interaction_id,client_key) VALUES (?1,?2,?3,'accepted',?4,?5)")
+                let result = sqlx::query("INSERT INTO layers(project_id,thread_id,layout_schema_version,state,owner_interaction_id,client_key,default_node_id) VALUES (?1,?2,?3,'accepted',?4,?5,?6)")
                     .bind(metadata.project_id.map(ProjectId::value)).bind(metadata.thread_id.value())
                     .bind(resolved.layer.layout.as_ref().map(|layout| i64::from(layout.version)))
                     .bind(owner).bind(resolved.layer.client_key.as_deref().unwrap_or(&resolved.layer.id))
+                    .bind(resolved.layer.default_node_id.as_ref().map(|id| node_ids[id]))
                     .execute(&mut *tx).await?;
                 layer_ids.insert(resolved.layer.id, result.last_insert_rowid());
             }
@@ -1191,6 +1194,17 @@ impl crate::GraphDatabase {
 }
 
 fn validate_imported_layout(layer: &ImportedLayer) -> Result<(), GraphError> {
+    if layer
+        .default_node_id
+        .as_ref()
+        .is_some_and(|id| !layer.nodes.contains(id))
+    {
+        return Err(GraphError::validation(
+            "default_node_outside_layer",
+            "defaultNodeId",
+            "Imported default node must belong to its layer.",
+        ));
+    }
     let Some(layout) = &layer.layout else {
         return Ok(());
     };

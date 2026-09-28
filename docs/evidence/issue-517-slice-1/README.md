@@ -1,5 +1,16 @@
 # Issue 517 Slice 1 verification ledger
 
+## Current integration status
+
+The user approved the live gate at `dd7e5a18`: "okay i've verified myself that it works good job".
+That acceptance applies to the pre-integration source; it is not fresh live proof
+of this merge. Integration with main `17b50d95` is recorded separately in
+[integration-verification.json](integration-verification.json) and
+[integration-source-snapshot.json](integration-source-snapshot.json).
+The sections below retain historical evidence and failures. Their source manifest
+and migration filenames describe their original snapshots, not the integrated head.
+No additional paid inference is authorized or performed for merge readiness.
+
 This is the typed-permission and invoke-transition slice of #517. Persistent
 attached-node mutation, general detail replacement, B3, migration, and portability
 are not claimed. The graph qualification flag defaults off.
@@ -34,14 +45,14 @@ while the cycle case protects semantic rejection before acknowledgement.
 - Scoped live inference is explicitly authorized for the final gate described below.
   Signed binaries and release proof are outside this context.
 
-## Actual results
+## Historical pre-integration results
 
-The exact changed source is recorded in [source-snapshot.json](source-snapshot.json).
+The pre-integration changed source is recorded in [source-snapshot.json](source-snapshot.json).
 The manifest includes the base commit, every changed non-evidence file hash, and
 an aggregate digest. Evidence-directory edits do not alter that source identity.
 
-- `npm run build`: passed on the final production source with pinned Node 22.23.2.
-- Current `npm run check` retry: main Vitest 203 files and 2,629 tests passed,
+- `npm run build`: passed on the pre-integration production source with pinned Node 22.23.2.
+- Pre-integration `npm run check` retry: main Vitest 203 files and 2,629 tests passed,
   3 skipped; Rust workspace, crash reconciliation, and package checks passed.
   The outer command failed during final isolated secret-boundary cleanup
   (`ENOTEMPTY`). An unchanged focused retry passed both secret-boundary tests.
@@ -229,3 +240,51 @@ hydrated owner. `shows the invoked result distinct root` exercises the real
 controller across normal, recovered, already-accepted, and deliberate Back paths.
 This maps to IP-003 destination presentation without inventing a new graph action.
 The initial live failure remains recorded in [LIVE-GATE.md](LIVE-GATE.md).
+
+## Integration with main 17b50d95
+
+The text conflicts preserve both the permission and layer-selection imports, and
+both complete Rust test blocks. The hydrated interaction remains the owner used
+for invoke-result refresh; main's default/remembered selection runs within that
+correct result layer. The four invoke controller cases now use authored default
+node 27 and verify its selection; deliberate Back keeps source node 22. Their
+prior null-selection assertions failed because main intentionally opens details.
+No failure boundary was removed; this updates the expectation to NDT-003.
+
+Main already owns migration 0021 for layer defaults. The unpublished permission,
+DELETE guard, and receipt guard migrations are now 0024, 0025, and 0026 with
+unchanged SQL bytes. Historical 0021/0022/0023 review scopes above remain historical.
+The main-baseline upgrade test applies the real migration registry through 21,
+reopens through GraphDatabase, preserves the stored default node, and verifies the
+gate remains off with no historical permission or receipt backfill. It maps to
+IP-001/IP-004 and NDT-001. Existing typed acceptance/reopen tests protect IP-002.
+
+The retained pre-merge qualification databases used the unpublished old numbering.
+They are untouched and must not be opened with the integrated migration registry.
+Their original proof remains tied to dd7e5a18. Reopening those historical profiles
+requires matching pre-merge source/runtime; no checksum override or implicit data
+migration is provided. Fresh integrated deterministic profiles qualify the new
+registry. Ordinary main databases upgrade through the tested production path.
+
+Semantic auto-merge review also checks main's portable default-node transport
+alongside Slice 1 export refusal, selected descendant revalidation alongside
+remembered/closed detail state, and actual input/context/history behavior. The
+required assembled portfolio adds main's three declared node-input,
+interaction-context, and project-new-thread desktop runners to both invoke modes.
+Build is shared once; each runner's inner result remains independently reported.
+
+Current integration results: build passed; full check passed Rust/crash/package
+checks and 2,670 Vitest cases but failed two graph-start timeouts and one undersized
+provider frame. An unchanged focused run passed all 34 cases in those three files.
+The remaining secret-boundary (2), Python (43), receipt lint, and readability checks
+passed separately. This is composite checkpoint evidence, not an outer check pass.
+Earlier compiler integration failures are retained in the machine record.
+
+All five deterministic desktop journeys passed their inner results. Project reopen
+confirmed both restartPersistence and layerSelectionRestartPersistence. The current
+reopened invoke image visibly includes the selected compiled control. The node-detail
+collapsed image shows an expanded sidebar and is not visual collapse proof, despite
+passing DOM geometry checks. No claim extends beyond each observed boundary.
+Independent standards/spec reviewers found no unresolved findings on source digest
+`1eae477c40effc19cdeac99fd99f1beb6ca0bd236b1ffdae8b2a259a7f734b38`.
+Their exact scopes and execution limits are in integration-verification.json.

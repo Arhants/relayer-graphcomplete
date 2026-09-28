@@ -145,6 +145,28 @@ describe("workspace navigation integration", () => {
     expect(controller.appState.nodes.map(({ id }) => id)).toEqual([11]);
   });
 
+  it("opens the authored default and restores the user's choice on sidebar reopen", async () => {
+    const layer = { ...rootLayer(101, 11), layer: { id: 101, nodes: [11, 12], defaultNodeId: 12 }, nodes: [{ id: 11, title: "Other" }, { id: 12, title: "Default" }] };
+    const turn = interaction(1, 10, layer);
+    const other = interaction(2, 20, rootLayer(201, 21));
+    const threads = [{ id: 10, title: "First" }, { id: 20, title: "Second" }];
+    requestImplementation = vi.fn(async (path) => {
+      if (path.startsWith("/api/state?threadId=10")) return productState(threads, [turn]);
+      if (path.startsWith("/api/state?threadId=20")) return productState(threads, [other]);
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const controller = await loadModules();
+    await controller.loadThread(10);
+    expect(controller.viewState.selectedNodeId).toBe(12);
+    controller.replaceCurrentSelection(11);
+    await controller.loadThread(20);
+    await controller.loadThread(10);
+    expect(String(controller.viewState.selectedNodeId)).toBe("11");
+    // Explicit history restoration wins over the most recent per-layer choice.
+    controller.hydrateWorkspace(turn, layer, { selectedNodeId: 12 });
+    expect(controller.viewState.selectedNodeId).toBe(12);
+  });
+
   it("restores thread, turn, path, numeric node selection, and deep-link URL", async () => {
     const layer1 = rootLayer(101, 11);
     const layer2 = rootLayer(201, 21);
@@ -181,6 +203,30 @@ describe("workspace navigation integration", () => {
       forwardChangesTurn: true,
       pendingDirection: null,
     });
+  });
+
+  it("restores explicitly closed details with Back and Forward", async () => {
+    const turns = [interaction(1, 10, rootLayer(101, 11)), interaction(2, 20, rootLayer(201, 21))];
+    const threads = [{ id: 10, title: "First" }, { id: 20, title: "Second" }];
+    requestImplementation = vi.fn(async (path) => {
+      const id = path.includes("threadId=20") || path === "/api/threads/20" ? 20 : 10;
+      const selected = turns.filter((turn) => turn.threadId === id);
+      return path.startsWith("/api/state") ? productState(threads, selected)
+        : { thread: threads.find((thread) => thread.id === id), interactions: selected, actionInvocations: [] };
+    });
+    const controller = await loadModules();
+    await controller.loadThread(10);
+    expect(controller.viewState.selectedNodeId).toBe(11);
+    controller.replaceCurrentSelection(null);
+    await controller.loadThread(20);
+    expect(controller.viewState.selectedNodeId).toBe(21);
+    controller.replaceCurrentSelection(null);
+    await controller.navigateHistory(-1);
+    expect(controller.viewState).toMatchObject({ selectedNodeId: null, nodeDetailsClosed: true });
+    await controller.navigateHistory(1);
+    expect(controller.viewState).toMatchObject({ selectedNodeId: null, nodeDetailsClosed: true });
+    await controller.loadThread(10);
+    expect(String(controller.viewState.selectedNodeId)).toBe("11");
   });
 
   it("waits for tutorial completion persistence before refreshing to the submitted follow-up", async () => {
@@ -369,7 +415,7 @@ describe("workspace navigation integration", () => {
     expect(controller.viewState).toMatchObject({
       currentThreadId: 20,
       currentInteractionId: 2,
-      selectedNodeId: null,
+      selectedNodeId: 21,
     });
     expect(controller.viewState.layerPath.map(({ layerId }) => layerId)).toEqual([201]);
     expect(controller.getNavigationHistory().canGoBack).toBe(true);
@@ -890,6 +936,7 @@ describe("workspace navigation integration", () => {
     const source = interaction(1, 10, sourceRoot);
     const resultRoot = rootLayer(8, 26);
     resultRoot.nodes.push({ id: 27, title: "Observe" }, { id: 28, title: "Decide" });
+    resultRoot.layer.defaultNodeId = 27;
     const result = { ...interaction(2, 10, resultRoot, 2), completionStatus: "running", completionOutput: null };
     const state = productState([{ id: 10, title: "Launch" }], [source]);
     let invoked = false;
@@ -927,7 +974,7 @@ describe("workspace navigation integration", () => {
     expect(controller.appState.visibleLayer.layer.id).toBe(backToSource ? 7 : 8);
     expect(controller.viewState.layerPath.map(({ layerId }) => layerId)).toEqual([backToSource ? 7 : 8]);
     expect(controller.appState.nodes.map(({ id }) => id)).toEqual(backToSource ? [22] : [26, 27, 28]);
-    expect(controller.viewState.selectedNodeId).toBeNull();
+    expect(String(controller.viewState.selectedNodeId)).toBe(backToSource ? "22" : "27");
     controller.selectTurnById(1);
     expect(controller.appState.visibleLayer.layer.id).toBe(7);
     expect(controller.appState.actions[0]).toMatchObject({ id: 6, kind: "navigate", targetLayerId: 8 });
