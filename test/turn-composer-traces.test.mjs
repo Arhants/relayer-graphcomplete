@@ -106,3 +106,25 @@ describe("A second Send while the thread's follow-up is in flight", () => {
     expect(world.submits).toBe(1);
   });
 });
+
+// Not in TurnComposer.tla, which leaves restored retry drafts out.
+describe("Retry text a newer draft kept out", () => {
+  const failedTurn = {
+    status: "not_started", text: "the failed prompt", latestAttempt: { id: 1, outcome: "model_failed" },
+  };
+
+  it("returns after the draft is cleared and the app restarts", async () => {
+    world = await new TurnComposerWorld({
+      maxText: 2, maxTurns: 2, turnsA: [failedTurn], persisted: { 1: "my newer draft" },
+    }).ready();
+    expect(world.prompt.value).toBe("my newer draft");
+    world.prompt.value = "";
+    world.prompt.dispatchEvent(new world.window.Event("input"));
+    const persisted = world.persistedDraft(1);
+    world.dispose();
+    world = await new TurnComposerWorld({
+      maxText: 2, maxTurns: 2, turnsA: [failedTurn], persisted: { 1: persisted },
+    }).ready();
+    expect(world.prompt.value).toBe("the failed prompt");
+  });
+});

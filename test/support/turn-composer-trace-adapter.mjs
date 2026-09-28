@@ -63,6 +63,7 @@ export class TurnComposerWorld {
     this.window.localStorage.clear();
     this.window.localStorage.setItem("relayerComposerDraftsV1", JSON.stringify({
       threadFollowups: Object.fromEntries(Object.entries(persisted)
+        .filter(([, text]) => text != null)
         .map(([turn, text]) => [`${THREAD_ID.A}:${interactionId("A", Number(turn))}`, text])),
     }));
     this.window.document.body.innerHTML = '<section id="threadView"></section><div id="toast" class="hidden"></div>';
@@ -141,6 +142,7 @@ export class TurnComposerWorld {
       threadId: THREAD_ID[thread],
       sequence: index + 1,
       text: turn.text ?? `Turn ${index + 1}`,
+      ...(turn.latestAttempt ? { latestAttempt: turn.latestAttempt } : {}),
       graphNodeId: interactionId(thread, index + 1) + 5000,
       completionStatus: turn.status,
     })));

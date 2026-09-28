@@ -371,6 +371,10 @@ export class NodeInspectorWorld {
     }
   }
 
+  async settled() {
+    await settle();
+  }
+
   // The refinement mapping onto the spec's observable variables.
   observe() {
     const $ = (selector) => this.window.document.querySelector(selector);

@@ -1606,7 +1606,10 @@ export function createProductWorkspace({
   const contextDraftController = contextDraftApi
     ? createNodeContextDraftController({
       api: contextDraftApi,
-      onChange: () => renderContextDraftStatus(),
+      onChange: () => {
+        settleAdoptedDraftOperations();
+        renderContextDraftStatus();
+      },
     })
     : null;
   const contextEditorErrors = new Map();
@@ -1786,6 +1789,24 @@ export function createProductWorkspace({
       if (refresh && !waitingUserRequests) refreshSelection();
     };
   };
+  // An editor remounted while its draft's confirm, discard, or reconcile is
+  // still in flight (after leaving the thread and returning) resolves until
+  // that operation settles, as the editor that started it did.
+  const draftOperationPending = (draft) => (
+    ["confirming", "discarding", "reconciling"].includes(draft?.operation?.kind));
+  const adoptedDraftOperations = new Set();
+  const adoptDraftOperation = (editor, threadId, nodeId) => {
+    if (!editor || editor.resolving) return;
+    if (!draftOperationPending(contextDraftController?.draftForNode(threadId, nodeId))) return;
+    adoptedDraftOperations.add({ threadId, nodeId, end: beginEditorResolution(editor) });
+  };
+  function settleAdoptedDraftOperations() {
+    for (const adopted of adoptedDraftOperations) {
+      if (draftOperationPending(contextDraftController?.draftForNode(adopted.threadId, adopted.nodeId))) continue;
+      adoptedDraftOperations.delete(adopted);
+      adopted.end();
+    }
+  }
   const awaitUserRequestTurn = async () => {
     const ticket = ++userRequestTicket;
     waitingUserRequests += 1;
@@ -2862,6 +2883,7 @@ export function createProductWorkspace({
         attaching: !contextForTarget(selectedDraft.target),
         error: restoredContextEditorError(threadId, selectedDraft.id),
       });
+      adoptDraftOperation(contextEditor, threadId, selectedNode.id);
     }
     if (!contextEditor?.durable
       || !selectedNode
@@ -3827,8 +3849,14 @@ export function createProductWorkspace({
       preserve: false,
     });
     composerPromptRevision += 1;
+    // An empty value is kept as a tombstone only when it clears restored
+    // retry text that was shown. Clearing a draft that kept a restoration
+    // out leaves no draft, so the retry text returns, after a restart too
+    // (SCP-020).
+    const restorationShown = composerDraftScopeState.drafts
+      .get(composerDraftScopeState.activeScopeKey)?.restoredDraftInteractionId != null;
     persistThreadFollowupDraft(composerDraftScopeState.activeScopeKey, prompt.value, {
-      preserveEmpty: restoredDraftActive,
+      preserveEmpty: restoredDraftActive && restorationShown,
     });
     syncComposer();
   };
@@ -5353,6 +5381,7 @@ export function createProductWorkspace({
           attaching: !contextForTarget(draft.target),
           error: restoredContextEditorError(String(getThread()?.id), draft.id),
         });
+        adoptDraftOperation(contextEditor, getThread()?.id, node.id);
       }
     }
     const nodeAnchor = annotationEnabled

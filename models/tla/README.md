@@ -440,7 +440,9 @@ The candidate fixes are:
 
 A restored retry that the user's non-empty draft keeps out stays pending,
 and returns once the user empties the composer; an empty value persisted
-after the user cleared restored text is a tombstone, and wins (SCP-020). The
+after the user cleared restored text is a tombstone, and wins (SCP-020).
+Clearing a draft that kept a restoration out persists nothing, so the retry
+text also returns after a restart; a test covers it. The
 model leaves restored retry drafts out; unit tests in
 `test/workspace-keyboard.test.mjs` cover these rules.
 
@@ -534,6 +536,10 @@ A request waiting for a draft is void once the workspace enters another
 view, whether it is a click, Close, turn change, Back or Forward, or a layer
 change. The model clears any remembered request on entering a view.
 Scenario: `inspector-view-change-voids-waiting-close`.
+
+An editor remounted while its draft's confirm or discard is in flight, after
+the user left the thread and returned, resolves until that operation
+settles, so requests still wait for it; a test covers it.
 
 The model has one thread. Switching threads voids a request still waiting
 for a draft, so a turn change queued in one thread cannot act on the next;
