@@ -21,7 +21,7 @@ npm run check:models
 Pass check ids to run a subset. The runner needs Java 11 or newer and the
 pinned `tla2tools.jar` (version and sha256 in `checks.json`). It never
 downloads the jar; place it at `~/.cache/tlaplus/tla2tools-1.8.0.jar` or set
-`TLA2TOOLS_JAR`. All checks and scenarios together take about 90 seconds on an idle machine.
+`TLA2TOOLS_JAR`. All checks and scenarios together take about two minutes on an idle machine.
 `--render` rewrites the scenario traces (see below).
 
 `check:models` is not part of `npm run check` yet. Adding it there requires a
@@ -407,6 +407,99 @@ counter with each process, and the desktop quits when the app server stops.
 If the app server alone restarted, its restored row would stay the record.
 It would accept the coordinator's next generation, and the coordinator's
 counter only grows.
+
+### `HarnessCodexThread.tla`
+
+This model covers `codex.basic`'s persistent root thread across serialized
+root turns:
+
+- **Harness:** the saved thread, its provider definition, and the step that
+  saves it.
+- **App server:** `thread/start`, `thread/resume` and `turn/start`. A thread
+  has a rollout only in the `CODEX_HOME` whose `turn/start` was accepted on it.
+  `thread/resume` without one fails with "no rollout found", as the pinned
+  Codex 0.147.0 binary does.
+- **Provider definitions:** two, each with its own `CODEX_HOME`.
+- **Interruptions:** Stop, the per-turn force-stop, and a thread saved by an
+  earlier release, whose provider is unknown and whose rollout may be missing.
+
+`codex-thread-today` mirrors the code, and each `-reverted` check turns one fix
+off. Three constants hold the fixes:
+
+- `CommitAtTurnStart`: the thread is saved when `turn/start` is accepted
+  (`onTurnId`), not when `thread/start` answers.
+- `ThreadRecordsProvider`: the saved thread names its provider definition, and
+  a turn on another provider starts a fresh thread.
+- `RecoverMissingRollout`: a `thread/resume` that finds no rollout forgets the
+  saved thread and starts a fresh one in the same turn.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `codex-thread-resumable` | Fixed; now passes | Before the fix (H1): the thread was saved as soon as `thread/start` answered, and reset only when the presentation version changed. A follow-up on another Codex provider resumed it in a `CODEX_HOME` without its rollout, and a Stop between `thread/start` and `turn/start` pinned a thread that never got one. Every later root turn failed with "no rollout found", also after a restart. Regressions: `codex-root-thread.test.ts` drives the real app-server transport against an emulated app-server with Codex's rollout rules. |
+| `codex-thread-provider-reverted` | violated: shows why the fix is needed | A follow-up on another provider resumes the first provider's thread. |
+| `codex-thread-commit-reverted` | violated: shows why the fix is needed | A Stop before `turn/start` leaves a saved thread with no rollout. |
+| `codex-thread-recovery-reverted` | violated: shows why the fix is needed | A thread saved by an earlier release, with no rollout in the turn's home, fails the turn. It is still offered for resume, so that existing conversations keep their thread. |
+
+`ResumeOnlyMaterialized` exempts the earlier release's thread by design: its
+provider is unknown, so the harness tries it once and binds it on success.
+In the model, `Force` ends the turn, so no `turn/start` answer can arrive after
+a force. The `codex-basic.test.ts` case "does not keep a thread a force-stopped
+root turn reports after the force" owns that boundary.
+
+### `HarnessPrimeRoot.tla`
+
+This model covers the harness host and Prime Agent's persistent root session:
+
+- **Host:** the per-thread session lock, capture and persist after a run,
+  graceful close, force close, a crash and one restart.
+- **Prime:** pinning, rotation, reload, the force-stop generation, and the
+  presentation instructions each session was built with.
+- **Turns:** two root turns and one invoked child, which only captures state.
+
+`prime-root-today` mirrors the code, and each `-reverted` check turns one fix
+off. Four constants hold the fixes:
+
+- `ForcePersists`: the host records the harness state as soon as a per-turn
+  force-stop fires, not when the host run ends up to ten seconds later.
+- `ForceShutdownForgets`: force shutdown forgets the root session while a root
+  turn is active, as a per-turn force-stop does.
+- `ForceClosePersists`: force close captures and persists that state, although
+  it skips close's final persist.
+- `SessionScopedInstructions`: each session reads its own presentation
+  instructions. Before, every session read the shared resource loader's cache,
+  which only a session's `reload()` refreshed.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `prime-root-serialized` | passes | Root turns stay serialized, and two root natives never share a session. |
+| `prime-root-memory` | passes | While the harness is live, it never pins a force-stopped root conversation. |
+| `prime-root-capture` | Fixed; now passes | Before the fix: a graceful close captured the state, a force-stop then fired, and the close persisted the stale capture. |
+| `prime-root-capture-reverted` | violated: shows why the fix is needed | Without recording at the force-stop, the close persists the stopped session. |
+| `prime-root-restart-close` | Fixed; now passes | Before the fix: a turn force-stopped after close had persisted was restored after the restart. |
+| `prime-root-restart-close-reverted` | violated: shows why the fix is needed | Same trace with the force-stop recorded only at the end of the host run. |
+| `prime-root-force-close` | Fixed; now passes | Before the fix (H2): quitting while a root turn ran ended in force close. Force shutdown kept the root session (Codex kept its thread), and nothing persisted, so the restart resumed the killed conversation. Regressions: `host-root-session-force.test.ts` (Codex through the real host, restarted) and the Prime force-shutdown test in `prime-agent.test.ts`. |
+| `prime-root-force-close-forget-reverted` | violated: shows why the fix is needed | Force close persists the killed conversation it did not forget. |
+| `prime-root-force-close-persist-reverted` | violated: shows why the fix is needed | The previously saved killed conversation survives. |
+| `prime-root-crash` | Open, narrowed | A crash after a per-turn force-stop but before its state write lands restores the stopped conversation. The write now starts when the force fires. Before, it waited for the host run to end. Regression for the new timing: "records a force-stopped root turn's forgotten session before its host run ends". |
+| `prime-root-instructions` | Fixed; now passes | Before the fix (H3): a rotated root session was built from the loader's cache, which held the previous version's instructions, because `createAgentSessionFromServices` does not reload it (PPG-003). Regression: `prime-agent-native-instructions.test.ts` with the real Prime SDK 0.8.1 and no inference; it also covers invoked children, which the model leaves out. |
+| `prime-root-instructions-reverted` | violated: shows why the fix is needed | With the shared cache, a rotated root session runs with stale instructions. |
+| `prime-root-liveness` | passes | A force-stopped turn's host run always ends and frees the lock. |
+
+`Restart` after a close or force close waits for the writes they await. A
+crash may restart at any point.
+
+### `HarnessCodexAuth.tla`
+
+This model covers the per-`CODEX_HOME` `auth.json` refcount and its serialized
+write and remove queue in `codex-basic.ts`. It has three concurrent turns,
+roots and children, on one provider home. It includes the per-turn
+force-stop and a host that stops waiting before a turn's cleanup ends. It found
+no bug, and its checks guard the queue against regressions.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `codex-auth-safety` | passes | A running turn always finds its key file, the user count is exact, and no key file remains once every turn ends. |
+| `codex-auth-liveness` | passes | The key file is eventually removed for good. |
 
 ## Limits
 
