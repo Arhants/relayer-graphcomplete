@@ -127,6 +127,32 @@ describe("An answer that failed while its Node Detail was replaced", () => {
   });
 });
 
+describe("A follow-up the server rejects outright", () => {
+  it("comes back even when an invoke made a turn with the same text meanwhile", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    await world.click("#sendInteraction");
+    await world.newerTurnArrives({ text: "Here is my answer", invoked: true });
+    world.post.response.reject(Object.assign(new Error("interaction_in_progress"), { status: 409 }));
+    await world.settled();
+    expect(world.promptText).toBe("Here is my answer");
+  });
+});
+
+describe("Committed-input pills while Send waits", () => {
+  it("cannot detach an answer the Send will reserve", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    for (const step of [["Type", 1], ["Commit"], ["ServeCommit"], ["CommitReturns"], ["Type", 2], ["Commit"]]) {
+      await world.apply(step);
+    }
+    await world.click("#closeInspector");
+    await world.click("#sendInteraction");
+    await world.click('[aria-label="Detach Your answer"]');
+    // A detach would be queued behind the commit, so let the commit land.
+    for (const step of [["ServeCommit"], ["CommitReturns"]]) await world.apply(step);
+    expect(world.detachRequests).not.toHaveBeenCalled();
+  });
+});
+
 describe("A follow-up whose POST fails with a server error", () => {
   it("keeps its text in the composer when an unrelated newer turn arrives", async () => {
     world = await new AuthoredInputSendWorld().ready();

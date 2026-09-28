@@ -2637,11 +2637,14 @@ export function createProductWorkspace({
   // (SCP-019) or one interrupted by a restart. It is neither carried into a
   // newer turn nor handed back.
   const sentByLaterTurn = (threadId, scopeKey, text) => {
+    // A turn an invoke action created is not the user's follow-up.
+    const invoked = new Set((getState().actionInvocations || [])
+      .map((invocation) => String(invocation.resultInteractionId)));
     const turns = (getState().interactions || [])
       .filter((turn) => String(turn.threadId) === String(threadId));
     const from = turns.findIndex((turn) => composerDraftScopeKey(threadId, turn.id) === scopeKey);
     return from >= 0 && Boolean(String(text ?? "").trim()) && turns.slice(from + 1)
-      .some((turn) => String(turn.text ?? "").trim() === String(text).trim());
+      .some((turn) => !invoked.has(String(turn.id)) && String(turn.text ?? "").trim() === String(text).trim());
   };
   let sendWarningIntent = null;
   let failedConfirmationSends = new Map();
@@ -3281,7 +3284,9 @@ export function createProductWorkspace({
         detach.setAttribute("aria-label", `Detach ${attachment.action.prompt}`);
         detach.disabled = contextStagingDisabled() || inputPending.has(stageKey);
         detach.onclick = async () => {
-          if (detach.disabled) return;
+          // Checked at the click: a Send that began after this pill rendered
+          // locks the committed inputs it reserves.
+          if (detach.disabled || contextStagingDisabled() || inputPending.has(stageKey)) return;
           beginNodeInputMutation({
             inputPending,
             stageKey,
@@ -3701,6 +3706,8 @@ export function createProductWorkspace({
     for (const control of $("#nodeInputActions").querySelectorAll("button, textarea")) {
       control.disabled = true;
     }
+    // The composer's committed-input pills lock with the Send too.
+    renderComposerContexts();
     if (selection.selectedNodeId != null) {
       void selectNode(getState(), selection.selectedNodeId, { notify: false });
     }

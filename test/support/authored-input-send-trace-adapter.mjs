@@ -122,7 +122,7 @@ export class AuthoredInputSendWorld {
           world.put = { expected: expectedRevision, val: valueOf(value.text), response: deferred(), result: null };
           return world.put.response.promise;
         },
-        detach: vi.fn(),
+        detach: (world.detachRequests = vi.fn()),
       },
       onSubmitInteraction: (_text, _model, _contexts, _confirmationIds, _identityRevision, inputDraftRevision) => {
         world.post = { expected: inputDraftRevision, response: deferred(), result: null, reserved: 0 };
@@ -252,9 +252,10 @@ export class AuthoredInputSendWorld {
 
   // A turn created elsewhere in the thread, such as by an authored invoke,
   // arrives and becomes the latest.
-  async newerTurnArrives() {
+  async newerTurnArrives({ text = "Invoked", invoked = false } = {}) {
     const [first] = this.state.interactions;
-    this.state.interactions = [...this.state.interactions, { ...first, id: 6, sequence: 2, text: "Invoked" }];
+    this.state.interactions = [...this.state.interactions, { ...first, id: 6, sequence: 2, text }];
+    if (invoked) this.state.actionInvocations = [...this.state.actionInvocations, { id: 1, resultInteractionId: 6 }];
     this.state.currentInteractionId = 6;
     this.selection.currentInteractionId = 6;
     this.workspace.render();
