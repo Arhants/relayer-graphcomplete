@@ -1,0 +1,7 @@
+Attempt 4 -> attempt 5 external runner delta (verified by reconstruction/hash):
+
+Source tree, repo narrow-sidebar runner bytes, fixture setup, API operations, assertions, and capture flow are identical. Attempt 5 adds only a bounded successful completion immediately after `f807-models-proof.json` is written: assert no renderer console errors, write focused `result.json`, print focused completion, set `exitCode = 0`, and return from `main` so normal finally cleanup runs. This prevents the inherited broad suite from continuing into its unrelated hard-coded two-family index assertion after the synthetic provider catalogs are added. Attempt 4 had passed the same focused Models scenario and then failed later in that inherited suite. No production/repository source changed.
+
+Attempt-4 reconstructed driver SHA-256: 76cbb3a1416025e148d95c0ce06fa09afa2d11465c6ef125cdd2189687df0b4d
+Attempt-5 driver SHA-256: 6f109012fe8b13a4fb85547fb41278edcc821e9cf9d95e6c559a352b77a42b9d
+Combined source tree: d41f8895ed3298f7e8cbf8ebba15d6ff80367c67
