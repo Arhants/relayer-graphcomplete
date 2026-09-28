@@ -2030,11 +2030,15 @@ impl ProjectPathRedactor {
 
     fn contains_markdown_private_path(&self, value: &str) -> bool {
         let without_subtrees = strip_dangerous_markdown_subtrees(value);
+        let without_shallow_subtrees = strip_shallow_dangerous_markdown_subtrees(value);
         let without_images = strip_markdown_images(value);
         let skeletons = [
             markdown_security_skeleton(value),
             markdown_html_stripped_skeleton(value),
             security_skeleton(&without_subtrees),
+            markdown_html_stripped_skeleton(&without_subtrees),
+            security_skeleton(&without_shallow_subtrees),
+            markdown_html_stripped_skeleton(&without_shallow_subtrees),
             security_skeleton(&without_images),
         ];
         skeletons.iter().any(|skeleton| {
@@ -2295,6 +2299,12 @@ fn strip_dangerous_markdown_subtrees(value: &str) -> String {
     stripped
 }
 
+fn strip_shallow_dangerous_markdown_subtrees(value: &str) -> String {
+    dangerous_markdown_shallow_subtree_regex()
+        .replace_all(value, "")
+        .into_owned()
+}
+
 fn strip_markdown_images(value: &str) -> String {
     let characters: Vec<char> = value.chars().collect();
     let mut stripped = String::with_capacity(value.len());
@@ -2358,6 +2368,16 @@ fn dangerous_markdown_subtree_regex() -> &'static Regex {
             r"(?is)<(?:iframe|math|object|script|style|svg|template)\b[^>]*>.*</(?:iframe|math|object|script|style|svg|template)\s*>",
         )
         .expect("valid dangerous Markdown subtree regex")
+    })
+}
+
+fn dangerous_markdown_shallow_subtree_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(
+            r"(?is)<(?:iframe|math|object|script|style|svg|template)\b[^>]*>.*?</(?:iframe|math|object|script|style|svg|template)\s*>",
+        )
+        .expect("valid shallow dangerous Markdown subtree regex")
     })
 }
 
@@ -2527,11 +2547,15 @@ fn contains_relaxed_share_secret(value: &str) -> bool {
 
 fn contains_markdown_share_secret(value: &str) -> bool {
     let without_subtrees = strip_dangerous_markdown_subtrees(value);
+    let without_shallow_subtrees = strip_shallow_dangerous_markdown_subtrees(value);
     let without_images = strip_markdown_images(value);
     [
         markdown_security_skeleton(value),
         markdown_html_stripped_skeleton(value),
         security_skeleton(&without_subtrees),
+        markdown_html_stripped_skeleton(&without_subtrees),
+        security_skeleton(&without_shallow_subtrees),
+        markdown_html_stripped_skeleton(&without_shallow_subtrees),
         security_skeleton(&without_images),
     ]
     .iter()
@@ -3588,6 +3612,9 @@ mod tests {
             "<x s<script>hidden</script>k-proj-12345678901234567890>",
             "<x s![alt](https://example.test/img.png)k-proj-12345678901234567890>",
             "s<template>a<template>b</template>c</template>k-proj-12345678901234567890",
+            "s<script>a</script>k-proj-12345678901234567890<script>b</script>",
+            "s<template>a</template>k-proj-12345678901234567890<template>b</template>",
+            "s<script>a</script><em>k</em>-proj-12345678901234567890<script>b</script>",
             "s![alt]k-proj-12345678901234567890\n\n[alt]: https://example.test/image.png",
             "a < B**earer** abc.def.ghi >",
             "a < e**yJ**hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.synthetic_signature >",
