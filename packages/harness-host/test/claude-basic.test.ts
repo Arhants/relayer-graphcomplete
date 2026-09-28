@@ -221,6 +221,7 @@ describe("ClaudeBasicHarness", () => {
       expect(options.env).not.toHaveProperty("OPENAI_API_KEY");
       expect(options.env.RELAYER_GRAPH_TOKEN).toBe("token");
       expect(harness.state()).toEqual({
+        claudeProviderHome: "legacy-shared",
         claudeSessionId: "session-1",
         claudeSessionProviderDefinitionId: "anthropic-work",
         claudeSessionPersonalPresentationVersionId: null,
@@ -443,6 +444,7 @@ describe("ClaudeBasicHarness", () => {
 
     expect(call?.options.resume).toBeUndefined();
     expect(harness.state()).toEqual({
+      claudeProviderHome: "legacy-shared",
       claudeSessionId: "legacy-session",
       claudeSessionProviderDefinitionId: "claude-work",
       claudeSessionPersonalPresentationVersionId: null,
@@ -514,6 +516,7 @@ describe("ClaudeBasicHarness", () => {
     ]);
     expect(calls.slice(0, 2).map(({ options }) => options.resume)).toEqual([undefined, undefined]);
     expect(harness.state()).toEqual({
+      claudeProviderHome: "legacy-shared",
       claudeSessionId: "root-session",
       claudeSessionProviderDefinitionId: "claude-work",
       claudeSessionPersonalPresentationVersionId: null,
@@ -562,6 +565,7 @@ describe("ClaudeBasicHarness", () => {
 
     expect(call?.options.resume).toBeUndefined();
     expect(harness.state()).toEqual({
+      claudeProviderHome: "legacy-shared",
       claudeSessionId: "replacement",
       claudeSessionProviderDefinitionId: next.providerId,
       claudeSessionPersonalPresentationVersionId: null,
@@ -578,7 +582,7 @@ describe("ClaudeBasicHarness", () => {
     await harness.complete(runContext(secretAccess()));
 
     expect(call?.options.resume).toBeUndefined();
-    expect(harness.state()).toEqual({});
+    expect(harness.state()).toEqual({ claudeProviderHome: "legacy-shared" });
   });
 
   it("requires an explicit managed executable and SDK module for every provider access kind", async () => {

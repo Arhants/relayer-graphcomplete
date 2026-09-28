@@ -132,6 +132,9 @@ function validatedExecutionAccess(resolved, definition, descriptor) {
     const runtime = resolved.runtime === undefined
       ? undefined
       : validatedManagedRuntime(resolved.runtime);
+    if (resolved.environment !== undefined && !stringRecord(resolved.environment)) {
+      throw new Error("Provider adapter returned invalid secret execution access.");
+    }
     const modelCapabilities = validatedModelCapabilities(resolved.modelCapabilities);
     return Object.freeze({
       kind: "secret",
@@ -143,6 +146,7 @@ function validatedExecutionAccess(resolved, definition, descriptor) {
       fields: Object.freeze({ ...resolved.fields }),
       ...(modelCapabilities === undefined ? {} : { modelCapabilities }),
       ...(runtime === undefined ? {} : { runtime }),
+      ...(resolved.environment === undefined ? {} : { environment: Object.freeze({ ...resolved.environment }) }),
     });
   }
   if (definition.accessContract === "managed-runtime@1") {

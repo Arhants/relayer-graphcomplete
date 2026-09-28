@@ -526,19 +526,6 @@ off. Five constants hold the fixes:
 `Restart` after a close or force close waits for the writes they await. A
 crash may restart at any point.
 
-### `HarnessCodexAuth.tla`
-
-This model covers the per-`CODEX_HOME` `auth.json` refcount and its serialized
-write and remove queue in `codex-basic.ts`. It has three concurrent turns,
-roots and children, on one provider home. It includes the per-turn
-force-stop and a host that stops waiting before a turn's cleanup ends. It found
-no bug, and its checks guard the queue against regressions.
-
-| Check | Verdict | Finding |
-| --- | --- | --- |
-| `codex-auth-safety` | passes | A running turn always finds its key file, the user count is exact, and no key file remains once every turn ends. |
-| `codex-auth-liveness` | passes | The key file is eventually removed for good. |
-
 ## Limits
 
 - **Bounds:** one provider plus one new connection, one renderer, one lease,

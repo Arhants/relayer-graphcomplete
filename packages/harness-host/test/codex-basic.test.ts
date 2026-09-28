@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, unlink } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -187,6 +187,7 @@ describe("CodexBasicHarness", () => {
 
     expect(submitted?.savedThreadId).toBeUndefined();
     expect(harness.state()).toEqual({
+      codexProviderHome: "legacy-shared",
       codexThreadId: "replacement-thread",
       codexThreadPersonalPresentationVersionId: null,
       codexThreadProviderDefinitionId: null,
@@ -328,11 +329,12 @@ describe("CodexBasicHarness", () => {
     force.abort(new Error("force-stopped after two minutes"));
     await expect(stuck).rejects.toThrow("force-stopped after two minutes");
     // The killed process may have left the thread mid-write, so it is neither saved nor resumed.
-    expect(harness.state()).toEqual({});
+    expect(harness.state()).toEqual({ codexProviderHome: "legacy-shared" });
 
     await harness.complete({ ...runContext(2, "next-token"), forceSignal: new AbortController().signal });
     expect(submissions[1]?.savedThreadId).toBeUndefined();
     expect(harness.state()).toEqual({
+      codexProviderHome: "legacy-shared",
       codexThreadId: "fresh-thread-2",
       codexThreadPersonalPresentationVersionId: null,
       codexThreadProviderDefinitionId: null,
@@ -376,6 +378,7 @@ describe("CodexBasicHarness", () => {
     await expect(stuck).rejects.toThrow("killed app-server exited");
 
     expect(harness.state()).toEqual({
+      codexProviderHome: "legacy-shared",
       codexThreadId: "fresh-thread-2",
       codexThreadPersonalPresentationVersionId: null,
       codexThreadProviderDefinitionId: null,
@@ -400,7 +403,7 @@ describe("CodexBasicHarness", () => {
     force.abort(new Error("force-stopped after two minutes"));
     await expect(stuck).rejects.toThrow("killed app-server exited");
 
-    expect(harness.state()).toEqual({});
+    expect(harness.state()).toEqual({ codexProviderHome: "isolated" });
   });
 
   it("rejects an unsupported implementation version", () => {
@@ -438,6 +441,7 @@ describe("CodexBasicHarness", () => {
     await expect(harness.complete(runContext(1, "token"))).rejects.toThrow("turn failed");
 
     expect(harness.state()).toEqual({
+      codexProviderHome: "isolated",
       codexThreadId: "codex-thread-after-start",
       codexThreadPersonalPresentationVersionId: null,
       codexThreadProviderDefinitionId: null,
@@ -856,6 +860,7 @@ describe("CodexBasicHarness", () => {
       ["gpt-second", "gpt-second"],
     ]);
     expect(harness.state()).toEqual({
+      codexProviderHome: "isolated",
       codexThreadId: "codex-thread-1",
       codexThreadPersonalPresentationVersionId: null,
       codexThreadProviderDefinitionId: "codex",
@@ -892,7 +897,7 @@ describe("CodexBasicHarness", () => {
     await harness.complete(runContext(2, "second-token"));
 
     expect(submissions.map(({ savedThreadId }) => savedThreadId)).toEqual([undefined, undefined]);
-    expect(harness.state()).toEqual({});
+    expect(harness.state()).toEqual({ codexProviderHome: "legacy-shared" });
   });
 
   it("starts recursive semantic completions in fresh Codex threads without replacing root continuity", async () => {
@@ -946,6 +951,7 @@ describe("CodexBasicHarness", () => {
       [undefined, "child-token-b", "3"],
     ]);
     expect(harness.state()).toEqual({
+      codexProviderHome: "legacy-shared",
       codexThreadId: "root-thread",
       codexThreadPersonalPresentationVersionId: null,
     });
@@ -953,6 +959,7 @@ describe("CodexBasicHarness", () => {
     await harness.complete(runContext(1, "root-token"));
     expect(submissions[2]?.savedThreadId).toBe("root-thread");
     expect(harness.state()).toEqual({
+      codexProviderHome: "legacy-shared",
       codexThreadId: "root-thread",
       codexThreadPersonalPresentationVersionId: null,
       codexThreadProviderDefinitionId: null,
@@ -991,13 +998,14 @@ describe("CodexBasicHarness", () => {
         access: {
           kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
           adapterImplementationVersion: "1", endpoint: "https://api.openai.test/v1", fields: { "api-key": "selected-secret" },
+          environment: { CODEX_HOME: "/provider-runtimes/openai-work/codex-home" },
         },
       });
 
       expect(submitted?.environment.OPENAI_API_KEY).toBe("selected-secret");
       expect(submitted?.environment.OPENAI_BASE_URL).toBe("https://api.openai.test/v1");
       expect(submitted?.environment).not.toHaveProperty("ANTHROPIC_API_KEY");
-      expect(submitted?.environment).not.toHaveProperty("CODEX_HOME");
+      expect(submitted?.environment.CODEX_HOME).toBe("/provider-runtimes/openai-work/codex-home");
       expect(submitted?.threadParams).toMatchObject({
         modelProvider: "relayer_execution_provider",
         config: {
@@ -1036,16 +1044,12 @@ describe("CodexBasicHarness", () => {
 
   it.each(["openrouter", "vercel-ai-router"])("admits %s at the secret-access seam", async (adapterId) => {
     let submitted: CodexAppServerTurnOptions | undefined;
-    const writeAuthFile = vi.fn(async () => {});
-    const removeAuthFile = vi.fn(async () => {});
     const harness = new CodexBasicHarness(context("auto"), {
       runAppServerTurn: async (options) => {
         submitted = options;
         options.onThreadId("api-thread");
         return { threadId: "api-thread", turnId: "turn-1", status: "completed" };
       },
-      writeCodexApiKeyAuthFile: writeAuthFile,
-      removeCodexApiKeyAuthFile: removeAuthFile,
     });
 
     await harness.complete({
@@ -1065,16 +1069,16 @@ describe("CodexBasicHarness", () => {
         fields: { "api-key": "selected-secret" },
         runtime: {
           runtimeId: "codex", version: "0.147.0", executable: "/managed/codex",
-          environment: { CODEX_HOME: "/isolated/codex-home", RELAYER_CODEX_BINARY: "/managed/codex" },
+          environment: { RELAYER_CODEX_BINARY: "/managed/codex" },
         },
+        environment: { CODEX_HOME: "/isolated/codex-home" },
       },
     });
 
     expect(submitted?.codexPathOverride).toBe("/managed/codex");
     expect(submitted?.environment.OPENAI_API_KEY).toBe("selected-secret");
     expect(submitted?.environment.OPENAI_BASE_URL).toBe("https://provider.test/v1");
-    expect(writeAuthFile).toHaveBeenCalledWith("/isolated/codex-home", "selected-secret");
-    expect(removeAuthFile).toHaveBeenCalledWith("/isolated/codex-home");
+    expect(submitted?.environment.CODEX_HOME).toBe("/isolated/codex-home");
   });
 
   it("rejects unsupported secret adapters before starting Codex", async () => {
@@ -1104,16 +1108,12 @@ describe("CodexBasicHarness", () => {
 
   it("uses the managed Codex runtime attached to secret provider access", async () => {
     let submitted: CodexAppServerTurnOptions | undefined;
-    const writeAuthFile = vi.fn(async () => {});
-    const removeAuthFile = vi.fn(async () => {});
     const harness = new CodexBasicHarness(context("auto"), {
       runAppServerTurn: async (options) => {
         submitted = options;
         options.onThreadId("api-thread");
         return { threadId: "api-thread", turnId: "turn-1", status: "completed" };
       },
-      writeCodexApiKeyAuthFile: writeAuthFile,
-      removeCodexApiKeyAuthFile: removeAuthFile,
     });
 
     await harness.complete({
@@ -1124,246 +1124,15 @@ describe("CodexBasicHarness", () => {
         adapterImplementationVersion: "1", endpoint: "https://api.openai.test/v1", fields: { "api-key": "selected-secret" },
         runtime: {
           runtimeId: "codex", version: "0.147.0", executable: "/managed/codex",
-          environment: { CODEX_HOME: "/isolated/codex-home", RELAYER_CODEX_BINARY: "/managed/codex" },
+          environment: { CODEX_HOME: "/runtime-default/codex-home", RELAYER_CODEX_BINARY: "/managed/codex" },
         },
+        environment: { CODEX_HOME: "/isolated/codex-home" },
       },
     });
 
     expect(submitted?.codexPathOverride).toBe("/managed/codex");
+    // The provider's private home wins over any home the runtime descriptor carries.
     expect(submitted?.environment.CODEX_HOME).toBe("/isolated/codex-home");
-    expect(writeAuthFile).toHaveBeenCalledWith("/isolated/codex-home", "selected-secret");
-    expect(removeAuthFile).toHaveBeenCalledWith("/isolated/codex-home");
-  });
-
-  it("writes an ephemeral API-key auth.json for the Codex turn and removes it afterward", async () => {
-    const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-home-"));
-    try {
-      const harness = new CodexBasicHarness(context("auto"), {
-        runAppServerTurn: async (options) => {
-          const authFile = JSON.parse(await readFile(join(codexHome, "auth.json"), "utf8"));
-          expect(authFile).toEqual({ auth_mode: "apikey", OPENAI_API_KEY: "selected-secret" });
-          options.onThreadId("api-thread");
-          return { threadId: "api-thread", turnId: "turn-1", status: "completed" };
-        },
-      });
-      await harness.complete({
-        ...runContext(1, "token"),
-        model: { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" },
-        access: {
-          kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
-          adapterImplementationVersion: "1", endpoint: "https://api.openai.test/v1", fields: { "api-key": "selected-secret" },
-          runtime: {
-            runtimeId: "codex", version: "0.147.0", executable: "/managed/codex",
-            environment: { CODEX_HOME: codexHome, RELAYER_CODEX_BINARY: "/managed/codex" },
-          },
-        },
-      });
-      await expect(readFile(join(codexHome, "auth.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    } finally {
-      await rm(codexHome, { recursive: true, force: true });
-    }
-  });
-
-  it("removes the ephemeral auth.json when the Codex turn fails", async () => {
-    const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-home-"));
-    try {
-      const harness = new CodexBasicHarness(context("auto"), {
-        runAppServerTurn: async () => {
-          const authFile = JSON.parse(await readFile(join(codexHome, "auth.json"), "utf8"));
-          expect(authFile).toEqual({ auth_mode: "apikey", OPENAI_API_KEY: "selected-secret" });
-          throw new Error("codex turn failed");
-        },
-      });
-      await expect(harness.complete({
-        ...runContext(1, "token"),
-        model: { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" },
-        access: {
-          kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
-          adapterImplementationVersion: "1", endpoint: "https://api.openai.test/v1", fields: { "api-key": "selected-secret" },
-          runtime: {
-            runtimeId: "codex", version: "0.147.0", executable: "/managed/codex",
-            environment: { CODEX_HOME: codexHome, RELAYER_CODEX_BINARY: "/managed/codex" },
-          },
-        },
-      })).rejects.toThrow("codex turn failed");
-      await expect(readFile(join(codexHome, "auth.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    } finally {
-      await rm(codexHome, { recursive: true, force: true });
-    }
-  });
-
-  it("never lets a force-stopped turn's late auth.json removal delete the next turn's credentials", async () => {
-    const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-home-"));
-    let releaseStaleRemoval!: () => void;
-    const staleRemovalGate = new Promise<void>((resolve) => { releaseStaleRemoval = resolve; });
-    let removals = 0;
-    const removeCodexApiKeyAuthFile = async (home: string) => {
-      removals += 1;
-      // The force-stopped turn's unlink is still pending after the host stopped waiting for it.
-      if (removals === 1) await staleRemovalGate;
-      await unlink(join(home, "auth.json")).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "ENOENT") throw error;
-      });
-    };
-    const reads: unknown[] = [];
-    let runs = 0;
-    const access = (apiKey: string) => ({
-      kind: "secret" as const, contract: "secret@1" as const, providerId: "openai-work", adapterId: "openai-api",
-      adapterImplementationVersion: "1", endpoint: "https://api.openai.test/v1", fields: { "api-key": apiKey },
-      runtime: {
-        runtimeId: "codex" as const, version: "0.147.0", executable: "/managed/codex",
-        environment: { CODEX_HOME: codexHome, RELAYER_CODEX_BINARY: "/managed/codex" },
-      },
-    });
-    const harness = new CodexBasicHarness(context("auto"), {
-      removeCodexApiKeyAuthFile,
-      runAppServerTurn: async (options) => {
-        runs += 1;
-        if (runs === 1) {
-          await new Promise<void>((_resolve, reject) => options.forceSignal?.addEventListener("abort", () => reject(options.forceSignal?.reason), { once: true }));
-        }
-        // The successor's run reads its credentials after the stale removal was let through.
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        reads.push(JSON.parse(await readFile(join(codexHome, "auth.json"), "utf8")));
-        return { threadId: "api-thread", turnId: "turn", status: "completed" as const };
-      },
-    });
-    const turn = (id: number, apiKey: string, forceSignal: AbortSignal): HarnessRunContext => ({
-      ...runContext(id, `token-${id}`),
-      model: { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" },
-      access: access(apiKey),
-      forceSignal,
-    });
-    try {
-      const force = new AbortController();
-      const stale = harness.complete(turn(1, "first-secret", force.signal)).then(() => undefined, () => undefined);
-      await vi.waitFor(() => expect(runs).toBe(1));
-      force.abort(new Error("force-stopped after two minutes"));
-      await vi.waitFor(() => expect(removals).toBe(1));
-
-      // The host stopped waiting, so the next root turn starts on the same CODEX_HOME.
-      const next = harness.complete(turn(2, "next-secret", new AbortController().signal));
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      releaseStaleRemoval();
-      await next;
-      await stale;
-
-      expect(reads).toEqual([{ auth_mode: "apikey", OPENAI_API_KEY: "next-secret" }]);
-      await expect(readFile(join(codexHome, "auth.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    } finally {
-      releaseStaleRemoval();
-      await rm(codexHome, { recursive: true, force: true });
-    }
-  });
-
-  it("never writes auth.json for a turn force-stopped while it waited behind another turn's removal", async () => {
-    const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-home-"));
-    let releaseStaleRemoval!: () => void;
-    const staleRemovalGate = new Promise<void>((resolve) => { releaseStaleRemoval = resolve; });
-    let removals = 0;
-    const removeCodexApiKeyAuthFile = async (home: string) => {
-      removals += 1;
-      if (removals === 1) await staleRemovalGate;
-      await unlink(join(home, "auth.json")).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "ENOENT") throw error;
-      });
-    };
-    const writes: string[] = [];
-    const writeCodexApiKeyAuthFile = async (_home: string, apiKey: string) => { writes.push(apiKey); };
-    let runs = 0;
-    const access = (apiKey: string) => ({
-      kind: "secret" as const, contract: "secret@1" as const, providerId: "openai-work", adapterId: "openai-api",
-      adapterImplementationVersion: "1", endpoint: "https://api.openai.test/v1", fields: { "api-key": apiKey },
-      runtime: {
-        runtimeId: "codex" as const, version: "0.147.0", executable: "/managed/codex",
-        environment: { CODEX_HOME: codexHome, RELAYER_CODEX_BINARY: "/managed/codex" },
-      },
-    });
-    const harness = new CodexBasicHarness(context("auto"), {
-      removeCodexApiKeyAuthFile,
-      writeCodexApiKeyAuthFile,
-      runAppServerTurn: async (options) => {
-        runs += 1;
-        await new Promise<void>((_resolve, reject) => options.forceSignal?.addEventListener("abort", () => reject(options.forceSignal?.reason), { once: true }));
-        return { threadId: "api-thread", turnId: "turn", status: "completed" as const };
-      },
-    });
-    const turn = (id: number, apiKey: string, forceSignal: AbortSignal): HarnessRunContext => ({
-      ...runContext(id, `token-${id}`),
-      model: { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" },
-      access: access(apiKey),
-      forceSignal,
-    });
-    try {
-      const firstForce = new AbortController();
-      const first = harness.complete(turn(1, "first-secret", firstForce.signal)).then(() => undefined, () => undefined);
-      await vi.waitFor(() => expect(runs).toBe(1));
-      firstForce.abort(new Error("force-stopped after two minutes"));
-      await vi.waitFor(() => expect(removals).toBe(1));
-
-      // The next turn queues its write behind the stalled removal and is force-stopped there.
-      const queuedForce = new AbortController();
-      const queued = harness.complete(turn(2, "queued-secret", queuedForce.signal));
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      queuedForce.abort(new Error("queued turn force-stopped"));
-      releaseStaleRemoval();
-      await expect(queued).rejects.toThrow("queued turn force-stopped");
-      await first;
-
-      expect(writes).toEqual(["first-secret"]);
-      expect(runs).toBe(1);
-    } finally {
-      releaseStaleRemoval();
-      await rm(codexHome, { recursive: true, force: true });
-    }
-  });
-
-  it("keeps auth.json while overlapping secret turns share a CODEX_HOME", async () => {
-    const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-home-"));
-    const firstTurn = deferredTurn();
-    const secondTurn = deferredTurn();
-    let overlappingReads = 0;
-    const runAppServerTurn = async (options: CodexAppServerTurnOptions) => {
-      const authFile = JSON.parse(await readFile(join(codexHome, "auth.json"), "utf8"));
-      expect(authFile).toEqual({ auth_mode: "apikey", OPENAI_API_KEY: "selected-secret" });
-      overlappingReads += 1;
-      if (overlappingReads === 1) {
-        secondTurn.resolve();
-        await firstTurn.promise;
-      } else {
-        await secondTurn.promise;
-        firstTurn.resolve();
-      }
-      options.onThreadId(`api-thread-${overlappingReads}`);
-      return { threadId: `api-thread-${overlappingReads}`, turnId: "turn-1", status: "completed" as const };
-    };
-    try {
-      const access = {
-        kind: "secret" as const, contract: "secret@1" as const, providerId: "openai-work", adapterId: "openai-api",
-        adapterImplementationVersion: "1", endpoint: "https://api.openai.test/v1", fields: { "api-key": "selected-secret" },
-        runtime: {
-          runtimeId: "codex" as const, version: "0.147.0", executable: "/managed/codex",
-          environment: { CODEX_HOME: codexHome, RELAYER_CODEX_BINARY: "/managed/codex" },
-        },
-      };
-      const first = new CodexBasicHarness(context("auto"), { runAppServerTurn }).complete({
-        ...runContext(1, "token"),
-        model: { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" },
-        access,
-      });
-      const second = new CodexBasicHarness(context("auto"), { runAppServerTurn }).complete({
-        ...runContext(2, "token-2"),
-        model: { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" },
-        access,
-      });
-      await Promise.all([first, second]);
-      expect(overlappingReads).toBe(2);
-      await expect(readFile(join(codexHome, "auth.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    } finally {
-      firstTurn.resolve();
-      secondTurn.resolve();
-      await rm(codexHome, { recursive: true, force: true });
-    }
   });
 
   it("allows only Codex runtime keys from managed access and preserves graph authority", async () => {
@@ -1793,14 +1562,6 @@ describe("CodexBasicHarness", () => {
     }
   });
 });
-
-function deferredTurn(): { promise: Promise<void>; resolve: () => void } {
-  let resolve!: () => void;
-  const promise = new Promise<void>((complete) => {
-    resolve = complete;
-  });
-  return { promise, resolve };
-}
 
 function context(permissionProfileId: "ask" | "auto" | "full") {
   return {

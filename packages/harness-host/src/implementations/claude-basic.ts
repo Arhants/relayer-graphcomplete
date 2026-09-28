@@ -77,6 +77,15 @@ export class ClaudeBasicHarness implements Harness {
   private sessionId: string | undefined;
   private sessionProviderDefinitionId: string | undefined;
   private sessionPersonalPresentationVersionId: number | null | undefined;
+  /**
+   * Which home this conversation's API-key turns use, recorded as `claudeProviderHome` in its
+   * saved state. "isolated" is the provider's private CLAUDE_CONFIG_DIR, for a conversation
+   * started with per-provider homes. "legacy-shared" is Claude's default home, for one saved
+   * before them: its native history is there, so it keeps that home for its whole life. This
+   * records storage only. It does not mark a conversation as supporting provider-neutral
+   * continuation (#584).
+   */
+  private readonly providerHome: "isolated" | "legacy-shared";
 
   constructor(
     private readonly context: HarnessFactoryContext,
@@ -84,6 +93,10 @@ export class ClaudeBasicHarness implements Harness {
   ) {
     this.clientModuleUrl = dependencies.clientModuleUrl ?? import.meta.resolve("@relayer/graph-client");
     this.completeModuleUrl = dependencies.completeModuleUrl ?? new URL("../../../../dist/index.js", import.meta.url).href;
+    // Only a conversation saved before per-provider homes has saved state without this marker.
+    this.providerHome = context.savedState === undefined || context.savedState.claudeProviderHome === "isolated"
+      ? "isolated"
+      : "legacy-shared";
     const savedSessionId = context.savedState?.claudeSessionId;
     const savedProviderDefinitionId = context.savedState?.claudeSessionProviderDefinitionId;
     const savedPresentationVersionId = context.savedState?.claudeSessionPersonalPresentationVersionId;
@@ -183,11 +196,13 @@ export class ClaudeBasicHarness implements Harness {
   }
 
   state(): HarnessSessionState {
+    const home = { claudeProviderHome: this.providerHome };
     return this.sessionId === undefined
       || this.sessionProviderDefinitionId === undefined
       || this.sessionPersonalPresentationVersionId === undefined
-      ? {}
+      ? home
       : {
+          ...home,
           claudeSessionId: this.sessionId,
           claudeSessionProviderDefinitionId: this.sessionProviderDefinitionId,
           claudeSessionPersonalPresentationVersionId: this.sessionPersonalPresentationVersionId,
@@ -205,7 +220,14 @@ export class ClaudeBasicHarness implements Harness {
     signal?: AbortSignal,
   ): Promise<{ text: string; sessionId?: string }> {
     const runtime = await claudeRuntime(access, this.dependencies.resolveClaudeRuntime);
-    const environment = executionEnvironment(access, runtime.environment, graph, completionBroker, this.dependencies.platform);
+    const environment = executionEnvironment(
+      access,
+      runtime.environment,
+      graph,
+      completionBroker,
+      this.providerHome,
+      this.dependencies.platform,
+    );
     const permissionMode = claudePermissionMode(this.context.permissionBinding.approvalMode);
     const abortController = new AbortController();
     const abort = () => abortController.abort(signal?.reason ?? new Error("Claude completion was cancelled"));
@@ -333,6 +355,7 @@ function executionEnvironment(
   runtimeEnvironment: Readonly<Record<string, string>>,
   graph: GraphCapability,
   completionBroker: HarnessRunContext["completionBroker"],
+  providerHome: "isolated" | "legacy-shared",
   platform = process.platform,
 ): Record<string, string> {
   const environment = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => (
@@ -347,6 +370,12 @@ function executionEnvironment(
   if (access.kind === "secret") {
     const apiKey = access.fields["api-key"];
     if (!apiKey) throw new Error("claude.basic requires the provider API key");
+    if (providerHome === "isolated") {
+      const privateHome = access.environment?.CLAUDE_CONFIG_DIR;
+      // Never fall back to the user's own Claude home for a new conversation.
+      if (!privateHome) throw new Error("claude.basic requires the API-key provider's private CLAUDE_CONFIG_DIR");
+      environment.CLAUDE_CONFIG_DIR = privateHome;
+    }
     environment.ANTHROPIC_API_KEY = apiKey;
     // Provider definitions store the catalog/API prefix (for example `/v1`), while
     // Claude Code appends the Anthropic API version path itself.

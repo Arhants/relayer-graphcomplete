@@ -16,8 +16,9 @@ import type { HarnessConfiguration, HarnessRunContext, HarnessSessionState } fro
 // "no rollout found for thread id ...".
 //
 // The providers are shaped like production's (provider-adapter-registry.mjs). The Codex
-// subscription has its own CODEX_HOME. API-key providers get no runtime and so no CODEX_HOME:
-// they all share Codex's default home.
+// subscription has its own CODEX_HOME. Each API-key provider has its own private CODEX_HOME,
+// which a new conversation uses. A conversation saved before those homes keeps Codex's default
+// home, which every API-key provider shares.
 
 const configuration: HarnessConfiguration = {
   schemaVersion: 1,
@@ -29,6 +30,7 @@ const configuration: HarnessConfiguration = {
 };
 const SUBSCRIPTION_HOME = "codex-home";
 const DEFAULT_HOME = "default-home";
+const providerHome = (providerId: string) => `${providerId}/codex-home`;
 
 describe("Codex persistent root thread", () => {
   it("starts a fresh root thread when a follow-up selects another Codex provider", async () => {
@@ -43,12 +45,10 @@ describe("Codex persistent root thread", () => {
 
     expect(codex.threadRequests).toEqual([
       `${SUBSCRIPTION_HOME} thread/start -> thread-1`,
-      // The subscription's thread has no rollout in the API-key providers' home.
-      `${DEFAULT_HOME} thread/start -> thread-2`,
-      `${DEFAULT_HOME} thread/resume thread-2`,
-      // Conservative: API-key providers share one home, so thread-2 could have been resumed.
-      // The binding is to the provider definition, which cannot resume across homes.
-      `${DEFAULT_HOME} thread/start -> thread-3`,
+      // Each provider's thread has its rollout only in that provider's own home.
+      `${providerHome("openai-work")} thread/start -> thread-2`,
+      `${providerHome("openai-work")} thread/resume thread-2`,
+      `${providerHome("openrouter-work")} thread/start -> thread-3`,
       `${SUBSCRIPTION_HOME} thread/start -> thread-4`,
     ]);
     expect(harness.state()).toEqual(pinned("thread-4", "codex"));
@@ -63,7 +63,7 @@ describe("Codex persistent root thread", () => {
     });
 
     await expect(harness.complete(rootTurn(1, "codex"), stop.signal)).rejects.toThrow("Stopped by user");
-    expect(harness.state()).toEqual({});
+    expect(harness.state()).toEqual({ codexProviderHome: "isolated" });
     await harness.complete(rootTurn(2, "codex"));
 
     // thread-1 has no rollout, so the next root turn never tries to resume it.
@@ -110,7 +110,7 @@ describe("Codex persistent root thread", () => {
       `${SUBSCRIPTION_HOME} thread/start -> thread-1`,
       `${SUBSCRIPTION_HOME} thread/resume thread-1`,
     ]);
-    expect(harness.state()).toEqual(pinned("thread-1", "codex"));
+    expect(harness.state()).toEqual(pinned("thread-1", "codex", "legacy-shared"));
   });
 
   it("keeps resuming a saved root thread from an earlier release and binds it to its provider", async () => {
@@ -118,11 +118,15 @@ describe("Codex persistent root thread", () => {
     codex.rollouts.set("legacy-thread", SUBSCRIPTION_HOME);
     const harness = codex.harness({ savedState: { codexThreadId: "legacy-thread", codexThreadPersonalPresentationVersionId: null } });
 
-    expect(harness.state()).toEqual({ codexThreadId: "legacy-thread", codexThreadPersonalPresentationVersionId: null });
+    expect(harness.state()).toEqual({
+      codexProviderHome: "legacy-shared",
+      codexThreadId: "legacy-thread",
+      codexThreadPersonalPresentationVersionId: null,
+    });
     await harness.complete(rootTurn(1, "codex"));
 
     expect(codex.threadRequests).toEqual([`${SUBSCRIPTION_HOME} thread/resume legacy-thread`]);
-    expect(harness.state()).toEqual(pinned("legacy-thread", "codex"));
+    expect(harness.state()).toEqual(pinned("legacy-thread", "codex", "legacy-shared"));
   });
 
   it("forgets the root thread when the harness is force-shut down during a root turn", async () => {
@@ -143,7 +147,7 @@ describe("Codex persistent root thread", () => {
     await vi.waitFor(() => expect(codex.turnStarts).toBe(3));
     harness.forceShutdown();
     await expect(root).rejects.toThrow("force-closed");
-    expect(harness.state()).toEqual({});
+    expect(harness.state()).toEqual({ codexProviderHome: "isolated" });
   });
 
   it.each(["force shutdown", "per-turn force-stop"] as const)(
@@ -167,8 +171,13 @@ describe("Codex persistent root thread", () => {
   );
 });
 
-function pinned(threadId: string, providerId: string): HarnessSessionState {
+function pinned(
+  threadId: string,
+  providerId: string,
+  codexProviderHome: "isolated" | "legacy-shared" = "isolated",
+): HarnessSessionState {
   return {
+    codexProviderHome,
     codexThreadId: threadId,
     codexThreadPersonalPresentationVersionId: null,
     codexThreadProviderDefinitionId: providerId,
@@ -206,7 +215,7 @@ function rootTurn(id: number, providerId: "codex" | "openai-work" | "openrouter-
   return {
     ...turn,
     model: { providerId, adapterId: "openai-api", modelId: "gpt-5.2" },
-    // SecretApiProviderAdapter.executionAccess returns no runtime, so no CODEX_HOME.
+    // SecretApiProviderAdapter.executionAccess carries only the provider's private home.
     access: {
       kind: "secret",
       contract: "secret@1",
@@ -215,6 +224,7 @@ function rootTurn(id: number, providerId: "codex" | "openai-work" | "openrouter-
       adapterImplementationVersion: "1",
       endpoint: "https://api.openai.test/v1",
       fields: { "api-key": `key-${providerId}` },
+      environment: { CODEX_HOME: providerHome(providerId) },
     },
   };
 }
@@ -243,8 +253,6 @@ class EmulatedCodex {
       ...(options.savedState === undefined ? {} : { savedState: options.savedState }),
     }, {
       codexPathOverride: process.execPath,
-      writeCodexApiKeyAuthFile: async () => undefined,
-      removeCodexApiKeyAuthFile: async () => undefined,
       runAppServerTurn: (turn) => runCodexAppServerTurn({
         ...turn,
         spawnProcess: this.spawn,

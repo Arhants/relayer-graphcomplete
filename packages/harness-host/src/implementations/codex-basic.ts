@@ -1,7 +1,6 @@
 import { RELAYER_ICON_NAMES, type GraphCapability, type GraphNode } from "@relayer/graph-client";
-import { createHash, randomUUID } from "node:crypto";
-import { mkdir, rename, rm, unlink, writeFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { createHash } from "node:crypto";
+import { isAbsolute } from "node:path";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
 import { INTERACTION_INPUT_GUIDANCE, renderInteractionInput } from "../interaction-input.js";
 import { redactTraceData } from "../trace.js";
@@ -48,71 +47,6 @@ const CODEX_MANAGED_RUNTIME_ENVIRONMENT = new Set([
 const CODEX_BASIC_SECRET_ADAPTERS = new Set(["openai-api", "openrouter", "vercel-ai-router"]);
 const CODEX_BASIC_ADAPTERS = new Set(["codex-subscription", ...CODEX_BASIC_SECRET_ADAPTERS]);
 
-// Codex authenticates an API-key provider from CODEX_HOME/auth.json. The
-// OPENAI_API_KEY environment variable alone is not honored by the managed Codex
-// runtime (requests go out with no bearer). Write the selected provider's key
-// into its isolated per-provider CODEX_HOME only for the turn, then delete the
-// file so the durable copy stays in the OS credential store (PRD AGT-007).
-async function writeCodexApiKeyAuthFile(codexHome: string, apiKey: string): Promise<void> {
-  await mkdir(codexHome, { recursive: true });
-  // Replace atomically: another turn's Codex process may be reading the current file.
-  const temporary = join(codexHome, `.auth.json.${randomUUID()}.tmp`);
-  try {
-    await writeFile(temporary, `${JSON.stringify({ auth_mode: "apikey", OPENAI_API_KEY: apiKey })}\n`, { mode: 0o600 });
-    await rename(temporary, join(codexHome, "auth.json"));
-  } finally {
-    await rm(temporary, { force: true });
-  }
-}
-
-async function removeCodexApiKeyAuthFile(codexHome: string): Promise<void> {
-  try {
-    await unlink(join(codexHome, "auth.json"));
-  } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return;
-    throw error;
-  }
-}
-
-const CODEX_API_KEY_AUTH_USERS = new Map<string, number>();
-/**
- * Writes and removals of one CODEX_HOME's auth.json run one at a time. A turn whose cleanup
- * outlives it (a force-stopped turn the host stopped waiting for) therefore cannot delete the
- * file a later turn on that home has since written.
- */
-const CODEX_API_KEY_AUTH_FILE_OPERATIONS = new Map<string, Promise<void>>();
-
-function serializedCodexApiKeyAuthFileOperation(codexHome: string, operation: () => Promise<void>): Promise<void> {
-  const previous = CODEX_API_KEY_AUTH_FILE_OPERATIONS.get(codexHome) ?? Promise.resolve();
-  const current = previous.then(operation);
-  const tail = current.catch(() => undefined);
-  CODEX_API_KEY_AUTH_FILE_OPERATIONS.set(codexHome, tail);
-  void tail.then(() => {
-    if (CODEX_API_KEY_AUTH_FILE_OPERATIONS.get(codexHome) === tail) CODEX_API_KEY_AUTH_FILE_OPERATIONS.delete(codexHome);
-  });
-  return current;
-}
-
-function retainCodexApiKeyAuth(codexHome: string): void {
-  CODEX_API_KEY_AUTH_USERS.set(codexHome, (CODEX_API_KEY_AUTH_USERS.get(codexHome) ?? 0) + 1);
-}
-
-async function releaseCodexApiKeyAuth(
-  codexHome: string,
-  remove: (codexHome: string) => Promise<void>,
-): Promise<void> {
-  const users = CODEX_API_KEY_AUTH_USERS.get(codexHome) ?? 0;
-  if (users <= 1) {
-    CODEX_API_KEY_AUTH_USERS.delete(codexHome);
-    await serializedCodexApiKeyAuthFileOperation(codexHome, async () => {
-      // A later turn retained this home meanwhile; the file it writes after this must survive.
-      if ((CODEX_API_KEY_AUTH_USERS.get(codexHome) ?? 0) > 0) return;
-      await remove(codexHome);
-    });
-    return;
-  }
-  CODEX_API_KEY_AUTH_USERS.set(codexHome, users - 1);
-}
 const UNDERLYING_TASK_GUIDANCE = `Complete the underlying user task in the working directory. Use the harness's ordinary workspace tools and reasoning as needed; the graph is the presentation of the work, not a substitute for doing it. Author graph content from the work you actually performed and the evidence you actually observed. If you reach a genuine blocker that you cannot resolve, present that blocker and its evidence instead of presenting planned work as completed.`;
 
 export interface CodexBasicDependencies {
@@ -131,8 +65,6 @@ export interface CodexBasicDependencies {
     readonly executable: string;
     readonly environment: Readonly<Record<string, string>>;
   }>;
-  readonly writeCodexApiKeyAuthFile?: (codexHome: string, apiKey: string) => Promise<void>;
-  readonly removeCodexApiKeyAuthFile?: (codexHome: string) => Promise<void>;
 }
 
 interface CodexBasicConfiguration {
@@ -196,6 +128,14 @@ export class CodexBasicHarness implements Harness {
   private codexThreadProviderDefinitionId: string | null | undefined;
   /** Each running turn's force controller, with the step that forgets its root thread. */
   private readonly activeForceShutdowns = new Map<AbortController, () => void>();
+  /**
+   * Which home this conversation's API-key turns use, recorded as `codexProviderHome` in its saved
+   * state. "isolated" is the provider's private CODEX_HOME, for a conversation started with
+   * per-provider homes. "legacy-shared" is Codex's default home, for one saved before them: its
+   * native history is there, so it keeps that home for its whole life. This records storage only.
+   * It does not mark a conversation as supporting provider-neutral continuation (#584).
+   */
+  private readonly providerHome: "isolated" | "legacy-shared";
 
   constructor(private readonly context: HarnessFactoryContext, private readonly dependencies: CodexBasicDependencies = {}) {
     const resolved = parseCodexBasicConfiguration(context);
@@ -203,6 +143,10 @@ export class CodexBasicHarness implements Harness {
     this.clientModuleUrl = dependencies.clientModuleUrl ?? import.meta.resolve("@relayer/graph-client");
     this.completeModuleUrl = dependencies.completeModuleUrl ?? new URL("../../../../dist/index.js", import.meta.url).href;
     validateBrowserMcpRuntime(dependencies.browserMcpRuntime);
+    // Only a conversation saved before per-provider homes has saved state without this marker.
+    this.providerHome = context.savedState === undefined || context.savedState.codexProviderHome === "isolated"
+      ? "isolated"
+      : "legacy-shared";
     const codexThreadId = context.savedState?.codexThreadId;
     const savedPresentationVersionId = context.savedState?.codexThreadPersonalPresentationVersionId;
     const savedProviderDefinitionId = context.savedState?.codexThreadProviderDefinitionId;
@@ -274,39 +218,12 @@ export class CodexBasicHarness implements Harness {
     }
     const capability = context.graph.acquireCapability();
     const resolvedRuntime = await this.codexRuntime(context.access);
-    // A turn force-stopped while resolving its runtime no longer holds access: write nothing.
-    context.forceSignal?.throwIfAborted();
     const environment = this.graphEnvironment(capability, context.completionBroker, context.access, resolvedRuntime.environment);
-    let authHome: string | undefined;
-    try {
-      if (context.access?.kind === "secret") {
-        const apiKey = context.access.fields["api-key"];
-        const codexHome = environment.CODEX_HOME;
-        if (apiKey !== undefined && apiKey !== "" && codexHome !== undefined && codexHome !== "") {
-          retainCodexApiKeyAuth(codexHome);
-          authHome = codexHome;
-          const write = this.dependencies.writeCodexApiKeyAuthFile ?? writeCodexApiKeyAuthFile;
-          await serializedCodexApiKeyAuthFileOperation(codexHome, async () => {
-            // The turn may have been force-stopped while it waited behind another turn's
-            // removal; it no longer holds access, so it must not write credentials.
-            context.forceSignal?.throwIfAborted();
-            await write(codexHome, apiKey);
-          });
-        }
-      }
-      await this.runCodexTurn(context, attach, signal, environment, resolvedRuntime.executable, {
-        persistentRootSession,
-        personalPresentationVersionId,
-        providerDefinitionId,
-      });
-    } finally {
-      if (authHome !== undefined) {
-        await releaseCodexApiKeyAuth(
-          authHome,
-          this.dependencies.removeCodexApiKeyAuthFile ?? removeCodexApiKeyAuthFile,
-        );
-      }
-    }
+    await this.runCodexTurn(context, attach, signal, environment, resolvedRuntime.executable, {
+      persistentRootSession,
+      personalPresentationVersionId,
+      providerDefinitionId,
+    });
   }
 
   private async runCodexTurn(
@@ -418,10 +335,12 @@ export class CodexBasicHarness implements Harness {
   }
 
   state(): HarnessSessionState {
+    const home = { codexProviderHome: this.providerHome };
     return this.codexThreadId === undefined
       || this.codexThreadPersonalPresentationVersionId === undefined
-      ? {}
+      ? home
       : {
+          ...home,
           codexThreadId: this.codexThreadId,
           codexThreadPersonalPresentationVersionId: this.codexThreadPersonalPresentationVersionId,
           ...(this.codexThreadProviderDefinitionId === undefined
@@ -472,6 +391,12 @@ export class CodexBasicHarness implements Harness {
       Object.assign(environment, Object.fromEntries(Object.entries(resolvedRuntimeEnvironment).filter(([key]) => (
         CODEX_MANAGED_RUNTIME_ENVIRONMENT.has(key)
       ))));
+      if (this.providerHome === "isolated") {
+        const privateHome = access.environment?.CODEX_HOME;
+        // Never fall back to the user's own Codex home for a new conversation.
+        if (!privateHome) throw new Error("codex.basic requires the API-key provider's private CODEX_HOME");
+        environment.CODEX_HOME = privateHome;
+      }
       environment.OPENAI_API_KEY = apiKey;
       environment.OPENAI_BASE_URL = access.endpoint;
     } else {
@@ -533,6 +458,9 @@ export class CodexBasicHarness implements Harness {
     readonly codexConfigOverrides?: readonly string[];
   } {
     if (access?.kind !== "secret") return {};
+    // Codex authenticates the API-key provider from OPENAI_API_KEY through `env_key`, with
+    // no auth.json (test:codex-secret-boundary). The key stays in the OS credential store
+    // and this turn's process environment only (PRD AGT-007).
     return {
       codexConfigOverrides: [
         'model_provider="relayer_execution_provider"',
