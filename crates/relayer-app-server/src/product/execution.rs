@@ -1092,8 +1092,31 @@ async fn end_native_wait(execution: &InteractionExecutionService, attempt_id: Op
             }
             Err(error) => {
                 eprintln!(
-                    "could not end the native wait of attempt {attempt_id} after bounded retries: {error}"
+                    "could not end the native wait of attempt {attempt_id} after bounded retries: {error}; retrying in the background"
                 );
+                // This task is the only one that knows the native run ended. Keep trying
+                // until storage recovers, so the attempt stops blocking removal and its
+                // lease is released without waiting for a restart.
+                let execution = execution.clone();
+                tokio::spawn(async move {
+                    let mut delay = std::time::Duration::from_millis(250);
+                    loop {
+                        tokio::time::sleep(delay).await;
+                        match execution.product.end_attempt_native_wait(attempt_id).await {
+                            Ok(true) => {
+                                release_terminal_admission(&execution, Some(attempt_id)).await;
+                                return;
+                            }
+                            Ok(false) => return,
+                            Err(error) => {
+                                eprintln!(
+                                    "could not end the native wait of attempt {attempt_id}: {error}; retrying"
+                                );
+                                delay = (delay * 2).min(std::time::Duration::from_secs(30));
+                            }
+                        }
+                    }
+                });
                 return;
             }
         }

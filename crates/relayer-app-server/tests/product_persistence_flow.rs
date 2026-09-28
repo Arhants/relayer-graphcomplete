@@ -8942,6 +8942,9 @@ enum UnpersistedTurnEnding {
     /// The provider expires the turn's approval request mid-turn, which fails the interaction
     /// before the native turn ends; its later success can no longer be accepted.
     ApprovalExpires,
+    /// As `CanonicalVerificationFails`, while storage refuses to record the end of the native
+    /// wait until the test lifts the refusal.
+    WaitEndRefused,
 }
 
 async fn run_turn_whose_canonical_verification_fails() -> QuarantinedTurn {
@@ -9223,6 +9226,17 @@ async fn run_turn_whose_outcome_is_not_persisted(ending: UnpersistedTurnEnding) 
     .unwrap();
     let app =
         open_app_with_runtime_observed(&database, &root, &catalog, &graph_url, &harness_url).await;
+    if ending == UnpersistedTurnEnding::WaitEndRefused {
+        let pool = sqlite_pool(&database).await;
+        sqlx::query(
+            "CREATE TRIGGER refuse_native_wait_end BEFORE UPDATE OF native_wait_ended_at ON interaction_attempts
+             BEGIN SELECT RAISE(ABORT, 'storage refused the native wait end'); END",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+    }
     assert_eq!(
         app.clone()
             .oneshot(provider_publish_request(test_provider_snapshot()))
@@ -9312,7 +9326,8 @@ async fn run_turn_whose_outcome_is_not_persisted(ending: UnpersistedTurnEnding) 
         "setup: expected quarantine: {last}"
     );
     let expected_error = match ending {
-        UnpersistedTurnEnding::CanonicalVerificationFails => "Canonical reconciliation pending:",
+        UnpersistedTurnEnding::CanonicalVerificationFails
+        | UnpersistedTurnEnding::WaitEndRefused => "Canonical reconciliation pending:",
         UnpersistedTurnEnding::ApprovalExpires => "Approval request expired at the provider.",
     };
     assert!(
@@ -9399,6 +9414,37 @@ async fn a_turn_failed_by_an_expired_approval_releases_its_provider_when_it_ends
         ("execution_failed", Some("approval_expired")),
     )
     .await;
+}
+
+/// A wait end that storage refuses past the bounded retries keeps being retried in the
+/// background, so once storage recovers the attempt stops blocking removal and its lease is
+/// released without a restart.
+#[tokio::test]
+async fn a_refused_native_wait_end_is_retried_until_storage_recovers() {
+    let turn = run_turn_whose_outcome_is_not_persisted(UnpersistedTurnEnding::WaitEndRefused).await;
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let refused = attempt_lease_rows(&turn.database).await;
+    assert!(
+        refused.iter().all(|row| row.3.is_none()),
+        "setup: the lease was released while storage refused the wait end: {refused:?}"
+    );
+    let pool = sqlite_pool(&turn.database).await;
+    sqlx::query("DROP TRIGGER refuse_native_wait_end")
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+    let released = await_lease_releases_recorded(&turn.database).await;
+    assert!(
+        released
+            .iter()
+            .all(|row| row.2.is_none() || row.3.is_some()),
+        "the refused wait end was never retried: {released:?}"
+    );
+    assert_eq!(turn.lease_deletes.load(Ordering::SeqCst), 1);
+    turn.graph_task.abort();
+    turn.harness_task.abort();
+    fs::remove_dir_all(turn.root).unwrap();
 }
 
 /// The thread view settling a quarantined attempt wakes the one lease reconciler (#538). Here
