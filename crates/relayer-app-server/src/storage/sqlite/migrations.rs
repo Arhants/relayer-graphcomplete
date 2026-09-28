@@ -643,6 +643,7 @@ mod tests {
             execution_access_contracts: vec!["managed-runtime@1".into()],
             family_policy: None,
             runtime_available: true,
+            restore_prior_readiness: false,
             unavailable_reason: None,
         };
         store

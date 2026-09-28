@@ -98,6 +98,9 @@ const graphRuntime = new GraphCompleteRuntimeService({
   ...(codexBrowserMcpInspection.available ? { codexBrowserMcpRuntime: codexBrowserMcpInspection } : {}),
   resolveCodexRuntime: () => managedCodexRuntime.resolve(),
   resolvePrimeRuntime: () => managedPrimeRuntime.resolve(),
+  // Prime has an explicit readiness path, so it starts unavailable until the Eval
+  // provider evaluates it. Fixture and existing Codex startup stay unchanged.
+  coordinateHarnessReadiness: ({ implementation }) => implementation === "prime.agent",
   acquireProviderExecution: (providerId) => providerId === "codex"
     ? acquireEvalProviderExecution(providerId)
     : primeProvider
@@ -166,18 +169,6 @@ async function start() {
   try { await lock.writeFile(String(process.pid)); } finally { await lock.close(); }
   requireRunning();
   const runtimeSession = await graphRuntime.start();
-  requireRunning();
-  // Prime has an explicit readiness path; fixture and existing Codex startup stay
-  // unchanged. Publish the initial unavailable state before the product opens.
-  await graphRuntime.recordHarnessReadiness([...runtimeSession.configurations.values()]
-    .filter(({ implementation }) => implementation === "prime.agent")
-    .map((configuration) => ({
-      harnessId: configuration.name,
-      configurationDigest: runtimeSession.digestConfiguration(configuration),
-      generation: 0,
-      available: false,
-      unavailableReason: { code: "harness_readiness_pending", message: "Prime Eval runtime is not ready." },
-    })));
 
   requireRunning();
   productServer = new RelayerAppServerService({
@@ -202,7 +193,7 @@ async function start() {
   requireRunning();
   if (primeProfile) {
     primeProvider = createEvalPrimeProvider({
-      userDataDirectory, productServer, productSession, runtimeSession, graphRuntime,
+      userDataDirectory, productServer, productSession, runtimeSession,
       managedPrimeRuntime, managedCodexRuntime,
     });
     try { await primeProvider.start(primeProfile); }

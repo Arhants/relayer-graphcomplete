@@ -20,13 +20,18 @@ mod threads;
 use super::StorageError;
 use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
-use std::{path::Path, time::Duration};
+use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
+use tokio::sync::Mutex;
 
 pub(crate) use personal_presentation::PersonalPresentationPin;
 
 #[derive(Clone)]
 pub(crate) struct SqliteProductStore {
     pool: SqlitePool,
+    /// The highest readiness generation accepted per harness in this process (PROV-005).
+    /// Electron restarts its generation counter with every process, and the app server
+    /// never outlives it in the desktop, so this ordering is deliberately not persisted.
+    harness_readiness_generations: Arc<Mutex<HashMap<String, u64>>>,
 }
 
 impl SqliteProductStore {
@@ -54,6 +59,9 @@ impl SqliteProductStore {
             pool.close().await;
             return Err(error);
         }
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            harness_readiness_generations: Arc::default(),
+        })
     }
 }

@@ -356,10 +356,7 @@ async function prepareRoute({ session, productServer, runtime, resolver, profile
         // The operator supplies the Codex executable; resolveRunProfile required it.
         : async () => ({ available: true }),
     },
-    publishAvailability: async (updates) => {
-      await productServer.publishHarnessReadiness(updates);
-      await runtime.recordHarnessReadiness(updates);
-    },
+    publishAvailability: (updates) => productServer.publishHarnessReadiness(updates),
   });
   const { readyHarnessIds, routeResults } = await readiness.evaluate({
     trigger: "connect",

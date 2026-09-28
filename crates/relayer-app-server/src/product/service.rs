@@ -3241,6 +3241,7 @@ mod tests {
             execution_access_contracts: vec!["secret@1".into()],
             family_policy: None,
             runtime_available: true,
+            restore_prior_readiness: false,
             unavailable_reason: None,
         });
         storage
@@ -4237,6 +4238,7 @@ mod tests {
                     version,
                 }),
                 runtime_available: true,
+                restore_prior_readiness: false,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4258,6 +4260,7 @@ mod tests {
                     version: 1,
                 }),
                 runtime_available: true,
+                restore_prior_readiness: false,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4279,6 +4282,7 @@ mod tests {
                     version: 1,
                 }),
                 runtime_available: true,
+                restore_prior_readiness: false,
                 unavailable_reason: None,
             },
         ]
@@ -4295,6 +4299,7 @@ mod tests {
                 execution_access_contracts: vec![],
                 family_policy: None,
                 runtime_available: true,
+                restore_prior_readiness: false,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4310,6 +4315,7 @@ mod tests {
                 execution_access_contracts: vec![],
                 family_policy: None,
                 runtime_available: true,
+                restore_prior_readiness: false,
                 unavailable_reason: None,
             },
         ]
