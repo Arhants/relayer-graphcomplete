@@ -64,11 +64,27 @@ impl InteractionExecutionService {
         }
     }
 
+    /// Runs a prepared interaction through its native turn and settles it. However the
+    /// settlement ends, including when its outcome cannot be persisted, Relayer then stops
+    /// waiting on the attempt it began (`end_native_wait`).
     pub(crate) async fn execute_prepared_interaction(
         &self,
         thread: Thread,
         interaction: Interaction,
         prepared: PreparedInteraction,
+    ) {
+        let mut begun_attempt = None;
+        self.run_prepared_interaction(thread, interaction, prepared, &mut begun_attempt)
+            .await;
+        end_native_wait(self, begun_attempt).await;
+    }
+
+    async fn run_prepared_interaction(
+        &self,
+        thread: Thread,
+        interaction: Interaction,
+        prepared: PreparedInteraction,
+        begun_attempt: &mut Option<i64>,
     ) {
         let execution = self;
         let runtime = &execution.runtime;
@@ -329,7 +345,10 @@ impl InteractionExecutionService {
                 })
                 .await
             {
-                Ok(attempt) => Some(attempt),
+                Ok(attempt) => {
+                    *begun_attempt = Some(attempt);
+                    Some(attempt)
+                }
                 Err(error) => {
                     let execution_lease_reconciled = runtime
                         .release_provider_execution(
@@ -1046,6 +1065,62 @@ async fn stop_before_native_execution(
         }
     }
     release_terminal_admission(execution, attempt).await;
+}
+
+/// Relayer has stopped waiting on the attempt's native run: the turn settled, Relayer gave up
+/// on it, or it never started. An attempt still running here has an outcome the task did not
+/// persist. If its interaction's outcome is decided (an approval the provider expired, aborted,
+/// or cancelled), the attempt ends with it. Otherwise it stays undecided for canonical
+/// reconciliation, and only the end of the wait is recorded. Either way it stops counting
+/// toward the provider removal drain, and its lease is released now. That release does not
+/// free access a native turn still uses: the harness host abandons a turn it still runs and
+/// releases the access only once the turn settles.
+async fn end_native_wait(execution: &InteractionExecutionService, attempt_id: Option<i64>) {
+    let Some(attempt_id) = attempt_id else { return };
+    for retry in 1..=LIVE_RECONCILIATION_ATTEMPTS {
+        match execution.product.end_attempt_native_wait(attempt_id).await {
+            Ok(true) => {
+                release_terminal_admission(execution, Some(attempt_id)).await;
+                return;
+            }
+            Ok(false) => return,
+            Err(error) if retry < LIVE_RECONCILIATION_ATTEMPTS => {
+                eprintln!(
+                    "could not end the native wait of attempt {attempt_id}: {error}; retrying"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(retry * 25)).await;
+            }
+            Err(error) => {
+                eprintln!(
+                    "could not end the native wait of attempt {attempt_id} after bounded retries: {error}; retrying in the background"
+                );
+                // This task is the only one that knows the native run ended. Keep trying
+                // until storage recovers, so the attempt stops blocking removal and its
+                // lease is released without waiting for a restart.
+                let execution = execution.clone();
+                tokio::spawn(async move {
+                    let mut delay = std::time::Duration::from_millis(250);
+                    loop {
+                        tokio::time::sleep(delay).await;
+                        match execution.product.end_attempt_native_wait(attempt_id).await {
+                            Ok(true) => {
+                                release_terminal_admission(&execution, Some(attempt_id)).await;
+                                return;
+                            }
+                            Ok(false) => return,
+                            Err(error) => {
+                                eprintln!(
+                                    "could not end the native wait of attempt {attempt_id}: {error}; retrying"
+                                );
+                                delay = (delay * 2).min(std::time::Duration::from_secs(30));
+                            }
+                        }
+                    }
+                });
+                return;
+            }
+        }
+    }
 }
 
 async fn record_reconciliation_pending(
