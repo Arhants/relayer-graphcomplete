@@ -82,7 +82,7 @@ Provider access, model-family organization, and harness execution are separate p
 3. A product-owned model family is an ordered list of exact provider-definition/model pairs. Families contain no credentials or execution behavior and may span providers. Managed read-only families are derived by versioned product policy; custom families remain harness-agnostic.
 4. A named harness configuration declares its versioned execution-access contract and exact or regular-expression model rules over stable adapter ID plus model ID. It never contains a user provider-definition ID or credential.
 5. Product resolution is the only join among the thread-pinned harness configuration, the selected family, current provider/catalog state, and the unsent exact selection. Send atomically pins the resolved provider definition and model to one execution attempt. The harness host defensively revalidates the adapter/model rule and access contract before invoking the selected harness implementation.
-6. Electron owns one credential-free readiness coordinator for loaded production harness configurations. Connect, reconnect, and explicit repair resolve exact access-contract and model-rule candidates, prepare shared recipes once, and publish one digest-guarded availability batch. Rust persists only global configuration availability and derives provider routes through the existing catalog joins; there is no provider-by-harness persistence. Loaded configurations start unavailable, and startup, catalog background work, renderer reads, and Send perform no readiness probes. Secret provider access contains only provider material; Codex and Claude managed runtime descriptors are injected by their harness factories.
+6. Electron owns one credential-free readiness coordinator for loaded production harness configurations. Connect, reconnect, and explicit repair resolve exact access-contract and model-rule candidates, prepare shared recipes once, and publish one digest-guarded availability batch. Rust persists only global configuration availability and derives provider routes through the existing catalog joins; there is no provider-by-harness persistence. That persisted row is the only readiness record: Electron publishes only to Rust, and Rust rejects a generation older than one it accepted in the same process. Loaded configurations start unavailable unless startup restores Rust's own ready row, and startup, catalog background work, renderer reads, and Send perform no readiness probes. Secret provider access contains only provider material; Codex and Claude managed runtime descriptors are injected by their harness factories.
 
 Threads pin a harness-configuration identity, not an immutable copy of catalog or family state. Unsent turns resolve lazily against current semantic revisions when the picker opens or Send is pressed. A still-valid exact selection is preserved; an invalid selection may move only within its current family. The product never selects another family implicitly. Once an attempt is sent, its provider/model identity cannot change or fall back mid-flight.
 
@@ -433,11 +433,18 @@ affect Codex or Claude. `npm run test:prime-managed-runtime` owns the clean-root
 checkpoint. Signed release proof, updater publication (#378), and downloadable
 JavaScript reconstruction (#379) remain separate.
 
-On restart, an unchanged configuration may recover a previously ready route
-only after cheap local validation of its exact managed receipt, owned real
-state directory, installation marker, and entrypoints whose resolved targets
-remain inside that exact installation. A recovered ready boolean starts a new
-process-local readiness ordering epoch. Startup does not download, prepare,
+On restart, Electron writes the configuration catalog by temporary file and
+rename. It never reads readiness back from that file. For each coordinated
+configuration it records only whether cheap local validation passed: the
+exact managed receipt, owned real state directory, installation marker, and
+entrypoints whose resolved targets remain inside that exact installation.
+Rust then restores a ready route only when its own previous row said ready
+for the same configuration digest and that validation passed. Migration 0034
+clears every ready row once, because a row from an older build may not come
+from an evaluation; each route then waits for its next evaluation. Each app-server
+process starts a new readiness ordering epoch. The desktop never restarts the
+app server alone; if it did, the restored row stays the record and the
+coordinator's generations keep increasing. Startup does not download, prepare,
 invoke a readiness probe, or contact a provider. A digest mismatch or corrupt
 local descriptor keeps the harness unavailable and records a sanitized error.
 

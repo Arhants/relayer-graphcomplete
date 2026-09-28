@@ -57,6 +57,17 @@
       "Ops": "{\"logout\", \"reconnect\", \"remove\"}",
       "InitDefFams": "{\"mP\", \"C\", \"none\"}",
       "DefaultProviderPairsFamily": "TRUE"
+    },
+    "readiness-today": {
+      "Evals": "{1, 2, 3}",
+      "Digests": "{\"d1\", \"d2\"}",
+      "InitDigest": "\"d1\"",
+      "MaxRestarts": "1",
+      "JsonWriteCanFail": "TRUE",
+      "ValidationCanFail": "TRUE",
+      "RequestCanOutliveClient": "TRUE",
+      "RustIsReadinessRecord": "TRUE",
+      "RustRejectsOlderGeneration": "TRUE"
     }
   },
   "checks": [
@@ -894,6 +905,107 @@
       ],
       "expect": "pass",
       "finding": "A tombstoned default family restores once its provider is healthy and its real adapter is registered."
+    },
+    {
+      "id": "readiness-restart-restore",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "invariants": [
+        "TypeOK",
+        "PRD_MatchingDigest",
+        "PROV006_RestoreOnlyFromRecord",
+        "PROV006_AdmitOnlyLatestReady"
+      ],
+      "expect": "pass",
+      "finding": "Startup restores ready only from the app server's own record for the same digest when the runtime files validate, so a withdrawn route stays withdrawn (fixed R1; was: restart restored a ready the JSON catalog still held after Rust recorded unavailable)."
+    },
+    {
+      "id": "readiness-restart-restore-reverted",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "constants": {
+        "RustIsReadinessRecord": "FALSE",
+        "JsonWriteCanFail": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "PROV006_AdmitOnlyLatestReady"
+      ],
+      "expect": {
+        "violated": "PROV006_AdmitOnlyLatestReady"
+      },
+      "finding": "With the JSON catalog as a second record, a crash between the Rust and JSON writes restores a ready that Rust had withdrawn, and Send is admitted on it (R1, the behavior before the fix)."
+    },
+    {
+      "id": "readiness-single-record",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "invariants": [
+        "TypeOK",
+        "ReadinessRecordsAgree"
+      ],
+      "expect": "pass",
+      "finding": "There is one readiness record, so no failed write can split it (fixed R2; was: a failed JSON write left the two stores disagreeing with no reconciliation)."
+    },
+    {
+      "id": "readiness-single-record-reverted",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "constants": {
+        "RustIsReadinessRecord": "FALSE",
+        "MaxRestarts": "0"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadinessRecordsAgree"
+      ],
+      "expect": {
+        "violated": "ReadinessRecordsAgree"
+      },
+      "finding": "With two records, a JSON write that fails after the Rust commit leaves them disagreeing (R2, the behavior before the fix)."
+    },
+    {
+      "id": "readiness-never-backwards",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "invariants": [
+        "TypeOK"
+      ],
+      "properties": [
+        "PROV005_NeverOverNewer"
+      ],
+      "expect": "pass",
+      "finding": "Rust rejects a generation older than one it accepted in the same process, so an older result never replaces a newer one, even when a request outlives its client (fixed R3)."
+    },
+    {
+      "id": "readiness-never-backwards-reverted",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "constants": {
+        "RustRejectsOlderGeneration": "FALSE",
+        "MaxRestarts": "0"
+      },
+      "invariants": [
+        "TypeOK"
+      ],
+      "properties": [
+        "PROV005_NeverOverNewer"
+      ],
+      "expect": {
+        "violated": "PROV005_NeverOverNewer"
+      },
+      "finding": "Without the generation guard, a request that reaches Rust after its client gave up replaces a newer result (R3 mechanism; plausible: needs a request that outlives its client)."
+    },
+    {
+      "id": "readiness-liveness",
+      "module": "HarnessReadiness",
+      "preset": "readiness-today",
+      "fair": true,
+      "properties": [
+        "LIVE_LatestReachesRust"
+      ],
+      "expect": "pass",
+      "finding": "The latest evaluation always reaches the app server."
     }
   ]
 }

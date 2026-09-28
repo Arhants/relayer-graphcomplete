@@ -94,6 +94,19 @@ struct CatalogEntry {
     runtime_available: bool,
     #[serde(default)]
     unavailable_reason: Option<crate::product::UnavailableReason>,
+    /// Present for a harness whose readiness Desktop coordinates. The app server's own
+    /// persisted record then decides whether the route restores as ready (PROV-006), and
+    /// Desktop writes `runtimeAvailable: false`, so a reader that misses this field fails
+    /// closed.
+    #[serde(default)]
+    app_server_readiness: Option<AppServerReadiness>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppServerReadiness {
+    /// The file-only startup validation of the local runtime passed. Never a probe.
+    runtime_files_valid: bool,
 }
 
 const fn catalog_entry_available() -> bool {
@@ -561,7 +574,13 @@ impl RuntimeClient {
                     .model_defaults
                     .as_ref()
                     .map(|defaults| defaults.family_policy.clone()),
-                runtime_available: entry.runtime_available,
+                runtime_available: entry
+                    .app_server_readiness
+                    .as_ref()
+                    .map_or(entry.runtime_available, |readiness| {
+                        readiness.runtime_files_valid
+                    }),
+                restore_prior_readiness: entry.app_server_readiness.is_some(),
                 unavailable_reason: entry.unavailable_reason.clone(),
             })
             .collect::<Vec<_>>();
@@ -575,6 +594,7 @@ impl RuntimeClient {
                 execution_access_contracts: Vec::new(),
                 family_policy: None,
                 runtime_available: false,
+                restore_prior_readiness: false,
                 unavailable_reason: Some(entry.reason.clone()),
             }
         }));

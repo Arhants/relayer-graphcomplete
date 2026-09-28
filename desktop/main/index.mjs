@@ -501,10 +501,8 @@ if (primaryInstance) {
         }),
         "prime.agent": ({ runtime }) => checkPrimeManagedRuntime({ runtime }),
       },
-      publishAvailability: async (updates) => {
-        await productServer.publishHarnessReadiness(updates);
-        await graphRuntime.recordHarnessReadiness(updates);
-      },
+      // The app server's record is the only readiness record (PROV-006).
+      publishAvailability: (updates) => productServer.publishHarnessReadiness(updates),
       diagnostics: providerDiagnostics,
     });
     const publishCatalog = (snapshot, { signal } = {}) => (

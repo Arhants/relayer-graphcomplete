@@ -309,6 +309,58 @@ fail in the model, so the host's retry of a failed acknowledgement is not
 modeled. The ten-minute forget of access released without an owner is
 modeled (`ForgetReleased`).
 
+### `HarnessReadiness.tla`
+
+This model covers harness readiness from evaluation to admission:
+
+- **Desktop main:** the readiness coordinator's generations, its
+  publication chain, and startup's file-only runtime validation.
+- **Stores:** the app server's `product_harnesses` row and, before the fix,
+  the readiness copy in `harness-configurations.json`.
+- **Restart:** a crash at any point, then the whole next startup.
+- **Admission:** Send admits only a route the app server holds ready.
+
+There is one harness configuration, three evaluations, two configuration
+digests and one restart.
+
+`readiness-today` mirrors the code, and each `-reverted` check turns one fix
+off. Two constants hold the fixes:
+
+- `RustIsReadinessRecord`: Electron publishes readiness only to the app
+  server. Startup restores ready only from the app server's own row.
+- `RustRejectsOlderGeneration`: the app server rejects a generation lower
+  than one it accepted for that harness in the same process.
+
+`RequestCanOutliveClient` lets a readiness request reach the app server after
+its client saw an error. Without it, the publication chain alone keeps
+results in order.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `readiness-restart-restore` | Fixed; now passes | Before the fix (R1): readiness was written to Rust first, then to the JSON catalog. At startup Electron restored ready from the JSON, and Rust rebuilt its row from that JSON without reading its own. A crash or failed write between the two writes restored a ready that Rust had withdrawn, and Send was admitted. Now the JSON carries only whether the runtime files validate. `initialize_model_catalog` restores ready only from its own previous row for the same digest (PROV-006). Regressions: the desktop-shell test "hands startup readiness to the app server record instead of the previous catalog file" fails on the old code; `restart_keeps_the_app_server_record_of_an_unavailable_route` guards the new rule. |
+| `readiness-restart-restore-reverted` | violated: shows why the fix is needed | With the JSON catalog as a second record, a crash between the two writes restores the withdrawn ready, and Send is admitted on it. |
+| `readiness-single-record` | Fixed; now passes | Before the fix (R2): a failed JSON write left the two records split, with nothing to reconcile them. The JSON readiness write is gone, so there is one record. |
+| `readiness-single-record-reverted` | violated: shows why the fix is needed | With two records, a JSON write that fails after the Rust commit splits them. |
+| `readiness-never-backwards` | Fixed; now passes | Before the fix (R3): Rust checked only that a generation was positive. The app server now rejects an older generation than one it accepted in the process (PROV-005). Regression: `readiness_rejects_an_older_generation_within_a_process`. A superseded result can still publish until the newer one does. PROV-005 allows that, because it never replaces a newer result. |
+| `readiness-never-backwards-reverted` | Plausible: needs a request that outlives its client | Without the guard, a request that reaches Rust after its client gave up replaces a newer result. |
+| `readiness-liveness` | passes | The latest evaluation always reaches the app server. |
+
+With the fix on, `PROV006_RestoreOnlyFromRecord` restates the `Restart`
+action and `ReadinessRecordsAgree` compares Rust with itself. They guard
+against a regression in the model, not in the code. With the fixes on,
+`PROV006_AdmitOnlyLatestReady` and `PROV005_NeverOverNewer` also hold almost by
+construction; their discriminating power is in the `-reverted` checks. The
+model starts with no ready row, so it does not cover the JSON field that
+marks a coordinated harness. A row made ready before this fix is cleared once
+by migration 0034, which `first_launch_after_upgrade_reverifies_a_route_an_older_build_left_ready`
+covers.
+
+The generation guard lives in app-server memory. Electron restarts its
+counter with each process, and the desktop quits when the app server stops.
+If the app server alone restarted, its restored row would stay the record.
+It would accept the coordinator's next generation, and the coordinator's
+counter only grows.
+
 ## Limits
 
 - **Bounds:** one provider plus one new connection, one renderer, one lease,
@@ -333,7 +385,6 @@ modeled (`ForgetReleased`).
 - **Not modeled:**
   - the parent retrying a failed stop;
   - label uniqueness and ids;
-  - harness readiness generations;
   - thread permission pinning;
   - Ladybug index crash recovery;
   - remint races in the graph server;
