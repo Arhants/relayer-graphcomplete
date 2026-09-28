@@ -6,6 +6,11 @@ import { lstat, mkdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { RELAYER_ICON_NAMES, type GraphCapability } from "@relayer/graph-client";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
+import {
+  parseNativeSessionResetReason,
+  reportNativeSessionReset,
+  type NativeSessionResetReason,
+} from "../native-session-reset.js";
 import { MAX_HARNESS_APPROVAL_TEXT_LENGTH } from "../approval.js";
 import { INTERACTION_INPUT_GUIDANCE, renderInteractionInput } from "../interaction-input.js";
 import { HarnessApprovalRequestTerminatedError } from "../approval-coordinator.js";
@@ -114,6 +119,8 @@ interface PrimeSessionInstructions {
 interface PrimeAgentSessionHandle {
   readonly session: PrimeAgentSession;
   readonly instructions: PrimeSessionInstructions;
+  /** The session holds a root conversation: it was restored from a file, or a root turn ran on it. */
+  conversed: boolean;
   readonly nativeDispose: () => void;
   disposeInProgress: boolean;
   disposeCompleted: boolean;
@@ -496,6 +503,7 @@ export class PrimeAgentHarness implements Harness {
     private readonly createSessionManager: () => unknown,
     private resumableSessionFile: string | undefined,
     savedPresentationVersionId: number | null | undefined,
+    private pendingRootReset: NativeSessionResetReason | undefined,
     sessionHandle?: PrimeAgentSessionHandle,
   ) {
     this.sessionHandle = sessionHandle;
@@ -636,6 +644,10 @@ export class PrimeAgentHarness implements Harness {
       : primeAgent.SessionManager.open(restorableSessionFile);
     // A restored session learns its instructions from its first root turn, which reloads it.
     const initialSession = await createSession(initialSessionManager, "");
+    initialSession.conversed = restorableSessionFile !== undefined;
+    const pendingRootReset = typeof savedSessionFile === "string" && restorableSessionFile === undefined
+      ? "session_unavailable"
+      : parseNativeSessionResetReason(context.savedState?.primeRootResetReason);
     return new PrimeAgentHarness(
       context,
       primeAgent,
@@ -646,6 +658,7 @@ export class PrimeAgentHarness implements Harness {
       createSessionManager,
       restorableSessionFile,
       restorableSessionFile === undefined ? undefined : parsedSavedPresentationVersionId,
+      pendingRootReset,
       initialSession,
     );
   }
@@ -711,6 +724,14 @@ export class PrimeAgentHarness implements Harness {
     const session = candidate instanceof Promise ? await candidate : candidate;
     const handle = this.sessionHandle?.session === session ? this.sessionHandle : undefined;
     turn.session = session;
+    if (handle !== undefined) {
+      // A new session that replaces a previous root conversation says so before it runs.
+      if (!handle.conversed && this.pendingRootReset !== undefined) {
+        reportNativeSessionReset(context, "Prime Agent", this.context.threadId, this.pendingRootReset);
+      }
+      this.pendingRootReset = undefined;
+      handle.conversed = true;
+    }
     forceStop.bind(() => {
       if (handle !== undefined) this.forceStopRootSession(handle);
       else void session.abort().catch(() => undefined);
@@ -844,11 +865,13 @@ export class PrimeAgentHarness implements Harness {
 
   state(): HarnessSessionState {
     const sessionFile = this.sessionHandle?.session.sessionFile;
+    const reset = this.pendingRootReset === undefined ? {} : { primeRootResetReason: this.pendingRootReset };
     return sessionFile === undefined || this.sessionPersonalPresentationVersionId === undefined
-      ? {}
+      ? reset
       : {
           primeAgentSessionFile: sessionFile,
           primeAgentSessionPersonalPresentationVersionId: this.sessionPersonalPresentationVersionId,
+          ...reset,
         };
   }
 
@@ -891,6 +914,7 @@ export class PrimeAgentHarness implements Harness {
       this.sessionHandle = undefined;
       this.sessionPersonalPresentationVersionId = undefined;
       this.resumableSessionFile = undefined;
+      this.pendingRootReset = "force_stopped";
     }
     if (handle === undefined) return;
     this.installNativeDisposeGuard(handle);
@@ -913,6 +937,7 @@ export class PrimeAgentHarness implements Harness {
       this.sessionHandle = undefined;
       this.sessionPersonalPresentationVersionId = undefined;
       this.resumableSessionFile = undefined;
+      if (handle.conversed) this.pendingRootReset = "force_stopped";
     }
     this.installNativeDisposeGuard(handle);
     try {
@@ -934,6 +959,7 @@ export class PrimeAgentHarness implements Harness {
     this.pendingRootSessionAcquisition = undefined;
     const handle = this.sessionHandle;
     if (handle !== undefined) this.forceStopRootSession(handle);
+    if (this.resumableSessionFile !== undefined) this.pendingRootReset = "force_stopped";
     this.sessionPersonalPresentationVersionId = undefined;
     this.resumableSessionFile = undefined;
   }
@@ -999,6 +1025,11 @@ export class PrimeAgentHarness implements Harness {
     if (this.sessionHandle === previousHandle) this.sessionHandle = undefined;
     const resumeSavedSession = this.resumableSessionFile !== undefined
       && this.sessionPersonalPresentationVersionId === versionId;
+    // Rotating away from a root conversation cannot continue it; the new session reports why.
+    const reset: NativeSessionResetReason | undefined = resumeSavedSession
+      ? undefined
+      : this.pendingRootReset
+        ?? (previousHandle?.conversed === true || this.resumableSessionFile !== undefined ? "presentation_changed" : undefined);
     const sessionManager = resumeSavedSession
       ? this.primeAgent.SessionManager.open(this.resumableSessionFile!)
       : this.createSessionManager();
@@ -1016,6 +1047,8 @@ export class PrimeAgentHarness implements Harness {
     }
     this.sessionHandle = replacement;
     this.sessionPersonalPresentationVersionId = versionId;
+    replacement.conversed = resumeSavedSession;
+    this.pendingRootReset = reset;
     return session;
   }
 
@@ -1166,6 +1199,7 @@ function primeSessionHandle(session: PrimeAgentSession, instructions: PrimeSessi
   return {
     session,
     instructions,
+    conversed: false,
     nativeDispose: session.dispose.bind(session),
     disposeInProgress: false,
     disposeCompleted: false,

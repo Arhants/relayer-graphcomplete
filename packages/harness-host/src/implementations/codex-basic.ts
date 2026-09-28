@@ -4,6 +4,11 @@ import { mkdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
 import { INTERACTION_INPUT_GUIDANCE, renderInteractionInput } from "../interaction-input.js";
+import {
+  parseNativeSessionResetReason,
+  reportNativeSessionReset,
+  type NativeSessionResetReason,
+} from "../native-session-reset.js";
 import { redactTraceData } from "../trace.js";
 import { CURRENT_WORKSPACE_GUIDANCE, GRAPH_PRESENTATION_GUIDANCE } from "./graph-presentation-guidance.js";
 import {
@@ -47,6 +52,18 @@ const CODEX_MANAGED_RUNTIME_ENVIRONMENT = new Set([
 ]);
 const CODEX_BASIC_SECRET_ADAPTERS = new Set(["openai-api", "openrouter", "vercel-ai-router"]);
 const CODEX_BASIC_ADAPTERS = new Set(["codex-subscription", ...CODEX_BASIC_SECRET_ADAPTERS]);
+/** The stable name recorded for Codex's default home, used when a turn sets no CODEX_HOME. */
+const CODEX_DEFAULT_HOME = "codex-default-home";
+
+/**
+ * The Codex home a turn's app-server reads and writes rollouts in. A thread resumes only in the
+ * home holding its rollout. The configured path is recorded as given, so it stays the same
+ * across restarts; a turn without CODEX_HOME uses Codex's default home.
+ */
+function codexHomeOf(environment: Readonly<Record<string, string>>): string {
+  const home = environment.CODEX_HOME;
+  return home === undefined || home === "" ? CODEX_DEFAULT_HOME : home;
+}
 
 // Codex authenticates an API-key provider from CODEX_HOME/auth.json. The
 // OPENAI_API_KEY environment variable alone is not honored by the managed Codex
@@ -189,11 +206,16 @@ export class CodexBasicHarness implements Harness {
   private codexThreadId: string | undefined;
   private codexThreadPersonalPresentationVersionId: number | null | undefined;
   /**
-   * The provider definition the thread was created under; null for a turn run without a
-   * selected provider. Undefined only for a thread saved by an earlier release: it
-   * is still offered for resume, and a missing rollout starts a fresh thread instead.
+   * The Codex home holding the thread's rollout. Undefined only for a thread saved by an earlier
+   * release: it is still offered for resume, binds to the home it resumes in, and a missing
+   * rollout starts a fresh thread instead.
    */
-  private codexThreadProviderDefinitionId: string | null | undefined;
+  private codexThreadHome: string | undefined;
+  /**
+   * Why the root thread was dropped, until the next root turn that starts fresh reports it.
+   * It is saved with the state, so the notice survives a restart.
+   */
+  private pendingRootReset: NativeSessionResetReason | undefined;
   /** Each running turn's force controller, with the step that forgets its root thread. */
   private readonly activeForceShutdowns = new Map<AbortController, () => void>();
 
@@ -205,22 +227,21 @@ export class CodexBasicHarness implements Harness {
     validateBrowserMcpRuntime(dependencies.browserMcpRuntime);
     const codexThreadId = context.savedState?.codexThreadId;
     const savedPresentationVersionId = context.savedState?.codexThreadPersonalPresentationVersionId;
-    const savedProviderDefinitionId = context.savedState?.codexThreadProviderDefinitionId;
+    const savedHome = context.savedState?.codexThreadHome;
     const validSavedPresentationVersion = savedPresentationVersionId === undefined
       || savedPresentationVersionId === null
       || (typeof savedPresentationVersionId === "number"
         && Number.isSafeInteger(savedPresentationVersionId)
         && savedPresentationVersionId > 0);
-    const validSavedProviderDefinition = savedProviderDefinitionId === undefined
-      || savedProviderDefinitionId === null
-      || (typeof savedProviderDefinitionId === "string" && savedProviderDefinitionId !== "");
-    if (resolved.settings.rootSessionMode !== "fresh"
-      && typeof codexThreadId === "string"
-      && validSavedPresentationVersion
-      && validSavedProviderDefinition) {
+    const validSavedHome = savedHome === undefined || (typeof savedHome === "string" && savedHome !== "");
+    if (resolved.settings.rootSessionMode === "fresh") return;
+    this.pendingRootReset = parseNativeSessionResetReason(context.savedState?.codexRootResetReason);
+    if (typeof codexThreadId === "string" && validSavedPresentationVersion && validSavedHome) {
       this.codexThreadId = codexThreadId;
       this.codexThreadPersonalPresentationVersionId = savedPresentationVersionId;
-      this.codexThreadProviderDefinitionId = savedProviderDefinitionId;
+      this.codexThreadHome = savedHome;
+    } else if (typeof codexThreadId === "string") {
+      this.pendingRootReset = "session_unavailable";
     }
   }
 
@@ -256,17 +277,10 @@ export class CodexBasicHarness implements Harness {
     signal?: AbortSignal,
   ): Promise<void> {
     const personalPresentationVersionId = context.personalPresentation?.attachment.versionInteractionNodeId ?? null;
-    const providerDefinitionId = context.model?.providerId ?? null;
     const persistentRootSession = kind === "root" && this.resolved.settings.rootSessionMode !== "fresh";
-    // A thread resumes only in the CODEX_HOME holding its rollout. The Codex subscription has
-    // its own home; API-key providers share Codex's default home. Binding the thread to its
-    // provider definition is therefore required across that boundary and conservative
-    // between two API-key providers.
     if (persistentRootSession && this.codexThreadId !== undefined
-      && (this.codexThreadPersonalPresentationVersionId !== personalPresentationVersionId
-        || (this.codexThreadProviderDefinitionId !== undefined
-          && this.codexThreadProviderDefinitionId !== providerDefinitionId))) {
-      this.forgetRootThread();
+      && this.codexThreadPersonalPresentationVersionId !== personalPresentationVersionId) {
+      this.forgetRootThread("presentation_changed");
     }
     this.selectedModel(context);
     if (context.model !== undefined && context.access === undefined) {
@@ -277,6 +291,14 @@ export class CodexBasicHarness implements Harness {
     // A turn force-stopped while resolving its runtime no longer holds access: write nothing.
     context.forceSignal?.throwIfAborted();
     const environment = this.graphEnvironment(capability, context.completionBroker, context.access, resolvedRuntime.environment);
+    const codexHome = codexHomeOf(environment);
+    // A thread resumes only in the Codex home holding its rollout. Providers that share a home,
+    // such as API-key providers in Codex's default home, keep resuming it. This decides only
+    // resumption for the provider the product selected, never which providers it may select.
+    if (persistentRootSession && this.codexThreadId !== undefined
+      && this.codexThreadHome !== undefined && this.codexThreadHome !== codexHome) {
+      this.forgetRootThread("home_changed");
+    }
     let authHome: string | undefined;
     try {
       if (context.access?.kind === "secret") {
@@ -297,7 +319,7 @@ export class CodexBasicHarness implements Harness {
       await this.runCodexTurn(context, attach, signal, environment, resolvedRuntime.executable, {
         persistentRootSession,
         personalPresentationVersionId,
-        providerDefinitionId,
+        codexHome,
       });
     } finally {
       if (authHome !== undefined) {
@@ -318,7 +340,7 @@ export class CodexBasicHarness implements Harness {
     rootThread: {
       readonly persistentRootSession: boolean;
       readonly personalPresentationVersionId: number | null;
-      readonly providerDefinitionId: string | null;
+      readonly codexHome: string;
     },
   ): Promise<void> {
     const { persistentRootSession } = rootThread;
@@ -344,7 +366,7 @@ export class CodexBasicHarness implements Harness {
     const forceShutdown = new AbortController();
     let conversationStarted = false;
     const forgetForcedRootThread = () => {
-      if (persistentRootSession && conversationStarted) this.forgetRootThread();
+      if (persistentRootSession && conversationStarted) this.forgetRootThread("force_stopped");
     };
     const forceTurn = () => {
       forgetForcedRootThread();
@@ -352,6 +374,10 @@ export class CodexBasicHarness implements Harness {
     };
     context.forceSignal?.addEventListener("abort", forceTurn, { once: true });
     this.activeForceShutdowns.set(forceShutdown, forgetForcedRootThread);
+    if (persistentRootSession && this.codexThreadId === undefined && this.pendingRootReset !== undefined) {
+      reportNativeSessionReset(context, "Codex", this.context.threadId, this.pendingRootReset);
+      this.pendingRootReset = undefined;
+    }
     try {
       await run({
         environment,
@@ -377,13 +403,22 @@ export class CodexBasicHarness implements Harness {
         onThreadId: () => undefined,
         onTurnStarting: () => { conversationStarted = true; },
         onSavedThreadUnavailable: (threadId) => {
-          if (persistentRootSession && this.codexThreadId === threadId) this.forgetRootThread();
+          if (!persistentRootSession || this.codexThreadId !== threadId) return;
+          this.forgetRootThread("no_rollout");
+          reportNativeSessionReset(context, "Codex", this.context.threadId, "no_rollout");
+          this.pendingRootReset = undefined;
+        },
+        // A Stop that lands while turn/start is pending kills the app-server, which may have
+        // left the thread mid-write, as a force-stop does.
+        onTurnStartAbandoned: () => {
+          if (persistentRootSession && !forceShutdown.signal.aborted) this.forgetRootThread("stopped_during_start");
         },
         onTurnId: (threadId, turnId) => {
           if (persistentRootSession && !forceShutdown.signal.aborted) {
             this.codexThreadId = threadId;
             this.codexThreadPersonalPresentationVersionId = rootThread.personalPresentationVersionId;
-            this.codexThreadProviderDefinitionId = rootThread.providerDefinitionId;
+            this.codexThreadHome = rootThread.codexHome;
+            this.pendingRootReset = undefined;
           }
           attach(Object.freeze({
             schemaVersion: 1,
@@ -418,15 +453,15 @@ export class CodexBasicHarness implements Harness {
   }
 
   state(): HarnessSessionState {
+    const reset = this.pendingRootReset === undefined ? {} : { codexRootResetReason: this.pendingRootReset };
     return this.codexThreadId === undefined
       || this.codexThreadPersonalPresentationVersionId === undefined
-      ? {}
+      ? reset
       : {
           codexThreadId: this.codexThreadId,
           codexThreadPersonalPresentationVersionId: this.codexThreadPersonalPresentationVersionId,
-          ...(this.codexThreadProviderDefinitionId === undefined
-            ? {}
-            : { codexThreadProviderDefinitionId: this.codexThreadProviderDefinitionId }),
+          ...(this.codexThreadHome === undefined ? {} : { codexThreadHome: this.codexThreadHome }),
+          ...reset,
         };
   }
 
@@ -439,10 +474,11 @@ export class CodexBasicHarness implements Harness {
     }
   }
 
-  private forgetRootThread(): void {
+  private forgetRootThread(reason: NativeSessionResetReason): void {
     this.codexThreadId = undefined;
     this.codexThreadPersonalPresentationVersionId = undefined;
-    this.codexThreadProviderDefinitionId = undefined;
+    this.codexThreadHome = undefined;
+    this.pendingRootReset = reason;
   }
 
   private graphEnvironment(
