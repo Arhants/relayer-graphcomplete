@@ -1544,17 +1544,32 @@ export async function startHarnessHost(options: HarnessHostOptions): Promise<Run
   // still offers keep-alive, so either would hold server.close() past the runtime's deadline.
   // A request whose headers are still arriving when close begins is reset, not served.
   const connections = new Map<Socket, Set<ServerResponse>>();
+  const lastResponses = new WeakSet<ServerResponse>();
   let closing = false;
+  // Only the connection's final response may close it, so earlier pipelined responses still reply.
+  const closeConnectionAfter = (response: ServerResponse) => {
+    if (response.headersSent) return;
+    response.shouldKeepAlive = false;
+    lastResponses.add(response);
+  };
   const server = createServer((request, response) => {
     const socket = request.socket;
     const inFlight = connections.get(socket);
+    const previous = inFlight === undefined ? undefined : [...inFlight].at(-1);
     inFlight?.add(response);
-    if (closing) response.shouldKeepAlive = false;
     response.once("close", () => {
       inFlight?.delete(response);
       if (closing && inFlight?.size === 0 && !socket.destroyed) socket.end(() => socket.destroy());
     });
-    void route(host, options, request, response);
+    if (!closing) return void route(host, options, request, response);
+    // A request that arrives while the host closes is refused without routing, so it has no
+    // effect that its caller could miss when the connection closes.
+    if (previous !== undefined && lastResponses.has(previous) && !previous.headersSent) {
+      previous.shouldKeepAlive = true;
+      lastResponses.delete(previous);
+    }
+    closeConnectionAfter(response);
+    reply(response, 503, { error: "harness_host_closing" });
   });
   server.on("connection", (socket) => {
     connections.set(socket, new Set());
@@ -1587,10 +1602,9 @@ export async function startHarnessHost(options: HarnessHostOptions): Promise<Run
       closing = true;
       const closingServer = close(server);
       for (const [socket, inFlight] of connections) {
-        if (inFlight.size === 0) socket.destroy();
-        // Only the newest response closes the connection, so pipelined earlier ones still reply.
         const newest = [...inFlight].at(-1);
-        if (newest !== undefined && !newest.headersSent) newest.shouldKeepAlive = false;
+        if (newest === undefined) socket.destroy();
+        else closeConnectionAfter(newest);
       }
       runningClosePromise = host.close().finally(() => closingServer);
       return runningClosePromise;
