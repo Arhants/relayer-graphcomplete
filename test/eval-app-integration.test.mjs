@@ -1678,10 +1678,8 @@ describe("Relayer Eval application service", () => {
     expect(authoredNode.authoredDetail).toMatchObject({
       version: 1,
       assets: [
-        expect.objectContaining({
-          mediaType: "image/svg+xml",
-          representation: "image",
-        }),
+        expect.objectContaining({ mediaType: "image/svg+xml", representation: "image" }),
+        expect.objectContaining({ mediaType: "image/svg+xml", representation: "image" }),
       ],
     });
     expect(authoredNode.authoredDetail.assets[0].digestSha256).toMatch(
