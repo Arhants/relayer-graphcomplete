@@ -2133,7 +2133,7 @@ fn redact_share_secrets(value: &str) -> String {
         .replace_all(&redacted, "$1[redacted-secret]")
         .into_owned();
     if contains_raw_share_secret(&markdown_rendered_text(&redacted))
-        || contains_relaxed_provider_secret(&markdown_security_skeleton(&redacted))
+        || contains_relaxed_share_secret(&markdown_security_skeleton(&redacted))
     {
         return "[redacted-secret]".into();
     }
@@ -2147,7 +2147,7 @@ fn redact_share_secrets(value: &str) -> String {
             if step_changed
                 && (contains_raw_share_secret(&next)
                     || contains_raw_share_secret(&markdown_rendered_text(&next))
-                    || contains_relaxed_provider_secret(&markdown_security_skeleton(&next)))
+                    || contains_relaxed_share_secret(&markdown_security_skeleton(&next)))
             {
                 return "[redacted-secret]".into();
             }
@@ -2249,15 +2249,18 @@ fn markdown_security_skeleton(value: &str) -> String {
     value
         .chars()
         .filter(|character| {
-            character.is_ascii_alphanumeric()
+            character.is_alphanumeric()
                 || matches!(character, '/' | '\\' | '.' | '_' | ':' | '-' | '=' | '+')
                 || character.is_whitespace()
         })
         .collect()
 }
 
-fn contains_relaxed_provider_secret(value: &str) -> bool {
-    relaxed_provider_secret_regex().is_match(value)
+fn contains_relaxed_share_secret(value: &str) -> bool {
+    pem_secret_regex().is_match(value)
+        || relaxed_bearer_secret_regex().is_match(value)
+        || relaxed_jwt_secret_regex().is_match(value)
+        || relaxed_provider_secret_regex().is_match(value)
 }
 
 fn contains_raw_share_secret(value: &str) -> bool {
@@ -2323,6 +2326,22 @@ fn relaxed_provider_secret_regex() -> &'static Regex {
             r"(?i)(?:sk-(?:ant-)?[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[a-z](?:\.xox[a-z])?-[A-Za-z0-9-]{10,}|AKIA[A-Z0-9]{16}|ASIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|hf_[A-Za-z0-9]{20,}|(?:rk|sk)_(?:live|test)_[A-Za-z0-9]{12,})",
         )
         .expect("valid relaxed provider secret redaction regex")
+    })
+}
+
+fn relaxed_bearer_secret_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(r"(?i)Bearer\s+[A-Za-z0-9._~+/-]+=*")
+            .expect("valid relaxed bearer redaction regex")
+    })
+}
+
+fn relaxed_jwt_secret_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}")
+            .expect("valid relaxed JWT redaction regex")
     })
 }
 
@@ -3267,6 +3286,9 @@ mod tests {
             "a < s**k**-proj-12345678901234567890 >",
             "[label](s**k**-proj-12345678901234567890",
             "[label][s**k**-proj-12345678901234567890",
+            "a < B**earer** abc.def.ghi >",
+            "a < e**yJ**hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.synthetic_signature >",
+            "[label](e**yJ**hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.synthetic_signature",
         ] {
             let mut node = authored_node(serde_json::json!({}));
             node.authored_detail = None;
@@ -3298,6 +3320,11 @@ mod tests {
         );
         assert_eq!(
             home_redactor.text("a < /Us**ers**/alice/secret >"),
+            "[project-path]"
+        );
+        let unicode_redactor = ProjectPathRedactor::for_share(Some("/opt/café"));
+        assert_eq!(
+            unicode_redactor.text("a < /opt/ca**fé**/secret >"),
             "[project-path]"
         );
     }
