@@ -16,7 +16,7 @@ import {
 import { createRelayerIcon } from "./icons.js";
 import { graphLayoutSignature, projectLayerNodePositions } from "./graph-layout.js";
 import { renderMarkdown } from "./markdown.js";
-import { mountCompiledNodeDetail } from "./node-detail-runtime.js";
+import { isResolvedInvokeAction, mountCompiledNodeDetail } from "./node-detail-runtime.js";
 import { productWorkspaceMarkup } from "./view.js";
 import {
   confirmationRestorationKey,
@@ -1290,7 +1290,8 @@ export function actionActivationPresentation(
   { invoked = false, retryable = false, canInvokeMutatingActions = false } = {},
 ) {
   const layerNavigation = action?.kind === "navigate" && action.targetLayerId != null;
-  const resolvedInvoke = action?.kind === "invoke" && action.targetLayerId != null;
+  const resolvedInvoke = (action?.kind === "invoke" && action.targetLayerId != null)
+    || (action != null && isResolvedInvokeAction(action));
   const navigational = layerNavigation || resolvedInvoke;
   const retryableInvoke = action?.kind === "invoke" && !navigational && retryable;
   return Object.freeze({
@@ -1338,7 +1339,7 @@ export function compiledNodeDetailCoversActions(detail, actions, node) {
     .map((mount) => {
       const action = resolveCompiledNodeDetailAction(actions, mount.capability.action, node);
       if (mount.capability.kind === "input" && action?.kind === "input") return action.id;
-      if (mount.capability.kind === "invoke" && action?.kind === "invoke") return action.id;
+      if (mount.capability.kind === "invoke" && (action?.kind === "invoke" || (action && isResolvedInvokeAction(action)))) return action.id;
       if ((mount.capability.kind === "expand" || mount.capability.kind === "reference")
         && action?.kind === "navigate"
         && action.relation === mount.capability.kind
@@ -4922,6 +4923,8 @@ export function createProductWorkspace({
       const action = resolveAuthoredAction(mount.capability.action);
       if (!action) {
         authoredCapabilityState[mount.id] = { disabled: true, error: "This action is unavailable in the accepted detail." };
+      } else if (isResolvedInvokeAction(action)) {
+        authoredCapabilityState[mount.id] = { disabled: false, busy: false, error: null };
       } else if (action.kind === "invoke") {
         const invoked = actionWasInvoked(
           state.actionInvocations,
@@ -4975,6 +4978,10 @@ export function createProductWorkspace({
       capabilityState: authoredCapabilityState,
       onNavigate: async (action) => {
         if (!await prepareNodeContextSelectionChange()) return;
+        if (isResolvedInvokeAction(action)) {
+          await onNavigateResolvedInvoke(action, { beforeCommit: collapseContextPreviews });
+          return;
+        }
         await onNavigateLayer(action.targetLayerId, {
           action,
           sourceNode: node,

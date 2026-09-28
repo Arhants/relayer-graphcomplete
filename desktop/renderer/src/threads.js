@@ -1,3 +1,4 @@
+import { isResolvedInvokeAction } from "./product-workspace/node-detail-runtime.js";
 import { request } from "./api.js";
 import {
   actionWasInvoked,
@@ -941,7 +942,7 @@ export async function navigateResolvedInvoke(action, { beforeCommit } = {}) {
   if (
     !sourceThreadId
     || !sourceInteractionId
-    || action?.kind !== "invoke"
+    || (action?.kind !== "invoke" && !isResolvedInvokeAction(action))
     || action.targetLayerId == null
     || action.id == null
   ) return false;
@@ -962,7 +963,7 @@ export async function navigateResolvedInvoke(action, { beforeCommit } = {}) {
     ) return false;
     if (
       String(destination.actionId) !== String(action.id)
-      || destination.actionKind !== "invoke"
+      || destination.actionKind !== action.kind
       || String(destination.targetLayerId) !== String(action.targetLayerId)
       || String(destination.rootLayerId) !== String(action.targetLayerId)
     ) throw new Error("Resolved invoke destination did not match the selected graph action.");

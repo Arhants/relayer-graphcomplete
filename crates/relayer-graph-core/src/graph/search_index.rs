@@ -333,6 +333,7 @@ mod tests {
                 state: RecordState::Accepted,
             },
             root_action: Some(GraphAction {
+                resolved_invoke_interaction_id: None,
                 id: crate::ActionId::new(1).unwrap(),
                 client_key: Some("response".into()),
                 source_node_id: NodeId::new(1).unwrap(),

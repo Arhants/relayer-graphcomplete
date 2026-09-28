@@ -1057,8 +1057,15 @@ impl crate::GraphDatabase {
                 self,
                 &mut tx,
                 target,
-                closures,
-                crate::publication_targets(metadata.project_id, metadata.thread_id),
+                closures
+                    .into_iter()
+                    .map(|closure| {
+                        (
+                            closure,
+                            crate::publication_targets(metadata.project_id, metadata.thread_id),
+                        )
+                    })
+                    .collect(),
                 self.import_expiry(),
             )
             .await

@@ -248,6 +248,10 @@ pub(crate) struct RuntimeInvokedCompletionStart {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RuntimeAction {
     pub(crate) id: i64,
+    #[serde(default)]
+    pub(crate) relation: Option<String>,
+    #[serde(default)]
+    pub(crate) resolved_invoke_interaction_id: Option<i64>,
     pub(crate) kind: String,
     pub(crate) interaction_text: Option<String>,
     #[serde(default)]

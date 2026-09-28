@@ -107,6 +107,32 @@ impl GraphDatabase {
         })
     }
 
+    /// Trusted process configuration, frozen separately on each new interaction.
+    /// Persistent attached-node mutation is unavailable even when enabled.
+    pub async fn set_interaction_permissions_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<(), GraphError> {
+        let mut transaction = self.storage.begin_write().await?;
+        sqlx::query("UPDATE interaction_permission_config SET enabled=?1 WHERE singleton=1")
+            .bind(enabled)
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn interaction_permissions(
+        &self,
+        interaction: NodeId,
+    ) -> Result<Option<crate::InteractionPermissions>, GraphError> {
+        let mut transaction = self.storage.begin_read().await?;
+        let description =
+            crate::storage::sqlite::permissions::read(&mut transaction, interaction).await?;
+        transaction.commit().await?;
+        Ok(description)
+    }
+
     pub async fn temporal_features(&self) -> Result<TemporalFeatureConfig, GraphError> {
         let mut transaction = self.storage.begin_read().await?;
         let config = CurrentTable::new(&mut transaction)
@@ -374,6 +400,24 @@ impl GraphDatabase {
         text: &str,
         invocation: Option<InteractionInvocation>,
     ) -> Result<GraphNode, GraphError> {
+        self.create_interaction_with_invocation_and_context(
+            project_id,
+            thread_id,
+            text,
+            invocation,
+            &[],
+        )
+        .await
+    }
+
+    pub async fn create_interaction_with_invocation_and_context(
+        &self,
+        project_id: Option<ProjectId>,
+        thread_id: ThreadId,
+        text: &str,
+        invocation: Option<InteractionInvocation>,
+        contexts: &[InteractionContextDraft],
+    ) -> Result<GraphNode, GraphError> {
         reject_reserved_profile_thread(thread_id)?;
         if invocation.is_none() {
             require_nonempty(text, "text")?;
@@ -382,6 +426,38 @@ impl GraphDatabase {
         let node = NodeTable::new(&mut transaction)
             .insert_interaction(project_id, thread_id, text, invocation)
             .await?;
+        let scope = InteractionScope {
+            project_id,
+            thread_id,
+            root_node_id: node.id,
+            read_only: false,
+            authority_epoch: None,
+        };
+        let initialized: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM completion_states WHERE interaction_node_id=?1)",
+        )
+        .bind(node.id.value())
+        .fetch_one(&mut *transaction)
+        .await?;
+        if initialized {
+            let stored = ContextTable::new(&mut transaction).actions(&scope).await?;
+            let stored = stored
+                .into_iter()
+                .map(|action| InteractionContextDraft {
+                    target: action.target,
+                    annotations: action.annotations,
+                })
+                .collect::<Vec<_>>();
+            if stored != contexts {
+                return Err(GraphError::Forbidden(
+                    "An invocation retry cannot change frozen context.".into(),
+                ));
+            }
+        } else {
+            ContextTable::new(&mut transaction)
+                .insert_all(&scope, contexts)
+                .await?;
+        }
         initialize_completion(&mut transaction, &node, project_id, thread_id).await?;
         transaction.commit().await?;
         Ok(node)
@@ -411,7 +487,6 @@ impl GraphDatabase {
         let node = NodeTable::new(&mut transaction)
             .insert_interaction(project_id, thread_id, text, None)
             .await?;
-        initialize_completion(&mut transaction, &node, project_id, thread_id).await?;
         let scope = InteractionScope {
             project_id,
             thread_id,
@@ -422,6 +497,7 @@ impl GraphDatabase {
         let actions = ContextTable::new(&mut transaction)
             .insert_all(&scope, contexts)
             .await?;
+        initialize_completion(&mut transaction, &node, project_id, thread_id).await?;
         transaction.commit().await?;
         Ok((node, actions))
     }
@@ -502,7 +578,6 @@ impl GraphDatabase {
             .identified_interaction(project_id, thread_id, input_identity, input_digest)
             .await?
         {
-            initialize_completion(&mut transaction, &node, project_id, thread_id).await?;
             let scope = InteractionScope {
                 project_id,
                 thread_id,
@@ -547,7 +622,6 @@ impl GraphDatabase {
         let node = NodeTable::new(&mut transaction)
             .insert_interaction(project_id, thread_id, text, None)
             .await?;
-        initialize_completion(&mut transaction, &node, project_id, thread_id).await?;
         NodeTable::new(&mut transaction)
             .set_input_identity(node.id, input_identity, input_digest)
             .await?;
@@ -561,6 +635,7 @@ impl GraphDatabase {
         let actions = ContextTable::new(&mut transaction)
             .insert_all(&scope, contexts)
             .await?;
+        initialize_completion(&mut transaction, &node, project_id, thread_id).await?;
         transaction.commit().await?;
         Ok((node, actions))
     }
@@ -623,7 +698,6 @@ impl GraphDatabase {
                 other => other,
             })?;
         if let Some(node) = identified {
-            initialize_completion(&mut transaction, &node, project_id, thread_id).await?;
             let scope = InteractionScope {
                 project_id,
                 thread_id,
@@ -673,7 +747,6 @@ impl GraphDatabase {
         nodes
             .set_input_identity(node.id, input_identity, authority_digest)
             .await?;
-        initialize_completion(&mut transaction, &node, project_id, thread_id).await?;
         let scope = InteractionScope {
             project_id,
             thread_id,
@@ -684,6 +757,7 @@ impl GraphDatabase {
         ContextTable::new(&mut transaction)
             .insert_all(&scope, contexts)
             .await?;
+        initialize_completion(&mut transaction, &node, project_id, thread_id).await?;
         let children = InputChildTable::new(&mut transaction)
             .validate_and_insert_all(&scope, text, input_identity, authority_digest, attachments)
             .await?;
@@ -957,6 +1031,7 @@ pub(crate) async fn initialize_completion(
         read_only: false,
         authority_epoch: None,
     };
+    crate::storage::sqlite::permissions::prepare(connection, node.id).await?;
     initialize_completion_scope(connection, &scope).await
 }
 

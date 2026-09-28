@@ -18,8 +18,25 @@ pub(crate) async fn finalize(
     plan: &CompletionPlan,
 ) -> Result<(), GraphError> {
     if let Some(lease) = plan.lease {
+        let typed = crate::storage::sqlite::permissions::read(connection, scope.root_node_id)
+            .await?
+            .is_some_and(|snapshot| snapshot.enabled());
+        if typed {
+            crate::storage::sqlite::permissions::authorize(
+                connection,
+                scope,
+                &crate::InteractionPermission::InvokeResolve {
+                    action_id: lease.action_id,
+                },
+            )
+            .await?;
+        }
         ActionTable::new(&mut *connection)
-            .resolve_leased_invoke(lease.action_id, plan.root_layer_id()?)
+            .resolve_leased_invoke(
+                lease.action_id,
+                plan.root_layer_id()?,
+                typed.then_some(scope.root_node_id),
+            )
             .await?;
     }
     CompletionTable::new(connection)
@@ -53,9 +70,33 @@ pub(crate) async fn publish(
             .publish_owned(*action, scope.root_node_id, revision)
             .await?;
     }
+    let typed = crate::storage::sqlite::permissions::read(connection, scope.root_node_id)
+        .await?
+        .is_some_and(|snapshot| snapshot.enabled());
     for (layer, actions) in &plan.layer_actions {
+        let mut actions = actions.clone();
+        if typed {
+            // A validated invoke belongs to its node, including occurrences in
+            // other layers authored by this same completion. Do not broaden
+            // authored navigate projection without its separate cycle checks.
+            let invokes: Vec<i64> = sqlx::query_scalar(
+                "SELECT a.id FROM actions a JOIN layer_nodes n ON n.node_id=a.source_node_id WHERE n.layer_id=?1 AND a.owner_interaction_id=?2 AND a.kind='invoke' AND a.state='accepted' ORDER BY a.id",
+            )
+            .bind(layer.value())
+            .bind(scope.root_node_id.value())
+            .fetch_all(&mut *connection)
+            .await?;
+            for id in invokes {
+                let id = crate::ActionId::new(id).ok_or_else(|| {
+                    GraphError::Internal("Invalid accepted invoke identity".into())
+                })?;
+                if plan.actions.contains(&id) && !actions.contains(&id) {
+                    actions.push(id);
+                }
+            }
+        }
         LayerTable::new(&mut *connection)
-            .snapshot_actions(*layer, scope.root_node_id, actions)
+            .snapshot_actions(*layer, scope.root_node_id, &actions)
             .await?;
     }
     Ok(())

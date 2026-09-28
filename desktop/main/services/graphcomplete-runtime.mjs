@@ -278,6 +278,7 @@ export class GraphCompleteRuntimeService {
     harnessHostModuleUrl,
     candidateTrace,
     acquireProviderExecution,
+    interactionPermissions = false,
     temporalFeatures = {},
     spawnProcess = spawn,
     fetchRequest = fetch,
@@ -305,6 +306,7 @@ export class GraphCompleteRuntimeService {
     this.harnessHostModuleUrl = harnessHostModuleUrl;
     this.candidateTrace = candidateTrace;
     this.acquireProviderExecution = acquireProviderExecution;
+    this.interactionPermissions = interactionPermissions === true;
     this.temporalFeatures = Object.freeze({
       schemaRead: temporalFeatures.schemaRead === true,
       rootCurrentWrite: temporalFeatures.rootCurrentWrite === true,
@@ -439,6 +441,7 @@ export class GraphCompleteRuntimeService {
         graphProcess = this.spawnProcess(this.graphServerBinary, [
            "--database", join(runtimeDirectory, "graph.sqlite3"),
            "--port", "0",
+           ...(this.interactionPermissions ? ["--interaction-permissions"] : []),
            ...(this.temporalFeatures.schemaRead ? ["--temporal-schema-read"] : []),
            ...(this.temporalFeatures.rootCurrentWrite ? ["--temporal-root-current-write"] : []),
            ...(this.temporalFeatures.projectionUi ? ["--temporal-projection-ui"] : []),

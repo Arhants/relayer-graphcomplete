@@ -310,9 +310,20 @@ function applyCapabilityState(host, state = {}) {
   }
 }
 
+export function isResolvedInvokeAction(action) {
+  return action?.kind === "navigate"
+    && action.relation === "expand"
+    && action.state === "accepted"
+    && Number.isSafeInteger(action.resolvedInvokeInteractionId)
+    && action.resolvedInvokeInteractionId > 0
+    && action.targetLayerId != null
+    && action.interactionText == null;
+}
+
 function assertResolvedAction(capability, action) {
   if (!action || typeof action !== "object") throw new Error(`Node Detail ${capability.kind} action is unavailable.`);
-  if (capability.kind === "invoke" && action.kind !== "invoke") {
+
+  if (capability.kind === "invoke" && action.kind !== "invoke" && !isResolvedInvokeAction(action)) {
     throw new Error("Node Detail invoke authority did not resolve an invoke action.");
   }
   if ((capability.kind === "expand" || capability.kind === "reference")
@@ -548,8 +559,8 @@ img{max-inline-size:100%}
           try {
             const currentAction = await resolveCurrentAction();
             assertResolvedAction(capability, currentAction);
-            if (capability.kind === "invoke") await adapters.onInvoke(currentAction, context);
-            else await adapters.onNavigate(currentAction, Object.freeze({ ...context, relation: capability.kind }));
+            if (capability.kind === "invoke" && currentAction.kind === "invoke") await adapters.onInvoke(currentAction, context);
+            else await adapters.onNavigate(currentAction, Object.freeze({ ...context, relation: currentAction.relation }));
             const succeededState = {
               ...(capabilityStates.get(id) ?? prior),
               busy: false,

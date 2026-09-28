@@ -1355,6 +1355,12 @@ fn export_action(
     ids: &mut PortableIds,
     redactor: &ProjectPathRedactor,
 ) -> Result<ExportAction, ConversationExportBuildError> {
+    if action.resolved_invoke_interaction_id.is_some() {
+        return Err(ConversationExportBuildError::Invalid(
+            "Typed invoke resolution portability requires Slice 2.".into(),
+        ));
+    }
+
     ensure_accepted(action.state, "action", action.id.value())?;
     let kind = match action.kind {
         ActionKind::Navigate => ExportActionKind::Navigate,
@@ -2884,6 +2890,7 @@ mod tests {
     #[test]
     fn resolved_invoke_exports_its_authored_shape() {
         let action = GraphAction {
+            resolved_invoke_interaction_id: None,
             id: ActionId::new(1).unwrap(),
             client_key: Some("continue".into()),
             source_node_id: NodeId::new(2).unwrap(),
@@ -2908,6 +2915,23 @@ mod tests {
         )
         .unwrap();
 
+        let converted = GraphAction {
+            kind: ActionKind::Navigate,
+            relation: Some(relayer_graph_core::NavigateRelation::Expand),
+            interaction_text: None,
+            resolved_invoke_interaction_id: Some(NodeId::new(5).unwrap()),
+            ..action.clone()
+        };
+        assert!(
+            export_action(
+                &converted,
+                &mut PortableIds::default(),
+                &ProjectPathRedactor::new(None)
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("Slice 2")
+        );
         assert!(exported.target_layer_id.is_none());
         assert_eq!(
             exported.interaction_text.as_deref(),
@@ -2918,6 +2942,7 @@ mod tests {
     #[test]
     fn unanswered_input_action_exports_its_authored_payload() {
         let action = GraphAction {
+            resolved_invoke_interaction_id: None,
             id: ActionId::new(1).unwrap(),
             client_key: Some("choose".into()),
             source_node_id: NodeId::new(2).unwrap(),
@@ -2978,6 +3003,7 @@ mod tests {
         assert_eq!(authored_key.len(), 128);
         assert_eq!(authored_key_with_internal_space.len(), 128);
         let action = GraphAction {
+            resolved_invoke_interaction_id: None,
             id: ActionId::new(1).unwrap(),
             client_key: Some("choose".into()),
             source_node_id: NodeId::new(2).unwrap(),

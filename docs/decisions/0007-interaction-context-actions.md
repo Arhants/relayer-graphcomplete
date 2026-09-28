@@ -54,3 +54,9 @@ model-authored root `navigate` action with `relation=expand`.
 - Context actions never become clickable output actions or semantic graph edges.
 - Existing navigate, reference, invoke, explicit submission, and harness-native recursion
   semantics are unchanged.
+
+## Typed authority refinement
+
+[ADR 0010](0010-typed-interaction-permissions.md) derives exact-node `navigate.add`
+permissions from these immutable attachments. Slice 1 records and authorizes the
+description but keeps persistent attached-node edits disabled.

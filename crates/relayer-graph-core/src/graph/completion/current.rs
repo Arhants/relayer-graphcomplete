@@ -211,15 +211,57 @@ pub(crate) async fn transition(
             database,
             super::CompletionCrashPoint::AfterSqliteClosureWrite,
         );
-        if let Err(error) = index_and_record(
-            database,
-            &mut transaction,
-            target,
-            vec![publication],
+        let mut publications = vec![(
+            publication,
             crate::publication_targets(scope.project_id, scope.thread_id),
-            expiry,
+        )];
+        let converted: Option<i64> = sqlx::query_scalar(
+            "SELECT action_id FROM invoke_resolution_transitions WHERE interaction_node_id=?1",
         )
-        .await
+        .bind(scope.root_node_id.value())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if let Some(action_id) = converted {
+            // Match rebuild semantics: each presenting closure publishes only to
+            // its own project/thread. Do not mix source and result entitlements.
+            let currents = CurrentTable::new(&mut transaction)
+                .published_currents()
+                .await?;
+            for current in currents {
+                if current.completion_id == scope.root_node_id {
+                    continue;
+                }
+                let presenting = crate::storage::sqlite::nodes::NodeTable::new(&mut transaction)
+                    .interaction_scope(current.completion_id)
+                    .await?;
+                if SearchTarget::new(presenting.project_id, presenting.thread_id) != target {
+                    continue;
+                }
+                let root = super::read_output_on(&mut transaction, &presenting)
+                    .await?
+                    .map(|output| output.root_action);
+                let closure = read_accepted_publication_on(
+                    &mut transaction,
+                    &presenting,
+                    current.layer_id,
+                    root,
+                )
+                .await?;
+                if closure.layers.iter().any(|layer| {
+                    layer
+                        .actions
+                        .iter()
+                        .any(|action| action.id.value() == action_id)
+                }) {
+                    publications.push((
+                        closure,
+                        crate::publication_targets(presenting.project_id, presenting.thread_id),
+                    ));
+                }
+            }
+        }
+        if let Err(error) =
+            index_and_record(database, &mut transaction, target, publications, expiry).await
         {
             transaction.rollback().await?;
             return Err(error);

@@ -1045,7 +1045,16 @@ pub(super) async fn get_action_destination(
     let target_layer_id = action
         .target_layer_id
         .ok_or_else(|| ApiError::invalid("invoke action has not resolved to a destination"))?;
-    if action.id != action_id || action.kind != "invoke" || action.state != "accepted" {
+    let typed_resolution = action.kind == "navigate"
+        && action.relation.as_deref() == Some("expand")
+        && action
+            .resolved_invoke_interaction_id
+            .is_some_and(|id| id > 0)
+        && action.interaction_text.is_none();
+    if action.id != action_id
+        || (action.kind != "invoke" && !typed_resolution)
+        || action.state != "accepted"
+    {
         return Err(ApiError::invalid(
             "action is not a resolved accepted invoke action for this interaction",
         ));
@@ -1053,7 +1062,10 @@ pub(super) async fn get_action_destination(
     let layer_owner = runtime
         .get_layer_owner(source_graph_node_id, target_layer_id)
         .await?;
-    if layer_owner.layer_id != target_layer_id {
+    if layer_owner.layer_id != target_layer_id
+        || (typed_resolution
+            && action.resolved_invoke_interaction_id != Some(layer_owner.owner_interaction_node_id))
+    {
         return Err(ApiError::internal(
             "GraphComplete returned a mismatched action destination layer",
         ));

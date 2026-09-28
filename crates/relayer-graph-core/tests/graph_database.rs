@@ -374,6 +374,10 @@ fn imported_invoke_conversation() -> ImportedConversation {
 async fn imported_conversation_is_materialized_read_only_and_removable() {
     let database = GraphDatabase::in_memory().await.unwrap();
     database
+        .set_interaction_permissions_enabled(true)
+        .await
+        .unwrap();
+    database
         .remove_imported_conversation("missing-import")
         .await
         .unwrap();
@@ -398,6 +402,21 @@ async fn imported_conversation_is_materialized_read_only_and_removable() {
         .writer_for_subgraph(NodeId::new(turn.graph_node_id.unwrap()).unwrap())
         .await
         .unwrap();
+    assert!(
+        writer
+            .authorize_interaction_permission(&InteractionPermission::NavigateAdd {
+                node_id: turn.output.as_ref().unwrap().root_layer.nodes[0].id
+            })
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        database
+            .interaction_permissions(NodeId::new(turn.graph_node_id.unwrap()).unwrap())
+            .await
+            .unwrap(),
+        None
+    );
     let error = writer
         .submit_node(&NodeDraft {
             client_key: "mutation".into(),
@@ -6154,8 +6173,23 @@ async fn reused_action_snapshot_leases_once_concurrently_and_replays_after_reope
 
 #[tokio::test]
 async fn leased_completion_atomically_resolves_invoke_once_and_survives_reopen() {
+    leased_completion_atomically_resolves_invoke_once_and_survives_reopen_fixture(false).await;
+}
+
+#[tokio::test]
+async fn typed_leased_completion_atomically_resolves_invoke_once_and_survives_reopen() {
+    leased_completion_atomically_resolves_invoke_once_and_survives_reopen_fixture(true).await;
+}
+
+async fn leased_completion_atomically_resolves_invoke_once_and_survives_reopen_fixture(
+    typed: bool,
+) {
     let file = tempfile::NamedTempFile::new().unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
+    database
+        .set_interaction_permissions_enabled(typed)
+        .await
+        .unwrap();
     let source_interaction = database
         .create_interaction(Some(project(1)), thread(1), "Source")
         .await
@@ -6213,15 +6247,33 @@ async fn leased_completion_atomically_resolves_invoke_once_and_survives_reopen()
         .iter()
         .find(|action| action.id == unresolved.id)
         .unwrap();
-    assert_eq!(resolved.kind, ActionKind::Invoke);
-    assert_eq!(resolved.relation, None);
+    assert_eq!(
+        resolved.kind,
+        if typed {
+            ActionKind::Navigate
+        } else {
+            ActionKind::Invoke
+        }
+    );
+    assert_eq!(resolved.relation, typed.then_some(NavigateRelation::Expand));
+    assert_eq!(
+        resolved.resolved_invoke_interaction_id,
+        typed.then_some(leased.id)
+    );
     assert_eq!(resolved.source_node_id, source_node.id);
     assert_eq!(resolved.source_layer_id, unresolved.source_layer_id);
     assert_eq!(resolved.label, unresolved.label);
     assert_eq!(resolved.variant, unresolved.variant);
     assert_eq!(resolved.icon, unresolved.icon);
     assert_eq!(resolved.description, unresolved.description);
-    assert_eq!(resolved.interaction_text, unresolved.interaction_text);
+    assert_eq!(
+        resolved.interaction_text,
+        if typed {
+            None
+        } else {
+            unresolved.interaction_text.clone()
+        }
+    );
     assert_eq!(resolved.target_layer_id, Some(root_layer.id));
     assert_eq!(resolved.state, RecordState::Accepted);
     let reused_output = reused_writer.completion_output().await.unwrap().unwrap();
@@ -6242,6 +6294,19 @@ async fn leased_completion_atomically_resolves_invoke_once_and_survives_reopen()
     drop(reused_writer);
     database.close().await;
     let reopened = GraphDatabase::open(file.path()).await.unwrap();
+    let recovered = reopened
+        .create_interaction_with_invocation(
+            Some(project(1)),
+            thread(2),
+            "ignored",
+            Some(InteractionInvocation {
+                source_interaction_node_id: source_interaction.id,
+                source_action_id: unresolved.id,
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(recovered, leased);
     let replay = reopened
         .writer_for_subgraph(leased.id)
         .await
@@ -6272,8 +6337,21 @@ async fn leased_completion_atomically_resolves_invoke_once_and_survives_reopen()
 
 #[tokio::test]
 async fn leased_completion_storage_failure_rolls_back_closure_and_resolution() {
+    leased_completion_storage_failure_rolls_back_closure_and_resolution_fixture(false).await;
+}
+
+#[tokio::test]
+async fn typed_leased_completion_storage_failure_rolls_back_closure_and_resolution() {
+    leased_completion_storage_failure_rolls_back_closure_and_resolution_fixture(true).await;
+}
+
+async fn leased_completion_storage_failure_rolls_back_closure_and_resolution_fixture(typed: bool) {
     let file = tempfile::NamedTempFile::new().unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
+    database
+        .set_interaction_permissions_enabled(typed)
+        .await
+        .unwrap();
     let source_interaction = database
         .create_interaction(Some(project(1)), thread(1), "Source")
         .await
@@ -6336,4 +6414,488 @@ async fn leased_completion_storage_failure_rolls_back_closure_and_resolution() {
             .target_layer_id,
         None
     );
+}
+
+#[tokio::test]
+async fn typed_permissions_freeze_exact_combined_authority_and_keep_mutation_dark() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    database
+        .set_interaction_permissions_enabled(true)
+        .await
+        .unwrap();
+    let source = database
+        .create_interaction(Some(project(1)), thread(1), "Source")
+        .await
+        .unwrap();
+    let (_, invoke) = accepted_invoke(&database, &source).await;
+    let mut contexts = Vec::new();
+    for index in 2..=3 {
+        let interaction = database
+            .create_interaction(Some(project(1)), thread(index), "Context")
+            .await
+            .unwrap();
+        let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+        let target = node(&writer, "context").await;
+        let layer = accept_single_node(&writer, interaction.clone(), target.clone()).await;
+        contexts.push(InteractionContextDraft {
+            target: InteractionContextTarget {
+                node_id: target.id,
+                source_interaction_node_id: interaction.id,
+                source_layer_id: layer.id,
+            },
+            annotations: vec![],
+        });
+    }
+    let origin = Some(InteractionInvocation {
+        source_interaction_node_id: source.id,
+        source_action_id: invoke.id,
+    });
+    let interaction = database
+        .create_interaction_with_invocation_and_context(
+            Some(project(1)),
+            thread(4),
+            "ignored",
+            origin,
+            &contexts,
+        )
+        .await
+        .unwrap();
+    let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+    let helper = database.writer_for_subgraph(interaction.id).await.unwrap();
+    let permission = InteractionPermission::InvokeResolve {
+        action_id: invoke.id,
+    };
+    helper
+        .authorize_interaction_permission(&permission)
+        .await
+        .unwrap();
+    let frozen = database
+        .interaction_permissions(interaction.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        frozen,
+        Some(InteractionPermissions::V1 {
+            enabled: true,
+            permissions: vec![
+                permission.clone(),
+                InteractionPermission::NavigateAdd {
+                    node_id: contexts[0].target.node_id
+                },
+                InteractionPermission::NavigateAdd {
+                    node_id: contexts[1].target.node_id
+                }
+            ]
+        })
+    );
+    database
+        .set_interaction_permissions_enabled(false)
+        .await
+        .unwrap();
+    assert!(
+        database
+            .create_interaction_with_invocation_and_context(
+                Some(project(1)),
+                thread(4),
+                "ignored",
+                origin,
+                &contexts[..1]
+            )
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        database
+            .interaction_permissions(interaction.id)
+            .await
+            .unwrap(),
+        frozen
+    );
+    for context in &contexts {
+        writer
+            .authorize_interaction_permission(&InteractionPermission::NavigateAdd {
+                node_id: context.target.node_id,
+            })
+            .await
+            .unwrap();
+    }
+    // The source interaction is visible but unattached; an arbitrary action ID is also denied.
+    assert!(
+        writer
+            .authorize_interaction_permission(&InteractionPermission::NavigateAdd {
+                node_id: source.id
+            })
+            .await
+            .is_err()
+    );
+    assert!(
+        writer
+            .authorize_interaction_permission(&InteractionPermission::InvokeResolve {
+                action_id: ActionId::new(invoke.id.value() + 1000).unwrap()
+            })
+            .await
+            .is_err()
+    );
+    let answer = node(&writer, "answer").await;
+    let layer = single_node_layer(&writer, "answer-layer", &answer).await;
+    let draft = ActionDraft {
+        client_key: "forbidden-persistent".into(),
+        source_node_id: contexts[0].target.node_id,
+        source_layer_id: Some(layer.id),
+        kind: ActionKind::Navigate,
+        relation: Some(NavigateRelation::Expand),
+        label: "Open".into(),
+        variant: ActionVariant::default(),
+        icon: None,
+        description: None,
+        target_layer_id: Some(layer.id),
+        interaction_text: None,
+        input: None,
+    };
+    assert!(writer.add_action(&draft).await.is_err());
+    root_expand(&writer, &interaction, &layer).await;
+    writer.complete(interaction.id).await.unwrap();
+    assert!(
+        helper
+            .authorize_interaction_permission(&permission)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        database
+            .interaction_permissions(interaction.id)
+            .await
+            .unwrap(),
+        frozen
+    );
+    // Caller payloads cannot describe additional variants or future versions.
+    for json in [
+        r#"{"version":"2","enabled":true,"permissions":[]}"#,
+        r#"{"version":"1","enabled":true,"permissions":[{"kind":"node.edit","nodeId":1}]}"#,
+        r#"{"version":"1","enabled":true,"permissions":[{"kind":"navigate.add","nodeId":1,"invoke":true}]}"#,
+    ] {
+        assert!(serde_json::from_str::<InteractionPermissions>(json).is_err());
+    }
+}
+
+#[tokio::test]
+async fn typed_invoke_rejects_expand_cycle_atomically_and_stop_revokes_authority() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    database
+        .set_interaction_permissions_enabled(true)
+        .await
+        .unwrap();
+    let source = database
+        .create_interaction(Some(project(1)), thread(1), "Source")
+        .await
+        .unwrap();
+    let (source_node, invoke) = accepted_invoke(&database, &source).await;
+    let interaction = database
+        .create_interaction_with_invocation(
+            Some(project(1)),
+            thread(2),
+            "ignored",
+            Some(InteractionInvocation {
+                source_interaction_node_id: source.id,
+                source_action_id: invoke.id,
+            }),
+        )
+        .await
+        .unwrap();
+    let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+    let layer = single_node_layer(&writer, "cycle", &source_node).await;
+    root_expand(&writer, &interaction, &layer).await;
+    assert!(matches!(
+        writer.complete(interaction.id).await,
+        Err(GraphError::Validation {
+            code: "expand_cycle",
+            ..
+        })
+    ));
+    assert_eq!(
+        writer.get_layer(layer.id).await.unwrap().layer.state,
+        RecordState::Draft
+    );
+    let source_writer = database.writer_for_subgraph(source.id).await.unwrap();
+    let unchanged = source_writer
+        .completion_output()
+        .await
+        .unwrap()
+        .unwrap()
+        .root_layer
+        .actions
+        .into_iter()
+        .find(|action| action.id == invoke.id)
+        .unwrap();
+    assert_eq!(unchanged.id, invoke.id);
+    assert_eq!(unchanged.kind, ActionKind::Invoke);
+    assert_eq!(unchanged.target_layer_id, None);
+    assert_eq!(unchanged.resolved_invoke_interaction_id, None);
+    let permission = InteractionPermission::InvokeResolve {
+        action_id: invoke.id,
+    };
+    writer
+        .authorize_interaction_permission(&permission)
+        .await
+        .unwrap();
+    writer
+        .transition_current(
+            0,
+            "stop",
+            CurrentTransition::Stop {
+                reason: "cancelled_by_user".into(),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(
+        writer
+            .authorize_interaction_permission(&permission)
+            .await
+            .is_err()
+    );
+    assert!(writer.complete(interaction.id).await.is_err());
+}
+
+#[tokio::test]
+async fn typed_permission_storage_is_immutable_and_unknown_versions_fail_closed() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let database = GraphDatabase::open(file.path()).await.unwrap();
+    database
+        .set_interaction_permissions_enabled(true)
+        .await
+        .unwrap();
+    let source = database
+        .create_interaction(None, thread(1), "Source")
+        .await
+        .unwrap();
+    let (_, invoke) = accepted_invoke(&database, &source).await;
+    let interaction = database
+        .create_interaction_with_invocation(
+            None,
+            thread(1),
+            "ignored",
+            Some(InteractionInvocation {
+                source_interaction_node_id: source.id,
+                source_action_id: invoke.id,
+            }),
+        )
+        .await
+        .unwrap();
+    let fixture = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(
+            SqliteConnectOptions::new()
+                .filename(file.path())
+                .foreign_keys(true),
+        )
+        .await
+        .unwrap();
+    assert!(
+        sqlx::query("UPDATE interaction_permissions SET description='{}'")
+            .execute(&fixture)
+            .await
+            .is_err()
+    );
+    sqlx::query("DROP TRIGGER interaction_permissions_immutable")
+        .execute(&fixture)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE interaction_permissions SET description=?1 WHERE interaction_node_id=?2")
+        .bind(r#"{"version":"future","enabled":true,"permissions":[]}"#)
+        .bind(interaction.id.value())
+        .execute(&fixture)
+        .await
+        .unwrap();
+    fixture.close().await;
+    database.close().await;
+    let reopened = GraphDatabase::open(file.path()).await.unwrap();
+    let writer = reopened.writer_for_subgraph(interaction.id).await.unwrap();
+    assert!(
+        writer
+            .authorize_interaction_permission(&InteractionPermission::InvokeResolve {
+                action_id: invoke.id
+            })
+            .await
+            .is_err()
+    );
+    let answer = node(&writer, "answer").await;
+    let layer = single_node_layer(&writer, "root", &answer).await;
+    root_expand(&writer, &interaction, &layer).await;
+    assert!(writer.complete(interaction.id).await.is_err());
+    assert_eq!(
+        writer.get_layer(layer.id).await.unwrap().layer.state,
+        RecordState::Draft
+    );
+}
+
+#[tokio::test]
+async fn typed_permissions_temporal_return_and_semantic_child_have_distinct_authority() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    database
+        .set_interaction_permissions_enabled(true)
+        .await
+        .unwrap();
+    database
+        .set_temporal_features(TemporalFeatureConfig {
+            schema_read: true,
+            root_current_write: true,
+            projection_ui: true,
+            invoke_resolution: true,
+            provider_recursion: true,
+            ..TemporalFeatureConfig::default()
+        })
+        .await
+        .unwrap();
+    let source = database
+        .create_interaction(None, thread(1), "Source")
+        .await
+        .unwrap();
+    let (_, invoke) = accepted_invoke(&database, &source).await;
+    let parent = database.writer_for_subgraph(source.id).await.unwrap();
+    let child = parent
+        .prepare_recursive_completion(invoke.id)
+        .await
+        .unwrap();
+    let writer = database.writer_for_subgraph(child.id).await.unwrap();
+    let permission = InteractionPermission::InvokeResolve {
+        action_id: invoke.id,
+    };
+    assert!(
+        parent
+            .authorize_interaction_permission(&permission)
+            .await
+            .is_err()
+    );
+    writer
+        .authorize_interaction_permission(&permission)
+        .await
+        .unwrap();
+    let answer = node(&writer, "answer").await;
+    let layer = single_node_layer(&writer, "root", &answer).await;
+    root_expand(&writer, &child, &layer).await;
+    writer
+        .transition_current(
+            0,
+            "publish",
+            CurrentTransition::Advance { layer_id: layer.id },
+        )
+        .await
+        .unwrap();
+    writer
+        .transition_current(
+            1,
+            "return",
+            CurrentTransition::Return { layer_id: layer.id },
+        )
+        .await
+        .unwrap();
+    assert!(
+        writer
+            .authorize_interaction_permission(&permission)
+            .await
+            .is_err()
+    );
+    let resolved = parent
+        .completion_output()
+        .await
+        .unwrap()
+        .unwrap()
+        .root_layer
+        .actions
+        .into_iter()
+        .find(|action| action.id == invoke.id)
+        .unwrap();
+    assert_eq!(resolved.kind, ActionKind::Navigate);
+    assert_eq!(resolved.resolved_invoke_interaction_id, Some(child.id));
+}
+
+#[tokio::test]
+async fn typed_invoke_snapshots_same_completion_occurrences_and_rejects_reused_cycle() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    database
+        .set_interaction_permissions_enabled(true)
+        .await
+        .unwrap();
+    let source = database
+        .create_interaction(None, thread(1), "Source")
+        .await
+        .unwrap();
+    let writer = database.writer_for_subgraph(source.id).await.unwrap();
+    let menu = node(&writer, "menu").await;
+    let shared = node(&writer, "shared").await;
+    let root = single_node_layer(&writer, "root", &menu).await;
+    let first = single_node_layer(&writer, "first", &shared).await;
+    let second = single_node_layer(&writer, "second", &shared).await;
+    navigate(
+        &writer,
+        "first",
+        &menu,
+        &root,
+        &first,
+        NavigateRelation::Expand,
+    )
+    .await;
+    navigate(
+        &writer,
+        "second",
+        &menu,
+        &root,
+        &second,
+        NavigateRelation::Expand,
+    )
+    .await;
+    let invoke = writer
+        .add_action(&ActionDraft {
+            client_key: "invoke".into(),
+            source_node_id: shared.id,
+            source_layer_id: Some(first.id),
+            kind: ActionKind::Invoke,
+            relation: None,
+            label: "Continue".into(),
+            variant: ActionVariant::default(),
+            icon: None,
+            description: None,
+            target_layer_id: None,
+            interaction_text: Some("Continue".into()),
+            input: None,
+        })
+        .await
+        .unwrap();
+    root_expand(&writer, &source, &root).await;
+    writer.complete(source.id).await.unwrap();
+    for layer in [first.id, second.id] {
+        let actions = writer.get_layer(layer).await.unwrap().actions;
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].id, invoke.id);
+        assert_eq!(actions[0].source_layer_id, Some(first.id));
+    }
+    let child = database
+        .create_interaction_with_invocation(
+            None,
+            thread(1),
+            "ignored",
+            Some(InteractionInvocation {
+                source_interaction_node_id: source.id,
+                source_action_id: invoke.id,
+            }),
+        )
+        .await
+        .unwrap();
+    let child_writer = database.writer_for_subgraph(child.id).await.unwrap();
+    let response = single_node_layer(&child_writer, "reused-response", &shared).await;
+    root_expand(&child_writer, &child, &response).await;
+    assert!(matches!(
+        child_writer.complete(child.id).await,
+        Err(GraphError::Validation {
+            code: "expand_cycle",
+            ..
+        })
+    ));
+    for layer in [first.id, second.id] {
+        let action = &writer.get_layer(layer).await.unwrap().actions[0];
+        assert_eq!(action.kind, ActionKind::Invoke);
+        assert_eq!(action.target_layer_id, None);
+    }
+    assert!(child_writer.completion_output().await.unwrap().is_none());
 }

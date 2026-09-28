@@ -60,6 +60,7 @@ export interface InputOption {
 }
 
 export interface GraphAction {
+  readonly resolvedInvokeInteractionId?: GraphId;
   readonly id: GraphId;
   /** Stable author-assigned identity; absent only in projections written before client keys were exposed. */
   readonly clientKey?: string;

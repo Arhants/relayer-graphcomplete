@@ -113,6 +113,15 @@ impl ServerState {
         }
     }
 
+    pub async fn set_interaction_permissions_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<(), relayer_graph_core::GraphError> {
+        self.graph
+            .set_interaction_permissions_enabled(enabled)
+            .await
+    }
+
     pub fn with_temporal_features(mut self, temporal_features: TemporalFeatureConfig) -> Self {
         self.temporal_features = temporal_features;
         self
@@ -1134,9 +1143,7 @@ async fn create_interaction(
     Json(input): Json<CreateInteractionRequest>,
 ) -> Result<Json<CreateInteractionResponse>, ApiError> {
     require_bearer(&headers, &state.control_token)?;
-    if input.invocation.is_some()
-        && (!input.contexts.is_empty() || !input.submitted_inputs.is_empty())
-    {
+    if input.invocation.is_some() && !input.submitted_inputs.is_empty() {
         return Err(ApiError::invalid(
             "invocation and submitted interaction input cannot be prepared together",
         ));
@@ -1216,20 +1223,19 @@ async fn create_interaction(
         return Err(ApiError::invalid(
             "submittedInputs require inputIdentity and inputDigest",
         ));
-    } else if input.contexts.is_empty() {
-        (
-            state
-                .graph
-                .create_interaction_with_invocation(
-                    input.project_id,
-                    input.thread_id,
-                    &input.text,
-                    input.invocation,
-                )
-                .await?,
-            Vec::new(),
-            Vec::new(),
-        )
+    } else if input.contexts.is_empty() || input.invocation.is_some() {
+        let node = state
+            .graph
+            .create_interaction_with_invocation_and_context(
+                input.project_id,
+                input.thread_id,
+                &input.text,
+                input.invocation,
+                &input.contexts,
+            )
+            .await?;
+        let actions = state.graph.interaction_context_actions(node.id).await?;
+        (node, actions, Vec::new())
     } else {
         let (node, actions) = state
             .graph

@@ -888,6 +888,7 @@ describe("compiled Node Detail product runtime", () => {
       showThread: () => {},
       showEmpty,
       onNavigateLayer,
+      onNavigateResolvedInvoke: (action) => onNavigateLayer(action.targetLayerId, { action, sourceNode: node }),
       onInvokeAction,
       inputDraftApi,
     });
@@ -923,6 +924,28 @@ describe("compiled Node Detail product runtime", () => {
     await window.happyDOM.waitUntilComplete();
     expect(onNavigateLayer).toHaveBeenCalledWith(91, expect.objectContaining({ action: actions[0], sourceNode: node }));
     expect(onInvokeAction).toHaveBeenCalledWith(actions[1]);
+    const invokeButton = runtimeHost.shadowRoot.querySelector("[data-gc-mount='invoke']");
+    Object.assign(actions[1], { kind: "navigate", relation: "expand", targetLayerId: 92,
+      state: "accepted", interactionText: null, resolvedInvokeInteractionId: 51 });
+    workspace.render();
+    await window.happyDOM.waitUntilComplete();
+    expect(runtimeHost.shadowRoot.querySelector("[data-gc-mount='invoke']")).toBe(invokeButton);
+    expect(invokeButton.disabled).toBe(false);
+    invokeButton.click();
+    await window.happyDOM.waitUntilComplete();
+    expect(onNavigateLayer).toHaveBeenCalledWith(92, expect.objectContaining({ action: actions[1], sourceNode: node }));
+    expect(onInvokeAction).toHaveBeenCalledTimes(1);
+    // Fresh mount from another occurrence uses the stored receipt, without an in-memory prior kind.
+    const other = window.document.createElement("div");
+    window.document.body.append(other);
+    const mounted = await mountCompiledNodeDetail({ host: other, detail,
+      resolveAction: (reference) => actions.find((action) => action.clientKey === reference.clientKey),
+      onNavigate: onNavigateLayer, onInvoke: onInvokeAction });
+    expect(mounted.status).toBe("mounted");
+    other.shadowRoot.querySelector("[data-gc-mount='invoke']").click();
+    await window.happyDOM.waitUntilComplete();
+    expect(onInvokeAction).toHaveBeenCalledTimes(1);
+    mounted.dispose();
     const input = runtimeHost.shadowRoot.querySelector("[data-gc-mount='input']");
     expect(input.disabled).toBe(false);
     input.dispatchEvent(new window.Event("change", { bubbles: true }));
