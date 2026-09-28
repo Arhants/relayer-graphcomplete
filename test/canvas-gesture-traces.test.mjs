@@ -36,7 +36,7 @@ describe("CanvasGesture traces replay against the Product workspace canvas", () 
 
   for (const trace of traces) {
     it(`${trace.scenario}: ${trace.summary}`, async () => {
-      world = new CanvasGestureWorld({ initialPointer: trace.steps[0].state.ptr });
+      world = new CanvasGestureWorld({ initialPointer: trace.steps[0].state.ptr, L });
       for (const [index, { action, state }] of trace.steps.entries()) {
         if (action) await world.apply(action);
         const real = world.observe();

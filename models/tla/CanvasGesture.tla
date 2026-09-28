@@ -24,6 +24,9 @@ EXTENDS Naturals
 CONSTANTS
   L,                \* locations on the ring
   MaxGen,           \* bound on renders
+  FitLayoutAfterDrop, \* TRUE since review of #531: a layout that changed
+                    \* mid-drag is fitted once the node is dropped. Before,
+                    \* the fit was skipped, and new nodes could stay off-screen
   KeepDragAcrossRender \* TRUE since the fix (#531): a render re-binds the drag to
                     \* its node's new object and element and keeps the node
                     \* under the pointer. Before, the drag kept the replaced
@@ -32,6 +35,9 @@ CONSTANTS
 None == L + 1
 Wrap(x) == x % L
 Canon(layout) == layout - 1          \* N's authored location in each layout
+\* fitGraphCamera centers the graph, which puts the one node N at screen
+\* location 0.
+Fit(x) == Wrap(L - x)
 NoDrag == [on |-> FALSE, gen |-> 0, capGen |-> 0, moved |-> FALSE]
 
 VARIABLES
@@ -48,11 +54,12 @@ VARIABLES
                 \* the element holding pointer capture, moved]
   pan,          \* panning: [on, startCam, startPtr]
   sel,          \* N is selected
+  fitDue,       \* fitGraphAfterDrop: the layout changed while N was dragged
   \* --- ghosts ---
   dropped       \* where the user last moved N to, while that should hold
 
 vars == <<view, layout, gen, w, pinned, cam, cache, ptr, pressed, drag, pan, sel,
-          dropped>>
+          fitDue, dropped>>
 
 NoCache == [w |-> None, pinned |-> FALSE, cam |-> 0, layout |-> 0]
 Screen(x) == Wrap(x + cam)
@@ -64,7 +71,7 @@ Init ==
   /\ w = Canon(1) /\ pinned = FALSE /\ cam = 0 /\ cache = NoCache
   /\ ptr \in 0..(L - 1) /\ pressed = "none"
   /\ drag = NoDrag /\ pan = [on |-> FALSE, startCam |-> 0, startPtr |-> 0]
-  /\ sel = FALSE
+  /\ sel = FALSE /\ fitDue = FALSE
   /\ dropped = None
 
 -----------------------------------------------------------------------------
@@ -82,7 +89,7 @@ Press ==
      ELSE /\ pressed' = "stage"
           /\ pan' = [on |-> TRUE, startCam |-> cam, startPtr |-> ptr]
           /\ UNCHANGED drag
-  /\ UNCHANGED <<view, layout, gen, w, pinned, cam, cache, ptr, sel, dropped>>
+  /\ UNCHANGED <<view, layout, gen, w, pinned, cam, cache, ptr, sel, fitDue, dropped>>
 
 \* A pointer event goes to the element holding capture while it is still in
 \* the document; otherwise to the element under the pointer.
@@ -107,7 +114,7 @@ Move(p) ==
           /\ UNCHANGED <<drag, w, pinned>>
   \* The user means N to go where the pointer is, whichever element hears it.
   /\ dropped' = IF pressed = "node" /\ drag.on /\ view = "home" THEN World(p) ELSE dropped
-  /\ UNCHANGED <<view, layout, gen, cache, pressed, pan, sel>>
+  /\ UNCHANGED <<view, layout, gen, cache, pressed, pan, sel, fitDue>>
 
 \* pointerup and the click that follows it. On N's element, a moved drag
 \* suppresses the click (the node's onpointerup and onclick); otherwise the click
@@ -122,8 +129,13 @@ Release ==
                /\ sel' = IF drag.moved THEN sel ELSE TRUE
           ELSE UNCHANGED <<drag, sel>>
      ELSE UNCHANGED <<drag, sel>>
+  \* The drag ends on N's element; a fit due from a mid-drag layout change
+  \* runs now (fitAfterDrop), and N stays where it was dropped.
+  /\ LET fits == FitLayoutAfterDrop /\ fitDue /\ pressed = "node" /\ NodeGetsEvent IN
+     /\ cam' = IF fits THEN Fit(w) ELSE cam
+     /\ fitDue' = IF fits THEN FALSE ELSE fitDue
   /\ pan' = [pan EXCEPT !.on = FALSE]
-  /\ UNCHANGED <<view, layout, gen, w, pinned, cam, cache, ptr, dropped>>
+  /\ UNCHANGED <<view, layout, gen, w, pinned, cache, ptr, dropped>>
 
 -----------------------------------------------------------------------------
 (* Renders.                                                               *)
@@ -142,7 +154,7 @@ RenderSame ==
   /\ gen' = gen + 1
   /\ w' = IF pinned THEN w ELSE Canon(layout)
   /\ drag' = Rebind(gen + 1)
-  /\ UNCHANGED <<view, layout, pinned, cam, cache, ptr, pressed, pan, sel, dropped>>
+  /\ UNCHANGED <<view, layout, pinned, cam, cache, ptr, pressed, pan, sel, fitDue, dropped>>
 
 \* The accepted layout changes (a newer current revision in the same view):
 \* positions reset to the layout and the camera refits. A node still being
@@ -153,7 +165,8 @@ RenderLayout ==
   /\ layout' = 3 - layout
   /\ w' = IF Dragging THEN w ELSE Canon(3 - layout)
   /\ pinned' = Dragging
-  /\ cam' = IF Dragging THEN cam ELSE 0
+  /\ cam' = IF Dragging THEN cam ELSE Fit(Canon(3 - layout))
+  /\ fitDue' = Dragging
   /\ drag' = Rebind(gen + 1)
   \* A node still being dragged keeps where the user is taking it.
   /\ dropped' = IF Dragging THEN dropped ELSE None
@@ -168,6 +181,7 @@ Leave ==
   /\ cache' = [w |-> w, pinned |-> pinned, cam |-> cam, layout |-> layout]
   /\ cam' = 0
   /\ drag' = IF KeepDragAcrossRender THEN NoDrag ELSE drag
+  /\ fitDue' = FALSE
   /\ UNCHANGED <<layout, w, pinned, ptr, pressed, pan, sel, dropped>>
 
 \* Returning restores N and the camera from the cache when the layout
@@ -180,8 +194,8 @@ Return ==
   /\ LET hit == cache # NoCache /\ cache.layout = layout IN
      /\ w' = IF hit /\ cache.pinned THEN cache.w ELSE Canon(layout)
      /\ pinned' = hit /\ cache.pinned
-     /\ cam' = IF hit THEN cache.cam ELSE 0
-  /\ UNCHANGED <<layout, cache, ptr, pressed, drag, pan, sel, dropped>>
+     /\ cam' = IF hit THEN cache.cam ELSE Fit(Canon(layout))
+  /\ UNCHANGED <<layout, cache, ptr, pressed, drag, pan, sel, fitDue, dropped>>
 
 -----------------------------------------------------------------------------
 Next ==
@@ -223,6 +237,11 @@ DropStays ==
 \* user pans or when a new layout is fitted. A property of steps, so it
 \* fails if any render moves the camera.
 CameraMovesOnlyByPanOrFit ==
-  [][view = "home" /\ view' = "home" /\ cam' # cam => pressed = "stage" \/ layout' # layout]_vars
+  [][view = "home" /\ view' = "home" /\ cam' # cam =>
+       pressed = "stage" \/ layout' # layout \/ (fitDue /\ ~fitDue')]_vars
+
+\* A layout that changed mid-drag is fitted once the node is dropped, so its
+\* nodes come into view.
+DropFitsNewLayout == pressed = "none" /\ view = "home" => ~fitDue
 
 =============================================================================

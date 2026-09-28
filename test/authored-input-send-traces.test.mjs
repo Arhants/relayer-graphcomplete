@@ -72,14 +72,14 @@ describe("A newer turn arriving while Send waits for an authored commit", () => 
     expect(world.promptText).toBe("");
   });
 
-  it("keeps text typed since then when the stopped Send hands its text back", async () => {
+  it("keeps text typed since then, and does not restore the older text", async () => {
     world = await new AuthoredInputSendWorld().ready();
     for (const step of [["Type", 1], ["Commit"], ["ClickSend"]]) await world.apply(step);
     await world.newerTurnArrives();
     await world.typePrompt("second thought");
     for (const step of [["CommitFails"], ["CommitReturns"]]) await world.apply(step);
     expect(world.post).toBeNull();
-    expect(world.promptText).toBe(`${COMPOSED}\n\nsecond thought`);
+    expect(world.promptText).toBe("second thought");
   });
 
   it("hands the text back when that Send stops", async () => {
@@ -93,10 +93,12 @@ describe("A newer turn arriving while Send waits for an authored commit", () => 
 });
 
 describe("Send after an answer did not save", () => {
-  it("is not stopped once the Node Detail with that answer was closed", async () => {
+  it("is stopped once even after that Node Detail was closed, then sends", async () => {
     world = await new AuthoredInputSendWorld().ready();
     for (const step of [["Type", 1], ["Commit"], ["CommitFails"], ["CommitReturns"]]) await world.apply(step);
     await world.click("#closeInspector");
+    await world.click("#sendInteraction");
+    expect(world.post).toBeNull();
     await world.click("#sendInteraction");
     expect(world.post).not.toBeNull();
   });

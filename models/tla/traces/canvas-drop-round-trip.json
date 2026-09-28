@@ -25,6 +25,7 @@
           "on": false
         },
         "dropped": 4,
+        "fitDue": false,
         "gen": 1,
         "layout": 1,
         "pan": {
@@ -59,6 +60,7 @@
           "on": true
         },
         "dropped": 4,
+        "fitDue": false,
         "gen": 1,
         "layout": 1,
         "pan": {
@@ -94,6 +96,7 @@
           "on": true
         },
         "dropped": 1,
+        "fitDue": false,
         "gen": 1,
         "layout": 1,
         "pan": {
@@ -128,6 +131,7 @@
           "on": false
         },
         "dropped": 1,
+        "fitDue": false,
         "gen": 1,
         "layout": 1,
         "pan": {
@@ -162,6 +166,7 @@
           "on": false
         },
         "dropped": 1,
+        "fitDue": false,
         "gen": 2,
         "layout": 1,
         "pan": {
@@ -196,6 +201,7 @@
           "on": false
         },
         "dropped": 1,
+        "fitDue": false,
         "gen": 3,
         "layout": 1,
         "pan": {

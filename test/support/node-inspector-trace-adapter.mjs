@@ -48,6 +48,28 @@ async function settle() {
   for (let turn = 0; turn < 40; turn += 1) await new Promise((resolve) => setImmediate(resolve));
 }
 
+// Waits until no digest is in flight and a probe's value has held for 30 ms
+// of real time. A Node Detail mount verifies its package with crypto.subtle,
+// which answers off the event loop, so a fixed number of turns can end
+// before it renders on a slow machine. Only setTimeout is faked, so
+// setImmediate and Date.now are real.
+async function quiesce(probe, busy) {
+  const deadline = Date.now() + 5000;
+  let last = probe();
+  let stableSince = Date.now();
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setImmediate(resolve));
+    const now = probe();
+    if (now !== last || busy()) {
+      last = now;
+      stableSince = Date.now();
+    } else if (Date.now() - stableSince >= 30) {
+      return;
+    }
+  }
+  throw new Error("The inspector did not settle");
+}
+
 async function until(condition, what) {
   for (let turn = 0; turn < 2000; turn += 1) {
     if (condition()) return;
@@ -85,6 +107,16 @@ export class NodeInspectorWorld {
   constructor() {
     this.window = new Window({ url: "http://127.0.0.1:3000" });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    this.pendingDigests = 0;
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    this.digestSpy = vi.spyOn(crypto.subtle, "digest").mockImplementation(async (...args) => {
+      this.pendingDigests += 1;
+      try {
+        return await digest(...args);
+      } finally {
+        this.pendingDigests -= 1;
+      }
+    });
     vi.stubGlobal("document", this.window.document);
     vi.stubGlobal("window", this.window);
     vi.stubGlobal("localStorage", this.window.localStorage);
@@ -281,6 +313,7 @@ export class NodeInspectorWorld {
         throw new Error(`Unknown NodeInspector action ${name}`);
     }
     await settle();
+    await quiesce(() => JSON.stringify(this.observe()), () => this.pendingDigests > 0);
     await this.#pairSlots(before, after);
   }
 
@@ -330,6 +363,7 @@ export class NodeInspectorWorld {
 
   dispose() {
     this.workspace.dispose();
+    this.digestSpy.mockRestore();
     vi.useRealTimers();
     vi.unstubAllGlobals();
   }

@@ -55,3 +55,26 @@ describe("TurnComposer traces replay against the Product workspace composer", ()
     });
   }
 });
+
+// Not in TurnComposer.tla, which does not restart the app.
+describe("After a restart, text an earlier session left in an older turn", () => {
+  it("is carried into the newest turn when it was not sent", async () => {
+    world = await new TurnComposerWorld({
+      maxText: 2, maxTurns: 2,
+      turnsA: [{ status: "accepted" }, { status: "accepted", text: "Invoked" }],
+      persisted: { 1: "left behind" },
+    }).ready();
+    expect(world.prompt.value).toBe("left behind");
+    expect(world.persistedDraft(2)).toBe("left behind");
+    expect(world.persistedDraft(1)).toBeNull();
+  });
+
+  it("is not carried when a later turn shows it was sent", async () => {
+    world = await new TurnComposerWorld({
+      maxText: 2, maxTurns: 2,
+      turnsA: [{ status: "accepted" }, { status: "accepted", text: "left behind" }],
+      persisted: { 1: "left behind" },
+    }).ready();
+    expect(world.prompt.value).toBe("");
+  });
+});

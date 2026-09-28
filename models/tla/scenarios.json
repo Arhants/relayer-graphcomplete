@@ -1645,9 +1645,10 @@
       "init": "ptr = 0",
       "promises": [
         "DragFollowsPointer",
-        "DropStays"
+        "DropStays",
+        "DropFitsNewLayout"
       ],
-      "summary": "The accepted layout changes while a node is dragged; the node stays with the pointer, the camera does not refit, and the drop holds.",
+      "summary": "The accepted layout changes while a node is dragged; the node stays with the pointer, the view fits the new layout once it is dropped, and the drop holds.",
       "steps": [
         [
           "Press"

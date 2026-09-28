@@ -1547,6 +1547,8 @@ export function createProductWorkspace({
   let graphSignature = "";
   let graphViewKey = "";
   let dragging = null;
+  // A layout that changed mid-drag is fitted once the drag ends.
+  let fitGraphAfterDrop = false;
   let panning = null;
   let pinching = null;
   let camera = { x: 0, y: 0, zoom: 1 };
@@ -1623,9 +1625,8 @@ export function createProductWorkspace({
   // them, so that click is not lost and it carries the committed answer.
   const authoredInputCommits = new Map();
   // A commit can fail before the click that blurred its input arrives, so an
-  // input's latest failed commit is kept, with the Node Detail showing the
-  // unsaved answer, until a Send it stops, a newer commit of that input, or
-  // detaching that input accounts for it.
+  // input's latest failed commit is kept until a Send it stops, a newer
+  // commit of that input, or detaching that input accounts for it.
   const latestAuthoredInputCommits = new Map();
   const failedAuthoredInputs = new Map();
   const authoredInputKey = (occurrence) => [
@@ -1633,7 +1634,7 @@ export function createProductWorkspace({
     occurrence.presentingLayerId,
     occurrence.actionId,
   ].join("\u0000");
-  const trackAuthoredInputCommit = (threadId, inputKey, runtime, commit) => {
+  const trackAuthoredInputCommit = (threadId, inputKey, commit) => {
     const key = String(threadId);
     const inputSlot = `${key}\u0000${inputKey}`;
     const commits = authoredInputCommits.get(key) ?? new Set();
@@ -1643,9 +1644,9 @@ export function createProductWorkspace({
     failedAuthoredInputs.get(key)?.delete(inputKey);
     void commit.then(() => {}, () => {
       if (latestAuthoredInputCommits.get(inputSlot) !== commit) return;
-      const failed = failedAuthoredInputs.get(key) ?? new Map();
+      const failed = failedAuthoredInputs.get(key) ?? new Set();
       failedAuthoredInputs.set(key, failed);
-      failed.set(inputKey, runtime);
+      failed.add(inputKey);
     }).finally(() => {
       if (latestAuthoredInputCommits.get(inputSlot) === commit) latestAuthoredInputCommits.delete(inputSlot);
       commits.delete(commit);
@@ -1656,22 +1657,18 @@ export function createProductWorkspace({
     return commit;
   };
   const pendingAuthoredInputCommits = (threadId) => authoredInputCommits.get(String(threadId))?.size ?? 0;
-  // Whether the answers on screen when Send was clicked saved, and whether
-  // any answer failed. A failure stops this Send if its Node Detail was the
-  // one open then; the input shows why, and a later Send is the user's
-  // choice.
-  const settleAuthoredInputCommits = async (threadId, detailOnScreen) => {
+  // Whether every answer saved. A failure stops this Send only, whether or
+  // not its Node Detail is still open; the input shows why, and sending
+  // again without the answer is the user's choice.
+  const settleAuthoredInputCommits = async (threadId) => {
     const key = String(threadId);
     let commits;
     while ((commits = authoredInputCommits.get(key))?.size) {
       await Promise.allSettled([...commits]);
     }
-    const failures = [...(failedAuthoredInputs.get(key)?.values() ?? [])];
+    const failed = failedAuthoredInputs.get(key);
     failedAuthoredInputs.delete(key);
-    return {
-      committed: !failures.some((runtime) => runtime === detailOnScreen),
-      failed: failures.length > 0,
-    };
+    return !failed?.size;
   };
   const inputRailScroll = new Map();
   let inputFocusRequest = null;
@@ -2467,6 +2464,13 @@ export function createProductWorkspace({
   };
   const midpoint = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
   const pointerDistance = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+
+  // The node stays where it was dropped; the view fits the new layout.
+  function fitAfterDrop() {
+    if (!fitGraphAfterDrop || dragging) return;
+    fitGraphAfterDrop = false;
+    updateCamera(fitGraphCamera(graphNodes, graphStage.getBoundingClientRect()), false);
+  }
 
   function updateCamera(nextCamera, manual = true) {
     camera = nextCamera;
@@ -3422,19 +3426,20 @@ export function createProductWorkspace({
   cancelContextDraftSend.onclick = () => closeContextDraftSendWarning();
 
   // A send that fails after its thread's newer turn arrived leaves its text
-  // in the older turn's scope; bring it back into the prompt, ahead of any
-  // text typed there since, so neither is lost.
+  // in the older turn's scope; bring it back into the empty prompt. Text the
+  // user typed since wins, and the older text is not restored.
   const restoreStrandedSubmission = (submission) => {
     const { activeScopeKey } = composerDraftScopeState;
     if (String(getThread()?.id) !== String(submission.threadId)
-      || activeScopeKey === submission.scopeKey) return;
+      || activeScopeKey === submission.scopeKey
+      || prompt.value) return;
     const stored = composerDraftScopeState.drafts.get(submission.scopeKey);
     const stranded = stored?.promptValue;
     if (!stranded) return;
     // Text of a send that may have gone through, and whose turn arrived, is
     // not handed back (SCP-019).
     if (landedUncertainSubmission(submission.threadId, submission.scopeKey, stored.promptRevision)) return;
-    const text = prompt.value ? `${stranded}\n\n${prompt.value}` : stranded;
+    const text = stranded;
     const drafts = new Map(composerDraftScopeState.drafts);
     drafts.delete(submission.scopeKey);
     composerDraftScopeState = { activeScopeKey, drafts };
@@ -3638,7 +3643,6 @@ export function createProductWorkspace({
     };
     let intent = draftOverride ? sendWarningIntent : null;
     let unconfirmedContextDrafts = [];
-    const detailOnScreen = $("#inspector").classList.contains("hidden") ? null : mountedAuthoredDetail;
     const attempt = { threadId: String(threadId) };
     inFlightSendThreads.set(attempt.threadId, attempt);
     sendAttempt = attempt;
@@ -3675,20 +3679,11 @@ export function createProductWorkspace({
         });
         intent = await selectInteractionSendIntentAfterInputReconciliation({
           awaitInputDraft: async () => {
-            const unsaved = "An answer in Node Details could not be saved, so the message was not sent.";
-            const settled = await settleAuthoredInputCommits(threadId, detailOnScreen);
-            // The answer the user entered did not save; the input shows why.
-            if (!settled.committed) throw new Error(unsaved);
+            if (!await settleAuthoredInputCommits(threadId)) {
+              // The answer the user entered did not save; the input shows why.
+              throw new Error("An answer in Node Details could not be saved, so the message was not sent.");
+            }
             if (inputDraftController) await ensureInputDraftLoaded(threadId);
-            // An answer that did not save may have been all there was to send.
-            if (settled.failed && !composerSubmissionReady(
-              sendRequest.freshIntent.promptValue,
-              false,
-              true,
-              sendRequest.freshIntent.contexts,
-              false,
-              inputDraftController?.current(threadId)?.attachments || [],
-            )) throw new Error(unsaved);
           },
           selectionIsCurrent: () => sendIntentIsCurrentThread(getThread()?.id, threadId)
             && sendAttempt === attempt,
@@ -4099,6 +4094,8 @@ export function createProductWorkspace({
     }
     if (renderedThreadId !== null && renderedThreadId !== threadId) {
       nodeSelectionSequence += 1;
+      // A request still waiting for a draft belongs to the thread left.
+      userRequestTicket += 1;
       releaseSendAttempt();
       if (contextDraftSendWarning.open) {
         closeContextDraftSendWarning({ focusSend: false });
@@ -4210,6 +4207,19 @@ export function createProductWorkspace({
     retryMessage.classList.toggle("is-stopped", latestInteraction?.completionStatus === "stopped" && !latestInteraction.stopError);
     retryMessage.classList.toggle("hidden", !restoredDraft && !stopMessage);
     retryMessage.textContent = stopMessage || restoredDraft?.message || "";
+    // Text an earlier session persisted in an older turn's scope, such as one
+    // closed while a send was in flight, can be carried forward too, unless
+    // a later turn with that text shows it was sent.
+    if (composerDraftScopeState.activeScopeKey !== composerDraftScopeKey(threadId, latestInteraction?.id)) {
+      const drafts = new Map(composerDraftScopeState.drafts);
+      turns.slice(0, -1).forEach((turn, index) => {
+        const scopeKey = composerDraftScopeKey(threadId, turn.id);
+        const text = drafts.has(scopeKey) ? null : threadFollowupDraft(scopeKey);
+        if (!text || turns.slice(index + 1).some((later) => String(later.text ?? "").trim() === text.trim())) return;
+        drafts.set(scopeKey, { promptValue: text, promptRevision: -1, restoredDraftInteractionId: null });
+      });
+      composerDraftScopeState = { ...composerDraftScopeState, drafts };
+    }
     const draftTransition = transitionComposerDraftScope(composerDraftScopeState, {
       threadId,
       interactionId: latestInteraction?.id,
@@ -4549,14 +4559,16 @@ export function createProductWorkspace({
       cancelInspectorFit();
       if (!preserveHistoricalSelection) $("#inspector").classList.add("hidden");
       saveGraphView();
-      // A drag cannot follow its node into another view.
+      // A drag cannot follow its node into another view, which is fitted.
       dragging = null;
+      fitGraphAfterDrop = false;
     }
     $("#graphEmpty").classList.toggle("hidden", responseNodes.length > 0);
     $("#graphStage").classList.toggle("hidden", responseNodes.length === 0);
     if (!responseNodes.length) {
       graphViewKey = nextViewKey;
       dragging = null;
+      fitGraphAfterDrop = false;
       // Removing the node elements also releases a drag's pointer capture,
       // so its release cannot click a node that is gone.
       $("#nodeLayer").replaceChildren();
@@ -4677,6 +4689,7 @@ export function createProductWorkspace({
         // No button is pressed: the release was missed, so the drag is over.
         if (!event.buttons) {
           dragging = null;
+          fitAfterDrop();
           return;
         }
         const rect = $("#graphStage").getBoundingClientRect();
@@ -4700,8 +4713,12 @@ export function createProductWorkspace({
           graphWindow?.setTimeout?.(() => { suppressClickAfterDrag = false; }, 0);
         }
         dragging = null;
+        fitAfterDrop();
       };
-      element.onpointercancel = () => { dragging = null; };
+      element.onpointercancel = () => {
+        dragging = null;
+        fitAfterDrop();
+      };
     });
     if (dragging) {
       const element = $$('[data-node]').find((item) => item.dataset.node === String(dragging.node.id));
@@ -4748,7 +4765,15 @@ export function createProductWorkspace({
     if (cachedView && cachedLayoutMatches) {
       camera = { ...cachedView.camera };
       cameraRevision = cachedView.cameraRevision;
-    } else if (enteringView || (!cachedLayoutMatches && !dragMoved)) {
+    } else if (enteringView || !cachedLayoutMatches) {
+      // While a node is dragged, the new layout is fitted after the drop.
+      if (dragMoved && dragging) fitGraphAfterDrop = true;
+      else camera = fitGraphCamera(graphNodes, graphStage.getBoundingClientRect());
+    }
+    // A drag that ended in this render, when its pointer could not be
+    // captured again, gets its fit now.
+    if (fitGraphAfterDrop && !dragging) {
+      fitGraphAfterDrop = false;
       camera = fitGraphCamera(graphNodes, graphStage.getBoundingClientRect());
     }
     drawGraph();
@@ -5378,7 +5403,6 @@ export function createProductWorkspace({
           const draft = await trackAuthoredInputCommit(
             thread.id,
             authoredInputKey(occurrence),
-            authoredDetailRuntime,
             inputDraftController.commit(thread.id, occurrence, action, value),
           );
           const attachment = committedInputAttachment(draft, occurrence);

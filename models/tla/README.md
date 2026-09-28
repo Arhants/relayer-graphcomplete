@@ -262,7 +262,7 @@ created elsewhere to keep the per-promise checks fast; `composer-fixed` and
 | `composer-settlement-erases-edit` | Fixed; now passes | Before the fix (#513): re-entering a scope with persisted text assigned `currentPromptRevision + 1`, which could repeat a revision the scope already had. An edit after Send could then reach the submitted revision, and settlement cleared the prompt and deleted the persisted draft. A scope's revision now only moves forward. Scenario: `composer-settlement-erases-edit`. |
 | `composer-sent-text-lingers` | Fixed; now passes | Before the fix (#513): re-entering a scope during a send bumped its revision though the text was unchanged, so settlement no longer recognized the sent text and left it in an enabled composer. Unchanged text now keeps its revision. Scenario: `composer-sent-text-lingers`. |
 | `composer-one-send-per-thread` | passes | One follow-up per thread is in flight at a time, and every send releases its thread's Send button. |
-| `composer-invoked-turns` | Fixed; now passes | Before the fix (review of #512): the submission was held only once `submitInteraction` began, after Send had waited for authored input commits. A turn created elsewhere that arrived during the wait carried the text into its scope, and the Send then posted it and cleared only the older scope, so the sent text stayed. The submission is now held from the click. A Send that ends without posting hands back text a newer turn left in its scope, as a rejected POST does, ahead of any text typed since. One thread, three turns. Regression tests: the "newer turn arriving while Send waits" cases in `test/authored-input-send-traces.test.mjs`, since only that world holds a Send on an authored commit. The draft-send warning, which the model leaves out, also holds the text while open and hands it back when cancelled; a test in the same file covers it. |
+| `composer-invoked-turns` | Fixed; now passes | Before the fix (review of #512): the submission was held only once `submitInteraction` began, after Send had waited for authored input commits. A turn created elsewhere that arrived during the wait carried the text into its scope, and the Send then posted it and cleared only the older scope, so the sent text stayed. The submission is now held from the click. A Send that ends without posting hands back text a newer turn left in its scope into the empty prompt, as a rejected POST does; text typed since wins. One thread, three turns. Regression tests: the "newer turn arriving while Send waits" cases in `test/authored-input-send-traces.test.mjs`, since only that world holds a Send on an authored commit. The draft-send warning, which the model leaves out, also holds the text while open and hands it back when cancelled; a test in the same file covers it. |
 | `composer-without-click-hold` | Records the bug | With `HoldFromClick` off, the text is carried away while Send waits. |
 | `composer-without-uncertain-hold` | Records the bug | With `HoldUncertain` off, the text of a POST that failed after the server recorded it is carried into the turn it created, and could be sent again (SCP-019). The renderer recognizes that turn by the submission's text, so an unrelated turn, or a POST that never reached the server, still carries the text forward. A retry refused after the turn arrived does not hand the text back. Scenarios: `composer-uncertain-send-stays-put`, `composer-retry-of-landed-send`. |
 | `composer-fixed` | passes | With every candidate fix, every composer promise holds. |
@@ -287,8 +287,14 @@ The candidate fixes are:
 to stay in the prompt of the scope it was sent from, where the user sees it
 until its turn arrives. `UnsentDraftSurvives` drops its promise for such text
 only when a newer turn already arrived before the error; SCP-019 then does
-not restore it. The model restores stranded text only into an empty prompt;
-the code also restores it ahead of text typed since, which a test covers.
+not restore it. Stranded text is restored only into an empty prompt: text the user typed
+since wins (a decision recorded in the PRD).
+
+The model does not restart the app. After a restart, text an earlier session
+left in an older turn's scope, such as one closed while a send was in
+flight, is carried into the newest turn unless a later turn with that text
+shows it was sent. Tests in `test/turn-composer-traces.test.mjs` cover both
+cases.
 
 `CarryUnsentDraft` recognizes the in-flight submission by its revision, so
 it is sound only together with `StableScopeRevision`.
@@ -346,6 +352,13 @@ mutates one `appState` in place, so a stale state would not show there
 today; the replay would still catch code that continues from a stale state.
 Scenario: `inspector-switch-sees-refresh`.
 
+The model has one thread. Switching threads voids a request still waiting
+for a draft, so a turn change queued in one thread cannot act on the next;
+a test in `test/node-inspector-traces.test.mjs` covers it. After each step
+the replay waits for in-flight `crypto.subtle` digests and a steady
+inspector, since a Node Detail mount verifies its package off the event
+loop.
+
 The replay also showed the dock keeps the previous node's locked editor
 until the new node's Node Detail mount finishes. The replay compares the
 dock only once the renderer is quiet.
@@ -375,7 +388,7 @@ follow-up Send:
 | --- | --- | --- |
 | `input-send-carries-answer` | Fixed; now passes | Before the fix (#521): legacy input controls registered each commit with `inputPending`, which kept Send disabled; an authored input's commit did not. Mousedown on Send blurs the input, whose `change` commits it, so the commit and the Send went out together at the same revision. A Send served first went without the answer, which then landed in the next turn's draft; a commit served first got the Send refused with `input_draft_revision_conflict`. Send now waits for the thread's authored commits before it captures the draft revision, and stops if one fails, since the answer did not save; a commit still in flight counts toward Send being ready. Authored inputs are locked while a Send is in flight; a commit during a run still goes to the next turn's draft (ADR 0008). Scenarios: `input-send-waits-for-commit`, `input-failed-answer-stops-send`. |
 | `input-send-without-waiting` | Records the bug | With `SendAwaitsAuthoredCommits` off, a Send served before the commit goes without the answer. |
-| `input-send-forgets-early-failure` | Records the bug | With `KeepFailedCommit` off, a commit that fails before the click is forgotten, and the Send goes without the answer. Before the fix (review of #521), a failed commit left the set Send waits on as soon as it settled. Now an input's latest failed commit is kept until a Send it stops, a newer commit of that input, or detaching it accounts for it. It stops a Send only if its Node Detail was open when Send was clicked, so an answer the user can no longer see does not stop a later message, unless that answer was all there was to send. Scenario: `input-early-failure-stops-send`; the closed-inspector case is a test in `test/authored-input-send-traces.test.mjs`. |
+| `input-send-forgets-early-failure` | Records the bug | With `KeepFailedCommit` off, a commit that fails before the click is forgotten, and the Send goes without the answer. Before the fix (review of #521), a failed commit left the set Send waits on as soon as it settled. Now an input's latest failed commit is kept until a Send it stops, a newer commit of that input, or detaching it accounts for it. It stops the next Send once, whether or not its Node Detail is still open; clicking Send again sends without it. Scenario: `input-early-failure-stops-send`; the closed-inspector case is a test in `test/authored-input-send-traces.test.mjs`. |
 
 Send waits rather than being disabled during the commit, because disabling it
 would swallow the click that caused the blur.
@@ -407,8 +420,9 @@ is the only transform (`docs/architecture.md`).
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `canvas-promises` | Fixed; now passes | Before the fix (#531): `renderGraph` replaced `graphNodes` and the node elements on every render, but `dragging` kept the replaced object and the capture on the removed element. After a render mid-drag, moves went to the old object and the node stopped following the pointer (`DragFollowsPointer`, Press → Move → RenderLayout). The next render rebuilt positions from the new objects, so the drop was lost (`DropStays`, Press → RenderSame → Move → Release). A render now re-binds the drag to the node's new object and captures the pointer on its new element. A node that has moved stays under the pointer, pinned, and the camera is not refit while it is dragged. Entering another view, the node disappearing, a failed re-capture, or a move with no button pressed ends the drag. `CameraMovesOnlyByPanOrFit` is a property of steps: in the home view, only a pan or a new layout moves the camera. Scenarios: `canvas-drag-across-render`, `canvas-drag-across-layout`, `canvas-drop-round-trip`, `canvas-pan-across-render`, `canvas-drag-into-view-change`. |
+| `canvas-promises` | Fixed; now passes | Before the fix (#531): `renderGraph` replaced `graphNodes` and the node elements on every render, but `dragging` kept the replaced object and the capture on the removed element. After a render mid-drag, moves went to the old object and the node stopped following the pointer (`DragFollowsPointer`, Press → Move → RenderLayout). The next render rebuilt positions from the new objects, so the drop was lost (`DropStays`, Press → RenderSame → Move → Release). A render now re-binds the drag to the node's new object and captures the pointer on its new element. A node that has moved stays under the pointer, pinned, and the camera is not refit while it is dragged. Entering another view, the node disappearing, a failed re-capture, or a move with no button pressed ends the drag. `CameraMovesOnlyByPanOrFit` is a property of steps: in the home view, only a pan, a new layout, or the fit after a drop moves the camera. Scenarios: `canvas-drag-across-render`, `canvas-drag-across-layout`, `canvas-drop-round-trip`, `canvas-pan-across-render`, `canvas-drag-into-view-change`. |
 | `canvas-without-rebind` | Records the bug | With `KeepDragAcrossRender` off, a render during a drag leaves the drag on the replaced node. |
+| `canvas-without-fit-after-drop` | Records the bug | With `FitLayoutAfterDrop` off, a layout that changed mid-drag is never fitted, and new nodes can stay off-screen (`DropFitsNewLayout`). Now the view fits the new layout once the node is dropped, and the node stays where it was dropped. Scenario: `canvas-drag-across-layout`. |
 
 The replay dispatches pointer events the way a browser routes them. An event
 goes to the element holding capture while that element is still in the
@@ -423,9 +437,8 @@ also shows the node. The camera and layout functions
 have their own tests (`test/graph-camera.test.mjs`,
 `test/graph-layout.test.mjs`).
 
-A layout that changes mid-drag is not refit after the drop, so new nodes can
-stay off-screen until the user fits the view. That is a product choice not
-yet recorded in the PRD.
+A fit centers the graph, which the model writes as `Fit`: the one node at
+location 0. The replay reads locations and camera offsets modulo `L`.
 
 ## Limits
 

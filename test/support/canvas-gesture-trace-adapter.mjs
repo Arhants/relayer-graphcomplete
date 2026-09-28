@@ -12,6 +12,8 @@
 //
 // observe() reads where N is drawn (as a location, or "off" when N is not on
 // the canvas), the camera offset in locations, and the press in progress.
+// Locations and offsets are read modulo L, as the spec's ring is; a fit
+// centers the one node N, which puts it at location 0 as the spec's Fit does.
 // RenderLayout moves N's authored placement. It is replayed only while a
 // moved drag holds N, which keeps N where it is; otherwise the new placement
 // does not map onto evenly spaced locations.
@@ -39,7 +41,8 @@ function layer(id, nodeId, x = 0.4) {
 }
 
 export class CanvasGestureWorld {
-  constructor({ initialPointer }) {
+  constructor({ initialPointer, L = 3 }) {
+    this.L = L;
     this.window = new Window({ url: "http://127.0.0.1:3000" });
     vi.stubGlobal("document", this.window.document);
     vi.stubGlobal("window", this.window);
@@ -242,9 +245,13 @@ export class CanvasGestureWorld {
     const location = point && Math.abs(point.y - this.origin.y) < 0.5
       ? (point.x - this.origin.x) / STEP : null;
     const offset = (this.#cameraX() - this.cameraOrigin) / STEP;
+    const ring = (value) => {
+      const whole = Math.round(value);
+      return Math.abs(value - whole) < 1e-6 ? ((whole % this.L) + this.L) % this.L : "elsewhere";
+    };
     return {
-      node: point === null ? "off" : Number.isInteger(location) ? location : "elsewhere",
-      cam: this.#node ? offset : "away",
+      node: point === null ? "off" : ring(location),
+      cam: this.#node ? ring(offset) : "away",
       pressed: this.pressed,
     };
   }
@@ -268,6 +275,8 @@ export function projectModelState(state, L) {
 export const PROMISES = {
   DragFollowsPointer: (real, model) => !(model.pressed === "node" && model.drag.on && model.drag.moved
     && model.view === "home") || real.node === model.ptr,
+  // The fit after the drop is observed as the camera the model says.
+  DropFitsNewLayout: (_real, model) => !(model.pressed === "none" && model.view === "home" && model.fitDue),
   DropStays: (real, model, L) => model.dropped === L + 1 || model.view !== "home"
     || model.pressed !== "none" || real.node === (model.dropped + model.cam) % L,
 };

@@ -1,10 +1,11 @@
 {
   "scenario": "canvas-drag-across-layout",
   "module": "CanvasGesture",
-  "summary": "The accepted layout changes while a node is dragged; the node stays with the pointer, the camera does not refit, and the drop holds.",
+  "summary": "The accepted layout changes while a node is dragged; the node stays with the pointer, the view fits the new layout once it is dropped, and the drop holds.",
   "promises": [
     "DragFollowsPointer",
-    "DropStays"
+    "DropStays",
+    "DropFitsNewLayout"
   ],
   "generatedBy": "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
   "steps": [
@@ -25,6 +26,7 @@
           "on": false
         },
         "dropped": 4,
+        "fitDue": false,
         "gen": 1,
         "layout": 1,
         "pan": {
@@ -59,6 +61,7 @@
           "on": true
         },
         "dropped": 4,
+        "fitDue": false,
         "gen": 1,
         "layout": 1,
         "pan": {
@@ -94,6 +97,7 @@
           "on": true
         },
         "dropped": 1,
+        "fitDue": false,
         "gen": 1,
         "layout": 1,
         "pan": {
@@ -128,6 +132,7 @@
           "on": true
         },
         "dropped": 1,
+        "fitDue": true,
         "gen": 2,
         "layout": 2,
         "pan": {
@@ -163,6 +168,7 @@
           "on": true
         },
         "dropped": 2,
+        "fitDue": true,
         "gen": 2,
         "layout": 2,
         "pan": {
@@ -189,7 +195,7 @@
           "pinned": false,
           "w": 4
         },
-        "cam": 0,
+        "cam": 1,
         "drag": {
           "capGen": 0,
           "gen": 0,
@@ -197,6 +203,7 @@
           "on": false
         },
         "dropped": 2,
+        "fitDue": false,
         "gen": 2,
         "layout": 2,
         "pan": {
@@ -223,7 +230,7 @@
           "pinned": false,
           "w": 4
         },
-        "cam": 0,
+        "cam": 1,
         "drag": {
           "capGen": 0,
           "gen": 0,
@@ -231,6 +238,7 @@
           "on": false
         },
         "dropped": 2,
+        "fitDue": false,
         "gen": 3,
         "layout": 2,
         "pan": {

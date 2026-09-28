@@ -48,7 +48,9 @@ async function settle() {
 }
 
 export class TurnComposerWorld {
-  constructor({ maxText, maxTurns }) {
+  // turnsA: thread A's turns ({ status, text }) as a restart finds them;
+  // persisted: follow-up drafts an earlier session left, keyed by A's turn.
+  constructor({ maxText, maxTurns, turnsA, persisted = {} }) {
     this.maxText = maxText;
     this.maxTurns = maxTurns;
     this.window = new Window({ url: "http://127.0.0.1:3000" });
@@ -59,11 +61,15 @@ export class TurnComposerWorld {
       createElement: () => this.window.document.createElement("svg"),
     }, { get: (target, key) => target[key] ?? {} }));
     this.window.localStorage.clear();
+    this.window.localStorage.setItem("relayerComposerDraftsV1", JSON.stringify({
+      threadFollowups: Object.fromEntries(Object.entries(persisted)
+        .map(([turn, text]) => [`${THREAD_ID.A}:${interactionId("A", Number(turn))}`, text])),
+    }));
     this.window.document.body.innerHTML = '<section id="threadView"></section><div id="toast" class="hidden"></div>';
     this.threads = Object.fromEntries(Object.entries(THREAD_ID).map(([key, id]) => [key, {
       id, title: `Thread ${key}`, harnessId: "fixture", projectId: null, permissionProfileId: null,
     }]));
-    this.turns = { A: [{ status: "accepted" }], B: [{ status: "accepted" }] };
+    this.turns = { A: turnsA ?? [{ status: "accepted" }], B: [{ status: "accepted" }] };
     this.pendingTurn = { A: false, B: false };
     this.recordedText = { A: undefined, B: undefined };
     this.view = "A";
@@ -109,6 +115,12 @@ export class TurnComposerWorld {
   async ready() {
     await settle();
     return this;
+  }
+
+  // Not in the model: the draft an earlier session persisted for A's turn.
+  persistedDraft(turn) {
+    const state = JSON.parse(this.window.localStorage.getItem("relayerComposerDraftsV1") || "{}");
+    return state.threadFollowups?.[`${THREAD_ID.A}:${interactionId("A", turn)}`] ?? null;
   }
 
   get prompt() { return this.window.document.querySelector("#threadPrompt"); }

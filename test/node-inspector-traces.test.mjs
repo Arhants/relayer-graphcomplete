@@ -56,3 +56,24 @@ describe("NodeInspector traces replay against the Product workspace inspector", 
     });
   }
 });
+
+// Not in NodeInspector.tla, which has one thread.
+describe("A request waiting for a resolving draft", () => {
+  const quietModel = { slots: {} };
+
+  it("is void once the user switches to another thread", async () => {
+    // The trace's first steps annotate n1 and start discarding its draft.
+    const trace = traces.find((candidate) => candidate.scenario === "inspector-view-change-during-discard");
+    const discard = trace.steps.findIndex(({ action }) => action?.[0] === "Discard");
+    world = await new NodeInspectorWorld().ready();
+    for (let index = 1; index <= discard; index += 1) {
+      await world.apply(trace.steps[index].action, trace.steps[index - 1].state, trace.steps[index].state);
+    }
+    const turnChange = world.workspace.prepareSelectionChange();
+    world.thread = { ...world.thread, id: 4, title: "Other thread" };
+    world.selection.currentThreadId = 4;
+    world.workspace.render();
+    await world.apply(["DiscardReturns", "ok"], quietModel, quietModel);
+    expect(await turnChange).toBe(false);
+  });
+});
