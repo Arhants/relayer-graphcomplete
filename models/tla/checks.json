@@ -85,7 +85,8 @@
       "StartupFailsUnlaunched": "TRUE",
       "PrepareCanBeAmbiguous": "TRUE",
       "RefusedLaunchFailsChild": "TRUE",
-      "ChildrenOutsideRootGate": "TRUE"
+      "ChildrenOutsideRootGate": "TRUE",
+      "ProductLeavesChildren": "TRUE"
     }
   },
   "checks": [
@@ -1364,10 +1365,12 @@
         "TypeOK",
         "SettledRowIsTerminal",
         "StartupFailsActiveChildren",
-        "SendNeverWaitsOnChild"
+        "SendNeverWaitsOnChild",
+        "OneHumanTurn",
+        "ProductLeavesChildAlone"
       ],
       "expect": "pass",
-      "finding": "With every fix, a settled execution row has a terminal current and product row, startup leaves no interrupted child active, and a child never holds the next human turn."
+      "finding": "With every fix, a settled execution row has a terminal current and product row, and startup leaves no interrupted child active. The user can send whenever no human turn runs, two human turns never run at once, and the product neither stops nor runs an agent's child."
     },
     {
       "id": "launch-liveness",
@@ -1504,12 +1507,29 @@
       },
       "invariants": [
         "TypeOK",
-        "SendNeverWaitsOnChild"
+        "SendNeverWaitsOnChild",
+        "OneHumanTurn"
       ],
       "expect": {
         "violated": "SendNeverWaitsOnChild"
       },
-      "finding": "Before the decision, a child that still runs after its parent is done refuses the thread's next human turn."
+      "finding": "Before the decision, a child that still runs after its parent is done refuses the user's next message (the gate counted it as a turn)."
+    },
+    {
+      "id": "launch-product-child-reverted",
+      "module": "CompletionLaunchWindows",
+      "preset": "launch-today",
+      "constants": {
+        "ProductLeavesChildren": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ProductLeavesChildAlone"
+      ],
+      "expect": {
+        "violated": "ProductLeavesChildAlone"
+      },
+      "finding": "Before the decision, the product accepted a Stop for an agent's child, and a user's invoke of the delegate action ran the child on the product path."
     }
   ]
 }
