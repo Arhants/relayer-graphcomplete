@@ -292,12 +292,33 @@ impl<'connection> ActionTable<'connection> {
         .collect()
     }
 
+    /// Presentation does not transfer ownership out of an imported history.
+    pub(crate) async fn require_native_provenance(
+        &mut self,
+        action_id: ActionId,
+    ) -> Result<(), GraphError> {
+        let native: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM actions a JOIN nodes source ON source.id=a.source_node_id JOIN nodes owner ON owner.id=a.owner_interaction_id JOIN nodes source_owner ON source_owner.id=source.owner_interaction_id WHERE a.id=?1 AND NOT EXISTS(SELECT 1 FROM graph_imports imported WHERE imported.thread_id IN (a.thread_id,source.thread_id,owner.thread_id,source_owner.thread_id)))",
+        )
+        .bind(action_id.value())
+        .fetch_one(&mut *self.connection)
+        .await?;
+        if !native {
+            return Err(GraphError::Forbidden(
+                "Imported actions and source nodes cannot acquire invoke mutation authority."
+                    .into(),
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) async fn validate_unresolved_lease(
         &mut self,
         scope: &InteractionScope,
         source_interaction: NodeId,
         action_id: ActionId,
     ) -> Result<(), GraphError> {
+        self.require_native_provenance(action_id).await?;
         let in_source_completion = sqlx::query_scalar::<_, i64>(
             r#"
             WITH RECURSIVE reachable_layers(id) AS (
@@ -452,6 +473,15 @@ impl<'connection> ActionTable<'connection> {
             ));
         }
         if let Some(interaction) = typed_interaction {
+            // Legacy snapshots may omit this node-owned action in another
+            // occurrence. Add only this authorized identity, in the same
+            // transaction as conversion, without changing existing ordering.
+            sqlx::query(
+                "INSERT INTO layer_actions(layer_id,action_id,position) SELECT l.id,a.id,COALESCE((SELECT MAX(position)+1 FROM layer_actions existing WHERE existing.layer_id=l.id),0) FROM actions a JOIN layer_nodes occurrence ON occurrence.node_id=a.source_node_id JOIN layers l ON l.id=occurrence.layer_id WHERE a.id=?1 AND l.state='accepted' AND ((a.project_id IS NOT NULL AND l.project_id=a.project_id) OR (a.project_id IS NULL AND l.project_id IS NULL AND l.thread_id=a.thread_id)) AND NOT EXISTS(SELECT 1 FROM graph_imports imported WHERE imported.thread_id=l.thread_id) AND NOT EXISTS(SELECT 1 FROM layer_actions existing WHERE existing.layer_id=l.id AND existing.action_id=a.id)",
+            )
+            .bind(action_id.value())
+            .execute(&mut *self.connection)
+            .await?;
             sqlx::query("INSERT INTO invoke_resolution_transitions VALUES(?1,?2,?3)")
                 .bind(action_id.value())
                 .bind(interaction.value())

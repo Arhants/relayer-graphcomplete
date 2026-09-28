@@ -334,6 +334,9 @@ impl<'connection> NodeTable<'connection> {
                 "The source action is not a member of that interaction's published presentation.",
             ));
         }
+        super::actions::ActionTable::new(&mut *self.connection)
+            .require_native_provenance(invocation.source_action_id)
+            .await?;
         if allow_existing_lease && ActionKind::parse(&row.action_kind)? == ActionKind::Navigate {
             let request: Option<String> = sqlx::query_scalar("SELECT n.detail FROM invoke_resolution_transitions t JOIN nodes n ON n.id=t.interaction_node_id JOIN actions a ON a.id=t.action_id WHERE t.action_id=?1 AND n.lease_source_interaction_id=?2 AND n.leased_action_id=a.id AND a.kind='navigate' AND a.relation='expand' AND a.state='accepted' AND a.target_layer_id=t.target_layer_id")
                 .bind(invocation.source_action_id.value()).bind(invocation.source_interaction_node_id.value())

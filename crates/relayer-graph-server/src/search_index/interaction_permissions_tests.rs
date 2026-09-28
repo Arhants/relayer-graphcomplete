@@ -62,7 +62,7 @@ async fn typed_invoke_index_matches_rebuild_without_widening_result_thread() {
     );
     let database = database.with_search_index(index.clone());
     database
-        .set_interaction_permissions_enabled(true)
+        .set_interaction_permissions_enabled(false)
         .await
         .unwrap();
     let project = Some(ProjectId::new(1).unwrap());
@@ -73,6 +73,28 @@ async fn typed_invoke_index_matches_rebuild_without_widening_result_thread() {
     let writer = database.writer_for_subgraph(source.id).await.unwrap();
     let node = content(&writer, "source-only").await;
     let source_layer = layer(&writer, "source", &node).await;
+    let legacy_second = layer(&writer, "legacy-second", &node).await;
+    let menu = content(&writer, "source-menu").await;
+    let source_root = layer(&writer, "source-root", &menu).await;
+    for target in [&source_layer, &legacy_second] {
+        writer
+            .add_action(&ActionDraft {
+                client_key: format!("open-{}", target.id),
+                source_node_id: menu.id,
+                source_layer_id: Some(source_root.id),
+                kind: ActionKind::Navigate,
+                relation: Some(NavigateRelation::Expand),
+                label: "Open".into(),
+                variant: Default::default(),
+                icon: None,
+                description: None,
+                target_layer_id: Some(target.id),
+                interaction_text: None,
+                input: None,
+            })
+            .await
+            .unwrap();
+    }
     let invoke = writer
         .add_action(&ActionDraft {
             client_key: "invoke".into(),
@@ -90,8 +112,20 @@ async fn typed_invoke_index_matches_rebuild_without_widening_result_thread() {
         })
         .await
         .unwrap();
-    root(&writer, &source, &source_layer).await;
+    root(&writer, &source, &source_root).await;
     writer.complete(source.id).await.unwrap();
+    assert!(
+        writer
+            .get_layer(legacy_second.id)
+            .await
+            .unwrap()
+            .actions
+            .is_empty()
+    );
+    database
+        .set_interaction_permissions_enabled(true)
+        .await
+        .unwrap();
     let reuse = database
         .create_interaction(project, ThreadId::new(3).unwrap(), "Reuse request")
         .await
@@ -117,6 +151,10 @@ async fn typed_invoke_index_matches_rebuild_without_widening_result_thread() {
     let result_layer = layer(&result_writer, "answer", &answer).await;
     root(&result_writer, &result, &result_layer).await;
     result_writer.complete(result.id).await.unwrap();
+    let legacy_actions = writer.get_layer(legacy_second.id).await.unwrap().actions;
+    assert_eq!(legacy_actions.len(), 1);
+    assert_eq!(legacy_actions[0].id, invoke.id);
+    assert_eq!(legacy_actions[0].kind, ActionKind::Navigate);
     let expected =
         schema::canonical_inventory(&database.search_index_rebuild_snapshot().await.unwrap());
     let actual = index.inventory().await.unwrap();

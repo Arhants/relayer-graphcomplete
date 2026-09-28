@@ -387,9 +387,39 @@ impl<'connection> CurrentTable<'connection> {
     /// Every accepted current that contributes to a canonical search rebuild,
     /// ordered deterministically by logical target and completion identity.
     pub(crate) async fn published_currents(&mut self) -> Result<Vec<PublishedCurrent>, GraphError> {
+        self.published_currents_selected(None).await
+    }
+
+    pub(crate) async fn published_currents_for_action(
+        &mut self,
+        action: crate::ActionId,
+    ) -> Result<Vec<PublishedCurrent>, GraphError> {
+        self.published_currents_selected(Some(action)).await
+    }
+
+    async fn published_currents_selected(
+        &mut self,
+        action: Option<crate::ActionId>,
+    ) -> Result<Vec<PublishedCurrent>, GraphError> {
         sqlx::query_as::<_, PublishedCurrentRow>(
-            "SELECT state.interaction_node_id,state.current_layer_id FROM completion_states state JOIN nodes n ON n.id=state.interaction_node_id WHERE state.current_layer_id IS NOT NULL ORDER BY CASE WHEN n.project_id IS NULL THEN 1 ELSE 0 END,n.project_id,n.thread_id,state.interaction_node_id",
+            r#"
+            WITH RECURSIVE affected(layer_id) AS (
+                SELECT layer_id FROM layer_actions WHERE action_id=?1
+                UNION
+                SELECT membership.layer_id FROM affected child
+                JOIN actions parent ON parent.target_layer_id=child.layer_id
+                    AND parent.kind='navigate' AND parent.state='accepted'
+                JOIN layer_actions membership ON membership.action_id=parent.id
+            )
+            SELECT state.interaction_node_id,state.current_layer_id
+            FROM completion_states state JOIN nodes n ON n.id=state.interaction_node_id
+            WHERE state.current_layer_id IS NOT NULL
+                AND (?1 IS NULL OR state.current_layer_id IN (SELECT layer_id FROM affected))
+            ORDER BY CASE WHEN n.project_id IS NULL THEN 1 ELSE 0 END,
+                n.project_id,n.thread_id,state.interaction_node_id
+            "#,
         )
+        .bind(action.map(crate::ActionId::value))
         .fetch_all(&mut *self.connection)
         .await?
         .into_iter()

@@ -8,8 +8,8 @@ are not claimed. The graph qualification flag defaults off.
 
 | Checkpoint | Changed production seam | Smallest deterministic observation |
 | --- | --- | --- |
-| IP-001 | trusted preparation, combined invocation/context, immutable description, terminal authorization | `typed_permissions_freeze_exact_combined_authority_and_keep_mutation_dark` |
-| IP-002 | atomic Return, conversion receipt, node-owned cycles, storage rollback, replay/reopen | `typed_leased_completion_atomically_resolves_invoke_once_and_survives_reopen`, `typed_leased_completion_storage_failure_rolls_back_closure_and_resolution`, `typed_invoke_rejects_expand_cycle_atomically_and_stop_revokes_authority`, `typed_invoke_snapshots_same_completion_occurrences_and_rejects_reused_cycle` |
+| IP-001 | trusted preparation, combined invocation/context, immutable description, terminal authorization | `typed_permissions_freeze_exact_combined_authority_and_keep_mutation_dark`, `typed_imported_invoke_cannot_gain_authority_through_writable_occurrence` |
+| IP-002 | atomic Return, conversion receipt, node-owned cycles, storage rollback, replay/reopen | `typed_leased_completion_atomically_resolves_invoke_once_and_survives_reopen`, `typed_leased_completion_storage_failure_rolls_back_closure_and_resolution`, `typed_invoke_rejects_expand_cycle_atomically_and_stop_revokes_authority`, `typed_invoke_snapshots_same_completion_occurrences_and_rejects_reused_cycle`, `typed_conversion_updates_legacy_occurrences_atomically` |
 | IP-003 | compiled binding compatibility, mounted button refresh, workspace dispatch, destination API | `test/node-detail-runtime.test.mjs`, `test/workspace-actions.test.mjs`, deterministic desktop first-message |
 | IP-004 | default-off preparation, persistent-node writer denial, export boundary | original `leased_completion_*` fixtures, combined-authority fixture, export suite |
 | IP-005 | per-publication index entitlements and source closure refresh | search portfolio and typed index fixture |
@@ -43,10 +43,11 @@ an aggregate digest. Evidence-directory edits do not alter that source identity.
 - `npm run check`: passed. Vitest: 190 files passed, 2,483 tests passed,
   3 skipped; separate secret-boundary suite: 2 passed. Rust workspace and crash
   reconciliation, Python, receipt lint, and PRD readability also passed.
-- The seven focused typed core cases passed, including rollback, frozen authority,
+- The nine focused typed core cases passed, including rollback, frozen authority,
   temporal/child isolation, same-completion occurrences, and atomic cycle rejection.
 - The real Ladybug publication/reopen fixture passed. It compares canonical and
-  physical inventories and checks source/result thread entitlements.
+  physical inventories and checks source/result thread entitlements. Its source now
+  starts with the gate off and an omitted second-occurrence action.
 - Gated Electron journey: [machine result](gated-result.json), passed. It requires
   the compiled control, holds the same DOM button through acceptance, navigates in
   Product and read-only Eval, restarts both services, selects the distinct second
@@ -55,7 +56,8 @@ an aggregate digest. Evidence-directory edits do not alter that source identity.
   It verifies the legacy retained-invoke representation and navigation.
 - Both Electron runs used `RELAYER_INVOKE_EVIDENCE_SKIP_NATIVE_KEYBOARD=1` and clicked
   production Send. Native keyboard/focus proof is excluded, explicitly recorded as
-  `nativeKeyboardVerified: false`. No paid inference ran.
+  `nativeKeyboardVerified: false`. Test windows disable background throttling;
+  background-throttled behavior is not claimed. No paid inference ran.
 
 The existing broad runner required setup repairs for current IPC/provider contracts,
 visible-navigation waits, and Electron's all-windows-closed lifecycle. Earlier runs
@@ -74,6 +76,33 @@ canonical-layout checks. The final results contain no ancillary failures.
 - [Read-only Eval destination](gated/06-eval-cross-interaction-destination.png)
 - [Reopened second occurrence](gated/07-reopened-second-occurrence.png)
 - [Reopened navigation destination](gated/08-reopened-destination.png)
+
+[Review-fix run summary](review-fixes-verification.json) records the red observations
+and final verification outcomes for the refreshed source snapshot.
+
+## PR 536 review fixes
+
+Review of the first head found two real gaps. A writable presentation could lease
+an imported action, and conversion could miss a legacy occurrence without an action
+membership. Permanent regressions reproduced both failures before the fixes. The first full
+check also caught an error-classification regression in the new guard. Keeping
+existing source validation before provenance validation repaired it. A desktop
+run stalled after acceptance and was terminated; the final runs disable background
+throttling and passed. Source-turn selection now awaits the production selection
+function before capture; visual inspection confirmed the stable source header.
+
+The provenance check now inspects the action, source node, and their owners during
+preparation and authority use. Acceptance rechecks it, so a previously persisted
+unsafe lease cannot mutate imported history after reopen. Conversion atomically adds
+only the exact converted identity to accepted, native occurrences within its scope.
+It preserves existing ordering, source provenance, and compiled binding identity.
+The legacy fixture checks cycle rejection, injected storage rollback, successful
+conversion, idempotent replay, and durable membership after reopen.
+
+Search refresh now selects affected currents by reverse traversal from the exact
+action membership before reconstructing closures. The traversal follows accepted
+navigate edges, matching canonical publication. This avoids reconstructing unrelated
+history; history-size performance remains unmeasured, and no scale proof is claimed.
 
 ## Review and remaining dependencies
 

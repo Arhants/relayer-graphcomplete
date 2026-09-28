@@ -282,6 +282,7 @@ async function run() {
     openExternal: async () => { throw new Error("External navigation is outside this deterministic fixture."); },
   });
   window = await createWindow(productSession);
+  window.webContents.setBackgroundThrottling(false);
   const webContents = window.webContents;
   const electronInputs = [];
   let acceptingTestInput = false;
@@ -406,7 +407,7 @@ async function run() {
     return detail.interactions.some((interaction) => interaction.completionStatus === "running");
   });
   await waitFor("the invoked turn to finish opening", () => webContents.executeJavaScript(`document.querySelector("#turnPickerButton")?.textContent === "Turn 2 of 2" && document.querySelector("#interactionText")?.textContent === "Propose the most useful next improvement to this task system."`));
-  await webContents.executeJavaScript(`document.querySelector("#previousTurn")?.click()`);
+  await webContents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${sourceInteraction.id}))`);
   await waitFor("the source turn while the invoked interaction runs", () => webContents.executeJavaScript(
     `document.querySelector("#interactionText")?.textContent === "Show the deterministic task system."`,
   ));
@@ -629,6 +630,7 @@ async function run() {
   });
   await evalWindow.loadURL(`${productSession.origin}/?threadId=${encodeURIComponent(threadId)}&review=1`);
   const evalContents = evalWindow.webContents;
+  evalContents.setBackgroundThrottling(false);
   await waitFor("the read-only Eval workspace", () => evalContents.executeJavaScript(`(() => (
     document.querySelector("#threadView")?.dataset.workspaceMode === "review"
     && document.querySelector("#turnPickerButton")?.textContent === "Turn 4 of 4"
@@ -756,6 +758,7 @@ async function run() {
     window = await createWindow(reopenedProductSession);
     await window.loadURL(`${reopenedProductSession.origin}/?threadId=${threadId}`);
     const reopenedContents = window.webContents;
+    reopenedContents.setBackgroundThrottling(false);
     await waitFor("reopened thread", () => reopenedContents.executeJavaScript(`document.querySelector("#turnPickerButton")?.textContent === "Turn 4 of 4"`));
     await reopenedContents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${sourceInteraction.id}))`);
     // Select the other occurrence through the source's queue expansion.

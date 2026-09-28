@@ -90,5 +90,7 @@
     "revisited": "default-off/05-revisited-source.png",
     "evalCrossInteraction": "default-off/06-eval-cross-interaction-destination.png"
   },
-  "sourceSnapshot": "source-snapshot.json"
+  "sourceSnapshot": "source-snapshot.json",
+  "sourceSha256": "d1a67ba8d584fc8a2e4b42e46b865111229642f98d8300d120d2564e27027579",
+  "backgroundThrottling": false
 }

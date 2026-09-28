@@ -224,8 +224,10 @@ pub(crate) async fn transition(
         if let Some(action_id) = converted {
             // Match rebuild semantics: each presenting closure publishes only to
             // its own project/thread. Do not mix source and result entitlements.
+            let action_id = crate::ActionId::new(action_id)
+                .ok_or_else(|| GraphError::Internal("Invalid converted action identity".into()))?;
             let currents = CurrentTable::new(&mut transaction)
-                .published_currents()
+                .published_currents_for_action(action_id)
                 .await?;
             for current in currents {
                 if current.completion_id == scope.root_node_id {
@@ -247,12 +249,11 @@ pub(crate) async fn transition(
                     root,
                 )
                 .await?;
-                if closure.layers.iter().any(|layer| {
-                    layer
-                        .actions
-                        .iter()
-                        .any(|action| action.id.value() == action_id)
-                }) {
+                if closure
+                    .layers
+                    .iter()
+                    .any(|layer| layer.actions.iter().any(|action| action.id == action_id))
+                {
                     publications.push((
                         closure,
                         crate::publication_targets(presenting.project_id, presenting.thread_id),

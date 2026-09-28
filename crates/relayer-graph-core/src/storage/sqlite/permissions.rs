@@ -47,10 +47,12 @@ pub(crate) async fn prepare(
         .await?;
     let mut permissions = Vec::new();
     if let Some(action) = action {
-        permissions.push(InteractionPermission::InvokeResolve {
-            action_id: ActionId::new(action)
-                .ok_or_else(|| GraphError::Internal("Invalid invocation identity".into()))?,
-        });
+        let action_id = ActionId::new(action)
+            .ok_or_else(|| GraphError::Internal("Invalid invocation identity".into()))?;
+        super::actions::ActionTable::new(&mut *connection)
+            .require_native_provenance(action_id)
+            .await?;
+        permissions.push(InteractionPermission::InvokeResolve { action_id });
     }
     let nodes: Vec<i64> = sqlx::query_scalar("SELECT context.target_node_id FROM interaction_context_actions context JOIN nodes target ON target.id=context.target_node_id WHERE context.interaction_node_id=?1 AND NOT EXISTS(SELECT 1 FROM graph_imports imported WHERE imported.thread_id=target.thread_id) ORDER BY context.position")
         .bind(interaction.value()).fetch_all(&mut *connection).await?;
@@ -80,6 +82,11 @@ pub(crate) async fn authorize(
     permission: &InteractionPermission,
 ) -> Result<(), GraphError> {
     scope.require_active_authority(connection).await?;
+    if let InteractionPermission::InvokeResolve { action_id } = permission {
+        super::actions::ActionTable::new(&mut *connection)
+            .require_native_provenance(*action_id)
+            .await?;
+    }
     let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM completion_states WHERE interaction_node_id=?1 AND lifecycle='active')")
         .bind(scope.root_node_id.value()).fetch_one(&mut *connection).await?;
     if scope.read_only
