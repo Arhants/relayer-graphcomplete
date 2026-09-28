@@ -31,16 +31,19 @@
       "TerminalReadSettlesCleanup": "TRUE",
       "ChildAdmission": "TRUE"
     },
-    "readiness-today": {
-      "Evals": "{1, 2, 3}",
-      "Digests": "{\"d1\", \"d2\"}",
-      "InitDigest": "\"d1\"",
-      "MaxRestarts": "1",
-      "JsonWriteCanFail": "TRUE",
-      "ValidationCanFail": "TRUE",
-      "RequestCanOutliveClient": "TRUE",
-      "RustIsReadinessRecord": "TRUE",
-      "RustRejectsOlderGeneration": "TRUE"
+    "leases-today": {
+      "Turns": "{1}",
+      "MaxRestarts": "0",
+      "AdmissionTimeout": "FALSE",
+      "RustCanAbandon": "FALSE",
+      "PersistCanFail": "FALSE",
+      "StartupQuarantine": "FALSE",
+      "HarnessCanHang": "FALSE",
+      "HostReleasesOnSettle": "TRUE",
+      "ClaimRejectsReleasing": "TRUE",
+      "AckRetriesFinalize": "TRUE",
+      "QuarantineSettleWakesReconciler": "TRUE",
+      "UnknownReleaseRetriesFinalize": "TRUE"
     },
     "catalog-today": {
       "MaxQ": "2",
@@ -57,6 +60,17 @@
       "ConnectionGeneration": "TRUE",
       "ReconnectKeepsAdapter": "TRUE",
       "AdapterAfterCommit": "TRUE"
+    },
+    "readiness-today": {
+      "Evals": "{1, 2, 3}",
+      "Digests": "{\"d1\", \"d2\"}",
+      "InitDigest": "\"d1\"",
+      "MaxRestarts": "1",
+      "JsonWriteCanFail": "TRUE",
+      "ValidationCanFail": "TRUE",
+      "RequestCanOutliveClient": "TRUE",
+      "RustIsReadinessRecord": "TRUE",
+      "RustRejectsOlderGeneration": "TRUE"
     }
   },
   "checks": [
@@ -130,6 +144,7 @@
         "AtMostOneLaunch",
         "StopReportIsTruthful",
         "LeaseReleasedOnlyAfterSettlement",
+        "AccessReleasedOnlyAfterProviderRun",
         "ProviderRunsUnderLease",
         "AttemptEndsOnlyAfterProvider"
       ],
@@ -137,7 +152,7 @@
         "TerminalIsAbsorbing"
       ],
       "expect": "pass",
-      "finding": "One launch per reservation; stop reports what the graph holds; terminal states are absorbing; an admitted child ends its attempt and releases its leases only after it settles and its provider run ends."
+      "finding": "One launch per reservation; stop reports what the graph holds; terminal states are absorbing; an admitted child's provider runs under held access, which the host releases once the run ends; its attempt ends, and its lease record is released, only after it settles and its provider run ends."
     },
     {
       "id": "completion-observe-timeout",
@@ -284,6 +299,7 @@
         "NoExitFailureWhileRunning",
         "SettledExecutionAgreesWithGraph",
         "LeaseReleasedOnlyAfterSettlement",
+        "AccessReleasedOnlyAfterProviderRun",
         "ProviderRunsUnderLease",
         "AttemptEndsOnlyAfterProvider"
       ],
@@ -306,7 +322,590 @@
         "ClaimedChildSettles"
       ],
       "expect": "pass",
-      "finding": "With the candidate fixes, every claimed child settles and releases its leases."
+      "finding": "With the candidate fixes, every claimed child settles and releases its lease record and provider access."
+    },
+    {
+      "id": "leases-safety",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "Turns": "{1, 2}",
+        "MaxRestarts": "2",
+        "AdmissionTimeout": "TRUE",
+        "RustCanAbandon": "TRUE",
+        "PersistCanFail": "TRUE",
+        "StartupQuarantine": "TRUE",
+        "HarnessCanHang": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "RuntimeOpenWhileLeased",
+        "LeaseHeldWhileTurnRuns",
+        "RuntimeOpenWhileTurnRuns",
+        "NoTimerOnClaimedAccess",
+        "StartupSucceeds"
+      ],
+      "properties": [
+        "AccessKeptWhileTurnRuns"
+      ],
+      "expect": "pass",
+      "finding": "With every fault on, a leased runtime stays open, no runtime closes under a running turn, a turn runs only under held access, access is never released while its turn runs, no host timer targets a running turn's access, and the app always starts."
+    },
+    {
+      "id": "leases-ideal",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "Turns": "{1, 2}",
+        "MaxRestarts": "1"
+      },
+      "fair": true,
+      "invariants": [
+        "TypeOK",
+        "RuntimeOpenWhileLeased",
+        "LeaseHeldWhileTurnRuns",
+        "RuntimeOpenWhileTurnRuns",
+        "NoTimerOnClaimedAccess",
+        "StartupSucceeds"
+      ],
+      "properties": [
+        "AccessKeptWhileTurnRuns",
+        "LeaseEventuallyReleased",
+        "DebtEventuallyReconciled",
+        "AttemptSettlesAfterTurn",
+        "RemovalCompletes"
+      ],
+      "expect": "pass",
+      "finding": "With no faults, every safety invariant holds, every lease is released, every lease debt is reconciled, every attempt whose turn ended becomes terminal, and a removal completes without a restart."
+    },
+    {
+      "id": "leases-abandon",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "RustCanAbandon": "TRUE",
+        "MaxRestarts": "1"
+      },
+      "invariants": [
+        "LeaseHeldWhileTurnRuns",
+        "RuntimeOpenWhileTurnRuns"
+      ],
+      "properties": [
+        "AccessKeptWhileTurnRuns"
+      ],
+      "expect": "pass",
+      "finding": "Rust giving up on a running turn and then releasing its lease cancels the turn; the access is released only when the native turn ends (fixed; was: released under the live turn, so removal could close the runtime under it)."
+    },
+    {
+      "id": "leases-abandon-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "RustCanAbandon": "TRUE",
+        "MaxRestarts": "1",
+        "HostReleasesOnSettle": "FALSE"
+      },
+      "invariants": [
+        "RuntimeOpenWhileTurnRuns"
+      ],
+      "expect": {
+        "violated": "RuntimeOpenWhileTurnRuns"
+      },
+      "finding": "Without the host owning the release, Rust's release after it gave up frees the access under the live native turn, and removal then closes the runtime under it."
+    },
+    {
+      "id": "leases-timer-claim",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "AdmissionTimeout": "TRUE",
+        "MaxRestarts": "1"
+      },
+      "invariants": [
+        "LeaseHeldWhileTurnRuns"
+      ],
+      "properties": [
+        "AccessKeptWhileTurnRuns"
+      ],
+      "expect": "pass",
+      "finding": "An admission whose release was decided cannot be claimed, so a timer release never lands under a running turn (fixed; was: the 30 s admission timer's release completed after the claim)."
+    },
+    {
+      "id": "leases-timer-claim-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "AdmissionTimeout": "TRUE",
+        "MaxRestarts": "1",
+        "ClaimRejectsReleasing": "FALSE"
+      },
+      "properties": [
+        "AccessKeptWhileTurnRuns"
+      ],
+      "expect": {
+        "violated": "AccessKeptWhileTurnRuns"
+      },
+      "finding": "Without the claim check, a claim during an in-flight admission release runs the turn, and the release then frees its access."
+    },
+    {
+      "id": "leases-claim-after-failed-release",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "AdmissionTimeout": "TRUE",
+        "MaxRestarts": "1",
+        "AckRetriesFinalize": "FALSE"
+      },
+      "invariants": [
+        "LeaseHeldWhileTurnRuns"
+      ],
+      "expect": "pass",
+      "finding": "A failed admission release still blocks the claim, because releaseRequested is sticky (fixed; was: the claim succeeded and the turn ran with no counted lease). A2's fix is off here: a refused finalize is the only modeled way a release fails."
+    },
+    {
+      "id": "leases-removal-finalize",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "fair": true,
+      "properties": [
+        "RemovalCompletes"
+      ],
+      "expect": "pass",
+      "finding": "A removal completes without a restart even though the host releases the last lease before Rust ends the attempt: the owner's acknowledgement retries the refused finalize (fixed; A2)."
+    },
+    {
+      "id": "leases-removal-finalize-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "AckRetriesFinalize": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "RemovalCompletes"
+      ],
+      "expect": {
+        "violated": "RemovalCompletes"
+      },
+      "finding": "Without the acknowledgement retry, the finalize refused while the attempt still ran is never retried, and removal waits for a restart."
+    },
+    {
+      "id": "leases-forgotten-release-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "UnknownReleaseRetriesFinalize": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "RemovalCompletes"
+      ],
+      "expect": {
+        "violated": "RemovalCompletes"
+      },
+      "finding": "Without the unknown-release retry, access released before the owner's release is forgotten after ten minutes; the owner's later release finds nothing to acknowledge, and removal waits for a restart."
+    },
+    {
+      "id": "leases-view-debt",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE"
+      },
+      "fair": true,
+      "properties": [
+        "DebtEventuallyReconciled"
+      ],
+      "expect": "pass",
+      "finding": "Settling a quarantined attempt, from the thread view or an action destination, wakes the lease reconciler, so its lease debt is reconciled (fixed; D; was: debt left until restart)."
+    },
+    {
+      "id": "leases-view-debt-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE",
+        "QuarantineSettleWakesReconciler": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "DebtEventuallyReconciled"
+      ],
+      "expect": {
+        "violated": "DebtEventuallyReconciled"
+      },
+      "finding": "Without the wake, a settled quarantined attempt's lease debt waits for a restart."
+    },
+    {
+      "id": "leases-persist-lease",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE"
+      },
+      "fair": true,
+      "properties": [
+        "LeaseEventuallyReleased"
+      ],
+      "expect": "pass",
+      "finding": "A turn whose terminal state cannot be persisted still releases its access, because the host releases it when the native turn ends (fixed; C lease half; was: held forever)."
+    },
+    {
+      "id": "leases-persist-lease-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE",
+        "HostReleasesOnSettle": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "LeaseEventuallyReleased"
+      ],
+      "expect": {
+        "violated": "LeaseEventuallyReleased"
+      },
+      "finding": "Without the host owning the release, a turn whose terminal state cannot be persisted holds its lease forever."
+    },
+    {
+      "id": "leases-restart-quarantine",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "StartupQuarantine": "TRUE",
+        "MaxRestarts": "2"
+      },
+      "invariants": [
+        "StartupSucceeds"
+      ],
+      "expect": "pass",
+      "finding": "A startup that finds a removal_pending provider whose quarantined attempt still runs now starts, leaving the provider removal_pending (fixed; E's startup failure)."
+    },
+    {
+      "id": "leases-restart-quarantine-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "StartupQuarantine": "TRUE",
+        "MaxRestarts": "2",
+        "AckRetriesFinalize": "FALSE"
+      },
+      "invariants": [
+        "StartupSucceeds"
+      ],
+      "expect": {
+        "violated": "StartupSucceeds"
+      },
+      "finding": "Without it, the refused finalize in reconcileStartup fails every startup."
+    },
+    {
+      "id": "leases-restart-persist",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE",
+        "MaxRestarts": "1"
+      },
+      "invariants": [
+        "StartupSucceeds"
+      ],
+      "expect": "pass",
+      "finding": "An attempt left running by a failed persist under a removal no longer fails startup (fixed; E via C)."
+    },
+    {
+      "id": "leases-restart-removal",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "StartupQuarantine": "TRUE",
+        "MaxRestarts": "1"
+      },
+      "fair": true,
+      "properties": [
+        "RemovalCompletes"
+      ],
+      "expect": {
+        "violated": "RemovalCompletes"
+      },
+      "finding": "Open (E, PR #545): after a restart, a quarantined submitted input's attempt stays running until its thread is opened or the app restarts again, so the removal stays pending meanwhile."
+    },
+    {
+      "id": "leases-restart-drained-removal",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "StartupQuarantine": "TRUE",
+        "MaxRestarts": "1"
+      },
+      "fair": true,
+      "properties": [
+        "DrainedRemovalCompletes"
+      ],
+      "expect": "pass",
+      "finding": "After a restart, once the quarantined attempt becomes terminal, the owner's release of a lease the fresh host does not know retries every drained removal, so the removal finishes in-session."
+    },
+    {
+      "id": "leases-persist-attempt",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE"
+      },
+      "fair": true,
+      "properties": [
+        "AttemptSettlesAfterTurn"
+      ],
+      "expect": {
+        "violated": "AttemptSettlesAfterTurn"
+      },
+      "finding": "Open (C attempt half, PR 2): when a turn's terminal state cannot be persisted, its attempt stays running, which blocks the provider tombstone."
+    },
+    {
+      "id": "leases-hang",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "HarnessCanHang": "TRUE",
+        "RustCanAbandon": "TRUE"
+      },
+      "fair": true,
+      "properties": [
+        "CancelledAccessEventuallyReleased"
+      ],
+      "expect": {
+        "violated": "CancelledAccessEventuallyReleased"
+      },
+      "finding": "Open (per-turn force-stop PR): a cancelled native turn that ignores the cancellation keeps its provider access forever."
+    },
+    {
+      "id": "catalog-refresh-keeps-chosen-default",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "InitDefFams": "{\"mP\", \"C\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "DefaultIsPaired",
+        "RefreshKeepsUserDefault",
+        "RefreshKeepsOtherDefault"
+      ],
+      "expect": "pass",
+      "finding": "Choosing a default provider also selects its managed family, so no later refresh changes the chosen provider or family (fixed, PROV-008; was: the next refresh of the family's provider moved the default provider back to it)."
+    },
+    {
+      "id": "catalog-refresh-keeps-default-chosen-from-unset",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "InitDefFams": "{\"none\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "DefaultIsPaired",
+        "RefreshKeepsUserDefault"
+      ],
+      "expect": "pass",
+      "finding": "From an unset default family, a refresh may fill the family with its provider, but once the user chooses a provider and family no refresh changes them (PROV-008)."
+    },
+    {
+      "id": "catalog-chosen-default-reverted",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "InitDefFams": "{\"mP\", \"C\"}",
+        "DefaultProviderPairsFamily": "FALSE"
+      },
+      "invariants": [
+        "RefreshKeepsUserDefault"
+      ],
+      "expect": {
+        "violated": "RefreshKeepsUserDefault"
+      },
+      "finding": "Without the pairing, the Settings provider choice stores only the provider, and the next refresh of the default family's provider moves the default provider back to it."
+    },
+    {
+      "id": "catalog-stale-refresh-after-reconnect",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"logout\", \"reconnect\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoStaleEffect",
+        "NoPersistingStaleEffect"
+      ],
+      "expect": "pass",
+      "finding": "A refresh that discovered before a reconnect carries the older connection generation, so its stale result has no effect (fixed, PROV-002; was: it published over the reconnect and nothing queued behind it corrected that)."
+    },
+    {
+      "id": "catalog-old-account-repopulates",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"reconnect\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoUnsafePopulate"
+      ],
+      "expect": "pass",
+      "finding": "An eligible result discovered before a zero-eligible reconnect carries the older generation and cannot reactivate the tombstoned family (fixed, PROV-002)."
+    },
+    {
+      "id": "catalog-stale-adapter-capture",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"reconnect\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoContradictingReplacedAdapterEffect"
+      ],
+      "expect": "pass",
+      "finding": "A refresh resolves its adapter when it runs, so a refresh queued before a reconnect runs through the reconnect's runtime (fixed, PROV-002; was: it ran through the captured unavailable stub and contradicted the reconnect)."
+    },
+    {
+      "id": "catalog-stub-recovery-logout-deadlock",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"logout\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "fair": true,
+      "properties": [
+        "LogoutReturns"
+      ],
+      "expect": "pass",
+      "finding": "Logout commits its signed-out state with the next generation and no longer waits inside the provider queue for its refresh, so it returns (fixed, CR-V7)."
+    },
+    {
+      "id": "catalog-no-restore-after-cancelled-reconnect",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "2",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"reconnect\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "fair": true,
+      "invariants": [
+        "TypeOK",
+        "ActiveProviderHasAdapter"
+      ],
+      "properties": [
+        "DefaultRestores"
+      ],
+      "expect": "pass",
+      "finding": "A cancelled reconnect leaves the active provider a catalog adapter: a fresh runtime, or the recovery adapter when none can start. With the real adapter, a tombstoned default family restores once the provider is healthy (fixed, F4/V8)."
+    },
+    {
+      "id": "catalog-own-family",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "1"
+      },
+      "properties": [
+        "OnlyOwnFamily"
+      ],
+      "expect": "pass",
+      "finding": "A catalog publish changes only its own provider's managed family and never a custom family."
+    },
+    {
+      "id": "catalog-tombstoned-default-blocks-send",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "1"
+      },
+      "invariants": [
+        "TypeOK",
+        "TombDefaultBlocksSend"
+      ],
+      "expect": "pass",
+      "finding": "A default family tombstoned by a zero-eligible refresh stays the default and blocks Send."
+    },
+    {
+      "id": "catalog-default-restores",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"logout\", \"reconnect\"}"
+      },
+      "fair": true,
+      "properties": [
+        "DefaultRestores"
+      ],
+      "expect": "pass",
+      "finding": "A tombstoned default family restores once its provider is healthy and its real adapter is registered."
     },
     {
       "id": "readiness-restart-restore",
@@ -410,90 +1009,6 @@
       "finding": "The latest evaluation always reaches the app server."
     },
     {
-      "id": "catalog-refresh-keeps-chosen-default",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "MaxEvents": "1",
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "MaxFlips": "1",
-        "InitAdapters": "{\"real\"}",
-        "InitDefFams": "{\"mP\", \"C\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "DefaultIsPaired",
-        "RefreshKeepsUserDefault",
-        "RefreshKeepsOtherDefault"
-      ],
-      "expect": "pass",
-      "finding": "Choosing a default provider also selects its managed family, so no later refresh changes the chosen provider or family (fixed, PROV-008; was: the next refresh of the family's provider moved the default provider back to it)."
-    },
-    {
-      "id": "catalog-refresh-keeps-default-chosen-from-unset",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "MaxEvents": "1",
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "MaxFlips": "1",
-        "InitAdapters": "{\"real\"}",
-        "InitDefFams": "{\"none\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "DefaultIsPaired",
-        "RefreshKeepsUserDefault"
-      ],
-      "expect": "pass",
-      "finding": "From an unset default family, a refresh may fill the family with its provider, but once the user chooses a provider and family no refresh changes them (PROV-008)."
-    },
-    {
-      "id": "catalog-chosen-default-reverted",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "MaxEvents": "1",
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "MaxFlips": "1",
-        "InitAdapters": "{\"real\"}",
-        "InitDefFams": "{\"mP\", \"C\"}",
-        "DefaultProviderPairsFamily": "FALSE"
-      },
-      "invariants": [
-        "RefreshKeepsUserDefault"
-      ],
-      "expect": {
-        "violated": "RefreshKeepsUserDefault"
-      },
-      "finding": "Without the pairing, the Settings provider choice stores only the provider, and the next refresh of the default family's provider moves the default provider back to it."
-    },
-    {
-      "id": "catalog-stale-refresh-after-reconnect",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxFlips": "0",
-        "InitAdapters": "{\"real\"}",
-        "Ops": "{\"logout\", \"reconnect\"}",
-        "InitDefFams": "{\"mP\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "NoStaleEffect",
-        "NoPersistingStaleEffect"
-      ],
-      "expect": "pass",
-      "finding": "A refresh that discovered before a reconnect carries the older connection generation, so its stale result has no effect (fixed, PROV-002; was: it published over the reconnect and nothing queued behind it corrected that)."
-    },
-    {
       "id": "catalog-stale-refresh-after-reconnect-reverted",
       "module": "CatalogRefresh",
       "preset": "catalog-today",
@@ -517,27 +1032,6 @@
       "finding": "Without the connection generation, a refresh that discovered before a reconnect publishes its stale disconnected result after the reconnect, and nothing queued behind it corrects that."
     },
     {
-      "id": "catalog-old-account-repopulates",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "MaxFlips": "1",
-        "InitAdapters": "{\"real\"}",
-        "Ops": "{\"reconnect\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "NoUnsafePopulate"
-      ],
-      "expect": "pass",
-      "finding": "An eligible result discovered before a zero-eligible reconnect carries the older generation and cannot reactivate the tombstoned family (fixed, PROV-002)."
-    },
-    {
       "id": "catalog-old-account-repopulates-reverted",
       "module": "CatalogRefresh",
       "preset": "catalog-today",
@@ -559,28 +1053,6 @@
         "violated": "NoUnsafePopulate"
       },
       "finding": "Without the connection generation, an eligible result discovered before a reconnect that found zero eligible models reactivates the tombstoned managed family."
-    },
-    {
-      "id": "catalog-stale-adapter-capture",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "MaxFlips": "0",
-        "InitAdapters": "{\"stub\"}",
-        "Ops": "{\"reconnect\"}",
-        "InitDefFams": "{\"mP\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "NoContradictingReplacedAdapterEffect"
-      ],
-      "expect": "pass",
-      "finding": "A refresh resolves its adapter when it runs, so a refresh queued before a reconnect runs through the reconnect's runtime (fixed, PROV-002; was: it ran through the captured unavailable stub and contradicted the reconnect)."
     },
     {
       "id": "catalog-stale-adapter-capture-reverted",
@@ -607,28 +1079,6 @@
       "finding": "Without run-time resolution, a refresh captures its adapter when requested; the unavailable stub it captured publishes after a reconnect replaced it and contradicts the reconnect."
     },
     {
-      "id": "catalog-stub-recovery-logout-deadlock",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "MaxFlips": "0",
-        "InitAdapters": "{\"stub\"}",
-        "Ops": "{\"logout\"}",
-        "InitDefFams": "{\"mP\"}"
-      },
-      "fair": true,
-      "properties": [
-        "LogoutReturns"
-      ],
-      "expect": "pass",
-      "finding": "Logout commits its signed-out state with the next generation and no longer waits inside the provider queue for its refresh, so it returns (fixed, CR-V7)."
-    },
-    {
       "id": "catalog-stub-recovery-logout-deadlock-reverted",
       "module": "CatalogRefresh",
       "preset": "catalog-today",
@@ -652,32 +1102,6 @@
         "violated": "LogoutReturns"
       },
       "finding": "Logout waits inside the provider queue for its own refresh, which is queued behind an explicit stub recovery that waits for the provider queue: neither returns."
-    },
-    {
-      "id": "catalog-no-restore-after-cancelled-reconnect",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "MaxFlips": "2",
-        "InitAdapters": "{\"stub\"}",
-        "Ops": "{\"reconnect\"}",
-        "InitDefFams": "{\"mP\"}"
-      },
-      "fair": true,
-      "invariants": [
-        "TypeOK",
-        "ActiveProviderHasAdapter"
-      ],
-      "properties": [
-        "DefaultRestores"
-      ],
-      "expect": "pass",
-      "finding": "A cancelled reconnect leaves the active provider a catalog adapter: a fresh runtime, or the recovery adapter when none can start. With the real adapter, a tombstoned default family restores once the provider is healthy (fixed, F4/V8)."
     },
     {
       "id": "catalog-no-restore-after-cancelled-reconnect-reverted",
@@ -746,61 +1170,6 @@
         "violated": "AdapterOnlyForDefinition"
       },
       "finding": "Registering the catalog adapter before the commit gives a provider an adapter before its definition exists."
-    },
-    {
-      "id": "catalog-own-family",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxFlips": "1"
-      },
-      "properties": [
-        "OnlyOwnFamily"
-      ],
-      "expect": "pass",
-      "finding": "A catalog publish changes only its own provider's managed family and never a custom family."
-    },
-    {
-      "id": "catalog-tombstoned-default-blocks-send",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxFlips": "1"
-      },
-      "invariants": [
-        "TypeOK",
-        "TombDefaultBlocksSend"
-      ],
-      "expect": "pass",
-      "finding": "A default family tombstoned by a zero-eligible refresh stays the default and blocks Send."
-    },
-    {
-      "id": "catalog-default-restores",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "InitAdapters": "{\"real\"}",
-        "Ops": "{\"logout\", \"reconnect\"}"
-      },
-      "fair": true,
-      "properties": [
-        "DefaultRestores"
-      ],
-      "expect": "pass",
-      "finding": "A tombstoned default family restores once its provider is healthy and its real adapter is registered."
     }
   ]
 }

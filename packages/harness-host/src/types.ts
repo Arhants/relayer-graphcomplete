@@ -294,6 +294,11 @@ export type HarnessExecutionAccess =
 export interface HarnessExecutionAccessLease {
   readonly access: HarnessExecutionAccess;
   release(): void | Promise<void>;
+  /**
+   * Called after release once the lease's owner has durably recorded that the work using
+   * this access ended. A failure is returned to the owner, which retries.
+   */
+  acknowledge?(): void | Promise<void>;
 }
 
 /** One currently resolvable model-family member. Array order is family order. */
@@ -338,6 +343,11 @@ export interface HarnessExecutionAccessBroker {
     acceptedContracts: readonly string[],
     signal: AbortSignal,
   ): Promise<HarnessExecutionAccessLease>;
+  /**
+   * The owner acknowledged a lease this host no longer knows (it forgot the released access,
+   * or restarted). Providers retry any work that waited on such an acknowledgement.
+   */
+  acknowledgeUnknownRelease?(): void | Promise<void>;
 }
 
 export interface InteractionModelSelection {

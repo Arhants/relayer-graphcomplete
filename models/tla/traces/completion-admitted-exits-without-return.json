@@ -17,6 +17,7 @@
     {
       "action": null,
       "state": {
+        "access": "none",
         "appUp": true,
         "attempt": "none",
         "auth": false,
@@ -63,6 +64,7 @@
         1
       ],
       "state": {
+        "access": "none",
         "appUp": true,
         "attempt": "none",
         "auth": false,
@@ -109,6 +111,7 @@
         1
       ],
       "state": {
+        "access": "none",
         "appUp": true,
         "attempt": "none",
         "auth": false,
@@ -155,6 +158,7 @@
         1
       ],
       "state": {
+        "access": "none",
         "appUp": true,
         "attempt": "none",
         "auth": false,
@@ -202,6 +206,7 @@
         "ok"
       ],
       "state": {
+        "access": "none",
         "appUp": true,
         "attempt": "none",
         "auth": true,
@@ -249,6 +254,7 @@
         "ok"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": true,
@@ -296,6 +302,7 @@
         "ok"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": true,
@@ -343,6 +350,7 @@
         "ok"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": true,
@@ -389,6 +397,7 @@
         "exited_ok"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": true,
@@ -434,6 +443,7 @@
         "ExitObserve"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": true,
@@ -479,6 +489,7 @@
         "ExitCheckAndFail"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": true,
@@ -524,6 +535,7 @@
         "SemFinalize"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": true,
@@ -569,6 +581,7 @@
         "ExitDiscard"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": false,
@@ -614,6 +627,7 @@
         "AttemptEnd"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "terminal",
         "auth": false,
@@ -659,6 +673,7 @@
         "LeaseReconcile"
       ],
       "state": {
+        "access": "released",
         "appUp": true,
         "attempt": "terminal",
         "auth": false,

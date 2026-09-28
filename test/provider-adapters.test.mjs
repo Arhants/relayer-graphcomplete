@@ -27,6 +27,7 @@ import {
   createProviderRuntimeStateRemover,
   providerRuntimeDirectory,
 } from "../desktop/main/providers/provider-runtime-state.mjs";
+import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 import { ModelCatalogService } from "../desktop/main/models/model-catalog-service.mjs";
 import { toProductCatalogSnapshot } from "../desktop/main/models/model-catalog-adapter.mjs";
 import { withProviderRetry } from "../desktop/main/providers/provider-retry.mjs";
@@ -1621,6 +1622,96 @@ describe("provider definition lifecycle", () => {
     expect(fixture.definitions()[0]).toMatchObject({ lifecycleState: "tombstoned", credentialReference: null });
     expect(fixture.credentials.size).toBe(0);
     expect(removals).toEqual([providerId]);
+  });
+
+  it("finishes a removal once the store stops counting the settled turn's attempt as running", async () => {
+    const removals = [];
+    const fixture = serviceFixture({ removeRuntimeState: async ({ id }) => { removals.push(id); } });
+    const created = await fixture.service.connect({ adapterId: "fake-api", label: "Draining", fields: { "api-key": "k" } });
+    const providerId = created.providerDefinition.id;
+    let durableAttemptRunning = true;
+    const originalSave = fixture.service.definitionStore.save.bind(fixture.service.definitionStore);
+    fixture.service.definitionStore.save = async (definitions) => {
+      if (durableAttemptRunning && definitions.some(({ lifecycleState }) => lifecycleState === "tombstoned")) {
+        throw Object.assign(new Error("Provider removal cannot finish while an execution attempt is running."), {
+          code: "provider_execution_drain_incomplete",
+        });
+      }
+      await originalSave(definitions);
+    };
+
+    const lease = await fixture.service.acquireExecution(providerId);
+    await expect(fixture.service.remove(providerId)).resolves.toMatchObject({ lifecycleState: "removal_pending" });
+    // The native turn settles before the store records the attempt's outcome.
+    await expect(lease.release()).resolves.toBeUndefined();
+    expect(fixture.definitions()[0]).toMatchObject({ lifecycleState: "removal_pending" });
+    expect(fixture.credentials.size).toBe(1);
+
+    // The owner acknowledges once the attempt is durably terminal; the removal finishes.
+    durableAttemptRunning = false;
+    await lease.acknowledge();
+    expect(fixture.definitions()[0]).toMatchObject({ lifecycleState: "tombstoned", credentialReference: null });
+    expect(fixture.credentials.size).toBe(0);
+    expect(removals).toEqual([providerId]);
+  });
+
+  it("reads the catalog's drain refusal code from the app server's error body", async () => {
+    const service = new RelayerAppServerService({
+      userDataDirectory: "/unused", binaryPath: "/unused", webDirectory: "/unused", permissionCatalogPath: "/unused",
+    });
+    service.start = async () => ({ origin: "http://127.0.0.1:1", cookie: { value: "control" } });
+    // The exact shape api/error.rs catalog_error sends for a refused tombstone.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      code: "provider_execution_drain_incomplete",
+      error: "Provider removal cannot finish while an execution attempt is running.",
+      familyId: null, harnessId: null, modelId: null, providerId: null,
+    }), { status: 422, headers: { "content-type": "application/json" } })));
+    try {
+      await expect(service.providerDefinitionStore().save([])).rejects.toMatchObject({
+        code: "provider_execution_drain_incomplete",
+        message: "Provider removal cannot finish while an execution attempt is running.",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("finishes drained removals when the host acknowledges a release it no longer tracks", async () => {
+    const fixture = serviceFixture();
+    const created = await fixture.service.connect({ adapterId: "fake-api", label: "Forgotten", fields: { "api-key": "k" } });
+    const providerId = created.providerDefinition.id;
+    let durableAttemptRunning = true;
+    const originalSave = fixture.service.definitionStore.save.bind(fixture.service.definitionStore);
+    fixture.service.definitionStore.save = async (definitions) => {
+      if (durableAttemptRunning && definitions.some(({ lifecycleState }) => lifecycleState === "tombstoned")) {
+        throw Object.assign(new Error("drain incomplete"), { code: "provider_execution_drain_incomplete" });
+      }
+      await originalSave(definitions);
+    };
+    await expect(fixture.service.remove(providerId)).resolves.toMatchObject({ lifecycleState: "removal_pending" });
+    durableAttemptRunning = false;
+    await fixture.service.finalizeDrainedRemovals();
+    expect(fixture.definitions()[0]).toMatchObject({ lifecycleState: "tombstoned" });
+  });
+
+  it("defers a removal with no lease while the store still counts an attempt as running", async () => {
+    const fixture = serviceFixture();
+    const created = await fixture.service.connect({ adapterId: "fake-api", label: "Settling", fields: { "api-key": "k" } });
+    const providerId = created.providerDefinition.id;
+    const lease = await fixture.service.acquireExecution(providerId);
+    await lease.release();
+    let durableAttemptRunning = true;
+    const originalSave = fixture.service.definitionStore.save.bind(fixture.service.definitionStore);
+    fixture.service.definitionStore.save = async (definitions) => {
+      if (durableAttemptRunning && definitions.some(({ lifecycleState }) => lifecycleState === "tombstoned")) {
+        throw Object.assign(new Error("drain incomplete"), { code: "provider_execution_drain_incomplete" });
+      }
+      await originalSave(definitions);
+    };
+    await expect(fixture.service.remove(providerId)).resolves.toMatchObject({ lifecycleState: "removal_pending" });
+    durableAttemptRunning = false;
+    await lease.acknowledge();
+    expect(fixture.definitions()[0]).toMatchObject({ lifecycleState: "tombstoned" });
   });
 
   it("retains runtime and credentials when authoritative tombstoning fails, then reconciles on restart", async () => {

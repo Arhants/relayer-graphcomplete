@@ -8298,6 +8298,61 @@ async fn sqlite_pool(database: &Path) -> sqlx::SqlitePool {
         .unwrap()
 }
 
+/// Leaves one terminal attempt whose lease release was never acknowledged, as a crash after
+/// the outcome was persisted would.
+async fn seed_startup_lease_debt(database: &Path, root: &Path) {
+    let offline = open_app(database, root).await;
+    let thread = response_json(
+        offline
+            .oneshot(api_request(
+                "POST",
+                "/api/threads",
+                Some(json!({"initialMessage":"Earlier turn"})),
+                true,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let thread_id = thread["id"].as_i64().unwrap();
+    seed_explicit_test_model_default(database, thread_id).await;
+    let pool = sqlite_pool(database).await;
+    let interaction_id: i64 =
+        sqlx::query_scalar("SELECT id FROM interactions WHERE thread_id=?1 ORDER BY id LIMIT 1")
+            .bind(thread_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let (family_id, family_revision): (i64, i64) =
+        sqlx::query_as("SELECT id,revision FROM model_families ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let finished_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .to_string();
+    sqlx::query(
+        "INSERT INTO interaction_attempts(
+            interaction_id,attempt_number,started_at,finished_at,family_id,family_revision,
+            harness_configuration_name,harness_configuration_revision,harness_configuration_digest,
+            provider_id,adapter_id,adapter_implementation_version,model_id,access_contract,
+            outcome,failure_category,effect_boundary,execution_lease_id
+         ) VALUES (?1,1,?2,?2,?3,?4,'codex-basic',1,'sha256:model-test',
+            'codex','test-adapter',1,'test-model','managed-runtime@1',
+            'execution_failed','execution_failed','unknown','startup-barrier')",
+    )
+    .bind(interaction_id)
+    .bind(&finished_at)
+    .bind(family_id)
+    .bind(family_revision)
+    .execute(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+}
+
 async fn seed_explicit_test_model_default(database: &Path, thread_id: i64) {
     let pool = sqlite_pool(database).await;
     sqlx::query("UPDATE model_providers SET connected=1,unavailable_reason_code=NULL,unavailable_reason_message=NULL,refreshed_at='1',lifecycle_state='active',removed_at=NULL WHERE id='codex'")
@@ -8841,4 +8896,419 @@ fn test_execution_admission(body: &Value, lease_id: &str, version: &str) -> Valu
         "adapterImplementationVersion": version,
         "admittedPlan": admitted_plan,
     })
+}
+
+struct QuarantinedTurn {
+    app: Router,
+    root: std::path::PathBuf,
+    database: std::path::PathBuf,
+    thread_id: i64,
+    graph_healthy: Arc<AtomicBool>,
+    lease_deletes: Arc<AtomicUsize>,
+    graph_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
+    harness_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
+}
+
+async fn attempt_lease_rows(database: &Path) -> Vec<(i64, String, Option<String>, Option<String>)> {
+    let pool = sqlite_pool(database).await;
+    let rows: Vec<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT id,outcome,execution_lease_id,execution_lease_reconciled_at FROM interaction_attempts ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+    rows
+}
+
+async fn unreconciled_lease_debts(database: &Path) -> Vec<(i64, String)> {
+    let pool = sqlite_pool(database).await;
+    // Same predicate as SqliteStore::unreconciled_execution_lease_debts (attempts.rs).
+    let rows: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT a.id,a.execution_lease_id FROM interaction_attempts a JOIN interactions i ON i.id=a.interaction_id WHERE a.execution_lease_id IS NOT NULL AND a.execution_lease_reconciled_at IS NULL AND a.outcome!='running' ORDER BY a.id",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+    rows
+}
+
+/// Runs one ordinary Send whose native turn succeeds while the graph's canonical metadata read
+/// fails after the harness completion, so the interaction is quarantined as reconciliation pending.
+async fn run_turn_whose_canonical_verification_fails() -> QuarantinedTurn {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "relayer-quarantined-lease-{}-{unique}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let database = root.join("product.sqlite3");
+
+    let graph_healthy = Arc::new(AtomicBool::new(true));
+    let harness_completed = Arc::new(AtomicBool::new(false));
+    let lease_deletes = Arc::new(AtomicUsize::new(0));
+    let inputs = Arc::new(Mutex::new(HashMap::<i64, (Value, Value)>::new()));
+    let next_node = Arc::new(AtomicUsize::new(900));
+
+    let graph = {
+        let create_inputs = inputs.clone();
+        let metadata_inputs = inputs.clone();
+        let metadata_healthy = graph_healthy.clone();
+        let metadata_completed = harness_completed.clone();
+        let output_healthy = graph_healthy.clone();
+        axum::Router::new()
+            .route(
+                "/api/control/interactions",
+                axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
+                    let create_inputs = create_inputs.clone();
+                    let next_node = next_node.clone();
+                    async move {
+                        let node_id = next_node.fetch_add(1, Ordering::SeqCst) as i64;
+                        create_inputs.lock().unwrap().insert(
+                            node_id,
+                            (body["inputIdentity"].clone(), body["inputDigest"].clone()),
+                        );
+                        axum::Json(json!({
+                            "node": { "id": node_id },
+                            "graphToken": "",
+                            "inputIdentity": body["inputIdentity"],
+                            "inputDigest": body["inputDigest"]
+                        }))
+                    }
+                }),
+            )
+            .route(
+                "/api/control/context-occurrences/canonical",
+                axum::routing::post(canonical_accepted_context_node),
+            )
+            .route(
+                "/api/control/capabilities",
+                axum::routing::post(|axum::Json(body): axum::Json<Value>| async move {
+                    axum::Json(json!({ "graphToken": body["graphToken"] }))
+                })
+                .delete(|| async { axum::Json(json!({ "revoked": true })) }),
+            )
+            .route(
+                "/api/control/interactions/{id}",
+                axum::routing::get(
+                    move |axum::extract::Path(id): axum::extract::Path<i64>| {
+                        let metadata_inputs = metadata_inputs.clone();
+                        let metadata_healthy = metadata_healthy.clone();
+                        let metadata_completed = metadata_completed.clone();
+                        async move {
+                            if metadata_completed.load(Ordering::SeqCst)
+                                && !metadata_healthy.load(Ordering::SeqCst)
+                            {
+                                return (
+                                    StatusCode::SERVICE_UNAVAILABLE,
+                                    axum::Json(json!({"error":{"code":"temporarily_unavailable"}})),
+                                )
+                                    .into_response();
+                            }
+                            let (identity, digest) = metadata_inputs
+                                .lock()
+                                .unwrap()
+                                .get(&id)
+                                .cloned()
+                                .unwrap_or((Value::Null, Value::Null));
+                            axum::Json(json!({
+                                "nodeId": id,
+                                "invocation": null,
+                                "inputIdentity": identity,
+                                "inputDigest": digest
+                            }))
+                            .into_response()
+                        }
+                    },
+                ),
+            )
+            .route(
+                "/api/control/interactions/{id}/output",
+                axum::routing::get(
+                    move |axum::extract::Path(id): axum::extract::Path<i64>| {
+                        let output_healthy = output_healthy.clone();
+                        async move {
+                            if !output_healthy.load(Ordering::SeqCst) {
+                                return (
+                                    StatusCode::NOT_FOUND,
+                                    axum::Json(json!({"error":{"code":"completion_not_found"}})),
+                                );
+                            }
+                            (
+                                StatusCode::OK,
+                                axum::Json(json!({
+                                    "nodeId": id,
+                                    "rootLayer": { "layer": { "id": 1 }, "nodes": [], "edges": [], "actions": [] }
+                                })),
+                            )
+                        }
+                    },
+                ),
+            )
+    };
+    let harness = {
+        let deletes = lease_deletes.clone();
+        let completed = harness_completed.clone();
+        let complete_healthy = graph_healthy.clone();
+        axum::Router::new()
+            .route(
+                "/sessions",
+                axum::routing::post(|| async { (StatusCode::CREATED, axum::Json(json!({}))) }),
+            )
+            .route(
+                "/sessions/{id}/execution-leases",
+                axum::routing::post(|axum::Json(body): axum::Json<Value>| async move {
+                    (
+                        StatusCode::CREATED,
+                        axum::Json(test_execution_admission(
+                            &body,
+                            "00000000-0000-0000-0000-00000000adc0",
+                            "7",
+                        )),
+                    )
+                }),
+            )
+            .route(
+                "/sessions/{id}/execution-leases/{lease}",
+                axum::routing::delete(move || {
+                    let deletes = deletes.clone();
+                    async move {
+                        deletes.fetch_add(1, Ordering::SeqCst);
+                        axum::Json(json!({ "released": true }))
+                    }
+                }),
+            )
+            .route(
+                "/sessions/{id}/complete",
+                axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
+                    let completed = completed.clone();
+                    let complete_healthy = complete_healthy.clone();
+                    async move {
+                        // The native turn ends successfully; from now on the graph's
+                        // canonical metadata read is unavailable.
+                        complete_healthy.store(false, Ordering::SeqCst);
+                        completed.store(true, Ordering::SeqCst);
+                        axum::Json(json!({
+                            "output": {
+                                "nodeId": body["graph"]["nodeId"],
+                                "rootLayer": { "layer": { "id": 1 }, "nodes": [], "edges": [], "actions": [] }
+                            }
+                        }))
+                    }
+                }),
+            )
+    };
+    let (graph_url, graph_task) = serve_test_app(graph).await;
+    let (harness_url, harness_task) = serve_test_app(harness).await;
+    let catalog = root.join("catalog.json");
+    fs::write(
+        &catalog,
+        json!({
+            "schemaVersion": 1,
+            "configurations": [{
+                "configuration": {
+                    "schemaVersion": 1,
+                    "name": "codex-basic",
+                    "implementation": "test",
+                    "implementationVersion": 1,
+                    "permissionBindings": { "ask": {}, "auto": {}, "full": {} },
+                    "modelCompatibility": [{ "providerId": "codex" }],
+                    "executionAccessContracts": ["managed-runtime@1"],
+                    "settings": {}
+                },
+                "digest": "sha256:model-test"
+            }]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    // A terminal attempt from before this start carries lease debt, so the reconciler's
+    // startup scan has something to release. Waiting for that release below is the barrier
+    // that proves the startup wake is spent before the test measures any later wake.
+    seed_startup_lease_debt(&database, &root).await;
+    let app =
+        open_app_with_runtime_observed(&database, &root, &catalog, &graph_url, &harness_url).await;
+    let barrier = std::time::Instant::now() + Duration::from_secs(5);
+    while (lease_deletes.load(Ordering::SeqCst) == 0
+        || !unreconciled_lease_debts(&database).await.is_empty())
+        && std::time::Instant::now() < barrier
+    {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        lease_deletes.load(Ordering::SeqCst),
+        1,
+        "setup: the startup scan released the seeded debt"
+    );
+    assert!(
+        unreconciled_lease_debts(&database).await.is_empty(),
+        "setup: the startup scan finished"
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(provider_publish_request(test_provider_snapshot()))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    let family = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            "/api/model-families",
+            Some(json!({
+                "name": "Quarantined lease models",
+                "members": [{ "providerId": "codex", "modelId": "test-model" }]
+            })),
+            true,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(family.status(), StatusCode::CREATED, "setup: family");
+    let family_id = response_json(family).await["id"].as_i64().unwrap();
+    let created = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            "/api/threads",
+            Some(json!({
+                "title": "Quarantined lease",
+                "initialMessage": "First",
+                "harnessId": "codex-basic",
+                "modelSelection": model_selection(family_id, "test-model")
+            })),
+            true,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED, "setup: thread");
+    let thread_id = response_json(created).await["id"].as_i64().unwrap();
+
+    // Bounded poll: the turn's interaction reaches a terminal (failed/accepted) status.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let state = loop {
+        let state = response_json(
+            app.clone()
+                .oneshot(api_request(
+                    "GET",
+                    &format!("/api/state?threadId={thread_id}"),
+                    None,
+                    true,
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        let terminal = state["interactions"]
+            .as_array()
+            .and_then(|interactions| interactions.last())
+            .is_some_and(|interaction| {
+                matches!(
+                    interaction["completionStatus"].as_str(),
+                    Some("accepted" | "failed")
+                )
+            });
+        if terminal {
+            break state;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "setup: timed out waiting for terminal interaction: {state}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    };
+    let last = state["interactions"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap()
+        .clone();
+    assert!(
+        harness_completed.load(Ordering::SeqCst),
+        "setup: harness /complete was never called"
+    );
+    assert_eq!(
+        last["completionStatus"], "failed",
+        "setup: expected quarantine: {last}"
+    );
+    assert!(
+        last["completionError"]
+            .as_str()
+            .is_some_and(|error| error.starts_with("Canonical reconciliation pending:")),
+        "setup: expected reconciliation-pending quarantine: {last}"
+    );
+    QuarantinedTurn {
+        app,
+        root,
+        database,
+        thread_id,
+        graph_healthy,
+        lease_deletes,
+        graph_task,
+        harness_task,
+    }
+}
+
+#[tokio::test]
+async fn opening_a_quarantined_thread_releases_its_settled_attempt_lease() {
+    let turn = run_turn_whose_canonical_verification_fails().await;
+    let deletes_before = turn.lease_deletes.load(Ordering::SeqCst);
+    // Graph recovers and has the canonical output.
+    turn.graph_healthy.store(true, Ordering::SeqCst);
+    let view = turn
+        .app
+        .clone()
+        .oneshot(api_request(
+            "GET",
+            &format!("/api/threads/{}", turn.thread_id),
+            None,
+            true,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(view.status(), StatusCode::OK, "setup: thread view");
+    let view = response_json(view).await;
+    let viewed = view["interactions"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap()
+        .clone();
+    let settled = attempt_lease_rows(&turn.database).await;
+    assert_eq!(
+        viewed["completionStatus"], "accepted",
+        "setup: view reconciled quarantine"
+    );
+    assert_ne!(settled[0].1, "running", "setup: view settled the attempt");
+
+    // Settling the attempt turns its lease into debt; the reconciler releases it in-session.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let after = loop {
+        let after = attempt_lease_rows(&turn.database).await;
+        if after[0].3.is_some() || std::time::Instant::now() >= deadline {
+            break after;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    let debts = unreconciled_lease_debts(&turn.database).await;
+    assert_eq!(
+        turn.lease_deletes.load(Ordering::SeqCst),
+        deletes_before + 1,
+        "thread view settled attempt {} to '{}' but its lease was not released; debts={debts:?}",
+        after[0].0,
+        after[0].1
+    );
+    assert!(
+        after[0].3.is_some(),
+        "released lease was not recorded as reconciled"
+    );
+    assert!(debts.is_empty(), "lease debt remains: {debts:?}");
+    turn.graph_task.abort();
+    turn.harness_task.abort();
+    fs::remove_dir_all(turn.root).unwrap();
 }

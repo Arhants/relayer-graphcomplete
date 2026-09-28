@@ -433,7 +433,11 @@ export class RelayerAppServerService {
         if (response.ok) return;
         let detail = null;
         try { detail = await response.json(); } catch { /* use status fallback */ }
-        throw new Error(detail?.error?.message || detail?.error || `Provider definition write failed (${response.status}).`);
+        // Catalog refusals carry a top-level `code` beside the message (api/error.rs catalog_error).
+        const error = new Error(detail?.error?.message || detail?.error || `Provider definition write failed (${response.status}).`);
+        const code = detail?.code ?? detail?.error?.code;
+        if (typeof code === "string") error.code = code;
+        throw error;
       },
       createWithCatalog: async (definition, catalog, { signal } = {}) => {
         const session = await this.start();

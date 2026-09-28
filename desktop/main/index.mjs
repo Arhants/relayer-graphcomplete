@@ -221,6 +221,7 @@ if (primaryInstance) {
       if (!providerSetup) throw new Error("Provider execution broker is not ready.");
       return providerSetup.acquireExecution(providerId);
     },
+    acknowledgeUnknownProviderRelease: () => providerSetup?.finalizeDrainedRemovals(),
     issueErrorReporter,
     issueErrorCapability,
     onUnexpectedStop: () => {
