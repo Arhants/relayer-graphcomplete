@@ -123,23 +123,22 @@ async function observeNextCurrent(
  * Watches the children a parent launched. Each call to `changes()` resolves on the next
  * event: any child's current moving or ending. A child still unanswered keeps its request
  * open; an answered child is asked again after the revision it reported, so its next event
- * carries its latest current, with any moves made in between folded into it. Overlapping
- * calls take turns, so each event is returned by exactly one of them.
+ * carries its latest current, with any moves made in between folded into it. A child whose
+ * request fails is reported once with that error and not asked again, so it never holds
+ * back its siblings. Overlapping calls take turns, so each event is returned by exactly one
+ * of them.
  */
 export function watchCompletions(children: Iterable<CompletionHandle>): CompletionWatch {
   const watched = new Map<number, CompletionHandle>();
   for (const child of children) watched.set(child.completionId, child);
   const seen = new Map<number, number>();
   const ended = new Set<number>();
-  const pending = new Map<number, Promise<{ id: number; current: CompletionCurrentSnapshot }>>();
+  const pending = new Map<number, Promise<Answer>>();
   let turn: Promise<unknown> = Promise.resolve();
   const collect = async (): Promise<readonly CompletionChange[]> => {
     for (const [id, child] of watched) {
       if (ended.has(id) || pending.has(id)) continue;
-      const request = child.current.next(seen.get(id)).then((current) => ({ id, current }));
-      // A failure surfaces on the next changes() call; until then it must not be unhandled.
-      request.catch(() => {});
-      pending.set(id, request);
+      pending.set(id, answerNext(child, seen.get(id)));
     }
     if (pending.size === 0) return [];
     await Promise.race(pending.values());
@@ -150,8 +149,14 @@ export function watchCompletions(children: Iterable<CompletionHandle>): Completi
     const changes: CompletionChange[] = [];
     for (const id of answered) {
       if (id === undefined) continue;
-      const { current } = await pending.get(id)!;
+      const answer = await pending.get(id)!;
       pending.delete(id);
+      if (answer.error !== undefined) {
+        ended.add(id);
+        changes.push(Object.freeze({ child: watched.get(id)!, error: answer.error }));
+        continue;
+      }
+      const { current } = answer;
       seen.set(id, current.revision);
       if (current.lifecycle !== "active") ended.add(id);
       changes.push(Object.freeze({ child: watched.get(id)!, current }));
@@ -168,6 +173,27 @@ export function watchCompletions(children: Iterable<CompletionHandle>): Completi
       return changes;
     },
   });
+}
+
+type Answer = { current: CompletionCurrentSnapshot; error?: undefined } | { error: Error };
+
+/**
+ * Asks one watched child for its next current. A failed request, however it fails, answers
+ * with its error, so the watch consumes it like any other answer.
+ */
+async function answerNext(child: CompletionHandle, afterRevision: number | undefined): Promise<Answer> {
+  try {
+    return { current: await child.current.next(afterRevision) };
+  } catch (error) {
+    if (error instanceof Error) return { error };
+    let detail = "Completion observation failed";
+    try {
+      detail = String(error);
+    } catch {
+      // Keep the generic detail for a value that cannot be printed.
+    }
+    return { error: new Error(detail) };
+  }
 }
 
 /**
