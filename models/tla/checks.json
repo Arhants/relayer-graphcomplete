@@ -66,7 +66,8 @@
       "ConnectionGeneration": "TRUE",
       "ReconnectKeepsAdapter": "TRUE",
       "AdapterAfterCommit": "TRUE",
-      "RefreshSkipsPendingReconnect": "TRUE"
+      "RefreshSkipsPendingReconnect": "TRUE",
+      "CancelSignsOut": "TRUE"
     },
     "readiness-today": {
       "Evals": "{1, 2, 3}",
@@ -89,7 +90,8 @@
       "ShutdownRefusesLeases": "TRUE",
       "RefreshSkipsPendingReconnect": "TRUE",
       "LostReconnectAdopted": "TRUE",
-      "AdoptChecksBaseline": "TRUE"
+      "AdoptChecksBaseline": "TRUE",
+      "CancelSignsOut": "TRUE"
     }
   },
   "checks": [
@@ -1435,10 +1437,11 @@
       },
       "invariants": [
         "TypeOK",
-        "ReadyMeansSignedIn"
+        "ReadyMeansSignedIn",
+        "PendingReconnectNotReady"
       ],
       "expect": "pass",
-      "finding": "No refresh runs during a pending reconnect, so the app server never reads P ready while its home holds no login."
+      "finding": "No refresh starts or publishes during a pending reconnect, so an automatic result never stands for the reconnect's sign-in, and Rust never reads P ready with no login."
     },
     {
       "id": "lifecycle-refresh-during-reconnect-reverted",
@@ -1451,12 +1454,12 @@
       },
       "invariants": [
         "TypeOK",
-        "ReadyMeansSignedIn"
+        "PendingReconnectNotReady"
       ],
       "expect": {
-        "violated": "ReadyMeansSignedIn"
+        "violated": "PendingReconnectNotReady"
       },
-      "finding": "With RefreshSkipsPendingReconnect off, a refresh publishes ready through the runtime a reconnect is signing in; cancelling the reconnect wipes the login and leaves the app server ready."
+      "finding": "With RefreshSkipsPendingReconnect off, a refresh publishes ready through the runtime a reconnect is signing in, before the user's reconnect settles."
     },
     {
       "id": "lifecycle-lost-reconnect-answer",
@@ -1478,7 +1481,8 @@
       "preset": "lifecycle-today",
       "constants": {
         "SignOutPublishCanFail": "FALSE",
-        "LostReconnectAdopted": "FALSE"
+        "LostReconnectAdopted": "FALSE",
+        "CancelSignsOut": "FALSE"
       },
       "invariants": [
         "TypeOK",
@@ -1487,7 +1491,7 @@
       "expect": {
         "violated": "ReadyMeansSignedIn"
       },
-      "finding": "With LostReconnectAdopted off, a reconnect the app server committed settles as failed and its cancel wipes the login the app server now reads as connected."
+      "finding": "With LostReconnectAdopted and CancelSignsOut off (the code before this fix), a reconnect the app server committed settles as failed and its cancel wipes the login the app server reads as connected."
     },
     {
       "id": "lifecycle-lost-answer-adopts-only-commit",
@@ -1542,6 +1546,66 @@
         "violated": "CommittedReconnectKeepsLogin"
       },
       "finding": "With LostReconnectAdopted off, a reconnect whose committed publish lost its answer is settled and its login wiped."
+    },
+    {
+      "id": "lifecycle-cancel-records-signed-out",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "CancelRecordsSignedOut"
+      ],
+      "expect": "pass",
+      "finding": "A settled reconnect commits signed-out with the next generation, so it never leaves the app server reading ready over the login it wiped, with every fault on."
+    },
+    {
+      "id": "lifecycle-cancel-records-signed-out-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "CancelSignsOut": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "CancelRecordsSignedOut"
+      ],
+      "expect": {
+        "violated": "CancelRecordsSignedOut"
+      },
+      "finding": "With CancelSignsOut off, a sign-out whose publish failed leaves Rust ready; a reconnect then starts and is cancelled, wiping the login while Rust still reads ready."
+    },
+    {
+      "id": "lifecycle-straddling-refresh",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE",
+        "ReconnectAnswerCanBeLost": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyMeansSignedIn"
+      ],
+      "expect": "pass",
+      "finding": "A refresh that resolved its generation before a reconnect and read the account mid-sign-in is dropped after the reconnect is cancelled, because the cancel advanced the generation."
+    },
+    {
+      "id": "lifecycle-straddling-refresh-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE",
+        "ReconnectAnswerCanBeLost": "FALSE",
+        "CancelSignsOut": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyMeansSignedIn"
+      ],
+      "expect": {
+        "violated": "ReadyMeansSignedIn"
+      },
+      "finding": "With CancelSignsOut off, a refresh straddling a cancelled reconnect passes both generation checks and publishes ready over the wiped login."
     },
     {
       "id": "lifecycle-removal-completes",

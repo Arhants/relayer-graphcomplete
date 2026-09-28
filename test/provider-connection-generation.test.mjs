@@ -144,6 +144,8 @@ function managedWorld({ activationFails = false } = {}) {
     homeWipes: 0,
     holdNextDependencies: null,
     catalogUnavailable: false,
+    // Holds the next discovery before it reads the account, so the read can land mid-sign-in.
+    gateNextDiscover: null,
   };
   world.removeRuntimeState = vi.fn(async () => {
     world.homeWipes += 1;
@@ -174,6 +176,12 @@ function managedWorld({ activationFails = false } = {}) {
         providerId: definition.id,
         discover: async () => {
           runtime.discoveries += 1;
+          const gate = world.gateNextDiscover;
+          world.gateNextDiscover = null;
+          if (gate) {
+            gate.reached.resolve();
+            await gate.release.promise;
+          }
           const status = world.catalogUnavailable ? "unavailable"
             : world.account === "connected" ? "available" : "disconnected";
           const hold = world.holdNextDiscover;
@@ -349,7 +357,8 @@ describe("PROV-002: a superseded provider result is inert", () => {
       await expect(composition.providerDefinitions.completeConnection(second.connectionId))
         .resolves.toMatchObject({ status: "connected" });
       expect(server.connected(managedDefinition.id)).toBe(true);
-      expect(server.rows.get(managedDefinition.id).generation).toBe(4);
+      // Two sign-outs, the refused reconnect's settle recording signed out, and the reconnect.
+      expect(server.rows.get(managedDefinition.id).generation).toBe(5);
     } finally {
       await composition.close();
     }
@@ -507,6 +516,65 @@ describe("PROV-002: a superseded provider result is inert", () => {
         connected: false,
         unavailableReason: expect.objectContaining({ code: "provider_logged_out" }),
       });
+    } finally {
+      await composition.close();
+    }
+  });
+
+  // A sign-out whose publish failed left the app server reading connected. A reconnect then
+  // started and was cancelled: the cancel wiped the login but recorded nothing, so Rust kept
+  // admitting turns with no login until some later refresh.
+  it("records signed out in the app server when a reconnect is cancelled after a failed sign-out", async () => {
+    const world = managedWorld();
+    const server = productServer([managedDefinition]);
+    const composition = compose({ registry: world.registry, server, removeRuntimeState: world.removeRuntimeState });
+    try {
+      await composition.start();
+      server.publishFails = true;
+      await composition.providerDefinitions.logout(managedDefinition.id);
+      await vi.waitFor(() => expect(server.failedPublishes).toBe(2), { timeout: 5_000 });
+      server.publishFails = false;
+      expect(server.connected(managedDefinition.id)).toBe(true);
+
+      const pending = await composition.providerDefinitions.reconnect(managedDefinition.id);
+      await composition.providerDefinitions.cancelConnection(pending.connectionId);
+      expect(server.connected(managedDefinition.id)).toBe(false);
+      expect(server.published.at(-1)).toMatchObject({ connected: false, connectionEvent: "signed-out" });
+      expect(composition.providerDefinitions.connectionGeneration(managedDefinition.id))
+        .toBe(server.rows.get(managedDefinition.id).generation);
+    } finally {
+      await composition.close();
+    }
+  });
+
+  // A refresh resolved its generation before a reconnect started and read the account after
+  // the browser sign-in. It reached its publish only after the reconnect was cancelled. The
+  // cancel moved nothing, so the refresh published "connected" over the wiped login.
+  it("drops a refresh that straddles a cancelled reconnect", async () => {
+    const world = managedWorld();
+    const server = productServer([managedDefinition]);
+    const composition = compose({ registry: world.registry, server, removeRuntimeState: world.removeRuntimeState });
+    try {
+      await composition.start();
+      await composition.providerDefinitions.logout(managedDefinition.id);
+
+      const gate = { reached: deferred(), release: deferred() };
+      world.gateNextDiscover = gate;
+      const reopened = composition.modelCatalog.settingsOpened();
+      await gate.reached.promise;
+
+      const pending = await composition.providerDefinitions.reconnect(managedDefinition.id);
+      world.account = "connected";
+      const stalled = world.hold();
+      gate.release.resolve();
+      await stalled.reached.promise;
+      await composition.providerDefinitions.cancelConnection(pending.connectionId);
+      stalled.release.resolve();
+
+      const [straddled] = await reopened;
+      expect(server.connected(managedDefinition.id)).toBe(false);
+      expect(straddled).toBeNull();
+      expect(world.homeWipes).toBe(1);
     } finally {
       await composition.close();
     }

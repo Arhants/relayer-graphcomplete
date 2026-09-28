@@ -670,6 +670,21 @@ export class ProviderDefinitionService {
       return true;
     }
     if (pending.reconnect === true) {
+      // The cancel wipes the login, so it records signed out with the next generation, as
+      // sign-out does. That corrects an app server a failed sign-out publish left reading
+      // connected, and makes stale any refresh that resolved its generation before the
+      // reconnect and read the account mid-sign-in. It commits before the wipe, so the app
+      // server never reads connected over a home with no login.
+      if (!this.closing) {
+        await this.#commitSignedOut(pending.candidate, {
+          onFailure: (error) => this.diagnostics?.write({
+            category: "provider_reconnect_cancel_sign_out_failed",
+            adapterId: pending.candidate.adapterId,
+            providerId: connectionId,
+            ...providerDiagnosticDetails(error),
+          }).catch(() => undefined),
+        });
+      }
       if (this.runtimes.get(connectionId) === pending.runtime) this.runtimes.delete(connectionId);
       await Promise.allSettled([
         pending.runtime.close?.(),
@@ -755,29 +770,10 @@ export class ProviderDefinitionService {
         providerId: id,
         ...providerDiagnosticDetails(error),
       }).catch(() => undefined);
-      // The disconnected state and the next connection generation commit together, so every
-      // result still in flight from the signed-in account is inert (PROV-002).
-      const signOut = async () => {
-        const generation = this.connectionGeneration(id);
-        await this.publishCatalog(signedOutCatalog(definition), {
-          signal,
-          connectionGeneration: generation,
-          connectionEvent: "signed-out",
-        });
-        this.#recordGeneration(id, generation + 1);
-      };
-      try {
-        try {
-          await signOut();
-        } catch (error) {
-          // Sign-out is the user's latest action, so it retries once at the current generation.
-          if (!await this.#relearnAfterRefusal(id, error)) throw error;
-          await signOut();
-        }
+      if (await this.#commitSignedOut(definition, { signal, onFailure: logoutFailed })) {
         if (pendingReconnect) pendingReconnect.superseded = true;
-      } catch (error) {
-        if (pendingReconnect) pendingReconnect.doubtful = true;
-        await logoutFailed(error);
+      } else if (pendingReconnect) {
+        pendingReconnect.doubtful = true;
       }
       // The follow-up refresh runs behind this queue, not inside it. Awaiting it here would
       // deadlock behind an explicit refresh that is waiting for this queue (CR-V7).
@@ -786,6 +782,36 @@ export class ProviderDefinitionService {
         .catch(logoutFailed);
       return Object.freeze({ ...(account ?? { status: "disconnected" }) });
     });
+  }
+
+  /**
+   * Commits the signed-out state with the next connection generation, so every result still in
+   * flight from the signed-in account is inert (PROV-002). A user action, so a refusal rereads
+   * the generation and retries once. Returns whether the app server answered; a failure is
+   * only reported, and the next refresh publishes the account's state.
+   */
+  async #commitSignedOut(definition, { signal, onFailure }) {
+    const signOut = async () => {
+      const generation = this.connectionGeneration(definition.id);
+      await this.publishCatalog(signedOutCatalog(definition), {
+        signal,
+        connectionGeneration: generation,
+        connectionEvent: "signed-out",
+      });
+      this.#recordGeneration(definition.id, generation + 1);
+    };
+    try {
+      try {
+        await signOut();
+      } catch (error) {
+        if (!await this.#relearnAfterRefusal(definition.id, error)) throw error;
+        await signOut();
+      }
+      return true;
+    } catch (error) {
+      await onFailure(error);
+      return false;
+    }
   }
 
   reconnect(id, options = {}) {

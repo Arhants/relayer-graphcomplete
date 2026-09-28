@@ -117,6 +117,8 @@ Init ==
 (* adapter it never replaced. A reconnect never closes a runtime a lease   *)
 (* holds (PROV-004): it only drops its entry. acquireExecution refuses     *)
 (* while a reconnect is pending, so that branch only guards the invariant. *)
+(* A reconnect that is torn down first commits signed-out, so SQLite reads *)
+(* P disconnected; close() skips that publish.                            *)
 CancelSetEffect(S) ==
   LET spared == "P" \in S /\ pend["P"].kind = "reconnect" /\ Holders /= {}
       live == {i \in S : pend[i].kind /= "none"}
@@ -133,6 +135,8 @@ CancelSetEffect(S) ==
                 ELSE IF restore /\ r = NextRt THEN "open" ELSE rt[r]]
      /\ override' = IF "P" \in live /\ pend["P"].kind = "reconnect"
                     THEN "logged_out" ELSE override
+     /\ sqlConnected' = IF "P" \in torn /\ pend["P"].kind = "reconnect" /\ ~closing
+                        THEN FALSE ELSE sqlConnected
 
 CancelPendingEffect(id) == CancelSetEffect({id})
 
@@ -148,7 +152,7 @@ RequestCancels(S) ==
         THEN /\ CancelSetEffect(queued)
              /\ UNCHANGED cancelQ
         ELSE /\ cancelQ' = [i \in Ids |-> cancelQ[i] \/ i \in queued]
-             /\ UNCHANGED <<pend, rmap, rt, override>>
+             /\ UNCHANGED <<pend, rmap, rt, override, sqlConnected>>
 
 RequestCancel(id) == RequestCancels({id})
 
@@ -289,12 +293,12 @@ Handoff(id, ok) ==
   /\ SetPc(id, "ipcdone")
   /\ IF ok /\ alive
      THEN /\ bound' = [bound EXCEPT ![id] = TRUE]
-          /\ UNCHANGED <<cancelQ, cancelled, pend, rmap, rt, override>>
+          /\ UNCHANGED <<cancelQ, cancelled, pend, rmap, rt, override, sqlConnected>>
      ELSE /\ RequestCancel(id)
           /\ UNCHANGED bound
   /\ UNCHANGED <<lock, defs, prep, closing, closed, connRt, reconRt,
                  reconCreated, complPc, complCap, exec, alive, ipcDone,
-                 sqlConnected, fam, defaultFamily>>
+                 fam, defaultFamily>>
 
 IpcReturn(id) ==
   /\ PcOf(id) = "ipcdone"
@@ -312,7 +316,7 @@ RendererCancel(id) ==
   /\ RequestCancel(id)
   /\ UNCHANGED <<lock, defs, prep, closing, closed, connPc, connRt, reconPc,
                  reconRt, reconCreated, complPc, complCap, exec, alive,
-                 ipcDone, sqlConnected, fam, defaultFamily>>
+                 ipcDone, fam, defaultFamily>>
 
 (* The renderer is destroyed; each bound listener fires once (IPC:31-39). *)
 RendererDestroyed ==
@@ -322,7 +326,7 @@ RendererDestroyed ==
   /\ RequestCancels({i \in Ids : bound[i]})
   /\ UNCHANGED <<lock, defs, prep, closing, closed, connPc, connRt, reconPc,
                  reconRt, reconCreated, complPc, complCap, exec, ipcDone,
-                 sqlConnected, fam, defaultFamily>>
+                 fam, defaultFamily>>
 
 RunCancel(id) ==
   /\ cancelQ[id] /\ lock = "none"
@@ -330,7 +334,7 @@ RunCancel(id) ==
   /\ CancelPendingEffect(id)
   /\ UNCHANGED <<lock, defs, prep, cancelled, closing, closed, connPc, connRt,
                  reconPc, reconRt, reconCreated, complPc, complCap, exec,
-                 alive, bound, ipcDone, sqlConnected, fam, defaultFamily>>
+                 alive, bound, ipcDone, fam, defaultFamily>>
 
 -----------------------------------------------------------------------------
 (* completeConnection (PDS:460-578), the renderer's 750 ms poll. It holds *)
@@ -376,7 +380,7 @@ CompleteFinish(id, outcome) ==
             /\ UNCHANGED <<rmap, rt, defs, sqlConnected, fam, override>>
        [] OTHER ->  \* settle(): terminal failure cancels the pending attempt
             /\ CancelPendingEffect(id)
-            /\ UNCHANGED <<defs, sqlConnected, fam>>
+            /\ UNCHANGED <<defs, fam>>
   \* The IPC handler releases the renderer binding once the attempt is no
   \* longer pending (IPC:185-194).
   /\ bound' = IF outcome = "disconnected" \/ (outcome = "check_failed" /\ budgetLeft)

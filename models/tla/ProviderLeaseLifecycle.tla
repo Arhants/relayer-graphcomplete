@@ -36,8 +36,10 @@ CONSTANTS MaxRt,          \* runtime objects that may be created
           RefreshSkipsPendingReconnect, \* no refresh runs or publishes during a reconnect
           LostReconnectAdopted,     \* a reconnect whose answer was lost reads the generation
                                     \* back, and keeps the login unless it was refused
-          AdoptChecksBaseline       \* it adopts only one step past a baseline it read, and
+          AdoptChecksBaseline,      \* it adopts only one step past a baseline it read, and
                                     \* never after a sign-out superseded it
+          CancelSignsOut            \* a cancelled or failed reconnect commits signed-out with
+                                    \* the next generation, as sign-out does
 
 VARIABLES
   life,     \* active | removal_pending | tombstoned        (app server row)
@@ -53,20 +55,24 @@ VARIABLES
   underLease, \* a held lease's runtime was closed or its home wiped
   closing, closed,
   badAdopt,  \* ghost: a reconnect the app server did not commit was adopted
-  wipedCommit \* ghost: a reconnect the app server committed was settled and wiped
+  wipedCommit, \* ghost: a reconnect the app server committed was settled and wiped
+  cancelLeftReady, \* ghost: a settled reconnect wiped the login while Rust read P ready
+  rq        \* the catalog refresh in flight: [on, g, res]
 
 vars == <<life, gen, jsGen, ready, auth, rmap, rtState, pend, turn, leaseRt,
-          underLease, closing, closed, badAdopt, wipedCommit>>
+          underLease, closing, closed, badAdopt, wipedCommit, cancelLeftReady, rq>>
 
 Rts == 1..MaxRt
 NoPend == [on |-> FALSE, rt |-> 0, g |-> 0, created |-> FALSE, known |-> FALSE,
            superseded |-> FALSE, doubtful |-> FALSE]
+NoRq == [on |-> FALSE, g |-> 0, res |-> "none"]
 
 Init ==
   /\ life = "active" /\ gen = 1 /\ jsGen = 1 /\ ready = TRUE /\ auth = TRUE
   /\ rmap = 1 /\ rtState = [r \in Rts |-> IF r = 1 THEN "open" ELSE "unused"]
   /\ pend = NoPend /\ turn = "none" /\ leaseRt = 0 /\ underLease = FALSE
   /\ closing = FALSE /\ closed = FALSE /\ badAdopt = FALSE /\ wipedCommit = FALSE
+  /\ cancelLeftReady = FALSE /\ rq = NoRq
 
 FreshRt == CHOOSE r \in Rts : rtState[r] = "unused"
 CanCreate == \E r \in Rts : rtState[r] = "unused"
@@ -83,7 +89,7 @@ RustAdmit ==
   /\ turn' = "admitted"
   /\ UNCHANGED <<life, gen, jsGen, ready, auth, rmap, rtState, pend, leaseRt,
                  underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
 
 \* --- The harness asks the broker (RTB acquire) -> PDS acquireExecution. With
 \* a registered runtime the lease is granted at once, and the broker then asks
@@ -105,7 +111,7 @@ Acquire ==
            ELSE turn' = "none" /\ leaseRt' = 0
         /\ UNCHANGED <<rmap, rtState>>
   /\ UNCHANGED <<life, gen, jsGen, ready, auth, pend, underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
 
 \* --- #runtimeFor registers the runtime after onRuntimeReady. With the fix, a
 \* runtime that finishes starting after close() began is closed instead.
@@ -119,7 +125,7 @@ AcquireRegistered ==
           /\ IF auth THEN turn' = "held" /\ UNCHANGED leaseRt
              ELSE turn' = "none" /\ leaseRt' = 0
   /\ UNCHANGED <<life, gen, jsGen, ready, auth, pend, underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
 
 \* --- PDS #finalizeRemoval (the store accepts: the attempt is terminal).
 Finalize ==
@@ -134,7 +140,7 @@ Release ==
   /\ IF life = "removal_pending" THEN Finalize
      ELSE UNCHANGED <<life, gen, ready, auth, rmap, rtState>>
   /\ UNCHANGED <<jsGen, pend, underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
 
 \* --- PDS logout. Refused while a lease is held. Publishes signed-out with the
 \* next generation; a failed publish is only logged. Settings offers Sign out
@@ -157,13 +163,13 @@ Logout ==
   /\ IF rmap = 0 THEN LET r == FreshRt IN rmap' = r /\ rtState' = [rtState EXCEPT ![r] = "open"]
      ELSE UNCHANGED <<rmap, rtState>>
   /\ UNCHANGED <<life, turn, leaseRt, underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
 
 \* --- PDS #reconnect, second serialized step. Refused while a lease is held.
 \* Offered only while P reads signed out (provider-ui.js), so auth = FALSE.
 Reconnect ==
   /\ QueueFree /\ life = "active" /\ turn /= "held" /\ ~pend.on /\ ~closing /\ ~auth
-  /\ rmap /= 0 \/ CanCreate
+  /\ gen < MaxGen /\ (rmap /= 0 \/ CanCreate)
   /\ LET created == rmap = 0
          r == IF created THEN FreshRt ELSE rmap
      IN /\ rmap' = r /\ rtState' = [rtState EXCEPT ![r] = "open"]
@@ -174,7 +180,7 @@ Reconnect ==
              /\ pend' = [on |-> TRUE, rt |-> r, g |-> jsGen', created |-> created,
                          known |-> known, superseded |-> FALSE, doubtful |-> FALSE]
   /\ UNCHANGED <<life, gen, ready, auth, turn, leaseRt, underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
 
 \* --- The user finishes the browser sign-in.
 SignIn ==
@@ -182,33 +188,45 @@ SignIn ==
   /\ auth' = TRUE
   /\ UNCHANGED <<life, gen, jsGen, ready, rmap, rtState, pend, turn, leaseRt,
                  underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
 
-\* --- PDS #cancelPendingConnection, reconnect branch. It closes the runtime
-\* and wipes the home. A reconnect that reused the live runtime starts a
-\* fresh one in its place (F4). With the fix, a runtime a lease holds is
-\* never closed or wiped; only the entry goes.
-CancelEffect ==
+\* --- PDS #cancelPendingConnection, reconnect branch. g0, j0 and r0 are the
+\* generation, the known generation and readiness after the calling action's
+\* own step. The cancel closes the runtime and wipes the home. A reconnect
+\* that reused the live runtime starts a fresh one in its place (F4). With
+\* the fix, a runtime a lease holds is never closed or wiped; only the entry
+\* goes. With CancelSignsOut, it first commits signed-out with the next
+\* generation, relearning a stale one once, as sign-out does. That publish
+\* can fail like sign-out's (the known limit), and it is skipped once
+\* close() began.
+CancelEffect(g0, j0, r0) ==
   /\ pend' = NoPend
   /\ IF CancelSparesLease /\ turn = "held"
-     THEN UNCHANGED <<auth, rmap, rtState, underLease>>
+     THEN /\ gen' = g0 /\ jsGen' = j0 /\ ready' = r0
+          /\ UNCHANGED <<auth, rmap, rtState, underLease, cancelLeftReady>>
      ELSE
        /\ auth' = FALSE
-       /\ LET r0 == pend.rt
-              closedMap == [rtState EXCEPT ![r0] = "closed"]
+       /\ LET r0t == pend.rt
+              closedMap == [rtState EXCEPT ![r0t] = "closed"]
           IN IF ~pend.created /\ ~closing /\ life = "active" /\ \E r \in Rts : closedMap[r] = "unused"
              THEN LET r == CHOOSE x \in Rts : closedMap[x] = "unused"
                   IN rmap' = r /\ rtState' = [closedMap EXCEPT ![r] = "open"]
-             ELSE /\ rmap' = IF rmap = r0 THEN 0 ELSE rmap
+             ELSE /\ rmap' = IF rmap = r0t THEN 0 ELSE rmap
                   /\ rtState' = closedMap
        /\ Harm(pend.rt, TRUE)
+       /\ \/ /\ CancelSignsOut /\ ~closing
+             /\ gen' = g0 + 1 /\ jsGen' = g0 + 1 /\ ready' = FALSE
+             /\ UNCHANGED cancelLeftReady
+          \/ /\ ~CancelSignsOut \/ closing \/ SignOutPublishCanFail
+             /\ gen' = g0 /\ jsGen' = j0 /\ ready' = r0
+             \* Counted only when no signed-out publish was attempted at all.
+             /\ cancelLeftReady' = (cancelLeftReady \/ (~CancelSignsOut /\ ~closing /\ r0))
 
 \* The user cancels, the window is destroyed (BRW-005), or the poll gives up.
 Cancel ==
   /\ QueueFree /\ pend.on
-  /\ CancelEffect
-  /\ UNCHANGED <<life, gen, jsGen, ready, turn, leaseRt, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+  /\ CancelEffect(gen, jsGen, ready)
+  /\ UNCHANGED <<life, turn, leaseRt, closing, closed, badAdopt, wipedCommit, rq>>
 
 \* --- PDS completeConnection for a reconnect: the publish commits the catalog
 \* and the next generation together.
@@ -217,7 +235,7 @@ CompleteOk ==
   /\ gen' = gen + 1 /\ jsGen' = gen + 1 /\ ready' = TRUE
   /\ pend' = NoPend /\ rmap' = pend.rt
   /\ UNCHANGED <<life, auth, rtState, turn, leaseRt, underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
 
 \* The reconnect's publish gets no answer. The app server committed it only if
 \* its generation was current. Without the fix the uncoded error settles and
@@ -229,52 +247,67 @@ CompleteOk ==
 \* settles the state.
 KeepReconnect ==
   /\ pend' = NoPend /\ rmap' = pend.rt
-  /\ UNCHANGED <<auth, rtState, underLease>>
+  /\ UNCHANGED <<auth, rtState, underLease, cancelLeftReady>>
 
 CompleteNoAnswer ==
   /\ ReconnectAnswerCanBeLost
   /\ QueueFree /\ pend.on /\ auth /\ gen < MaxGen
   /\ LET committed == pend.g = gen
          g2 == IF committed THEN gen + 1 ELSE gen
+         r2 == ready \/ committed
          adopt == IF AdoptChecksBaseline
                   THEN ~pend.superseded /\ ~pend.doubtful /\ pend.known /\ g2 = pend.g + 1
                   ELSE g2 > pend.g
-         settle == /\ CancelEffect /\ UNCHANGED <<jsGen, badAdopt>>
+         settle == /\ CancelEffect(g2, jsGen, r2) /\ UNCHANGED badAdopt
                    /\ wipedCommit' = (wipedCommit \/ committed)
-     IN /\ gen' = g2
-        /\ ready' = (ready \/ committed)
-        /\ IF ~LostReconnectAdopted \/ (AdoptChecksBaseline /\ pend.superseded)
-           THEN settle
-           ELSE \/ KeepReconnect /\ UNCHANGED <<jsGen, badAdopt, wipedCommit>> \* the read fails
-                \/ IF g2 <= pend.g
-                   THEN settle
-                   ELSE /\ KeepReconnect /\ jsGen' = g2 /\ UNCHANGED wipedCommit
-                        /\ badAdopt' = (badAdopt \/ (adopt /\ ~committed))
-  /\ UNCHANGED <<life, turn, leaseRt, closing, closed>>
+         keep(j) == /\ KeepReconnect /\ gen' = g2 /\ ready' = r2 /\ jsGen' = j
+     IN IF ~LostReconnectAdopted \/ (AdoptChecksBaseline /\ pend.superseded)
+        THEN settle
+        ELSE \/ keep(jsGen) /\ UNCHANGED <<badAdopt, wipedCommit>>   \* the read fails
+             \/ IF g2 <= pend.g
+                THEN settle
+                ELSE /\ keep(g2) /\ UNCHANGED wipedCommit
+                     /\ badAdopt' = (badAdopt \/ (adopt /\ ~committed))
+  /\ UNCHANGED <<life, turn, leaseRt, closing, closed, rq>>
 
 \* A refused (superseded) reconnect relearns the generation, then settles.
 CompleteRefused ==
   /\ QueueFree /\ pend.on /\ auth /\ pend.g /= gen
-  /\ jsGen' = gen
-  /\ CancelEffect
-  /\ UNCHANGED <<life, gen, ready, turn, leaseRt, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+  /\ CancelEffect(gen, gen, ready)
+  /\ UNCHANGED <<life, turn, leaseRt, closing, closed, badAdopt, wipedCommit, rq>>
 
-\* --- MCS refresh (not serialized): discovers through the registered adapter
-\* and publishes at the generation it resolved; CAT refuses a stale one, and
-\* the refresh relearns it. A reconnect that reused the live runtime signs in
-\* through the adapter the refresh uses. One that created its runtime never
-\* replaced the recovery adapter, which reports unavailable. With the fix, a
-\* refresh resolves no generation while a reconnect is pending (PDS
-\* refreshGeneration via PC), so it neither runs nor publishes.
-Refresh ==
-  /\ life = "active" /\ rmap /= 0 /\ rtState[rmap] = "open" /\ ~closing
+\* --- MCS refresh (not serialized), in three steps. It resolves the
+\* generation when it starts; with the fix, none while a reconnect is pending
+\* (PDS refreshGeneration via PC), so it does not start. It then reads the
+\* account through the registered adapter: a reconnect that reused the live
+\* runtime signs in through that adapter, while one that created its runtime
+\* never replaced the recovery adapter, which reports unavailable. Last, MCS
+\* drops the result if the generation it resolves now differs (null while a
+\* reconnect is pending), and CAT refuses a stale one, which the refresh
+\* relearns. close() aborts it.
+RefreshStart ==
+  /\ ~rq.on /\ life = "active" /\ rmap /= 0 /\ rtState[rmap] = "open" /\ ~closing
   /\ RefreshSkipsPendingReconnect => ~pend.on
-  /\ IF jsGen = gen THEN ready' = (auth /\ ~(pend.on /\ pend.created)) /\ UNCHANGED jsGen
+  /\ rq' = [on |-> TRUE, g |-> jsGen, res |-> "none"]
+  /\ UNCHANGED <<life, gen, jsGen, ready, auth, rmap, rtState, pend, turn, leaseRt,
+                 underLease, closing, closed, badAdopt, wipedCommit, cancelLeftReady>>
+
+RefreshRead ==
+  /\ rq.on /\ rq.res = "none"
+  /\ rq' = [rq EXCEPT !.res = IF auth /\ ~(pend.on /\ pend.created) THEN "ready" ELSE "notready"]
+  /\ UNCHANGED <<life, gen, jsGen, ready, auth, rmap, rtState, pend, turn, leaseRt,
+                 underLease, closing, closed, badAdopt, wipedCommit, cancelLeftReady>>
+
+RefreshPublish ==
+  /\ rq.on /\ rq.res /= "none"
+  /\ rq' = NoRq
+  /\ IF \/ closing \/ life /= "active"
+        \/ (RefreshSkipsPendingReconnect /\ pend.on) \/ jsGen /= rq.g
+     THEN UNCHANGED <<ready, jsGen>>
+     ELSE IF rq.g = gen THEN ready' = (rq.res = "ready") /\ UNCHANGED jsGen
      ELSE jsGen' = gen /\ UNCHANGED ready
   /\ UNCHANGED <<life, gen, auth, rmap, rtState, pend, turn, leaseRt, underLease,
-                 closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+                 closing, closed, badAdopt, wipedCommit, cancelLeftReady>>
 
 \* --- PDS remove. removal_pending drops the pending reconnect's entry only.
 Remove ==
@@ -285,7 +318,7 @@ Remove ==
        ELSE /\ life' = "removal_pending" /\ gen' = gen + 1
             /\ UNCHANGED <<ready, auth, rmap, rtState, jsGen>>
   /\ UNCHANGED <<turn, leaseRt, underLease, closing, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
 
 \* --- PDS close(): waits for lifecycle tasks, not for the queue. It closes the
 \* runtimes in this.runtimes and pendingConnections, not one still starting.
@@ -294,7 +327,7 @@ Close ==
   /\ closing' = TRUE
   /\ UNCHANGED <<life, gen, jsGen, ready, auth, rmap, rtState, pend, turn, leaseRt,
                  underLease, closed>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
 
 CloseRuntimes ==
   /\ closing /\ ~closed
@@ -303,12 +336,13 @@ CloseRuntimes ==
   /\ rmap' = 0 /\ pend' = NoPend
   /\ underLease' = (underLease \/ turn = "held")   \* shutdown: the host is closing too
   /\ UNCHANGED <<life, gen, jsGen, ready, auth, turn, leaseRt, closing>>
-  /\ UNCHANGED <<badAdopt, wipedCommit>>
+  /\ UNCHANGED <<badAdopt, wipedCommit, cancelLeftReady, rq>>
 
 Next ==
   \/ RustAdmit \/ Acquire \/ AcquireRegistered \/ Release \/ Logout
   \/ Reconnect \/ SignIn \/ Cancel \/ CompleteOk \/ CompleteNoAnswer
-  \/ CompleteRefused \/ Refresh \/ Remove \/ Close \/ CloseRuntimes
+  \/ CompleteRefused \/ RefreshStart \/ RefreshRead \/ RefreshPublish
+  \/ Remove \/ Close \/ CloseRuntimes
 
 Spec == Init /\ [][Next]_vars
 \* The host releases access when the native turn ends.
@@ -316,7 +350,7 @@ FairSpec == Spec /\ WF_vars(Release) /\ WF_vars(Acquire) /\ WF_vars(AcquireRegis
 
 TypeOK ==
   /\ life \in {"active", "removal_pending", "tombstoned"}
-  /\ gen \in 1..(MaxGen + 2) /\ jsGen \in 1..(MaxGen + 2)
+  /\ gen \in 1..(MaxGen + 3) /\ jsGen \in 1..(MaxGen + 3)
   /\ ready \in BOOLEAN /\ auth \in BOOLEAN
   /\ rmap \in 0..MaxRt /\ rtState \in [Rts -> {"unused", "starting", "open", "closed"}]
   /\ turn \in {"none", "admitted", "creating", "held"} /\ leaseRt \in 0..MaxRt
@@ -342,6 +376,16 @@ AdoptsOnlyCommittedReconnect == ~badAdopt
 \* The login of a reconnect the app server committed is never wiped: Rust
 \* would read P connected with no login (the P4 finding).
 CommittedReconnectKeepsLogin == ~wipedCommit
+
+\* PROV-002: a settled reconnect records signed out. It never leaves the app
+\* server reading P ready over the home it wiped, even after a sign-out whose
+\* publish failed.
+CancelRecordsSignedOut == ~cancelLeftReady
+
+\* PROV-002 ("User actions supersede automatic ones"): no automatic refresh
+\* stands for the sign-in of a pending reconnect. Checked with the sign-out
+\* fault off, since a failed sign-out leaves P ready by itself.
+PendingReconnectNotReady == pend.on => ~ready
 
 \* PROV-003: removal finishes without a restart once nothing runs.
 RemovalCompletes == (life = "removal_pending") ~> (life = "tombstoned")

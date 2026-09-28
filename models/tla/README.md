@@ -187,7 +187,7 @@ and `mQ`, and one custom family `C` with members from both. Each check
 shrinks the bounds in `catalog-today`. On an idle machine the two slowest,
 the default-provider checks, take about 10 and 20 seconds.
 
-`catalog-today` has five fix constants, all landed:
+`catalog-today` has six fix constants, all landed:
 
 - `DefaultProviderPairsFamily`: choosing a default provider also selects that
   provider's enabled managed family, in the same transaction. A provider
@@ -208,6 +208,9 @@ the default-provider checks, take about 10 and 20 seconds.
   settles, and `DefaultRestores` counts a provider as healthy only then. This
   model has no provider home, so `ProviderLeaseLifecycle` checks what the fix
   prevents.
+- `CancelSignsOut`: a cancelled or failed reconnect commits signed-out with
+  the next generation, as logout does, and its wipe signs the account out.
+  Every result in flight is superseded.
 
 Each `-reverted` check turns one constant off and keeps the others on, so its
 violation comes only from its own mechanism.
@@ -436,8 +439,9 @@ accepted while a reconnect is pending: Settings does not offer it then, but
 the service does not refuse it. A sign-out's publish can fail before it
 commits, or commit and lose its answer.
 
-`lifecycle-today` mirrors the code. It has every fault on and six fix
-constants, all landed:
+`lifecycle-today` mirrors the code. It has every fault on and seven fix
+constants, all landed. The refresh runs in three steps: it resolves its
+generation, reads the account, then publishes.
 
 - `LeaseWaitsForReconnect`: `acquireExecution` refuses while a reconnect is
   pending (PROV-004).
@@ -456,7 +460,11 @@ constants, all landed:
   sign-out ran meanwhile. A sign-out the app server answered makes the
   refusal certain, so the reconnect settles as failed. An unanswered
   sign-out, any other advance, or a failed read keeps the reconnect's runtime
-  and login without adopting it.
+  and login without adopting it. This unknown outcome is a PRD decision: the
+  reconnect reports a failure, and the next refresh settles the state.
+- `CancelSignsOut`: a cancelled or failed reconnect commits signed-out with
+  the next generation before it wipes the home, as sign-out does. Its publish
+  can fail like sign-out's, and `close()` skips it.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
@@ -466,27 +474,25 @@ constants, all landed:
 | `lifecycle-lease-during-reconnect-reverted` | violated: shows why the fix is needed | With both lease fixes off, a turn leases the runtime a pending reconnect is signing in, and cancelling the reconnect closes it and wipes its home. Either fix alone passes, so this check turns both off. |
 | `lifecycle-close` | Fixed; now passes | Checks `CloseLeavesNoOpenRuntime`. This is `provider-close`. |
 | `lifecycle-close-reverted` | violated: shows why the fix is needed | With `ShutdownRefusesLeases` off, a lease queued before shutdown registers a runtime after `close()` cleared the maps. |
-| `lifecycle-refresh-during-reconnect` | Fixed; now passes | Before the fix (plausible: Settings reopened while a reconnect is pending): the refresh discovered through the runtime the reconnect reuses and published ready. Cancelling the reconnect wiped the login but superseded nothing, so Rust admitted turns that Settings showed signed out, and they failed. Checks `ReadyMeansSignedIn` with the sign-out fault off. Regression test: `runs no refresh while a reconnect is pending, so a cancelled reconnect leaves the app server signed out`. |
-| `lifecycle-refresh-during-reconnect-reverted` | violated: shows why the fix is needed | With `RefreshSkipsPendingReconnect` off: sign out, reconnect, sign in, refresh, cancel. |
-| `lifecycle-lost-reconnect-answer` | Fixed; now passes | Before the fix (plausible: needs a lost answer): only a superseded refusal relearned the generation. Any other error settled the reconnect and wiped the login the app server had just committed. Rust then read connected with no login. This was the reconnect counterpart of F2. Regression tests: `adopts a reconnect the app server committed before its answer was lost`, `keeps the login of a reconnect whose outcome is unknown` and `registers the runtime a reconnect created when its outcome is unknown`. Keeping the login of an unknown outcome is not yet a PRD decision. If the publish never committed, the next refresh publishes the signed-in account at the old generation, with no reconnect event. |
-| `lifecycle-lost-reconnect-answer-reverted` | violated: shows why the fix is needed | With `LostReconnectAdopted` off, the committed reconnect's cancel wipes its login. |
+| `lifecycle-refresh-during-reconnect` | Fixed; now passes | Before the fix (plausible: Settings reopened while a reconnect is pending): the refresh discovered through the runtime the reconnect reuses and published ready. Cancelling the reconnect wiped the login but superseded nothing, so Rust admitted turns that Settings showed signed out, and they failed. Checks `ReadyMeansSignedIn` and `PendingReconnectNotReady` with the sign-out fault off. Since `CancelSignsOut`, the cancel alone restores `ReadyMeansSignedIn`, so the skip's own promise is `PendingReconnectNotReady`: no automatic result stands for the user's sign-in. Regression test: `runs no refresh while a reconnect is pending, so a cancelled reconnect leaves the app server signed out`. |
+| `lifecycle-refresh-during-reconnect-reverted` | violated: shows why the fix is needed | With `RefreshSkipsPendingReconnect` off: sign out, reconnect, sign in, and a refresh publishes ready while the reconnect is pending. |
+| `lifecycle-lost-reconnect-answer` | Fixed; now passes | Before the fix (plausible: needs a lost answer): only a superseded refusal relearned the generation. Any other error settled the reconnect and wiped the login the app server had just committed. Rust then read connected with no login. This was the reconnect counterpart of F2. Regression tests: `adopts a reconnect the app server committed before its answer was lost`, `keeps the login of a reconnect whose outcome is unknown` and `registers the runtime a reconnect created when its outcome is unknown`. Keeping the login of an unknown outcome is a PRD decision. If the publish never committed, the next refresh publishes the signed-in account at the old generation, with no reconnect event. |
+| `lifecycle-lost-reconnect-answer-reverted` | violated: shows why the fix is needed | With `LostReconnectAdopted` and `CancelSignsOut` off, as before these fixes, the committed reconnect's cancel wipes its login while Rust reads connected. With `CancelSignsOut` on, that cancel would record signed out instead, so `lifecycle-committed-reconnect-keeps-login-reverted` shows the login lost. |
 | `lifecycle-lost-answer-adopts-only-commit` | Fixed; now passes | Checks `AdoptsOnlyCommittedReconnect`: an unanswered reconnect is adopted only when the app server committed it. An independent review found that an earlier draft of this fix adopted any advance past the baseline. Regression tests: `settles a reconnect whose unanswered publish did not commit`, which also covers a publish or discovery that failed before any commit; `neither adopts nor wipes a reconnect whose unanswered publish cannot be proven`; and `settles a reconnect the app server refused with a code it could not have committed`. |
 | `lifecycle-lost-answer-adopts-only-commit-reverted` | violated: shows why the fix is needed | With `AdoptChecksBaseline` off: a sign-out commits but loses its answer, and the reconnect cannot read its baseline. Its publish at the older generation never commits, yet the read shows an advance, and the reconnect is adopted. Before the baseline and sign-out checks, a sign-out during the reconnect led to the same adoption. |
 | `lifecycle-committed-reconnect-keeps-login` | Fixed; now passes | Checks `CommittedReconnectKeepsLogin` with every fault on: a reconnect the app server committed is never settled and wiped. The review found that marking every sign-out as superseding, answered or not, broke this through a failed sign-out publish during the reconnect; this check catches that version. Regression test: `neither adopts nor wipes a reconnect whose unanswered publish cannot be proven`. |
 | `lifecycle-committed-reconnect-keeps-login-reverted` | violated: shows why the fix is needed | With `LostReconnectAdopted` off, the committed reconnect whose answer was lost is settled and its login wiped. |
+| `lifecycle-cancel-records-signed-out` | Fixed; now passes | Checks `CancelRecordsSignedOut` with every fault on. Before the fix (the known limit): a sign-out whose publish failed left Rust reading ready. A reconnect started and was cancelled; the cancel wiped the login and recorded nothing, so Rust kept admitting turns until some later refresh. A cancel whose own publish fails is the same known limit as sign-out's, and is not counted. Regression test: `records signed out in the app server when a reconnect is cancelled after a failed sign-out`. |
+| `lifecycle-cancel-records-signed-out-reverted` | violated: shows why the fix is needed | With `CancelSignsOut` off: a sign-out whose publish fails, a reconnect, a cancel. |
+| `lifecycle-straddling-refresh` | Fixed; now passes | Checks `ReadyMeansSignedIn` with the sign-out fault off. Before the fix: a refresh resolved its generation before a reconnect, read the account after the browser sign-in, and reached its publish after the cancel. The cancel had not moved the generation, so both checks passed and Rust read ready over the wiped login. The cancel now advances it, so the result is stale. Regression test: `drops a refresh that straddles a cancelled reconnect`. |
+| `lifecycle-straddling-refresh-reverted` | violated: shows why the fix is needed | With `CancelSignsOut` off: sign out, refresh starts, reconnect, sign in, refresh reads, cancel, refresh publishes. |
 | `lifecycle-removal-completes` | passes | PROV-003: a removal that waited on the turn finishes once the turn releases, with every fault on. |
 
 `ReadyMeansSignedIn` is checked with the sign-out fault off. A failed
 sign-out publish leaves Rust ready with no login by itself; the next refresh
-corrects it. While a reconnect is pending, no refresh runs, so that state
-lasts until the reconnect settles. Settling it does not publish a signed-out
-state, and the lease guard keeps turns off the reconnect's runtime meanwhile.
-Discovery is atomic here: a refresh that started before the reconnect and
-read the account mid-sign-in is not modeled. The code drops such a result if
-it reaches its pre-publish check while the reconnect is pending. A cancel
-does not advance the generation, so a result that reaches the check after the
-cancel still publishes. The cancel closes the reused runtime, so that
-discovery usually fails first.
+corrects it. While a reconnect is pending, no refresh runs, and the lease
+guard keeps turns off the reconnect's runtime. Settling the reconnect commits
+signed-out, which ends that state unless its own publish fails too.
 
 ## Limits
 
@@ -501,7 +507,7 @@ discovery usually fails first.
   makes `catalog-stale-refresh-after-reconnect`, `catalog-old-account-repopulates`
   and `catalog-stale-adapter-capture` fail, so their passes are not vacuous.
   A logout whose signed-out publish fails advances nothing and supersedes
-  nothing. A cancelled reconnect whose fresh runtime fails to start swaps the
+  nothing; a later reconnect's cancel records the signed-out state. A cancelled reconnect whose fresh runtime fails to start swaps the
   adapter for the stub within one generation; a real result already in
   flight may still publish, which PROV-002 allows because the account and
   generation are unchanged. No check covers restoring through the recovery
