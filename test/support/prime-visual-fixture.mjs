@@ -15,7 +15,8 @@ export function primeVisualFixtureFactory(context) {
     createAgentRunModelScope: (input) => input,
     SessionManager: { create: () => ({}), open: () => ({}) },
     createHostRequestHandler: nativeKernel?.createHostRequestHandler ?? ((handler) => handler),
-    createAgentSessionServices: async () => ({}),
+    // Each session reads its presentation instructions through this shared loader.
+    createAgentSessionServices: async () => ({ resourceLoader: { getAppendSystemPrompt: () => [] } }),
     createAgentSessionFromServices: async ({ hostRequestHandlers }) => {
       let process;
       return { session: {

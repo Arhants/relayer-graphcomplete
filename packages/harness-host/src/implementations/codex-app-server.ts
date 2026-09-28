@@ -35,6 +35,11 @@ export interface CodexAppServerTurnOptions {
   readonly spawnProcess?: CodexAppServerSpawn;
   readonly killProcessGroup?: typeof process.kill;
   readonly onThreadId: (threadId: string) => void | Promise<void>;
+  /**
+   * The saved thread has no rollout in this CODEX_HOME, so Codex cannot resume it. The turn
+   * starts a fresh thread instead; the caller should stop offering the saved one.
+   */
+  readonly onSavedThreadUnavailable?: (threadId: string) => void;
   readonly onTurnId?: (threadId: string, turnId: string) => void | Promise<void>;
   readonly onNotification?: (method: string, params: unknown) => void;
   readonly onServerRequest?: (method: string, params: unknown) => void;
@@ -101,6 +106,20 @@ export async function runCodexAppServerTurn(options: CodexAppServerTurnOptions):
   } finally {
     await connection.close();
   }
+}
+
+/** A JSON-RPC error answer from the app-server to one client request. */
+class CodexRequestError extends Error {
+  constructor(readonly method: string, readonly serverMessage: string) {
+    super(`Codex ${method} failed: ${serverMessage}`);
+  }
+}
+
+/** Codex 0.147.0 answers thread/resume this way when the thread has no rollout in its CODEX_HOME. */
+function isMissingRolloutError(error: unknown): boolean {
+  return error instanceof CodexRequestError
+    && error.method === "thread/resume"
+    && error.serverMessage.startsWith("no rollout found for thread id ");
 }
 
 interface PendingRequest {
@@ -193,15 +212,27 @@ class CodexAppServerConnection {
 
   async run(): Promise<CodexAppServerTurnResult> {
     if (!this.started) throw new Error("Codex app-server connection is not initialized");
-    const threadResult = await this.request(
-      this.options.savedThreadId === undefined ? "thread/start" : "thread/resume",
-      this.options.savedThreadId === undefined
-        ? this.options.threadParams
-        : { threadId: this.options.savedThreadId, ...this.options.threadParams },
-    );
+    const savedThreadId = this.options.savedThreadId;
+    let resumed = savedThreadId !== undefined;
+    let threadResult: unknown;
+    if (savedThreadId === undefined) {
+      threadResult = await this.request("thread/start", this.options.threadParams);
+    } else {
+      try {
+        threadResult = await this.request("thread/resume", { threadId: savedThreadId, ...this.options.threadParams });
+      } catch (error) {
+        // A thread has a rollout only in the CODEX_HOME whose turn/start ran on it. Without
+        // one it can never be resumed here, so this turn starts a fresh thread: its prompt
+        // carries the whole graph context.
+        if (!isMissingRolloutError(error)) throw error;
+        this.options.onSavedThreadUnavailable?.(savedThreadId);
+        resumed = false;
+        threadResult = await this.request("thread/start", this.options.threadParams);
+      }
+    }
     const thread = objectProperty(threadResult, "thread");
     const threadId = stringProperty(thread, "id");
-    if (threadId === undefined || (this.options.savedThreadId !== undefined && threadId !== this.options.savedThreadId)) {
+    if (threadId === undefined || (resumed && threadId !== savedThreadId)) {
       throw new Error("Codex app-server returned an invalid thread identity");
     }
     await abortableCallback(this.options.onThreadId(threadId), this.options.signal);
@@ -339,7 +370,7 @@ class CodexAppServerConnection {
     this.pending.delete(message.id);
     if (message.error !== undefined) {
       const error = isRecord(message.error) ? message.error : {};
-      pending.reject(new Error(`Codex ${pending.method} failed: ${String(error.message ?? "unknown error")}`));
+      pending.reject(new CodexRequestError(pending.method, String(error.message ?? "unknown error")));
     } else {
       pending.resolve(message.result);
     }

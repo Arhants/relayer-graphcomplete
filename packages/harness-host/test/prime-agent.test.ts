@@ -26,7 +26,7 @@ describe("PrimeAgentHarness", () => {
     const root = await mkdtemp(join(tmpdir(), "relayer-prime-managed-factory-"));
     const runtime = managedRuntimePaths(root);
     const session = primeSession(join(runtime.privateStateRoot, "sessions", "root.jsonl"));
-    const createAgentSessionServices = vi.fn(async () => ({}));
+    const createAgentSessionServices = vi.fn(async () => nativeServices());
     const createSessionManager = vi.fn(() => "managed-session");
     const loadModule = vi.fn(async () => ({
       ...runScopeApi(),
@@ -81,7 +81,7 @@ describe("PrimeAgentHarness", () => {
           ...runScopeApi(),
           SessionManager: { create, open },
           createHostRequestHandler: (handler: unknown) => handler,
-          createAgentSessionServices: vi.fn(async () => ({})),
+          createAgentSessionServices: vi.fn(async () => nativeServices()),
           createAgentSessionFromServices: vi.fn(async () => ({ session: primeSession(join(sessions, "fresh.jsonl")) })),
         }) as never,
         resolvePrimeRuntime: async () => runtime,
@@ -109,7 +109,7 @@ describe("PrimeAgentHarness", () => {
           ...runScopeApi(),
           SessionManager: { create, open },
           createHostRequestHandler: (handler: unknown) => handler,
-          createAgentSessionServices: vi.fn(async () => ({})),
+          createAgentSessionServices: vi.fn(async () => nativeServices()),
           createAgentSessionFromServices: vi.fn(async () => ({ session: primeSession(join(sessions, "fresh.jsonl")) })),
         }) as never,
         resolvePrimeRuntime: async () => runtime,
@@ -143,7 +143,7 @@ describe("PrimeAgentHarness", () => {
         loadModule: async () => ({
           ...runScopeApi(), SessionManager: { create, open },
           createHostRequestHandler: (handler: unknown) => handler,
-          createAgentSessionServices: vi.fn(async () => ({})),
+          createAgentSessionServices: vi.fn(async () => nativeServices()),
           createAgentSessionFromServices: vi.fn(async () => ({ session: primeSession(savedSession) })),
         }) as never,
         resolvePrimeRuntime: async () => runtime,
@@ -160,7 +160,7 @@ describe("PrimeAgentHarness", () => {
     const root = await mkdtemp(join(tmpdir(), "relayer-prime-managed-root-"));
     const outside = await mkdtemp(join(tmpdir(), "relayer-prime-state-outside-"));
     const runtime = managedRuntimePaths(root);
-    const createAgentSessionServices = vi.fn(async () => ({}));
+    const createAgentSessionServices = vi.fn(async () => nativeServices());
     const loadModule = vi.fn(async () => ({
       ...runScopeApi(), SessionManager: { create: vi.fn(), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
@@ -187,7 +187,7 @@ describe("PrimeAgentHarness", () => {
     const root = await mkdtemp(join(tmpdir(), "relayer-prime-managed-child-"));
     const outside = await mkdtemp(join(tmpdir(), "relayer-prime-child-outside-"));
     const runtime = managedRuntimePaths(root);
-    const createAgentSessionServices = vi.fn(async () => ({}));
+    const createAgentSessionServices = vi.fn(async () => nativeServices());
     const loadModule = vi.fn(async () => ({
       ...runScopeApi(), SessionManager: { create: vi.fn(), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
@@ -229,6 +229,75 @@ describe("PrimeAgentHarness", () => {
     expect(session.abort).toHaveBeenCalledOnce();
     expect(nativeSyncDispose).toHaveBeenCalledOnce();
     expect(session.disposeAsync).not.toHaveBeenCalled();
+  });
+
+  it("forgets the root session a force shutdown kills during a root turn, and keeps an idle one", async () => {
+    // PRD: a root turn force-stopped while its native conversation ran is not resumed.
+    const idle = await createHarness(primeSession("/tmp/idle.jsonl"));
+    await idle.complete(runContext(11, "token"));
+    idle.forceShutdown();
+    expect(idle.state()).toEqual({ primeAgentSessionFile: "/tmp/idle.jsonl", primeAgentSessionPersonalPresentationVersionId: null });
+
+    const session = primeSession("/tmp/killed.jsonl", {
+      promptAndWait: vi.fn().mockResolvedValueOnce(undefined).mockReturnValueOnce(new Promise<void>(() => {})),
+    });
+    const harness = await createHarness(session);
+    await harness.complete(runContext(11, "token"));
+    expect(harness.state()).toEqual({ primeAgentSessionFile: "/tmp/killed.jsonl", primeAgentSessionPersonalPresentationVersionId: null });
+    void harness.complete(runContext(12, "token")).catch(() => undefined);
+    await vi.waitFor(() => expect(session.promptAndWait).toHaveBeenCalledTimes(2));
+
+    harness.forceShutdown();
+
+    expect(session.abort).toHaveBeenCalledOnce();
+    expect(harness.state()).toEqual({});
+  });
+
+  it("keeps the next root turn's session at force shutdown after an earlier root turn was force-stopped", async () => {
+    const stuck = primeSession("/tmp/stuck.jsonl", { promptAndWait: vi.fn(() => new Promise<void>(() => {})) });
+    const next = primeSession("/tmp/next.jsonl");
+    const sessions = [stuck, next];
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7, workingDirectory: "/tmp/project", ...fullPermission, configuration,
+    }, { loadModule: async () => ({
+      ...runScopeApi(),
+      SessionManager: { create: vi.fn(() => "new-session"), open: vi.fn() },
+      createHostRequestHandler: (handler: unknown) => handler,
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
+      createAgentSessionFromServices: vi.fn(async () => ({ session: sessions.shift() })),
+    }) as never });
+    const force = new AbortController();
+    // The stuck root turn's native prompt never settles, even after its force-stop.
+    const stuckTurn = harness.complete({ ...runContext(11, "stuck"), forceSignal: force.signal });
+    await vi.waitFor(() => expect(stuck.promptAndWait).toHaveBeenCalledOnce());
+    force.abort(new Error("force-stopped after two minutes"));
+    await expect(stuckTurn).rejects.toThrow("force-stopped after two minutes");
+    await harness.complete({ ...runContext(12, "next"), forceSignal: new AbortController().signal });
+
+    harness.forceShutdown();
+
+    expect(harness.state()).toEqual({ primeAgentSessionFile: "/tmp/next.jsonl", primeAgentSessionPersonalPresentationVersionId: null });
+  });
+
+  it("fails closed when the installed package cannot scope presentation instructions to a session", async () => {
+    const session = primeSession("/tmp/unscoped.jsonl", { reload: vi.fn(async () => undefined) });
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7, workingDirectory: "/tmp/project", ...fullPermission, configuration,
+    }, { loadModule: async () => ({
+      ...runScopeApi(),
+      SessionManager: { create: vi.fn(() => "new-session"), open: vi.fn() },
+      createHostRequestHandler: (handler: unknown) => handler,
+      // No resource loader: a neutral session still works, pinned instructions cannot be delivered.
+      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionFromServices: vi.fn(async () => ({ session })),
+    }) as never });
+
+    await expect(harness.complete(presentationRunContext(11, "root", 90)))
+      .rejects.toThrow("cannot refresh interaction-scoped presentation instructions");
+    await expect(harness.complete(invokedRunContext(presentationRunContext(12, "child", 90), 7)))
+      .rejects.toThrow("cannot scope presentation instructions to a session");
+    expect(session.reload).not.toHaveBeenCalled();
+    expect(session.promptAndWait).not.toHaveBeenCalled();
   });
 
   it("guards native disposal before an asynchronous abort continuation can dispose again", async () => {
@@ -606,7 +675,7 @@ describe("PrimeAgentHarness", () => {
       .mockReturnValueOnce("fresh-a")
       .mockReturnValueOnce("fresh-b");
     const open = vi.fn(() => "saved-root");
-    const createAgentSessionServices = vi.fn(async () => ({}));
+    const createAgentSessionServices = vi.fn(async () => nativeServices());
     const createAgentSessionFromServices = vi.fn(async () => {
       const session = sessions.shift();
       if (session === undefined) throw new Error("unexpected Prime session creation");
@@ -693,7 +762,7 @@ describe("PrimeAgentHarness", () => {
       ...runScopeApi(),
       SessionManager: { create: vi.fn(() => "fresh"), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
       createAgentSessionFromServices: vi.fn(async () => {
         const session = sessions.shift();
         if (session === undefined) throw new Error("unexpected Prime session creation");
@@ -756,7 +825,7 @@ describe("PrimeAgentHarness", () => {
       ...runScopeApi(),
       SessionManager: { create: vi.fn(() => "fresh"), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
       createAgentSessionFromServices: vi.fn(async () => {
         creations += 1;
         if (creations === 1) return { session: root };
@@ -809,7 +878,7 @@ describe("PrimeAgentHarness", () => {
       ...runScopeApi(),
       SessionManager: { create: vi.fn(() => "fresh"), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
       createAgentSessionFromServices: vi.fn(async () => {
         const session = sessions.shift();
         if (session === undefined) throw new Error("unexpected Prime session creation");
@@ -887,7 +956,7 @@ describe("PrimeAgentHarness", () => {
       ...runScopeApi(),
       SessionManager: { create, open },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
       createAgentSessionFromServices,
     }) as never });
     const cancel = new AbortController();
@@ -942,7 +1011,7 @@ describe("PrimeAgentHarness", () => {
       ...runScopeApi(),
       SessionManager: { create: vi.fn(() => "fresh"), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
       createAgentSessionFromServices: vi.fn(async () => {
         creations += 1;
         if (creations === 1) return { session: root };
@@ -986,7 +1055,7 @@ describe("PrimeAgentHarness", () => {
       ...runScopeApi(),
       SessionManager: { create, open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
       createAgentSessionFromServices,
     }) as never });
     const rootForce = new AbortController();
@@ -1023,7 +1092,7 @@ describe("PrimeAgentHarness", () => {
       ...runScopeApi(),
       SessionManager: { create: vi.fn(() => "fresh-manager"), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
       createAgentSessionFromServices: vi.fn(async () => {
         creations += 1;
         if (creations === 1) return { session: pinned };
@@ -1079,7 +1148,7 @@ describe("PrimeAgentHarness", () => {
       ...runScopeApi(),
       SessionManager: { create, open },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
       createAgentSessionFromServices,
     }) as never });
     expect(open).toHaveBeenCalledOnce();
@@ -1115,7 +1184,7 @@ describe("PrimeAgentHarness", () => {
   });
 
   it("keeps the successor's presentation instructions when an abandoned reload later fails", async () => {
-    let resourceLoaderOptions: { appendSystemPromptOverride(base: string[]): string[] } | undefined;
+    const loaders = sessionLoaders();
     const staleReload = deferred<void>();
     const stuckRoot = primeSession("/tmp/stuck-root.jsonl", { reload: vi.fn(() => staleReload.promise) });
     const successor = primeSession("/tmp/successor.jsonl", { reload: vi.fn(async () => undefined) });
@@ -1126,15 +1195,12 @@ describe("PrimeAgentHarness", () => {
       ...runScopeApi(),
       SessionManager: { create: vi.fn(() => "fresh-manager"), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async (options: { resourceLoaderOptions: typeof resourceLoaderOptions }) => {
-        resourceLoaderOptions = options.resourceLoaderOptions;
-        return {};
-      }),
-      createAgentSessionFromServices: vi.fn(async () => {
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
+      createAgentSessionFromServices: loaders.record(vi.fn(async () => {
         const session = sessions.shift();
         if (session === undefined) throw new Error("unexpected Prime session creation");
         return { session };
-      }),
+      })),
     }) as never });
     const rootForce = new AbortController();
 
@@ -1149,15 +1215,14 @@ describe("PrimeAgentHarness", () => {
     staleReload.reject(new Error("stale reload failed"));
     await settleMicrotasks();
 
-    expect(resourceLoaderOptions?.appendSystemPromptOverride(["base"]))
-      .toEqual(["base", expect.stringContaining("If you are the root agent")]);
+    expect(loaders.appendedFor(successor)).toEqual(["base", expect.stringContaining("If you are the root agent")]);
     await harness.complete({ ...presentationRunContext(112, "next", 90), forceSignal: new AbortController().signal });
     expect(successor.reload).not.toHaveBeenCalled();
     expect(successor.promptAndWait).toHaveBeenCalledTimes(2);
   });
 
   it("does not create a session when an abandoned rotation's disposal settles after the successor started", async () => {
-    let resourceLoaderOptions: { appendSystemPromptOverride(base: string[]): string[] } | undefined;
+    const loaders = sessionLoaders();
     const staleDisposal = deferred<void>();
     const pinned = primeSession("/tmp/pinned.jsonl", {
       reload: vi.fn(async () => undefined),
@@ -1177,11 +1242,8 @@ describe("PrimeAgentHarness", () => {
       ...runScopeApi(),
       SessionManager: { create: vi.fn(() => "fresh-manager"), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async (options: { resourceLoaderOptions: typeof resourceLoaderOptions }) => {
-        resourceLoaderOptions = options.resourceLoaderOptions;
-        return {};
-      }),
-      createAgentSessionFromServices,
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
+      createAgentSessionFromServices: loaders.record(createAgentSessionFromServices),
     }) as never });
     await harness.complete({ ...presentationRunContext(120, "pinned", 90), forceSignal: new AbortController().signal });
     const rootForce = new AbortController();
@@ -1198,8 +1260,7 @@ describe("PrimeAgentHarness", () => {
     await settleMicrotasks();
 
     expect(createAgentSessionFromServices).toHaveBeenCalledTimes(2);
-    expect(resourceLoaderOptions?.appendSystemPromptOverride(["base"]))
-      .toEqual(["base", expect.stringContaining("If you are the root agent")]);
+    expect(loaders.appendedFor(successor)).toEqual(["base", expect.stringContaining("If you are the root agent")]);
     expect(harness.state()).toEqual({
       primeAgentSessionFile: "/tmp/successor.jsonl",
       primeAgentSessionPersonalPresentationVersionId: 90,
@@ -1217,7 +1278,7 @@ describe("PrimeAgentHarness", () => {
       ...runScopeApi(),
       SessionManager: { create: vi.fn(() => "fresh-manager"), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
       createAgentSessionFromServices: vi.fn(async () => {
         const session = sessions.shift();
         if (session === undefined) throw new Error("unexpected Prime session creation");
@@ -1437,7 +1498,7 @@ describe("PrimeAgentHarness", () => {
       ...controlledRunScopeApi(scopes),
       SessionManager: { create: vi.fn(() => "new-session"), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
       createAgentSessionFromServices: vi.fn(async () => ({ session })),
     }) as never });
 
@@ -1598,7 +1659,7 @@ describe("PrimeAgentHarness", () => {
   it("uses the separate layered-navigation prompt profile", async () => {
     let prompt = "";
     let listener: ((event: unknown) => void) | undefined;
-    let resourceLoaderOptions: { appendSystemPromptOverride(base: string[]): string[] } | undefined;
+    const loaders = sessionLoaders();
     const session = {
       agent: { state: { thinkingLevel: "off" } },
       sessionManager: { appendThinkingLevelChange: vi.fn() },
@@ -1645,11 +1706,8 @@ describe("PrimeAgentHarness", () => {
       ...runScopeApi(),
       SessionManager: { create: vi.fn(() => "new-session"), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async (options: { resourceLoaderOptions: typeof resourceLoaderOptions }) => {
-        resourceLoaderOptions = options.resourceLoaderOptions;
-        return { modelRegistry: { find: vi.fn() } };
-      }),
-      createAgentSessionFromServices: vi.fn(async () => ({ session })),
+      createAgentSessionServices: vi.fn(async () => nativeServices({ modelRegistry: { find: vi.fn() } })),
+      createAgentSessionFromServices: loaders.record(vi.fn(async () => ({ session }))),
     }) as never });
 
     const context = runContext(11, "token");
@@ -1718,7 +1776,7 @@ describe("PrimeAgentHarness", () => {
     const unrelatedTool = trace.events.find((event) => event.type === "tool.call.started");
     expect(JSON.stringify(unrelatedTool?.data)).toContain("Decision-useful center");
     expect(session.reload).toHaveBeenCalledOnce();
-    const nativeInstructions = resourceLoaderOptions?.appendSystemPromptOverride(["base prompt"]);
+    const nativeInstructions = loaders.appendedFor(session);
     expect(nativeInstructions).toHaveLength(2);
     expect(nativeInstructions?.[1]).toContain("If you are the root agent");
     expect(nativeInstructions?.[1]).toContain("relevant language-specific public API recipes");
@@ -1870,7 +1928,7 @@ describe("PrimeAgentHarness", () => {
   });
 
   it("retries a presentation instruction reload after a transient failure", async () => {
-    let resourceLoaderOptions: { appendSystemPromptOverride(base: string[]): string[] } | undefined;
+    const loaders = sessionLoaders();
     const reload = vi.fn().mockRejectedValueOnce(new Error("reload failed")).mockResolvedValueOnce(undefined);
     const session = {
       agent: { state: { thinkingLevel: "off" } },
@@ -1883,11 +1941,8 @@ describe("PrimeAgentHarness", () => {
     }, { loadModule: async () => ({
       ...runScopeApi(), SessionManager: { create: vi.fn(() => "new-session"), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async (options: { resourceLoaderOptions: typeof resourceLoaderOptions }) => {
-        resourceLoaderOptions = options.resourceLoaderOptions;
-        return { modelRegistry: { find: vi.fn() } };
-      }),
-      createAgentSessionFromServices: vi.fn(async () => ({ session })),
+      createAgentSessionServices: vi.fn(async () => nativeServices({ modelRegistry: { find: vi.fn() } })),
+      createAgentSessionFromServices: loaders.record(vi.fn(async () => ({ session }))),
     }) as never });
     const context = runContext(11, "token");
     const attached: HarnessRunContext = {
@@ -1907,13 +1962,13 @@ describe("PrimeAgentHarness", () => {
     };
 
     await expect(harness.complete(attached)).rejects.toThrow("reload failed");
-    expect(resourceLoaderOptions?.appendSystemPromptOverride(["base"])).toEqual(["base"]);
+    expect(loaders.appendedFor(session)).toEqual(["base"]);
     await expect(harness.complete(attached)).resolves.toBeUndefined();
     expect(reload).toHaveBeenCalledTimes(2);
-    expect(resourceLoaderOptions?.appendSystemPromptOverride(["base"])[1]).toContain("If you are the root agent");
-    expect(resourceLoaderOptions?.appendSystemPromptOverride(["base"])[1]).toContain("Never include that block in an unrelated delegate's task");
-    expect(resourceLoaderOptions?.appendSystemPromptOverride(["base"])[1]).not.toContain("Personal graph presentation preferences:");
-    expect(resourceLoaderOptions?.appendSystemPromptOverride(["base"])[1]).not.toContain("Decision-useful center");
+    expect(loaders.appendedFor(session)?.[1]).toContain("If you are the root agent");
+    expect(loaders.appendedFor(session)?.[1]).toContain("Never include that block in an unrelated delegate's task");
+    expect(loaders.appendedFor(session)?.[1]).not.toContain("Personal graph presentation preferences:");
+    expect(loaders.appendedFor(session)?.[1]).not.toContain("Decision-useful center");
   });
 
   it("rotates the native Prime session when the durable presentation pin changes", async () => {
@@ -1940,7 +1995,7 @@ describe("PrimeAgentHarness", () => {
     }, { loadModule: async () => ({
       ...runScopeApi(), SessionManager: { create: vi.fn(() => ({})), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({ modelRegistry: { find: vi.fn() } })),
+      createAgentSessionServices: vi.fn(async () => nativeServices({ modelRegistry: { find: vi.fn() } })),
       createAgentSessionFromServices,
     }) as never });
     const first = presentationRunContext(11, "first-token", 90);
@@ -1960,7 +2015,7 @@ describe("PrimeAgentHarness", () => {
   });
 
   it("reloads native propagation instructions when restoring a matching presentation pin", async () => {
-    let resourceLoaderOptions: { appendSystemPromptOverride(base: string[]): string[] } | undefined;
+    const loaders = sessionLoaders();
     const session = {
       sessionFile: "/tmp/saved-v1.jsonl",
       agent: { state: { thinkingLevel: "off" } },
@@ -1979,11 +2034,8 @@ describe("PrimeAgentHarness", () => {
     }, { loadModule: async () => ({
       ...runScopeApi(), SessionManager: { create: vi.fn(), open },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async (options: { resourceLoaderOptions: typeof resourceLoaderOptions }) => {
-        resourceLoaderOptions = options.resourceLoaderOptions;
-        return { modelRegistry: { find: vi.fn() } };
-      }),
-      createAgentSessionFromServices,
+      createAgentSessionServices: vi.fn(async () => nativeServices({ modelRegistry: { find: vi.fn() } })),
+      createAgentSessionFromServices: loaders.record(createAgentSessionFromServices),
     }) as never });
     const attached = presentationRunContext(11, "token", 90);
 
@@ -1994,7 +2046,7 @@ describe("PrimeAgentHarness", () => {
     expect(createAgentSessionFromServices).toHaveBeenCalledOnce();
     expect(session.reload).toHaveBeenCalledOnce();
     expect(session.promptAndWait).toHaveBeenCalledTimes(2);
-    const nativeInstructions = resourceLoaderOptions?.appendSystemPromptOverride(["base"]);
+    const nativeInstructions = loaders.appendedFor(session);
     expect(nativeInstructions?.[1]).toContain("If you are the root agent");
     expect(nativeInstructions?.[1]).toContain("relevant language-specific public API recipes");
     expect(nativeInstructions?.[1]).not.toContain("Decision-useful center");
@@ -2029,7 +2081,7 @@ describe("PrimeAgentHarness", () => {
     }, { loadModule: async () => ({
       ...runScopeApi(), SessionManager: { create: vi.fn(), open: vi.fn(() => ({})) },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({ modelRegistry: { find: vi.fn() } })),
+      createAgentSessionServices: vi.fn(async () => nativeServices({ modelRegistry: { find: vi.fn() } })),
       createAgentSessionFromServices: vi.fn(async () => ({ session })),
     }) as never });
 
@@ -2073,7 +2125,7 @@ describe("PrimeAgentHarness", () => {
     }, { loadModule: async () => ({
       ...runScopeApi(), SessionManager: { create: vi.fn(() => ({})), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({ modelRegistry: { find: vi.fn() } })),
+      createAgentSessionServices: vi.fn(async () => nativeServices({ modelRegistry: { find: vi.fn() } })),
       createAgentSessionFromServices,
     }) as never });
     await harness.complete(presentationRunContext(11, "first-token", 90));
@@ -2104,7 +2156,7 @@ describe("PrimeAgentHarness", () => {
     }, { loadModule: async () => ({
       ...runScopeApi(), SessionManager: { create, open },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({ modelRegistry: { find: vi.fn() } })),
+      createAgentSessionServices: vi.fn(async () => nativeServices({ modelRegistry: { find: vi.fn() } })),
       createAgentSessionFromServices: vi.fn(async () => ({ session })),
     }) as never });
 
@@ -2157,7 +2209,7 @@ describe("PrimeAgentHarness", () => {
       ...runScopeApi(),
       SessionManager: { create: vi.fn(() => "new-session"), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({ modelRegistry: { find: vi.fn() } })),
+      createAgentSessionServices: vi.fn(async () => nativeServices({ modelRegistry: { find: vi.fn() } })),
       createAgentSessionFromServices: vi.fn(async () => ({ session })),
     }) as never });
     const controller = new AbortController();
@@ -2349,7 +2401,7 @@ describe("PrimeAgentHarness", () => {
           createAgentRunKernelBoundaryScope: vi.fn((input: unknown) => ({ input })),
           SessionManager: { create: vi.fn(() => "new-session"), open: vi.fn() },
           createHostRequestHandler: (handler: unknown) => handler,
-          createAgentSessionServices: vi.fn(async () => ({})),
+          createAgentSessionServices: vi.fn(async () => nativeServices()),
           createAgentSessionFromServices,
         }) as never,
         createKernelBoundary: () => async () => ({ launch: vi.fn(), dispose: vi.fn(async () => undefined) }),
@@ -2752,6 +2804,26 @@ function runContext(nodeId: number, token: string, trace: HarnessTraceSink = cre
   };
 }
 
+/** Records the resource loader each native session was created with. */
+function sessionLoaders() {
+  const loaders = new Map<unknown, { getAppendSystemPrompt(): string[] }>();
+  return {
+    appendedFor: (session: unknown): string[] | undefined => loaders.get(session)?.getAppendSystemPrompt(),
+    record: <Result extends { readonly session: unknown }>(create: (...args: never[]) => Promise<Result>) => (
+      async (options: { readonly services: { readonly resourceLoader: { getAppendSystemPrompt(): string[] } } }) => {
+        const result = await (create as (value: unknown) => Promise<Result>)(options);
+        loaders.set(result.session, options.services.resourceLoader);
+        return result;
+      }
+    ),
+  };
+}
+
+/** Shared native services with a resource loader each session's instructions are scoped to. */
+function nativeServices(services: Record<string, unknown> = {}): Record<string, unknown> {
+  return { ...services, resourceLoader: { getAppendSystemPrompt: () => ["base"] } };
+}
+
 function invokedRunContext(context: HarnessRunContext, actionId: number): HarnessRunContext {
   return {
     ...context,
@@ -2830,7 +2902,7 @@ async function createHarness(
     ...runScopeApi(),
     SessionManager: { create: vi.fn(() => "new-session"), open: vi.fn() },
     createHostRequestHandler: (handler: unknown) => handler,
-    createAgentSessionServices: vi.fn(async () => ({ modelRegistry: { find: vi.fn() } })),
+    createAgentSessionServices: vi.fn(async () => nativeServices({ modelRegistry: { find: vi.fn() } })),
     createAgentSessionFromServices: vi.fn(async () => ({ session })),
   }) as never });
 }
@@ -2861,7 +2933,7 @@ async function createBoundedHarness(
       createAgentRunKernelBoundaryScope: vi.fn((input: unknown) => ({ input })),
       SessionManager: { create: vi.fn(() => "new-session"), open: vi.fn() },
       createHostRequestHandler: (handler: unknown) => handler,
-      createAgentSessionServices: vi.fn(async () => ({})),
+      createAgentSessionServices: vi.fn(async () => nativeServices()),
       createAgentSessionFromServices: vi.fn(async () => ({ session })),
     }) as never,
     createKernelBoundary: () => async () => ({ launch: vi.fn(), dispose: vi.fn(async () => undefined) }),

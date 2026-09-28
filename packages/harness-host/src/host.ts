@@ -785,6 +785,13 @@ export class HarnessHost {
       forceTimer.unref?.();
     };
     controller.signal.addEventListener("abort", armForceStop, { once: true });
+    // A force-stopped root turn's harness forgets its native conversation in its own force
+    // listener. Record that at once: after the force (two minutes after the cancel), the host
+    // run may take ten more seconds to end, and a crash before then must not restore it.
+    const recordForcedState = () => queueMicrotask(() => {
+      void this.recordSessionState(threadId, session).catch(() => undefined);
+    });
+    forceController.signal.addEventListener("abort", recordForcedState, { once: true });
     const detachSignal = forwardAbort(input.signal, controller);
     const completeCallId = randomUUID();
     const approvals = session.approvals.beginCompletion({ interactionId, completeCallId });
@@ -828,6 +835,7 @@ export class HarnessHost {
       if (!nativeStarted && error !== null && typeof error === "object") executionNotStartedErrors.add(error);
     }
     controller.signal.removeEventListener("abort", armForceStop);
+    forceController.signal.removeEventListener("abort", recordForcedState);
     if (forceTimer !== undefined) clearTimeout(forceTimer);
     session.approvals.endCompletion(
       completeCallId,
@@ -844,9 +852,7 @@ export class HarnessHost {
     detachSignal();
     const errors: unknown[] = operationError === undefined ? [] : [operationError];
     try {
-      session.descriptor = { ...session.descriptor, state: captureHarnessState(session.harness) };
-      this.saved.set(threadId, persistedDescriptor(session.descriptor));
-      await this.persist();
+      await this.recordSessionState(threadId, session);
     } catch (error) {
       errors.push(error);
     }
@@ -1454,8 +1460,7 @@ export class HarnessHost {
         errors.push(error);
       }
       try {
-        session.descriptor = { ...session.descriptor, state: captureHarnessState(session.harness) };
-        this.saved.set(threadId, persistedDescriptor(session.descriptor));
+        this.captureSessionState(threadId, session);
       } catch (error) {
         errors.push(error);
       }
@@ -1510,13 +1515,19 @@ export class HarnessHost {
       reject = rejectPromise;
     });
     const errors: unknown[] = [];
-    for (const session of this.sessions.values()) {
+    for (const [threadId, session] of this.sessions) {
       session.approvals.close("Harness host force-closed before the approval was resolved.");
       for (const active of session.activeCompletions.values()) {
         active.controller.abort(new Error("Harness host force-closed"));
       }
       try { session.lifecycle.forceShutdown(); } catch (error) { errors.push(error); }
+      // A harness forgets a root conversation its force shutdown killed. Capture that now: the
+      // killed turn may never settle before the process exits.
+      try { this.captureSessionState(threadId, session); } catch (error) { errors.push(error); }
     }
+    // Force close skips close()'s final persist, so it writes the captured state itself.
+    const persistFailure = (this.initialized && this.sessions.size > 0 ? this.persist() : Promise.resolve())
+      .then(() => undefined, (error: unknown) => ({ error }));
     for (const lifecycle of this.lateClosingHarnesses) {
       try { lifecycle.forceShutdown(); } catch (error) { errors.push(error); }
     }
@@ -1530,6 +1541,8 @@ export class HarnessHost {
       } catch (error) {
         if (!(error instanceof Error && error.message === "Harness host is closed")) errors.push(error);
       }
+      const persistOutcome = await persistFailure;
+      if (persistOutcome !== undefined) errors.push(persistOutcome.error);
       await this.persistTail;
       try { await this.traceStore?.forceClose(); } catch (error) { errors.push(error); }
       if (errors.length > 0) throw new AggregateError(errors, "Harness host did not force-close cleanly");
@@ -1577,6 +1590,16 @@ export class HarnessHost {
       release();
       if (this.registrationTails.get(threadId) === tail) this.registrationTails.delete(threadId);
     }
+  }
+
+  private captureSessionState(threadId: number, session: LiveSession): void {
+    session.descriptor = { ...session.descriptor, state: captureHarnessState(session.harness) };
+    this.saved.set(threadId, persistedDescriptor(session.descriptor));
+  }
+
+  private async recordSessionState(threadId: number, session: LiveSession): Promise<void> {
+    this.captureSessionState(threadId, session);
+    await this.persist();
   }
 
   private persist(): Promise<void> {
