@@ -320,7 +320,7 @@ async function run() {
     systemFamily: { key: "codex", name: "Codex", modelIds: ["fixture-model"] },
   };
   const modelCatalogRefreshServer = await startModelCatalogRefreshServer({
-    refresh: () => product.publishProviderCatalog(catalogSnapshot),
+    refresh: () => product.seedProviderCatalog(catalogSnapshot),
   });
   services.push(modelCatalogRefreshServer);
   const productOptions = {
@@ -336,7 +336,7 @@ async function run() {
   product = new RelayerAppServerService(productOptions);
   services.push(product);
   const productSession = await product.start();
-  await product.publishProviderCatalog(catalogSnapshot);
+  await product.seedProviderCatalog(catalogSnapshot);
   await productRequest(productSession, "/api/model-families", {
     method: "POST",
     body: JSON.stringify({ name: "Fixture models", enabled: true,
@@ -470,11 +470,15 @@ async function run() {
   };
 
   await webContents.executeJavaScript(`(document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelector("button") ?? (${typedPermissions} ? null : document.querySelector('[data-action-id="${invokeAction.id}"]')))?.click()`);
-  await waitFor("the running invoked interaction", async () => {
+  const runningInteraction = await waitFor("the running invoked interaction", async () => {
     const detail = await productRequest(productSession, `/api/threads/${threadId}`);
-    return detail.interactions.some((interaction) => interaction.completionStatus === "running");
+    return detail.interactions.find((interaction) => interaction.completionStatus === "running");
   });
-  await waitFor("the invoked turn to finish opening", () => webContents.executeJavaScript(`${turnReady(2, 2)} && document.querySelector("#interactionText")?.textContent === "Propose the most useful next improvement to this task system."`));
+  // READ-001 preserves the source while pending. Explicit browsing cancels the
+  // automatic ready-result switch so the mounted source control can be observed.
+  await waitFor("the source to remain visible while invoke is pending", () => webContents.executeJavaScript(`${turnReady(1, 2)} && document.querySelector("#interactionText")?.textContent === "Show the deterministic task system."`));
+  await webContents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${runningInteraction.id}))`);
+  await waitFor("the explicitly selected pending turn", () => webContents.executeJavaScript(`${turnReady(2, 2)} && document.querySelector("#interactionText")?.textContent === "Propose the most useful next improvement to this task system."`));
   await webContents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${sourceInteraction.id}))`);
   await waitFor("the source turn while the invoked interaction runs", () => webContents.executeJavaScript(
     `document.querySelector("#interactionText")?.textContent === "Show the deterministic task system."`,
@@ -564,6 +568,9 @@ async function run() {
   }
 
   await window.loadURL(`${productSession.origin}/?threadId=${encodeURIComponent(threadId)}`);
+  window.show();
+  window.focus();
+  webContents.setBackgroundThrottling(false);
   await waitFor("the four-turn workspace", () => webContents.executeJavaScript(`(() => {
     return ${turnReady(4, 4)};
   })()`));
@@ -580,6 +587,7 @@ async function run() {
   const productOpenSignature = nodeRectSignature(productStableOpen);
   const productRootLayout = requireAuthoredLayout("Product root", productStableOpen);
   await mkdir(dirname(screenshotPath), { recursive: true });
+  await waitForPaint(webContents);
   await writeFile(screenshotPath, (await webContents.capturePage()).toPNG());
   await webContents.executeJavaScript(`document.querySelector('[data-node]:not([data-node="${navigateAction.sourceNodeId}"])')?.click()`);
   await waitFor("the second Product node detail", () => webContents.executeJavaScript(
@@ -590,9 +598,10 @@ async function run() {
     throw new Error("Selecting another node while the inspector was open changed the Product graph camera.");
   }
   await webContents.executeJavaScript(`document.querySelector("#closeInspector")?.click()`);
-  const productAfterClose = await graphPresentation(webContents);
-  if (JSON.stringify(nodeRectSignature(productAfterClose)) !== JSON.stringify(productOpenSignature)) {
-    throw new Error("Closing the inspector changed the Product graph camera.");
+  const productAfterClose = await waitForStableGraph("the expanded Product graph after closing details", webContents);
+  if (productAfterClose.inspectorOpen || !nodesAreContained(productAfterClose)
+    || JSON.stringify(requireAuthoredLayout("Product closed inspector", productAfterClose)) !== JSON.stringify(productRootLayout)) {
+    throw new Error("Closing the inspector did not preserve canonical layout and fit the expanded Product graph.");
   }
   const dragPoint = await webContents.executeJavaScript(`(() => {
     const rect = document.querySelector("[data-node]")?.getBoundingClientRect();
@@ -600,7 +609,7 @@ async function run() {
   })()`);
   if (!dragPoint) throw new Error("The Product graph did not expose a node to drag.");
   webContents.sendInputEvent({ type: "mouseDown", ...dragPoint, button: "left", clickCount: 1 });
-  webContents.sendInputEvent({ type: "mouseMove", x: dragPoint.x + 24, y: dragPoint.y + 12 });
+  webContents.sendInputEvent({ type: "mouseMove", x: dragPoint.x + 24, y: dragPoint.y + 12, modifiers: ["leftButtonDown"] });
   webContents.sendInputEvent({
     type: "mouseUp",
     x: dragPoint.x + 24,
@@ -670,7 +679,8 @@ async function run() {
     initialContained: nodesAreContained(productInspectorFit),
     restoredContained: nodesAreContained(restoredInspectorFit),
     openToOpenPreserved: true,
-    closePreserved: true,
+    closeCanonicalLayoutPreserved: true,
+    closedContained: nodesAreContained(productAfterClose),
     dragSelectionSuppressed,
   };
   reviewContext = {
@@ -734,6 +744,10 @@ async function run() {
   const evalRootInspectorFit = await waitFor("the Eval root inspector fit", async () => {
     const presentation = await graphPresentation(evalContents);
     return presentation.inspectorOpen && nodesAreContained(presentation) ? presentation : false;
+  }).catch(async (error) => {
+    process.stderr.write(`Eval root inspector failure: ${JSON.stringify(await graphPresentation(evalContents))}\n`);
+    await captureEvidence(evalContents, "failed-eval-root-inspector");
+    throw error;
   });
   if (JSON.stringify(requireAuthoredLayout("Eval root inspector", evalRootInspectorFit)) !== JSON.stringify(evalRootLayout)) {
     throw new Error("Opening the Eval inspector changed canonical root positions.");
@@ -760,18 +774,19 @@ async function run() {
 
   await evalContents.executeJavaScript(`document.querySelector("#closeInspector")?.click()`);
   evalWindow.setContentSize(760, 920);
-  const narrowClosed = await waitFor("the exact 760px Eval workspace", async () => {
+  await waitFor("the exact 760px Eval workspace", async () => {
     const presentation = await graphPresentation(evalContents);
     return presentation.innerWidth === 760 && !presentation.inspectorOpen
       ? presentation
       : false;
   });
-  const narrowClosedSignature = nodeCameraSignature(await waitForStableGraph(
+  const narrowClosed = await waitForStableGraph(
     "the stable narrow Eval graph",
     evalContents,
-  ));
+  );
+  const narrowClosedSignature = nodeCameraSignature(narrowClosed);
   await evalContents.executeJavaScript(`document.querySelector("[data-node]")?.click()`);
-  const evalNarrowInspector = await waitFor("the narrow Eval inspector overlay", async () => {
+  await waitFor("the narrow Eval inspector", async () => {
     const presentation = await graphPresentation(evalContents);
     return presentation.innerWidth === 760
       && presentation.inspectorOpen
@@ -781,10 +796,17 @@ async function run() {
       ? presentation
       : false;
   });
+  const evalNarrowInspector = await waitForStableGraph("the settled narrow Eval inspector", evalContents);
   if (Math.round(evalNarrowInspector.stage.width) !== Math.round(narrowClosed.stage.width)) {
-    throw new Error("The 760px inspector changed the Eval graph-stage width instead of overlaying it.");
+    throw new Error(`The 760px inspector changed the Eval graph-stage width instead of overlaying it: ${JSON.stringify({ before: narrowClosed.stage, after: evalNarrowInspector.stage })}`);
   }
-  if (JSON.stringify(nodeCameraSignature(evalNarrowInspector)) !== JSON.stringify(narrowClosedSignature)) {
+  const narrowStageResized = Math.round(evalNarrowInspector.stage.bottom - evalNarrowInspector.stage.top)
+    !== Math.round(narrowClosed.stage.bottom - narrowClosed.stage.top);
+  const narrowCameraPreserved = JSON.stringify(nodeCameraSignature(evalNarrowInspector)) === JSON.stringify(narrowClosedSignature);
+  // Responsive details may change the graph's height. Automatic cameras refit
+  // changed bounds; fixed bounds must retain the existing camera.
+  if (!nodesAreContained(evalNarrowInspector)) throw new Error("The narrow Eval graph is clipped after details open.");
+  if (!narrowStageResized && !narrowCameraPreserved) {
     ancillaryFailures.push({ checkpoint: "760px Eval camera preservation", before: narrowClosedSignature, after: nodeCameraSignature(evalNarrowInspector), stageBefore: narrowClosed.stage, stageAfter: evalNarrowInspector.stage });
   }
   if (JSON.stringify(requireAuthoredLayout("narrow Eval child", evalNarrowInspector)) !== JSON.stringify(evalChildLayout)) {
@@ -817,8 +839,10 @@ async function run() {
   })()`));
   evalNavigationState.inspectorFit = {
     desktopContained: nodesAreContained(evalInspectorFit),
-    narrowOverlayPreservedStage: true,
-    narrowOverlayPreservedCamera: ancillaryFailures.length === 0,
+    narrowPreservedStageWidth: true,
+    narrowStageResized,
+    narrowCameraPreserved,
+    narrowContained: nodesAreContained(evalNarrowInspector),
     redockedContained: nodesAreContained(evalRedockedInspector),
   };
 

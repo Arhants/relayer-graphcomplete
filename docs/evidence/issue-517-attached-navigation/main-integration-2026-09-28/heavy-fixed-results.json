@@ -1,0 +1,14 @@
+[
+  {
+    "name": "project-fixed",
+    "exitCode": 0
+  },
+  {
+    "name": "context-fixed",
+    "exitCode": 1
+  },
+  {
+    "name": "node-input-fixed",
+    "exitCode": 0
+  }
+]

@@ -94,6 +94,19 @@ struct CatalogEntry {
     runtime_available: bool,
     #[serde(default)]
     unavailable_reason: Option<crate::product::UnavailableReason>,
+    /// Present for a harness whose readiness Desktop coordinates. The app server's own
+    /// persisted record then decides whether the route restores as ready (PROV-006), and
+    /// Desktop writes `runtimeAvailable: false`, so a reader that misses this field fails
+    /// closed.
+    #[serde(default)]
+    app_server_readiness: Option<AppServerReadiness>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppServerReadiness {
+    /// The file-only startup validation of the local runtime passed. Never a probe.
+    runtime_files_valid: bool,
 }
 
 const fn catalog_entry_available() -> bool {
@@ -586,7 +599,13 @@ impl RuntimeClient {
                     .model_defaults
                     .as_ref()
                     .map(|defaults| defaults.family_policy.clone()),
-                runtime_available: entry.runtime_available,
+                runtime_available: entry
+                    .app_server_readiness
+                    .as_ref()
+                    .map_or(entry.runtime_available, |readiness| {
+                        readiness.runtime_files_valid
+                    }),
+                restore_prior_readiness: entry.app_server_readiness.is_some(),
                 unavailable_reason: entry.unavailable_reason.clone(),
             })
             .collect::<Vec<_>>();
@@ -600,6 +619,7 @@ impl RuntimeClient {
                 execution_access_contracts: Vec::new(),
                 family_policy: None,
                 runtime_available: false,
+                restore_prior_readiness: false,
                 unavailable_reason: Some(entry.reason.clone()),
             }
         }));
@@ -1085,6 +1105,25 @@ impl RuntimeClient {
         self.control_harness_get(
             &format!("sessions/{thread_id}/invoked-completions/{completion_id}?waitMs={wait_ms}"),
             self.observation_poll,
+        )
+        .await
+    }
+
+    /// One observation that barely waits: the host answers with the run's end if it has
+    /// ended, or with `running` after one millisecond if it still runs.
+    pub(crate) async fn probe_invoked_completion(
+        &self,
+        thread_id: i64,
+        completion_id: i64,
+    ) -> Result<Value, RuntimeError> {
+        if thread_id < 1 || completion_id < 1 {
+            return Err(RuntimeError::Configuration(
+                "invoked completion observation identifiers must be positive".into(),
+            ));
+        }
+        self.control_harness_get(
+            &format!("sessions/{thread_id}/invoked-completions/{completion_id}?waitMs=1"),
+            CONTROL_REQUEST_TIMEOUT,
         )
         .await
     }
@@ -2794,7 +2833,7 @@ mod tests {
             Arc,
             atomic::{AtomicUsize, Ordering},
         },
-        time::{Duration, SystemTime, UNIX_EPOCH},
+        time::Duration,
     };
 
     #[test]
@@ -3009,15 +3048,11 @@ mod tests {
             );
         let (graph_url, graph_task) = serve(graph).await;
         let (harness_url, harness_task) = serve(harness).await;
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "relayer-runtime-invoked-start-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-runtime-invoked-start-")
+            .tempdir()
+            .unwrap();
+        let root = temporary.path().to_path_buf();
         let catalog = root.join("catalog.json");
         fs::write(
             &catalog,
@@ -3134,7 +3169,6 @@ mod tests {
 
         graph_task.abort();
         harness_task.abort();
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -3178,14 +3212,11 @@ mod tests {
 
     #[tokio::test]
     async fn unavailable_catalog_entries_are_visible_but_never_executable() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let catalog = std::env::temp_dir().join(format!(
-            "relayer-unavailable-runtime-{}-{unique}.json",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-unavailable-runtime-")
+            .tempdir()
+            .unwrap();
+        let catalog = temporary.path().join("catalog.json");
         fs::write(
             &catalog,
             json!({
@@ -3224,7 +3255,6 @@ mod tests {
         );
         assert!(harness.model_rules.is_none());
         assert!(harness.execution_access_contracts.is_empty());
-        fs::remove_file(catalog).unwrap();
     }
 
     #[test]
@@ -3438,15 +3468,11 @@ mod tests {
             );
         let (graph_url, graph_task) = serve(graph).await;
         let (harness_url, harness_task) = serve(Router::new()).await;
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "relayer-runtime-create-retry-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-runtime-create-retry-")
+            .tempdir()
+            .unwrap();
+        let root = temporary.path().to_path_buf();
         let catalog = root.join("catalog.json");
         fs::write(
             &catalog,
@@ -3549,7 +3575,6 @@ mod tests {
         runtime.discard_prepared(prepared).await.unwrap();
         graph_task.abort();
         harness_task.abort();
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]
@@ -3608,15 +3633,11 @@ mod tests {
             );
         let (graph_url, graph_task) = serve(graph).await;
         let (harness_url, harness_task) = serve(Router::new()).await;
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "relayer-runtime-input-with-presentation-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-runtime-input-with-presentation-")
+            .tempdir()
+            .unwrap();
+        let root = temporary.path().to_path_buf();
         let catalog = root.join("catalog.json");
         fs::write(
             &catalog,
@@ -3712,7 +3733,6 @@ mod tests {
         runtime.discard_prepared(prepared).await.unwrap();
         graph_task.abort();
         harness_task.abort();
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]
@@ -3736,15 +3756,11 @@ mod tests {
         );
         let (graph_url, graph_task) = serve(graph).await;
         let (harness_url, harness_task) = serve(Router::new()).await;
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "relayer-personal-presentation-publication-retry-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-personal-presentation-publication-retry-")
+            .tempdir()
+            .unwrap();
+        let root = temporary.path().to_path_buf();
         let catalog = root.join("catalog.json");
         fs::write(
             &catalog,
@@ -3772,7 +3788,6 @@ mod tests {
         );
         graph_task.abort();
         harness_task.abort();
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]
@@ -3787,15 +3802,11 @@ mod tests {
         ));
         let (graph_url, graph_task) = serve(graph_app).await;
         let (harness_url, harness_task) = serve(Router::new()).await;
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "relayer-personal-presentation-runtime-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-personal-presentation-runtime-")
+            .tempdir()
+            .unwrap();
+        let root = temporary.path().to_path_buf();
         let catalog = root.join("catalog.json");
         fs::write(
             &catalog,
@@ -3995,7 +4006,6 @@ mod tests {
 
         graph_task.abort();
         harness_task.abort();
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]
@@ -4014,15 +4024,11 @@ mod tests {
         );
         let (graph_url, graph_task) = serve(graph).await;
         let (harness_url, harness_task) = serve(Router::new()).await;
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "relayer-runtime-bounded-retry-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-runtime-bounded-retry-")
+            .tempdir()
+            .unwrap();
+        let root = temporary.path().to_path_buf();
         let catalog = root.join("catalog.json");
         fs::write(
             &catalog,
@@ -4100,7 +4106,6 @@ mod tests {
         assert!(matches!(result, Ok(Err(super::RuntimeError::Http(_)))));
         graph_task.abort();
         harness_task.abort();
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]
@@ -4147,15 +4152,11 @@ mod tests {
         );
         let (graph_url, graph_task) = serve(graph).await;
         let (harness_url, harness_task) = serve(harness).await;
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "relayer-runtime-capability-cleanup-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-runtime-capability-cleanup-")
+            .tempdir()
+            .unwrap();
+        let root = temporary.path().to_path_buf();
         let catalog = root.join("catalog.json");
         fs::write(
             &catalog,
@@ -4221,7 +4222,6 @@ mod tests {
         assert_eq!(revocations.load(Ordering::SeqCst), 2);
         graph_task.abort();
         harness_task.abort();
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]
@@ -4309,15 +4309,11 @@ mod tests {
             );
         let (graph_url, graph_task) = serve(graph).await;
         let (harness_url, harness_task) = serve(harness).await;
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "relayer-runtime-capability-owner-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-runtime-capability-owner-")
+            .tempdir()
+            .unwrap();
+        let root = temporary.path().to_path_buf();
         let catalog = root.join("catalog.json");
         fs::write(
             &catalog,
@@ -4389,7 +4385,6 @@ mod tests {
         assert_eq!(revocations.load(Ordering::SeqCst), 1);
         graph_task.abort();
         harness_task.abort();
-        fs::remove_dir_all(root).unwrap();
     }
 
     async fn serve(app: Router) -> (String, tokio::task::JoinHandle<()>) {

@@ -4,6 +4,17 @@ use crate::{
 };
 use sqlx::SqliteConnection;
 
+pub(crate) async fn set_enabled(
+    connection: &mut SqliteConnection,
+    enabled: bool,
+) -> Result<(), GraphError> {
+    sqlx::query("UPDATE interaction_permission_config SET enabled=?1 WHERE singleton=1")
+        .bind(enabled)
+        .execute(connection)
+        .await?;
+    Ok(())
+}
+
 pub(crate) async fn read(
     connection: &mut SqliteConnection,
     interaction: NodeId,

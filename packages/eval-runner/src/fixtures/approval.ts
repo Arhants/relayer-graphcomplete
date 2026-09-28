@@ -71,11 +71,11 @@ class ApprovalFixtureHarness implements Harness {
   }
 
   private async approveAlwaysQueue(context: HarnessRunContext, completion: number): Promise<string> {
-    const source = this.request(context, completion, "always-source", BUILD_SCOPE_KEYS, "npm run build");
+    const source = this.request(context, completion, "always-source", BUILD_SCOPE_KEYS, BUILD_COMMAND);
     // Make the user-selected source request deterministically first in the product queue;
     // this is fixture orchestration, not an approval timeout.
     await new Promise((resolve) => setTimeout(resolve, 2));
-    const exactPending = this.request(context, completion, "always-exact-pending", BUILD_SCOPE_KEYS, "npm run build");
+    const exactPending = this.request(context, completion, "always-exact-pending", BUILD_SCOPE_KEYS, BUILD_COMMAND);
     const nearPending = this.request(context, completion, "always-near-pending", DEPLOY_SCOPE_KEYS, "npm run deploy");
     const [sourceDecision, exactDecision, nearDecision] = await Promise.all([source, exactPending, nearPending]);
     this.observe(completion, "always-source", sourceDecision);
@@ -85,7 +85,7 @@ class ApprovalFixtureHarness implements Harness {
   }
 
   private async consumeSessionGrant(context: HarnessRunContext, completion: number): Promise<string> {
-    const exactFuture = await this.request(context, completion, "always-exact-future", BUILD_SCOPE_KEYS, "npm run build");
+    const exactFuture = await this.request(context, completion, "always-exact-future", BUILD_SCOPE_KEYS, BUILD_COMMAND);
     this.observe(completion, "always-exact-future", exactFuture);
     return "The exact build request reused the live-session grant across completions without making the grant durable product state."
   }
@@ -100,7 +100,7 @@ class ApprovalFixtureHarness implements Harness {
     return context.approvals.request({
       providerItemId: `fixture-provider-${completion}-${step}`,
       title: `Allow ${command}`,
-      reason: `The deterministic fixture requested ${command}.`,
+      reason: `The deterministic fixture requested ${command}. This user-visible request includes a longer review explanation so the native narrow-window checkpoint can verify the complete reason, action, working folder, and permission scope remain readable and reachable before a user selects a decision.`,
       action: { kind: "command", command, workingDirectory: this.context.workingDirectory },
       scopeKeys,
       scopeDescription: `Run ${command} in ${this.context.workingDirectory} for this live harness session.`,
@@ -148,6 +148,7 @@ class ApprovalFixtureHarness implements Harness {
 const TEST_SCOPE_KEYS = Object.freeze(["fixture:command:npm-test", "fixture:cwd:workspace"]);
 const BUILD_SCOPE_KEYS = Object.freeze(["fixture:command:npm-build", "fixture:cwd:workspace"]);
 const DEPLOY_SCOPE_KEYS = Object.freeze(["fixture:command:npm-deploy", "fixture:cwd:workspace"]);
+const BUILD_COMMAND = "npm run build --workspace=@relayer/eval-runner --if-present";
 
 export function createApprovalFixtureFactory(dependencies: ApprovalFixtureDependencies = {}): HarnessFactory {
   return (context) => new ApprovalFixtureHarness(context, dependencies);

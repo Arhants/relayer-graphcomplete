@@ -27,6 +27,7 @@ import {
   createProviderRuntimeStateRemover,
   providerRuntimeDirectory,
 } from "../desktop/main/providers/provider-runtime-state.mjs";
+import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 import { ModelCatalogService } from "../desktop/main/models/model-catalog-service.mjs";
 import { toProductCatalogSnapshot } from "../desktop/main/models/model-catalog-adapter.mjs";
 import { withProviderRetry } from "../desktop/main/providers/provider-retry.mjs";
@@ -1058,6 +1059,7 @@ describe("managed subscription isolation", () => {
     };
     const create = vi.fn(() => replacementRuntime);
     const removed = vi.fn(async () => {});
+    const ready = vi.fn(async () => {});
     const service = new ProviderDefinitionService({
       registry: createProviderAdapterRegistry([{
         adapterId: "fake-managed", implementationVersion: "1", label: "Managed", accessContract: "managed-runtime@1",
@@ -1066,6 +1068,7 @@ describe("managed subscription isolation", () => {
       definitionStore: { async load() { return [definition]; } },
       credentialStore: {},
       initialRuntimes: new Map([[definition.id, failedRuntime]]),
+      onRuntimeReady: ready,
       onRuntimeRemoved: removed,
       publishCatalog: vi.fn(async () => {}),
     });
@@ -1073,7 +1076,13 @@ describe("managed subscription isolation", () => {
     await expect(service.reconnect(definition.id)).resolves.toMatchObject({ status: "pending" });
     await expect(service.completeConnection(definition.id)).rejects.toThrow("managed account check failed");
     expect(failedRuntime.close).toHaveBeenCalledOnce();
-    expect(removed).toHaveBeenCalledWith(expect.objectContaining({ id: definition.id }));
+    // The active provider keeps a catalog adapter: a fresh runtime replaces the closed one (F4).
+    expect(removed).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledOnce();
+    expect(ready).toHaveBeenCalledWith(expect.objectContaining({ id: definition.id }), replacementRuntime);
+    await expect(service.list()).resolves.toEqual([expect.objectContaining({
+      id: definition.id, connected: false, unavailableReason: expect.objectContaining({ code: "provider_logged_out" }),
+    })]);
 
     await expect(service.reconnect(definition.id)).resolves.toMatchObject({
       status: "pending", connectionId: definition.id,
@@ -1495,18 +1504,39 @@ describe("provider definition lifecycle", () => {
     await expect(service.list()).resolves.toEqual([]);
   });
 
-  it("compensates runtime registration before a failed staged create and leaves no active definition", async () => {
+  it("registers the catalog adapter only after the staged create commits (PROV-007)", async () => {
+    const fixture = serviceFixture();
+    const order = [];
+    const createWithCatalog = fixture.service.definitionStore.createWithCatalog;
+    fixture.service.definitionStore.createWithCatalog = async (...args) => {
+      order.push("commit");
+      return createWithCatalog(...args);
+    };
+    fixture.service.onRuntimeReady = async ({ id }) => { order.push(`register ${id}`); };
+    await fixture.service.connect({ adapterId: "fake-api", label: "Ordered", fields: { "api-key": "opaque" } });
+    expect(order).toEqual(["commit", "register provider-1"]);
+  });
+
+  it("keeps a committed provider and its recovery adapter when runtime registration fails", async () => {
     const fixture = serviceFixture();
     const unregistered = [];
+    const unavailable = [];
     fixture.service.onRuntimeReady = async () => { throw new Error("runtime registration failed"); };
     fixture.service.onRuntimeRemoved = async ({ id }) => { unregistered.push(id); };
+    fixture.service.onRuntimeUnavailable = async ({ id }) => { unavailable.push(id); };
+    // The definition committed, so the connection stands; like a failed startup activation,
+    // the provider keeps its recovery adapter.
     await expect(fixture.service.connect({
       adapterId: "fake-api", label: "Broken registration", fields: { "api-key": "opaque" },
-    })).rejects.toThrow("runtime registration failed");
-    expect(fixture.definitions()).toEqual([]);
-    expect(fixture.credentials.size).toBe(0);
+    })).resolves.toMatchObject({ status: "connected", providerDefinition: { id: "provider-1" } });
+    expect(fixture.definitions()).toEqual([expect.objectContaining({ id: "provider-1", lifecycleState: "active" })]);
+    expect([...fixture.credentials.keys()]).toEqual(["provider:provider-1"]);
     expect(fixture.closes).toEqual(["provider-1"]);
-    expect(unregistered).toEqual(["provider-1"]);
+    expect(unregistered).toEqual([]);
+    expect(unavailable).toEqual(["provider-1"]);
+    await expect(fixture.service.list()).resolves.toEqual([expect.objectContaining({
+      id: "provider-1", unavailableReason: expect.objectContaining({ code: "provider_activation_failed" }),
+    })]);
   });
 
   it("joins authoritative connection state into generic provider listings", async () => {
@@ -1592,6 +1622,96 @@ describe("provider definition lifecycle", () => {
     expect(fixture.definitions()[0]).toMatchObject({ lifecycleState: "tombstoned", credentialReference: null });
     expect(fixture.credentials.size).toBe(0);
     expect(removals).toEqual([providerId]);
+  });
+
+  it("finishes a removal once the store stops counting the settled turn's attempt as running", async () => {
+    const removals = [];
+    const fixture = serviceFixture({ removeRuntimeState: async ({ id }) => { removals.push(id); } });
+    const created = await fixture.service.connect({ adapterId: "fake-api", label: "Draining", fields: { "api-key": "k" } });
+    const providerId = created.providerDefinition.id;
+    let durableAttemptRunning = true;
+    const originalSave = fixture.service.definitionStore.save.bind(fixture.service.definitionStore);
+    fixture.service.definitionStore.save = async (definitions) => {
+      if (durableAttemptRunning && definitions.some(({ lifecycleState }) => lifecycleState === "tombstoned")) {
+        throw Object.assign(new Error("Provider removal cannot finish while an execution attempt is running."), {
+          code: "provider_execution_drain_incomplete",
+        });
+      }
+      await originalSave(definitions);
+    };
+
+    const lease = await fixture.service.acquireExecution(providerId);
+    await expect(fixture.service.remove(providerId)).resolves.toMatchObject({ lifecycleState: "removal_pending" });
+    // The native turn settles before the store records the attempt's outcome.
+    await expect(lease.release()).resolves.toBeUndefined();
+    expect(fixture.definitions()[0]).toMatchObject({ lifecycleState: "removal_pending" });
+    expect(fixture.credentials.size).toBe(1);
+
+    // The owner acknowledges once the attempt is durably terminal; the removal finishes.
+    durableAttemptRunning = false;
+    await lease.acknowledge();
+    expect(fixture.definitions()[0]).toMatchObject({ lifecycleState: "tombstoned", credentialReference: null });
+    expect(fixture.credentials.size).toBe(0);
+    expect(removals).toEqual([providerId]);
+  });
+
+  it("reads the catalog's drain refusal code from the app server's error body", async () => {
+    const service = new RelayerAppServerService({
+      userDataDirectory: "/unused", binaryPath: "/unused", webDirectory: "/unused", permissionCatalogPath: "/unused",
+    });
+    service.start = async () => ({ origin: "http://127.0.0.1:1", cookie: { value: "control" } });
+    // The exact shape api/error.rs catalog_error sends for a refused tombstone.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      code: "provider_execution_drain_incomplete",
+      error: "Provider removal cannot finish while an execution attempt is running.",
+      familyId: null, harnessId: null, modelId: null, providerId: null,
+    }), { status: 422, headers: { "content-type": "application/json" } })));
+    try {
+      await expect(service.providerDefinitionStore().save([])).rejects.toMatchObject({
+        code: "provider_execution_drain_incomplete",
+        message: "Provider removal cannot finish while an execution attempt is running.",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("finishes drained removals when the host acknowledges a release it no longer tracks", async () => {
+    const fixture = serviceFixture();
+    const created = await fixture.service.connect({ adapterId: "fake-api", label: "Forgotten", fields: { "api-key": "k" } });
+    const providerId = created.providerDefinition.id;
+    let durableAttemptRunning = true;
+    const originalSave = fixture.service.definitionStore.save.bind(fixture.service.definitionStore);
+    fixture.service.definitionStore.save = async (definitions) => {
+      if (durableAttemptRunning && definitions.some(({ lifecycleState }) => lifecycleState === "tombstoned")) {
+        throw Object.assign(new Error("drain incomplete"), { code: "provider_execution_drain_incomplete" });
+      }
+      await originalSave(definitions);
+    };
+    await expect(fixture.service.remove(providerId)).resolves.toMatchObject({ lifecycleState: "removal_pending" });
+    durableAttemptRunning = false;
+    await fixture.service.finalizeDrainedRemovals();
+    expect(fixture.definitions()[0]).toMatchObject({ lifecycleState: "tombstoned" });
+  });
+
+  it("defers a removal with no lease while the store still counts an attempt as running", async () => {
+    const fixture = serviceFixture();
+    const created = await fixture.service.connect({ adapterId: "fake-api", label: "Settling", fields: { "api-key": "k" } });
+    const providerId = created.providerDefinition.id;
+    const lease = await fixture.service.acquireExecution(providerId);
+    await lease.release();
+    let durableAttemptRunning = true;
+    const originalSave = fixture.service.definitionStore.save.bind(fixture.service.definitionStore);
+    fixture.service.definitionStore.save = async (definitions) => {
+      if (durableAttemptRunning && definitions.some(({ lifecycleState }) => lifecycleState === "tombstoned")) {
+        throw Object.assign(new Error("drain incomplete"), { code: "provider_execution_drain_incomplete" });
+      }
+      await originalSave(definitions);
+    };
+    await expect(fixture.service.remove(providerId)).resolves.toMatchObject({ lifecycleState: "removal_pending" });
+    durableAttemptRunning = false;
+    await lease.acknowledge();
+    expect(fixture.definitions()[0]).toMatchObject({ lifecycleState: "tombstoned" });
   });
 
   it("retains runtime and credentials when authoritative tombstoning fails, then reconciles on restart", async () => {
@@ -1733,9 +1853,10 @@ describe("provider definition lifecycle", () => {
     expect(close).not.toHaveBeenCalled();
   });
 
-  it("does not persist or destroy credentials after managed runtime registration fails", async () => {
+  it("keeps a committed managed provider when its runtime registration fails", async () => {
     let stored = [];
     const removed = [];
+    const unavailable = [];
     const closed = vi.fn(async () => {});
     const service = new ProviderDefinitionService({
       registry: createProviderAdapterRegistry([{
@@ -1761,12 +1882,15 @@ describe("provider definition lifecycle", () => {
       idGenerator: () => "managed-failed",
       onRuntimeReady: async () => { throw new Error("registration failed"); },
       onRuntimeRemoved: async ({ id }) => { removed.push(id); },
+      onRuntimeUnavailable: async ({ id }) => { unavailable.push(id); },
     });
     const pending = await service.connect({ adapterId: "failed-managed", label: "Failed" });
-    await expect(service.completeConnection(pending.connectionId)).rejects.toThrow("registration failed");
-    expect(stored).toEqual([]);
+    // Registration follows the commit (PROV-007), so its failure cannot undo the connection.
+    await expect(service.completeConnection(pending.connectionId)).resolves.toMatchObject({ status: "connected" });
+    expect(stored).toEqual([expect.objectContaining({ id: "managed-failed", lifecycleState: "active" })]);
     expect(closed).toHaveBeenCalledOnce();
-    expect(removed).toEqual(["managed-failed"]);
+    expect(removed).toEqual([]);
+    expect(unavailable).toEqual(["managed-failed"]);
   });
 
 

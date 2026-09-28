@@ -21,8 +21,10 @@ import {
 } from "@relayer/eval-runner";
 import { evalHarnessConfigurationPaths, evalRuntimeTarget } from "./configuration-paths.mjs";
 import { EvalService } from "./eval-service.mjs";
+import { loadExternalEvalCatalog } from "./external-catalog.mjs";
 import { loadAtomicAnnotationSnapshots } from "./annotation-snapshot-loader.mjs";
 import { loadJudgeScreenshotArtifact } from "./judge-screenshot-loader.mjs";
+import { createLiveCredentialValidator, createLiveModelRouteResolver } from "./live-credentials.mjs";
 import {
   LOCAL_SIMULATED_USER_JUDGE_CONFIGURATION as LOCAL_INPUT_GROUNDING_JUDGE_CONFIGURATION,
   buildInputGroundingTopology,
@@ -64,6 +66,13 @@ const permissionCatalogPath = join(repositoryRoot, "permissions", "desktop.json"
 const productRendererDirectory = join(desktopDirectory, "renderer");
 const evalRendererDirectory = join(desktopDirectory, "eval-renderer");
 const configurationPaths = evalHarnessConfigurationPaths({ harnessDirectory, targetKey: evalTarget.key });
+// Only explicitly selected, commit-pinned developer catalogs execute here.
+const externalCatalog = process.env.RELAYER_EVAL_CATALOG_ROOT
+  ? await loadExternalEvalCatalog({
+    repositoryDirectory: resolve(process.env.RELAYER_EVAL_CATALOG_ROOT),
+    lock: JSON.parse(await readFile(join(repositoryRoot, "eval-catalog.lock.json"), "utf8")),
+  })
+  : null;
 process.env.PYTHONPATH = [join(repositoryRoot, "python", "relayer-graph", "src"), process.env.PYTHONPATH].filter(Boolean).join(delimiter);
 const codexBrowserMcpInspection = await inspectCodexBrowserMcpRuntime({ executable: process.execPath, packageRoot: join(repositoryRoot, "node_modules", "chrome-devtools-mcp") });
 const managedCodexRuntime = createEvalManagedCodexRuntime({
@@ -98,6 +107,9 @@ const graphRuntime = new GraphCompleteRuntimeService({
   ...(codexBrowserMcpInspection.available ? { codexBrowserMcpRuntime: codexBrowserMcpInspection } : {}),
   resolveCodexRuntime: () => managedCodexRuntime.resolve(),
   resolvePrimeRuntime: () => managedPrimeRuntime.resolve(),
+  // Prime has an explicit readiness path, so it starts unavailable until the Eval
+  // provider evaluates it. Fixture and existing Codex startup stay unchanged.
+  coordinateHarnessReadiness: ({ implementation }) => implementation === "prime.agent",
   acquireProviderExecution: (providerId) => providerId === "codex"
     ? acquireEvalProviderExecution(providerId)
     : primeProvider
@@ -166,18 +178,6 @@ async function start() {
   try { await lock.writeFile(String(process.pid)); } finally { await lock.close(); }
   requireRunning();
   const runtimeSession = await graphRuntime.start();
-  requireRunning();
-  // Prime has an explicit readiness path; fixture and existing Codex startup stay
-  // unchanged. Publish the initial unavailable state before the product opens.
-  await graphRuntime.recordHarnessReadiness([...runtimeSession.configurations.values()]
-    .filter(({ implementation }) => implementation === "prime.agent")
-    .map((configuration) => ({
-      harnessId: configuration.name,
-      configurationDigest: runtimeSession.digestConfiguration(configuration),
-      generation: 0,
-      available: false,
-      unavailableReason: { code: "harness_readiness_pending", message: "Prime Eval runtime is not ready." },
-    })));
 
   requireRunning();
   productServer = new RelayerAppServerService({
@@ -202,7 +202,7 @@ async function start() {
   requireRunning();
   if (primeProfile) {
     primeProvider = createEvalPrimeProvider({
-      userDataDirectory, productServer, productSession, runtimeSession, graphRuntime,
+      userDataDirectory, productServer, productSession, runtimeSession,
       managedPrimeRuntime, managedCodexRuntime,
     });
     try { await primeProvider.start(primeProfile); }
@@ -212,6 +212,13 @@ async function start() {
   const ensureEvalCodexCatalog = createEvalCodexCatalogProvisioner({
     productSession,
     resolveRuntime: () => managedCodexRuntime.resolve(),
+  });
+  const resolveLiveModelRoute = createLiveModelRouteResolver({
+    readModelSettings: () => productRequest(productSession, "/api/model-settings"),
+    readDefaultModelSelection: (harnessId) => productRequest(productSession,
+      `/api/model-selection/default?harnessId=${encodeURIComponent(harnessId)}`),
+    ensureCodexModelCatalog: ensureEvalCodexCatalog,
+    selectPrimeModel: primeProvider ? (harnessId) => primeProvider.select(harnessId) : null,
   });
   const simulatedUserJudgeRunner = createLocalSimulatedUserJudgeRunner({
     resolveCodexRuntime: () => managedCodexRuntime.resolve(),
@@ -228,6 +235,7 @@ async function start() {
     stateFile: evalStateFile,
     productSession,
     configurationPaths,
+    externalCatalog,
     simulatedUserJudgeRunner,
     candidateTraceExporter: (productInteractionId, targetDirectory, correlation) => (
       graphRuntime.exportCandidateTrace(productInteractionId, targetDirectory, correlation)
@@ -239,6 +247,10 @@ async function start() {
     ensureModelCatalog: ensureEvalCodexCatalog,
     selectPrimeModel: primeProvider ? (harnessId) => primeProvider.select(harnessId) : null,
     primeModelAvailability: primeProvider ? (harnessId) => primeProvider.availability(harnessId) : null,
+    validateLiveCredential: createLiveCredentialValidator({
+      resolveCodexRuntime: () => managedCodexRuntime.resolve(),
+      resolveModelRoute: resolveLiveModelRoute,
+    }),
     conversationImportEnabled: true,
     annotationSnapshotLoader: (threadIds) => loadAnnotationSnapshots(productSession, threadIds),
     targetKey: evalTarget.key,

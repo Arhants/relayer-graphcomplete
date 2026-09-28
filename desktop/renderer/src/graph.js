@@ -49,6 +49,7 @@ function workspace() {
     showThread: () => setMainView("thread"),
     showEmpty: () => setMainView("new"),
     getNavigationHistory,
+    onOpenReadyResult: () => import("./threads.js").then(({ openReadyResult }) => openReadyResult()),
     onNavigateHistory: async (direction, navigation) => {
       try {
         await navigateHistory(direction, navigation);
@@ -65,8 +66,9 @@ function workspace() {
       try { return await selectTurnById(turnId, options); }
       catch (error) { toast(error.message); return false; }
     },
-    onSelectionChange: (nodeId) => {
-      replaceCurrentSelection(nodeId);
+    onSelectionChange: (nodeId, options) => {
+      if (options) replaceCurrentSelection(nodeId, options);
+      else replaceCurrentSelection(nodeId);
       onboardingTutorialController()?.nodeSelected({
         threadId: viewState.currentThreadId,
         interactionId: viewState.currentInteractionId,

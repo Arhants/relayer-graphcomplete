@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/permissions-merge-ready/relayer-graphcomplete
+
+
+ Test Files  2 passed (2)
+      Tests  12 passed (12)
+   Start at  15:42:11
+   Duration  1.95s (transform 56ms, setup 0ms, import 111ms, tests 1.69s, environment 0ms)
+

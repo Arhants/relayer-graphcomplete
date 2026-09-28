@@ -3,8 +3,11 @@ import {
   copySystemFamily,
   createFamilyVisibilityGate,
   createModelFamilyDraft,
+  defaultHarnessChangeNotice,
   defaultHarnessIsSelectable,
   defaultHarnessError,
+  defaultProviderChoices,
+  defaultProviderHint,
   MAX_MODELS_PER_FAMILY,
   modelMember,
   moveItem,
@@ -190,7 +193,19 @@ function providerOptions(selectedProviderId) {
 }
 
 function defaultProviderOptions() {
-  return providerOptions(settings.defaults.providerId);
+  const { selectable } = defaultProviderChoices(settings);
+  const current = settings.providers.find((item) => item.id === settings.defaults.providerId);
+  // The saved default stays visible. It is marked unavailable only when it is not connected.
+  const currentLabel = current?.connected === false || !current
+    ? `${current?.label ?? settings.defaults.providerId} (unavailable)`
+    : current.label;
+  const stranded = selectable.some((item) => item.id === settings.defaults.providerId)
+    ? ""
+    : `<option value="${escapeHtmlAttribute(settings.defaults.providerId)}" selected disabled>${escapeHtml(currentLabel)}</option>`;
+  return `${stranded}${selectable.map((item) => {
+    const selected = item.id === settings.defaults.providerId;
+    return `<option value="${escapeHtmlAttribute(item.id)}" ${selected ? "selected" : ""}>${escapeHtml(item.label)}</option>`;
+  }).join("")}`;
 }
 
 function unavailableModelOption(member) {
@@ -290,6 +305,9 @@ function render() {
   $("#defaultProviderSelect").innerHTML = defaultProviderOptions();
   $("#defaultHarnessSelect").disabled = savingDefaults;
   $("#defaultProviderSelect").disabled = savingDefaults;
+  const providerHint = defaultProviderHint(defaultProviderChoices(settings), settings.defaults?.providerId);
+  $("#defaultProviderHint").textContent = providerHint ?? "";
+  $("#defaultProviderHint").classList.toggle("hidden", !providerHint);
   const harnessError = defaultHarnessError(settings);
   $("#defaultHarnessError").textContent = harnessError ?? "";
   $("#defaultHarnessError").classList.toggle("hidden", !harnessError);
@@ -531,20 +549,29 @@ async function persistDefault(field) {
     : $("#defaultProviderSelect").value;
   settings.defaults[field] = candidate;
   render();
+  let saved = null;
+  let harnessNotice = null;
   try {
-    const applyPermissionProfiles = field === "harnessId"
+    let applyPermissionProfiles = field === "harnessId"
       ? await preparePermissionProfiles(candidate)
       : null;
-    await saveModelDefaults({ [field]: candidate });
+    saved = await saveModelDefaults({ [field]: candidate });
+    // The response is the committed defaults. Choosing a provider also selects its managed
+    // family, and may move the default harness to one that runs it (PROV-008).
+    settings.defaults = { ...saved };
+    if (appState.modelSettings) appState.modelSettings.defaults = { ...saved };
+    harnessNotice = field === "providerId"
+      ? defaultHarnessChangeNotice(previous, saved, settings)
+      : null;
+    if (harnessNotice) applyPermissionProfiles = await preparePermissionProfiles(saved.harnessId);
+    applyPermissionProfiles?.();
     await refreshModelSettings({ preserveEdit: true });
-    if (field === "harnessId") {
-      applyPermissionProfiles?.();
-      resetNewThreadModelPicker();
-    }
-    setStatus("Saved", "success");
+    resetNewThreadModelPicker();
+    setStatus(harnessNotice ?? "Saved", "success");
   } catch (error) {
-    settings.defaults = previous;
-    setStatus(error.message, "error");
+    if (!saved) settings.defaults = previous;
+    const savedStatus = harnessNotice ? `${harnessNotice} Could not refresh: ${error.message}` : `Saved, but could not refresh: ${error.message}`;
+    setStatus(saved ? savedStatus : error.message, "error");
   } finally {
     savingDefaults = false;
     render();

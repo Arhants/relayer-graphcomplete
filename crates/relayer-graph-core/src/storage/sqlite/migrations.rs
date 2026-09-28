@@ -130,7 +130,8 @@ mod tests {
 
     #[tokio::test]
     async fn schema_21_default_selection_survives_permission_migration_without_backfill() {
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
         let url = format!("sqlite://{}", file.path().display());
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
@@ -183,7 +184,8 @@ mod tests {
 
     #[tokio::test]
     async fn schema_16_nodes_reopen_without_an_authored_detail_package() {
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
         let url = format!("sqlite://{}", file.path().display());
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
@@ -222,7 +224,8 @@ mod tests {
 
     #[tokio::test]
     async fn schema_9_graph_reopens_and_accepts_a_personal_presentation_attachment() {
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
         let url = format!("sqlite://{}", file.path().display());
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
@@ -343,7 +346,8 @@ mod tests {
 
     #[tokio::test]
     async fn schema_11_graph_reopens_and_tracks_search_index_revisions_and_versions() {
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
         let url = format!("sqlite://{}", file.path().display());
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
@@ -802,7 +806,8 @@ mod tests {
 
     #[tokio::test]
     async fn fresh_full_schema_foreign_keys_target_the_current_actions_table() {
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
         let database = GraphDatabase::open(file.path()).await.unwrap();
         let mut connection = database.storage.acquire().await.unwrap();
         for (table, action_column) in [
@@ -831,7 +836,8 @@ mod tests {
 
     #[tokio::test]
     async fn schema_11_actions_rebuild_preserves_all_foreign_key_references() {
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
         let url = format!("sqlite://{}", file.path().display());
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
@@ -923,7 +929,8 @@ mod tests {
 
     #[tokio::test]
     async fn original_schema_12_history_reopens_and_preserves_action_references() {
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
         let url = format!("sqlite://{}", file.path().display());
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
@@ -1052,7 +1059,8 @@ mod tests {
 
     #[tokio::test]
     async fn cascade_damaged_schema_12_history_is_rejected_on_open() {
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
         let url = format!("sqlite://{}", file.path().display());
         let pool = SqlitePoolOptions::new()
             .max_connections(1)

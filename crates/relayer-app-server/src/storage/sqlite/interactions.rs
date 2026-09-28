@@ -51,7 +51,8 @@ impl SqliteProductStore {
         // Finalize the attempt in the same transaction: an interrupted harness has an unknown
         // effect boundary and therefore must never be silently replayed after restart. A
         // submitted-input attempt quarantined by a retryable canonical read stays open only for
-        // graph reconciliation; it is never replayed through the provider.
+        // graph reconciliation; it is never replayed through the provider, and the end of
+        // Relayer's wait on it is recorded.
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let finished_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -76,9 +77,22 @@ impl SqliteProductStore {
                    AND submitted.state NOT IN ('accepted','failed','stopped')
                )",
         )
-            .bind(finished_at)
+            .bind(&finished_at)
             .execute(&mut *transaction)
             .await?;
+        // The quarantined attempts left open above ran in the process that exited with the
+        // application, so nothing waits on them any more. Their outcome waits for graph
+        // reconciliation, but they no longer count toward the removal drain, and their
+        // execution leases become debt. Settled recursive children are excluded: a harness that
+        // outlived this server may still run them, and startup resumes their provider-end wait.
+        sqlx::query(
+            "UPDATE interaction_attempts SET native_wait_ended_at=?1
+             WHERE outcome='running' AND native_wait_ended_at IS NULL
+               AND interaction_id NOT IN (SELECT interaction_id FROM completion_executions WHERE phase='settled')",
+        )
+        .bind(&finished_at)
+        .execute(&mut *transaction)
+        .await?;
         let result = sqlx::query(
             "UPDATE interactions SET completion_status='failed',completion_error=?1 WHERE completion_status IN ('running','submitted') AND (?2=0 OR input_identity IS NULL) AND id NOT IN (SELECT result_interaction_id FROM action_invocations WHERE authoritative=1) AND thread_id IN (SELECT id FROM threads WHERE conversation_import_id IS NULL)",
         )
@@ -1058,14 +1072,11 @@ mod tests {
 
     #[tokio::test]
     async fn omitted_model_is_inherited_inside_the_sequence_allocation_transaction() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-interaction-inheritance-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-interaction-inheritance-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_models(&store).await;
         let first_model = selection("first-model");
@@ -1108,19 +1119,15 @@ mod tests {
         assert_eq!(inherited.sequence, 3);
         assert_eq!(inherited.model_selection, Some(second_model));
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn last_successful_catalog_snapshot_remains_usable_until_replaced() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-stale-catalog-interaction-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-stale-catalog-interaction-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_models(&store).await;
         let model = selection("first-model");
@@ -1149,19 +1156,15 @@ mod tests {
         assert_eq!(store.list_interactions(thread.id).await.unwrap().len(), 2);
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn retry_claim_updates_the_same_draft_once_and_preserves_the_failed_receipt() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-interaction-retry-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-interaction-retry-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_models(&store).await;
         let first_model = selection("first-model");
@@ -1286,19 +1289,15 @@ mod tests {
         assert_eq!(receipt.effect_boundary, "none");
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn restart_recovery_preserves_every_imported_completion_status() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-import-recovery-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-import-recovery-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("INSERT INTO conversation_imports(id,source_sha256,export_version,producer_json,header_json,state,created_at) VALUES ('import-1','sha256:abc',1,'{}','{}','published','1')")
             .execute(&store.pool).await.unwrap();
@@ -1373,7 +1372,6 @@ mod tests {
         .unwrap();
         assert_eq!(preserved, statuses);
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     fn selection(model_id: &str) -> InteractionModelSelection {

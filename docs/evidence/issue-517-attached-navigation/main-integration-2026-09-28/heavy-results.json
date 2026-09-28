@@ -1,0 +1,44 @@
+[
+  {
+    "name": "project",
+    "command": [
+      "node",
+      "scripts/run-project-new-thread-test.mjs"
+    ],
+    "exitCode": 1
+  },
+  {
+    "name": "context",
+    "command": [
+      "node",
+      "scripts/run-interaction-context-lifecycle-test.mjs"
+    ],
+    "exitCode": 1
+  },
+  {
+    "name": "node-input",
+    "command": [
+      "node",
+      "scripts/run-node-input-actions-test.mjs"
+    ],
+    "exitCode": 1
+  },
+  {
+    "name": "compiled-eval",
+    "command": [
+      "npm",
+      "run",
+      "test:eval-compiled-runtime"
+    ],
+    "exitCode": 0
+  },
+  {
+    "name": "layout",
+    "command": [
+      "npm",
+      "run",
+      "test:desktop:interaction-graph-layout"
+    ],
+    "exitCode": 0
+  }
+]

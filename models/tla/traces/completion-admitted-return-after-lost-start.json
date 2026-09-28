@@ -17,6 +17,7 @@
     {
       "action": null,
       "state": {
+        "access": "none",
         "appUp": true,
         "attempt": "none",
         "auth": false,
@@ -63,6 +64,7 @@
         1
       ],
       "state": {
+        "access": "none",
         "appUp": true,
         "attempt": "none",
         "auth": false,
@@ -109,6 +111,7 @@
         1
       ],
       "state": {
+        "access": "none",
         "appUp": true,
         "attempt": "none",
         "auth": false,
@@ -155,6 +158,7 @@
         1
       ],
       "state": {
+        "access": "none",
         "appUp": true,
         "attempt": "none",
         "auth": false,
@@ -202,6 +206,7 @@
         "ok"
       ],
       "state": {
+        "access": "none",
         "appUp": true,
         "attempt": "none",
         "auth": true,
@@ -249,6 +254,7 @@
         "ok"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": true,
@@ -296,6 +302,7 @@
         "lost"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": true,
@@ -341,6 +348,7 @@
         "ChildReturn"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": true,
@@ -386,6 +394,7 @@
         "CleanFail"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": true,
@@ -431,6 +440,7 @@
         "CleanFinalize"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": true,
@@ -476,6 +486,7 @@
         "CleanCancel"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": true,
@@ -521,6 +532,7 @@
         "CleanDiscard"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "running",
         "auth": false,
@@ -566,6 +578,7 @@
         "AttemptEnd"
       ],
       "state": {
+        "access": "held",
         "appUp": true,
         "attempt": "terminal",
         "auth": false,
@@ -611,6 +624,7 @@
         "LeaseReconcile"
       ],
       "state": {
+        "access": "released",
         "appUp": true,
         "attempt": "terminal",
         "auth": false,

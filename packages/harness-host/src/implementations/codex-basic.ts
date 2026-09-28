@@ -1,6 +1,6 @@
 import { RELAYER_ICON_NAMES, type GraphCapability, type GraphNode } from "@relayer/graph-client";
-import { createHash } from "node:crypto";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
 import { INTERACTION_INPUT_GUIDANCE, renderInteractionInput } from "../interaction-input.js";
@@ -57,11 +57,14 @@ const CODEX_BASIC_ADAPTERS = new Set(["codex-subscription", ...CODEX_BASIC_SECRE
 // file so the durable copy stays in the OS credential store (PRD AGT-007).
 async function writeCodexApiKeyAuthFile(codexHome: string, apiKey: string): Promise<void> {
   await mkdir(codexHome, { recursive: true });
-  await writeFile(
-    join(codexHome, "auth.json"),
-    `${JSON.stringify({ auth_mode: "apikey", OPENAI_API_KEY: apiKey })}\n`,
-    { mode: 0o600 },
-  );
+  // Replace atomically: another turn's Codex process may be reading the current file.
+  const temporary = join(codexHome, `.auth.json.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporary, `${JSON.stringify({ auth_mode: "apikey", OPENAI_API_KEY: apiKey })}\n`, { mode: 0o600 });
+    await rename(temporary, join(codexHome, "auth.json"));
+  } finally {
+    await rm(temporary, { force: true });
+  }
 }
 
 async function removeCodexApiKeyAuthFile(codexHome: string): Promise<void> {
@@ -74,6 +77,23 @@ async function removeCodexApiKeyAuthFile(codexHome: string): Promise<void> {
 }
 
 const CODEX_API_KEY_AUTH_USERS = new Map<string, number>();
+/**
+ * Writes and removals of one CODEX_HOME's auth.json run one at a time. A turn whose cleanup
+ * outlives it (a force-stopped turn the host stopped waiting for) therefore cannot delete the
+ * file a later turn on that home has since written.
+ */
+const CODEX_API_KEY_AUTH_FILE_OPERATIONS = new Map<string, Promise<void>>();
+
+function serializedCodexApiKeyAuthFileOperation(codexHome: string, operation: () => Promise<void>): Promise<void> {
+  const previous = CODEX_API_KEY_AUTH_FILE_OPERATIONS.get(codexHome) ?? Promise.resolve();
+  const current = previous.then(operation);
+  const tail = current.catch(() => undefined);
+  CODEX_API_KEY_AUTH_FILE_OPERATIONS.set(codexHome, tail);
+  void tail.then(() => {
+    if (CODEX_API_KEY_AUTH_FILE_OPERATIONS.get(codexHome) === tail) CODEX_API_KEY_AUTH_FILE_OPERATIONS.delete(codexHome);
+  });
+  return current;
+}
 
 function retainCodexApiKeyAuth(codexHome: string): void {
   CODEX_API_KEY_AUTH_USERS.set(codexHome, (CODEX_API_KEY_AUTH_USERS.get(codexHome) ?? 0) + 1);
@@ -86,7 +106,11 @@ async function releaseCodexApiKeyAuth(
   const users = CODEX_API_KEY_AUTH_USERS.get(codexHome) ?? 0;
   if (users <= 1) {
     CODEX_API_KEY_AUTH_USERS.delete(codexHome);
-    await remove(codexHome);
+    await serializedCodexApiKeyAuthFileOperation(codexHome, async () => {
+      // A later turn retained this home meanwhile; the file it writes after this must survive.
+      if ((CODEX_API_KEY_AUTH_USERS.get(codexHome) ?? 0) > 0) return;
+      await remove(codexHome);
+    });
     return;
   }
   CODEX_API_KEY_AUTH_USERS.set(codexHome, users - 1);
@@ -159,6 +183,8 @@ interface NormalizedCollaborationItem {
 
 export class CodexBasicHarness implements Harness {
   readonly supportsInvokedComplete = true;
+  /** Each turn runs in its own app-server process group, so a force-stop ends only that turn. */
+  readonly supportsForceStop = true;
   private readonly clientModuleUrl: string;
   private readonly completeModuleUrl: string;
   private readonly resolved: ResolvedCodexConfiguration;
@@ -231,6 +257,8 @@ export class CodexBasicHarness implements Harness {
     }
     const capability = context.graph.acquireCapability();
     const resolvedRuntime = await this.codexRuntime(context.access);
+    // A turn force-stopped while resolving its runtime no longer holds access: write nothing.
+    context.forceSignal?.throwIfAborted();
     const environment = this.graphEnvironment(capability, context.completionBroker, context.access, resolvedRuntime.environment);
     let authHome: string | undefined;
     try {
@@ -240,7 +268,13 @@ export class CodexBasicHarness implements Harness {
         if (apiKey !== undefined && apiKey !== "" && codexHome !== undefined && codexHome !== "") {
           retainCodexApiKeyAuth(codexHome);
           authHome = codexHome;
-          await (this.dependencies.writeCodexApiKeyAuthFile ?? writeCodexApiKeyAuthFile)(codexHome, apiKey);
+          const write = this.dependencies.writeCodexApiKeyAuthFile ?? writeCodexApiKeyAuthFile;
+          await serializedCodexApiKeyAuthFileOperation(codexHome, async () => {
+            // The turn may have been force-stopped while it waited behind another turn's
+            // removal; it no longer holds access, so it must not write credentials.
+            context.forceSignal?.throwIfAborted();
+            await write(codexHome, apiKey);
+          });
         }
       }
       await this.runCodexTurn(context, attach, signal, environment, resolvedRuntime.executable, persistentRootSession, personalPresentationVersionId);
@@ -276,7 +310,22 @@ export class CodexBasicHarness implements Harness {
       graphAuthoringCommandIds: new Set(),
       fallbackGraphAuthoringEnabled: this.dependencies.graphAuthoringLauncherPath === undefined,
     };
+    // The host's per-turn force-stop kills this turn's app-server process group, exactly as a
+    // harness force shutdown does, and no other turn's. A turn force-stopped before it spawns
+    // never spawns. A force-stopped root turn also drops its native thread: the killed process
+    // may have left it mid-write, so the next root turn starts a fresh one.
+    context.forceSignal?.throwIfAborted();
     const forceShutdown = new AbortController();
+    const forgetForcedRootThread = () => {
+      if (!persistentRootSession) return;
+      this.codexThreadId = undefined;
+      this.codexThreadPersonalPresentationVersionId = undefined;
+    };
+    const forceTurn = () => {
+      forgetForcedRootThread();
+      forceShutdown.abort(context.forceSignal?.reason);
+    };
+    context.forceSignal?.addEventListener("abort", forceTurn, { once: true });
     this.activeForceShutdowns.add(forceShutdown);
     try {
       await run({
@@ -299,7 +348,7 @@ export class CodexBasicHarness implements Harness {
         forceSignal: forceShutdown.signal,
         ...(this.dependencies.spawnProcess === undefined ? {} : { spawnProcess: this.dependencies.spawnProcess }),
         onThreadId: (threadId) => {
-          if (persistentRootSession) {
+          if (persistentRootSession && context.forceSignal?.aborted !== true) {
             this.codexThreadId = threadId;
             this.codexThreadPersonalPresentationVersionId = personalPresentationVersionId;
           }
@@ -314,6 +363,9 @@ export class CodexBasicHarness implements Harness {
         onServerRequest: (method, params) => traceCodexAppServerNotification(context, method, params, traceState),
       });
     } finally {
+      // Nothing is forgotten here: forceTurn already did, and a later root turn may have
+      // stored its own thread by the time this killed turn settles.
+      context.forceSignal?.removeEventListener("abort", forceTurn);
       this.activeForceShutdowns.delete(forceShutdown);
       closeIncompleteCollaborationSpans(traceState);
     }
@@ -443,9 +495,9 @@ export class CodexBasicHarness implements Harness {
         'model_providers.relayer_execution_provider.wire_api="responses"',
         "model_providers.relayer_execution_provider.requires_openai_auth=false",
         "model_providers.relayer_execution_provider.supports_websockets=false",
-        // Native snapshots capture the provider process environment and can
-        // restore excluded secrets after shell filtering. Disable that path
-        // only for secret-backed execution; keep the explicit exclusions below.
+        // Codex 0.147 snapshots capture the app-server environment and source
+        // those exports after shell filtering. Disable that path for API-key
+        // access so snapshots cannot persist or reintroduce provider secrets.
         "features.shell_snapshot=false",
         'shell_environment_policy.inherit="all"',
         "shell_environment_policy.ignore_default_excludes=true",
@@ -1275,6 +1327,6 @@ export function createCodexBasicFactory(dependencies: CodexBasicDependencies = {
   return (context) => new CodexBasicHarness(context, dependencies);
 }
 
-const CODEX_VISUAL_GUIDANCE = "The following public API recipe demonstrates authoring mechanics only; its placeholder content and layout are not a recommended response design. For visual Node Details: Import the exported html, css, and detailCapability helpers. At minimum, call node.detailAuthoring.setComponent(\"main\", html`<section><h2>Summary</h2><p>Details</p></section>`, css`section { display: grid; gap: 0.75rem; }`), await graph.checkpointNodeDetail(node), and then await graph.submitNode(node). When a node has actions, create each stable action object with its sourceLayer before checkpointing, bind that same object in the page with the matching detailCapability helper, and pass it to graph.addAction after submitting the layer.";
+const CODEX_VISUAL_GUIDANCE = "The following public API recipe demonstrates authoring mechanics only; its placeholder content and layout are not a recommended response design. For visual Node Details: Import the exported html, css, and detailCapability helpers. At minimum, call node.detailAuthoring.setComponent(\"main\", html`<section><h2>Summary</h2><p>Details</p></section>`, css`section { display: grid; gap: 0.75rem; }`), await graph.checkpointNodeDetail(node), and then await graph.submitNode(node). Each node’s detail must explain that node’s title and purpose. Reuse styles and layout helpers, but do not copy a whole explanation across siblings. If several nodes would have the same explanation, consolidate them. HTML binds permanently on first attachment, including fragments. Create fresh html for each node; wrapping or copying an owned template cannot transfer it. Only node.detailAuthoring authors components. For same-node repair reusing an existing template, call graph.bindNode(original) and graph.bindNode(replacement) before attachment; both must have the same stable client key in this interaction. When a node has actions, create each stable action object with its sourceLayer before checkpointing, bind that same object in the page with the matching detailCapability helper, and pass it to graph.addAction after submitting the layer. Example with shared styles and distinct content: const common = css`section { padding: 1rem; }`; answer.detailAuthoring.setComponent(\"main\", html`<section><h2>Answer</h2><p>Explain the conclusion.</p></section>`, common); evidence.detailAuthoring.setComponent(\"main\", html`<section><h2>Supporting evidence</h2><p>Explain what supports the conclusion.</p></section>`, common).";
 
 const CODEX_ASSET_GUIDANCE = `For image assets, import assetRef from the supplied clientModuleUrl. Use const scope = await graph.visualAssets.scope(); await graph.visualAssets.listAssets({ scope }); await graph.visualAssets.listTags({ scope }); await graph.visualAssets.inspect(assetId, scope). Register caller-read bytes with await graph.visualAssets.add({ scope, name, file: { name, mediaType, async read() { return bytes; } } }); bind the returned asset.id with html\`<img asset=\${assetRef(asset.id)} alt="Description">\`. The host resolves and pins content. Never supply compiled packages, mounts, hashes, raw image URLs, or executable JavaScript.`;

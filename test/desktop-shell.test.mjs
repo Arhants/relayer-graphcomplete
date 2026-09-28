@@ -2,7 +2,7 @@ import { runEvidenceCleanup } from "../scripts/evidence-service-cleanup.mjs";
 import { EventEmitter } from "node:events";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { cp, link, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
@@ -670,7 +670,11 @@ describe("desktop skeleton", () => {
       expect((await stat(join(directory, "product-data"))).mode & 0o777).toBe(0o700);
       expect(await service.start()).toBe(session);
       const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 204 }));
-      await service.publishProviderCatalog({ providerId: "codex", models: [] });
+      // A publish names the generation its result started with; a lifecycle event advances it.
+      await service.publishProviderCatalog(
+        { providerId: "codex", models: [] },
+        { connectionGeneration: 3, connectionEvent: "signed-out" },
+      );
       expect(fetch).toHaveBeenCalledWith(
         new URL("http://127.0.0.1:43123/api/internal/provider-catalog"),
         expect.objectContaining({
@@ -679,11 +683,26 @@ describe("desktop skeleton", () => {
             Authorization: `Bearer ${session.cookie.value}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ providerId: "codex", models: [] }),
+          body: JSON.stringify({ providerId: "codex", models: [], connectionGeneration: 3, connectionEvent: "signed-out" }),
         }),
       );
       expect(fetch.mock.calls[0][1].headers).not.toHaveProperty("Cookie");
       fetch.mockRestore();
+      // A seeded catalog is published at the provider's current generation.
+      const seedFetch = vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(Response.json([{ id: "work", connectionGeneration: 1 }, { id: "codex", connectionGeneration: 5 }]))
+        .mockResolvedValueOnce(new Response(null, { status: 204 }));
+      await service.seedProviderCatalog({ providerId: "codex", models: [] });
+      expect(seedFetch.mock.calls[0][0]).toEqual(new URL("http://127.0.0.1:43123/api/internal/provider-definitions"));
+      expect(JSON.parse(seedFetch.mock.calls[1][1].body)).toEqual({ providerId: "codex", models: [], connectionGeneration: 5 });
+      seedFetch.mockRestore();
+      const refusedFetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(Response.json(
+        { code: "provider_connection_superseded", error: "The provider connection changed after this catalog result started." },
+        { status: 422 },
+      ));
+      await expect(service.publishProviderCatalog({ providerId: "codex", models: [] }, { connectionGeneration: 4 }))
+        .rejects.toMatchObject({ code: "provider_connection_superseded" });
+      refusedFetch.mockRestore();
       const exportBytes = new TextEncoder().encode('{"recordType":"header"}\n');
       const exportFetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(exportBytes, {
         headers: { "Content-Type": "application/x-ndjson; charset=utf-8" },
@@ -859,19 +878,6 @@ describe("desktop skeleton", () => {
   it("keeps graph authority off argv and reports a graph server that stops after readiness", async () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-graph-runtime-service-"));
     const configurationPath = fileURLToPath(new URL("../harnesses/codex-basic.yaml", import.meta.url));
-    const persistedConfiguration = parseYaml(await readFile(configurationPath, "utf8"));
-    await mkdir(join(directory, "graphcomplete-runtime"), { recursive: true });
-    await writeFile(join(directory, "graphcomplete-runtime", "harness-configurations.json"), JSON.stringify({
-      schemaVersion: 1,
-      configurations: [{
-        configuration: persistedConfiguration,
-        digest: digestHarnessConfiguration(persistedConfiguration),
-        runtimeAvailable: true,
-        unavailableReason: null,
-        readinessGeneration: 4,
-      }],
-      unavailableConfigurations: [],
-    }));
     const validateHarnessRuntime = vi.fn(async () => true);
     let suppliedToken = "";
     const unexpectedStops = [];
@@ -934,9 +940,8 @@ describe("desktop skeleton", () => {
       const catalog = JSON.parse(await readFile(session.catalogPath, "utf8"));
       expect(catalog.configurations).toEqual([
         expect.objectContaining({
-          runtimeAvailable: true,
-          unavailableReason: null,
-          readinessGeneration: 0,
+          runtimeAvailable: false,
+          appServerReadiness: { runtimeFilesValid: true },
         }),
       ]);
       expect(catalog.unavailableConfigurations).toEqual([expect.objectContaining({
@@ -945,26 +950,6 @@ describe("desktop skeleton", () => {
         diagnostics: expect.objectContaining({ sourceCommit: "f6130839ad3043f1cd3d5294fe03023035bfcd5c" }),
       })]);
       expect(validateHarnessRuntime).toHaveBeenCalledOnce();
-      await service.recordHarnessReadiness([{
-        harnessId: "codex-basic",
-        configurationDigest: digestHarnessConfiguration(persistedConfiguration),
-        generation: 5,
-        available: false,
-        unavailableReason: { code: "runtime_corrupt", message: "This execution configuration is currently unavailable." },
-      }]);
-      await service.recordHarnessReadiness([{
-        harnessId: "codex-basic",
-        configurationDigest: digestHarnessConfiguration(persistedConfiguration),
-        generation: 4,
-        available: true,
-        unavailableReason: null,
-      }]);
-      const recordedCatalog = JSON.parse(await readFile(session.catalogPath, "utf8"));
-      expect(recordedCatalog.configurations[0]).toMatchObject({
-        runtimeAvailable: false,
-        readinessGeneration: 5,
-        unavailableReason: { code: "runtime_corrupt" },
-      });
       expect(suppliedToken).toBe(
         `${session.graphControlToken}\n`
         + '{"schema":"relayer.authenticated-error-capability/v1","capability":null}\n',
@@ -991,23 +976,9 @@ describe("desktop skeleton", () => {
     }
   });
 
-  it("hides and reports persisted readiness when restart-local descriptor validation detects corruption", async () => {
+  it("hides and reports a route when restart-local descriptor validation detects corruption", async () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-graph-runtime-corrupt-readiness-"));
     const configurationPath = fileURLToPath(new URL("../harnesses/codex-basic.yaml", import.meta.url));
-    const configuration = parseYaml(await readFile(configurationPath, "utf8"));
-    const runtimeDirectory = join(directory, "graphcomplete-runtime");
-    await mkdir(runtimeDirectory, { recursive: true });
-    await writeFile(join(runtimeDirectory, "harness-configurations.json"), JSON.stringify({
-      schemaVersion: 1,
-      configurations: [{
-        configuration,
-        digest: digestHarnessConfiguration(configuration),
-        runtimeAvailable: true,
-        unavailableReason: null,
-        readinessGeneration: 8,
-      }],
-      unavailableConfigurations: [],
-    }));
     const corruption = new Error("managed executable is missing");
     const onHarnessRuntimeValidationFailure = vi.fn(async () => {});
     const child = Object.assign(new EventEmitter(), {
@@ -1034,6 +1005,7 @@ describe("desktop skeleton", () => {
       expect(catalog.configurations[0]).toMatchObject({
         runtimeAvailable: false,
         unavailableReason: { code: "harness_readiness_pending" },
+        appServerReadiness: { runtimeFilesValid: false },
       });
       expect(onHarnessRuntimeValidationFailure).toHaveBeenCalledWith(
         expect.objectContaining({ name: "codex-basic" }), corruption,
@@ -1044,76 +1016,88 @@ describe("desktop skeleton", () => {
     }
   });
 
-  it("resets persisted readiness ordering for a new coordinator epoch", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "relayer-graph-runtime-readiness-epoch-"));
-    const configurationPath = fileURLToPath(new URL("../harnesses/codex-basic.yaml", import.meta.url));
-    const configuration = parseYaml(await readFile(configurationPath, "utf8"));
-    const digest = digestHarnessConfiguration(configuration);
+  it("hands startup readiness to the app server record instead of the previous catalog file", async () => {
+    // PROV-006: the previous catalog file is not a readiness record. Startup validates the
+    // local runtime files of every coordinated configuration and leaves the restore to the
+    // app server, which reads its own last record (catalog.rs initialize_model_catalog).
+    const directory = await mkdtemp(join(tmpdir(), "relayer-graph-runtime-readiness-owner-"));
+    const load = async (name) => {
+      const path = fileURLToPath(new URL(`../harnesses/${name}.yaml`, import.meta.url));
+      return { path, configuration: parseYaml(await readFile(path, "utf8")) };
+    };
+    const codex = await load("codex-basic");
+    const claude = await load("claude-basic");
     const runtimeDirectory = join(directory, "graphcomplete-runtime");
+    const catalogPath = join(runtimeDirectory, "harness-configurations.json");
     await mkdir(runtimeDirectory, { recursive: true });
-    await writeFile(join(runtimeDirectory, "harness-configurations.json"), JSON.stringify({
+    const previousCatalog = `${JSON.stringify({
       schemaVersion: 1,
       configurations: [{
-        configuration,
-        digest,
-        runtimeAvailable: true,
-        unavailableReason: null,
+        configuration: codex.configuration,
+        digest: digestHarnessConfiguration(codex.configuration),
+        runtimeAvailable: false,
+        unavailableReason: { code: "runtime_probe_failed", message: "Unavailable." },
         readinessGeneration: 8,
       }],
       unavailableConfigurations: [],
-    }));
+    })}\n`;
+    await writeFile(catalogPath, previousCatalog);
+    await link(catalogPath, join(directory, "previous-catalog.json"));
+    const notInstalled = Object.assign(new Error("claude managed runtime is not installed."), {
+      code: "managed_runtime_not_installed",
+    });
+    const validateHarnessRuntime = vi.fn(async (configuration) => {
+      if (configuration.name === "claude-basic") throw notInstalled;
+      return true;
+    });
+    const onHarnessRuntimeValidationFailure = vi.fn(async () => {});
     const services = [];
-    const createService = (validateHarnessRuntime) => {
+    const start = (coordinateHarnessReadiness) => {
       const child = Object.assign(new EventEmitter(), {
         stdin: new Writable({ write(_chunk, _encoding, callback) { callback(); } }),
         stdout: new PassThrough(), stderr: new PassThrough(), exitCode: null, signalCode: null,
         kill: vi.fn(function kill() { this.exitCode = 0; this.emit("exit", 0, null); }),
       });
       const service = new GraphCompleteRuntimeService({
-      fetchRequest: async () => new Response(null, { status: 204 }),
+        fetchRequest: async () => new Response(null, { status: 204 }),
         userDataDirectory: directory,
         graphServerBinary: "/test/bin/relayer-graph-server",
-        configurationPaths: [configurationPath],
-        coordinateHarnessReadiness: true,
+        configurationPaths: [codex.path, claude.path],
+        coordinateHarnessReadiness,
         validateHarnessRuntime,
+        onHarnessRuntimeValidationFailure,
         spawnProcess: () => {
-          queueMicrotask(() => child.stdout.write(`${JSON.stringify({ ready: true, url: "http://127.0.0.1:43127" })}\n`));
+          queueMicrotask(() => child.stdout.write(`${JSON.stringify({ ready: true, url: "http://127.0.0.1:43128" })}\n`));
           return child;
         },
       });
       services.push(service);
-      return service;
+      return service.start();
     };
+    const pending = { code: "harness_readiness_pending", message: "This execution configuration is currently unavailable." };
     try {
-      const firstValidation = vi.fn(async () => true);
-      const first = createService(firstValidation);
-      const firstSession = await first.start();
-      expect(JSON.parse(await readFile(firstSession.catalogPath, "utf8")).configurations[0]).toMatchObject({
-        runtimeAvailable: true,
-        readinessGeneration: 0,
-      });
+      const session = await start(true);
+      const entries = JSON.parse(await readFile(session.catalogPath, "utf8")).configurations;
+      // The previous file said codex-basic was unavailable; its files validate, so the
+      // app server's own record decides. claude-basic is simply not installed.
+      expect(entries.map(({ configuration, digest, ...readiness }) => [configuration.name, readiness])).toEqual([
+        ["codex-basic", { runtimeAvailable: false, unavailableReason: pending, appServerReadiness: { runtimeFilesValid: true } }],
+        ["claude-basic", { runtimeAvailable: false, unavailableReason: pending, appServerReadiness: { runtimeFilesValid: false } }],
+      ]);
+      expect(validateHarnessRuntime).toHaveBeenCalledTimes(2);
+      expect(onHarnessRuntimeValidationFailure).not.toHaveBeenCalled();
+      // The catalog is replaced by rename, never rewritten in place.
+      expect(await readFile(join(directory, "previous-catalog.json"), "utf8")).toBe(previousCatalog);
+      expect((await readdir(runtimeDirectory)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+      expect(services[0]).not.toHaveProperty("recordHarnessReadiness");
+      await services[0].close();
 
-      await first.recordHarnessReadiness([{
-        harnessId: "codex-basic",
-        configurationDigest: digest,
-        generation: 1,
-        available: false,
-        unavailableReason: { code: "runtime_corrupt", message: "This execution configuration is currently unavailable." },
-      }]);
-      expect(JSON.parse(await readFile(firstSession.catalogPath, "utf8")).configurations[0]).toMatchObject({
-        runtimeAvailable: false,
-        readinessGeneration: 1,
-        unavailableReason: { code: "runtime_corrupt" },
-      });
-      await first.close();
-
-      const secondValidation = vi.fn(async () => true);
-      const secondSession = await createService(secondValidation).start();
-      expect(JSON.parse(await readFile(secondSession.catalogPath, "utf8")).configurations[0]).toMatchObject({
-        runtimeAvailable: false,
-        unavailableReason: { code: "harness_readiness_pending" },
-      });
-      expect(secondValidation).not.toHaveBeenCalled();
+      // Eval coordinates only some configurations; the others keep their catalog shape.
+      const partial = await start((configuration) => configuration.implementation === "claude.basic");
+      const partialEntries = JSON.parse(await readFile(partial.catalogPath, "utf8")).configurations;
+      expect(partialEntries[0]).not.toHaveProperty("runtimeAvailable");
+      expect(partialEntries[0]).not.toHaveProperty("appServerReadiness");
+      expect(partialEntries[1]).toMatchObject({ runtimeAvailable: false, appServerReadiness: { runtimeFilesValid: false } });
     } finally {
       await Promise.allSettled(services.map((service) => service.close()));
       await rm(directory, { recursive: true, force: true });

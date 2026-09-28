@@ -1,5 +1,10 @@
 # Relayer GraphComplete
 
+> The ten capability-eval cases are maintained in the separate
+> [`relayer-capability-evals`](https://github.com/vishaltandale00/relayer-capability-evals) repository.
+> This checkout loads a commit-pinned catalog and runs it through Relayer Eval.
+> See [EVAL_SUITE.md](EVAL_SUITE.md) for setup and verification.
+
 Relayer GraphComplete is an open-source, graph-native agent workspace with a harness- and provider-agnostic product contract. Each thread pins a supported execution configuration behind the same GraphComplete boundary.
 
 The canonical external product boundary remains conceptually:
@@ -291,6 +296,8 @@ RELAYER_EVAL_AUTORUN_PERSONAL_PRESENTATION=1 \
 The autorun holds the case, judge, model selection, and harness settings fixed,
 then executes only the checked-in V0 and V1 configurations. It remains disabled
 by default and outside `npm run check`.
+
+The ten capability cases introduced by Issue #278, including HTTPCore, are maintained in [relayer-capability-evals](https://github.com/vishaltandale00/relayer-capability-evals). Follow [the external catalog setup guide](EVAL_SUITE.md) to run their pinned suite through GraphComplete. Their admission commands and case evidence live in that repository.
 
 The public Relayer and internal Relayer Eval builds use distinct application identifiers, entry points, data profiles, and dashboard assets. They share the graph runtime, harness host, app server, product records, API contracts, and production workspace. See [ADR 0003](docs/decisions/0003-shared-product-eval-workspace.md).
 

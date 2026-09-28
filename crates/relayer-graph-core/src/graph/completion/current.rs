@@ -219,27 +219,16 @@ pub(crate) async fn transition(
             publication,
             crate::publication_targets(scope.project_id, scope.thread_id),
         )];
-        let converted: Option<i64> = sqlx::query_scalar(
-            "SELECT action_id FROM invoke_resolution_transitions WHERE interaction_node_id=?1",
-        )
-        .bind(scope.root_node_id.value())
-        .fetch_optional(&mut *transaction)
-        .await?;
+        let converted_action = crate::storage::sqlite::actions::ActionTable::new(&mut transaction)
+            .converted_action_for_interaction(scope.root_node_id)
+            .await?;
+        let converted = converted_action.map(|id| id.value());
         let mutated =
             crate::storage::sqlite::attached_navigation::changed_nodes(&mut transaction, scope)
                 .await?;
-        if converted.is_some() || !mutated.is_empty() {
-            // Match rebuild semantics: each presenting closure publishes only to
-            // its own project/thread. Do not mix source and result entitlements.
-            // Select affected occurrences and their presenting ancestors before
-            // reconstructing closures inside this write transaction.
-            let converted_action = converted
-                .map(|id| {
-                    crate::ActionId::new(id).ok_or_else(|| {
-                        GraphError::Internal("Invalid converted action identity".into())
-                    })
-                })
-                .transpose()?;
+        if converted_action.is_some() || !mutated.is_empty() {
+            // Each presenting closure publishes only to its own project/thread.
+            // Select affected occurrences and ancestors before reconstructing closures.
             let currents = CurrentTable::new(&mut transaction)
                 .published_currents_for_changes(converted_action, &mutated)
                 .await?;

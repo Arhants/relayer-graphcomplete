@@ -1,5 +1,5 @@
 import { createSettingsStore } from "../desktop/main/services/settings-store.mjs";
-import { registerComposerDraftIpc, registerLayerSelectionIpc } from "../desktop/main/ipc/register-ipc.mjs";
+import { registerComposerDraftIpc, registerLayerSelectionIpc, registerWorkspaceLayoutIpc } from "../desktop/main/ipc/register-ipc.mjs";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { mkdtempSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -198,6 +198,7 @@ function registerIpc() {
   const settings = createSettingsStore(dataDirectory);
   registerComposerDraftIpc({ ipcMain, settings });
   registerLayerSelectionIpc({ ipcMain, settings });
+  registerWorkspaceLayoutIpc({ ipcMain, settings });
   ipcMain.handle("relayer:account-read", () => ({ status: "signed-in", channel: "stable", subject: "fixture|node-input" }));
   ipcMain.handle("relayer:appearance-read", () => ({ appearance: "dark" }));
   ipcMain.handle("relayer:update-status", () => ({ phase: "development", channel: "stable", version: "test" }));
@@ -220,7 +221,7 @@ async function startServices() {
     }),
   });
   const runtimeSession = await runtime.start();
-  catalogRefreshServer = await startModelCatalogRefreshServer({ refresh: () => product.publishProviderCatalog(catalogSnapshot) });
+  catalogRefreshServer = await startModelCatalogRefreshServer({ refresh: () => product.seedProviderCatalog(catalogSnapshot) });
   product = new RelayerAppServerService({
     userDataDirectory: dataDirectory,
     binaryPath: join(repositoryRoot, "target", "debug", "relayer-app-server"),
@@ -231,7 +232,7 @@ async function startServices() {
     defaultHarnessConfiguration: "fixture-task-system",
   });
   productSession = await product.start();
-  await product.publishProviderCatalog(catalogSnapshot);
+  await product.seedProviderCatalog(catalogSnapshot);
 }
 
 async function run() {
@@ -276,6 +277,10 @@ async function run() {
     openExternal: async () => undefined,
   });
   window = await createWindow(productSession);
+  const nativeMinimumSize = window.getMinimumSize();
+  if (nativeMinimumSize[0] !== 375 || nativeMinimumSize[1] !== 640) {
+    throw new Error(`Node input layout proof must use the production 375×640 native minimum: ${JSON.stringify(nativeMinimumSize)}`);
+  }
   window.setSize(1280, 820);
   let initialDraftLoadRequests = 0;
   const initialDraftLoadFilter = {
@@ -429,15 +434,96 @@ async function run() {
   if (process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR) {
     await writeFile(join(process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR, "node-detail-sidebar-collapsed.png"), (await window.webContents.capturePage()).toPNG());
   }
-  // Exercise the shared narrow layout below the native window's 960px minimum.
-  window.setMinimumSize(640, 640);
+  // Exercise the production narrow layout at 720px without overriding the native minimum.
   window.setSize(720, 820);
-  await waitFor("Environment remains reachable without the sidebar toggle", () => evaluate(`(() => {
-    const environment = document.querySelector('.environment-panel').getBoundingClientRect();
-    return window.innerWidth <= 760 && environment.width > 0 && environment.height > 0;
-  })()`));
+  const readNarrowEnvironmentAndSidebar = () => evaluate(`(() => {
+    const box = (element) => element.getBoundingClientRect();
+    const sidebar = box(document.querySelector('.sidebar'));
+    const toggleElement = document.querySelector('#collapseSidebar');
+    const toggle = box(toggleElement);
+    const environmentElement = document.querySelector('.environment-panel');
+    const environment = box(environmentElement);
+    const titleElement = document.querySelector('#environmentTitle');
+    const title = box(titleElement);
+    const facts = document.querySelector('#environmentFacts');
+    const message = document.querySelector('#environmentMessage');
+    const visible = (element) => Boolean(element?.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }));
+    const settledEnvironment = (visible(facts) && [...facts.querySelectorAll('dd')]
+      .some((value) => value.textContent.trim().length > 0))
+      || (visible(message) && message.textContent.trim().length > 0);
+    return {
+      width: innerWidth,
+      collapsed: document.body.classList.contains('sidebar-collapsed'),
+      sidebar: { left: sidebar.left, right: sidebar.right, width: sidebar.width },
+      toggle: { left: toggle.left, right: toggle.right, top: toggle.top, bottom: toggle.bottom, width: toggle.width, height: toggle.height },
+      toggleVisible: visible(toggleElement),
+      ariaExpanded: toggleElement.getAttribute('aria-expanded'),
+      environment: { left: environment.left, right: environment.right, top: environment.top, bottom: environment.bottom, width: environment.width, height: environment.height },
+      environmentVisible: visible(environmentElement),
+      inspectorVisible: visible(document.querySelector('#inspector')),
+      environmentToggleVisible: visible(document.querySelector('#environmentToggle')),
+      title: { left: title.left, right: title.right, top: title.top, bottom: title.bottom, width: title.width, height: title.height },
+      titleVisible: visible(titleElement),
+      environmentReady: document.querySelector('#environmentBody').getAttribute('aria-busy') === 'false' && settledEnvironment,
+      pageFits: document.documentElement.scrollWidth <= innerWidth,
+    };
+  })()`);
+  const narrowDefault = await waitFor("Environment stays hidden at 720px", async () => {
+    const value = await readNarrowEnvironmentAndSidebar();
+    return value.width === 720 && !value.environmentVisible ? value : false;
+  });
+  if (!narrowDefault.environmentToggleVisible || !narrowDefault.inspectorVisible) {
+    throw new Error(`Environment control or selected details disappeared at 720px: ${JSON.stringify(narrowDefault)}`);
+  }
+  await click('#environmentToggle');
+  const narrowCollapsed = await waitFor("requested Environment and collapsed rail at 720px", async () => {
+    const value = await readNarrowEnvironmentAndSidebar();
+    return value.width === 720 && value.collapsed && value.sidebar.width === 58
+      && value.ariaExpanded === 'false' && value.environmentReady ? value : false;
+  });
+  const isContainedInViewport = (rect, width, height) => rect.left >= -0.5 && rect.top >= -0.5
+    && rect.right <= width + 0.5 && rect.bottom <= height + 0.5 && rect.width > 0 && rect.height > 0;
+  if (!narrowCollapsed.toggleVisible || !isContainedInViewport(narrowCollapsed.toggle, 720, 820)
+    || narrowCollapsed.toggle.left < narrowCollapsed.sidebar.left
+    || narrowCollapsed.toggle.right > narrowCollapsed.sidebar.right + 0.5
+    || !narrowCollapsed.environmentVisible || !narrowCollapsed.titleVisible
+    || !isContainedInViewport(narrowCollapsed.environment, 720, 820)
+    || !isContainedInViewport(narrowCollapsed.title, 720, 820)
+    || !narrowCollapsed.pageFits) {
+    throw new Error(`The persistent 720px sidebar rail or Environment is not fully reachable: ${JSON.stringify(narrowCollapsed)}`);
+  }
+  await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))`);
+  const afterEnvironmentEscape = await readNarrowEnvironmentAndSidebar();
+  if (afterEnvironmentEscape.environmentVisible || !afterEnvironmentEscape.inspectorVisible) {
+    throw new Error(`Escape must dismiss Environment while preserving details: ${JSON.stringify(afterEnvironmentEscape)}`);
+  }
+  await click('#collapseSidebar');
+  await click('#environmentToggle');
+  const narrowExpanded = await waitFor("sidebar expands in normal flow at 720px", async () => {
+    const value = await readNarrowEnvironmentAndSidebar();
+    return !value.collapsed && value.sidebar.width >= 209 && value.ariaExpanded === 'true'
+      && value.environmentReady ? value : false;
+  });
+  if (!narrowExpanded.toggleVisible || narrowExpanded.sidebar.left !== 0
+    || !isContainedInViewport(narrowExpanded.toggle, 720, 820)
+    || narrowExpanded.toggle.right > narrowExpanded.sidebar.right + 0.5
+    || !narrowExpanded.environmentVisible || !narrowExpanded.titleVisible
+    || !isContainedInViewport(narrowExpanded.environment, 720, 820)
+    || !isContainedInViewport(narrowExpanded.title, 720, 820)
+    || !narrowExpanded.pageFits) {
+    throw new Error(`The expanded 720px sidebar displaced or clipped Environment: ${JSON.stringify(narrowExpanded)}`);
+  }
+  await click('#closeEnvironment');
+  const afterEnvironmentClose = await readNarrowEnvironmentAndSidebar();
+  if (afterEnvironmentClose.environmentVisible || !afterEnvironmentClose.inspectorVisible) {
+    throw new Error(`Closing Environment must preserve details: ${JSON.stringify(afterEnvironmentClose)}`);
+  }
+  await click('#collapseSidebar');
+  await waitFor("persistent rail collapses again at 720px", async () => {
+    const value = await readNarrowEnvironmentAndSidebar();
+    return value.collapsed && value.sidebar.width === 58 && value.ariaExpanded === 'false';
+  });
   window.setSize(1280, 820);
-  window.setMinimumSize(960, 640);
   await waitFor("collapsed desktop layout returns after resizing", async () => (await readSidebarGeometry()).collapsedStructure);
   await click('#collapseSidebar');
   await waitForPaint();
@@ -819,8 +905,8 @@ async function run() {
   await setValue(".node-input-text", "Thread A pending input replacement.");
   await click("[aria-label='Commit Name the governing constraint']");
   await waitFor("thread A input commit held in flight", () => pendingInputCommitHeld);
-  await waitFor("thread A Send disabled by its pending input", () => evaluate(`(
-    document.querySelector('#sendInteraction')?.disabled === true
+  await waitFor("thread A Send can wait for its pending input", () => evaluate(`(
+    document.querySelector('#sendInteraction')?.disabled === false
   )`));
   await click(`[data-thread='${idleThread.id}']`);
   await waitFor("thread B opens while A input commit is pending", () => evaluate(`(() => (
@@ -838,19 +924,12 @@ async function run() {
       && document.querySelectorAll('.graph-node').length === 2
   ))()`));
   await clickNode("Input grammar");
-  await waitFor("thread A Send remains disabled until input settlement", () => evaluate(`(
-    document.querySelector('#sendInteraction')?.disabled === true
+  await waitFor("thread A Send remains available with a pending commit", () => evaluate(`(
+    document.querySelector('#sendInteraction')?.disabled === false
   )`));
-  releasePendingInputCommit();
-  window.webContents.session.webRequest.onBeforeRequest(pendingInputCommitFilter, null);
-  await waitFor("thread A input commit settles and Send unlocks", async () => (
-    (await productRequest(`/api/threads/${thread.id}/input-draft`)).attachments?.some(
-      (attachment) => attachment.value?.text === "Thread A pending input replacement.",
-    )
-      && await evaluate(`document.querySelector('#sendInteraction')?.disabled === false`)
-  ));
 
   let pendingThreadSendHeld = false;
+  let pendingThreadSendBody;
   let cancelPendingThreadSend;
   const pendingThreadSendFilter = {
     urls: [`${productSession.origin}/api/threads/${thread.id}/interactions`],
@@ -860,6 +939,7 @@ async function run() {
     (details, callback) => {
       if (!pendingThreadSendHeld && details.method === "POST") {
         pendingThreadSendHeld = true;
+        pendingThreadSendBody = JSON.parse(Buffer.concat((details.uploadData || []).map(({ bytes }) => bytes)).toString());
         cancelPendingThreadSend = () => callback({ cancel: true });
         return;
       }
@@ -868,7 +948,17 @@ async function run() {
   );
   await setValue("#threadPrompt", "Hold the owning thread Send while editing another thread.");
   await click("#sendInteraction");
+  await waitFor("thread A Send waits for its held input commit", () => evaluate(`(
+    document.querySelector('#sendInteraction')?.disabled === true
+  )`));
+  if (pendingThreadSendHeld) throw new Error("Send posted before its input commit settled.");
+  releasePendingInputCommit();
   await waitFor("thread A Send held in flight", () => pendingThreadSendHeld);
+  const committedBeforeSend = await productRequest(`/api/threads/${thread.id}/input-draft`);
+  if (pendingThreadSendBody.inputDraftRevision !== committedBeforeSend.revision
+    || !committedBeforeSend.attachments?.some((attachment) => attachment.value?.text === "Thread A pending input replacement.")) {
+    throw new Error("Send did not include the exact settled input composition.");
+  }
   await click(`[data-thread='${idleThread.id}']`);
   await waitFor("idle thread B remains composable while A Send is pending", () => evaluate(`(() => (
     document.querySelector("[data-thread='${idleThread.id}']")?.classList.contains('active')
@@ -1087,8 +1177,28 @@ async function run() {
   await waitFor("input controls locked during send", () => evaluate(`(() => (
     document.querySelectorAll('#nodeInputActions button:not(:disabled), #nodeInputActions textarea:not(:disabled)').length === 0
   ))()`));
+  await waitFor("pending turn retains accepted details and shows running status", () => evaluate(`(() => (
+    !document.querySelector('#pendingTurnNotice')?.classList.contains('hidden')
+      && /running/i.test(document.querySelector('#pendingTurnText')?.textContent || '')
+      && document.querySelector('#detailTitle')?.textContent === 'Input grammar'
+  ))()`));
+  if (process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR) {
+    await waitFor("transient reconciliation toast settles", () => evaluate("document.querySelector('#toast')?.classList.contains('hidden')"));
+    await waitForPaint();
+    await writeFile(join(process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR, "reading-pending.png"), (await window.webContents.capturePage()).toPNG());
+  }
+  await clickNode("Selection guard");
   releaseFourthCompletion();
   const acceptedThread = await waitForAcceptedInteractions(thread.id, 3);
+  await waitFor("ready result preserves explicit browsing", () => evaluate(`(() => (
+    !document.querySelector('#openReadyResult')?.classList.contains('hidden')
+      && document.querySelector('#detailTitle')?.textContent === 'Selection guard'
+  ))()`));
+  if (process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR) {
+    await waitForPaint();
+    await writeFile(join(process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR, "reading-result-ready.png"), (await window.webContents.capturePage()).toPNG());
+  }
+  await click("#openReadyResult");
   await waitFor("submitted inputs rendered read-only", () => evaluate(`(() => (
     document.querySelectorAll('#interactionInputHistory .interaction-input-history-item').length === 1
       && document.querySelectorAll('.composer-input-pill').length === 0
@@ -1148,7 +1258,78 @@ async function run() {
     const controls = [...document.querySelectorAll('#nodeInputActions .node-input-editor button, #nodeInputActions .node-input-editor textarea')];
     return Boolean(send?.disabled) && controls.length > 0 && controls.every((control) => control.disabled);
   })()`));
+  // Same production workspace, now exercise the new saved split using real pointer input.
+  const readingUrl = `${productSession.origin}/?threadId=${encodeURIComponent(thread.id)}&interactionId=${encodeURIComponent(authoredTurnId)}`;
+  await window.loadURL(readingUrl);
+  window.setSize(1280, 820);
+  await waitFor("interactive reading workspace", () => evaluate("document.querySelectorAll('.graph-node').length === 2"));
+  await clickNode("Input grammar");
+  const readSplit = () => evaluate(`(() => {
+    const rect = selector => { const value = document.querySelector(selector).getBoundingClientRect(); return { x: value.x, y: value.y, width: value.width, height: value.height }; };
+    return { graph: rect('#graphStage'), detail: rect('#inspector'), divider: rect('#workspaceDivider'),
+      title: document.querySelector('#detailTitle').textContent,
+      ratio: Number(document.querySelector('#workspaceDivider').getAttribute('aria-valuenow')),
+      preference: Number(document.querySelector('.workspace-layout').style.getPropertyValue('--graph-share').replace('%', '')) };
+  })()`);
+  const beforeResize = await readSplit();
+  if (Math.abs(beforeResize.graph.width - beforeResize.detail.width) > 1) {
+    throw new Error(`Default graph/details split is not equal: ${JSON.stringify(beforeResize)}`);
+  }
+  const dividerX = Math.round(beforeResize.divider.x + beforeResize.divider.width / 2);
+  const dividerY = Math.round(beforeResize.divider.y + beforeResize.divider.height / 2);
+  window.webContents.sendInputEvent({ type: "mouseMove", x: dividerX, y: dividerY });
+  window.webContents.sendInputEvent({ type: "mouseDown", x: dividerX, y: dividerY, button: "left", clickCount: 1 });
+  window.webContents.sendInputEvent({ type: "mouseMove", x: dividerX + 90, y: dividerY });
+  window.webContents.sendInputEvent({ type: "mouseUp", x: dividerX + 90, y: dividerY, button: "left", clickCount: 1 });
+  const resized = await waitFor("drag changes both rendered pane widths", async () => {
+    const value = await readSplit();
+    return value.graph.width > beforeResize.graph.width + 50
+      && value.detail.width < beforeResize.detail.width - 50 ? value : false;
+  });
+  let persistedRatio;
+  try {
+    await waitFor("desktop durable ratio is written", async () => {
+      persistedRatio = await evaluate("window.relayerDesktop.workspaceLayout.read()");
+      return Math.abs(persistedRatio * 100 - resized.preference) < 0.001;
+    });
+  } catch (error) {
+    throw new Error(`Split persistence mismatch: ${JSON.stringify({ resized, persistedRatio, current: await readSplit() })}`, { cause: error });
+  }
+  if (process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR) {
+    await waitForPaint();
+    await writeFile(join(process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR, "workspace-resized.png"), (await window.webContents.capturePage()).toPNG());
+  }
+  await click('#closeInspector');
+  await waitFor("closing details expands graph", async () => (await readSplit()).graph.width > resized.graph.width + 200);
+  await clickNode("Input grammar");
+  await waitFor("selecting node restores saved split", async () => Math.abs((await readSplit()).graph.width - resized.graph.width) < 1);
+  await window.loadURL(readingUrl);
+  await waitFor("reloaded graph", () => evaluate("document.querySelectorAll('.graph-node').length === 2"));
+  await waitFor("reloaded workspace restores saved split and node", async () => {
+    const value = await readSplit();
+    return value.title === 'Input grammar' && value.ratio === resized.ratio
+      && Math.abs(value.graph.width - resized.graph.width) < 1;
+  });
+  await click('#environmentToggle');
+  await waitFor("Environment overlay opens without shifting resized panes", async () => {
+    const value = await readSplit();
+    return Math.abs(value.graph.width - resized.graph.width) < 1
+      && await evaluate("!document.querySelector('#environmentPanel').classList.contains('hidden')");
+  });
+  await waitFor("Environment content settles after reload", () => evaluate("document.querySelector('#environmentBody')?.getAttribute('aria-busy') === 'false'"));
+  if (process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR) {
+    await waitForPaint();
+    await writeFile(join(process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR, "workspace-environment-open.png"), (await window.webContents.capturePage()).toPNG());
+  }
+  await click('#closeEnvironment');
   process.stdout.write("Node-input Electron proof passed with 0 paid inference calls.\n");
+  if (process.env.RELAYER_WORKSPACE_HUMAN_REVIEW === "1") {
+    window.show();
+    window.focus();
+    app.focus({ steal: true });
+    process.stdout.write(`Visual human gate ready in the interactive Relayer window: ${readingUrl}\n`);
+    await new Promise(resolveClose => window.once("closed", resolveClose));
+  }
 }
 
 async function stop() {

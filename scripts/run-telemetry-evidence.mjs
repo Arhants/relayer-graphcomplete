@@ -22,6 +22,9 @@ const corpusPath = join(repositoryRoot, "test/fixtures/telemetry-privacy-v1.json
 const defaultOutputPath = join(repositoryRoot, ".relayer/evidence/telemetry-v1.json");
 const releaseAuthorityPaths = Object.freeze([
   "desktop/packaging/electron-builder.mjs",
+  "desktop/packaging/build-cache.mjs",
+  "desktop/packaging/signed-native-cache.mjs",
+  "desktop/packaging/signed-native-transport.mjs",
   "desktop/release/build-release.mjs",
   "desktop/release/telemetry-artifacts.mjs",
   ".github/workflows/desktop-signed-preview.yml",
@@ -47,6 +50,7 @@ const productionPortfolioFiles = Object.freeze([
   "test/desktop-rust-error-capabilities.test.mjs",
   "test/desktop-telemetry-release.test.mjs",
   "test/desktop-telemetry-release-artifacts.test.mjs",
+  "test/signed-native-cache.test.mjs",
   "test/desktop-telemetry-module-inventory.test.mjs",
   "test/sentry-error-transport.test.mjs",
 ]);

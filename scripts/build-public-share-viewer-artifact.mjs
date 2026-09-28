@@ -36,6 +36,7 @@ const browserResources = Object.freeze([
   "src/product-workspace/node-detail-runtime.js",
   "src/product-workspace/view.js",
   "src/product-workspace/workspace.js",
+  "src/product-workspace/workspace-layout.js",
   "src/public-share-viewer/adapter.js",
   "src/public-share-viewer/main.js",
   "src/public-share-viewer/snapshot.js",

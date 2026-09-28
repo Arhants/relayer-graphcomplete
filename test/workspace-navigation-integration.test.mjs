@@ -280,7 +280,8 @@ describe("workspace navigation integration", () => {
     completionPersistence.resolve(true);
     await expect(submitting).resolves.toEqual(followup);
     expect(stateReads).toBe(2);
-    expect(controller.viewState.currentInteractionId).toBe(2);
+    expect(controller.viewState.currentInteractionId).toBe(1);
+    expect(controller.appState.pendingTurn).toMatchObject({ interactionId: 2, status: "submitted" });
   });
 
   it("submits annotation-only context with stable occurrence identity", async () => {
@@ -323,7 +324,8 @@ describe("workspace navigation integration", () => {
       { providerId: "openai", modelId: "gpt-5" },
       contexts,
     )).resolves.toEqual(followup);
-    expect(controller.viewState.currentInteractionId).toBe(2);
+    expect(controller.viewState.currentInteractionId).toBe(1);
+    expect(controller.appState.pendingTurn).toMatchObject({ interactionId: 2, status: "submitted" });
   });
 
   it("lets a newer turn choice cancel a slower history restoration", async () => {
@@ -960,11 +962,18 @@ describe("workspace navigation integration", () => {
     });
     const controller = await loadModules();
     await controller.loadThread(10);
+    controller.viewState.mainView = "thread";
     controller.replaceCurrentSelection(22);
     expect(controller.viewState.layerPath.map(({ layerId }) => layerId)).toEqual([7]);
     await controller.invokeAction(action);
-    expect(controller.viewState.currentInteractionId).toBe(2);
-    if (backToSource) controller.selectTurnById(1);
+    expect(controller.viewState.currentInteractionId).toBe(outcome === "already-accepted" ? 2 : 1);
+    expect(controller.appState.visibleLayer.layer.id).toBe(outcome === "already-accepted" ? 8 : 7);
+    if (backToSource) {
+      // Pending work now preserves the source. Exercise actual browsing to the
+      // pending turn and back, not a no-op selection of the already-open source.
+      controller.selectTurnById(2);
+      controller.selectTurnById(1);
+    }
     accepted = true;
     sourceRoot.actions = [{ ...action, kind: "navigate", relation: "expand", targetLayerId: 8,
       resolvedInvokeInteractionId: 25, interactionText: null, state: "accepted" }];
@@ -1043,7 +1052,7 @@ describe("workspace navigation integration", () => {
 
   it.each([
     ["submitted", false, 1],
-    ["running", true, 100],
+    ["running", true, 1],
   ])("advances the invoke tutorial only for a non-retryable %s result", async (
     resultCompletionStatus,
     shouldAdvance,
