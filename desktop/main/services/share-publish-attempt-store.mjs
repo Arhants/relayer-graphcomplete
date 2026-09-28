@@ -70,8 +70,14 @@ function validateRecord(value) {
     throw new TypeError("Share publish attempt record is invalid.");
   }
   const published = validPublishedUrl(value.publishedUrl);
+  const durableExportFailure = !published
+    && value.snapshotBytes.length === 0
+    && value.lastFailure !== null
+    && value.lastFailure.retryable === false
+    && ["share_snapshot_too_large", "share_export_failed"].includes(value.lastFailure.code);
   if ((published && (value.snapshotBytes.length !== 0 || value.lastFailure !== null))
-    || (!published && (value.publishedUrl !== null || value.snapshotBytes.length === 0))) {
+    || (!published && (value.publishedUrl !== null
+      || (value.snapshotBytes.length === 0 && !durableExportFailure)))) {
     throw new TypeError("Share publish attempt record is invalid.");
   }
   if (Array.isArray(value.snapshotBytes)

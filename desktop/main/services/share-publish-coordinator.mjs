@@ -223,7 +223,12 @@ export function createSharePublishCoordinator({
       })
       : null;
     try {
-      const metadata = publishedUrl === null ? snapshotMetadata(snapshotBytes) : null;
+      const failureOnly = publishedUrl === null
+        && snapshotBytes.length === 0
+        && lastFailure !== null
+        && lastFailure.retryable === false
+        && ["share_snapshot_too_large", "share_export_failed"].includes(lastFailure.code);
+      const metadata = publishedUrl === null && !failureOnly ? snapshotMetadata(snapshotBytes) : null;
       return {
         reference: value.reference,
         attemptId: value.attemptId,
@@ -237,6 +242,7 @@ export function createSharePublishCoordinator({
         lastFailure,
         reportedFailures: new Set(value.reportedFailures),
         completed: publishedUrl !== null,
+        failureOnly,
         publishedUrl,
         running: false,
         dismissing: false,
@@ -300,6 +306,14 @@ export function createSharePublishCoordinator({
   }
 
   async function run(record, authority) {
+    if (record.failureOnly) {
+      return record.lastFailure ?? Object.freeze({
+        status: "failed",
+        attemptReferenceId: record.reference,
+        code: "share_attempt_unavailable",
+        retryable: false,
+      });
+    }
     if (record.running || record.dismissing) {
       return Object.freeze({ status: "failed", attemptReferenceId: record.reference, code: "share_attempt_unavailable", retryable: false });
     }
@@ -405,14 +419,17 @@ export function createSharePublishCoordinator({
       const reference = createReferenceId();
       let failureReporter = null;
       let attempt = null;
+      let attemptDurable = false;
+      let account = null;
+      let sourceThreadId = null;
       try {
         await ensureLoaded();
         if (!Number.isSafeInteger(threadId) || threadId <= 0 || typeof title !== "string") {
           throw new TypeError("Share creation input is invalid.");
         }
-        const account = exactAccount(await accountSession());
+        account = exactAccount(await accountSession());
         failureReporter = issueHandledShareFailureReporter({ generation: account.generation });
-        const sourceThreadId = await sourceThreadIdentity(threadId);
+        sourceThreadId = await sourceThreadIdentity(threadId);
         if (typeof sourceThreadId !== "string" || !sourceThreadId.trim()) {
           throw new TypeError("Share source-thread identity is invalid.");
         }
@@ -443,12 +460,44 @@ export function createSharePublishCoordinator({
         };
         attempt = record;
         await save(record);
+        attemptDurable = true;
         record.lazy = typeof attemptStore.read === "function";
         remember(record);
         return await run(record, { generation: account.generation, failureReporter });
       } catch (error) {
-        if (attempt === null) await report(error, reference, failureReporter);
-        return Object.freeze({ ...closedFailure(error, reference), retryable: false });
+        const result = Object.freeze({ ...closedFailure(error, reference), retryable: false });
+        if (attempt === null && account !== null && sourceThreadId !== null
+          && ["share_snapshot_too_large", "share_export_failed"].includes(result.code)) {
+          const failureRecord = {
+            reference,
+            attemptId: createAttemptId(),
+            ownerKey: account.ownerKey,
+            threadId,
+            sourceThreadId,
+            title,
+            snapshotBytes: new Uint8Array(),
+            metadata: null,
+            createdAt: now(),
+            lastFailure: result,
+            reportedFailures: new Set(),
+            completed: false,
+            failureOnly: true,
+            publishedUrl: null,
+            running: false,
+            dismissing: false,
+          };
+          try {
+            await save(failureRecord);
+            attemptDurable = true;
+            remember(failureRecord);
+            attempt = failureRecord;
+          } catch {
+            attempt = null;
+          }
+        }
+        if (!attemptDurable) await report(error, reference, failureReporter);
+        else await report(error, reference, failureReporter, attempt);
+        return result;
       } finally {
         failureReporter?.revoke?.();
       }
@@ -501,6 +550,7 @@ export function createSharePublishCoordinator({
           return Object.freeze({ status: "created", attemptReferenceId: record.reference, url: record.publishedUrl });
         }
         if (record.lastFailure) {
+          if (record.failureOnly) return record.lastFailure;
           const recoverable = ![
             "daily_quota_exhausted",
             "reservation_limit_exhausted",

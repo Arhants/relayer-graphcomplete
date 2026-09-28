@@ -22,9 +22,9 @@ Sentry submission, or promotion of prototype code.
 - [x] `SHR-SPLIT-4` Produce an immutable viewer artifact manifest bound to the
   public commit, aggregate/file digests, builder, supported snapshot versions,
   CSP, and transitive resources.
-- [x] `SHR-SPLIT-5` Resolve the share origin inside Electron main: Stable is
-  pinned to production, Preview requires a build-sealed HTTPS origin, and only
-  Development permits a loopback override.
+- [x] `SHR-SPLIT-5` Resolve the share origin inside Electron main: packaged
+  Preview and Stable are pinned to production, and only non-packaged
+  Development permits an explicit private-preview override.
 - [x] `SHR-SPLIT-6` Private preview stack: deterministic AWS adapters, Lambda
   composition, exact artifact verification, isolated template, and a manual
   protected-environment workflow.

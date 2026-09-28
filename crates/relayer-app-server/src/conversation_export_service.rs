@@ -1928,6 +1928,11 @@ impl ProjectPathRedactor {
     fn text(&self, value: &str) -> String {
         let replaced = self.replace_raw(value);
         if !self.contains_private_path(&replaced) {
+            // Markdown syntax is not visible to a reader and can otherwise
+            // split a private path across emphasis, links, or inert HTML.
+            if self.contains_private_path(&markdown_rendered_text(&replaced)) {
+                return "[project-path]".to_owned();
+            }
             return if self.scrub_sensitive {
                 redact_share_secrets(&replaced)
             } else {
@@ -2154,11 +2159,33 @@ fn redact_share_secrets(value: &str) -> String {
 /// intentionally conservative: false positives redact one public field, while
 /// a false negative would disclose the reconstructed secret.
 fn markdown_rendered_text(value: &str) -> String {
-    let characters: Vec<char> = value.chars().collect();
+    // Reference definitions do not render. Removing them first also prevents
+    // the label used by `[text][label]` from being mistaken for visible text.
+    let visible_source = value
+        .split_inclusive('\n')
+        .filter(|line| {
+            let trimmed = line.trim_start_matches([' ', '\t']);
+            let Some(rest) = trimmed.strip_prefix('[') else {
+                return true;
+            };
+            !rest.contains("]:")
+        })
+        .collect::<String>();
+    let characters: Vec<char> = visible_source.chars().collect();
     let mut rendered = String::with_capacity(value.len());
     let mut index = 0;
     while index < characters.len() {
         match characters[index] {
+            '<' if characters[index..].starts_with(&['<', '!', '-', '-']) => {
+                index += 4;
+                while index < characters.len() {
+                    if characters[index..].starts_with(&['-', '-', '>']) {
+                        index += 3;
+                        break;
+                    }
+                    index += 1;
+                }
+            }
             '<' => {
                 index += 1;
                 let mut quote = None;
@@ -2188,6 +2215,16 @@ fn markdown_rendered_text(value: &str) -> String {
                         _ => {}
                     }
                     index += 1;
+                }
+            }
+            ']' if characters.get(index + 1) == Some(&'[') => {
+                index += 2;
+                while index < characters.len() {
+                    let character = characters[index];
+                    index += 1;
+                    if character == ']' {
+                        break;
+                    }
                 }
             }
             '*' | '`' | '~' | '[' | ']' | '!' => index += 1,
@@ -3190,6 +3227,8 @@ mod tests {
             "sk-proj-12345[6](https://example.test)78901234567890",
             "sk-proj-12345<span title=\"&gt;\">6</span>78901234567890",
             "sk-proj-12345<span title=\">\">6</span>78901234567890",
+            "s[k][x]-proj-12345678901234567890\n\n[x]: https://example.test",
+            "s<!-- > -->k-proj-12345678901234567890",
         ] {
             let mut node = authored_node(serde_json::json!({}));
             node.authored_detail = None;
@@ -3200,6 +3239,21 @@ mod tests {
         }
         let safe = "Q&amp;A [docs](https://example.test/?q=a%20b)";
         assert_eq!(redactor.text(safe), safe);
+    }
+
+    #[test]
+    fn share_markdown_redaction_detects_private_paths_exposed_by_rendering() {
+        let home_redactor = ProjectPathRedactor::for_share(None);
+        assert_eq!(
+            home_redactor.text("/Us**ers**/alice/.ssh/id_rsa"),
+            "[project-path]"
+        );
+
+        let project_redactor = ProjectPathRedactor::for_share(Some("/opt/relayer-private"));
+        assert_eq!(
+            project_redactor.text("/opt/relayer-**private**/secret"),
+            "[project-path]"
+        );
     }
 
     #[test]

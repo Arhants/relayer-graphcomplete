@@ -489,7 +489,7 @@ describe("share publication coordinator", () => {
     expect(publish).toHaveBeenCalledOnce();
   });
 
-  it("suppresses oversize export reporting without durable deduplication state", async () => {
+  it("persists oversize export deduplication state before reporting", async () => {
     const report = vi.fn(async () => ({ accepted: true }));
     const error = Object.assign(new Error("private raw service response"), {
       code: "share_snapshot_too_large",
@@ -504,7 +504,12 @@ describe("share publication coordinator", () => {
       createReferenceId: () => "SHR-ABCDEF12",
     });
     await coordinator.create({ threadId: 42, title: "Public title" });
-    expect(report).not.toHaveBeenCalled();
+    expect(report).toHaveBeenCalledWith({
+      code: "share.snapshot_too_large",
+      failureStage: "export",
+      attemptReferenceId: "SHR-ABCDEF12",
+      snapshotBytes: 16_777_217,
+    });
     expect(JSON.stringify(report.mock.calls)).not.toContain("private raw service response");
     expect(JSON.stringify(report.mock.calls)).not.toContain("Bearer secret");
   });
@@ -623,7 +628,7 @@ describe("share publication coordinator", () => {
     await expect(coordinator.retry("SHR-ABCDEF12")).resolves.toMatchObject({ code: "share_upload_failed" });
   });
 
-  it("suppresses real exporter errors without durable deduplication state", async () => {
+  it("persists real exporter failure deduplication state before reporting", async () => {
     const report = vi.fn();
     const coordinator = createSharePublishCoordinator({
       exportSnapshot: async () => { throw new ShareSnapshotExportError("share_export_failed"); },
@@ -634,7 +639,12 @@ describe("share publication coordinator", () => {
       createReferenceId: () => "SHR-ABCDEF12",
     });
     await coordinator.create({ threadId: 42, title: "Public title" });
-    expect(report).not.toHaveBeenCalled();
+    expect(report).toHaveBeenCalledWith({
+      code: "share.export_failed",
+      failureStage: "export",
+      attemptReferenceId: "SHR-ABCDEF12",
+      snapshotBytes: null,
+    });
   });
 
   it("does not admit a handled failure unless its durable deduplication key is saved", async () => {

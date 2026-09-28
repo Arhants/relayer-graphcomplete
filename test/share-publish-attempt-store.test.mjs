@@ -107,6 +107,26 @@ describe("durable share publish attempt store", () => {
     expect(loaded.publishedUrl).toBe("https://share.example.test/t/published");
   });
 
+  it("reopens a durable nonretryable exporter-failure receipt without snapshot bytes", async () => {
+    const root = await temporaryRoot();
+    const store = createSharePublishAttemptStore({ directory: root });
+    const failure = {
+      ...record("SHR-EXPORT01"),
+      snapshotBytes: [],
+      lastFailure: {
+        status: "failed",
+        attemptReferenceId: "SHR-EXPORT01",
+        code: "share_export_failed",
+        retryable: false,
+      },
+      reportedFailures: ["export:share.export_failed"],
+    };
+
+    await store.save(failure);
+    const [loaded] = await createSharePublishAttemptStore({ directory: root }).load();
+    expect({ ...loaded, snapshotBytes: [...loaded.snapshotBytes] }).toEqual(failure);
+  });
+
   it("rejects records above the 16 MiB product boundary", async () => {
     const root = await temporaryRoot();
     const store = createSharePublishAttemptStore({ directory: root });
