@@ -102,9 +102,9 @@ const SECRET_PROVIDER_HOMES = Object.freeze({
 });
 
 async function secretProviderRuntimeDependencies(definition, context, runtimeId) {
-  // A composition without provider runtime storage, such as Eval's Prime-only
-  // providers, gives no home. codex.basic and claude.basic then refuse new
-  // API-key conversations instead of falling back to the user's home.
+  // A composition without provider runtime storage gives no home. codex.basic
+  // and claude.basic then refuse new API-key conversations instead of falling
+  // back to the user's home.
   if (typeof context?.runtimeRoot !== "string") return {};
   const root = providerRuntimeDirectory(context.runtimeRoot, definition, productionProviderAdapterRegistry);
   if (root === null) return {};

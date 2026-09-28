@@ -429,6 +429,8 @@ export class CodexBasicHarness implements Harness {
       Object.assign(environment, Object.fromEntries(Object.entries(resolvedRuntimeEnvironment).filter(([key]) => (
         CODEX_MANAGED_RUNTIME_ENVIRONMENT.has(key)
       ))));
+      // A legacy conversation keeps the runtime environment's home unchanged. The production
+      // descriptor never sets CODEX_HOME, so that is Codex's default home.
       if (this.providerHome === "isolated") {
         const privateHome = access.environment?.CODEX_HOME;
         // Never fall back to the user's own Codex home for a new conversation.

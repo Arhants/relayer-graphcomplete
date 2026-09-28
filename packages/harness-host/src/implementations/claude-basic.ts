@@ -391,6 +391,8 @@ function executionEnvironment(
   if (access.kind === "secret") {
     const apiKey = access.fields["api-key"];
     if (!apiKey) throw new Error("claude.basic requires the provider API key");
+    // A legacy conversation keeps the runtime environment's home unchanged. The production
+    // descriptor never sets CLAUDE_CONFIG_DIR, so that is Claude's default home.
     if (providerHome === "isolated") {
       const privateHome = access.environment?.CLAUDE_CONFIG_DIR;
       // Never fall back to the user's own Claude home for a new conversation.

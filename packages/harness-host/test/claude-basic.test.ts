@@ -99,8 +99,10 @@ function secretAccess(overrides = {}): HarnessExecutionAccess {
       version: "0.3.250",
       executable: "/managed/claude",
       moduleUrl: "file:///managed/claude-agent-sdk/sdk.mjs",
-      environment: { CLAUDE_CONFIG_DIR: "/isolated/anthropic-work" },
+      environment: {},
     },
+    // The provider's private home, which a new conversation uses (PRD AGT-011).
+    environment: { CLAUDE_CONFIG_DIR: "/isolated/anthropic-work" },
     ...overrides,
   } as HarnessExecutionAccess;
 }
@@ -184,7 +186,9 @@ describe("ClaudeBasicHarness", () => {
       ], (input) => calls.push(input)),
     }));
     try {
-      const harness = new ClaudeBasicHarness(factoryContext("acceptEdits"), {
+      // A new conversation: no saved state.
+      const { savedState: _unused, ...newConversation } = factoryContext("acceptEdits");
+      const harness = new ClaudeBasicHarness(newConversation, {
         loadSdk,
         clientModuleUrl: "@relayer/graph-client",
       });
@@ -232,7 +236,7 @@ describe("ClaudeBasicHarness", () => {
       expect(options.env).not.toHaveProperty("OPENAI_API_KEY");
       expect(options.env.RELAYER_GRAPH_TOKEN).toBe("token");
       expect(harness.state()).toEqual({
-        claudeProviderHome: "legacy-shared",
+        claudeProviderHome: "isolated",
         claudeSessionId: "session-1",
         claudeSessionProviderDefinitionId: "anthropic-work",
         claudeSessionPersonalPresentationVersionId: null,

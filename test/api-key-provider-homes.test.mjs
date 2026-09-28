@@ -192,7 +192,7 @@ describe("API-key provider native homes", () => {
     ["openai-api", "CODEX_HOME"],
     ["anthropic-api", "CLAUDE_CONFIG_DIR"],
   ])("refuses a new %s conversation when the composition gave the provider no private home", async (adapterId, variable) => {
-    // Eval's Prime-only composition has no provider runtime storage.
+    // A composition that passes no provider runtime root gives the provider no home.
     const provider = await connectProvider(adapterId, {});
     const host = await startHost(provider);
     await host.createSession(adapterId === "anthropic-api" ? claudeSession() : codexSession());
