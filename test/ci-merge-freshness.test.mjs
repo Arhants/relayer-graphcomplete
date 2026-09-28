@@ -52,7 +52,7 @@ function fakeGitHub(f) {
 }
 
 describe("scheduled merge freshness", () => {
-  it("records actual Git merge parents and then-current main in a local-only repository", async () => {
+  it("records the actual merge when PR base metadata predates current main", async () => {
     const directory = await mkdtemp(join(tmpdir(), "freshness-git-"));
     const git = (args) => execFileSync("git", args, { cwd: directory, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
     try {
@@ -61,20 +61,25 @@ describe("scheduled merge freshness", () => {
       git(["config", "user.email", "fixture@example.invalid"]);
       git(["config", "commit.gpgsign", "false"]);
       git(["commit", "--allow-empty", "-m", "main"]);
-      const mainSha = git(["rev-parse", "HEAD"]);
+      const eventBaseSha = git(["rev-parse", "HEAD"]);
       git(["checkout", "-b", "pr"]);
       git(["commit", "--allow-empty", "-m", "head"]);
       const headSha = git(["rev-parse", "HEAD"]);
+      git(["checkout", "main"]);
+      git(["commit", "--allow-empty", "-m", "main advances without updating PR metadata"]);
+      const mainSha = git(["rev-parse", "HEAD"]);
       git(["checkout", "--detach", "main"]);
       git(["merge", "--no-ff", "pr", "-m", "test merge"]);
       const mergeSha = git(["rev-parse", "HEAD"]);
       git(["remote", "add", "origin", directory]);
       const f = fixture();
-      f.pr.base.sha = mainSha; f.pr.head.sha = headSha;
+      f.pr.base.sha = eventBaseSha; f.pr.head.sha = headSha;
       const env = { GITHUB_SHA: mergeSha, GITHUB_REPOSITORY: repository, GITHUB_RUN_ID: "10", GITHUB_RUN_ATTEMPT: "1" };
       expect(recordEvidence({ pull_request: f.pr }, env, git)).toEqual({
         ...f.receipt, baseSha: mainSha, headSha, mergeSha, observedMain: mainSha,
       });
+      expect(() => recordEvidence({ pull_request: f.pr }, { ...env, GITHUB_SHA: headSha }, git)).toThrow();
+      expect(() => recordEvidence({ pull_request: { ...f.pr, head: { sha: mainSha } } }, env, git)).toThrow();
       git(["checkout", "pr"]);
       expect(() => recordEvidence({ pull_request: f.pr }, env, git)).toThrow("exact main + PR merge");
     } finally { await rm(directory, { recursive: true, force: true }); }
@@ -229,6 +234,15 @@ describe("scheduled merge freshness", () => {
     expect(workflow.jobs.refresh.steps[1].with.script).toContain("result.published === false");
     expect(workflow.jobs.refresh.steps[1].with.script).toContain("core.setFailed(");
     const ci = parse(await read(".github/workflows/ci.yml"));
+    for (const job of Object.values(ci.jobs)) {
+      if (job.if === "${{ false }}" || job.if === false) continue;
+      for (const step of job.steps ?? []) {
+        if (step.uses?.startsWith("actions/checkout@")) expect(step.with.ref).toBe("${{ github.sha }}");
+      }
+    }
+    for (const name of ["Record exact main and PR merge tested by CI", "Upload merge freshness evidence"]) {
+      expect(ci.jobs.plan.steps.find((step) => step.name === name)["continue-on-error"]).toBe(true);
+    }
     expect(ci.jobs.plan.steps.find((step) => step.name === "Upload merge freshness evidence").with.name).toBe("merge-freshness-v1-${{ github.run_attempt }}");
     const main = JSON.parse(await read("infra/github/desktop-release-authority/main-ruleset.json"));
     const checks = main.rules.find((rule) => rule.type === "required_status_checks").parameters;
