@@ -58,6 +58,8 @@ function productServer(definitions = []) {
     commitDelayed: null,
     // The next refusal's answer is lost: the client sees a transport error.
     loseNextRefusal: false,
+    // The next publish of this lifecycle event fails before it reaches the store.
+    failNextEvent: null,
     failedPublishes: 0,
     // Stalls the next definition save after it is reached, holding the provider queue.
     holdNextSave: null,
@@ -108,6 +110,11 @@ function productServer(definitions = []) {
       const row = rows.get(snapshot.providerId);
       if (!row) throw coded("provider_unknown");
       if (row.definition.lifecycleState !== "active") throw coded("provider_not_active");
+      if (server.failNextEvent && server.failNextEvent === connectionEvent) {
+        server.failNextEvent = null;
+        server.failedPublishes += 1;
+        throw new Error("app server unreachable");
+      }
       if (server.delayNextCommit && server.delayNextCommit === connectionEvent) {
         server.delayNextCommit = null;
         server.commitDelayed = () => server.publishCatalog(snapshot, { connectionGeneration, connectionEvent });
@@ -593,6 +600,70 @@ describe("PROV-002: a superseded provider result is inert", () => {
     }
   });
 
+  // An explicit refresh passed its generation check, then awaited the readiness evaluation that
+  // precedes its publish. A reconnect started meanwhile. The refresh published anyway, while
+  // the reconnect was pending.
+  it("publishes no explicit refresh whose readiness evaluation outlasted the start of a reconnect", async () => {
+    const world = managedWorld();
+    const server = productServer([managedDefinition]);
+    let holdReadiness = null;
+    const composition = compose({
+      registry: world.registry, server, removeRuntimeState: world.removeRuntimeState,
+      evaluateReadiness: async ({ trigger }) => {
+        const hold = holdReadiness;
+        if (trigger !== "explicit-repair" || !hold) return null;
+        holdReadiness = null;
+        hold.reached.resolve();
+        await hold.release.promise;
+        return null;
+      },
+    });
+    try {
+      await composition.start();
+      await composition.providerDefinitions.logout(managedDefinition.id);
+      const readiness = { reached: deferred(), release: deferred() };
+      holdReadiness = readiness;
+      const explicit = composition.modelCatalog.explicitRefresh(managedDefinition.id);
+      await readiness.reached.promise;
+      const attempts = server.attempts.length;
+      await composition.providerDefinitions.reconnect(managedDefinition.id);
+      readiness.release.resolve();
+      await expect(explicit).resolves.toBeNull();
+      expect(server.attempts.length).toBe(attempts);
+    } finally {
+      await composition.close();
+    }
+  });
+
+  // The user signed out while a reconnect was pending, and the app server answered. The browser
+  // sign-in then finished, and the reconnect was refused as superseded. Its settle could not
+  // record signed out again, so it kept the new login as an unknown outcome; the next refresh
+  // then published connected over the user's confirmed sign-out.
+  it("keeps a confirmed sign-out when a superseded reconnect cannot record signed out again", async () => {
+    const world = managedWorld();
+    const server = productServer([managedDefinition]);
+    const composition = compose({ registry: world.registry, server, removeRuntimeState: world.removeRuntimeState });
+    try {
+      await composition.start();
+      await composition.providerDefinitions.logout(managedDefinition.id);
+      const pending = await composition.providerDefinitions.reconnect(managedDefinition.id);
+      await composition.providerDefinitions.logout(managedDefinition.id);
+      world.account = "connected";
+      server.failNextEvent = "signed-out";
+      await expect(composition.providerDefinitions.completeConnection(pending.connectionId))
+        .rejects.toThrow("provider_connection_superseded");
+      expect(world.homeWipes).toBe(1);
+      await composition.modelCatalog.explicitRefresh(managedDefinition.id);
+      expect(server.connected(managedDefinition.id)).toBe(false);
+      expect((await composition.providerDefinitions.list())[0]).toMatchObject({
+        connected: false,
+        unavailableReason: expect.objectContaining({ code: "provider_logged_out" }),
+      });
+    } finally {
+      await composition.close();
+    }
+  });
+
   // A refresh resolved its generation before a reconnect started and read the account after
   // the browser sign-in. It reached its publish only after the reconnect was cancelled. The
   // cancel moved nothing, so the refresh published "connected" over the wiped login.
@@ -953,6 +1024,24 @@ describe("PROV-004: provider lifecycle never runs under a turn's provider access
       expect(world.homeWipes).toBe(0);
       expect(service.pendingConnections.has(managedDefinition.id)).toBe(false);
       service.activeExecutions.delete(managedDefinition.id);
+    } finally {
+      await composition.close();
+    }
+  });
+
+  // Shutdown awaits the app server's close before it closes the providers. Leases requested in
+  // that interval were still granted, and the provider teardown then closed their runtime.
+  it("refuses provider access from the moment shutdown begins", async () => {
+    const world = managedWorld();
+    const server = productServer([managedDefinition]);
+    const composition = compose({ registry: world.registry, server, removeRuntimeState: world.removeRuntimeState });
+    const service = composition.providerDefinitions;
+    try {
+      await composition.start();
+      composition.beginShutdown();
+      await expect(service.acquireExecution(managedDefinition.id)).rejects.toThrow("Provider setup is shutting down.");
+      await expect(service.reconnect(managedDefinition.id)).rejects.toThrow("Provider setup is shutting down.");
+      expect(service.activeExecutions.size).toBe(0);
     } finally {
       await composition.close();
     }

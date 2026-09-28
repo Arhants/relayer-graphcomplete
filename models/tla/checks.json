@@ -192,6 +192,7 @@
       "AdoptChecksBaseline": "TRUE",
       "CancelSignsOut": "TRUE",
       "CancelKeepsUnrecordedLogin": "TRUE",
+      "SupersededCancelWipes": "TRUE",
       "AdoptTracksLostWrites": "TRUE"
     }
   },
@@ -2465,6 +2466,33 @@
         "violated": "CancelRecordsSignedOut"
       },
       "finding": "With CancelKeepsUnrecordedLogin off, a cancel whose signed-out publish fails still wipes the login, while a failed sign-out left the app server reading ready."
+    },
+    {
+      "id": "lifecycle-confirmed-sign-out-stands",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "ConfirmedSignOutStands"
+      ],
+      "expect": "pass",
+      "finding": "Once the app server answered a sign-out, the home holds no login again until the user starts a new reconnect, with every fault on."
+    },
+    {
+      "id": "lifecycle-confirmed-sign-out-stands-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SupersededCancelWipes": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ConfirmedSignOutStands"
+      ],
+      "expect": {
+        "violated": "ConfirmedSignOutStands"
+      },
+      "finding": "With SupersededCancelWipes off, a sign-out answered during a reconnect is followed by the browser sign-in; the refused reconnect's settle cannot publish, keeps the new login, and the next refresh would publish connected over the confirmed sign-out."
     },
     {
       "id": "lifecycle-straddling-refresh",

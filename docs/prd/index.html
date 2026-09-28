@@ -794,6 +794,7 @@ interface CompletionTerminalError extends Error {
 <li>A cancelled or failed reconnect leaves the provider refreshable. It keeps a live catalog, or its recovery path if the provider could not be activated.</li>
 <li>A cancelled or failed reconnect records the signed-out state with the next generation, as sign-out does. Every result still in flight becomes inert.</li>
 <li>If that record fails, the reconnect keeps its sign-in, as an unknown outcome does. The next refresh settles the provider's state.</li>
+<li>A sign-out the app server confirmed during the reconnect is the exception. That sign-out stands, and the reconnect's sign-in is removed.</li>
 <li>Recovery never uses the runtime a pending reconnect is signing in. Until that reconnect settles, recovery reports the provider unavailable.</li>
 <li>No catalog refresh starts or publishes while a reconnect is pending.</li>
 <li>Sign-out records the disconnected state itself. It does not wait for a catalog refresh.</li>
@@ -839,7 +840,7 @@ interface CompletionTerminalError extends Error {
 <p>A turn holds its provider's execution access exactly as long as its native agent runs, unless the turn is force-stopped. The access ends when the native turn settles, or within ten seconds of a force-stop. It does not wait for Relayer to record the turn's outcome.</p>
 <ul>
 <li><strong>PROV-004:</strong> Provider access is never released while the native turn that uses it still runs, unless that turn is force-stopped. Remove, sign-out, and reconnect therefore never run under live native work that was not force-stopped.</li>
-<li>A turn cannot take provider access while that provider's reconnect is pending, or once Relayer has begun to quit.</li>
+<li>A turn cannot take provider access while that provider's reconnect is pending, or once Relayer has begun to quit. Quitting closes provider access before it waits for other services.</li>
 <li>When Relayer gives up on a running turn, it cancels the turn. The access is released once the native turn settles, or within ten seconds of a force-stop.</li>
 <li>A turn cannot start on an admission whose release has already begun.</li>
 <li><strong>PROV-003:</strong> Removing a provider finishes without a restart once nothing is actually running on it. This holds after an application restart and when Relayer could not record a turn's outcome.</li>

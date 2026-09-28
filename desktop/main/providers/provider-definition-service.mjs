@@ -690,7 +690,10 @@ export class ProviderDefinitionService {
           ...providerDiagnosticDetails(error),
         }).catch(() => undefined),
       });
-      if (!recorded) {
+      // A sign-out the app server answered while this reconnect was pending already recorded
+      // signed out, and no refresh runs while it is pending. Nothing is unknown: the confirmed
+      // sign-out stands, so the reconnect's login is wiped even when this record fails.
+      if (!recorded && !pending.superseded) {
         // The app server may still read connected, so wiping the login would leave it
         // admitting turns with none. As for an unknown reconnect outcome, the login and the
         // reconnect's runtime are kept, Settings follows the app server, and the next refresh
@@ -1162,12 +1165,20 @@ export class ProviderDefinitionService {
     }).catch(() => undefined);
   }
 
+  /**
+   * Refuses new provider access, connects and reconnects from now on. Shutdown calls it before
+   * it awaits the app server, so no turn is admitted onto a runtime that close() then closes.
+   */
+  beginShutdown() {
+    this.closing = true;
+    for (const preparation of this.preparingConnections.values()) {
+      if (preparation.cancellable) preparation.cancelled = true;
+    }
+  }
+
   async close() {
     this.closePromise ??= (async () => {
-      this.closing = true;
-      for (const preparation of this.preparingConnections.values()) {
-        if (preparation.cancellable) preparation.cancelled = true;
-      }
+      this.beginShutdown();
       await Promise.allSettled([...this.lifecycleTasks]);
       const runtimes = new Set([
         ...this.runtimes.values(),
