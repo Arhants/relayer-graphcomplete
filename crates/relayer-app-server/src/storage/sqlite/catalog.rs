@@ -626,8 +626,17 @@ impl SqliteProductStore {
             }
         }
         let stored_defaults = load_defaults(&mut transaction).await?;
-        if command.harness_id.is_some() || command.family_id.is_some() {
-            let family_id = command.family_id.or(stored_defaults.family_id);
+        // The default provider and the default family are one pair (PROV-008). Choosing a
+        // provider selects its managed family; choosing a managed family selects its provider.
+        // A later catalog refresh then finds nothing to reconcile.
+        let (provider_id, new_family_id) = paired_default_on(
+            &mut transaction,
+            command.provider_id.as_ref(),
+            command.family_id,
+        )
+        .await?;
+        if command.harness_id.is_some() || new_family_id.is_some() {
+            let family_id = new_family_id.or(stored_defaults.family_id);
             let harness_id = command
                 .harness_id
                 .clone()
@@ -669,8 +678,8 @@ impl SqliteProductStore {
             "UPDATE product_model_preferences SET default_harness_configuration_name=COALESCE(?1,default_harness_configuration_name),default_provider_id=COALESCE(?2,default_provider_id),default_family_id=COALESCE(?3,default_family_id),defaults_modified=1 WHERE singleton=1",
         )
         .bind(command.harness_id.as_deref())
-        .bind(command.provider_id.as_ref().map(ProviderId::as_str))
-        .bind(command.family_id.map(ModelFamilyId::value))
+        .bind(provider_id.as_ref().map(ProviderId::as_str))
+        .bind(new_family_id.map(ModelFamilyId::value))
         .execute(&mut *transaction)
         .await?;
         let defaults = load_defaults(&mut transaction).await?;
@@ -2018,6 +2027,59 @@ fn overlay_digest(
     digest.update([0]);
     digest.update(revision.to_le_bytes());
     Ok(format!("sha256:{:x}", digest.finalize()))
+}
+
+/// Resolves the provider and family a defaults update writes, keeping them paired.
+///
+/// A provider chosen alone brings its enabled managed family; a provider without one is refused,
+/// so the stored defaults stay unchanged. A managed family chosen alone brings its provider. A
+/// managed family chosen with a different provider is refused. A custom family keeps whatever
+/// provider was chosen or stored.
+async fn paired_default_on(
+    connection: &mut SqliteConnection,
+    provider_id: Option<&ProviderId>,
+    family_id: Option<ModelFamilyId>,
+) -> Result<(Option<ProviderId>, Option<ModelFamilyId>), StorageError> {
+    match (provider_id, family_id) {
+        (None, None) => Ok((None, None)),
+        (Some(provider_id), None) => {
+            let managed = sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM model_families WHERE kind='system' AND managed_provider_id=?1 AND lifecycle_state='active' AND enabled=1 ORDER BY id DESC LIMIT 1",
+            )
+            .bind(provider_id.as_str())
+            .fetch_optional(&mut *connection)
+            .await?
+            .ok_or_else(|| {
+                StorageError::Catalog(CatalogError::invalid(
+                    "default_provider_family_unavailable",
+                    "The selected provider has no enabled model family yet. Refresh its models, then choose it again.",
+                ))
+            })?;
+            Ok((
+                Some(provider_id.clone()),
+                Some(ModelFamilyId::from_database(managed)),
+            ))
+        }
+        (provider_id, Some(family_id)) => {
+            let owner = sqlx::query_scalar::<_, Option<String>>(
+                "SELECT managed_provider_id FROM model_families WHERE id=?1 AND kind='system'",
+            )
+            .bind(family_id.value())
+            .fetch_optional(&mut *connection)
+            .await?
+            .flatten()
+            .map(ProviderId::from_database);
+            match (provider_id, owner) {
+                (Some(chosen), Some(owner)) if *chosen != owner => {
+                    Err(StorageError::Catalog(CatalogError::invalid(
+                        "default_family_provider_mismatch",
+                        "The default family belongs to a different provider.",
+                    )))
+                }
+                (chosen, owner) => Ok((chosen.cloned().or(owner), Some(family_id))),
+            }
+        }
+    }
 }
 
 async fn load_defaults(

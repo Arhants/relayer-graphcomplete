@@ -3628,14 +3628,20 @@ mod tests {
             .await
             .unwrap();
         let openai_settings = service.model_settings().await.unwrap();
-        assert!(openai_settings.families.iter().any(|family| {
-            family.members.iter().any(|member| {
-                member.provider_id.as_str() == "custom-openai" && member.model_id == "default"
-            }) && family.managed_policy.as_ref().is_some_and(|policy| {
-                policy.policy_id == super::super::model_policy::PROVIDER_DEFAULT_FAMILY_POLICY_ID
-                    && policy.policy_version == 1
+        let openai_family = openai_settings
+            .families
+            .iter()
+            .find(|family| {
+                family.members.iter().any(|member| {
+                    member.provider_id.as_str() == "custom-openai" && member.model_id == "default"
+                }) && family.managed_policy.as_ref().is_some_and(|policy| {
+                    policy.policy_id
+                        == super::super::model_policy::PROVIDER_DEFAULT_FAMILY_POLICY_ID
+                        && policy.policy_version == 1
+                })
             })
-        }));
+            .unwrap()
+            .id;
         service
             .update_model_settings_defaults(UpdateModelSettingsDefaultsCommand {
                 harness_id: None,
@@ -3649,24 +3655,46 @@ mod tests {
             .create_provider_with_catalog(definition, snapshot.clone())
             .await
             .unwrap();
+        // Choosing the provider selected its managed family too (PROV-008), and adding Codex
+        // preserves both.
         let first = service.model_settings().await.unwrap();
-        assert_eq!(first.defaults.family_id, None);
+        assert_eq!(first.defaults.family_id, Some(openai_family));
         assert_eq!(first.defaults.provider_id.as_str(), "custom-openai");
 
         storage
             .initialize_model_catalog("codex-basic", &managed_runtime_harnesses(2))
             .await
             .unwrap();
-        service.publish_provider_catalog(snapshot).await.unwrap();
+        service
+            .publish_provider_catalog(snapshot.clone())
+            .await
+            .unwrap();
         let migrated = service.model_settings().await.unwrap();
         assert_eq!(migrated.defaults.provider_id.as_str(), "custom-openai");
-        assert_eq!(migrated.defaults.family_id, None);
+        assert_eq!(migrated.defaults.family_id, Some(openai_family));
         assert!(migrated.families.iter().any(|family| {
             family
                 .managed_policy
                 .as_ref()
                 .is_some_and(|policy| policy.policy_version == 2)
         }));
+
+        // Legacy data: before the pairing, a provider-only save could leave the family unset.
+        // A Codex publish still keeps that connected provider and fills nothing.
+        let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", path.display()))
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE product_model_preferences SET default_family_id=NULL WHERE singleton=1",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+        service.publish_provider_catalog(snapshot).await.unwrap();
+        let legacy = service.model_settings().await.unwrap();
+        assert_eq!(legacy.defaults.provider_id.as_str(), "custom-openai");
+        assert_eq!(legacy.defaults.family_id, None);
 
         drop(service);
         drop(storage);

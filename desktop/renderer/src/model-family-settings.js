@@ -537,10 +537,10 @@ async function persistDefault(field) {
       : null;
     await saveModelDefaults({ [field]: candidate });
     await refreshModelSettings({ preserveEdit: true });
-    if (field === "harnessId") {
-      applyPermissionProfiles?.();
-      resetNewThreadModelPicker();
-    }
+    // Both defaults choose the next thread's model: the harness directly, and the provider
+    // through the managed family the server pairs with it (PROV-008).
+    applyPermissionProfiles?.();
+    resetNewThreadModelPicker();
     setStatus("Saved", "success");
   } catch (error) {
     settings.defaults = previous;

@@ -1,6 +1,6 @@
 # TLA+ models
 
-These models find bugs in the two parts of Relayer with the most concurrent
+These models find bugs in the parts of Relayer with the most concurrent
 state. The method is model, counterexample, reproduce, fix:
 
 1. Model one race-prone state machine, citing the code each action abstracts.
@@ -21,7 +21,7 @@ npm run check:models
 Pass check ids to run a subset. The runner needs Java 11 or newer and the
 pinned `tla2tools.jar` (version and sha256 in `checks.json`). It never
 downloads the jar; place it at `~/.cache/tlaplus/tla2tools-1.8.0.jar` or set
-`TLA2TOOLS_JAR`. All checks and scenarios together take about 40 seconds.
+`TLA2TOOLS_JAR`. All checks and scenarios together take about 45 seconds on an idle machine.
 `--render` rewrites the scenario traces (see below).
 
 `check:models` is not part of `npm run check` yet. Adding it there requires a
@@ -43,8 +43,13 @@ Each bug check starts from `completion-today`, switches every other bug's
 fix on, and leaves its own constant as the code has it. A violation of that
 check can therefore come only from its own mechanism.
 
-A fix PR flips its constant in `completion-today`. That check then passes, so
-the PR must also flip its expectation to `pass`; otherwise the runner fails.
+`CatalogRefresh` follows the same rule with `catalog-today`, which mirrors
+the code. It has one constant per landed fix, and each open bug check keeps
+every landed fix on.
+
+A fix PR flips its constant in `completion-today` or `catalog-today`. That
+check then passes, so the PR must also flip its expectation to `pass`;
+otherwise the runner fails.
 A provider fix edits `ProviderSettings.tla` directly and flips its check the
 same way. Violated checks run on one TLC worker, so their traces are the same
 from run to run.
@@ -128,6 +133,7 @@ counterexample:
 
 - **Confirmed:** the product can reach the trace.
 - **Plausible:** reaching it depends on the assumption named in the row.
+- **Latent:** the mechanism is real, but the current UI cannot reach it.
 
 ## Models
 
@@ -152,6 +158,48 @@ renderer.
 | `provider-attempt-ownership` | Fixed; now passes | Before the fix: `bindConnection` ran only after `connect()`/`reconnect()` (including `login()`) and `openExternal` resolved. It added a `destroyed` listener to contents already destroyed, and that listener never fired. It now cancels the attempt instead. This restores PRD BRW-005. Scenario: `provider-destroyed-before-bind`. |
 | `provider-close` | Plausible: depends on shutdown order | `close()` waits for lifecycle tasks but not for the queue, and `acquireExecution` ignores `closing`. A turn admitted before shutdown can create and register a runtime after the maps are cleared. |
 | `provider-default-family` | Needs a product decision | A catalog refresh that reports `provider_no_eligible_execution_models` tombstones the provider's managed family even when it is the default family. A later refresh with eligible models reactivates the same family. Disable, delete and removal all refuse to break the default family, but the PRD makes no promise here. |
+
+### `CatalogRefresh.tla`
+
+This model covers the model catalog and the default provider and family:
+
+- **Desktop main:** the per-provider catalog refresh queue
+  (`model-catalog-service.mjs`), which captures its adapter when a refresh is
+  requested. It also covers the pre-inference join, `close()`, the unavailable
+  stub's explicit recovery, and logout, reconnect, remove and connect at the
+  points where they meet that queue.
+- **SQLite catalog:** a publish reactivates or tombstones the provider's
+  managed family and reconciles an unset or managed default. It also covers
+  the user's default provider and family choices and the removal guard.
+
+There are two providers: the existing managed provider `P`, and `Q`, which
+starts absent and may connect. The families are their managed families `mP`
+and `mQ`, and one custom family `C` with members from both. Each check
+shrinks the bounds in `catalog-today`. On an idle machine the slowest,
+`catalog-refresh-keeps-chosen-default`, takes about 10 seconds.
+
+`catalog-today` has one fix constant:
+
+- `DefaultProviderPairsFamily`: choosing a default provider also selects that
+  provider's enabled managed family, in the same transaction. A provider
+  without one is refused, and the defaults stay unchanged. Landed (PROV-008).
+
+The five open bug checks below are fixed together by a later PR, the provider
+connection generation (PR 4). That PR ties each catalog result to the
+provider's connection generation, and it will add its own constant.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `catalog-refresh-keeps-chosen-default` | Fixed; now passes | Before the fix, the Settings default-provider selector saved only `providerId`. Rust stored that provider with the old provider's managed family. The next catalog publish for the old provider matched "the default family is my managed family" and moved the default provider back. The pairing leaves nothing for a refresh to revert. The check also proves `DefaultIsPaired` and `RefreshKeepsOtherDefault`. Regression test: `catalog_refresh_keeps_the_chosen_default_provider_and_its_managed_family` in `model_catalog_flow.rs`. |
+| `catalog-chosen-default-reverted` | violated: shows why the fix is needed | With `DefaultProviderPairsFamily` off, `Q` connects, the user chooses `Q`, and a refresh of `P` moves the default provider back to `P`. |
+| `catalog-stale-refresh-after-reconnect` | Plausible: needs a stalled refresh; open, PR 4 | A refresh discovers "disconnected" after sign-out, then stalls. The user reconnects, which publishes connected directly. The stalled refresh then publishes its disconnected result, and nothing queued behind it corrects that (CR-V1). |
+| `catalog-old-account-repopulates` | Plausible: an old `model/list` outlasts a full login; open, PR 4 | A refresh discovers eligible models. A reconnect to an account with zero eligible models then tombstones the managed family. The older eligible result publishes afterwards and reactivates it (CR-V3). |
+| `catalog-stale-adapter-capture` | Confirmed; open, PR 4 | A refresh captures the unavailable stub when it is requested, and the stub answers "could not be activated". Before that result publishes, a reconnect registers the real runtime and publishes connected. The stub's result then publishes over it (F3/V2). |
+| `catalog-stub-recovery-logout-deadlock` | Latent: the UI hides Sign out while the stub is registered; open, PR 4 | An explicit refresh through the stub waits for the provider queue. Logout holds that queue while it waits for its own refresh, which is queued behind the explicit one. Neither returns (CR-V7). |
+| `catalog-no-restore-after-cancelled-reconnect` | Confirmed, low; open, PR 4 | A cancelled reconnect unregisters the catalog adapter while the provider stays active. A tombstoned default family then never restores, because no refresh can run (V8). |
+| `catalog-own-family` | passes | A catalog publish changes only its own provider's managed family and never the custom family. |
+| `catalog-tombstoned-default-blocks-send` | passes | A default family tombstoned by a zero-eligible publish stays the default and blocks Send. |
+| `catalog-default-restores` | passes | With the real adapter registered, a tombstoned default family restores once its provider is healthy again. |
 
 ### `CompletionCurrent.tla`
 
@@ -199,14 +247,18 @@ interaction to `submitted` for a retry, and resetting the execution to
 ## Limits
 
 - **Bounds:** one provider plus one new connection, one renderer, one lease,
-  and a single child at depth 1 with head revision at most 3. A bug that needs
-  more actors is out of reach.
+  and a single child at depth 1 with head revision at most 3. `CatalogRefresh`
+  has two providers, two queued refreshes per provider, and at most two
+  lifecycle events. A bug that needs more actors is out of reach.
+- **Catalog abstractions:** `CatalogRefresh` has no harness. A family is
+  resolvable when it is enabled and has a connected member with available
+  models. The legacy state of a user-chosen default with no family is left
+  out of the default-provider checks.
 - **Queue order:** the provider queue is FIFO for queued cancels, but requests
   that queue behind an interior await may start in either order.
 - **Not modeled:**
   - the parent retrying a failed stop;
   - label uniqueness and ids;
-  - the model catalog refresh queue's own ordering;
   - harness readiness generations;
   - thread permission pinning;
   - Ladybug index crash recovery;

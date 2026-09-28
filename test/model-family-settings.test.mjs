@@ -359,7 +359,10 @@ describe("model family settings layout", () => {
     expect(settingsSource).toContain('$("#defaultHarnessSelect").disabled = savingDefaults');
     expect(settingsSource).toContain("await preparePermissionProfiles(candidate)");
     expect(settingsSource).toContain("await saveModelDefaults({ [field]: candidate })");
-    expect(settingsSource).toContain("resetNewThreadModelPicker();");
+    // A saved default provider moves the default family, so the new-thread picker restarts
+    // from it just as it does after a harness change.
+    expect(settingsSource).toContain("applyPermissionProfiles?.();\n    resetNewThreadModelPicker();");
+    expect(settingsSource).not.toContain('if (field === "harnessId") {\n      applyPermissionProfiles');
     expect(settingsSource).toContain("refreshNewThreadModelPicker();");
     expect(settingsSource).toContain('$("#familyNameInput").value = current.name;');
     expect(settingsSource).not.toContain('value="${escapeHtml(family.name)}"');
