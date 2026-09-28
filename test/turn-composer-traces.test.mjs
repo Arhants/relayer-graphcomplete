@@ -296,6 +296,50 @@ describe("An edit after Send that retypes the same text", () => {
     expect(world.prompt.value).toBe(sentText);
   });
 
+  it("is kept until the turns of two same-text Sends from one scope have both loaded", async () => {
+    world = await new TurnComposerWorld({ maxText: 2, maxTurns: 3 }).ready();
+    await world.apply(["Type"]);
+    const sentText = world.prompt.value;
+    const retype = () => {
+      world.prompt.value = sentText;
+      world.prompt.dispatchEvent(new world.window.Event("input"));
+    };
+    const sendUnresolved = async () => {
+      await world.apply(["ClickSend"]);
+      for (const step of [["PostInserted", "A"], ["PostSucceeds", "A"], ["RefreshSkipped", "A"], ["Settle", "A"]]) {
+        await world.apply(step);
+      }
+    };
+    await sendUnresolved();
+    retype();
+    await sendUnresolved();
+    expect(world.sentRecord()).toMatchObject({ sends: 2 });
+    retype();
+    // The first Send's turn loads; the second's has not.
+    world.turns.A.push({ status: "running", text: sentText });
+    await world.apply(["BackgroundRender"]);
+    expect(world.prompt.value).toBe(sentText);
+    await world.apply(["TurnArrives", "A"]);
+    expect(world.prompt.value).toBe(sentText);
+    expect(world.sentRecord()).toBeNull();
+  });
+
+  it("still waits for an earlier same-text Send when a later one is rejected outright", async () => {
+    world = await new TurnComposerWorld({ maxText: 2, maxTurns: 3 }).ready();
+    await world.apply(["Type"]);
+    const sentText = world.prompt.value;
+    await world.apply(["ClickSend"]);
+    for (const step of [["PostInserted", "A"], ["PostSucceeds", "A"], ["RefreshSkipped", "A"], ["Settle", "A"]]) {
+      await world.apply(step);
+    }
+    world.prompt.value = sentText;
+    world.prompt.dispatchEvent(new world.window.Event("input"));
+    await world.apply(["ClickSend"]);
+    expect(world.sentRecord()).toMatchObject({ sends: 2 });
+    await world.apply(["PostFails", "A"]);
+    expect(world.sentRecord()).toMatchObject({ sends: 1 });
+  });
+
   it("leaves no record once the server rejects the send outright", async () => {
     world = await new TurnComposerWorld({ maxText: 2, maxTurns: 2 }).ready();
     await world.apply(["Type"]);

@@ -65,12 +65,13 @@ export function normalizeComposerDrafts(value) {
       ? Object.fromEntries(Object.entries(value.sentThreadFollowups)
         .filter(([, record]) => typeof record?.scopeKey === "string"
           && typeof record.originScopeKey === "string" && typeof record.textDigest === "string"
-          && typeof record.edited === "boolean")
+          && typeof record.edited === "boolean" && Number.isSafeInteger(record.sends) && record.sends >= 1)
         .map(([threadId, record]) => [threadId, {
           scopeKey: record.scopeKey,
           originScopeKey: record.originScopeKey,
           textDigest: record.textDigest,
           edited: record.edited,
+          sends: record.sends,
         }]))
       : {},
   };

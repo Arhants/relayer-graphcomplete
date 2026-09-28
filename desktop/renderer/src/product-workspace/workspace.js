@@ -2828,6 +2828,7 @@ export function createProductWorkspace({
   // carries it, as after a send that failed with a network or server error
   // (SCP-019) or one interrupted by a restart. It is neither carried into a
   // newer turn nor handed back.
+  // How many of the thread's user turns after scopeKey's turn match.
   const laterUserTurnMatches = (threadId, scopeKey, matches) => {
     // A turn an invoke action created is not the user's follow-up.
     const invoked = new Set((getState().actionInvocations || [])
@@ -2835,21 +2836,22 @@ export function createProductWorkspace({
     const turns = (getState().interactions || [])
       .filter((turn) => String(turn.threadId) === String(threadId));
     const from = turns.findIndex((turn) => composerDraftScopeKey(threadId, turn.id) === scopeKey);
-    return from >= 0 && turns.slice(from + 1)
-      .some((turn) => !invoked.has(String(turn.id)) && matches(String(turn.text ?? "")));
+    return from < 0 ? 0 : turns.slice(from + 1)
+      .filter((turn) => !invoked.has(String(turn.id)) && matches(String(turn.text ?? ""))).length;
   };
   const sentByLaterTurn = (threadId, scopeKey, text) => Boolean(String(text ?? "").trim())
-    && laterUserTurnMatches(threadId, scopeKey, (turnText) => turnText.trim() === String(text).trim());
+    && laterUserTurnMatches(threadId, scopeKey, (turnText) => turnText.trim() === String(text).trim()) > 0;
   // A thread's send whose turn has not loaded is persisted from when its POST
   // starts, so it outlives a restart: the scope its text is in now, the scope
-  // it was sent from, a digest of the sent text, and whether that scope's
-  // draft was typed after Send. Such a draft is kept until the turn loads,
-  // even when it repeats the sent text (SCP-018).
+  // it was sent from, a digest of the sent text, whether that scope's draft
+  // was typed after Send, and how many Sends of that text from that scope
+  // it waits for. Such a draft is kept until every one of those turns
+  // loads, even when it repeats the sent text (SCP-018).
   const sentTurnLoaded = (threadId, record) => laterUserTurnMatches(
     threadId,
     record.originScopeKey,
     (turnText) => followupTextDigest(turnText) === record.textDigest,
-  );
+  ) >= record.sends;
   const editedAfterSendScopeKey = (threadId) => {
     const record = sentThreadFollowup(threadId);
     return record?.edited ? record.scopeKey : null;
@@ -3747,8 +3749,15 @@ export function createProductWorkspace({
       const scopeRevision = composerDraftScopeState.activeScopeKey === submission.scopeKey
         ? composerPromptRevision
         : composerDraftScopeState.drafts.get(submission.scopeKey)?.promptRevision;
+      // An earlier Send of the same text from the same scope whose turn has
+      // not loaded is still waited for, so the first of those turns does not
+      // end this one's protection.
+      const earlier = sentThreadFollowup(submittedThreadId);
+      const earlierSends = earlier?.originScopeKey === sentRecord.originScopeKey
+        && earlier.textDigest === sentRecord.textDigest ? earlier.sends : 0;
       persistSentThreadFollowup(submittedThreadId, {
         ...sentRecord,
+        sends: earlierSends + 1,
         scopeKey: editScopeKey ?? submission.scopeKey,
         edited: editScopeKey != null
           || (scopeRevision !== undefined && scopeRevision !== submission.prompt.revision),
@@ -3896,7 +3905,8 @@ export function createProductWorkspace({
       restoreStrandedSubmission(submission);
       // A definite rejection creates no turn to wait for.
       if (!confirmationSendFailureMayHaveCommitted(error) && ownsSentRecord()) {
-        persistSentThreadFollowup(submittedThreadId, null);
+        const record = sentThreadFollowup(submittedThreadId);
+        persistSentThreadFollowup(submittedThreadId, record.sends > 1 ? { ...record, sends: record.sends - 1 } : null);
       }
       toast(error.message);
     } finally {

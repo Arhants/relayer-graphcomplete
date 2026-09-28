@@ -40,7 +40,7 @@ function sentEntries(value) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? Object.fromEntries(Object.entries(value).filter(([, record]) => typeof record?.scopeKey === "string"
       && typeof record.originScopeKey === "string" && typeof record.textDigest === "string"
-      && typeof record.edited === "boolean"))
+      && typeof record.edited === "boolean" && Number.isSafeInteger(record.sends) && record.sends >= 1))
     : {};
 }
 
@@ -200,7 +200,8 @@ export function sentThreadFollowup(threadId) {
 }
 
 // record: { scopeKey (where its text is now), originScopeKey, textDigest,
-// edited (the scope's draft was typed after Send) }, or null.
+// edited (the scope's draft was typed after Send), sends (how many Sends of
+// that text from that scope it waits for) }, or null.
 export function persistSentThreadFollowup(threadId, record) {
   if (threadId == null) return;
   const state = readState();
@@ -211,6 +212,7 @@ export function persistSentThreadFollowup(threadId, record) {
       originScopeKey: record.originScopeKey,
       textDigest: record.textDigest,
       edited: Boolean(record.edited),
+      sends: record.sends ?? 1,
     };
   }
   writeState(state);

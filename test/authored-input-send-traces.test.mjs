@@ -154,9 +154,7 @@ describe("Send after an answer did not save", () => {
     world.input.value = " ";
     world.input.dispatchEvent(new world.window.Event("change", { bubbles: true }));
     await world.settled();
-    await world.click('[data-node="8"]');
-    await world.settled();
-    expect(world.input.getAttribute("aria-label")).toBe("Other answer");
+    await world.openNode(8, "Other answer");
     world.input.value = "unrelated";
     world.input.dispatchEvent(new world.window.Event("input", { bubbles: true }));
     await world.settled();
@@ -317,10 +315,8 @@ describe("An answer that failed while its Node Detail was replaced", () => {
     world.input.dispatchEvent(new world.window.Event("change", { bubbles: true }));
     await world.settled();
     const revisit = async () => {
-      await world.click('[data-node="8"]');
-      await world.settled();
-      await world.click('[data-node="7"]');
-      await world.settled();
+      await world.openNode(8, "Other answer");
+      await world.openNode(7, "Your answer");
     };
     await revisit();
     expect(world.input?.getAttribute("aria-invalid")).toBe("true");

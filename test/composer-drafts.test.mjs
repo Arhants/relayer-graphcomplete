@@ -68,7 +68,7 @@ describe("composer draft persistence", () => {
     clearThreadFollowupDraft("t:1");
     expect(threadFollowupRestoration("t:1")).toBeNull();
 
-    const record = { scopeKey: "3:5", originScopeKey: "3:5", textDigest: followupTextDigest(" sent "), edited: true };
+    const record = { scopeKey: "3:5", originScopeKey: "3:5", textDigest: followupTextDigest(" sent "), edited: true, sends: 2 };
     persistSentThreadFollowup(3, record);
     expect(sentThreadFollowup(3)).toEqual(record);
     persistSentThreadFollowup(3, null);
@@ -86,7 +86,7 @@ describe("composer draft persistence", () => {
     expect(sentThreadFollowup("t256")).not.toBeNull();
 
     const records = Object.fromEntries(Array.from({ length: 257 }, (_, index) => [`t${index}`, {
-      scopeKey: `t${index}:1`, originScopeKey: `t${index}:1`, textDigest: "1:a", edited: index === 0,
+      scopeKey: `t${index}:1`, originScopeKey: `t${index}:1`, textDigest: "1:a", edited: index === 0, sends: 1,
     }]));
     const normalized = normalizeComposerDrafts({ threadFollowups: { "t0:1": "retyped after Send" }, sentThreadFollowups: records });
     expect(normalized.sentThreadFollowups.t0).toBeDefined();
@@ -106,14 +106,15 @@ describe("composer draft persistence", () => {
       threadFollowups: { "t:1": "restored", "t:2": "" },
       threadFollowupRestorations: { "t:1": "1:7", "t:2": "2:1", "t:9": "orphan", "t:3": 4 },
       sentThreadFollowups: {
-        3: { scopeKey: "3:5", originScopeKey: "3:5", textDigest: "4:abc", edited: false, extra: true },
-        4: { scopeKey: "4:1", originScopeKey: "4:1", textDigest: "4:abc" },
-        5: { scopeKey: "5:1", originScopeKey: "5:1", text: "full text", edited: true },
+        3: { scopeKey: "3:5", originScopeKey: "3:5", textDigest: "4:abc", edited: false, sends: 1, extra: true },
+        4: { scopeKey: "4:1", originScopeKey: "4:1", textDigest: "4:abc", sends: 1 },
+        5: { scopeKey: "5:1", originScopeKey: "5:1", text: "full text", edited: true, sends: 1 },
+        6: { scopeKey: "6:1", originScopeKey: "6:1", textDigest: "4:abc", edited: true, sends: 0 },
       },
     });
     expect(normalized.threadFollowupRestorations).toEqual({ "t:1": "1:7", "t:2": "2:1" });
     expect(normalized.sentThreadFollowups).toEqual({
-      3: { scopeKey: "3:5", originScopeKey: "3:5", textDigest: "4:abc", edited: false },
+      3: { scopeKey: "3:5", originScopeKey: "3:5", textDigest: "4:abc", edited: false, sends: 1 },
     });
     expect(normalizeComposerDrafts(null)).toEqual({
       pendingNewThread: null, threadFollowups: {}, threadFollowupRestorations: {}, sentThreadFollowups: {},

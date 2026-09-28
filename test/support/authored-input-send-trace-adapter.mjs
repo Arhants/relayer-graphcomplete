@@ -314,6 +314,13 @@ export class AuthoredInputSendWorld {
     await settle();
   }
 
+  // Open a node's Node Detail and wait until its input, named label, mounts.
+  async openNode(id, label) {
+    this.window.document.querySelector(`[data-node="${id}"]`).click();
+    await until(() => this.input?.getAttribute("aria-label") === label && !this.input.disabled, `node ${id}'s input`);
+    await settle();
+  }
+
   // Let the server detach the committed answer.
   acceptDetach() {
     this.detachRequests.mockImplementation(async () => {
