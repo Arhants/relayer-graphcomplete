@@ -130,6 +130,38 @@ describe("A request waiting for a resolving draft", () => {
     expect(String(world.selection.selectedNodeId)).toBe("8");
   });
 
+  it("keeps waiting while a remounted discard reconciles a revision conflict", async () => {
+    const trace = traces.find((candidate) => candidate.scenario === "inspector-view-change-during-discard");
+    const discard = trace.steps.findIndex(({ action }) => action?.[0] === "Discard");
+    world = await new NodeInspectorWorld().ready();
+    for (let index = 1; index <= discard; index += 1) {
+      await world.apply(trace.steps[index].action, trace.steps[index - 1].state, trace.steps[index].state);
+    }
+    const home = world.thread;
+    world.thread = { ...home, id: 4, title: "Other thread" };
+    world.selection.currentThreadId = 4;
+    world.workspace.render();
+    world.thread = home;
+    world.selection.currentThreadId = home.id;
+    world.workspace.render();
+    await world.settled();
+    // The server holds a newer revision: the first discard conflicts, the
+    // controller reloads it, and discards again.
+    world.listedDrafts = [{
+      ...world.lastSavedDraft, revision: world.draftRevision + 1,
+      createdAt: "2026-09-27T00:00:00Z", updatedAt: "2026-09-27T00:00:01Z",
+    }];
+    world.discards.shift().response.reject(Object.assign(new Error("changed"), {
+      status: 409, code: "context_draft_revision_conflict",
+    }));
+    await world.settled();
+    world.window.document.querySelector('[data-node="8"]').click();
+    await world.settled();
+    expect(String(world.selection.selectedNodeId)).toBe("7");
+    await world.apply(["DiscardReturns", "ok"], quietModel, quietModel);
+    expect(String(world.selection.selectedNodeId)).toBe("8");
+  });
+
   it("is void once the user leaves every thread for New Thread", async () => {
     const trace = traces.find((candidate) => candidate.scenario === "inspector-view-change-during-discard");
     const discard = trace.steps.findIndex(({ action }) => action?.[0] === "Discard");

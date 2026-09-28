@@ -180,8 +180,9 @@ export class NodeInspectorWorld {
         return request.response.promise;
       },
       contextDraftApi: {
-        list: async () => ({ drafts: [], confirmations: [] }),
+        list: async () => ({ drafts: world.listedDrafts ?? [], confirmations: [] }),
         save: (_threadId, draft) => {
+          world.lastSavedDraft = draft;
           const request = { node: specNode(draft.target.nodeId), response: deferred() };
           world.saves.push(request);
           return request.response.promise;

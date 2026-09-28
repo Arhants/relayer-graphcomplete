@@ -1855,20 +1855,46 @@ export function createProductWorkspace({
   // An editor remounted while its draft's confirm, discard, or reconcile is
   // still in flight (after leaving the thread and returning) resolves until
   // that operation settles, as the editor that started it did.
+  // The workspace's own confirm or discard is the stable signal: its promise
+  // settles only once any revision-conflict reconciliation and retry are
+  // done, while the draft's operation kind passes through idle and saving.
   const draftOperationPending = (draft) => (
     ["confirming", "discarding", "reconciling"].includes(draft?.operation?.kind));
+  const workspaceDraftOperations = new Map();
+  const draftOperationKey = (threadId, nodeId) => `${threadId}\u0000${nodeId}`;
+  const trackDraftOperation = (threadId, nodeId, operation) => {
+    const key = draftOperationKey(threadId, nodeId);
+    const tracked = Promise.resolve(operation);
+    workspaceDraftOperations.set(key, tracked);
+    const release = () => {
+      if (workspaceDraftOperations.get(key) === tracked) workspaceDraftOperations.delete(key);
+    };
+    tracked.then(release, release);
+    return operation;
+  };
   const adoptedDraftOperations = new Set();
   const adoptDraftOperation = (editor, threadId, nodeId) => {
     if (!editor || editor.resolving) return;
+    const tracked = workspaceDraftOperations.get(draftOperationKey(threadId, nodeId));
+    if (tracked) {
+      const end = beginEditorResolution(editor);
+      tracked.then(() => end(), () => end());
+      return;
+    }
+    // An operation the workspace did not start: settle once the controller
+    // shows it done after the current task, past any transient state.
     if (!draftOperationPending(contextDraftController?.draftForNode(threadId, nodeId))) return;
     adoptedDraftOperations.add({ threadId, nodeId, end: beginEditorResolution(editor) });
   };
   function settleAdoptedDraftOperations() {
-    for (const adopted of adoptedDraftOperations) {
-      if (draftOperationPending(contextDraftController?.draftForNode(adopted.threadId, adopted.nodeId))) continue;
-      adoptedDraftOperations.delete(adopted);
-      adopted.end();
-    }
+    if (!adoptedDraftOperations.size) return;
+    queueMicrotask(() => {
+      for (const adopted of adoptedDraftOperations) {
+        if (draftOperationPending(contextDraftController?.draftForNode(adopted.threadId, adopted.nodeId))) continue;
+        adoptedDraftOperations.delete(adopted);
+        adopted.end();
+      }
+    });
   }
   const awaitUserRequestTurn = async () => {
     const ticket = ++userRequestTicket;
@@ -3061,7 +3087,8 @@ export function createProductWorkspace({
       try {
         clearContextEditorError(discardingEditor);
         renderNodeContextDock();
-        await contextDraftController.discard(threadId, selectedNode.id);
+        await trackDraftOperation(threadId, selectedNode.id,
+          contextDraftController.discard(threadId, selectedNode.id));
         clearContextEditorError(discardingEditor);
         closeDurableEditor(threadId, discardingEditor.draftId);
       } catch (discardError) {
@@ -3085,7 +3112,8 @@ export function createProductWorkspace({
       try {
         clearContextEditorError(confirmingEditor);
         renderNodeContextDock();
-        const confirmation = await contextDraftController.confirm(threadId, selectedNode.id);
+        const confirmation = await trackDraftOperation(threadId, selectedNode.id,
+          contextDraftController.confirm(threadId, selectedNode.id));
         if (!confirmation) {
           rememberContextEditorError(
             confirmingEditor,

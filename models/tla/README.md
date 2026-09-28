@@ -554,7 +554,10 @@ again from the latest state; a test covers it.
 
 An editor remounted while its draft's confirm or discard is in flight, after
 the user left the thread and returned, resolves until that operation
-settles, so requests still wait for it; a test covers it.
+settles, so requests still wait for it. It waits for the workspace's own
+confirm or discard promise, which settles only after any revision-conflict
+reload and retry, not for the draft's momentary operation kind. Tests cover
+the plain remount and the conflict retry.
 
 The model has one thread. Switching threads voids a request still waiting
 for a draft, so a turn change queued in one thread cannot act on the next;
