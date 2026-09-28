@@ -83,16 +83,16 @@ class NodeDetailAuthoring:
         self._finalizing = False
         self._object_id = str(uuid4())
 
-    def _validate_owner(self, owner: Any) -> None:
+    def _validate_owner(self, owner: Any, *, captured_key: str | None = None) -> None:
         registered = _authoring.get(self)
         if owner is None or registered is None or registered[0]() is not owner:
             raise ValueError("node_envelope_invalid: detail authoring belongs to another node")
         identity = registered[1]
-        if owner.client_key != identity.client_key:
+        if (owner.client_key if captured_key is None else captured_key) != identity.client_key:
             raise ValueError("detail_owner_identity_changed: create a fresh NodeObject for a different client key")
 
-    def _bind(self, owner: Any, url: str, node_id: int) -> None:
-        self._validate_owner(owner)
+    def _bind(self, owner: Any, url: str, node_id: int, *, captured_key: str | None = None) -> None:
+        self._validate_owner(owner, captured_key=captured_key)
         identity = _authoring[self][1]
         scope = (url.rstrip("/"), node_id)
         if identity.scope is not None and identity.scope != scope:

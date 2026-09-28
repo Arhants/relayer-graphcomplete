@@ -1,41 +1,33 @@
 {
   "sourceSnapshot": {
-    "baseCommit": "d56815a78798b7aba3f426a70c1331e5bfa9eedb",
+    "baseCommit": "c050294b58d96f217a9122a6295bc4cb0237facd",
     "files": [
       {
         "path": "desktop/main/managed-runtimes/recipes.mjs",
-        "sha256": "8f5c34b67f9dcb69802b88188c6c08fdcb8c9c9d956323cdc619cd0e3d732d90"
+        "sha256": "c8de05a0225970624ff1f49747f554669bf4d3bda801ec36136225de37265fcf"
       },
       {
         "path": "desktop/main/services/prime-agent-runtime.mjs",
-        "sha256": "10c1a83aa57e8eeff4fb231afb70cb3375b724201cd0c86fed9528ec47ab3340"
-      },
-      {
-        "path": "packages/graph-client/src/detail.ts",
-        "sha256": "017502c678c0ef23baac0f0b9d61c1e06b2b87db86a2295fbf41059e416d3a2f"
-      },
-      {
-        "path": "packages/graph-client/test/detail-ownership.test.ts",
-        "sha256": "dafc05f8be64e1e76dd99cfbd70fcf4455a74a0cca7a3156329df4f05dac9b22"
-      },
-      {
-        "path": "python/relayer-graph/src/relayer_graph/actions.py",
-        "sha256": "a80a1de2c309080135de49ee7726ebbd10b3c9a9e71274506ce847c9e89818e5"
+        "sha256": "da19160396b4c22f3f983bf45e473531fdebae5ed100db717ba8862a689a7387"
       },
       {
         "path": "python/relayer-graph/src/relayer_graph/detail.py",
-        "sha256": "b84baadd0416655e5d34c8c4f7e040631bb0d0c5581c4c4e6bd80492c4a6b582"
+        "sha256": "bd56292f24fc983078da47dbe3558504300b31af5975e315ecfe3d5f74fe2d6a"
       },
       {
-        "path": "python/relayer-graph/tests/test_detail_ownership.py",
-        "sha256": "42fd5cde8c26f56b07685fe76a42ece25052bc1a0e86361c8825f6d7a42ba9cf"
+        "path": "python/relayer-graph/src/relayer_graph/session.py",
+        "sha256": "e7c9a567f1e1ff9ff31cd2b9751dda3215e3896032ee690fdc1f6b3cc9e95f72"
+      },
+      {
+        "path": "python/relayer-graph/tests/test_visual_authoring.py",
+        "sha256": "07751a105a34bd16392577a8705f76655906c1201ccecb41b4a300b9978d1ba4"
       },
       {
         "path": "vendor/prime-agent/manifest.json",
-        "sha256": "404cd43bc61a1bd0c951507dcf8f9724034b200f330476b5e5cb94acfa364b2c"
+        "sha256": "a7cf345f59b2d88c37cdedfe12e9922c9a36ae0c49ec97fba72f91466f2df67d"
       }
     ],
-    "sha256": "816da0eb24d1ee334d4444dfd177df07d0c7c40f7cd81c7224bc85260178660e"
+    "sha256": "93c2c81d978675138adc51879014f9f0750ff8e7ca348ba835f81ec28a2e3d9c"
   },
   "baselineReceipt": {
     "sourceCommit": "f764dd44d350f4e01827dfd69722af1309c6a3ca",
@@ -83,10 +75,10 @@
   ],
   "scenario": "issue-557",
   "paidInferenceCalls": 0,
-  "sourceCommit": "d56815a78798b7aba3f426a70c1331e5bfa9eedb",
+  "sourceCommit": "c050294b58d96f217a9122a6295bc4cb0237facd",
   "baselineResourceSha256": "f10aac8c89fbf8973af44110bb7eea334248b057951167f62d90d34ab1d7ae0b",
   "fixedResourceSha256": "3b817d2a93ed95676a55214f0ef6b36b7548f12109b3ea1728bb85ee835a15c2",
-  "videoSha256": "d5ce7d2c7e8a32f921dc8f389eee834b62a239332b0dfccd1197e1d0e13bd0bf",
+  "videoSha256": "d12e36ca7bacdc04b601d6e0116bb0f6bdd7e7de005c9e0e0a03f28b0827b519",
   "frames": [
     {
       "file": "before-1.png",
@@ -106,12 +98,12 @@
     {
       "file": "rejection.png",
       "duration": 6,
-      "sha256": "2ed43b900f9d40cb8e2b0598e00217002c2be49cfba34be212584d0ecd064b4d"
+      "sha256": "d094bfb241d7a93cbb9f08790e441fada96a8729ddbd4243ca98440456eb4d14"
     },
     {
       "file": "after-1.png",
       "duration": 3,
-      "sha256": "e2004e97c7128cc727bf2d7ddeca40d3b836b4acce723f53728b6dbd6d2185bb"
+      "sha256": "e75758e99c8feabfba550985327e2a571067775c9ba9568f1694cb7e4da9ada1"
     },
     {
       "file": "after-2.png",
@@ -180,7 +172,7 @@
     {
       "phase": "after",
       "rejection": {
-        "message": "detail_template_owner_mismatch: HTML belongs to node \"answer\" ([\"http://127.0.0.1:60670\",25]), not \"mechanism\" (unbound). Create fresh html(...) for this node; share CSS, assets, or helpers. For same-node repair, graph.bindNode both objects first.",
+        "message": "detail_template_owner_mismatch: HTML belongs to node \"answer\" ([\"http://127.0.0.1:55255\",25]), not \"mechanism\" (unbound). Create fresh html(...) for this node; share CSS, assets, or helpers. For same-node repair, graph.bindNode both objects first.",
         "issues": [
           {
             "code": "detail_template_owner_mismatch",
@@ -188,7 +180,7 @@
             "path": "markup",
             "line": 1,
             "column": 1,
-            "message": "HTML belongs to node \"answer\" ([\"http://127.0.0.1:60670\",25]), not \"mechanism\" (unbound). Create fresh html(...) for this node; share CSS, assets, or helpers. For same-node repair, graph.bindNode both objects first."
+            "message": "HTML belongs to node \"answer\" ([\"http://127.0.0.1:55255\",25]), not \"mechanism\" (unbound). Create fresh html(...) for this node; share CSS, assets, or helpers. For same-node repair, graph.bindNode both objects first."
           }
         ]
       },

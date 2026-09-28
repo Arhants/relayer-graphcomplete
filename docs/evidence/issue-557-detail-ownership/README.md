@@ -39,6 +39,16 @@ its first owner cannot acquire valid action provenance by being reused.
 Python validates component keys before claiming ownership, so a failed attachment
 with an invalid key leaves both the draft and template ownership unchanged.
 
+Python same-session submission joins and cached results validate the captured
+client key, so later live-key edits cannot rewrite or invalidate the frozen
+request. Exact owner and interaction-scope checks still run before returning it.
+The cache uses builder identity, so copied mutable object IDs cannot alias it.
+Transport and frozen-host failures retain the exact envelope for replay; only an
+explicit mutable rejection releases it for repair. Host responses freeze the
+original captured builder even if the node’s live builder field changes.
+The concurrent-submit test exercises in-flight joining, a completed cached
+result, unchanged wire identity, and rejection after a session-scope change.
+
 The focused regression first reproduced the failure in both clients. Ownership
 tests now cover all four capability kinds, checkpoint, submit, repeated repair,
 mixed fresh/reused components, same-key strangers, original-key mutation, and
@@ -105,13 +115,24 @@ CSS shorthand, which was changed to the supported property. Rapid continuous cap
 The final walkthrough captures each verified stable selection once and holds
 those real frames in the video; it is not a continuous screen recording. Failed manifests remain under `.relayer/issue557/evidence`.
 
+A full-check attempt during the final cache audit was superseded by additional
+Python source fixes while it was running. Its four package-integrity failures
+are retained as a failed run, not proof for the final snapshot. The stable-source
+rerun below verifies the final package pins and all required checks.
+
+The first stable-source full check hit a 500 ms timeout in the unchanged Rust
+`command_runner_clears_hostile_git_repository_environment` shell fixture. The
+exact test passed immediately in isolation and in preceding full runs. One
+unchanged full-check retry followed after concurrent runtime installation ended;
+the timeout and diagnostic logs remain recorded separately.
+
 ## Actual runs and review
 
 [Verification receipt](verification.json) records successful `npm run check`,
 `npm run build`, the existing Electron visual-detail proof, Prime clean-root
 runtime proof, and the final A/B capture. The full check passed 2,789 default
 Vitest tests (three intentionally skipped), two separate Codex secret-boundary
-tests, and all 57 Python tests, plus Rust and repository contract checks.
+tests, and all 59 Python tests, plus Rust and repository contract checks.
 
 [Watch the A-to-B video](video/ownership-a-to-b.mp4). The [video manifest](video/manifest.json)
 records the accepted packages and six selected views. The [desktop manifest](desktop-manifest.json)

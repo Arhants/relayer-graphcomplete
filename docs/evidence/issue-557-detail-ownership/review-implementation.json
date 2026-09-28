@@ -11,7 +11,8 @@
     "Python runtime package identity pins, PRD section 6.2 issue 557 checkpoint mapping, and changed deterministic tests including migrated constructor, malformed-template and Prime integration expectations",
     "Follow-up: action-bearing same-node repair preserves only each reused template first exact owner provenance; fresh templates and matching-key strangers gain no alternate owner; original live key is revalidated and Python weak-reference lifetime cannot disable membership checks.",
     "Cross-language repair acceptance: real Python binding, action-bearing template replacement and visual payload generation executed through real PrimeVisualAuthoring checkpoint and submit; exact compiled source-node/source-layer provenance and submitted package checked.",
-    "Final provenance hardening: reused action templates require the first exact owner exclusively; invalid first attachments cannot become valid by replacement; dead Python originals reject all serialized action-like binding kinds; component keys validate before ownership claim."
+    "Final provenance hardening: reused action templates require the first exact owner exclusively; invalid first attachments cannot become valid by replacement; dead Python originals reject all serialized action-like binding kinds; component keys validate before ownership claim.",
+    "Python submission lifecycle: cache identity is authentic NodeDetailAuthoring, cached/in-flight joins validate exact owner and scope using captured client key, locked failures retain exact payload for retry, explicit frozen:false validation rejection releases payload, and host results freeze the captured builder despite live node-field replacement."
   ],
   "verdict": "pass",
   "unresolvedFindings": [],
@@ -24,7 +25,11 @@
     "Follow-up TypeScript test attempted splice on readonly nodes; fixture now assigns the mutable layer nodes property and the graph-client typecheck passes.",
     "GitHub P2 review found prior current-owner OR original-owner fallback could let an invalid first attachment gain provenance when reused by a replacement. Fallback now requires original-only membership; explicit initially invalid and later mutated layer fixtures reject in both languages.",
     "GitHub P2 review found Python unhashable component keys claimed previously unowned HTML before failing dictionary insertion. Exact-string key validation now runs before ownership mutation; rejection preserves prior draft and leaves fresh HTML attachable by another owner.",
-    "This review confirmed a residual dead-original bypass for DetailBinding kind unknown because the first guard checked only action while serialization treats every non-asset/non-link binding as action. Guard now mirrors serialization; action and unknown-kind GC regressions and direct probes both reject."
+    "This review confirmed a residual dead-original bypass for DetailBinding kind unknown because the first guard checked only action while serialization treats every non-asset/non-link binding as action. Guard now mirrors serialization; action and unknown-kind GC regressions and direct probes both reject.",
+    "Late GitHub P2 review found Python in-flight and successful cached joins consulted mutated client_key before cached task. Cached envelopes now validate captured key while retaining exact owner and scope checks.",
+    "This review reproduced mutable objectId aliasing: a distinct same-key replacement received the original cached result without its own request. Cache now keys by authentic authoring object, preventing objectId alias joins.",
+    "This review reproduced failed-transport retry rebuilding from changed live fields. Locked transport and frozen-host failures now retain the payload and restart only the task; explicit mutable validation failures release the record to permit repair.",
+    "This review reproduced host result freezing a swapped-in unrelated builder while leaving original mutable. Submit now passes its captured authoring object to the host helper, covering both pre-child scheduling swaps and changes during host await."
   ],
   "testMigrationAssessment": "Standalone compiler tests now obtain node-owned builders. Standalone-constructor misuse and forged-template cases reject earlier at the authoring boundary, retaining their former rejection boundaries. Prime integration still reads the persisted expansion child and asserts the executable recipe output; only expected content changed to distinct supporting evidence. Follow-up regression fixtures cover all four capability kinds through repair checkpoint, submit and repeated repair; negative cases cover mixed fresh/reused templates, matching-key strangers, mutated original keys and collected Python originals.",
   "limits": [
@@ -35,22 +40,22 @@
     "Ownership is an API authoring guardrail, not a hostile Python interpreter security boundary or semantic duplicate detector.",
     "The current claim refreshes unchanged prior-reviewed files by hash plus direct review of the follow-up delta since 43429a0. Prior assertion is retained as invalidated history and is not proof of this source snapshot."
   ],
-  "reviewedAtUtc": "2026-09-28T16:09:59.025333+00:00",
-  "baseCommit": "d56815a78798b7aba3f426a70c1331e5bfa9eedb",
+  "reviewedAtUtc": "2026-09-28T16:29:29.181930+00:00",
+  "baseCommit": "c050294b58d96f217a9122a6295bc4cb0237facd",
   "inventoryDigest": {
     "algorithm": "SHA-256",
-    "value": "851eaab3a0b22a606aac0220d7b1c5bcd9c3d6eb211ae1d83bf4a1c52ae8ef0d",
+    "value": "f3d6b139c55b065dd39ff12d1426ab393f76b0958a4947b8b77d55eee3bd2ae7",
     "encoding": "UTF-8",
     "canonicalization": "SHA-256 of compact JSON array of reviewedFiles, with each object keys sorted, no whitespace, UTF-8 encoded. Equivalent: json.dumps(reviewedFiles, sort_keys=True, separators=(\",\", \":\")).encode(\"utf-8\"). Inventory is lexicographically sorted by repository-relative path; file hashes cover exact raw bytes."
   },
   "reviewedFiles": [
     {
       "path": "desktop/main/managed-runtimes/recipes.mjs",
-      "sha256": "8f5c34b67f9dcb69802b88188c6c08fdcb8c9c9d956323cdc619cd0e3d732d90"
+      "sha256": "c8de05a0225970624ff1f49747f554669bf4d3bda801ec36136225de37265fcf"
     },
     {
       "path": "desktop/main/services/prime-agent-runtime.mjs",
-      "sha256": "10c1a83aa57e8eeff4fb231afb70cb3375b724201cd0c86fed9528ec47ab3340"
+      "sha256": "da19160396b4c22f3f983bf45e473531fdebae5ed100db717ba8862a689a7387"
     },
     {
       "path": "docs/prd/index.html",
@@ -110,11 +115,11 @@
     },
     {
       "path": "python/relayer-graph/src/relayer_graph/detail.py",
-      "sha256": "b84baadd0416655e5d34c8c4f7e040631bb0d0c5581c4c4e6bd80492c4a6b582"
+      "sha256": "bd56292f24fc983078da47dbe3558504300b31af5975e315ecfe3d5f74fe2d6a"
     },
     {
       "path": "python/relayer-graph/src/relayer_graph/session.py",
-      "sha256": "fa7259818be1ea4a75939d8f2963c2a5bffcb79a1824e070e79833de20b2cd0a"
+      "sha256": "e7c9a567f1e1ff9ff31cd2b9751dda3215e3896032ee690fdc1f6b3cc9e95f72"
     },
     {
       "path": "python/relayer-graph/tests/test_detail_ownership.py",
@@ -122,7 +127,7 @@
     },
     {
       "path": "python/relayer-graph/tests/test_visual_authoring.py",
-      "sha256": "6e1be8b1ee878e03a4fdeac725c53b444251a7b3007ed69988500f17d6e3eea4"
+      "sha256": "07751a105a34bd16392577a8705f76655906c1201ccecb41b4a300b9978d1ba4"
     },
     {
       "path": "test/graph-client-packaged-detail.test.mjs",
@@ -138,37 +143,32 @@
     },
     {
       "path": "vendor/prime-agent/manifest.json",
-      "sha256": "404cd43bc61a1bd0c951507dcf8f9724034b200f330476b5e5cb94acfa364b2c"
+      "sha256": "a7cf345f59b2d88c37cdedfe12e9922c9a36ae0c49ec97fba72f91466f2df67d"
     }
   ],
   "checksObserved": [
     {
-      "command": "npx vitest run packages/graph-client/test/detail-ownership.test.ts packages/graph-client/test/detail.test.ts packages/graph-client/test/objects.test.ts packages/harness-host/test/prime-visual-authoring.test.ts",
-      "result": "103 tests passed across 4 files",
-      "sourceNote": "Final source with initially-invalid repair regression and original-only provenance."
-    },
-    {
       "command": "PYTHONPATH=python/relayer-graph/src python3 -m unittest discover -s python/relayer-graph/tests",
-      "result": "57 tests passed",
-      "sourceNote": "Final Python source and regressions, including failed-key atomicity and action/unknown-kind GC rejection."
+      "result": "59 tests passed",
+      "sourceNote": "Final Python source including authentic builder cache, retained locked envelopes and captured-builder freezing."
     },
     {
-      "command": "npx vitest run test/prime-agent-packaging.test.mjs test/prime-managed-runtime.test.mjs",
-      "result": "22 tests passed",
-      "sourceNote": "Final Python package pins."
+      "command": "npx vitest run packages/harness-host/test/prime-visual-authoring.test.ts test/prime-agent-packaging.test.mjs test/prime-managed-runtime.test.mjs",
+      "result": "29 tests passed across 3 files",
+      "sourceNote": "Final Python source and runtime package identity pins; bridge executes real Python authoring."
     },
     {
-      "command": "npm run check -w @relayer/graph-client",
-      "result": "Passed query-error generation check and TypeScript noEmit check",
-      "sourceNote": "Final graph-client implementation and tests."
-    },
-    {
-      "command": "Direct Python action and unknown-kind binding probe: attach to first and replacement owners, switch action layer to replacement, collect first owner, serialize replacement",
-      "result": "Both binding kinds reject with original template owner unavailable; original collection asserted before serialization."
+      "command": "Direct Python scheduling probe using loop.call_soon to swap node.detail_authoring after submit entry but before child coroutine starts",
+      "result": "Captured original builder is frozen; unrelated replacement builder remains mutable. Host observed swapped live field, confirming the scheduling boundary was exercised."
     },
     {
       "command": "digestFilesystemTree(python/relayer-graph/src/relayer_graph, Python-file filter) using desktop/shared/prime-runtime-integrity.mjs",
-      "result": "26a43c5cc57766d5e852a73a87eaddce35658ecdf204086303dbbbd2e568f387 matches vendor manifest, runtime inspector and managed recipe"
+      "result": "55e634d5c5d8e022dd110d60c1f7e958247b691179ccfbc39588277170ed0099 matches vendor manifest, runtime inspector and managed recipe"
+    },
+    {
+      "command": "Prior recorded TypeScript compiler/ownership/object checks",
+      "result": "103 tests and graph-client typecheck previously passed",
+      "sourceNote": "TypeScript implementation and relevant ownership tests are unchanged in this refresh; prior detailed run remains in invalidated-history record for historical context, not whole-snapshot certification."
     }
   ],
   "history": [
@@ -505,6 +505,184 @@
             "command": "npx vitest run packages/harness-host/test/prime-visual-authoring.test.ts",
             "result": "7 tests passed, including new real Python to TypeScript bridge repair checkpoint and submit scenario",
             "sourceNote": "Final bridge test source. All previously inventoried file hashes remained unchanged."
+          }
+        ]
+      }
+    },
+    {
+      "status": "invalidated",
+      "reason": "Late GitHub review and subsequent adversarial probes exposed Python cached mutable-key joins, mutable objectId aliasing, discarded locked retry payloads and wrong-builder freezing. These submission-lifecycle gaps were not established by the prior pass. Prior assertion cannot certify this changed source.",
+      "assertion": {
+        "schemaVersion": 2,
+        "reviewer": {
+          "identity": "ownership_review",
+          "agentTask": "/root/ownership_review",
+          "role": "Adversarial implementation and contract-mapping reviewer"
+        },
+        "scope": [
+          "TypeScript and Python HTML template ownership, permanent claims, copied and forged templates, scope binding, stable-key replacement repair, prior-draft preservation, submission caching and snapshot compatibility",
+          "Public and packaged authoring exports, generation guidance and distinct-content shared-style recipes",
+          "Python runtime package identity pins, PRD section 6.2 issue 557 checkpoint mapping, and changed deterministic tests including migrated constructor, malformed-template and Prime integration expectations",
+          "Follow-up: action-bearing same-node repair preserves only each reused template first exact owner provenance; fresh templates and matching-key strangers gain no alternate owner; original live key is revalidated and Python weak-reference lifetime cannot disable membership checks.",
+          "Cross-language repair acceptance: real Python binding, action-bearing template replacement and visual payload generation executed through real PrimeVisualAuthoring checkpoint and submit; exact compiled source-node/source-layer provenance and submitted package checked.",
+          "Final provenance hardening: reused action templates require the first exact owner exclusively; invalid first attachments cannot become valid by replacement; dead Python originals reject all serialized action-like binding kinds; component keys validate before ownership claim."
+        ],
+        "verdict": "pass",
+        "unresolvedFindings": [],
+        "resolvedFindings": [
+          "Python ownership records are registry-backed rather than mutable builder attributes; template ownership is checked again during serialization.",
+          "Python validation methods return None rather than leaking mutable owner records; missing owner references are rejected.",
+          "Cached submit/checkpoint paths validate interaction scope before returning existing results.",
+          "Shared asset references and same-scope repair are covered; PRD explicitly maps package pins and Prime visual integration.",
+          "Prior ownership assertion omitted action-bearing stable-key repair, which initially failed exact source-layer membership. Reused templates now privately preserve first-owner provenance and narrow membership fallback to authenticated same-scope/key repair.",
+          "Follow-up TypeScript test attempted splice on readonly nodes; fixture now assigns the mutable layer nodes property and the graph-client typecheck passes.",
+          "GitHub P2 review found prior current-owner OR original-owner fallback could let an invalid first attachment gain provenance when reused by a replacement. Fallback now requires original-only membership; explicit initially invalid and later mutated layer fixtures reject in both languages.",
+          "GitHub P2 review found Python unhashable component keys claimed previously unowned HTML before failing dictionary insertion. Exact-string key validation now runs before ownership mutation; rejection preserves prior draft and leaves fresh HTML attachable by another owner.",
+          "This review confirmed a residual dead-original bypass for DetailBinding kind unknown because the first guard checked only action while serialization treats every non-asset/non-link binding as action. Guard now mirrors serialization; action and unknown-kind GC regressions and direct probes both reject."
+        ],
+        "testMigrationAssessment": "Standalone compiler tests now obtain node-owned builders. Standalone-constructor misuse and forged-template cases reject earlier at the authoring boundary, retaining their former rejection boundaries. Prime integration still reads the persisted expansion child and asserts the executable recipe output; only expected content changed to distinct supporting evidence. Follow-up regression fixtures cover all four capability kinds through repair checkpoint, submit and repeated repair; negative cases cover mixed fresh/reused templates, matching-key strangers, mutated original keys and collected Python originals.",
+        "limits": [
+          "This assertion applies only to the exact reviewed file inventory. Any change to those files invalidates the assertion until refreshed.",
+          "Capture script, rendered screenshots/video, recording provenance and visual-evidence claims are excluded from this implementation review.",
+          "This reviewer did not independently run or certify the full npm run check, npm run build, desktop visual-detail runner or clean-root Prime runtime proof; their results require separate evidence.",
+          "No paid inference, signed application, publication or release-candidate proof was run or claimed.",
+          "Ownership is an API authoring guardrail, not a hostile Python interpreter security boundary or semantic duplicate detector.",
+          "The current claim refreshes unchanged prior-reviewed files by hash plus direct review of the follow-up delta since 43429a0. Prior assertion is retained as invalidated history and is not proof of this source snapshot."
+        ],
+        "reviewedAtUtc": "2026-09-28T16:09:59.025333+00:00",
+        "baseCommit": "d56815a78798b7aba3f426a70c1331e5bfa9eedb",
+        "inventoryDigest": {
+          "algorithm": "SHA-256",
+          "value": "851eaab3a0b22a606aac0220d7b1c5bcd9c3d6eb211ae1d83bf4a1c52ae8ef0d",
+          "encoding": "UTF-8",
+          "canonicalization": "SHA-256 of compact JSON array of reviewedFiles, with each object keys sorted, no whitespace, UTF-8 encoded. Equivalent: json.dumps(reviewedFiles, sort_keys=True, separators=(\",\", \":\")).encode(\"utf-8\"). Inventory is lexicographically sorted by repository-relative path; file hashes cover exact raw bytes."
+        },
+        "reviewedFiles": [
+          {
+            "path": "desktop/main/managed-runtimes/recipes.mjs",
+            "sha256": "8f5c34b67f9dcb69802b88188c6c08fdcb8c9c9d956323cdc619cd0e3d732d90"
+          },
+          {
+            "path": "desktop/main/services/prime-agent-runtime.mjs",
+            "sha256": "10c1a83aa57e8eeff4fb231afb70cb3375b724201cd0c86fed9528ec47ab3340"
+          },
+          {
+            "path": "docs/prd/index.html",
+            "sha256": "424a0e377db41a561f5254cf77b2d0924793ca616b8c65367eb3f029ef11af9c"
+          },
+          {
+            "path": "packages/graph-client/src/agent-resource-entry.ts",
+            "sha256": "fe16aaa20adbad1413a5cc88a961287d2007021b1f54b89bec7bda5a2a317fb3"
+          },
+          {
+            "path": "packages/graph-client/src/client.ts",
+            "sha256": "67a4212f2a790f3d427f292a1c3a094058fd686efdb51f0b9209f327e215011e"
+          },
+          {
+            "path": "packages/graph-client/src/detail.ts",
+            "sha256": "017502c678c0ef23baac0f0b9d61c1e06b2b87db86a2295fbf41059e416d3a2f"
+          },
+          {
+            "path": "packages/graph-client/src/index.ts",
+            "sha256": "6bf0d3fac40c99dd7f2445d9e27870bc43f3f0164bddbfc38e92ef4f8d7b76e7"
+          },
+          {
+            "path": "packages/graph-client/test/detail-ownership.test.ts",
+            "sha256": "dafc05f8be64e1e76dd99cfbd70fcf4455a74a0cca7a3156329df4f05dac9b22"
+          },
+          {
+            "path": "packages/graph-client/test/detail.test.ts",
+            "sha256": "0dfe3ff110c4c63a7153c09b1f63031ee41d3b02ceaf635356948f0b70190b03"
+          },
+          {
+            "path": "packages/harness-host/src/implementations/codex-basic.ts",
+            "sha256": "f2d8fcd045a3d9d077f942ea576e0a470f9cb49e3612c2b20596878ff1e97fe1"
+          },
+          {
+            "path": "packages/harness-host/src/implementations/prime-agent.ts",
+            "sha256": "7850aa7fe61f24a1a2a6eaccfa77b680a794ffcab1bcb25de382d5a679b6f4c1"
+          },
+          {
+            "path": "packages/harness-host/test/codex-basic.test.ts",
+            "sha256": "aa08d15cf11cbcffeb400754cdd353475e81de005ce23f398736df287ba6c1fd"
+          },
+          {
+            "path": "packages/harness-host/test/prime-agent.test.ts",
+            "sha256": "338fd3fa5e8fd1b8d949c247550176f8113d3da99f7cd266ce222b3f8784a5c4"
+          },
+          {
+            "path": "packages/harness-host/test/prime-visual-authoring.test.ts",
+            "sha256": "ae38b2a39afe829573c5806bfbe31e3ae83a34f2ce4d4384eb3a26bae42f0d0a"
+          },
+          {
+            "path": "python/relayer-graph/src/relayer_graph/actions.py",
+            "sha256": "a80a1de2c309080135de49ee7726ebbd10b3c9a9e71274506ce847c9e89818e5"
+          },
+          {
+            "path": "python/relayer-graph/src/relayer_graph/authoring.py",
+            "sha256": "a3ddd53326a1e936eef2d9ffed14ec8bc8ce1459de2949d27fc921ed4a66b1cf"
+          },
+          {
+            "path": "python/relayer-graph/src/relayer_graph/detail.py",
+            "sha256": "b84baadd0416655e5d34c8c4f7e040631bb0d0c5581c4c4e6bd80492c4a6b582"
+          },
+          {
+            "path": "python/relayer-graph/src/relayer_graph/session.py",
+            "sha256": "fa7259818be1ea4a75939d8f2963c2a5bffcb79a1824e070e79833de20b2cd0a"
+          },
+          {
+            "path": "python/relayer-graph/tests/test_detail_ownership.py",
+            "sha256": "42fd5cde8c26f56b07685fe76a42ece25052bc1a0e86361c8825f6d7a42ba9cf"
+          },
+          {
+            "path": "python/relayer-graph/tests/test_visual_authoring.py",
+            "sha256": "6e1be8b1ee878e03a4fdeac725c53b444251a7b3007ed69988500f17d6e3eea4"
+          },
+          {
+            "path": "test/graph-client-packaged-detail.test.mjs",
+            "sha256": "3a073daa0c4ef6afc93f434b295547f4551ee96098667b4f5d85d3c515605811"
+          },
+          {
+            "path": "test/node-detail-runtime.test.mjs",
+            "sha256": "f64cc3d1c941a22fdfbeae1e30d1df1e0f08f516a502245937cff851d98ff6e9"
+          },
+          {
+            "path": "test/prime-visual-integration.test.mjs",
+            "sha256": "30d358112b4b63b032d646a774a12cddc743e7233781dc5e1ab88bab6002b948"
+          },
+          {
+            "path": "vendor/prime-agent/manifest.json",
+            "sha256": "404cd43bc61a1bd0c951507dcf8f9724034b200f330476b5e5cb94acfa364b2c"
+          }
+        ],
+        "checksObserved": [
+          {
+            "command": "npx vitest run packages/graph-client/test/detail-ownership.test.ts packages/graph-client/test/detail.test.ts packages/graph-client/test/objects.test.ts packages/harness-host/test/prime-visual-authoring.test.ts",
+            "result": "103 tests passed across 4 files",
+            "sourceNote": "Final source with initially-invalid repair regression and original-only provenance."
+          },
+          {
+            "command": "PYTHONPATH=python/relayer-graph/src python3 -m unittest discover -s python/relayer-graph/tests",
+            "result": "57 tests passed",
+            "sourceNote": "Final Python source and regressions, including failed-key atomicity and action/unknown-kind GC rejection."
+          },
+          {
+            "command": "npx vitest run test/prime-agent-packaging.test.mjs test/prime-managed-runtime.test.mjs",
+            "result": "22 tests passed",
+            "sourceNote": "Final Python package pins."
+          },
+          {
+            "command": "npm run check -w @relayer/graph-client",
+            "result": "Passed query-error generation check and TypeScript noEmit check",
+            "sourceNote": "Final graph-client implementation and tests."
+          },
+          {
+            "command": "Direct Python action and unknown-kind binding probe: attach to first and replacement owners, switch action layer to replacement, collect first owner, serialize replacement",
+            "result": "Both binding kinds reject with original template owner unavailable; original collection asserted before serialization."
+          },
+          {
+            "command": "digestFilesystemTree(python/relayer-graph/src/relayer_graph, Python-file filter) using desktop/shared/prime-runtime-integrity.mjs",
+            "result": "26a43c5cc57766d5e852a73a87eaddce35658ecdf204086303dbbbd2e568f387 matches vendor manifest, runtime inspector and managed recipe"
           }
         ]
       }
