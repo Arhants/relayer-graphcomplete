@@ -239,6 +239,26 @@ The runner input is a test-run ID, selected test-case IDs, selected harness-conf
 
 The ordinary test suite never invokes inference. Evaluation execution and review belong to the Eval application through the product app server and shared production graph/chat workspace. The retired standalone CLI and HTML viewer are no longer supported.
 
+## External capability catalog
+
+The ten Issue #278 capability cases live in `relayer-capability-evals`.
+That repository owns their tasks, fixtures, references, mutants, verifiers,
+platform requirements, suite membership, and admission evidence. Older built-in
+H3, frontier, and calibration cases remain in this checkout.
+
+Relayer Eval loads an explicitly selected local catalog checkout at the commit
+in `eval-catalog.lock.json`. It checks provenance before importing trusted
+catalog code and rechecks it before queuing and executing external work.
+Startup never clones repositories, installs dependencies, or builds a catalog.
+This is a developer-code trust boundary, not a sandbox for untrusted plugins.
+
+A catalog registers case definitions and materialize, grade, and mandatory-gate
+callbacks. Its definitions expose only public snapshots. The host retains the
+ordinary case × harness matrix, product threads, graph acceptance, read-only
+review, and independent outcome and presentation grades. Catalog provenance and
+suite identity persist with each external execution and survive reopen without
+loading the package. Each harness still owns its native recursive execution.
+
 ## Runtime package boundaries
 
 - `crates/relayer-graph-core/src/graph.rs` is the graph behavior boundary. `graph/database` and `graph/writer` expose the public control flow, `graph/model` owns the node, edge, layer, action, ID, and state objects, and `graph/completion` separates closure planning from atomic acceptance.

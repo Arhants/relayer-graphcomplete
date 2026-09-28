@@ -148,7 +148,7 @@ export async function createEvalDashboard({ service, rendererDirectory, refreshC
     getRun: ([id]) => service.getRun(id),
     createRun: ([selection]) => service.createRun(selection),
     judgeImportedConversation: ([id, judge]) => service.judgeImportedConversation(id, judge),
-    rejudgeExecution: ([id, judge]) => service.rejudgeExecution(id, judge),
+    rejudgeExecution: ([id, judge, authorization]) => service.rejudgeExecution(id, judge, authorization),
     openReview: ([id]) => openReview(id),
     exportAnnotations: ([id]) => service.exportAnnotatedExecution(id),
     loadCandidateTrace: ([id, turn]) => service.candidateTraceContext(id, turn),
