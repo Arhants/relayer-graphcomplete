@@ -1621,6 +1621,8 @@ async fn a_child_returned_while_its_provider_runs_exports_and_restarts_as_accept
         Some(ExportAttemptOutcome::Accepted),
         "the production share builder must project the settled outcome while the provider unwinds"
     );
+    assert!(shared_child.completion.attempt_admission_id.is_none());
+    assert!(shared_child.completion.admitted_model_plan.is_none());
 
     // A running-but-unsettled snapshot never takes a decided outcome, even if the
     // execution settles between the two reads.
