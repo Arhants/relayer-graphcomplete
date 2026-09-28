@@ -374,7 +374,7 @@ CompleteFinish(id, outcome) ==
 
 -----------------------------------------------------------------------------
 (* A turn on provider P. Rust admission resolves the plan against SQLite  *)
-(* (CAT:1632-1710: provider connected and active), and only later does    *)
+(* (CAT:1634-1712: provider connected and active), and only later does    *)
 (* the harness call the lease broker (RTB:181-227) -> acquireExecution    *)
 (* (PDS:608-634), which checks only that the definition is active and     *)
 (* does not look at closing. #runtimeFor awaits onRuntimeReady before     *)
@@ -450,7 +450,7 @@ Logout(refreshed) ==
                  defaultFamily>>
 
 (* remove (PDS:721-737) with the SQLite guard_provider_removal            *)
-(* (CAT:2509-2559) and tombstone_managed_provider_families (CAT:186).     *)
+(* (CAT:2656-2706) and tombstone_managed_provider_families (CAT:186).     *)
 (* P is never the default provider in this model, so the guard reduces to *)
 (* "the default family keeps a member outside P", i.e. is not managedP.  *)
 (* The UI offers Remove for any non-default provider (provider-ui.js:210).*)
@@ -475,11 +475,11 @@ Remove ==
 (* service's own queue, not the provider queue, through whichever runtime *)
 (* is registered, including one reused by a pending reconnect.            *)
 
-\* publish_provider_catalog (CAT:681-765). "no_eligible" is the
+\* publish_provider_catalog (CAT:683-767). "no_eligible" is the
 \* provider_no_eligible_execution_models reason, which tombstones P's
 \* managed families without consulting product_model_preferences. A later
 \* publish with eligible models reactivates the same family id
-\* (replace_system_family, CAT:2310-2333).
+\* (replace_system_family, CAT:2455-2478).
 CatalogRefresh(outcome) ==
   /\ defs["P"] = "active" /\ ~closed
   /\ sqlConnected' = (outcome = "models")
@@ -493,7 +493,7 @@ CatalogRefresh(outcome) ==
                  reconCreated, complPc, complCap, exec, alive, bound, cancelQ,
                  ipcDone, defaultFamily>>
 
-\* update_model_settings_defaults (CAT:583-679): the family must resolve.
+\* update_model_settings_defaults (CAT:583-681): the family must resolve.
 SetDefaultFamily(f) ==
   /\ fam[f].state = "active" /\ fam[f].enabled
   /\ f = "managedP" => (sqlConnected /\ defs["P"] = "active")
@@ -503,7 +503,7 @@ SetDefaultFamily(f) ==
                  reconCreated, complPc, complCap, exec, alive, bound, cancelQ,
                  ipcDone, sqlConnected, fam>>
 
-\* update_model_family / delete_model_family (CAT:801-860): both refuse the
+\* update_model_family / delete_model_family (CAT:803-861): both refuse the
 \* default family; system families are read-only.
 DisableOrDeleteCustom(state) ==
   /\ defaultFamily /= "custom" /\ fam["custom"].state = "active"
@@ -636,7 +636,7 @@ CloseLeavesNoOpenRuntime ==
   closed => \A r \in RuntimeIds : rt[r] /= "open"
 
 \* The default family is always a live, enabled family. Disable, delete,
-\* and provider removal all refuse to break it (CAT:801-860, 2509-2559).
+\* and provider removal all refuse to break it (CAT:803-861, 2656-2706).
 \* The PRD states no such promise; this checks the guards' shared intent.
 DefaultFamilyIsLive ==
   fam[defaultFamily].state = "active" /\ fam[defaultFamily].enabled
