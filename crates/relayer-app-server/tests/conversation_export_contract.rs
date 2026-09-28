@@ -82,6 +82,7 @@ fn option(key: &str, label: &str) -> ExportInputOption {
 fn layer(id: &str, node_id: &str, actions: Vec<ExportAction>) -> ExportResolvedLayer {
     ExportResolvedLayer {
         layer: ExportLayer {
+            default_node_id: None,
             id: id.into(),
             client_key: None,
             nodes: vec![node_id.into()],

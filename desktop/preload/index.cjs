@@ -141,6 +141,10 @@ if (contextBridge) contextBridge.exposeInMainWorld("relayerDesktop", {
     read: () => ipcRenderer.invoke("relayer:appearance-read"),
     set: (appearance) => ipcRenderer.invoke("relayer:appearance-set", appearance),
   },
+  layerSelections: {
+    read: () => ipcRenderer.invoke("relayer:layer-selections-read"),
+    remember: (key, nodeId) => ipcRenderer.invoke("relayer:layer-selections-remember", { key, nodeId }),
+  },
   drafts: {
     read: () => ipcRenderer.invoke("relayer:composer-drafts-read"),
     write: (value) => ipcRenderer.invoke("relayer:composer-drafts-write", value),

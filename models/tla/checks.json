@@ -43,6 +43,19 @@
       "ClaimRejectsReleasing": "TRUE",
       "AckRetriesFinalize": "TRUE",
       "QuarantineSettleWakesReconciler": "TRUE"
+    },
+    "catalog-today": {
+      "MaxQ": "2",
+      "MaxEvents": "2",
+      "AllowPre": "TRUE",
+      "AllowClose": "TRUE",
+      "WithQ": "TRUE",
+      "UserOps": "TRUE",
+      "MaxFlips": "2",
+      "InitAdapters": "{\"real\", \"stub\"}",
+      "Ops": "{\"logout\", \"reconnect\", \"remove\"}",
+      "InitDefFams": "{\"mP\", \"C\", \"none\"}",
+      "DefaultProviderPairsFamily": "TRUE"
     }
   },
   "checks": [
@@ -617,6 +630,238 @@
         "violated": "CancelledAccessEventuallyReleased"
       },
       "finding": "Open (per-turn force-stop PR): a cancelled native turn that ignores the cancellation keeps its provider access forever."
+    },
+    {
+      "id": "catalog-refresh-keeps-chosen-default",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "InitDefFams": "{\"mP\", \"C\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "DefaultIsPaired",
+        "RefreshKeepsUserDefault",
+        "RefreshKeepsOtherDefault"
+      ],
+      "expect": "pass",
+      "finding": "Choosing a default provider also selects its managed family, so no later refresh changes the chosen provider or family (fixed, PROV-008; was: the next refresh of the family's provider moved the default provider back to it)."
+    },
+    {
+      "id": "catalog-refresh-keeps-default-chosen-from-unset",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "InitDefFams": "{\"none\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "DefaultIsPaired",
+        "RefreshKeepsUserDefault"
+      ],
+      "expect": "pass",
+      "finding": "From an unset default family, a refresh may fill the family with its provider, but once the user chooses a provider and family no refresh changes them (PROV-008)."
+    },
+    {
+      "id": "catalog-chosen-default-reverted",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "InitDefFams": "{\"mP\", \"C\"}",
+        "DefaultProviderPairsFamily": "FALSE"
+      },
+      "invariants": [
+        "RefreshKeepsUserDefault"
+      ],
+      "expect": {
+        "violated": "RefreshKeepsUserDefault"
+      },
+      "finding": "Without the pairing, the Settings provider choice stores only the provider, and the next refresh of the default family's provider moves the default provider back to it."
+    },
+    {
+      "id": "catalog-stale-refresh-after-reconnect",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"logout\", \"reconnect\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "invariants": [
+        "NoPersistingStaleEffect"
+      ],
+      "expect": {
+        "violated": "NoPersistingStaleEffect"
+      },
+      "finding": "A refresh that discovered before a reconnect publishes its stale disconnected result after the reconnect, and nothing queued behind it corrects that."
+    },
+    {
+      "id": "catalog-old-account-repopulates",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"reconnect\"}"
+      },
+      "invariants": [
+        "NoUnsafePopulate"
+      ],
+      "expect": {
+        "violated": "NoUnsafePopulate"
+      },
+      "finding": "An eligible result discovered before a reconnect that found zero eligible models reactivates the tombstoned managed family."
+    },
+    {
+      "id": "catalog-stale-adapter-capture",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"reconnect\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "invariants": [
+        "NoContradictingReplacedAdapterEffect"
+      ],
+      "expect": {
+        "violated": "NoContradictingReplacedAdapterEffect"
+      },
+      "finding": "A refresh captures its adapter when requested; the unavailable stub it captured publishes after a reconnect replaced it and contradicts the reconnect."
+    },
+    {
+      "id": "catalog-stub-recovery-logout-deadlock",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"logout\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "fair": true,
+      "properties": [
+        "LogoutReturns"
+      ],
+      "expect": {
+        "violated": "LogoutReturns"
+      },
+      "finding": "Logout waits inside the provider queue for its own refresh, which is queued behind an explicit stub recovery that waits for the provider queue: neither returns."
+    },
+    {
+      "id": "catalog-no-restore-after-cancelled-reconnect",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "2",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"reconnect\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "fair": true,
+      "properties": [
+        "DefaultRestoresAnyAdapter"
+      ],
+      "expect": {
+        "violated": "DefaultRestoresAnyAdapter"
+      },
+      "finding": "A cancelled reconnect unregisters the catalog adapter of an active provider, so a tombstoned default family never restores."
+    },
+    {
+      "id": "catalog-own-family",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "1"
+      },
+      "properties": [
+        "OnlyOwnFamily"
+      ],
+      "expect": "pass",
+      "finding": "A catalog publish changes only its own provider's managed family and never a custom family."
+    },
+    {
+      "id": "catalog-tombstoned-default-blocks-send",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "1"
+      },
+      "invariants": [
+        "TypeOK",
+        "TombDefaultBlocksSend"
+      ],
+      "expect": "pass",
+      "finding": "A default family tombstoned by a zero-eligible refresh stays the default and blocks Send."
+    },
+    {
+      "id": "catalog-default-restores",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"logout\", \"reconnect\"}"
+      },
+      "fair": true,
+      "properties": [
+        "DefaultRestores"
+      ],
+      "expect": "pass",
+      "finding": "A tombstoned default family restores once its provider is healthy and its real adapter is registered."
     }
   ]
 }

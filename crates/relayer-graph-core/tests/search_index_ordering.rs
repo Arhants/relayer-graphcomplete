@@ -293,6 +293,7 @@ async fn author(
         .await?;
     let root = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: format!("{key}-root"),
             nodes: vec![queue.id, worker.id],
             edges: vec![edge.id],
@@ -354,6 +355,7 @@ async fn author_current(
         .await?;
     let layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: format!("{key}-current"),
             nodes: vec![progress.id],
             edges: vec![],
@@ -400,6 +402,7 @@ async fn author_leased_return(
         .unwrap();
     let source_layer = source_writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: format!("{key}-source-layer"),
             nodes: vec![task.id],
             edges: vec![],
@@ -473,6 +476,7 @@ async fn author_leased_return(
         .unwrap();
     let child_layer = child_writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: format!("{key}-child-layer"),
             nodes: vec![answer.id],
             edges: vec![],
@@ -1205,6 +1209,7 @@ fn imported_conversation() -> ImportedConversation {
                 root_layer_id: "layer-1".into(),
                 layers: vec![ImportedResolvedLayer {
                     layer: ImportedLayer {
+                        default_node_id: None,
                         id: "layer-1".into(),
                         client_key: None,
                         nodes: vec!["node-1".into()],

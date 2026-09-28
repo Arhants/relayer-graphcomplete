@@ -116,6 +116,8 @@ panning, zooming, and inspector changes affect only the camera. Historical
 accepted layers without layout data remain readable through one deterministic,
 viewport-independent renderer fallback and are never rewritten during reads.
 
+Layers may carry an explicit `defaultNodeId` chosen by the author from their member nodes. Graph core validates membership and preserves the choice through publication, persistence, and portable import/export. Missing values from older clients or accepted layers remain readable. Product opens the chosen detail automatically when no valid user selection exists; legacy layers use their first canonical member. Per-thread, interaction, and layer presentation memory preserves the user's later choice without mutating the accepted layer. Explicit history selection takes precedence. Empty layers do not fabricate a detail node.
+
 Each product or Eval review window owns one bounded renderer-side navigation history for thread, turn, authored layer path, and remembered node selection. Restoration resolves accepted product data before committing the presentation and cursor together. Eval's judge history command delegates to this controller; the Eval main process records and validates the result but does not own a second stack. Hierarchy breadcrumbs and direct chronological turn controls remain separate presentations of layer ancestry and durable interaction order.
 
 ## Base graph-completion invariants

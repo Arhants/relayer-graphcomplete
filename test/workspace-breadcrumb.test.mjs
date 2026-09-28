@@ -190,6 +190,6 @@ describe("product workspace breadcrumb", () => {
 
     expect(styles).toContain(".interaction-banner{grid-column:1;grid-row:2;margin:8px 0 12px 12px;");
     expect(styles).toContain(".thread-workspace{grid-column:1 / -1;grid-row:3;display:grid;grid-template-columns:minmax(0,1fr) var(--inspector);column-gap:12px;");
-    expect(styles).toContain(".workspace-breadcrumb{min-height:40px;flex:none;display:flex;align-items:center;justify-content:flex-start;");
+    expect(styles).toContain(".workspace-breadcrumb{min-height:48px;flex:none;display:flex;align-items:center;justify-content:flex-start;");
   });
 });
