@@ -205,6 +205,30 @@ describe("workspace navigation integration", () => {
     });
   });
 
+  it("restores explicitly closed details with Back and Forward", async () => {
+    const turns = [interaction(1, 10, rootLayer(101, 11)), interaction(2, 20, rootLayer(201, 21))];
+    const threads = [{ id: 10, title: "First" }, { id: 20, title: "Second" }];
+    requestImplementation = vi.fn(async (path) => {
+      const id = path.includes("threadId=20") || path === "/api/threads/20" ? 20 : 10;
+      const selected = turns.filter((turn) => turn.threadId === id);
+      return path.startsWith("/api/state") ? productState(threads, selected)
+        : { thread: threads.find((thread) => thread.id === id), interactions: selected, actionInvocations: [] };
+    });
+    const controller = await loadModules();
+    await controller.loadThread(10);
+    expect(controller.viewState.selectedNodeId).toBe(11);
+    controller.replaceCurrentSelection(null);
+    await controller.loadThread(20);
+    expect(controller.viewState.selectedNodeId).toBe(21);
+    controller.replaceCurrentSelection(null);
+    await controller.navigateHistory(-1);
+    expect(controller.viewState).toMatchObject({ selectedNodeId: null, nodeDetailsClosed: true });
+    await controller.navigateHistory(1);
+    expect(controller.viewState).toMatchObject({ selectedNodeId: null, nodeDetailsClosed: true });
+    await controller.loadThread(10);
+    expect(String(controller.viewState.selectedNodeId)).toBe("11");
+  });
+
   it("waits for tutorial completion persistence before refreshing to the submitted follow-up", async () => {
     const root = rootLayer(101, 11);
     const source = interaction(1, 10, root);

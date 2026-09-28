@@ -862,6 +862,13 @@ describe("compiled Node Detail product runtime", () => {
       expect(window.document.querySelector(".node-input-text").value).toBe("");
       // Restoring a navigation selection must not emit a new user intent and cancel history.
       expect(onSelectionChange).not.toHaveBeenCalled();
+      state.visibleLayer = child; state.nodes = child.nodes; state.actions = [];
+      selection.selectedNodeId = null; selection.nodeDetailsClosed = true;
+      workspace.render();
+      await window.happyDOM.waitUntilComplete();
+      expect(selection.selectedNodeId).toBeNull();
+      expect(window.document.querySelector("#inspector").classList.contains("hidden")).toBe(true);
+      expect(onSelectionChange).not.toHaveBeenCalled();
     } finally { workspace.dispose(); }
   });
 

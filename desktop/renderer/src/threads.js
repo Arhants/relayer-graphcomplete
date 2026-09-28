@@ -665,7 +665,7 @@ export async function loadThread(threadId) {
 export function hydrateWorkspace(
   interaction,
   layer = interaction?.completionOutput?.rootLayer ?? null,
-  { layerPath, selectedNodeId, temporalCurrent } = {},
+  { layerPath, selectedNodeId, temporalCurrent, restoreSelection = false } = {},
 ) {
   const previousInteractionId = viewState.currentInteractionId;
   const previousLayerId = viewState.layerPath.at(-1)?.layerId;
@@ -679,10 +679,12 @@ export function hydrateWorkspace(
     String(previousInteractionId) !== String(interaction?.id)
     || String(previousLayerId) !== String(nextLayerId)
   ) {
-    viewState.selectedNodeId = preferredLayerNode(layer, selectedNodeId, rememberedLayerSelection(
+    viewState.nodeDetailsClosed = restoreSelection && selectedNodeId === null;
+    viewState.selectedNodeId = viewState.nodeDetailsClosed ? null : preferredLayerNode(layer, selectedNodeId, rememberedLayerSelection(
       viewState.currentThreadId, interaction?.id, layer?.layer?.id,
     ));
   } else if (selectedNodeId !== undefined) {
+    viewState.nodeDetailsClosed = restoreSelection && selectedNodeId === null;
     viewState.selectedNodeId = selectedNodeId;
   }
   viewState.currentInteractionId = interaction?.id ?? null;
@@ -1018,6 +1020,7 @@ export function getNavigationHistory() {
 }
 
 export function replaceCurrentSelection(selectedNodeId) {
+  viewState.nodeDetailsClosed = selectedNodeId == null;
   viewState.selectedNodeId = selectedNodeId ?? null;
   if (appState.visibleLayer?.nodes?.some((node) => String(node.id) === String(selectedNodeId))) {
     rememberLayerSelection(viewState.currentThreadId, viewState.currentInteractionId, appState.visibleLayer?.layer?.id, selectedNodeId);
@@ -1062,6 +1065,7 @@ function captureWorkspaceState() {
       currentThreadId: viewState.currentThreadId,
       currentInteractionId: viewState.currentInteractionId,
       selectedNodeId: viewState.selectedNodeId,
+      nodeDetailsClosed: viewState.nodeDetailsClosed,
       layerPath: viewState.layerPath,
       mainView: viewState.mainView,
     },
@@ -1079,7 +1083,7 @@ function restoreWorkspaceState(snapshot) {
   if (snapshot.view.mainView === "thread") renderThread();
 }
 
-function applyResolvedPresentation(resolved) {
+function applyResolvedPresentation(resolved, { restoreSelection = false } = {}) {
   const existingThread = appState.threads.find((thread) => (
     String(thread.id) === String(resolved.thread.id)
   ));
@@ -1124,6 +1128,7 @@ function applyResolvedPresentation(resolved) {
   hydrateWorkspace(resolved.interaction, resolved.layer, {
     layerPath: resolved.layerPath,
     selectedNodeId: resolved.selectedNodeId,
+    restoreSelection,
     temporalCurrent: resolved.entry.temporalCurrent,
   });
   setMainView("thread");
@@ -1165,7 +1170,7 @@ export async function navigateHistory(deltaOrDirection, { beforeCommit } = {}) {
     sourceSnapshot = captureWorkspaceState();
     refreshGate.invalidate();
     applied = true;
-    applyResolvedPresentation(resolved);
+    applyResolvedPresentation(resolved, { restoreSelection: true });
     beforeCommit?.();
     if (!navigationHistory.commit(transition)) throw navigationSupersededError();
     committed = true;

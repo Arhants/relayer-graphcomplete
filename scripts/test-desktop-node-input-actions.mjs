@@ -1,5 +1,5 @@
 import { createSettingsStore } from "../desktop/main/services/settings-store.mjs";
-import { registerComposerDraftIpc } from "../desktop/main/ipc/register-ipc.mjs";
+import { registerComposerDraftIpc, registerLayerSelectionIpc } from "../desktop/main/ipc/register-ipc.mjs";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { mkdtempSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -195,7 +195,9 @@ const driver = createElectronWorkspaceDriver({
 const { click, clickNode, evaluate, productRequest, setValue, waitFor, waitForAcceptedInteractions, waitForPaint } = driver;
 
 function registerIpc() {
-  registerComposerDraftIpc({ ipcMain, settings: createSettingsStore(dataDirectory) });
+  const settings = createSettingsStore(dataDirectory);
+  registerComposerDraftIpc({ ipcMain, settings });
+  registerLayerSelectionIpc({ ipcMain, settings });
   ipcMain.handle("relayer:account-read", () => ({ status: "signed-in", channel: "stable", subject: "fixture|node-input" }));
   ipcMain.handle("relayer:appearance-read", () => ({ appearance: "dark" }));
   ipcMain.handle("relayer:update-status", () => ({ phase: "development", channel: "stable", version: "test" }));
@@ -427,6 +429,16 @@ async function run() {
   if (process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR) {
     await writeFile(join(process.env.RELAYER_NODE_DETAIL_EVIDENCE_DIR, "node-detail-sidebar-collapsed.png"), (await window.webContents.capturePage()).toPNG());
   }
+  // Exercise the shared narrow layout below the native window's 960px minimum.
+  window.setMinimumSize(640, 640);
+  window.setSize(720, 820);
+  await waitFor("Environment remains reachable without the sidebar toggle", () => evaluate(`(() => {
+    const environment = document.querySelector('.environment-panel').getBoundingClientRect();
+    return window.innerWidth <= 760 && environment.width > 0 && environment.height > 0;
+  })()`));
+  window.setSize(1280, 820);
+  window.setMinimumSize(960, 640);
+  await waitFor("collapsed desktop layout returns after resizing", async () => (await readSidebarGeometry()).collapsedStructure);
   await click('#collapseSidebar');
   await waitForPaint();
   const restoredSidebarGeometry = await readSidebarGeometry();
