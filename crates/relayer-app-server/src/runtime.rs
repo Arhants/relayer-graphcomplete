@@ -1084,6 +1084,25 @@ impl RuntimeClient {
         .await
     }
 
+    /// One observation that barely waits: the host answers with the run's end if it has
+    /// ended, or with `running` after one millisecond if it still runs.
+    pub(crate) async fn probe_invoked_completion(
+        &self,
+        thread_id: i64,
+        completion_id: i64,
+    ) -> Result<Value, RuntimeError> {
+        if thread_id < 1 || completion_id < 1 {
+            return Err(RuntimeError::Configuration(
+                "invoked completion observation identifiers must be positive".into(),
+            ));
+        }
+        self.control_harness_get(
+            &format!("sessions/{thread_id}/invoked-completions/{completion_id}?waitMs=1"),
+            CONTROL_REQUEST_TIMEOUT,
+        )
+        .await
+    }
+
     pub(crate) async fn admit_provider_execution(
         &self,
         command: &CompleteInteraction<'_>,

@@ -19,13 +19,16 @@
 (*   CAT = crates/relayer-app-server/src/storage/sqlite/catalog.rs         *)
 (*   THR = crates/relayer-app-server/src/api/threads.rs                    *)
 (*                                                                         *)
+(* A citation is a function name (HH releaseAfter) or lines (HH:1194).    *)
+(* Line numbers drift as the code changes; prefer a name for a function.  *)
+(*                                                                         *)
 (* One provider P. Each turn t is one Rust interaction execution task with *)
 (* at most one attempt and one execution lease, on its own thread (so its  *)
 (* own harness session). The harness host runs in Electron main, so       *)
 (* harness -> broker -> PDS calls are in-process; Rust reaches the harness *)
-(* over HTTP (RT:1067-1215). The PDS #serialized queue makes each PDS      *)
-(* operation below one atomic step (acquire, release+finalize,             *)
-(* acknowledge+finalize, remove).                                          *)
+(* over HTTP (RT admit_execution, release_provider_execution). The PDS     *)
+(* #serialized queue makes each PDS operation below one atomic step        *)
+(* (acquire, release+finalize, acknowledge+finalize, remove).              *)
 (***************************************************************************)
 EXTENDS Naturals, FiniteSets
 
@@ -33,43 +36,65 @@ CONSTANTS
   Turns,              \* concurrent turns on provider P
   MaxRestarts,        \* bound on app restarts
   \* --- faults ---
-  AdmissionTimeout,   \* HH:855/920 30 s admission timer may fire before the claim
+  AdmissionTimeout,   \* HH:879/944 30 s admission timer may fire before the claim
   RustCanAbandon,     \* Rust stops waiting on /complete while the harness still runs
   PersistCanFail,     \* Rust terminal persistence fails (record_reconciliation_pending)
   StartupQuarantine,  \* startup reconciliation quarantines an interrupted submitted input
   HarnessCanHang,     \* a native turn may ignore cancellation (no fairness on NatEnd)
+  UserCanStop,        \* the user may Stop a running turn while Rust still waits on it
+  StartupCleanupCanFail, \* reconcileStartup's finalize fails with a non-drain error
+                         \* (catalog write, credential delete, runtime-state removal)
   \* --- fixes (TRUE once landed) ---
-  HostReleasesOnSettle,  \* HH:1238-1240, 980-989: the host releases access as soon as
-                         \* the native turn ends and keeps the entry until the owner's
-                         \* release; an owner release of a running turn cancels it
-                         \* instead (HH:960-972)
-  ClaimRejectsReleasing, \* HH:1167: no claim once a release was decided
-                         \* (releaseRequested, set at HH:973, 1064, 1411)
-  AckRetriesFinalize,    \* PDS:773-796: a finalize the store refuses as
+  HostReleasesOnSettle,  \* HH:1273-1277 (executeCompletion's finally) and
+                         \* HH settleExecutionAccess: the host releases access as
+                         \* soon as the native turn ends and keeps the entry until
+                         \* the owner's release; an owner release of a running turn
+                         \* cancels it instead (HH releaseProviderExecution)
+  ClaimRejectsReleasing, \* HH:1194: no claim once a release was decided
+                         \* (releaseRequested, set at HH:997, 1088, 1473)
+  AckRetriesFinalize,    \* PDS #finalizeRemoval: a finalize the store refuses as
                          \* drain-incomplete returns false instead of throwing
-                         \* (RAS:404); the owner's acknowledgement
-                         \* (HH:1053-1058 -> PDS:633-635) retries it
-  QuarantineSettleWakesReconciler, \* THR:1185-1197: settling a quarantined
-                         \* interaction wakes the lease reconciler
-  UnknownReleaseRetriesFinalize \* HH:962-967 -> RTB:192-194, 506-508 ->
-                         \* IDX:224 -> PDS:752-759: an owner release of a lease the
-                         \* host no longer tracks retries every drained removal
+                         \* (the refusal code, RAS:436-440); the owner's
+                         \* acknowledgement (HH acknowledgeReleasedExecution ->
+                         \* PDS acquireExecution's acknowledge) retries it
+  QuarantineSettleWakesReconciler, \* THR reconcile_quarantined_interaction:
+                         \* settling a quarantined interaction wakes the lease
+                         \* reconciler
+  UnknownReleaseRetriesFinalize, \* HH:986-991 -> RTB:192-194, 521-523 ->
+                         \* IDX:224 -> PDS finalizeDrainedRemovals: an owner release
+                         \* of a lease the host no longer tracks retries every
+                         \* drained removal
+  PersistFailureEndsWait, \* EX:67-80, 1070-1124: when the task stops waiting on
+                         \* a native run without a terminal attempt, it ends the
+                         \* attempt with a decided interaction outcome, or records
+                         \* native_wait_ended_at (AT:311-368), and releases the lease
+  RestartEndsWaits,      \* INT:83-95: startup records native_wait_ended_at on the
+                         \* attempts it leaves open for reconciliation
+  StartupIsolatesProviders, \* PDS reconcileStartup records a provider's
+                         \* removal or cleanup failure and keeps starting
+  ForceStopsCancelledTurn \* HH runCompletion (armForceStop) and
+                         \* settledOrForceStopped: a cancelled turn still
+                         \* running after two minutes is force-stopped, and
+                         \* its access is released
 
 Lives == {"active", "removal_pending", "tombstoned"}
 
 VARIABLES
   \* --- durable Rust SQLite (survives restart) ---
   rLife,     \* model_providers.lifecycle_state for P
-  att,       \* t -> none | running | terminal   (interaction_attempts.outcome)
+  att,       \* t -> none | running | ended | terminal
+             \*      (interaction_attempts.outcome; "ended" is outcome='running'
+             \*       with native_wait_ended_at set: undecided, but Relayer no
+             \*       longer waits on it, so the drain skips it)
   quar,      \* t -> no | ordinary | submitted  ("Canonical reconciliation pending")
   acked,     \* t -> execution_lease_reconciled_at IS NOT NULL
   \* --- Rust in-memory ---
   rpc,       \* t -> Rust execution task program counter
-  wake,      \* reconciler Notify permit (AS:504-536)
-  wBusy,     \* reconciler worker is scanning debt (AS:541-580)
+  wake,      \* reconciler Notify permit (AS:502-537)
+  wBusy,     \* reconciler worker is scanning debt (AS:539-575)
   \* --- Electron main: provider definition service ---
   jLife,     \* this.definitions[P].lifecycleState
-  jsHeld,    \* t -> PDS lease for t counted in activeExecutions (PDS:608-637)
+  jsHeld,    \* t -> PDS lease for t counted in activeExecutions (PDS acquireExecution)
   rt,        \* P's runtime in this.runtimes: none | open | closed
   pClosed,   \* PDS close() ran
   \* --- Electron main: harness host ---
@@ -77,12 +102,13 @@ VARIABLES
              \*      none | admitted | claimed | settled | released | awaiting
              \*      (awaiting is the state before HostReleasesOnSettle)
   hRel,      \* t -> a host-initiated release promise is in flight
-  hTimer,    \* t -> a release timer is armed (HH:1060-1072)
+  hTimer,    \* t -> a release timer is armed (HH releaseAfter)
   hReq,      \* t -> releaseRequested: a release was decided
   hOwn,      \* t -> ownerReleased: the owner's release arrived
   abort,     \* t -> the completion's AbortController has fired
-  nat,       \* t -> native harness turn using the provider runtime
-  hClosed,   \* harness host closed flag (HH:1357)
+  nat,       \* t -> native harness turn using the provider runtime:
+             \*      none | running | done | forced (ended by a force-stop)
+  hClosed,   \* harness host closed flag (HH:1419)
   \* --- process ---
   app,       \* up | rustDown | down | startFailed
   restarts
@@ -93,8 +119,12 @@ vars == <<rLife, att, quar, acked, rpc, wake, wBusy, jLife, jsHeld, rt,
 hostVars == <<hl, hRel, hTimer, hReq, hOwn, abort>>
 
 Count == Cardinality({u \in Turns : jsHeld[u]})
+\* CAT:206-218: the drain counts only undecided attempts Relayer still
+\* waits on. Live native work is guarded by jsHeld (the host's claim and the
+\* PDS count), not by this.
 RustRunning == \E u \in Turns : att[u] = "running"
-Debt(t) == att[t] = "terminal" /\ ~acked[t]      \* AT:311-345
+\* AT:370-410: lease debt is any attempt the drain no longer counts.
+Debt(t) == att[t] \in {"terminal", "ended"} /\ ~acked[t]
 
 Init ==
   /\ rLife = "active" /\ jLife = "active"
@@ -104,7 +134,7 @@ Init ==
   /\ rpc = [t \in Turns |-> "idle"]
   /\ wake = TRUE /\ wBusy = FALSE            \* AS:814-815 schedules at open
   /\ jsHeld = [t \in Turns |-> FALSE]
-  /\ rt = "open" /\ pClosed = FALSE          \* PC:81-83 activate()
+  /\ rt = "open" /\ pClosed = FALSE          \* PC:88 -> PDS activate()
   /\ hl = [t \in Turns |-> "none"]
   /\ hRel = [t \in Turns |-> FALSE]
   /\ hTimer = [t \in Turns |-> FALSE]
@@ -116,24 +146,26 @@ Init ==
   /\ app = "up" /\ restarts = 0
 
 -----------------------------------------------------------------------------
-(* #finalizeRemoval (PDS:773-796): definitionStore.save PUTs the tombstone *)
-(* to Rust, and sync_provider_definitions rejects it with                  *)
+(* PDS #finalizeRemoval: definitionStore.save PUTs the tombstone to Rust,  *)
+(* and sync_provider_definitions rejects it with                           *)
 (* provider_execution_drain_incomplete while any attempt on P is           *)
-(* outcome='running' (CAT:190-199). Only after the tombstone commits is    *)
-(* the runtime closed. With AckRetriesFinalize the refusal returns false   *)
-(* and P stays removal_pending; before it, the refusal was thrown.         *)
+(* undecided and still waited on (CAT:206-218). Only after the tombstone   *)
+(* commits is the runtime closed. With AckRetriesFinalize the refusal     *)
+(* returns false and P stays removal_pending; before it, it was thrown.    *)
 FinalizeOk == app = "up" /\ ~RustRunning
 Tombstone ==
   /\ rLife' = "tombstoned" /\ jLife' = "tombstoned"
   /\ rt' = IF rt = "open" THEN "closed" ELSE rt
 
-(* A PDS release (PDS:621-630, via releaseHeldExecutionAccess HH:2819 and  *)
-(* the broker's onceRelease RTB:173-185) sets released=true, drops the     *)
-(* count, and then finalizes if the count is zero and P is removal_pending *)
-(* (#finalizeDrainedRemoval, PDS:761-766). A retried release is a no-op.   *)
-(* An acknowledgement (PDS:633-635) runs the same drained-removal finalize *)
-(* again; before AckRetriesFinalize the lease had no acknowledge and the   *)
-(* host's `acknowledge?.()` did nothing.                                   *)
+(* A PDS release (the lease's release in PDS acquireExecution, via         *)
+(* releaseHeldExecutionAccess HH:2917 and the broker's onceRelease         *)
+(* RTB:173-185) sets released=true, drops the count, and then finalizes if *)
+(* the count is zero and P is removal_pending                             *)
+(* (PDS #finalizeDrainedRemoval).                                          *)
+(* A retried release is a no-op. An acknowledgement (the lease's           *)
+(* acknowledge in PDS acquireExecution) runs the same drained-removal      *)
+(* finalize again; before AckRetriesFinalize the lease had no acknowledge  *)
+(* and the host's `acknowledge?.()` did nothing.                           *)
 (*                                                                         *)
 (* Settle(t, rel, ack) is one host step that releases t's PDS lease (rel)  *)
 (* and then acknowledges it (ack). The release throws only when the        *)
@@ -152,10 +184,11 @@ PdsSettle(t, rel, ack) ==
      THEN Tombstone
      ELSE UNCHANGED <<rLife, jLife, rt>>
 
-(* After a release promise resolves (HH:1033-1050): the entry becomes   *)
-(* "released" and, if the owner already released it, is acknowledged and  *)
-(* forgotten (HH:995-1011, 1053-1058). A failed release clears the promise *)
-(* and re-arms a 30 s retry unless the host is closed (HH:1043-1048).      *)
+(* After a release promise resolves (HH releaseHeldExecution): the entry   *)
+(* becomes "released" and, if the owner already released it, is           *)
+(* acknowledged and forgotten (HH finishReleasedExecution,                 *)
+(* acknowledgeReleasedExecution). A failed release clears the promise and  *)
+(* re-arms a 30 s retry unless the host is closed (HH:1067-1072).          *)
 (* Before HostReleasesOnSettle, a release deleted the entry at once.      *)
 AfterRelease(t, ack) ==
   IF RelThrows(t, TRUE)
@@ -165,23 +198,24 @@ AfterRelease(t, ack) ==
                    IF ~HostReleasesOnSettle \/ ack THEN "none" ELSE "released"]
        /\ hTimer' = [hTimer EXCEPT ![t] = FALSE]
 
-(* The owner's release: Rust's DELETE (RT:1198-1213) -> HH:1787-1788 ->    *)
-(* releaseProviderExecution (HH:960-978). An unknown lease answers 200     *)
-(* released:false, which Rust treats as success (AS:455-500). A lease is  *)
-(* unknown after a restart (fresh host memory) or once the host forgot it *)
-(* (ForgetReleased). With UnknownReleaseRetriesFinalize the host first     *)
-(* asks the broker to acknowledge it (HH:962-967), which Desktop wires to  *)
-(* finalizeDrainedRemovals (RTB:192-194, 506-508, IDX:224, PDS:752-759):   *)
-(* every removal_pending provider with no counted lease is finalized. A    *)
-(* refused finalize is thrown to Rust only before AckRetriesFinalize. With *)
-(* HostReleasesOnSettle a claimed entry is not released: the owner         *)
-(* abandons the completion (HH:970, abandon set by the claimer at          *)
-(* HH:1182, 802) and gets true at once; the host releases the access when  *)
-(* the native turn ends and acknowledges it then (HH:995-1011). Any other  *)
-(* entry is released if needed (an admitted one first marks                *)
-(* releaseRequested, HH:973), acknowledged and deleted; a failed release   *)
-(* or acknowledgement is thrown back to Rust, whose worker retries. Before *)
-(* the fix it released any entry, including a running turn's.              *)
+(* The owner's release: Rust's DELETE (RT release_provider_execution) ->   *)
+(* HH:1849-1850 -> HH releaseProviderExecution. An unknown lease answers   *)
+(* 200 released:false, which Rust treats as success (AS:455-500). A lease  *)
+(* is unknown after a restart (fresh host memory) or once the host forgot  *)
+(* it (ForgetReleased). With UnknownReleaseRetriesFinalize the host first  *)
+(* asks the broker to acknowledge it (HH:986-991), which Desktop wires to  *)
+(* finalizeDrainedRemovals (RTB:192-194, 521-523, IDX:224, PDS             *)
+(* finalizeDrainedRemovals): every removal_pending provider with no        *)
+(* counted lease is finalized. A refused finalize is thrown to Rust only   *)
+(* before AckRetriesFinalize. With HostReleasesOnSettle a claimed entry is *)
+(* not released: the owner abandons the completion (HH:994, abandon set by *)
+(* the claimer at HH:1209, 823) and gets true at once; the host releases   *)
+(* the access when the native turn ends and acknowledges it then (HH       *)
+(* finishReleasedExecution). Any other entry is released if needed (an     *)
+(* admitted one first marks releaseRequested, HH:997), acknowledged and    *)
+(* deleted; a failed release or acknowledgement is thrown back to Rust,   *)
+(* whose worker retries. Before the fix it released any entry, including a *)
+(* running turn's.                                                         *)
 Abandons(t) == HostReleasesOnSettle /\ hl[t] = "claimed"
 OwnerRel(t) == hl[t] \in {"admitted", "settled", "claimed", "awaiting"}
 UnknownTries == UnknownReleaseRetriesFinalize /\ Count = 0
@@ -211,13 +245,13 @@ OwnerRelease(t) ==
        /\ UNCHANGED abort
 
 -----------------------------------------------------------------------------
-(* Rust execution task (EX:180-1048).                                     *)
+(* Rust execution task (EX execute_prepared_interaction).                 *)
 
 (* Rust resolves the plan against SQLite (provider active), then POSTs     *)
-(* execution-leases (RT:1067-1140) -> admitModelPlanExecution (HH:868-948) *)
-(* -> broker.acquire (RTB:187-230) -> acquireExecution (PDS:608-637),      *)
-(* which checks only the JS lifecycle; #runtimeFor opens a runtime if none *)
-(* is registered. The host arms the 30 s admission timer (HH:920).         *)
+(* execution-leases (RT admit_execution) -> HH admitModelPlanExecution    *)
+(* -> broker.acquire (RTB:187-241) -> PDS acquireExecution, which checks   *)
+(* only the JS lifecycle; #runtimeFor opens a runtime if none is           *)
+(* registered. The host arms the 30 s admission timer (HH:944).            *)
 (* A refused admission is a pre-execution failure with no attempt row.    *)
 Admit(t) ==
   /\ app = "up" /\ rpc[t] = "idle" /\ rLife = "active"
@@ -232,9 +266,9 @@ Admit(t) ==
   /\ UNCHANGED <<rLife, att, quar, acked, wake, wBusy, jLife, pClosed, hRel,
                  hReq, hOwn, abort, nat, hClosed, app, restarts>>
 
-(* begin_interaction_attempt (AT:116, EX:309-380) re-resolves the plan in  *)
+(* begin_interaction_attempt (AT:116, EX:320-399) re-resolves the plan in  *)
 (* one SQLite transaction and inserts outcome='running' with the lease id. *)
-(* If P is no longer admissible, EX:355-380 records a terminal admission-  *)
+(* If P is no longer admissible, EX:352-399 records a terminal admission-  *)
 (* failure receipt and releases the lease. Abstraction: we record the     *)
 (* terminal row and then take the ordinary terminal release path.         *)
 Begin(t) ==
@@ -247,11 +281,11 @@ Begin(t) ==
   /\ UNCHANGED <<rLife, quar, acked, wake, wBusy, jLife, jsHeld, rt, pClosed,
                  hostVars, nat, hClosed, app, restarts>>
 
-(* complete_prepared POSTs /complete with executionLeaseId (RT:846-930)   *)
-(* -> host.complete -> runCompletion (HH:747-832) -> executeCompletion,   *)
-(* which claims the entry only if state = "admitted" (HH:1165-1185) and,  *)
-(* with ClaimRejectsReleasing, only if no release was ever decided for it *)
-(* (HH:1167). Before that fix a release already in flight did not stop    *)
+(* RT complete_prepared POSTs /complete with executionLeaseId ->          *)
+(* host.complete -> HH runCompletion -> executeCompletion, which claims    *)
+(* the entry only if state = "admitted" (HH:1192-1214) and, with          *)
+(* ClaimRejectsReleasing, only if no release was ever decided for it      *)
+(* (HH:1194). Before that fix a release already in flight did not stop    *)
 (* the claim (finding A). A missing or refused entry fails the turn with  *)
 (* "Execution access admission is invalid or expired" before any provider *)
 (* call; Rust sees an error response.                                     *)
@@ -267,15 +301,14 @@ Claim(t) ==
   /\ UNCHANGED <<rLife, att, quar, acked, wake, wBusy, jLife, jsHeld, rt,
                  pClosed, hRel, hReq, hOwn, abort, hClosed, app, restarts>>
 
-(* The native turn ends (HH:1230 `await native` resolves or rejects). With *)
-(* HostReleasesOnSettle, executeCompletion's finally moves the entry its   *)
-(* completion claimed to settled and starts its release at once            *)
-(* (HH:1238-1240, 980-989), before the response reaches Rust. Before the   *)
-(* fix it moved it to awaiting-terminal with no timer and waited for       *)
-(* Rust's DELETE.                                                          *)
-NatEnd(t) ==
-  /\ nat[t] = "running"
-  /\ nat' = [nat EXCEPT ![t] = "done"]
+(* The native turn ends (HH:1260 `settledOrForceStopped(native, ...)`     *)
+(* resolves or rejects). With HostReleasesOnSettle, executeCompletion's    *)
+(* finally moves the entry its completion claimed to settled and starts    *)
+(* its release at once (HH:1273-1277, HH settleExecutionAccess), before    *)
+(* the response reaches Rust. Before the fix it moved it to               *)
+(* awaiting-terminal with no timer and waited for                          *)
+(* Rust's DELETE. ForceStop settles a turn the same way (SettleTurn).     *)
+SettleTurn(t) ==
   /\ IF hl[t] = "claimed"
      THEN IF HostReleasesOnSettle
           THEN /\ hl' = [hl EXCEPT ![t] = "settled"]
@@ -288,13 +321,36 @@ NatEnd(t) ==
   /\ UNCHANGED <<rLife, att, quar, acked, wake, wBusy, jLife, jsHeld, rt,
                  pClosed, hReq, hOwn, abort, hClosed, app, restarts>>
 
+NatEnd(t) ==
+  /\ nat[t] = "running"
+  /\ nat' = [nat EXCEPT ![t] = "done"]
+  /\ SettleTurn(t)
+
+(* The per-turn force-stop (HH runCompletion, armForceStop): a completion  *)
+(* whose cancel signal fired arms one two-minute timer. If its native turn *)
+(* still runs when it fires, the harness ends that one turn: Codex kills   *)
+(* the turn's own app-server process group, and Prime disposes the turn's  *)
+(* own session. executeCompletion (settledOrForceStopped) waits at most    *)
+(* ten more seconds, reports a settled cancellation, and settles the       *)
+(* claimed access exactly as NatEnd does. Only t changes, so a sibling is  *)
+(* never touched.                                                          *)
+(* Abstractions: the kill or disposal always ends the native work (the     *)
+(* code's best effort), and the harness declares supportsForceStop. Turns  *)
+(* here are on separate threads; turns sharing a thread (a root and its    *)
+(* invoked children) are covered by the harness-host tests.                *)
+ForceStop(t) ==
+  /\ ForceStopsCancelledTurn
+  /\ abort[t] /\ nat[t] = "running"
+  /\ nat' = [nat EXCEPT ![t] = "forced"]
+  /\ SettleTurn(t)
+
 (* Rust stops waiting while the harness is still running: the approval    *)
 (* reconciliation failure path cancels, waits 2 s, and breaks with Err     *)
-(* (EX:510-536), or the /complete HTTP request fails (RT:900-930; no      *)
-(* request timeout). The cancel (HH:1325-1337) or the dropped request      *)
-(* (HH:1854) aborts the completion, but the native turn unwinds on its     *)
-(* own schedule. Nothing forces it to stop: a per-turn force-stop is not   *)
-(* built.                                                                  *)
+(* (EX:529-555), or the /complete HTTP request fails (RT:935-969; no      *)
+(* request timeout). The cancel (HH cancel) or the dropped request         *)
+(* (HH:1916) aborts the completion, but the native turn unwinds on its     *)
+(* own schedule. With ForceStopsCancelledTurn, a turn that ignores the     *)
+(* cancellation is force-stopped (ForceStop).                              *)
 GiveUp(t) ==
   /\ RustCanAbandon /\ app = "up"
   /\ rpc[t] = "waiting" /\ nat[t] = "running"
@@ -304,31 +360,56 @@ GiveUp(t) ==
                  pClosed, hl, hRel, hTimer, hReq, hOwn, nat, hClosed, app,
                  restarts>>
 
-(* Rust persists the terminal attempt (fail EX:595-619, accept EX:640-659) *)
-(* and then releases (release_terminal_admission EX:1083-1098). On a       *)
-(* persistence or canonical-read failure it calls                          *)
-(* record_reconciliation_pending (EX:1051-1081), which fails only the      *)
-(* interaction and leaves the attempt 'running' (INT:884-903), or just    *)
-(* logs; either way it returns without a release. A submitted-input        *)
-(* interaction in that state is "quarantined".                             *)
+(* The user's Stop. Rust's wait loop sees stop_requested (EX:511-528) and  *)
+(* dispatch_product_stop stops the graph current, then cancels the         *)
+(* completion (RT cancel_invoked_completion -> HH:1853-1862 -> HH cancel), *)
+(* which aborts it. Unlike GiveUp, Rust keeps waiting on /complete, so the *)
+(* turn's end, natural or forced, is what hands Rust its result            *)
+(* (SettleTurn). A turn that ignores the cancellation is force-stopped     *)
+(* (ForceStop). Abstraction: a Stop before the claim, which never starts   *)
+(* the native turn, is not modeled.                                        *)
+Cancel(t) ==
+  /\ UserCanStop /\ app = "up"
+  /\ rpc[t] = "waiting" /\ nat[t] = "running" /\ ~abort[t]
+  /\ abort' = [abort EXCEPT ![t] = TRUE]
+  /\ UNCHANGED <<rLife, att, quar, acked, rpc, wake, wBusy, jLife, jsHeld, rt,
+                 pClosed, hl, hRel, hTimer, hReq, hOwn, nat, hClosed, app,
+                 restarts>>
+
+(* Rust persists the terminal attempt (fail EX:612-638, 844-869, accept   *)
+(* EX:655-678) and then releases (release_terminal_admission             *)
+(* EX:1158-1173). On a persistence or canonical-read failure it calls     *)
+(* record_reconciliation_pending (EX:1126-1156), which fails only the      *)
+(* interaction and leaves the attempt 'running' (INT:898-927), or just    *)
+(* logs. A submitted-input interaction in that state is "quarantined".     *)
+(* An approval the provider aborts, expires or cancels mid-turn fails or  *)
+(* stops the interaction first (q = "decided", no fault needed), so the    *)
+(* later write fails the same way. With PersistFailureEndsWait the task    *)
+(* then ends its wait (end_native_wait, EX:1070-1124): a decided attempt   *)
+(* ends with its interaction's outcome; a quarantined one stays undecided  *)
+(* ("ended"). Either way its lease is released. Before the fix the task    *)
+(* returned without a release, and the attempt stayed running.            *)
 Persist(t, ok) ==
   /\ app = "up" /\ rpc[t] = "result"
   /\ IF ok
      THEN /\ att' = [att EXCEPT ![t] = IF att[t] = "running" THEN "terminal" ELSE att[t]]
           /\ rpc' = [rpc EXCEPT ![t] = "release"]
           /\ UNCHANGED quar
-     ELSE /\ PersistCanFail
-          /\ rpc' = [rpc EXCEPT ![t] = "done"]
-          /\ \E q \in {"ordinary", "submitted"} : quar' = [quar EXCEPT ![t] = q]
-          /\ UNCHANGED att
+     ELSE /\ rpc' = [rpc EXCEPT ![t] = IF PersistFailureEndsWait THEN "release" ELSE "done"]
+          /\ \E q \in {"ordinary", "submitted", "decided"} :
+               /\ PersistCanFail \/ q = "decided"
+               /\ quar' = [quar EXCEPT ![t] = IF q = "decided" THEN quar[t] ELSE q]
+               /\ att' = [att EXCEPT ![t] =
+                            IF ~PersistFailureEndsWait \/ att[t] /= "running" THEN att[t]
+                            ELSE IF q = "decided" THEN "terminal" ELSE "ended"]
   /\ UNCHANGED <<rLife, acked, wake, wBusy, jLife, jsHeld, rt, pClosed,
                  hostVars, nat, hClosed, app, restarts>>
 
 (* release_terminal_admission -> reconcile_terminal_execution_lease        *)
-(* (AS:455-500): read debt (terminal attempts only), DELETE the lease,     *)
-(* acknowledge. On failure it wakes the one reconciler (EX:1094-1097).     *)
+(* (AS:455-500): read debt (Debt above), DELETE the lease,                 *)
+(* acknowledge. On failure it wakes the one reconciler (EX:1169-1172).     *)
 (* Abstraction: the DELETE waits out a release already in flight           *)
-(* (HH:1037 `??=`).                                                         *)
+(* (HH:1061 `??=`).                                                        *)
 InlineRelease(t) ==
   /\ app = "up" /\ rpc[t] = "release" /\ ~hRel[t]
   /\ rpc' = [rpc EXCEPT ![t] = "done"]
@@ -341,7 +422,7 @@ InlineRelease(t) ==
   /\ UNCHANGED <<att, quar, wBusy, pClosed, hRel, nat, hClosed, app, restarts>>
 
 -----------------------------------------------------------------------------
-(* The single lease-debt reconciler (AS:502-580). It wakes on a Notify    *)
+(* The single lease-debt reconciler (AS:502-575). It wakes on a Notify    *)
 (* permit, serially retries every unreconciled terminal lease with capped  *)
 (* backoff, and returns to idle when the debt is clear.                    *)
 WorkerWake ==
@@ -364,9 +445,9 @@ WorkerIdle ==
                  hostVars, nat, hClosed, app, restarts>>
 
 -----------------------------------------------------------------------------
-(* Host release timers (releaseAfter, HH:1060-1072). The admission timer   *)
-(* fires only if AdmissionTimeout (the claim came 30 s late) or no claim   *)
-(* is coming. A retry timer re-armed after a failed release always fires.  *)
+(* Host release timers (HH releaseAfter). The admission timer fires only  *)
+(* if AdmissionTimeout (the claim came 30 s late) or no claim is coming.   *)
+(* A retry timer re-armed after a failed release always fires.            *)
 (* With HostReleasesOnSettle a timer that finds the entry claimed or       *)
 (* released does nothing; otherwise it marks releaseRequested and starts   *)
 (* the release. Before the fix it released any entry. The release is       *)
@@ -394,9 +475,9 @@ ReleaseDone(t) ==
                  nat, hClosed, app, restarts>>
 
 (* Access released before its owner's release is kept for the owner's     *)
-(* acknowledgement for ten minutes, then forgotten (HH:995-1003,          *)
-(* 1022-1030). Abstraction: close-time releases, which arm no such timer, *)
-(* may be forgotten too.                                                   *)
+(* acknowledgement for ten minutes, then forgotten (HH                    *)
+(* finishReleasedExecution, expireUnacknowledged). Abstraction:            *)
+(* close-time releases, which arm no such timer, may be forgotten too.     *)
 ForgetReleased(t) ==
   /\ HostReleasesOnSettle /\ hl[t] = "released" /\ ~hOwn[t]
   /\ hl' = [hl EXCEPT ![t] = "none"]
@@ -407,7 +488,7 @@ ForgetReleased(t) ==
 -----------------------------------------------------------------------------
 (* User actions.                                                          *)
 
-(* remove (PDS:725-746): save removal_pending (CAT:176-187: guards only    *)
+(* PDS remove: save removal_pending (CAT:201-205: guards only             *)
 (* the default family and provider, not running attempts), then finalize   *)
 (* at once if the JS lease count is zero. A refused finalize leaves P      *)
 (* removal_pending (it threw before AckRetriesFinalize, but the save had   *)
@@ -422,15 +503,17 @@ Remove ==
                  nat, hClosed, app, restarts>>
 
 (* Reading a quarantined submitted input settles it                        *)
-(* (reconcile_quarantined_interaction, THR:1185-1197) with                 *)
-(* finalize_quarantined_submitted_input_failure (INT:169-200) or           *)
-(* recover_interaction_accepted, both of which terminalize the attempt.   *)
-(* Two readers call it: the thread view (refresh_accepted_outputs,         *)
-(* THR:1109-1140) and an invoke action's destination (THR:1067-1074).      *)
+(* (THR reconcile_quarantined_interaction) with                           *)
+(* INT finalize_quarantined_submitted_input_failure or                     *)
+(* recover_interaction_accepted, both of which terminalize the attempt,   *)
+(* whether or not the end of the wait was recorded. An ended attempt's    *)
+(* lease was already released, so no new debt forms.                       *)
+(* Two readers call it: the thread view (THR refresh_accepted_outputs)    *)
+(* and an invoke action's destination (THR:1103-1115).                     *)
 (* Neither releases the lease; with QuarantineSettleWakesReconciler the    *)
 (* settle wakes the reconciler, which owns the new lease debt.             *)
 ReadQuarantined(t) ==
-  /\ app = "up" /\ quar[t] = "submitted" /\ att[t] = "running"
+  /\ app = "up" /\ quar[t] = "submitted" /\ att[t] \in {"running", "ended"}
   /\ att' = [att EXCEPT ![t] = "terminal"]
   /\ quar' = [quar EXCEPT ![t] = "no"]
   /\ wake' = (wake \/ QuarantineSettleWakesReconciler)
@@ -449,11 +532,11 @@ ShutdownBegin ==
   /\ UNCHANGED <<rLife, att, quar, acked, jLife, jsHeld, rt, pClosed, hostVars,
                  nat, hClosed, restarts>>
 
-(* Harness host close (HH:1355-1420): sets closed and aborts active        *)
-(* completions; waits at most 5 s per session; then releases "admitted"   *)
-(* and, with HostReleasesOnSettle, "settled" entries without              *)
-(* acknowledging them (HH:1408-1419). Claimed entries stay held until     *)
-(* their native turn ends.                                                 *)
+(* Harness host close (HH beginClose, closeInternal): sets closed and     *)
+(* aborts active completions; waits at most 5 s per session; then         *)
+(* releases "admitted" and, with HostReleasesOnSettle, "settled" entries   *)
+(* without acknowledging them (HH:1468-1481). Claimed entries stay held    *)
+(* until their native turn ends.                                           *)
 HostCloseStart ==
   /\ app = "rustDown" /\ ~hClosed
   /\ hClosed' = TRUE
@@ -473,7 +556,7 @@ HostCloseRelease(t) ==
   /\ UNCHANGED <<att, quar, acked, rpc, wake, wBusy, pClosed, hRel, hOwn, abort,
                  nat, hClosed, app, restarts>>
 
-(* PDS close() (PDS:818-832) closes every runtime, ignoring leases.       *)
+(* PDS close() closes every runtime, ignoring leases.                      *)
 PdsClose ==
   /\ app = "rustDown" /\ ~pClosed
   /\ pClosed' = TRUE
@@ -488,26 +571,38 @@ ShutdownDone ==
                  pClosed, hostVars, nat, hClosed, restarts>>
 
 (* Restart. Rust open: startup reconciliation may quarantine an           *)
-(* interrupted submitted input on a retryable error (AS:720-740,          *)
-(* INT:141-163); then recover_interrupted_interactions (AS:793, INT:44-88) *)
-(* fails every running attempt EXCEPT quarantined submitted inputs; the    *)
-(* reconciler is scheduled (AS:814-815). Then provider composition start   *)
-(* (PC:81-83, IDX:560) runs reconcileStartup (PDS:798-816), which          *)
-(* finalizes every removal_pending definition. A refused finalize threw    *)
-(* and quit the app before the window opened (IDX:620, 631-635); with     *)
-(* AckRetriesFinalize it returns false and P stays removal_pending. All    *)
-(* harness and PDS memory is fresh: a later owner release finds no host   *)
-(* entry and takes the unknown-release path (OwnerRelease).               *)
-Restart(Q) ==
+(* interrupted submitted input on a retryable error (AS:720-740, INT     *)
+(* quarantine_interrupted_submitted_input); then                           *)
+(* recover_interrupted_interactions (AS:793, INT:44-105)                   *)
+(* fails every undecided attempt EXCEPT quarantined submitted inputs. With *)
+(* RestartEndsWaits it records the end of the wait on those kept attempts,*)
+(* their process exited with the app. The reconciler is scheduled          *)
+(* (AS:814-815). Then provider composition start (PC:86-90, IDX:558) runs *)
+(* PDS reconcileStartup, which finalizes every removal_pending             *)
+(* definition. A refused finalize threw and quit the app before the window *)
+(* opened (IDX:618, 629-633); with AckRetriesFinalize it returns false and *)
+(* P stays removal_pending. A finalize that fails otherwise (cf) quits the *)
+(* app too, unless StartupIsolatesProviders records it and starts; P then  *)
+(* stays removal_pending until the next start. All harness and PDS memory *)
+(* is fresh: a later owner release finds no host entry and takes the       *)
+(* unknown-release path (OwnerRelease).                                    *)
+Restart(Q, cf) ==
   /\ app \in {"down", "startFailed"} /\ restarts < MaxRestarts
   /\ Q \subseteq {t \in Turns : att[t] = "running" /\ quar[t] = "no"}
   /\ StartupQuarantine \/ Q = {}
-  /\ LET keep(t) == att[t] = "running" /\ (quar[t] = "submitted" \/ t \in Q)
+  /\ StartupCleanupCanFail \/ ~cf
+  /\ LET undecided(t) == att[t] \in {"running", "ended"}
+         keep(t) == undecided(t) /\ (quar[t] = "submitted" \/ t \in Q)
          att2 == [t \in Turns |->
-                    IF att[t] = "running" /\ ~keep(t) THEN "terminal" ELSE att[t]]
+                    IF undecided(t) /\ ~keep(t) THEN "terminal"
+                    ELSE IF keep(t) /\ RestartEndsWaits THEN "ended"
+                    ELSE att[t]]
          running2 == \E t \in Turns : att2[t] = "running"
-         fail == rLife = "removal_pending" /\ running2 /\ ~AckRetriesFinalize
-         life2 == IF rLife = "removal_pending" /\ ~running2 THEN "tombstoned" ELSE rLife
+         attempted == rLife = "removal_pending" /\ ~running2
+         cleanupFails == attempted /\ cf
+         fail == \/ rLife = "removal_pending" /\ running2 /\ ~AckRetriesFinalize
+                 \/ cleanupFails /\ ~StartupIsolatesProviders
+         life2 == IF attempted /\ ~cleanupFails THEN "tombstoned" ELSE rLife
      IN /\ att' = att2
         /\ quar' = [t \in Turns |-> IF keep(t) THEN "submitted" ELSE
                                     IF att2[t] = "running" THEN quar[t] ELSE "no"]
@@ -531,18 +626,20 @@ Restart(Q) ==
 Next ==
   \/ \E t \in Turns :
        \/ Admit(t) \/ Begin(t) \/ Claim(t) \/ NatEnd(t) \/ GiveUp(t)
+       \/ Cancel(t) \/ ForceStop(t)
        \/ \E ok \in BOOLEAN : Persist(t, ok)
        \/ InlineRelease(t) \/ WorkerTry(t)
        \/ TimerFire(t) \/ ReleaseDone(t) \/ HostCloseRelease(t)
        \/ ForgetReleased(t) \/ ReadQuarantined(t)
   \/ WorkerWake \/ WorkerIdle \/ Remove
   \/ ShutdownBegin \/ HostCloseStart \/ PdsClose \/ ShutdownDone
-  \/ \E Q \in SUBSET Turns : Restart(Q)
+  \/ \E Q \in SUBSET Turns, cf \in BOOLEAN : Restart(Q, cf)
 
 (* Fairness: the code guarantees the Rust task, host timers and release   *)
 (* promises, the reconciler, and a begun shutdown keep running. User       *)
-(* actions (Admit, Remove, reading a quarantined input, quit, restart) and *)
-(* the Rust give-up are not fair. NatEnd is fair unless HarnessCanHang.    *)
+(* actions (Admit, Remove, Stop, reading a quarantined input, quit,       *)
+(* restart) and the Rust give-up are not fair. NatEnd is fair unless      *)
+(* HarnessCanHang. ForceStop is driven by the host's timer, so it is fair. *)
 Fairness ==
   /\ \A t \in Turns :
        /\ WF_vars(Begin(t)) /\ WF_vars(Claim(t))
@@ -551,6 +648,7 @@ Fairness ==
        /\ WF_vars(TimerFire(t)) /\ WF_vars(ReleaseDone(t))
        /\ WF_vars(HostCloseRelease(t)) /\ WF_vars(ForgetReleased(t))
        /\ (~HarnessCanHang => WF_vars(NatEnd(t)))
+       /\ WF_vars(ForceStop(t))
   /\ WF_vars(WorkerWake) /\ WF_vars(\E t \in Turns : WorkerTry(t))
   /\ WF_vars(WorkerIdle)
   /\ WF_vars(HostCloseStart) /\ WF_vars(PdsClose) /\ WF_vars(ShutdownDone)
@@ -563,7 +661,7 @@ FairSpec == Spec /\ Fairness
 
 TypeOK ==
   /\ rLife \in Lives /\ jLife \in Lives
-  /\ att \in [Turns -> {"none", "running", "terminal"}]
+  /\ att \in [Turns -> {"none", "running", "ended", "terminal"}]
   /\ quar \in [Turns -> {"no", "ordinary", "submitted"}]
   /\ acked \in [Turns -> BOOLEAN]
   /\ rpc \in [Turns -> {"idle", "admitted", "attempt", "waiting", "result",
@@ -576,7 +674,7 @@ TypeOK ==
   /\ hRel \in [Turns -> BOOLEAN] /\ hTimer \in [Turns -> BOOLEAN]
   /\ hReq \in [Turns -> BOOLEAN] /\ hOwn \in [Turns -> BOOLEAN]
   /\ abort \in [Turns -> BOOLEAN]
-  /\ nat \in [Turns -> {"none", "running", "done"}]
+  /\ nat \in [Turns -> {"none", "running", "done", "forced"}]
   /\ app \in {"up", "rustDown", "down", "startFailed"}
   /\ restarts \in 0..MaxRestarts
 
@@ -606,14 +704,20 @@ RuntimeOpenWhileTurnRuns ==
 RuntimeOpenWhileTurnRunsAlways ==
   \A t \in Turns : nat[t] = "running" => rt = "open"
 
-\* CODE HH:1063: no host timer targets the access of a running turn. (Before
+\* CODE HH:1087: no host timer targets the access of a running turn. (Before
 \* HostReleasesOnSettle this read "only an admitted lease carries a timer":
 \* the host now retries a settled release on its own timer by design.)
 NoTimerOnClaimedAccess ==
   \A t \in Turns : hTimer[t] => hl[t] /= "claimed"
 
-\* DRAFT PROV-003 (restart finishes a removal) + CODE PC:81-83 (startup
-\* assumes reconcileStartup succeeds): the app always starts.
+\* PROV-004 (per-turn force-stop): only a cancelled turn is ever
+\* force-stopped, so a turn nobody cancelled, such as a healthy sibling, is
+\* never stopped.
+OnlyCancelledTurnsForceStopped ==
+  \A t \in Turns : nat[t] = "forced" => abort[t]
+
+\* PROV-003 (restart finishes a removal) + startup isolation (PDS reconcileStartup):
+\* the app always starts.
 StartupSucceeds == app /= "startFailed"
 
 -----------------------------------------------------------------------------
@@ -622,7 +726,7 @@ StartupSucceeds == app /= "startFailed"
 
 Quiet == \A t \in Turns : nat[t] /= "running"
 
-\* DRAFT PROV-003: once nothing is actually running, removal_pending becomes
+\* PROV-003: once nothing is actually running, removal_pending becomes
 \* tombstoned without a restart.
 RemovalCompletes ==
   (rLife = "removal_pending" /\ Quiet /\ app = "up")
@@ -645,16 +749,17 @@ RemovalCompletesEvenIfHung ==
 LeaseEventuallyReleased ==
   \A t \in Turns : (jsHeld[t] /\ app = "up") ~> (~jsHeld[t] \/ app /= "up")
 
-\* DRAFT PROV-003 (the durable record is the drain authority): once a turn's
-\* native work has ended, its attempt eventually becomes terminal. A running
-\* attempt blocks the tombstone (CAT:190-199).
-AttemptSettlesAfterTurn ==
+\* PROV-003 (the durable record is the drain authority): once a turn's
+\* native work has ended, its attempt eventually stops holding P. It becomes
+\* terminal, or the end of the wait is recorded while its outcome awaits
+\* reconciliation. A running attempt blocks the tombstone (CAT:206-218).
+AttemptEndsAfterTurn ==
   \A t \in Turns :
-    (att[t] = "running" /\ nat[t] = "done" /\ app = "up")
-      ~> (att[t] = "terminal" \/ app /= "up")
+    (att[t] = "running" /\ nat[t] \in {"done", "forced"} /\ app = "up")
+      ~> (att[t] \in {"terminal", "ended"} \/ app /= "up")
 
-\* A cancelled turn's access is eventually released, even if its native
-\* turn ignores the cancellation.
+\* PROV-004: a cancelled turn's access is eventually released, even if its
+\* native turn ignores the cancellation (through the per-turn force-stop).
 CancelledAccessEventuallyReleased ==
   \A t \in Turns :
     (abort[t] /\ jsHeld[t] /\ app = "up") ~> (~jsHeld[t] \/ app /= "up")

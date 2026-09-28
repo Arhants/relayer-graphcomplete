@@ -39,11 +39,17 @@
       "PersistCanFail": "FALSE",
       "StartupQuarantine": "FALSE",
       "HarnessCanHang": "FALSE",
+      "UserCanStop": "FALSE",
       "HostReleasesOnSettle": "TRUE",
       "ClaimRejectsReleasing": "TRUE",
       "AckRetriesFinalize": "TRUE",
       "QuarantineSettleWakesReconciler": "TRUE",
-      "UnknownReleaseRetriesFinalize": "TRUE"
+      "UnknownReleaseRetriesFinalize": "TRUE",
+      "StartupCleanupCanFail": "FALSE",
+      "PersistFailureEndsWait": "TRUE",
+      "RestartEndsWaits": "TRUE",
+      "StartupIsolatesProviders": "TRUE",
+      "ForceStopsCancelledTurn": "TRUE"
     },
     "catalog-today": {
       "MaxQ": "2",
@@ -335,7 +341,9 @@
         "RustCanAbandon": "TRUE",
         "PersistCanFail": "TRUE",
         "StartupQuarantine": "TRUE",
-        "HarnessCanHang": "TRUE"
+        "HarnessCanHang": "TRUE",
+        "UserCanStop": "TRUE",
+        "StartupCleanupCanFail": "TRUE"
       },
       "invariants": [
         "TypeOK",
@@ -343,13 +351,14 @@
         "LeaseHeldWhileTurnRuns",
         "RuntimeOpenWhileTurnRuns",
         "NoTimerOnClaimedAccess",
-        "StartupSucceeds"
+        "StartupSucceeds",
+        "OnlyCancelledTurnsForceStopped"
       ],
       "properties": [
         "AccessKeptWhileTurnRuns"
       ],
       "expect": "pass",
-      "finding": "With every fault on, a leased runtime stays open, no runtime closes under a running turn, a turn runs only under held access, access is never released while its turn runs, no host timer targets a running turn's access, and the app always starts."
+      "finding": "With every fault on, a leased runtime stays open, no runtime closes under a running turn, a turn runs only under held access, access is never released while its turn runs, no host timer targets a running turn's access, only a cancelled turn is ever force-stopped, and the app always starts."
     },
     {
       "id": "leases-ideal",
@@ -366,17 +375,18 @@
         "LeaseHeldWhileTurnRuns",
         "RuntimeOpenWhileTurnRuns",
         "NoTimerOnClaimedAccess",
-        "StartupSucceeds"
+        "StartupSucceeds",
+        "OnlyCancelledTurnsForceStopped"
       ],
       "properties": [
         "AccessKeptWhileTurnRuns",
         "LeaseEventuallyReleased",
         "DebtEventuallyReconciled",
-        "AttemptSettlesAfterTurn",
+        "AttemptEndsAfterTurn",
         "RemovalCompletes"
       ],
       "expect": "pass",
-      "finding": "With no faults, every safety invariant holds, every lease is released, every lease debt is reconciled, every attempt whose turn ended becomes terminal, and a removal completes without a restart."
+      "finding": "With no faults, every safety invariant holds, every lease is released, every lease debt is reconciled, every attempt whose turn ended stops holding the provider, and a removal completes without a restart."
     },
     {
       "id": "leases-abandon",
@@ -525,7 +535,8 @@
       "preset": "leases-today",
       "constants": {
         "PersistCanFail": "TRUE",
-        "QuarantineSettleWakesReconciler": "FALSE"
+        "QuarantineSettleWakesReconciler": "FALSE",
+        "PersistFailureEndsWait": "FALSE"
       },
       "fair": true,
       "properties": [
@@ -534,7 +545,7 @@
       "expect": {
         "violated": "DebtEventuallyReconciled"
       },
-      "finding": "Without the wake, a settled quarantined attempt's lease debt waits for a restart."
+      "finding": "Without the wake, a settled quarantined attempt's lease debt waits for a restart. C's fix is off here: it releases the lease when the native run ends, so the settle would leave no debt."
     },
     {
       "id": "leases-persist-lease",
@@ -556,7 +567,8 @@
       "preset": "leases-today",
       "constants": {
         "PersistCanFail": "TRUE",
-        "HostReleasesOnSettle": "FALSE"
+        "HostReleasesOnSettle": "FALSE",
+        "PersistFailureEndsWait": "FALSE"
       },
       "fair": true,
       "properties": [
@@ -565,7 +577,7 @@
       "expect": {
         "violated": "LeaseEventuallyReleased"
       },
-      "finding": "Without the host owning the release, a turn whose terminal state cannot be persisted holds its lease forever."
+      "finding": "Without the host owning the release, a turn whose terminal state cannot be persisted holds its lease forever. C's attempt fix is off here: it would release the lease from the product side."
     },
     {
       "id": "leases-restart-quarantine",
@@ -588,7 +600,8 @@
       "constants": {
         "StartupQuarantine": "TRUE",
         "MaxRestarts": "2",
-        "AckRetriesFinalize": "FALSE"
+        "AckRetriesFinalize": "FALSE",
+        "RestartEndsWaits": "FALSE"
       },
       "invariants": [
         "StartupSucceeds"
@@ -596,7 +609,7 @@
       "expect": {
         "violated": "StartupSucceeds"
       },
-      "finding": "Without it, the refused finalize in reconcileStartup fails every startup."
+      "finding": "Without it, the refused finalize in reconcileStartup fails every startup. E's removal fix is off here: it stops the quarantined attempt from counting, so the finalize would not be refused."
     },
     {
       "id": "leases-restart-persist",
@@ -624,10 +637,26 @@
       "properties": [
         "RemovalCompletes"
       ],
+      "expect": "pass",
+      "finding": "A removal that waited on a turn finishes at the next start even when startup quarantines that turn's submitted input: its attempt ran in the process that exited, so startup records its native-run end and the drain no longer counts it (fixed; E removal half)."
+    },
+    {
+      "id": "leases-restart-removal-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "StartupQuarantine": "TRUE",
+        "MaxRestarts": "1",
+        "RestartEndsWaits": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "RemovalCompletes"
+      ],
       "expect": {
         "violated": "RemovalCompletes"
       },
-      "finding": "Open (E, PR #545): after a restart, a quarantined submitted input's attempt stays running until its thread is opened or the app restarts again, so the removal stays pending meanwhile."
+      "finding": "Without it, the quarantined attempt still counts as running after the restart, so the removal stays pending until its thread is opened (the unknown-release retry then finishes it) or the app restarts again."
     },
     {
       "id": "leases-restart-drained-removal",
@@ -635,14 +664,15 @@
       "preset": "leases-today",
       "constants": {
         "StartupQuarantine": "TRUE",
-        "MaxRestarts": "1"
+        "MaxRestarts": "1",
+        "RestartEndsWaits": "FALSE"
       },
       "fair": true,
       "properties": [
         "DrainedRemovalCompletes"
       ],
       "expect": "pass",
-      "finding": "After a restart, once the quarantined attempt becomes terminal, the owner's release of a lease the fresh host does not know retries every drained removal, so the removal finishes in-session."
+      "finding": "After a restart, once the quarantined attempt becomes terminal, the owner's release of a lease the fresh host does not know retries every drained removal, so the removal finishes in-session. E's restart fix is off here: with it, startup's own finalize succeeds and this retry is never needed."
     },
     {
       "id": "leases-persist-attempt",
@@ -653,12 +683,127 @@
       },
       "fair": true,
       "properties": [
-        "AttemptSettlesAfterTurn"
+        "AttemptEndsAfterTurn"
+      ],
+      "expect": "pass",
+      "finding": "A turn whose terminal state cannot be persisted stops holding the provider once its native run ends: its attempt stays undecided for reconciliation, its lease is released, and the drain no longer counts it (fixed; C attempt half)."
+    },
+    {
+      "id": "leases-persist-attempt-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE",
+        "PersistFailureEndsWait": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "AttemptEndsAfterTurn"
       ],
       "expect": {
-        "violated": "AttemptSettlesAfterTurn"
+        "violated": "AttemptEndsAfterTurn"
       },
-      "finding": "Open (C attempt half, PR 2): when a turn's terminal state cannot be persisted, its attempt stays running, which blocks the provider tombstone."
+      "finding": "Without it, a turn whose terminal state cannot be persisted leaves its attempt running, which blocks the provider tombstone until a restart."
+    },
+    {
+      "id": "leases-persist-attempt-forced",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE",
+        "RustCanAbandon": "TRUE",
+        "HarnessCanHang": "TRUE",
+        "UserCanStop": "TRUE"
+      },
+      "fair": true,
+      "properties": [
+        "AttemptEndsAfterTurn"
+      ],
+      "expect": "pass",
+      "finding": "A cancelled turn that ignored the cancellation and was force-stopped also stops holding the provider: its attempt ends even when its terminal state cannot be persisted. The turn is cancelled by Rust giving up or by the user's Stop."
+    },
+    {
+      "id": "leases-persist-attempt-forced-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE",
+        "RustCanAbandon": "TRUE",
+        "HarnessCanHang": "TRUE",
+        "UserCanStop": "TRUE",
+        "PersistFailureEndsWait": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "AttemptEndsAfterTurn"
+      ],
+      "expect": {
+        "violated": "AttemptEndsAfterTurn"
+      },
+      "finding": "Without C's attempt fix, a force-stopped turn whose terminal state cannot be persisted leaves its attempt running, so it keeps holding the provider."
+    },
+    {
+      "id": "leases-persist-removal",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE"
+      },
+      "fair": true,
+      "properties": [
+        "RemovalCompletes",
+        "DebtEventuallyReconciled"
+      ],
+      "expect": "pass",
+      "finding": "A removal waiting on a turn whose terminal state cannot be persisted finishes without a restart, and the ended attempt's lease is reconciled once (fixed; C)."
+    },
+    {
+      "id": "leases-persist-removal-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE",
+        "PersistFailureEndsWait": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "RemovalCompletes"
+      ],
+      "expect": {
+        "violated": "RemovalCompletes"
+      },
+      "finding": "Without it, that removal waits for a restart."
+    },
+    {
+      "id": "leases-startup-isolation",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "StartupCleanupCanFail": "TRUE",
+        "MaxRestarts": "2"
+      },
+      "invariants": [
+        "StartupSucceeds"
+      ],
+      "expect": "pass",
+      "finding": "A pending removal whose finalize or cleanup fails at startup for another reason is recorded and left for the next start; the app still starts (fixed; L6)."
+    },
+    {
+      "id": "leases-startup-isolation-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "StartupCleanupCanFail": "TRUE",
+        "MaxRestarts": "2",
+        "StartupIsolatesProviders": "FALSE"
+      },
+      "invariants": [
+        "StartupSucceeds"
+      ],
+      "expect": {
+        "violated": "StartupSucceeds"
+      },
+      "finding": "Without isolation, that failure rejects reconcileStartup and Relayer cannot start."
     },
     {
       "id": "leases-hang",
@@ -666,7 +811,24 @@
       "preset": "leases-today",
       "constants": {
         "HarnessCanHang": "TRUE",
-        "RustCanAbandon": "TRUE"
+        "RustCanAbandon": "TRUE",
+        "UserCanStop": "TRUE"
+      },
+      "fair": true,
+      "properties": [
+        "CancelledAccessEventuallyReleased"
+      ],
+      "expect": "pass",
+      "finding": "A cancelled native turn that ignores the cancellation is force-stopped after two minutes, and its access is then released (fixed; G; was: it kept its provider access forever)."
+    },
+    {
+      "id": "leases-hang-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "HarnessCanHang": "TRUE",
+        "RustCanAbandon": "TRUE",
+        "ForceStopsCancelledTurn": "FALSE"
       },
       "fair": true,
       "properties": [
@@ -675,7 +837,7 @@
       "expect": {
         "violated": "CancelledAccessEventuallyReleased"
       },
-      "finding": "Open (per-turn force-stop PR): a cancelled native turn that ignores the cancellation keeps its provider access forever."
+      "finding": "Without the per-turn force-stop, a cancelled native turn that ignores the cancellation keeps its provider access forever."
     },
     {
       "id": "catalog-refresh-keeps-chosen-default",
