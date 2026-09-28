@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir, readdir } from "node:fs/promises";
+import { cp, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,7 +10,7 @@ import {
   withPinnedLadybugPackagingEnvironment,
 } from "./pinned-ladybug-build.mjs";
 
-import { cachedBuild, installRuntime, packagingIdentity, packagingBuildEnvironment, timedStage } from "./build-cache.mjs";
+import { cachedBuild, installRuntime, packagingIdentity, packagingBuildEnvironment, timedStage, runtimeBinaryNames, validateRuntime } from "./build-cache.mjs";
 
 function run(command, args, options) {
   return new Promise((resolvePromise, reject) => {
@@ -44,7 +44,14 @@ export async function buildDevelopmentDesktop({
   // Recheck licensing even when compilation is reused; cache receipts grant no authority.
   if (target.key === "macos-arm64") await requireLicense();
   const outputDirectory = resolve(repositoryRoot, "target", target.rustTarget, "release");
-  const compile = () => withPinnedLadybugPackagingEnvironment({
+  const compile = async () => {
+    // CI can omit all compilation preparation after a verified runtime hit. If
+    // that entry disappears or becomes invalid before consumption, restore the
+    // locked dependency closure before entering the offline native build.
+    if (environment.RELAYER_PACKAGING_FETCH_ON_MISS === "1") {
+      await timedStage("fallback Cargo fetch", () => execute("cargo", ["fetch", "--locked", "--target", target.rustTarget], { cwd: repositoryRoot, env: environment }), environment);
+    }
+    return withPinnedLadybugPackagingEnvironment({
     environment, target,
     prepareLadybug: (options) => prepareLadybug({ ...options, cache }),
   }, (buildEnvironment, cargoIntegrityArguments) => timedStage("Cargo release", () => execute("cargo", [
@@ -54,6 +61,7 @@ export async function buildDevelopmentDesktop({
     "--target", target.rustTarget,
     ...cargoIntegrityArguments,
   ], { cwd: repositoryRoot, env: buildEnvironment }), environment));
+  };
   if (cache) {
     const payload = await timedStage("release runtime cache verify/build", () => cachedBuild({
       cacheRoot: cache.root, kind: "runtime", identity: cache.runtime,
@@ -61,12 +69,10 @@ export async function buildDevelopmentDesktop({
         await compile();
         try {
           await mkdir(destination, { recursive: true });
-          for (const name of ["relayer-app-server", "relayer-graph-server"]) await cp(join(outputDirectory, name), join(destination, name));
+          for (const name of runtimeBinaryNames) await cp(join(outputDirectory, name), join(destination, name));
         } catch { console.log("Packaging runtime cache write failed; using fresh Cargo output"); return false; }
       },
-      validate: async (directory) => {
-        if (JSON.stringify((await readdir(directory)).sort()) !== JSON.stringify(["relayer-app-server", "relayer-graph-server"])) throw new Error("runtime inventory mismatch");
-      },
+      validate: validateRuntime,
       fallback: async () => { await compile(); return null; },
     }), environment);
     if (payload) {

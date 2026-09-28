@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
+import { runCommand } from "./run-command.mjs";
 import { appendFileSync } from "node:fs";
 
 const [label, command, ...args] = process.argv.slice(2);
 if (!label || !command) throw new Error("Usage: run-timed.mjs <label> <command> [args...]");
 
 const startedAt = Date.now();
-const result = spawnSync(command, args, { stdio: "inherit", env: process.env });
+const result = runCommand(label, command, args);
 const elapsedSeconds = ((Date.now() - startedAt) / 1000).toFixed(1);
 const outcome = result.status === 0 ? "passed" : "failed";
 if (process.env.GITHUB_STEP_SUMMARY) {

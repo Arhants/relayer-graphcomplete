@@ -75,6 +75,11 @@ function workspace() {
     onExportConversation: desktop?.conversation?.export
       ? (threadId) => desktop.conversation.export(threadId)
       : null,
+    shareApi: desktop?.share && desktop?.account ? {
+      account: desktop.account,
+      share: desktop.share,
+      clipboard: navigator.clipboard,
+    } : null,
     onStopInteraction: (threadId, interactionId) => import("./threads.js").then(({ stopInteraction }) => stopInteraction(threadId, interactionId)),
     onSubmitInteraction: (
       text,
