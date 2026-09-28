@@ -965,24 +965,65 @@ export class ProviderDefinitionService {
     return true;
   }
 
+  /**
+   * Finishes removals and cleanup left by the previous run. Each pending removal is attempted
+   * on its own, and credential and runtime-state cleanup run even if one fails. A failure is
+   * recorded, never thrown, so it cannot stop Relayer from starting or other providers from
+   * activating. A removal that fails or is deferred before its tombstone stays pending for the
+   * next start; cleanup that fails after the tombstone is swept by the next start's cleanup.
+   */
   async reconcileStartup() {
     return this.#serialized(async () => {
       await this.#initialize();
       for (const definition of this.definitions.filter(({ lifecycleState }) => lifecycleState === "removal_pending")) {
-        await this.#finalizeRemoval(definition);
+        try {
+          if (!await this.#finalizeRemoval(definition)) {
+            await this.#recordStartupCleanupFailure("provider_removal_startup_deferred", null, definition.id, definition.adapterId);
+          }
+        } catch (error) {
+          await this.#recordStartupCleanupFailure("provider_removal_startup_failed", error, definition.id, definition.adapterId);
+        }
       }
-      await this.removeRuntimeState.reconcile?.(this.definitions);
+      try {
+        await this.removeRuntimeState.reconcile?.(this.definitions);
+      } catch (error) {
+        await this.#recordStartupCleanupFailure("provider_runtime_state_startup_cleanup_failed", error);
+      }
       if (typeof this.credentialStore.listReferences === "function") {
         const retained = new Set(this.definitions.flatMap((definition) => (
           definition.lifecycleState !== "tombstoned" && definition.credentialReference
             ? [definition.credentialReference]
             : []
         )));
-        for (const reference of await this.credentialStore.listReferences()) {
-          if (!retained.has(reference)) await this.credentialStore.delete(reference);
+        let references = [];
+        try {
+          references = await this.credentialStore.listReferences();
+        } catch (error) {
+          await this.#recordStartupCleanupFailure("provider_credential_startup_cleanup_failed", error);
+        }
+        for (const reference of references) {
+          if (retained.has(reference)) continue;
+          try {
+            await this.credentialStore.delete(reference);
+          } catch (error) {
+            await this.#recordStartupCleanupFailure(
+              "provider_credential_startup_cleanup_failed",
+              error,
+              reference.startsWith("provider:") ? reference.slice("provider:".length) : null,
+            );
+          }
         }
       }
     });
+  }
+
+  async #recordStartupCleanupFailure(category, error, providerId = null, adapterId = null) {
+    await this.diagnostics?.write({
+      category,
+      ...(providerId === null ? {} : { providerId }),
+      ...(adapterId === null ? {} : { adapterId }),
+      ...(error === null ? {} : providerDiagnosticDetails(error)),
+    }).catch(() => undefined);
   }
 
   async close() {

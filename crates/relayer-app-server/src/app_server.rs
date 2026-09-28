@@ -815,12 +815,15 @@ impl RelayerAppServer {
             reconciler.schedule();
             reconciler
         });
+        // Children the harness no longer runs end before the server serves Desktop, so its
+        // startup removal finalize does not wait on them; the rest wait in the background.
         if let Some(runtime) = runtime.clone() {
-            tokio::spawn(api::threads::resume_unwinding_recursive_children(
+            api::threads::resume_unwinding_recursive_children(
                 product.clone(),
                 runtime,
                 execution_lease_reconciler.clone(),
-            ));
+            )
+            .await;
         }
         Ok(Self {
             product,

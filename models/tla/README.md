@@ -288,23 +288,31 @@ thread. Most checks use one turn and at most one restart; `leases-safety`
 and `leases-ideal` use two turns.
 
 Fault constants turn on the conditions the findings need:
-`AdmissionTimeout`, `RustCanAbandon`, `PersistCanFail`, `StartupQuarantine`
-and `HarnessCanHang`. Each fix has its own constant. The open findings have
-none yet, so the model follows today's code for them.
+`AdmissionTimeout`, `RustCanAbandon`, `PersistCanFail`, `StartupQuarantine`,
+`StartupCleanupCanFail` and `HarnessCanHang`. Each fix has its own constant.
+The open finding G has none yet, so the model follows today's code for it.
+
+An attempt has four states: `none`, `running`, `ended` and `terminal`.
+`ended` is an undecided attempt that Relayer no longer waits on
+(`native_wait_ended_at`). It keeps its outcome open for reconciliation, but
+the removal drain skips it and its lease is debt. Live native work is still
+guarded by the held lease (`jsHeld`), which the host releases only when the
+turn settles.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
 | `leases-safety` | passes | With every fault on, a leased runtime stays open, a turn runs only under held access, access is never released while its turn runs (`AccessKeptWhileTurnRuns`), and the app always starts. |
-| `leases-ideal` | passes | With no faults, every lease is released, every lease debt is reconciled, every attempt whose turn ended becomes terminal, and a removal completes without a restart. |
+| `leases-ideal` | passes | With no faults, every lease is released, every lease debt is reconciled, every attempt whose turn ended stops holding the provider, and a removal completes without a restart. |
 | `leases-abandon` | Fixed; now passes | Finding B. Before the fix: after Rust gave up on a running turn, its lease release freed the access while the native turn still ran. Removal could then close the runtime and delete its home under it. Now access lives as long as the native turn. An owner's release of a running turn cancels the turn and returns at once. The host releases the access as soon as the native turn ends, and keeps the entry until the owner's release (`HostReleasesOnSettle`). `leases-abandon-reverted` shows the old trace. |
 | `leases-timer-claim` | Fixed; now passes | Finding A, plausible: needs a 30 s stall. Before the fix: the admission timer's release could be in flight when the claim ran, and it then freed the access under the running turn. Once any release is decided for an admission, the claim refuses it, even if that release failed (`ClaimRejectsReleasing`). `leases-timer-claim-reverted` shows the old trace. `leases-claim-after-failed-release` covers a failed release. It turns A2's fix off, because a refused finalize is the only way the model has for a release to fail. |
 | `leases-removal-finalize` | Fixed in PR 1; now passes | Finding A2. The host releases the last lease when the native turn ends, before Rust ends the attempt, so the store refuses the removal finalize. The refusal now leaves `P` `removal_pending` instead of throwing. The owner's release, which Rust sends only once the attempt is terminal, acknowledges the lease, and the acknowledgement retries the finalize (`AckRetriesFinalize`). `leases-removal-finalize-reverted` shows removal waiting for a restart without it. |
-| `leases-view-debt` | Fixed; now passes | Finding D. Before the fix: settling a quarantined attempt (from the thread view or an invoke action's destination) made lease debt but did not wake the reconciler. The debt then waited for a restart. The settle now wakes it (`QuarantineSettleWakesReconciler`). `leases-view-debt-reverted` shows the old trace. |
-| `leases-persist-lease` | Fixed; now passes | Finding C, lease half. Before the fix: when a turn's terminal state could not be persisted, nothing released its lease. The host now releases it when the native turn ends. `leases-persist-lease-reverted` shows the old trace. |
-| `leases-restart-quarantine`, `leases-restart-persist` | Fixed; now pass | Finding E, startup half. A removal waited on a running attempt, and the user quit. At the next start, an interrupted submitted input was quarantined, or a failed persist had left it quarantined, so its attempt stayed `running`. `reconcileStartup`'s refused finalize then failed every start. A refused finalize now leaves `P` `removal_pending`, and the app starts. `leases-restart-quarantine-reverted` shows the old trace. |
-| `leases-restart-drained-removal` | Fixed; now passes | Finding E, removal half. After that restart, once the quarantined attempt becomes terminal, the reconciler's release finds no host entry, because host memory is fresh. A release for a lease the host no longer tracks retries every drained removal (`UnknownReleaseRetriesFinalize`), so the removal finishes without another restart. The same path covers access the host forgot ten minutes after releasing it. `leases-forgotten-release-reverted` shows removal waiting for a restart without it. |
-| `leases-restart-removal` | Confirmed, open, PR #545 | After that restart, the quarantined attempt stays `running` until its thread is opened or the app restarts again. Opening the thread is a user action, so the removal can stay pending meanwhile. PR #545 marks such attempts ended at restart. |
-| `leases-persist-attempt` | Confirmed, open, PR 2 | Finding C, attempt half. When a turn's terminal state cannot be persisted, its attempt stays `running`, which blocks the provider tombstone. A harness approval that is aborted, expired or cancelled reaches this with no fault. |
+| `leases-view-debt` | Fixed; now passes | Finding D. Before the fix: settling a quarantined attempt (from the thread view or an invoke action's destination) made lease debt but did not wake the reconciler. The debt then waited for a restart. The settle now wakes it (`QuarantineSettleWakesReconciler`). `leases-view-debt-reverted` shows the old trace with C's fix off, because C now releases the lease before the settle. |
+| `leases-persist-lease` | Fixed; now passes | Finding C, lease half. Before the fix: when a turn's terminal state could not be persisted, nothing released its lease. The host now releases it when the native turn ends. `leases-persist-lease-reverted` shows the old trace with C's attempt fix off, because that fix also releases the lease. |
+| `leases-restart-quarantine`, `leases-restart-persist` | Fixed; now pass | Finding E, startup half. A removal waited on a running attempt, and the user quit. At the next start, an interrupted submitted input was quarantined, or a failed persist had left it quarantined, so its attempt stayed `running`. `reconcileStartup`'s refused finalize then failed every start. A refused finalize now leaves `P` `removal_pending`, and the app starts. `leases-restart-quarantine-reverted` shows the old trace with E's removal fix off, because that fix stops the refusal. |
+| `leases-restart-drained-removal` | Fixed; now passes | Finding E, retry half. After that restart, once the quarantined attempt becomes terminal, the reconciler's release finds no host entry, because host memory is fresh. A release for a lease the host no longer tracks retries every drained removal (`UnknownReleaseRetriesFinalize`), so the removal finishes without another restart. The same path covers access the host forgot ten minutes after releasing it. The check turns E's restart fix off, because with it startup's own finalize succeeds and the retry is never needed. `leases-forgotten-release-reverted` shows removal waiting for a restart without the retry. |
+| `leases-restart-removal` | Fixed in PR #545; now passes | Finding E, removal half. Before the fix: after that restart, the quarantined attempt stayed `running` until its thread was opened or the app restarted again. Opening the thread is a user action, so the removal could stay pending meanwhile. Startup now records the end of the wait on the attempts it leaves open for reconciliation, since their process exited with the app (`RestartEndsWaits`). The drain skips them, so startup's finalize succeeds. `leases-restart-removal-reverted` shows the old trace. |
+| `leases-persist-attempt`, `leases-persist-removal` | Fixed in PR #545; now pass | Finding C, attempt half. Before the fix: when a turn's terminal state could not be persisted, its attempt stayed `running`, which blocked the provider tombstone until a restart. A harness approval that is aborted, expired or cancelled reached this with no fault (`Persist` with `q = "decided"`). The execution task now ends its wait on any attempt it leaves running and releases its lease (`PersistFailureEndsWait`). An attempt whose interaction already failed or stopped ends with that outcome; a quarantined one stays undecided. The owner's release acknowledges the access, which retries the finalize. The `-reverted` checks show the old traces. |
+| `leases-startup-isolation` | Fixed in PR #545; now passes | Finding L6. Before the fix: a removal or cleanup failure other than a drain refusal rejected `reconcileStartup`, so Relayer could not start. Startup now records each provider's failure and continues (`StartupIsolatesProviders`). `leases-startup-isolation-reverted` shows the old trace. The model has one provider, so "other providers still activate" is covered by the composition test, not the model. |
 | `leases-hang` | Confirmed (missing feature), open | Finding G. A cancelled native turn that ignores the cancellation keeps its provider access forever, so removal waits forever. A per-turn force-stop is planned for a later PR. |
 
 The fixes are:
@@ -319,11 +327,23 @@ The fixes are:
    (`QuarantineSettleWakesReconciler`). Landed.
 5. A release for a lease the host no longer tracks retries every drained
    removal (`UnknownReleaseRetriesFinalize`). Landed.
+6. An execution task that stops waiting on a native run without persisting
+   its outcome ends the attempt with a decided interaction outcome, or records
+   the end of the wait, and releases the lease (`PersistFailureEndsWait`).
+   PR #545.
+7. Startup records the end of the wait on attempts it leaves open for
+   reconciliation (`RestartEndsWaits`). PR #545.
+8. Startup isolates each provider's removal and cleanup failure
+   (`StartupIsolatesProviders`). PR #545.
 
 The `*-reverted` checks turn one landed fix off and show its old trace. In
 them the acknowledgement call is attributed to `AckRetriesFinalize`, so a
-reverted `HostReleasesOnSettle` still acknowledges. The open findings C and
-E have no fix constants yet. Startup error isolation (L6) is not modeled.
+reverted `HostReleasesOnSettle` still acknowledges. A reverted check turns
+off any other fix that would hide its trace, and says so in its finding.
+Recursive children unwinding across a restart are modeled in
+`CompletionCurrent`, not here. Neither model orders startup's one observation
+of those children before Desktop's startup removal; the product persistence
+and completion trace tests cover that ordering.
 A release and its acknowledgement are one step, and acknowledgements do not
 fail in the model, so the host's retry of a failed acknowledgement is not
 modeled. The ten-minute forget of access released without an owner is
