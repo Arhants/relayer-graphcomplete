@@ -9,6 +9,7 @@ pub(crate) mod input_children;
 pub(crate) mod layers;
 pub(crate) mod migrations;
 pub(crate) mod nodes;
+pub(crate) mod permissions;
 pub(crate) mod personal_presentation;
 pub(crate) mod search_index;
 

@@ -1,0 +1,36 @@
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/permissions-merge-ready/relayer-graphcomplete
+
+ ❯ |isolated| test/evidence-capture-integrity.test.mjs (130 tests | 1 failed | 129 skipped) 311ms
+     × runs the real graph client with exact-port IPv4 egress while excluding inherited provider secrets 310ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |isolated| test/evidence-capture-integrity.test.mjs > evidence capture integrity > runs the real graph client with exact-port IPv4 egress while excluding inherited provider secrets
+AssertionError: {"status":1,"stdout":"","stderr":"node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\n[TypeError: fetch failed] {\n  [cause]: Error: connect ERR_ACCESS_DENIED Access to this API has been restricted. Use --allow-net to manage permissions.\n      at internalConnect (node:net:1169:16)\n      at defaultTriggerAsyncIdScope (node:internal/async_hooks:473:12)\n      at node:net:1415:9\n      at process.processTicksAndRejections (node:internal/process/task_queues:85:11) {\n    errno: Error: Access to this API has been restricted. Use --allow-net to manage permissions.\n        at internalConnect (node:net:1150:26)\n        at defaultTriggerAsyncIdScope (node:internal/async_hooks:473:12)\n        at node:net:1415:9\n        at process.processTicksAndRejections (node:internal/process/task_queues:85:11) {\n      code: 'ERR_ACCESS_DENIED',\n      permission: 'Net',\n      resource: '127.0.0.1'\n    },\n    code: 'ERR_ACCESS_DENIED',\n    syscall: 'connect',\n    address: '127.0.0.1',\n    port: 60003\n  }\n}\n\nNode.js v26.0.0\n"}: expected { status: 1, stdout: '', …(1) } to match object { status: +0 }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "status": 0,
++   "status": 1,
+  }
+
+ ❯ test/evidence-capture-integrity.test.mjs:2074:46
+    2072|         child.stdin.end(program);
+    2073|       });
+    2074|       expect(result, JSON.stringify(result)).toMatchObject({ status: 0…
+       |                                              ^
+    2075|       expect(result.stderr).not.toContain("provider secret leaked");
+    2076|       expect(result.stdout.trim().split(",").filter((name) => name !==…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 129 skipped (130)
+   Start at  15:15:20
+   Duration  533ms (transform 61ms, setup 0ms, import 112ms, tests 311ms, environment 0ms)
+

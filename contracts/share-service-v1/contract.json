@@ -41,6 +41,14 @@
     "quota": {
       "responseRequired": ["used", "limit", "resetAt"]
     },
+    "embed": {
+      "responseMediaType": "text/html; charset=utf-8",
+      "cacheControl": "no-store",
+      "frameAncestors": ["https://relayerlabs.ai", "https://www.relayerlabs.ai"],
+      "themeOptions": ["system", "light", "dark"],
+      "requiredPinnedTemplateEmbedVersion": 1,
+      "unavailableMessage": "This shared graph is unavailable"
+    },
     "view": {
       "responseMediaType": "text/html; charset=utf-8",
       "cacheControl": "no-store",
@@ -61,6 +69,7 @@
     { "method": "GET", "path": "/shares/quota", "authentication": "bearer", "operation": "quota" },
     { "method": "GET", "path": "/shares/{shareId}", "authentication": "bearer", "operation": "read-owned" },
     { "method": "GET", "path": "/t/{shareId}", "authentication": "public", "operation": "view" },
+    { "method": "GET", "path": "/t/{shareId}/embed", "authentication": "public", "operation": "embed" },
     { "method": "GET", "path": "/t/{shareId}/install", "authentication": "public", "operation": "install" }
   ],
   "stableErrors": {

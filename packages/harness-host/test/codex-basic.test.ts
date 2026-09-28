@@ -54,7 +54,7 @@ describe("CodexBasicHarness", () => {
     const codexProviderPrompt = buildLayeredNavigationPrompt(personalPresentationRunContext(true), "@relayer/graph-client", undefined, false);
 
     expect(neutral).toBe(baseline);
-    for (const fragment of ["html`", "css`", "detailCapability", "setComponent", "checkpointNodeDetail", "submitNode", "graph.addAction"]) {
+    for (const fragment of ["html`", "css`", "detailCapability", "setComponent", "checkpointNodeDetail", "submitNode", "graph.addAction", "graph.bindNode", "do not copy a whole explanation across siblings", "const common = css", "evidence.detailAuthoring.setComponent"]) {
       expect(visualTreatment).toContain(fragment);
     }
     expect(treatment).toContain("Personal graph presentation preferences:");
