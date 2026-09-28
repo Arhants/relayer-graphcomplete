@@ -134,10 +134,10 @@
       "preset": "providers",
       "invariants": [
         "TypeOK",
-        "DefaultFamilyIsLiveOrInRecovery"
+        "DefaultFamilyIsLiveOrManagedByActiveProvider"
       ],
       "expect": "pass",
-      "finding": "The default family is live, or P's managed family in recovery while P stays active: after a no-eligible refresh, whether P stays connected or disconnects (decided; PROV-008 Q15). Custom defaults are never broken."
+      "finding": "The default family is live, or P's managed family while P is active, as after a no-eligible refresh whether P stays connected or disconnects (decided; PROV-008 Q15). The enabled choice and the recovery cause are checked by the Rust tests, not this model."
     },
     {
       "id": "completion-safety-holds",

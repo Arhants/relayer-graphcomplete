@@ -97,8 +97,8 @@ function workspace() {
       inputIdentityRevision,
       inputDraftRevision,
     )),
-    onOpenSettings: () => {
-      setSettingsTab("models");
+    onOpenSettings: (tab = "models") => {
+      setSettingsTab(tab);
       document.querySelector("#settingsButton")?.click();
     },
     onRefreshModels: providerModelsRefreshAction(),

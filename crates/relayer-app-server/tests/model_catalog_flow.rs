@@ -1095,6 +1095,24 @@ async fn a_disabled_managed_family_stays_disabled_through_a_zero_eligible_refres
         .unwrap()
         .remove("systemFamily");
     publish(zero_eligible).await;
+    // The refresh did tombstone Work's family; only the user's disable keeps it out of recovery.
+    let pool = sqlite_pool(&database).await;
+    let row: (String, bool, Option<String>) = sqlx::query_as(
+        "SELECT lifecycle_state,enabled,tombstone_cause FROM model_families WHERE id=?1",
+    )
+    .bind(work_family)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+    assert_eq!(
+        row,
+        (
+            "tombstoned".into(),
+            false,
+            Some("no_eligible_models".into())
+        )
+    );
     let tombstoned = settings().await;
     assert_eq!(tombstoned["familiesNeedingModelSetup"], json!([]));
     assert_eq!(validate().await, "model_family_disabled");
@@ -1109,6 +1127,166 @@ async fn a_disabled_managed_family_stays_disabled_through_a_zero_eligible_refres
         .unwrap();
     assert_eq!(family["enabled"], false);
     assert_eq!(validate().await, "model_family_disabled");
+
+    // A deleted custom family is removed. Validate now gives the code execution already gave;
+    // before PROV-008 it said the family was disabled.
+    let custom = response_json(
+        send(
+            "POST",
+            "/api/model-families",
+            Some(json!({
+                "name": "short-lived",
+                "members": [{ "providerId": "codex", "modelId": "gpt-5.6-sol" }],
+            })),
+        )
+        .await,
+    )
+    .await["id"]
+        .as_i64()
+        .unwrap();
+    assert_eq!(
+        send("DELETE", &format!("/api/model-families/{custom}"), None)
+            .await
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    let deleted = send(
+        "POST",
+        "/api/model-selection/validate",
+        Some(json!({
+            "harnessId": "codex-basic",
+            "familyId": custom,
+            "providerId": "codex",
+            "modelId": "gpt-5.6-sol",
+        })),
+    )
+    .await;
+    assert_eq!(response_json(deleted).await["code"], "model_family_removed");
+}
+
+// PROV-008: only the family the latest zero-eligible refresh kept is in recovery, whatever its id.
+// A policy upgrade replaces family A with B, B is kept by a zero-eligible refresh, then the policy
+// reverts and A becomes the default again. B is superseded and never shows as in recovery; A is
+// the family a later zero-eligible refresh keeps.
+#[tokio::test]
+async fn after_a_policy_revert_the_restored_family_is_the_one_in_recovery() {
+    const RECOVERY: &str = "provider_no_eligible_execution_models";
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-policy-revert-recovery-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
+    let database = root.join("product.sqlite3");
+    let app = open_app(&database, &root).await;
+    configure_codex_policy(&database).await;
+    let send = |method: &str, uri: &str, body: Option<Value>| {
+        let request = if uri.starts_with("/api/internal/") {
+            bearer_request(method, uri, body)
+        } else {
+            cookie_request(method, uri, body)
+        };
+        let app = app.clone();
+        async move { app.oneshot(request).await.unwrap() }
+    };
+    let publish = |snapshot: Value| {
+        let response = send("PUT", "/api/internal/provider-catalog", Some(snapshot));
+        async move {
+            assert_eq!(response.await.status(), StatusCode::NO_CONTENT);
+        }
+    };
+    let settings = || {
+        let response = send("GET", "/api/model-settings", None);
+        async move { response_json(response.await).await }
+    };
+    let policy_version = |version: i64| {
+        let database = database.clone();
+        async move {
+            let pool = sqlite_pool(&database).await;
+            sqlx::query("UPDATE product_harnesses SET family_policy_version=?1 WHERE configuration_name='codex-basic'")
+                .bind(version)
+                .execute(&pool)
+                .await
+                .unwrap();
+            pool.close().await;
+        }
+    };
+    // Hidden models are eligible under no Codex policy version.
+    let none_eligible = || {
+        let mut snapshot = provider_snapshot(None);
+        for model in snapshot["models"].as_array_mut().unwrap() {
+            model["providerDefault"] = json!(false);
+            model["visible"] = json!(false);
+        }
+        snapshot.as_object_mut().unwrap().remove("systemFamily");
+        snapshot
+    };
+    let disconnected = || {
+        json!({
+            "providerId": "codex",
+            "label": "Codex",
+            "connected": false,
+            "connectionGeneration": 1,
+            "models": [],
+        })
+    };
+
+    publish(provider_snapshot(None)).await;
+    let pool = sqlite_pool(&database).await;
+    sqlx::query("UPDATE product_harnesses SET available=1,unavailable_reason_code=NULL,unavailable_reason_message=NULL WHERE configuration_name='codex-basic'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+    let family_a = settings().await["defaults"]["familyId"].as_i64().unwrap();
+    policy_version(2).await;
+    publish(provider_snapshot(None)).await;
+    let family_b = settings().await["defaults"]["familyId"].as_i64().unwrap();
+    assert!(family_b > family_a);
+    publish(none_eligible()).await;
+    assert_eq!(
+        settings().await["defaultFamilyRecovery"]["familyId"],
+        family_b
+    );
+
+    // The policy reverts. A is the default again, and B is superseded.
+    policy_version(1).await;
+    publish(provider_snapshot(None)).await;
+    let reverted = settings().await;
+    assert_eq!(reverted["defaults"]["familyId"], family_a);
+    assert_eq!(reverted["familiesNeedingModelSetup"], json!([]));
+    // A disconnect now leaves nothing in recovery: A is live and B is not kept.
+    publish(disconnected()).await;
+    assert_eq!(settings().await["familiesNeedingModelSetup"], json!([]));
+
+    // A later zero-eligible refresh keeps A, the default, and only A.
+    publish(none_eligible()).await;
+    let recovering = settings().await;
+    assert_eq!(recovering["defaultFamilyRecovery"]["familyId"], family_a);
+    assert_eq!(
+        recovering["familiesNeedingModelSetup"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|family| family["familyId"].as_i64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![family_a]
+    );
+    let validate = |family_id: i64| {
+        let response = send(
+            "POST",
+            "/api/model-selection/validate",
+            Some(json!({
+                "harnessId": "codex-basic",
+                "familyId": family_id,
+                "providerId": "codex",
+                "modelId": "gpt-5.6-sol",
+            })),
+        );
+        async move { response_json(response.await).await["code"].clone() }
+    };
+    assert_eq!(validate(family_a).await, RECOVERY);
+    // B is superseded, not in recovery. Its models are hidden, so that is what validate reports.
+    assert_ne!(validate(family_b).await, RECOVERY);
 }
 
 /// Compares a real /api/model-settings response with the fixture the renderer tests read.

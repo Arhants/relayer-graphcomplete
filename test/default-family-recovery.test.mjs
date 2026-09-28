@@ -170,12 +170,15 @@ describe("default family that needs model setup (PROV-008)", () => {
   });
 
   it("offers Open Settings instead of a refresh the host cannot run", () => {
-    const { root, picker } = mountPicker(recovering(), { onRefreshModels: null });
+    const onOpenSettings = vi.fn();
+    const { root, picker } = mountPicker(recovering(), { onRefreshModels: null, onOpenSettings });
     picker.open();
     const panel = root.querySelector('[data-model-picker-panel="model"]');
     expect(panel.textContent).toContain("Needs model setup");
     expect(panel.querySelector("[data-model-picker-refresh]")).toBeNull();
-    expect(panel.querySelector("[data-model-picker-settings]")).not.toBeNull();
+    panel.querySelector("[data-model-picker-settings]").click();
+    // The Settings defaults show the recovery and the other providers to choose from.
+    expect(onOpenSettings).toHaveBeenCalledExactlyOnceWith("models");
     picker.dispose();
   });
 
@@ -206,7 +209,8 @@ describe("default family that needs model setup (PROV-008)", () => {
     const open = panel.querySelector("[data-model-picker-settings]");
     expect(open.getAttribute("aria-label")).toBe("Reconnect Codex in Settings");
     open.click();
-    expect(onOpenSettings).toHaveBeenCalledOnce();
+    // A reconnect happens on the provider's card, under Providers.
+    expect(onOpenSettings).toHaveBeenCalledExactlyOnceWith("providers");
     expect(onRefreshModels).not.toHaveBeenCalled();
     picker.dispose();
 
@@ -353,6 +357,11 @@ describe("default family that needs model setup (PROV-008)", () => {
     expect(workspace).toContain("send.title = composerSendTitle({");
     expect(threads).toContain('$("#createThread").title = composerSendTitle({');
     expect(main).toContain("setProviderModelsRefreshedHandler(");
+    // Picker "Open Settings" opens the tab the recovery needs.
+    for (const opener of [graph, main]) {
+      expect(opener).toContain('onOpenSettings: (tab = "models") => {');
+      expect(opener).toContain("setSettingsTab(tab);");
+    }
   });
 });
 
@@ -422,8 +431,11 @@ describe("Settings default section recovery (PROV-008)", () => {
     const button = document.querySelector("#refreshDefaultFamilyModels");
     expect(button.textContent).toBe("Open Providers");
     expect(button.getAttribute("aria-label")).toBe("Reconnect Codex under Providers");
+    button.focus();
     button.click();
     expect(opened).toHaveBeenCalledOnce();
     expect(refresh).not.toHaveBeenCalled();
+    // Focus leaves the Models tab with the user, instead of staying on a hidden button.
+    expect(document.activeElement).toBe(providersTab);
   });
 });

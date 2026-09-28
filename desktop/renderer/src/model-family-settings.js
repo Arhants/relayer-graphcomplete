@@ -608,7 +608,13 @@ async function refreshDefaultFamilyModels() {
   if (!recovery || refreshingDefaultFamily || savingDefaults) return;
   // A disconnected provider is reconnected from its card under Providers.
   if (recovery.action === "providers") {
-    $('[data-settings-tab="providers"]')?.click();
+    const providersTab = $('[data-settings-tab="providers"]');
+    providersTab?.click();
+    // The recovery button is now hidden with the Models tab. Focus goes to the provider's
+    // Reconnect action when its card offers one, otherwise to the Providers tab.
+    const reconnect = $$("[data-provider-reconnect]")
+      .find((button) => button.dataset.providerReconnect === String(recovery.providerId));
+    (reconnect ?? providersTab)?.focus();
     return;
   }
   const refreshButton = $("#refreshDefaultFamilyModels");

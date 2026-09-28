@@ -6,10 +6,14 @@ ALTER TABLE model_families
 ADD COLUMN tombstone_cause TEXT
 CHECK (tombstone_cause IS NULL OR tombstone_cause = 'no_eligible_models');
 
--- Families already in that recovery state: the provider's latest managed family, tombstoned
--- while its connected provider reports no eligible models. Earlier builds cleared `enabled` when
--- tombstoning and set it again on restore, so the user's choice is unknown; restore it as enabled,
--- which is what the next eligible refresh did before.
+-- Families already in that recovery state. A provider's managed families were all tombstoned by
+-- a zero-eligible refresh when it has no active managed family left while it is active: policy
+-- retirement always leaves a successor active. The kept family is the one retired last (then the
+-- newer id), not simply the newest id, which after a policy revert can be a superseded family.
+-- The provider is connected and still reports no eligible models, or has disconnected since,
+-- which overwrote that reason. Earlier builds cleared `enabled` when tombstoning and set it again
+-- on restore, so the user's choice is unknown; restore it as enabled, which is what the next
+-- eligible refresh did before.
 UPDATE model_families
 SET tombstone_cause = 'no_eligible_models', enabled = 1
 WHERE kind = 'system'
@@ -19,11 +23,20 @@ WHERE kind = 'system'
     SELECT 1 FROM model_providers owner
     WHERE owner.id = model_families.managed_provider_id
       AND owner.lifecycle_state = 'active'
-      AND owner.connected = 1
-      AND owner.unavailable_reason_code = 'provider_no_eligible_execution_models'
+      AND (
+        owner.connected = 0
+        OR owner.unavailable_reason_code = 'provider_no_eligible_execution_models'
+      )
   )
   AND NOT EXISTS (
-    SELECT 1 FROM model_families newer
-    WHERE newer.managed_provider_id = model_families.managed_provider_id
-      AND newer.id > model_families.id
+    SELECT 1 FROM model_families live
+    WHERE live.managed_provider_id = model_families.managed_provider_id
+      AND live.lifecycle_state = 'active'
+  )
+  AND id = (
+    SELECT kept.id FROM model_families kept
+    WHERE kept.managed_provider_id = model_families.managed_provider_id
+      AND kept.lifecycle_state = 'tombstoned'
+    ORDER BY CAST(kept.removed_at AS INTEGER) DESC, kept.id DESC
+    LIMIT 1
   );

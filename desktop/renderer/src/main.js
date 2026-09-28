@@ -426,8 +426,8 @@ async function boot() {
         updateCreateThreadAvailability();
         updateTutorialAvailability();
       },
-      onOpenSettings: () => {
-        setSettingsTab("models");
+      onOpenSettings: (tab = "models") => {
+        setSettingsTab(tab);
         $("#settingsButton").click();
       },
     });

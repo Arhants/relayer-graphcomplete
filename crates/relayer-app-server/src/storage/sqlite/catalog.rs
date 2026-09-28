@@ -30,14 +30,26 @@ const PROVIDER_DISCONNECTED_RECOVERY_CODE: &str = "provider_disconnected";
 const PROVIDER_DISCONNECTED_RECOVERY_MESSAGE: &str =
     "This model family's provider is not connected. Reconnect it in Settings.";
 
-/// SQL over a `model_families` row aliased `f`: true for a provider's latest managed family while
-/// a zero-eligible refresh keeps it tombstoned for recovery (PROV-008). The user has not disabled
-/// it, and its provider is active: either connected and still reporting no eligible models, or
-/// disconnected since. The recovery reason follows the provider.
+/// SQL over a `model_families` row aliased `f`: true for the managed family a zero-eligible
+/// refresh keeps tombstoned for recovery (PROV-008). A provider has at most one such family:
+/// every restore or replacement clears the cause on its other managed families, so the cause,
+/// not the highest id, names it. The user has not disabled it, and its provider is active:
+/// either connected and still reporting no eligible models, or disconnected since. The recovery
+/// reason follows the provider.
 macro_rules! family_in_recovery_sql {
     () => {
-        "(f.kind='system' AND f.managed_provider_id IS NOT NULL AND f.lifecycle_state='tombstoned' AND f.tombstone_cause='no_eligible_models' AND f.enabled=1 AND EXISTS(SELECT 1 FROM model_providers owner WHERE owner.id=f.managed_provider_id AND owner.lifecycle_state='active' AND (owner.connected=0 OR owner.unavailable_reason_code='provider_no_eligible_execution_models')) AND NOT EXISTS(SELECT 1 FROM model_families newer WHERE newer.managed_provider_id=f.managed_provider_id AND newer.id>f.id))"
+        "(f.kind='system' AND f.managed_provider_id IS NOT NULL AND f.lifecycle_state='tombstoned' AND f.tombstone_cause='no_eligible_models' AND f.enabled=1 AND EXISTS(SELECT 1 FROM model_providers owner WHERE owner.id=f.managed_provider_id AND owner.lifecycle_state='active' AND (owner.connected=0 OR owner.unavailable_reason_code='provider_no_eligible_execution_models')))"
     };
+}
+
+/// Why a provider's active managed families are tombstoned.
+#[derive(Clone, Copy)]
+enum ManagedFamilyTombstone {
+    /// A refresh found no eligible execution models. The family is kept for recovery with the
+    /// user's enabled choice (PROV-008).
+    NoEligibleModels,
+    /// The provider is being removed. Its families are retired, disabled, with no cause.
+    ProviderRemoval,
 }
 
 impl SqliteProductStore {
@@ -221,8 +233,12 @@ impl SqliteProductStore {
                 }
                 if old_state == "active" && definition.lifecycle_state == "removal_pending" {
                     guard_provider_removal(&mut transaction, definition.id.as_str()).await?;
-                    tombstone_managed_provider_families(&mut transaction, definition.id.as_str())
-                        .await?;
+                    tombstone_managed_provider_families(
+                        &mut transaction,
+                        definition.id.as_str(),
+                        ManagedFamilyTombstone::ProviderRemoval,
+                    )
+                    .await?;
                 }
                 if old_state == "removal_pending" && definition.lifecycle_state == "tombstoned" {
                     // An undecided attempt Relayer no longer waits on does not count; its outcome
@@ -860,8 +876,12 @@ impl SqliteProductStore {
                 .as_ref()
                 .is_some_and(|reason| reason.code == "provider_no_eligible_execution_models")
         {
-            tombstone_managed_provider_families(&mut transaction, snapshot.provider_id.as_str())
-                .await?;
+            tombstone_managed_provider_families(
+                &mut transaction,
+                snapshot.provider_id.as_str(),
+                ManagedFamilyTombstone::NoEligibleModels,
+            )
+            .await?;
         }
         transaction.commit().await?;
         Ok(())
@@ -2719,6 +2739,15 @@ async fn replace_system_family(
             ModelFamilyId::from_database(result.last_insert_rowid())
         }
     };
+    // Only the family a zero-eligible refresh kept can be in recovery. Once the provider has an
+    // active managed family again, no other family of that provider is kept (PROV-008).
+    sqlx::query(
+        "UPDATE model_families SET tombstone_cause=NULL WHERE managed_provider_id=?1 AND id<>?2",
+    )
+    .bind(snapshot.provider_id.as_str())
+    .bind(id.value())
+    .execute(&mut *connection)
+    .await?;
     replace_family_members(connection, id, &members).await?;
     compact_family_positions(connection).await?;
     // Move only an unset or managed default. A user-owned custom family is never replaced by
@@ -2843,12 +2872,31 @@ async fn rewrite_family_positions(
 async fn tombstone_managed_provider_families(
     connection: &mut SqliteConnection,
     provider_id: &str,
+    cause: ManagedFamilyTombstone,
 ) -> Result<(), StorageError> {
-    // Kept for recovery (PROV-008): the cause is recorded and `enabled` stays the user's choice.
-    sqlx::query("UPDATE model_families SET lifecycle_state='tombstoned',tombstone_cause='no_eligible_models',removed_at=CAST(strftime('%s','now') AS TEXT) WHERE managed_provider_id=?1 AND lifecycle_state='active'")
-        .bind(provider_id)
-        .execute(&mut *connection)
-        .await?;
+    match cause {
+        // Kept for recovery (PROV-008): the cause is recorded and `enabled` stays the user's
+        // choice.
+        ManagedFamilyTombstone::NoEligibleModels => {
+            sqlx::query("UPDATE model_families SET lifecycle_state='tombstoned',tombstone_cause='no_eligible_models',removed_at=CAST(strftime('%s','now') AS TEXT) WHERE managed_provider_id=?1 AND lifecycle_state='active'")
+                .bind(provider_id)
+                .execute(&mut *connection)
+                .await?;
+        }
+        // Retired with the provider, as before: disabled, and no family stays kept for recovery.
+        ManagedFamilyTombstone::ProviderRemoval => {
+            sqlx::query("UPDATE model_families SET lifecycle_state='tombstoned',enabled=0,tombstone_cause=NULL,removed_at=CAST(strftime('%s','now') AS TEXT) WHERE managed_provider_id=?1 AND lifecycle_state='active'")
+                .bind(provider_id)
+                .execute(&mut *connection)
+                .await?;
+            sqlx::query(
+                "UPDATE model_families SET tombstone_cause=NULL WHERE managed_provider_id=?1",
+            )
+            .bind(provider_id)
+            .execute(&mut *connection)
+            .await?;
+        }
+    }
     compact_family_positions(connection).await
 }
 
@@ -3102,6 +3150,63 @@ mod provider_definition_tests {
         }
     }
 
+    // Provider removal retires its managed family as before: disabled, and not kept for recovery.
+    #[tokio::test]
+    async fn provider_removal_retires_its_managed_family_without_a_recovery_cause() {
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-removal-family-cause-")
+            .tempdir()
+            .unwrap();
+        let store = SqliteProductStore::open(&temporary.path().join("product.sqlite3"))
+            .await
+            .unwrap();
+        let mut work = definition("work-openai");
+        let snapshot = ProviderCatalogSnapshot {
+            provider_id: work.id.clone(),
+            label: work.label.clone(),
+            connected: true,
+            unavailable_reason: None,
+            models: vec![crate::product::CatalogModelSnapshot {
+                id: "model-one".into(),
+                label: "Model One".into(),
+                order: 0,
+                visible: true,
+                available: true,
+                unavailable_reason: None,
+                provider_default: true,
+                replacement_model_id: None,
+                metadata: serde_json::json!({}),
+            }],
+            system_family: Some(SystemFamilySnapshot {
+                key: "work".into(),
+                name: "Work defaults".into(),
+                model_ids: vec!["model-one".into()],
+            }),
+        };
+        let policy = FamilyPolicyReference {
+            id: "openai-default-family".into(),
+            version: 1,
+        };
+        store
+            .create_provider_with_catalog(&work, &snapshot, Some(&policy), "1")
+            .await
+            .unwrap();
+        sqlx::query("UPDATE product_model_preferences SET default_provider_id='codex',default_family_id=NULL WHERE singleton=1")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        work.lifecycle_state = "removal_pending".into();
+        store.sync_provider_definitions(&[work]).await.unwrap();
+        let family: (String, bool, Option<String>) = sqlx::query_as(
+            "SELECT lifecycle_state,enabled,tombstone_cause FROM model_families WHERE managed_provider_id='work-openai'",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(family, ("tombstoned".into(), false, None));
+        store.pool.close().await;
+    }
+
     // PROV-008 upgrade: an earlier build tombstoned the default managed family on a zero-eligible
     // refresh and cleared `enabled`. The migration marks that family as kept for recovery, so it
     // stays in its recovery state. Families retired another way are not marked.
@@ -3141,6 +3246,17 @@ mod provider_definition_tests {
             "INSERT INTO model_families(id,name,kind,system_key,enabled,position,managed_provider_id,policy_id,policy_version,lifecycle_state,removed_at) VALUES(101,'Legacy v1','system','legacy:p@1',0,(SELECT COUNT(*) FROM model_families),'legacy','p',1,'tombstoned','1')",
             "INSERT INTO model_families(id,name,kind,system_key,enabled,position,managed_provider_id,policy_id,policy_version,lifecycle_state,removed_at) VALUES(102,'Legacy defaults','system','legacy:p@2',0,(SELECT COUNT(*) FROM model_families),'legacy','p',2,'tombstoned','1')",
             "UPDATE product_model_preferences SET default_provider_id='legacy',default_family_id=102 WHERE singleton=1",
+            // A zero-eligible family whose provider disconnected since: the reason was overwritten.
+            "INSERT INTO model_providers(id,label,connected,refreshed_at,adapter_id,access_contract,lifecycle_state,unavailable_reason_code,unavailable_reason_message) VALUES('offline','Offline',0,'1','codex-subscription','managed-runtime@1','active','provider_unavailable','Signed out.')",
+            "INSERT INTO model_families(id,name,kind,system_key,enabled,position,managed_provider_id,policy_id,policy_version,lifecycle_state,removed_at) VALUES(103,'Offline defaults','system','offline:p@1',0,(SELECT COUNT(*) FROM model_families),'offline','p',1,'tombstoned','5')",
+            // A removed provider's family is not in recovery.
+            "INSERT INTO model_providers(id,label,connected,refreshed_at,adapter_id,access_contract,lifecycle_state) VALUES('gone','Gone',0,'1','codex-subscription','managed-runtime@1','tombstoned')",
+            "INSERT INTO model_families(id,name,kind,system_key,enabled,position,managed_provider_id,policy_id,policy_version,lifecycle_state,removed_at) VALUES(104,'Gone defaults','system','gone:p@1',0,(SELECT COUNT(*) FROM model_families),'gone','p',1,'tombstoned','5')",
+            // A policy revert: the older id was retired later and restored, so it is the live one;
+            // the newer id is only superseded. Nothing is marked for this provider.
+            "INSERT INTO model_providers(id,label,connected,refreshed_at,adapter_id,access_contract,lifecycle_state) VALUES('reverted','Reverted',1,'1','codex-subscription','managed-runtime@1','active')",
+            "INSERT INTO model_families(id,name,kind,system_key,enabled,position,managed_provider_id,policy_id,policy_version,lifecycle_state) VALUES(105,'Reverted defaults','system','reverted:p@1',1,(SELECT COUNT(*) FROM model_families),'reverted','p',1,'active')",
+            "INSERT INTO model_families(id,name,kind,system_key,enabled,position,managed_provider_id,policy_id,policy_version,lifecycle_state,removed_at) VALUES(106,'Reverted v2','system','reverted:p@2',0,(SELECT COUNT(*) FROM model_families),'reverted','p',2,'tombstoned','5')",
         ] {
             sqlx::query(statement).execute(&pool).await.unwrap();
         }
@@ -3159,7 +3275,7 @@ mod provider_definition_tests {
             "provider_no_eligible_execution_models"
         );
         let marked: Vec<(i64, Option<String>, bool)> =
-            sqlx::query_as("SELECT id,tombstone_cause,enabled FROM model_families WHERE id IN (101,102) ORDER BY id")
+            sqlx::query_as("SELECT id,tombstone_cause,enabled FROM model_families WHERE id BETWEEN 101 AND 106 ORDER BY id")
                 .fetch_all(&store.pool)
                 .await
                 .unwrap();
@@ -3167,7 +3283,11 @@ mod provider_definition_tests {
             marked,
             vec![
                 (101, None, false),
-                (102, Some("no_eligible_models".into()), true)
+                (102, Some("no_eligible_models".into()), true),
+                (103, Some("no_eligible_models".into()), true),
+                (104, None, false),
+                (105, None, true),
+                (106, None, false),
             ]
         );
         store.pool.close().await;

@@ -253,10 +253,12 @@ export function createModelPicker({
       : "";
     panel.innerHTML = `<div class="model-picker-empty model-picker-recovery"><strong>${escapeHtml(modelSetup.label)}</strong><span>${escapeHtml(modelSetup.message)}</span>${refresh}</div>${otherFamilies}`;
     if (families.length) bindFamilyChange(panel, families);
+    // A disconnected provider is reconnected on its card under Providers; otherwise the Settings
+    // defaults show the recovery and the other providers.
     panel.querySelector("[data-model-picker-settings]")?.addEventListener("click", () => {
       onUserTakeover();
       close();
-      onOpenSettings();
+      onOpenSettings(modelSetup.action === "settings" ? "providers" : "models");
     });
     const refreshButton = panel.querySelector("[data-model-picker-refresh]");
     if (!refreshButton) return;
