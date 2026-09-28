@@ -12,6 +12,7 @@ import {
   responseNodesForThread,
   workspaceBreadcrumbItems,
   workspaceModeCapabilities,
+  humanTurns,
   workspaceTurns,
 } from "./model.js";
 import { createRelayerIcon } from "./icons.js";
@@ -432,11 +433,10 @@ export function graphTurnNavigationDelta(event, graphFocused) {
   return null;
 }
 
-export { workspaceTurns } from "./model.js";
+export { humanTurns, workspaceTurns } from "./model.js";
 
 export function productStopTarget(state, thread) {
-  const childIds = new Set((state.actionInvocations || []).map((item) => String(item.resultInteractionId)));
-  return workspaceTurns(state, thread).findLast((turn) => !childIds.has(String(turn.id)) && ["submitted", "running", "waiting_for_approval"].includes(turn.completionStatus)) || null;
+  return humanTurns(state, thread).findLast((turn) => ["submitted", "running", "waiting_for_approval"].includes(turn.completionStatus)) || null;
 }
 
 export function turnStatusPresentation(status) {
@@ -1281,7 +1281,12 @@ export function applyComposerCapabilities({ composer, prompt, send, readOnlyMess
 }
 
 export function composerStatusForThread(state, thread) {
-  return workspaceTurns(state, thread).at(-1)?.completionStatus || state.status || "idle";
+  return humanTurns(state, thread).at(-1)?.completionStatus || state.status || "idle";
+}
+
+/** The latest human turn, which the composer follows up, retries, and inherits a model from. */
+export function latestHumanTurn(state, thread) {
+  return humanTurns(state, thread).at(-1);
 }
 
 export function composerFocusRestoration(
@@ -3999,8 +4004,7 @@ export function createProductWorkspace({
     renderTurnNavigation(state, thread, interaction);
     renderHistoricalContexts(state, interaction);
     renderHistoricalInputs(interaction);
-    const turns = (state.interactions || []).filter((item) => String(item.threadId) === String(thread.id));
-    const latestInteraction = turns.at(-1);
+    const latestInteraction = latestHumanTurn(state, thread);
     if (inputDraftController && latestInteraction) {
       const statusKey = `${latestInteraction.id}:${latestInteraction.completionStatus || ""}`;
       const priorStatusKey = renderedInputDraftStatusKeys.get(threadId);

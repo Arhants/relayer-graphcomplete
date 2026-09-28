@@ -18,6 +18,13 @@ import {
   RECURSIVE_TEMPORAL_FEATURES,
 } from "../desktop/main/services/graphcomplete-runtime.mjs";
 import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
+import { interactionModelSelection } from "../desktop/renderer/src/model-picker.js";
+import {
+  composerDisabledForState,
+  composerStatusForThread,
+  latestHumanTurn,
+  productStopTarget,
+} from "../desktop/renderer/src/product-workspace/workspace.js";
 import {
   RECURSIVE_FIXTURE_CHILD_TASK as CHILD_TASK,
   recursiveCompleteFixtureFactory as recursiveFixtureFactory,
@@ -363,6 +370,19 @@ describe("recursive complete end to end", () => {
     const detail = await waitForStatus(session, thread.id, 1, "running", observed);
     const child = detail.interactions[1];
     expect(child.graphNodeId).toBe(observed.preparedChild);
+
+    // The renderer reads the real thread view: the child is marked, so the composer follows
+    // the accepted root, Stop has no target, and the next turn inherits the root's model.
+    const view = await productRequest(session, `/api/state?threadId=${thread.id}`);
+    expect(view.actionInvocations.find((invocation) => invocation.resultInteractionId === child.id))
+      .toMatchObject({ agentInvoked: true });
+    const viewedThread = { id: thread.id };
+    expect(composerStatusForThread(view, viewedThread)).toBe("accepted");
+    expect(composerDisabledForState(composerStatusForThread(view, viewedThread))).toBe(false);
+    expect(latestHumanTurn(view, viewedThread).id).toBe(detail.interactions[0].id);
+    expect(productStopTarget(view, viewedThread)).toBeNull();
+    // The next turn's model is inherited from this turn (selectionForNextInteraction's input).
+    expect(interactionModelSelection(latestHumanTurn(view, viewedThread))).toEqual(selection);
 
     // Only its parent may stop an agent's child; the product refuses with a client error.
     const stop = await fetch(new URL(`/api/threads/${thread.id}/interactions/${child.id}/stop`, session.origin), {
