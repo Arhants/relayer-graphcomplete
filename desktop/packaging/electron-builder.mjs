@@ -47,6 +47,7 @@ export function createDesktopBuilderConfig(
       relayerReleasePlatform: contract.distributionPlatform,
       relayerReleaseArchitecture: contract.architecture,
       relayerReleaseSourceCommit: contract.sourceCommit,
+      ...(contract.release ? { relayerShareServiceEndpoint: contract.shareServiceEndpoint } : {}),
       relayerAppleTeamId: contract.appleTeamId,
       relayerMinimumMacOSVersion: contract.minimumMacOSVersion,
     },

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import socket
 from dataclasses import dataclass
 from typing import Any, Awaitable, Iterable, Mapping
@@ -216,15 +217,14 @@ class _CompletionTransport:
                 return CompletionCurrentSnapshot.from_dict(
                     await self.request("GET", f"/{self.completion_id}/current")
                 )
-            if status in (202, 409):
-                current = value.get("current") if isinstance(value, Mapping) else None
-                if not isinstance(current, Mapping):
-                    raise TransportError("completion broker delivered an observation without a current")
+            current = value.get("current") if isinstance(value, Mapping) else None
+            if status in (202, 409) and isinstance(current, Mapping):
                 snapshot = CompletionCurrentSnapshot.from_dict(current)
                 if status == 409 or after_revision is None or snapshot.revision > after_revision:
                     return snapshot
                 continue
-            raise TransportError(f"completion broker returned HTTP {status}")
+            # A refusal without a current, such as a runtime conflict, is a broker error.
+            raise _broker_error(status, value)
 
     async def observe_result(self) -> Mapping[str, Any]:
         """Observe this child until it settles, one request per delivered revision.
@@ -247,15 +247,17 @@ class _CompletionTransport:
                     raise TransportError("completion broker delivered an observation without a current")
                 after_revision = CompletionCurrentSnapshot.from_dict(current).revision
                 continue
-            if status == 409:
-                current = CompletionCurrentSnapshot.from_dict(value["current"])
-                raise CompletionTerminalError(current, str(value.get("reason") or "completion_failed"))
-            raise TransportError(f"completion broker returned HTTP {status}")
+            current = value.get("current") if isinstance(value, Mapping) else None
+            if status == 409 and isinstance(current, Mapping):
+                raise CompletionTerminalError(
+                    CompletionCurrentSnapshot.from_dict(current), str(value.get("reason") or "completion_failed")
+                )
+            raise _broker_error(status, value)
 
     async def request(self, method: str, path: str, body: Any = None) -> Mapping[str, Any]:
         status, value = await self.request_with_status(method, path, body)
         if status not in (200, 201):
-            raise TransportError(f"completion broker returned HTTP {status}")
+            raise _broker_error(status, value)
         return value
 
     async def request_with_status(self, method: str, path: str, body: Any = None) -> tuple[int, Mapping[str, Any]]:
@@ -272,12 +274,35 @@ class _CompletionTransport:
             except HTTPError as error:
                 try:
                     return error.code, json.loads(error.read() or b"{}")
+                except ValueError:
+                    # A refusal without a JSON body, such as a proxy's error page, is still named by its status.
+                    return error.code, {}
                 finally:
                     error.close()
             except (URLError, socket.timeout, TimeoutError, OSError) as error:
                 raise TransportError(f"could not reach the completion broker at {self.url}") from error
 
         return await asyncio.to_thread(send)
+
+
+_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _broker_error(status: int, value: Any) -> TransportError:
+    """Name a broker refusal by its status, adding the broker's detail only when it is safe.
+
+    A client (4xx) refusal may carry a short message without control characters, meant for the caller. A
+    server (5xx) failure may carry internal detail, so its body is never repeated.
+    """
+    detail = value.get("error") if 400 <= status < 500 and isinstance(value, Mapping) else None
+    if isinstance(detail, str) and _utf16_length(detail) <= 200 and not _CONTROL_CHARACTER.search(detail):
+        return TransportError(f"completion broker returned HTTP {status}: {detail}")
+    return TransportError(f"completion broker returned HTTP {status}")
+
+
+def _utf16_length(text: str) -> int:
+    """Measure text as the TypeScript client does, so both accept the same detail."""
+    return len(text.encode("utf-16-le", "surrogatepass")) // 2
 
 
 def _absorb_unobserved_failure(task: "asyncio.Task[Any]") -> None:

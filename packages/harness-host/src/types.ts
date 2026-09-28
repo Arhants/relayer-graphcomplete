@@ -349,6 +349,11 @@ export interface HarnessExecutionAccessBroker {
     acceptedContracts: readonly string[],
     signal: AbortSignal,
   ): Promise<HarnessExecutionAccessLease>;
+  /**
+   * The owner acknowledged a lease this host no longer knows (it forgot the released access,
+   * or restarted). Providers retry any work that waited on such an acknowledgement.
+   */
+  acknowledgeUnknownRelease?(): void | Promise<void>;
 }
 
 export interface InteractionModelSelection {

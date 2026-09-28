@@ -262,7 +262,7 @@ Harness factories may initialize asynchronously so provider runtimes such as Pri
 
 Product and graph metadata remain in separate SQLite databases, so the app server uses an explicit recoverable handoff rather than pretending they share a transaction. It first creates the durable product interaction and conditionally reserves `submitted`; an input-assisted Send creates the root plus immutable submitted-input attempt before that reservation. It then prepares the canonical graph interaction and stores the graph `NodeId`, frozen configuration/model identity, effective-execution digest, and permission receipt. Only a conditional transition on that exact prepared identity may claim `running` and enter the harness. The graph capability token remains transient runtime memory and is never product data. Product graph reads use control-authenticated read endpoints rather than minting harness writer capabilities.
 
-Provider execution access lives exactly as long as the native turn that uses it. The harness host releases a claimed lease when that turn settles, whether or not the product has persisted the outcome yet. A release requested by the product while the native turn still runs cancels the turn and takes effect when it settles. The product's release after the outcome is durable acknowledges the access to its provider. That acknowledgement retries a removal the catalog refused while the attempt still counted as running, so removal during a turn finishes without a restart.
+Provider execution access lives exactly as long as the native turn that uses it. The harness host releases a claimed lease when that turn settles, whether or not the product has persisted the outcome yet. A release requested by the product while the native turn still runs cancels the turn and takes effect when it settles. The product's release after the outcome is durable acknowledges the access to its provider. That acknowledgement retries a removal the catalog refused while the attempt still counted as running, so removal during a turn finishes without a restart. A release for a lease the host no longer tracks retries every drained removal instead.
 
 A cancelled turn that has not settled within two minutes is force-stopped. The host arms one timer per completion when that completion is cancelled, including by the owner's release, and clears it when the completion returns, so only that turn is ever stopped; sibling turns and invoked children on the same thread keep running with their access. The harness receives the force-stop through `HarnessRunContext.forceSignal` and ends that one turn's native work: `codex.basic` kills the turn's own app-server process group, and `prime.agent` force-disposes the turn's own session. Codex settles once the killed process group exits; Prime's native disposal is synchronous, so it stops waiting for the disposed session at once. In any case the host waits at most ten more seconds for the turn to settle, records it as a failure, and releases its access even if the harness never settles; a later settlement changes nothing. The force-stop is best effort: it relies on the process kill or session disposal actually ending the provider work, and PROV-004 is relaxed for a force-stopped turn only. A Prime root turn force-stopped while still acquiring its session finishes that acquisition before the next root turn acquires one. The next Codex root turn resumes the native thread the killed process was writing, as it does after any process exit. A harness that does not declare `supportsForceStop`, currently `claude.basic`, whose SDK already terminates its process on cancellation, keeps a turn that never settles holding its access, which is the safe fallback.
 
@@ -330,9 +330,11 @@ separator prevents reuse as another product identity. The result is stable acros
 installations for the same Auth0 subject. Renderer presentation state is never an
 authority input.
 
-V1 reports only unhandled process crashes, supervised-child startup failures, and
-supervised-child unexpected exits. Handled operation failures and expected product
-states are excluded. Every adapter emits a closed record with stable component,
+V1 reports unhandled process crashes, supervised-child startup failures, and
+supervised-child unexpected exits. One closed Electron-main exception admits
+share export, oversize, upload, service, and unexpected deletion failures using
+the user-visible attempt reference. Cancellation, sign-in requirements, quota,
+and all other handled or expected product states remain excluded. Every adapter emits a closed record with stable component,
 operation, and failure codes plus a code-owned message. JavaScript frames are
 application-relative, limited to 32, and limited to 256 characters per module
 name. Rust frames name only approved workspace crates and modules. Absolute paths,
@@ -340,6 +342,26 @@ third-party frames, arbitrary maps, and raw errors are rejected. Module names mu
 also occur in the checked-in packaged-module inventory, so a caller cannot encode
 private data inside a valid-looking application path. The final event is validated
 again immediately before transport.
+
+The handled-share schema adds only the reference, closed stage/code, and optional
+oversize byte count. It reuses verified-account admission, the main-owned
+pseudonym, bounded encrypted queue, final transport validation, and recursion
+suppression. Main deduplicates account + reference + stage + code in process;
+the durable publish-attempt owner must preserve the same identity for restart
+deduplication. A handled failure is admitted only after that durable key saves;
+save failure suppresses reporting. Renderer and public viewer receive no reporting or network
+authority.
+
+The Electron-main publish coordinator writes a versioned, atomically replaced
+attempt record beneath private desktop user data before any upload. The record
+contains the exact frozen bytes, attempt/reference identity, original owner,
+source-thread identity, last closed result, and handled-failure deduplication
+keys, but never a bearer token or signed upload fields. Recovery is visible only
+for the matching open source thread after the original owner is verified. A
+successful response replaces snapshot bytes with a lightweight URL receipt;
+closing the result or explicitly dismissing a failure removes only that local
+record. Invalid or corrupt records fail closed, and capacity rejects new
+records instead of evicting an undisclosed frozen attempt.
 
 Authenticated transport failures may enter one `safeStorage`-encrypted queue. The
 queue holds at most 32 records and 256 KiB of encrypted bytes. Records expire after
@@ -427,19 +449,35 @@ Stable promotion is a separate protected workflow on `main`. It requires committ
 
 ## Planned shared thread snapshots
 
-The optional share service hosts immutable conversation-export v1 snapshots,
+The optional share service hosts immutable conversation-export V1 snapshots when accepted
+history is asset-free and V2 snapshots when accepted authored Node Details carry visual content,
 up to 16 MiB each. Rust owns export scrubbing; Electron main owns Auth0 and
-short-lived signed uploads to private S3 staging. A small HTTP API reserves and
+one frozen byte sequence plus an owner-bound attempt/reference identity. Renderer
+code receives neither bearer tokens nor direct network authority. Electron main
+owns short-lived signed uploads to private S3 staging. A small HTTP API reserves and
 finalizes uploads, lists shares, and accepts owner deletion. It never transports
 the snapshot body through API Gateway. DynamoDB stores owner hashes and share
-state; finalization validates the exact object before publication.
+state; finalization validates the exact object before publication. Concurrent
+retries of one owner-scoped attempt recover the same immutable result and charge
+the UTC-day quota once.
+
+Public graph records omit harness-authored layer, node, and action client keys;
+portable record IDs retain reference identity without exposing arbitrary key text.
+Asset collection uses the same rich-detail privacy predicate as node export, so
+omitted detail cannot leave orphan content. The V2 reader permits the canonical
+base64 expansion of an 8 MiB decoded asset while the whole snapshot remains
+bounded to 16 MiB. A renderer dialog binds to its source thread before preflight
+and closes when navigation changes that source.
 
 A separate Lambda streams safe inline snapshot HTML through a CloudFront-protected
 function URL. The stripped browser shell reuses the production graph workspace.
+Its versioned reader starts at the first accepted turn, keeps navigation out of
+the URL, and disables execution while preserving nested layers and Node Details.
 CloudFront reads only viewer assets from S3. Page reads check deletion and bypass
 caches. Public code is outside desktop telemetry and has no reporting client.
 These are planned service boundaries, not implemented product capabilities. See
-[ADR 0011](decisions/0011-shared-thread-snapshot-service.md) and PRD section 8.4.
+[ADR 0011](decisions/0011-shared-thread-snapshot-service.md),
+[ADR 0012](decisions/0012-immutable-shared-thread-snapshots.md), and PRD section 8.4.
 
 ## Developer Eval host
 

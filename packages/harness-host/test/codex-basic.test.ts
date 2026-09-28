@@ -86,6 +86,18 @@ describe("CodexBasicHarness", () => {
     expect(baseline).toContain("rather than on every change");
     expect(baseline).toContain("await graph.getCurrent()");
     expect(baseline).toContain("await graph.advanceCurrent(");
+    expect(baseline).toContain("After submitting the complete closure and registering all its actions, publish it with await graph.advanceCurrent(");
+    expect(baseline).toContain("The first current layer may contain visible accepted nodes");
+    expect(baseline).toContain("when no prior current exists, it needs no new draft carrier");
+    expect(baseline).toContain("Reuse an existing valid path when one already exists");
+    expect(baseline).toContain("every later current layer and the root of your final graph.submit must retain a navigation path back");
+    expect(baseline).toContain("Give each distinct logical advanceCurrent transition its own stable operation key");
+    expect(baseline).toContain("An exact retry reuses all three unchanged");
+    expect(baseline).toContain("After a successful nonterminal advanceCurrent, refresh with current = await graph.getCurrent()");
+    expect(baseline).toContain("Use a different stable key for that next transition");
+    expect(baseline).toContain("A successful terminal graph.submit ends graph access: do not call getCurrent");
+    expect(baseline).not.toContain("every layer you make current needs at least one new draft node");
+    expect(baseline).not.toContain("a-stable-operation-key");
     expect(baseline).toContain("Advancing current does not complete the interaction");
     expect(baseline).not.toContain("Do not author HTML, CSS, colors, dimensions, or style fields");
     expect(baseline).not.toContain("graph.prepareComplete(");
@@ -103,11 +115,13 @@ describe("CodexBasicHarness", () => {
     expect(brokerAuthorized).toContain("one input graph starts exactly one child");
     expect(brokerAuthorized).toContain("Only then submit a layer that presents the work itself and advance your current to it; otherwise keep waiting.");
     expect(brokerAuthorized).toContain("Import complete and watchCompletions from");
-    // The graph refuses a pointer move that loses the path back to the previous current layer.
-    expect(brokerAuthorized).toContain("the next current layer must keep a navigation path back to it");
-    // Graph core checks the same path on the final submit's Return, and only a draft node takes the action.
-    expect(brokerAuthorized).toContain("to the root layer of your final graph.submit");
-    expect(brokerAuthorized).toContain("every layer you make current needs at least one new draft node to carry that reference");
+    expect(brokerAuthorized).toContain("The first current layer may contain visible accepted nodes");
+    expect(brokerAuthorized).toContain("Reuse an existing valid path when one already exists");
+    expect(brokerAuthorized).toContain("Give each distinct logical advanceCurrent transition its own stable operation key");
+    expect(brokerAuthorized).toContain("After submitting the complete closure and registering all its actions, publish it with await graph.advanceCurrent(");
+    expect(brokerAuthorized).toContain("After a successful nonterminal advanceCurrent, refresh with current = await graph.getCurrent()");
+    expect(brokerAuthorized).toContain("A successful terminal graph.submit ends graph access: do not call getCurrent");
+    expect(brokerAuthorized).not.toContain("every layer you make current needs at least one new draft node");
     // A stopped or failed child rejects child.result, so the root must catch it to integrate the rest.
     expect(brokerAuthorized).toContain("A stopped or failed child rejects it with CompletionTerminalError");
     expect(brokerAuthorized).toContain("catch it and integrate the work its error.current still retains");

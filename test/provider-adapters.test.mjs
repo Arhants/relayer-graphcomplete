@@ -1647,6 +1647,24 @@ describe("provider definition lifecycle", () => {
     }
   });
 
+  it("finishes drained removals when the host acknowledges a release it no longer tracks", async () => {
+    const fixture = serviceFixture();
+    const created = await fixture.service.connect({ adapterId: "fake-api", label: "Forgotten", fields: { "api-key": "k" } });
+    const providerId = created.providerDefinition.id;
+    let durableAttemptRunning = true;
+    const originalSave = fixture.service.definitionStore.save.bind(fixture.service.definitionStore);
+    fixture.service.definitionStore.save = async (definitions) => {
+      if (durableAttemptRunning && definitions.some(({ lifecycleState }) => lifecycleState === "tombstoned")) {
+        throw Object.assign(new Error("drain incomplete"), { code: "provider_execution_drain_incomplete" });
+      }
+      await originalSave(definitions);
+    };
+    await expect(fixture.service.remove(providerId)).resolves.toMatchObject({ lifecycleState: "removal_pending" });
+    durableAttemptRunning = false;
+    await fixture.service.finalizeDrainedRemovals();
+    expect(fixture.definitions()[0]).toMatchObject({ lifecycleState: "tombstoned" });
+  });
+
   it("defers a removal with no lease while the store still counts an attempt as running", async () => {
     const fixture = serviceFixture();
     const created = await fixture.service.connect({ adapterId: "fake-api", label: "Settling", fields: { "api-key": "k" } });

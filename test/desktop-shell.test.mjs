@@ -2222,7 +2222,7 @@ describe("desktop skeleton", () => {
     expect(failures.map((failure) => failure.label)).toEqual(expect.arrayContaining([
       "environment desktop-production-windows has required variable names",
       "an active ruleset targets main",
-      "main requires the current GitHub Actions check job",
+      "main requires GitHub Actions CI and scheduled merge freshness",
     ]));
   });
 
@@ -2623,6 +2623,7 @@ describe("desktop skeleton", () => {
     expect(releaseWorkflow).toContain("RELAYER_DESKTOP_CANDIDATE_ARTIFACT_ID: ${{ fromJSON(needs.validate.outputs.candidate_artifacts)[matrix.target].id }}");
     expect(releaseWorkflow).toContain("RELAYER_DESKTOP_CANDIDATE_ARTIFACT_DIGEST: ${{ fromJSON(needs.validate.outputs.candidate_artifacts)[matrix.target].digest }}");
     expect(releaseWorkflow).toContain("if: ${{ github.event_name == 'workflow_dispatch' }}");
+    expect(releaseWorkflow).not.toMatch(/required=\([\s\S]*RELAYER_SHARE_SERVICE_ENDPOINT[\s\S]*\)/u);
     expect(releaseWorkflow).toContain("uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca");
     expect(releaseWorkflow).toContain("subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}");
     expect(releaseWorkflow).toContain("AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}");
@@ -2720,6 +2721,7 @@ describe("desktop skeleton", () => {
       RELAYER_DESKTOP_TARGET: "macos-arm64",
       RELAYER_DESKTOP_CHANNEL: "preview",
       RELAYER_DESKTOP_UPDATE_BASE_URL: DESKTOP_RELEASE.updateBaseUrl,
+      RELAYER_SHARE_SERVICE_ENDPOINT: "https://share-preview.relayerlabs.ai",
       RELAYER_DESKTOP_CANDIDATE_RUN_ID: "12345",
       RELAYER_DESKTOP_CANDIDATE_RUN_ATTEMPT: "2",
       RELAYER_DESKTOP_SIGN_IDENTITY: "Developer ID Application: VISHAL TANDALE (NZ253AL7U6)",
@@ -2728,6 +2730,11 @@ describe("desktop skeleton", () => {
       APPLE_API_ISSUER: "00000000-0000-0000-0000-000000000000",
     };
     const sourceCommit = "a".repeat(40);
+    expect(resolveDesktopReleaseContract({
+      environment: { ...releaseEnvironment, RELAYER_SHARE_SERVICE_ENDPOINT: "" },
+      version: "0.2.0",
+      sourceCommit,
+    }).shareServiceEndpoint).toBe("https://share.relayerlabs.ai");
     const contract = resolveDesktopReleaseContract({
       environment: releaseEnvironment,
       version: "0.2.0",
@@ -2745,11 +2752,14 @@ describe("desktop skeleton", () => {
       providerChannel: "beta",
       manifestName: "beta-mac.yml",
       sourceCommit,
+      shareServiceEndpoint: "https://share.relayerlabs.ai",
       candidateWorkflowRunId: "12345",
       candidateWorkflowRunAttempt: "2",
       appleTeamId: "NZ253AL7U6",
     });
     const builder = createDesktopBuilderConfig(contract);
+    expect(builder.extraMetadata.relayerUpdateChannel).toBe("preview");
+    expect(builder.extraMetadata.relayerShareServiceEndpoint).toBe("https://share.relayerlabs.ai");
     expect(builder.dmg).toEqual({ sign: true });
     expect(builder).toMatchObject({
       appId: "ai.relayer.desktop",
@@ -2811,6 +2821,7 @@ describe("desktop skeleton", () => {
       RELAYER_DESKTOP_TARGET: "windows-x64",
       RELAYER_DESKTOP_CHANNEL: "preview",
       RELAYER_DESKTOP_UPDATE_BASE_URL: DESKTOP_RELEASE_TARGETS["windows-x64"].updateBaseUrl,
+      RELAYER_SHARE_SERVICE_ENDPOINT: "https://share-preview.relayerlabs.ai",
       RELAYER_WINDOWS_SIGNING_ENDPOINT: DESKTOP_RELEASE.artifactSigningEndpoint,
       RELAYER_WINDOWS_SIGNING_ACCOUNT: DESKTOP_RELEASE.artifactSigningAccountName,
       RELAYER_WINDOWS_CERTIFICATE_PROFILE: "relayer-public-trust",
@@ -3523,6 +3534,7 @@ describe("desktop skeleton", () => {
         RELAYER_DESKTOP_TARGET: target.key,
         RELAYER_DESKTOP_CHANNEL: "preview",
         RELAYER_DESKTOP_UPDATE_BASE_URL: target.updateBaseUrl,
+        RELAYER_SHARE_SERVICE_ENDPOINT: "https://share-preview.relayerlabs.ai",
         RELAYER_WINDOWS_SIGNING_ENDPOINT: DESKTOP_RELEASE.artifactSigningEndpoint,
         RELAYER_WINDOWS_SIGNING_ACCOUNT: DESKTOP_RELEASE.artifactSigningAccountName,
         RELAYER_WINDOWS_CERTIFICATE_PROFILE: "relayer-public-trust",

@@ -54,6 +54,11 @@ describe("desktop provider execution access broker", () => {
     await lease.acknowledge();
     expect(provider.release).toHaveBeenCalledOnce();
     expect(acknowledge).toHaveBeenCalledOnce();
+
+    const acknowledgeUnknownRelease = vi.fn(async () => {});
+    await createProviderExecutionAccessBroker(async () => provider.lease, { acknowledgeUnknownRelease })
+      .acknowledgeUnknownRelease();
+    expect(acknowledgeUnknownRelease).toHaveBeenCalledOnce();
   });
 
   it("keeps two definitions on one adapter isolated and releases each lease exactly once", async () => {
