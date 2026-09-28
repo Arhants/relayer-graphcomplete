@@ -19,5 +19,6 @@ Shared digests store bytes once without merging distinct logical assets or their
 
 Incremental upload validation retains content metadata only. Product import staging owns the
 bytes, and graph publication validates and materializes them before accepting the imported graph.
-The format grants no execution or asset-library authority. This local archive extension does not
-change the separately defined V1 shared-snapshot service contract.
+The format grants no execution or asset-library authority. Public sharing uses V1 for an
+asset-free accepted snapshot and V2 when an accepted authored Node Detail references visual
+content. Both share forms retain the separate 16 MiB total snapshot limit.

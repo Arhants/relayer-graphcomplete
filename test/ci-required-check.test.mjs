@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -62,6 +63,44 @@ test("the required check allows unselected chapters to be skipped", () => {
       full: "skipped",
     }),
   ).toEqual({ ok: true, failures: [] });
+});
+
+test("the Vitest prerequisite chapter prepares generated renderer vendors", () => {
+  const root = mkdtempSync(join(tmpdir(), "relayer-vitest-prerequisites-"));
+  const bin = join(root, "bin");
+  const log = join(root, "commands.log");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(log, "");
+  const npm = join(bin, "npm");
+  writeFileSync(npm, `#!/bin/sh\nprintf '%s\\n' "$*" >> "$RELAYER_TEST_COMMAND_LOG"\n`);
+  chmodSync(npm, 0o755);
+
+  try {
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/ci/run-chapter.mjs", "vitest-prerequisites"],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CI_PLAN_JSON: JSON.stringify({
+            npmBuildWorkspaces: [],
+            rootTypeScript: false,
+          }),
+          PATH: `${bin}:${process.env.PATH}`,
+          RELAYER_TEST_COMMAND_LOG: log,
+        },
+      },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(log, "utf8").trim().split("\n")).toContain(
+      "run prepare:renderer",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("the full portfolio is satisfied by its authoritative chapters without a duplicate full gate", () => {
