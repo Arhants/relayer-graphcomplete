@@ -29,6 +29,7 @@ const browserResources = Object.freeze([
   "src/product-workspace/graph-layout.js",
   "src/product-workspace/icons.js",
   "src/product-workspace/index.js",
+  "src/product-workspace/interaction-graph.js",
   "src/product-workspace/layer-selection.js",
   "src/product-workspace/markdown.js",
   "src/product-workspace/model.js",

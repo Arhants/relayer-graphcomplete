@@ -23,6 +23,11 @@ const invokeEvidenceDirectory = process.env.RELAYER_INVOKE_EVIDENCE_DIR
 const dataDirectory = mkdtempSync(join(tmpdir(), "relayer-first-message-app-"));
 const services = [];
 const typedPermissions = process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1";
+function turnReady(position, total) {
+  if (!typedPermissions) return `document.querySelector("#turnPickerButton")?.textContent === "Turn ${position} of ${total}"`;
+  return `(() => { const cards=[...document.querySelectorAll("#turnPopover .interaction-graph-node")]; return document.querySelector("#turnPickerButton")?.classList.contains("interaction-graph-trigger") && cards.length===${total} && cards.findIndex(card=>card.getAttribute("aria-current")==="true")===${position-1}; })()`;
+}
+
 const ancillaryFailures = [];
 let window;
 let evalWindow;
@@ -409,7 +414,7 @@ async function run() {
     const detail = await productRequest(productSession, `/api/threads/${threadId}`);
     return detail.interactions.some((interaction) => interaction.completionStatus === "running");
   });
-  await waitFor("the invoked turn to finish opening", () => webContents.executeJavaScript(`document.querySelector("#turnPickerButton")?.textContent === "Turn 2 of 2" && document.querySelector("#interactionText")?.textContent === "Propose the most useful next improvement to this task system."`));
+  await waitFor("the invoked turn to finish opening", () => webContents.executeJavaScript(`${turnReady(2, 2)} && document.querySelector("#interactionText")?.textContent === "Propose the most useful next improvement to this task system."`));
   await webContents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${sourceInteraction.id}))`);
   await waitFor("the source turn while the invoked interaction runs", () => webContents.executeJavaScript(
     `document.querySelector("#interactionText")?.textContent === "Show the deterministic task system."`,
@@ -476,7 +481,7 @@ async function run() {
 
   await webContents.executeJavaScript(`(document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelector("button") ?? (${typedPermissions} ? null : document.querySelector('[data-action-id="${invokeAction.id}"]')))?.click()`);
   await waitFor("the resolved cross-interaction destination", () => webContents.executeJavaScript(
-    `document.querySelector("#turnPickerButton")?.textContent === "Turn 2 of 2"`,
+    `${turnReady(2, 2)}`,
   ));
   invokeEvidencePaths.crossInteraction = await captureEvidence(webContents, "04-cross-interaction-destination");
   await webContents.executeJavaScript(`import("./src/threads.js").then(({ navigateHistory }) => navigateHistory("back"))`);
@@ -500,8 +505,7 @@ async function run() {
 
   await window.loadURL(`${productSession.origin}/?threadId=${encodeURIComponent(threadId)}`);
   await waitFor("the four-turn workspace", () => webContents.executeJavaScript(`(() => {
-    const picker = document.querySelector("#turnPickerButton");
-    return picker?.textContent === "Turn 4 of 4";
+    return ${turnReady(4, 4)};
   })()`));
   const latest = navigationDetail.interactions.at(-1);
   const latestRoot = latest.completionOutput.rootLayer;
@@ -580,6 +584,7 @@ async function run() {
     return presentation.inspectorOpen && nodesAreContained(presentation) ? presentation : false;
   });
   const productChildLayout = requireAuthoredLayout("Product child", restoredInspectorFit);
+  if (typedPermissions) invokeEvidencePaths.graphClosed = await captureEvidence(webContents, "09-interaction-graph-closed");
   await webContents.executeJavaScript(`document.querySelector("#turnPickerButton")?.click()`);
   const productNavigationState = await waitFor("the scrolling turn picker", () => webContents.executeJavaScript(`(() => {
     const popover = document.querySelector("#turnPopover");
@@ -593,6 +598,14 @@ async function run() {
       selectedNodeId: document.querySelector(".graph-node.selected")?.dataset.node || null,
     };
   })()`));
+  if (typedPermissions) {
+    invokeEvidencePaths.graphOpen = await captureEvidence(webContents, "10-interaction-graph-open");
+    await webContents.executeJavaScript(`document.querySelector('.interaction-graph-node[aria-current="true"]')?.click()`);
+    await waitFor("B3 current selection to return to the response root", () => webContents.executeJavaScript(`Boolean(document.querySelector('[data-node="${latestRoot.nodes[0].id}"]')) && document.querySelector("#turnPopover")?.classList.contains("hidden") && document.querySelector("#workspaceBreadcrumb")?.classList.contains("hidden")`));
+    invokeEvidencePaths.graphSelected = await captureEvidence(webContents, "11-interaction-graph-selected-root");
+    await webContents.executeJavaScript(`document.querySelector("#historyBack")?.click()`);
+    await waitFor("Back from B3 root to the prior descendant", () => webContents.executeJavaScript(`document.querySelectorAll("#workspaceBreadcrumb .breadcrumb-segment").length === 2`));
+  }
   productNavigationState.inspectorFit = {
     initialContained: nodesAreContained(productInspectorFit),
     restoredContained: nodesAreContained(restoredInspectorFit),
@@ -636,7 +649,7 @@ async function run() {
   evalContents.setBackgroundThrottling(false);
   await waitFor("the read-only Eval workspace", () => evalContents.executeJavaScript(`(() => (
     document.querySelector("#threadView")?.dataset.workspaceMode === "review"
-    && document.querySelector("#turnPickerButton")?.textContent === "Turn 4 of 4"
+    && ${turnReady(4, 4)}
   ))()`));
   const evalRootStable = await waitForStableGraph("the stable Eval root graph", evalContents);
   const evalRootLayout = requireAuthoredLayout("Eval root", evalRootStable);
@@ -762,7 +775,7 @@ async function run() {
     await window.loadURL(`${reopenedProductSession.origin}/?threadId=${threadId}`);
     const reopenedContents = window.webContents;
     reopenedContents.setBackgroundThrottling(false);
-    await waitFor("reopened thread", () => reopenedContents.executeJavaScript(`document.querySelector("#turnPickerButton")?.textContent === "Turn 4 of 4"`));
+    await waitFor("reopened thread", () => reopenedContents.executeJavaScript(`${turnReady(4, 4)}`));
     await reopenedContents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${sourceInteraction.id}))`);
     // Select the other occurrence through the source's queue expansion.
     const queueAction = canonicalSource.completionOutput.rootLayer.actions.find((action) => action.kind === "navigate" && action.id !== invokeAction.id);

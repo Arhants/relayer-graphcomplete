@@ -527,7 +527,11 @@ async function run() {
   window = undefined;
   services.splice(services.indexOf(product), 1);
   await product.close();
+  await desktopSettings.flush();
   desktopSettings = createSettingsStore(dataDirectory);
+  ipcMain.removeHandler("relayer:composer-drafts-read");
+  ipcMain.removeHandler("relayer:composer-drafts-write");
+  registerComposerDraftIpc({ ipcMain, settings: desktopSettings });
   await startProduct();
   if (productSession.origin === previousOrigin) {
     throw new Error("The restart scenario did not move to a new product origin.");
@@ -627,6 +631,11 @@ async function run() {
     )`) && saved.composerDrafts?.pendingNewThread == null;
   });
 
+  // Acknowledge renderer writes before seeding the restart fixture through the same store.
+  await evaluate("window.relayerDesktop.drafts.read()");
+  window.destroy();
+  window = undefined;
+  await desktopSettings.flush();
   const folderDraft = {
     text: "Restore this exact folder-scoped draft.",
     scope: {
@@ -650,8 +659,6 @@ async function run() {
     automaticEligible: true,
   };
   automaticTutorialBegins = 0;
-  window.destroy();
-  window = undefined;
   await openWindow();
   await waitFor("the exact folder-scoped draft after restart", () => evaluate(`(
     document.querySelector('#newThreadPrompt')?.value === ${JSON.stringify(folderDraft.text)}

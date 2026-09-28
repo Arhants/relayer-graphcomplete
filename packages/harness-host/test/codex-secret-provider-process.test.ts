@@ -23,131 +23,135 @@ describe("Codex secret-provider process boundary", () => {
     await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
   });
 
-  // Run this native-process boundary in isolation. Codex 0.147's shell-policy
-  // behavior is not stable when many unrelated native tests execute in parallel,
-  // and non-Darwin binaries are not evidence for the shipped macOS boundary.
+  // Exercise overlapping native executions: asynchronous shell snapshot restore
+  // must not resurrect provider variables excluded from model-requested tools.
+  // Non-Darwin binaries are not evidence for the shipped macOS boundary.
   nativeDarwinIt("authenticates the selected Responses endpoint while excluding provider secrets from model-requested shell tools", async () => {
-    const codexBinary = resolvePinnedCodexBinary();
-    const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-secret-provider-"));
-    temporaryDirectories.push(codexHome);
-    await configureFixture(codexBinary, codexHome);
-    const requestReceived = deferred<CapturedRequest>();
-    const shellOutputReceived = deferred<string>();
-    let requestNumber = 0;
-    const server = createServer((request, response) => {
-      void captureRequest(request).then((captured) => {
-        requestNumber += 1;
-        if (requestNumber === 1) {
-          requestReceived.resolve(captured);
-          respondWithEnvironmentProbe(response);
-          return;
-        }
-        const shellOutput = functionCallOutput(captured.body);
-        shellOutputReceived.resolve(shellOutput);
-        respondWithFinalMessage(response);
-      }, (error) => {
-        if (requestNumber === 0) requestReceived.reject(error);
-        else shellOutputReceived.reject(error);
+    const scenarios = await Promise.allSettled(Array.from({ length: 3 }, async () => {
+      const codexBinary = resolvePinnedCodexBinary();
+      const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-secret-provider-"));
+      temporaryDirectories.push(codexHome);
+      await configureFixture(codexBinary, codexHome);
+      const requestReceived = deferred<CapturedRequest>();
+      const shellOutputReceived = deferred<string>();
+      let requestNumber = 0;
+      const server = createServer((request, response) => {
+        void captureRequest(request).then((captured) => {
+          requestNumber += 1;
+          if (requestNumber === 1) {
+            requestReceived.resolve(captured);
+            respondWithEnvironmentProbe(response);
+            return;
+          }
+          const shellOutput = functionCallOutput(captured.body);
+          shellOutputReceived.resolve(shellOutput);
+          respondWithFinalMessage(response);
+        }, (error) => {
+          if (requestNumber === 0) requestReceived.reject(error);
+          else shellOutputReceived.reject(error);
+        });
       });
-    });
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", resolve);
-    });
-    const address = server.address();
-    if (address === null || typeof address === "string") throw new Error("Loopback provider did not expose a TCP port.");
-    const endpoint = `http://127.0.0.1:${address.port}/v1`;
-    const abort = new AbortController();
-    const harness = new CodexBasicHarness({
-      threadId: 1,
-      permissionProfileId: "full",
-      permissionBinding: { sandboxMode: "danger-full-access", approvalPolicy: "never" },
-      workingDirectory: process.cwd(),
-      configuration: {
-        schemaVersion: 1,
-        name: "codex-basic",
-        implementation: "codex.basic",
-        implementationVersion: 1,
-        permissionBindings: {
-          full: { sandboxMode: "danger-full-access", approvalPolicy: "never" },
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", resolve);
+      });
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("Loopback provider did not expose a TCP port.");
+      const endpoint = `http://127.0.0.1:${address.port}/v1`;
+      const abort = new AbortController();
+      const harness = new CodexBasicHarness({
+        threadId: 1,
+        permissionProfileId: "full",
+        permissionBinding: { sandboxMode: "danger-full-access", approvalPolicy: "never" },
+        workingDirectory: process.cwd(),
+        configuration: {
+          schemaVersion: 1,
+          name: "codex-basic",
+          implementation: "codex.basic",
+          implementationVersion: 1,
+          permissionBindings: {
+            full: { sandboxMode: "danger-full-access", approvalPolicy: "never" },
+          },
+          settings: { skipGitRepoCheck: true },
         },
-        settings: { skipGitRepoCheck: true },
-      },
-    });
-    const inputGraph = {
-      id: 1,
-      kind: "user-interaction" as const,
-      icon: "user" as const,
-      title: "Question",
-      detail: "Explain idempotency keys.",
-      state: "accepted" as const,
-    };
-    const completion = harness.complete({
-      inputGraph,
-      interactionInput: { interaction: inputGraph, contexts: [] },
-      origin: { kind: "root" },
-      model: { providerId: "openai-test", adapterId: "openai-api", modelId: "gpt-test" },
-      access: {
-        kind: "secret",
-        contract: "secret@1",
-        providerId: "openai-test",
-        adapterId: "openai-api",
-        adapterImplementationVersion: "1",
-        endpoint,
-        fields: { "api-key": SYNTHETIC_API_KEY },
-        runtime: {
-          runtimeId: "codex",
-          version: pinnedCodexVersion(),
-          executable: codexBinary,
-          environment: {
-            CODEX_HOME: codexHome,
-            RELAYER_CODEX_BINARY: codexBinary,
+      });
+      const inputGraph = {
+        id: 1,
+        kind: "user-interaction" as const,
+        icon: "user" as const,
+        title: "Question",
+        detail: "Explain idempotency keys.",
+        state: "accepted" as const,
+      };
+      const completion = harness.complete({
+        inputGraph,
+        interactionInput: { interaction: inputGraph, contexts: [] },
+        origin: { kind: "root" },
+        model: { providerId: "openai-test", adapterId: "openai-api", modelId: "gpt-test" },
+        access: {
+          kind: "secret",
+          contract: "secret@1",
+          providerId: "openai-test",
+          adapterId: "openai-api",
+          adapterImplementationVersion: "1",
+          endpoint,
+          fields: { "api-key": SYNTHETIC_API_KEY },
+          runtime: {
+            runtimeId: "codex",
+            version: pinnedCodexVersion(),
+            executable: codexBinary,
+            environment: {
+              CODEX_HOME: codexHome,
+              RELAYER_CODEX_BINARY: codexBinary,
+            },
           },
         },
-      },
-      graph: {
-        interactionNodeId: 1,
-        acquireCapability: () => ({ url: "http://127.0.0.1:1", token: "graph-token", nodeId: 1 }),
-      },
-      approvals: { request: async () => { throw new Error("Approval was not expected."); } },
-      trace: createNoopHarnessTraceSink(),
-    }, abort.signal);
+        graph: {
+          interactionNodeId: 1,
+          acquireCapability: () => ({ url: "http://127.0.0.1:1", token: "graph-token", nodeId: 1 }),
+        },
+        approvals: { request: async () => { throw new Error("Approval was not expected."); } },
+        trace: createNoopHarnessTraceSink(),
+      }, abort.signal);
 
-    try {
-      const captured = await Promise.race([
-        requestReceived.promise,
-        new Promise<never>((_resolve, reject) => setTimeout(
-          () => reject(new Error("Pinned Codex did not contact the loopback Responses provider.")),
-          10_000,
-        )),
-      ]);
-      expect(captured).toMatchObject({
-        method: "POST",
-        url: "/v1/responses",
-        host: `127.0.0.1:${address.port}`,
-        authorization: `Bearer ${SYNTHETIC_API_KEY}`,
-      });
-      expect(JSON.parse(captured.body)).toMatchObject({ model: "gpt-test", stream: true });
-      const shellOutput = await Promise.race([
-        shellOutputReceived.promise,
-        new Promise<never>((_resolve, reject) => setTimeout(
-          () => reject(new Error("Pinned Codex did not return the model-requested shell probe.")),
-          10_000,
-        )),
-      ]);
-      expect(shellOutput).toContain("OPENAI_API_KEY_ABSENT");
-      expect(shellOutput).toContain("OPENAI_BASE_URL_ABSENT");
-      expect(shellOutput).toContain("RELAYER_GRAPH_URL_PRESENT");
-      expect(shellOutput).toContain("RELAYER_GRAPH_TOKEN_PRESENT");
-      expect(shellOutput).toContain("RELAYER_NODE_ID_PRESENT");
-      expect(shellOutput).not.toContain(SYNTHETIC_API_KEY);
-      await expect(completion).resolves.toBeUndefined();
-    } finally {
-      abort.abort(new Error("Process-boundary test cleanup."));
-      harness.forceShutdown();
-      await completion.catch(() => undefined);
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    }
+      try {
+        const captured = await Promise.race([
+          requestReceived.promise,
+          new Promise<never>((_resolve, reject) => setTimeout(
+            () => reject(new Error("Pinned Codex did not contact the loopback Responses provider.")),
+            10_000,
+          )),
+        ]);
+        expect(captured).toMatchObject({
+          method: "POST",
+          url: "/v1/responses",
+          host: `127.0.0.1:${address.port}`,
+          authorization: `Bearer ${SYNTHETIC_API_KEY}`,
+        });
+        expect(JSON.parse(captured.body)).toMatchObject({ model: "gpt-test", stream: true });
+        const shellOutput = await Promise.race([
+          shellOutputReceived.promise,
+          new Promise<never>((_resolve, reject) => setTimeout(
+            () => reject(new Error("Pinned Codex did not return the model-requested shell probe.")),
+            10_000,
+          )),
+        ]);
+        expect(shellOutput).toContain("OPENAI_API_KEY_ABSENT");
+        expect(shellOutput).toContain("OPENAI_BASE_URL_ABSENT");
+        expect(shellOutput).toContain("RELAYER_GRAPH_URL_PRESENT");
+        expect(shellOutput).toContain("RELAYER_GRAPH_TOKEN_PRESENT");
+        expect(shellOutput).toContain("RELAYER_NODE_ID_PRESENT");
+        expect(shellOutput).not.toContain(SYNTHETIC_API_KEY);
+        await expect(completion).resolves.toBeUndefined();
+      } finally {
+        abort.abort(new Error("Process-boundary test cleanup."));
+        harness.forceShutdown();
+        await completion.catch(() => undefined);
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    }));
+    const failures = scenarios.flatMap((scenario) => scenario.status === "rejected" ? [scenario.reason] : []);
+    if (failures.length) throw new AggregateError(failures, `${failures.length} native provider-isolation scenarios failed`);
   }, 20_000);
 
   nativeDarwinIt("uses the invoked child's fresh graph capability in a pinned-Codex shell after a parent completion", async () => {
@@ -429,7 +433,7 @@ function environmentProbeCommand(): string {
   if (process.platform === "win32") {
     return "cmd.exe /d /s /c \"if defined OPENAI_API_KEY (echo OPENAI_API_KEY_PRESENT) else (echo OPENAI_API_KEY_ABSENT) & if defined OPENAI_BASE_URL (echo OPENAI_BASE_URL_PRESENT) else (echo OPENAI_BASE_URL_ABSENT) & if defined RELAYER_GRAPH_URL (echo RELAYER_GRAPH_URL_PRESENT) else (echo RELAYER_GRAPH_URL_ABSENT) & if defined RELAYER_GRAPH_TOKEN (echo RELAYER_GRAPH_TOKEN_PRESENT) else (echo RELAYER_GRAPH_TOKEN_ABSENT) & if defined RELAYER_NODE_ID (echo RELAYER_NODE_ID_PRESENT) else (echo RELAYER_NODE_ID_ABSENT)\"";
   }
-  return "if env | grep -q ^OPENAI_API_KEY=; then echo OPENAI_API_KEY_PRESENT; else echo OPENAI_API_KEY_ABSENT; fi; if env | grep -q ^OPENAI_BASE_URL=; then echo OPENAI_BASE_URL_PRESENT; else echo OPENAI_BASE_URL_ABSENT; fi; if env | grep -q ^RELAYER_GRAPH_URL=; then echo RELAYER_GRAPH_URL_PRESENT; else echo RELAYER_GRAPH_URL_ABSENT; fi; if env | grep -q ^RELAYER_GRAPH_TOKEN=; then echo RELAYER_GRAPH_TOKEN_PRESENT; else echo RELAYER_GRAPH_TOKEN_ABSENT; fi; if env | grep -q ^RELAYER_NODE_ID=; then echo RELAYER_NODE_ID_PRESENT; else echo RELAYER_NODE_ID_ABSENT; fi";
+  return "if printenv OPENAI_API_KEY >/dev/null; then echo OPENAI_API_KEY_PRESENT; else echo OPENAI_API_KEY_ABSENT; fi; if printenv OPENAI_BASE_URL >/dev/null; then echo OPENAI_BASE_URL_PRESENT; else echo OPENAI_BASE_URL_ABSENT; fi; if printenv RELAYER_GRAPH_URL >/dev/null; then echo RELAYER_GRAPH_URL_PRESENT; else echo RELAYER_GRAPH_URL_ABSENT; fi; if printenv RELAYER_GRAPH_TOKEN >/dev/null; then echo RELAYER_GRAPH_TOKEN_PRESENT; else echo RELAYER_GRAPH_TOKEN_ABSENT; fi; if printenv RELAYER_NODE_ID >/dev/null; then echo RELAYER_NODE_ID_PRESENT; else echo RELAYER_NODE_ID_ABSENT; fi";
 }
 
 function respondWithFinalMessage(response: import("node:http").ServerResponse): void {

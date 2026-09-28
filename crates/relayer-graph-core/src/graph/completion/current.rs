@@ -154,12 +154,16 @@ pub(crate) async fn transition(
                     .await?;
             (Some(*layer_id), Some(*layer_id), digest, Some(publication))
         }
-        CurrentTransition::Stop { .. } | CurrentTransition::Fail { .. } => (
-            persisted.current_layer_id,
-            None,
-            format!("sha256:{:x}", Sha256::digest(b"no-publication")),
-            None,
-        ),
+        CurrentTransition::Stop { .. } | CurrentTransition::Fail { .. } => {
+            crate::storage::sqlite::attached_navigation::discard_pending(&mut transaction, scope)
+                .await?;
+            (
+                persisted.current_layer_id,
+                None,
+                format!("sha256:{:x}", Sha256::digest(b"no-publication")),
+                None,
+            )
+        }
     };
     CurrentTable::new(&mut transaction)
         .append_revision(RevisionInsert {
@@ -221,13 +225,23 @@ pub(crate) async fn transition(
         .bind(scope.root_node_id.value())
         .fetch_optional(&mut *transaction)
         .await?;
-        if let Some(action_id) = converted {
+        let mutated =
+            crate::storage::sqlite::attached_navigation::changed_nodes(&mut transaction, scope)
+                .await?;
+        if converted.is_some() || !mutated.is_empty() {
             // Match rebuild semantics: each presenting closure publishes only to
             // its own project/thread. Do not mix source and result entitlements.
-            let action_id = crate::ActionId::new(action_id)
-                .ok_or_else(|| GraphError::Internal("Invalid converted action identity".into()))?;
+            // Select affected occurrences and their presenting ancestors before
+            // reconstructing closures inside this write transaction.
+            let converted_action = converted
+                .map(|id| {
+                    crate::ActionId::new(id).ok_or_else(|| {
+                        GraphError::Internal("Invalid converted action identity".into())
+                    })
+                })
+                .transpose()?;
             let currents = CurrentTable::new(&mut transaction)
-                .published_currents_for_action(action_id)
+                .published_currents_for_changes(converted_action, &mutated)
                 .await?;
             for current in currents {
                 if current.completion_id == scope.root_node_id {
@@ -249,11 +263,16 @@ pub(crate) async fn transition(
                     root,
                 )
                 .await?;
-                if closure
-                    .layers
-                    .iter()
-                    .any(|layer| layer.actions.iter().any(|action| action.id == action_id))
-                {
+                if closure.layers.iter().any(|layer| {
+                    layer
+                        .actions
+                        .iter()
+                        .any(|action| Some(action.id.value()) == converted)
+                        || layer
+                            .nodes
+                            .iter()
+                            .any(|node| mutated.contains(&node.id.value()))
+                }) {
                     publications.push((
                         closure,
                         crate::publication_targets(presenting.project_id, presenting.thread_id),

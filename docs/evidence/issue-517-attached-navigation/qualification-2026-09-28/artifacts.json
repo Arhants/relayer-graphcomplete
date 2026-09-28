@@ -1,0 +1,188 @@
+{
+  "testedSourceDigest": "29eeda14452e722400023f2482855a4f0b573122b8592bce336152daaea20b01",
+  "status": "blocked",
+  "fullCheck": "failed",
+  "liveDemo": "not-run",
+  "artifacts": [
+    {
+      "path": "09-interaction-graph-closed.png",
+      "byteLength": 218989,
+      "sha256": "639a41e1789eba6c2db88fac6df8f0642f3ee65b0bc07097238dfb6acd19bfd0"
+    },
+    {
+      "path": "10-interaction-graph-open.png",
+      "byteLength": 233859,
+      "sha256": "a70fb5f381051afd784383ff5320608ddfbc4c4e34c8d612edc19337b8eb367f"
+    },
+    {
+      "path": "11-interaction-graph-selected-root.png",
+      "byteLength": 222836,
+      "sha256": "a335dc07501d2850ee79e85b503a807410f515e2338ee7272378b8680e1ec444"
+    },
+    {
+      "path": "PR-draft.md",
+      "byteLength": 3707,
+      "sha256": "40d62d7d2988ccb13861ed0473cf69878bbf39e88b58a8399dd5ff910dee25d7"
+    },
+    {
+      "path": "README.md",
+      "byteLength": 5737,
+      "sha256": "3edb91347ed6ecd9e00c1f9bbae82ee2d72d179373b30a8676ef98d897643637"
+    },
+    {
+      "path": "compiled-eval.txt",
+      "byteLength": 385,
+      "sha256": "ba50a1b61f1d82ab19ad725d57cd164c9a5c4d1b9215dd67b060f51f1a7ee3ee"
+    },
+    {
+      "path": "context-lifecycle.txt",
+      "byteLength": 39850,
+      "sha256": "330b383b080be20d62e523dffdde4d223354afd4ed3ed1e6e50c9351839fa17f"
+    },
+    {
+      "path": "desktop-default-result.json",
+      "byteLength": 3518,
+      "sha256": "6ee5bb4cbfbbdc4c07fc8a173c1e7eb889ae5d5f6c43ba54e3614cd7ad5f2d4c"
+    },
+    {
+      "path": "desktop-default.txt",
+      "byteLength": 8692,
+      "sha256": "c2071651c60fb09a10fd7d119a3d81ead026c13de31f64510257b35d73bbd4fd"
+    },
+    {
+      "path": "desktop-gated-result.json",
+      "byteLength": 4513,
+      "sha256": "1babcc419d2d15e0d3fa35a80f321ecde996e0b9c66925b28ca002a66ac05e45"
+    },
+    {
+      "path": "desktop-gated.txt",
+      "byteLength": 12555,
+      "sha256": "6f1925b926d845def83e1ce3c6d42d5917d37ac9e1129a8bf7ff218d8c8ee2c2"
+    },
+    {
+      "path": "final-build.txt",
+      "byteLength": 1940,
+      "sha256": "2424b73a52ca21d586c913d1ad9b23a4e7a27a027125f7492fb9458fdfe41e6a"
+    },
+    {
+      "path": "final-check-secret-boundary-failed.txt",
+      "byteLength": 107145,
+      "sha256": "b61803ac32c956d536016e33572c090a7adb7c939ed7a9e37d1a46a2cba96490"
+    },
+    {
+      "path": "focused-core.txt",
+      "byteLength": 783,
+      "sha256": "11ff133ad328323835863415cab15c68364621325bd04257e9802a1dfb156115"
+    },
+    {
+      "path": "focused-ladybug.txt",
+      "byteLength": 684,
+      "sha256": "fd47c96d153cc8bf9a1cc0d0feeb26910fbd07b15c83f56ab0710cce3ebb79f8"
+    },
+    {
+      "path": "frozen-check-failed.txt",
+      "byteLength": 115803,
+      "sha256": "c1cac53d76a89bac6817db713dcefccf5682158acad0ea39f9fe1dc0e618c65d"
+    },
+    {
+      "path": "isolated-secret-boundary-pass.txt",
+      "byteLength": 437,
+      "sha256": "3bc43c05bc133946a3eb172bb9425fdff69cfb83aab2077c83c7ea181ed6cbf0"
+    },
+    {
+      "path": "mount-green.txt",
+      "byteLength": 519,
+      "sha256": "33e5ef73623f16c1f57ee41e006e19d2c8611218f16e4bc31a2309c2a687a3b3"
+    },
+    {
+      "path": "mount-red.txt",
+      "byteLength": 1133,
+      "sha256": "f9e11eb940792280837bd65291418add71cb63aa00ad64c510730ef0551b0336"
+    },
+    {
+      "path": "native-boundary-diagnosis.md",
+      "byteLength": 3034,
+      "sha256": "faaef7f653ea9e94d8b17d7e16519793018f1da99f5d57078c69a95300a3fa80"
+    },
+    {
+      "path": "packaging-viewer-controller.txt",
+      "byteLength": 268,
+      "sha256": "11765466aaede08113ced5308b6a17aea5127bbbba61d6f37219d22a385005b6"
+    },
+    {
+      "path": "project-restart-result.json",
+      "byteLength": 599,
+      "sha256": "ad1dc27ed6b7573243c0fb7472e7d297a5aa241e09b58012b99ad62ba883b831"
+    },
+    {
+      "path": "project-restart.txt",
+      "byteLength": 3167,
+      "sha256": "2c98147bb5af1e18592992b7f0fbb8a01f92fbc72e2ae918e35cea81d807c8eb"
+    },
+    {
+      "path": "public-viewer-desktop-overview.png",
+      "byteLength": 118889,
+      "sha256": "17b22659dffd86f7d9767aa09f8e592434571fe88450dcadf2680fb8185989c3"
+    },
+    {
+      "path": "public-viewer-manifest.json",
+      "byteLength": 9082,
+      "sha256": "d4717fced866a95a4e4c2757419a1a24a9cb1ddf8d08891ad345671966b8f29f"
+    },
+    {
+      "path": "public-viewer-mobile-node-details.png",
+      "byteLength": 70092,
+      "sha256": "788ba3b5f6bb94910e1a4c34ca96ce8ae53152ea960824c68f950c7bafee3786"
+    },
+    {
+      "path": "public-viewer-mobile-overview.png",
+      "byteLength": 75303,
+      "sha256": "4e47e81316f0251313ba7188d880e97cd3341ced44051a285298eba578848d65"
+    },
+    {
+      "path": "public-viewer-smoke.txt",
+      "byteLength": 168,
+      "sha256": "164335572c6025477b72a15a5e81a0196d16039b30018223510c7626bdca2341"
+    },
+    {
+      "path": "review-fixed-check-readability-failed.txt",
+      "byteLength": 109201,
+      "sha256": "d3ae983fd659a8e208ac2410c0e6af74a22580afe6ca3efdd053e7ce72707297"
+    },
+    {
+      "path": "root-reference-green.txt",
+      "byteLength": 510,
+      "sha256": "65050a452cee9cf9ab2f58d713223ca59136eae4d4296a3e28098fa5ef32b80d"
+    },
+    {
+      "path": "root-reference-red.txt",
+      "byteLength": 1278,
+      "sha256": "affd92338312a72a344246a707229a701e9a2b44a3805bbae3b534754c516e02"
+    },
+    {
+      "path": "source-1c5b.json",
+      "byteLength": 8645,
+      "sha256": "33f9e5dcbee6597a8bc2b7d8ac28caaa651bae73ab0b86842d3fb55aa46a6643"
+    },
+    {
+      "path": "source-29eeda.json",
+      "byteLength": 8645,
+      "sha256": "38bd15f09cb991d06181b21d8c8806641c568b81f8ef97ec76e325fff35cc219"
+    },
+    {
+      "path": "source-acaa.json",
+      "byteLength": 7700,
+      "sha256": "867b0f346337ae570166ca22833f7baa87112c2143e3c5cab29f492756bf6de1"
+    },
+    {
+      "path": "staging-green.txt",
+      "byteLength": 519,
+      "sha256": "658ef36826f2020d3369777bcee55764db87931c1c5ee3c67c5346373b6c3d02"
+    },
+    {
+      "path": "staging-red.txt",
+      "byteLength": 1194,
+      "sha256": "0b5b62a5d859fc6e65d25f9900071fcaa11b9901a018d31baa6c6265eee274f0"
+    }
+  ]
+}

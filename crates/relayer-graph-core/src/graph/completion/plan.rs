@@ -25,6 +25,7 @@ pub(crate) struct CompletionPlan {
     pub layers: HashSet<LayerId>,
     pub actions: HashSet<ActionId>,
     pub layer_actions: HashMap<LayerId, Vec<ActionId>>,
+    arrivals: HashMap<LayerId, NavigateRelation>,
 }
 
 impl CompletionPlan {
@@ -75,10 +76,13 @@ impl CompletionPlan {
             layers: HashSet::new(),
             actions: HashSet::new(),
             layer_actions: HashMap::new(),
+            arrivals: HashMap::new(),
         };
         plan.actions
             .insert(plan.root_action.as_ref().expect("root action").id);
-        plan.walk_layers(connection, scope, root_layer).await?;
+        plan.walk_layers(connection, scope, root_layer, NavigateRelation::Expand)
+            .await?;
+        plan.collect_attached(connection, scope).await?;
         plan.validate_expand_acyclic(connection, scope).await?;
         plan.validate_no_orphan_layers(connection, scope).await?;
         plan.validate_edge_uniqueness(connection, scope).await?;
@@ -117,8 +121,10 @@ impl CompletionPlan {
             layers: HashSet::new(),
             actions: HashSet::new(),
             layer_actions: HashMap::new(),
+            arrivals: HashMap::new(),
         };
-        plan.walk_layers(connection, scope, root_layer).await?;
+        plan.walk_layers(connection, scope, root_layer, NavigateRelation::Expand)
+            .await?;
         plan.validate_expand_acyclic(connection, scope).await?;
         plan.validate_edge_uniqueness(connection, scope).await?;
         Ok(plan)
@@ -190,7 +196,7 @@ impl CompletionPlan {
         }
         let mut actions = HashSet::new();
         actions.insert(root_action.id);
-        let plan = Self {
+        let mut plan = Self {
             root_action: Some(root_action),
             root_layer: returned_layer,
             lease,
@@ -199,9 +205,63 @@ impl CompletionPlan {
             layers: HashSet::new(),
             actions,
             layer_actions: HashMap::new(),
+            arrivals: HashMap::from([(returned_layer, NavigateRelation::Expand)]),
         };
+        plan.collect_attached(connection, scope).await?;
+        plan.validate_expand_acyclic(connection, scope).await?;
+        plan.validate_edge_uniqueness(connection, scope).await?;
         plan.validate_no_orphan_layers(connection, scope).await?;
         Ok(plan)
+    }
+
+    async fn collect_attached(
+        &mut self,
+        connection: &mut GraphConnection,
+        scope: &InteractionScope,
+    ) -> Result<(), GraphError> {
+        super::super::attached_navigation::validate(connection, scope).await?;
+        let ids =
+            crate::storage::sqlite::attached_navigation::draft_actions(connection, scope).await?;
+        for id in ids {
+            let id = ActionId::new(id)
+                .ok_or_else(|| GraphError::Internal("Invalid attached action.".into()))?;
+            let action = ActionTable::new(&mut *connection)
+                .record(scope, id)
+                .await?
+                .ok_or_else(|| GraphError::Internal("Missing attached action.".into()))?
+                .action;
+            crate::storage::sqlite::permissions::authorize(
+                connection,
+                scope,
+                &crate::InteractionPermission::NavigateAdd {
+                    node_id: action.source_node_id,
+                },
+            )
+            .await?;
+            let target = action
+                .target_layer_id
+                .ok_or_else(|| GraphError::Internal("Missing attached target.".into()))?;
+            let layer = LayerTable::new(&mut *connection)
+                .visible(scope, target)
+                .await?;
+            let relation = action
+                .relation
+                .ok_or_else(|| GraphError::Internal("Missing attached relation.".into()))?;
+            // The response root already has its independent expansion-authoring role.
+            // An attached backlink exposes that response without reclassifying it as a
+            // reference-authored layer. Ordinary non-root arrivals still share checks.
+            if target == self.root_layer && relation == NavigateRelation::Reference {
+                self.actions.insert(id);
+                continue;
+            }
+            register_arrival(&mut self.arrivals, target, relation)?;
+            if layer.state != RecordState::Accepted {
+                self.walk_layers(connection, scope, target, relation)
+                    .await?;
+            }
+            self.actions.insert(id);
+        }
+        Ok(())
     }
 
     async fn validate_edge_uniqueness(
@@ -235,11 +295,11 @@ impl CompletionPlan {
         connection: &mut GraphConnection,
         scope: &InteractionScope,
         root: LayerId,
+        relation: NavigateRelation,
     ) -> Result<(), GraphError> {
-        let mut pending = VecDeque::from([(root, NavigateRelation::Expand)]);
-        let mut arrivals = HashMap::<LayerId, NavigateRelation>::new();
+        let mut pending = VecDeque::from([(root, relation)]);
         while let Some((layer_id, arrival)) = pending.pop_front() {
-            register_arrival(&mut arrivals, layer_id, arrival)?;
+            register_arrival(&mut self.arrivals, layer_id, arrival)?;
             let record = LayerTable::new(&mut *connection)
                 .record(scope, layer_id)
                 .await?
@@ -364,7 +424,7 @@ impl CompletionPlan {
                         "Submit or select the navigate target layer and retry.",
                     )
                 })?;
-                register_arrival(&mut arrivals, target, relation)?;
+                register_arrival(&mut self.arrivals, target, relation)?;
                 pending.push_back((target, relation));
             }
         }

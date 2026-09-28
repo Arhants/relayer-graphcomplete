@@ -58,6 +58,11 @@ pub(crate) enum ConversationExportBuildError {
 fn require_portable_invoke_shape(
     closure: &AcceptedGraphClosure,
 ) -> Result<(), ConversationExportBuildError> {
+    if closure.has_persistent_mutations {
+        return Err(ConversationExportBuildError::Invalid(
+            "Export is not yet available for conversations containing attached-node navigation changes.".into(),
+        ));
+    }
     if std::iter::once(&closure.root_action)
         .chain(closure.layers.iter().flat_map(|layer| &layer.actions))
         .any(|action| action.resolved_invoke_interaction_id.is_some())
@@ -3164,7 +3169,7 @@ mod tests {
         let missing_metadata = missing.clone();
         let large = Arc::new(AtomicBool::new(false));
         let large_metadata = large.clone();
-        let app = axum::Router::new().route("/api/control/temporal-features", axum::routing::get(|| async { axum::Json(json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true})) })).fallback(move |request: axum::extract::Request| {
+        let app = axum::Router::new().route("/api/control/temporal-features", axum::routing::get(|| async { axum::Json(json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true})) })).route("/api/control/interaction-features", axum::routing::get(|| async { axum::Json(json!({"interactionGraph":false})) })).fallback(move |request: axum::extract::Request| {
             let counted = counted.clone();
             let deny = deny.clone();
             let metadata_counted = metadata_counted.clone();
@@ -3315,6 +3320,23 @@ mod tests {
             "reject the second 8 MiB asset from metadata before fetching its body"
         );
         server.abort();
+    }
+
+    #[test]
+    fn portable_export_rejects_persistent_mutation_closures() {
+        let mut closure: relayer_graph_core::AcceptedGraphClosure = serde_json::from_value(serde_json::json!({
+            "nodeId":1,"interaction":{"id":1,"kind":"user-interaction","icon":"user","title":"Question","detail":"Question","state":"accepted"},
+            "rootAction":{"id":1,"sourceNodeId":1,"kind":"navigate","relation":"expand","label":"Response","variant":"pill","targetLayerId":1,"state":"accepted"},
+            "rootLayerId":1,"layers":[]
+        })).unwrap();
+        super::require_portable_invoke_shape(&closure).unwrap();
+        closure.has_persistent_mutations = true;
+        let error = super::require_portable_invoke_shape(&closure).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("attached-node navigation changes")
+        );
     }
 
     #[test]

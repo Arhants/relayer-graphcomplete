@@ -1,0 +1,22 @@
+   Compiling relayer-graph-core v0.0.0 (/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/crates/relayer-graph-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.87s
+     Running tests/graph_database.rs (target/debug/deps/graph_database-ab81e4d74e1ef132)
+
+running 1 test
+test attached_navigation_reference_targets_keep_reference_authoring_restrictions ... FAILED
+
+failures:
+
+---- attached_navigation_reference_targets_keep_reference_authoring_restrictions stdout ----
+
+thread 'attached_navigation_reference_targets_keep_reference_authoring_restrictions' (190539001) panicked at crates/relayer-graph-core/tests/graph_database.rs:8051:18:
+a backlink to the established response root does not make it reference-only: Validation { code: "reference_layer_authoring_restricted", path: "relation", message: "This action starts from a reference layer. Reference layers may author only reference navigation. Change the relation to reference, or author the action from an expansion layer." }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    attached_navigation_reference_targets_keep_reference_authoring_restrictions
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 96 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `-p relayer-graph-core --test graph_database`

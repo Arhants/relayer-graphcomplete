@@ -48,7 +48,7 @@ export interface StableAuthoringReference {
 export interface CompiledGraphActionReference {
   readonly clientKey: string;
   readonly sourceNode: StableAuthoringReference;
-  readonly sourceLayer: StableAuthoringReference;
+  readonly sourceLayer?: StableAuthoringReference;
 }
 
 export interface GraphDetailCapability {
@@ -242,9 +242,10 @@ function isCanonicalCapability(value: unknown): boolean {
   if (value.kind === "link") return hasExactKeys(value, ["href", "kind"]) && typeof value.href === "string";
   if (!["expand", "reference", "invoke", "input"].includes(value.kind)
     || !hasExactKeys(value, ["action", "kind"])
-    || !isPlainRecordWithKeys(value.action, ["clientKey", "sourceLayer", "sourceNode"])
+    || !(isPlainRecordWithKeys(value.action, ["clientKey", "sourceLayer", "sourceNode"])
+      || ((value.kind === "expand" || value.kind === "reference") && isPlainRecordWithKeys(value.action, ["clientKey", "sourceNode"])))
     || !isBoundedIdentity(value.action.clientKey)) return false;
-  return isStableReference(value.action.sourceLayer) && isStableReference(value.action.sourceNode);
+  return (value.action.sourceLayer === undefined || isStableReference(value.action.sourceLayer)) && isStableReference(value.action.sourceNode);
 }
 
 function isStableReference(value: unknown): boolean {
@@ -1321,7 +1322,7 @@ function compileCapability(capability: MaterializedDetailCapability, ownerClient
   if (typeof clientKey !== "string" || clientKey.trim() === "") {
     throw new Error(`Node Detail ${capability.kind} capability requires an explicit stable action clientKey`);
   }
-  if (!isMaterializedSourceLayer(sourceLayer)) {
+  if (sourceLayer !== undefined && !isMaterializedSourceLayer(sourceLayer)) {
     throw new Error(`Node Detail ${capability.kind} capability requires exact source-layer provenance`);
   }
   return Object.freeze({
@@ -1329,7 +1330,7 @@ function compileCapability(capability: MaterializedDetailCapability, ownerClient
     action: Object.freeze({
       clientKey,
       sourceNode: Object.freeze({ clientKey: ownerClientKey }),
-      sourceLayer: Object.freeze({ clientKey: sourceLayer.clientKey }),
+      ...(sourceLayer === undefined ? {} : { sourceLayer: Object.freeze({ clientKey: sourceLayer.clientKey }) }),
     }),
   });
 }
@@ -1384,10 +1385,12 @@ function capabilityValidationCodes(capability: MaterializedDetailCapability, own
       || actionValue === null) return ["capability_invalid"];
     const action = actionValue as Record<string, unknown>;
     if (!isStableIdentity(action.clientKey)) return ["capability_invalid"];
-    if (!isMaterializedSourceLayer(action.sourceLayer) || !isStableIdentity(action.sourceLayer.clientKey)) {
-      return ["capability_invalid"];
+    if (action.sourceLayer === undefined) {
+      if (action.kind !== "navigate") return ["capability_invalid"];
+    } else {
+      if (!isMaterializedSourceLayer(action.sourceLayer) || !isStableIdentity(action.sourceLayer.clientKey)) return ["capability_invalid"];
+      if (!action.sourceLayer.containsOwner) return ["capability_source_layer_mismatch"];
     }
-    if (!action.sourceLayer.containsOwner) return ["capability_source_layer_mismatch"];
     if (!(action.kind === capability.kind || (action.kind === "navigate" && action.relation === capability.kind))) return ["capability_invalid"];
     if (!hasExactActionFields(action) || !hasValidActionPresentation(action)) return ["capability_invalid"];
     if (typeof action.label !== "string" || action.label.trim() === "") return ["capability_invalid"];

@@ -2461,6 +2461,7 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
     let output_mode = Arc::new(AtomicI64::new(0));
     let read_mode = output_mode.clone();
     let lookup_mode = output_mode.clone();
+    let attached_mode = output_mode.clone();
     let unrelated_reads = Arc::new(AtomicUsize::new(0));
     let read_unrelated = unrelated_reads.clone();
     let graph = axum::Router::new()
@@ -2471,9 +2472,15 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
             "/api/control/resolved-invoke-roots",
             axum::routing::post(move || {let mode = lookup_mode.load(Ordering::SeqCst); async move {
                 if mode == 3 { StatusCode::INTERNAL_SERVER_ERROR.into_response() }
-                else { axum::Json(json!([90])).into_response() }
+                else { axum::Json(if mode >= 4 {json!([])} else {json!([90])}).into_response() }
             }}),
         )
+        .route("/api/control/attached-navigation-roots", axum::routing::post(move || {
+            let mode = attached_mode.load(Ordering::SeqCst); async move {
+                if mode == 7 { StatusCode::INTERNAL_SERVER_ERROR.into_response() }
+                else { axum::Json(if mode >= 4 {json!([90])} else {json!([])}).into_response() }
+            }
+        }))
         .route(
             "/api/control/interactions/90/actions/41",
             axum::routing::get(|| async {
@@ -2495,8 +2502,11 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
                 let mut canonical_source = canonical_source.clone();
                 let mode = read_mode.load(Ordering::SeqCst);
                 async move {
-                    if mode == 1 { return StatusCode::INTERNAL_SERVER_ERROR.into_response(); }
-                    if mode == 2 { canonical_source["nodeId"] = json!(999); }
+                    if mode == 1 || mode == 5 { return StatusCode::INTERNAL_SERVER_ERROR.into_response(); }
+                    if mode == 2 || mode == 6 { canonical_source["nodeId"] = json!(999); }
+                    if mode >= 4 {
+                        canonical_source["rootLayer"]["actions"] = json!([{"id":42,"sourceNodeId":7,"kind":"navigate","relation":"reference","targetLayerId":501,"state":"accepted"}]);
+                    }
                     axum::Json(canonical_source).into_response()
                 }
             }),
@@ -2614,6 +2624,49 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
         .await;
         assert_eq!(view["interactions"][0]["projectionFresh"], false);
         assert_eq!(view["interactions"][1]["projectionFresh"], mode != 3);
+    }
+    assert_eq!(unrelated_reads.load(Ordering::SeqCst), 0);
+    // A later attached-node mutation must refresh the cached source even with
+    // no invoke origin or typed conversion. Reopen cannot restore stale output.
+    output_mode.store(4, Ordering::SeqCst);
+    let reopened =
+        open_app_with_runtime(&database, &root, &catalog, &graph_url, &harness_url).await;
+    for reader in [app.clone(), reopened] {
+        for uri in [
+            format!("/api/threads/{source_thread_id}"),
+            format!("/api/state?threadId={source_thread_id}"),
+        ] {
+            let view = response_json(
+                reader
+                    .clone()
+                    .oneshot(api_request_with_token("GET", &uri, None, "review"))
+                    .await
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(
+                view["interactions"][0]["completionOutput"]["rootLayer"]["actions"][0]["id"], 42,
+                "{view}"
+            );
+            assert_eq!(view["interactions"][0]["projectionFresh"], true);
+        }
+    }
+    for mode in [5, 6, 7] {
+        output_mode.store(mode, Ordering::SeqCst);
+        let view = response_json(
+            app.clone()
+                .oneshot(api_request_with_token(
+                    "GET",
+                    &format!("/api/threads/{source_thread_id}"),
+                    None,
+                    "review",
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(view["interactions"][0]["projectionFresh"], false);
+        assert_eq!(view["interactions"][1]["projectionFresh"], mode != 7);
     }
     assert_eq!(unrelated_reads.load(Ordering::SeqCst), 0);
     graph_task.abort();
@@ -8722,7 +8775,10 @@ async fn serve_test_app(
     );
     // Mock graphs predate typed conversions unless a test supplies this route.
     let app = app.fallback(|uri: axum::http::Uri| async move {
-        if uri.path() == "/api/control/resolved-invoke-roots" {
+        if matches!(
+            uri.path(),
+            "/api/control/resolved-invoke-roots" | "/api/control/attached-navigation-roots"
+        ) {
             axum::Json(json!([])).into_response()
         } else {
             StatusCode::NOT_FOUND.into_response()
@@ -8978,4 +9034,153 @@ fn test_execution_admission(body: &Value, lease_id: &str, version: &str) -> Valu
         "adapterImplementationVersion": version,
         "admittedPlan": admitted_plan,
     })
+}
+
+#[tokio::test]
+async fn interaction_graph_projects_layer_owners_and_invocation_with_scope_and_read_failures() {
+    let root = tempfile::tempdir().unwrap();
+    let database = root.path().join("product.sqlite3");
+    drop(open_app(&database, root.path()).await);
+    let pool = sqlite_pool(&database).await;
+    let project = sqlx::query(
+        "INSERT INTO projects(name,path,created_at,updated_at) VALUES ('Project',?1,'1','1')",
+    )
+    .bind(root.path().to_string_lossy().as_ref())
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_rowid();
+    let mut thread_ids = Vec::new();
+    let mut interaction_ids = Vec::new();
+    for (graph_id, title) in [
+        (90, "Layer owner"),
+        (91, "Presenting interaction"),
+        (92, "Consumer"),
+        (93, "Outside scope"),
+    ] {
+        let thread = sqlx::query("INSERT INTO threads(title,project_id,created_at,updated_at,harness_configuration_name,permission_profile_id) VALUES (?1,?2,'1','1','codex-basic','auto')")
+            .bind(title).bind(if graph_id == 93 { None } else { Some(project) }).execute(&pool).await.unwrap().last_insert_rowid();
+        let interaction = sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,graph_node_id,completion_status,permission_profile_id) VALUES (?1,1,?2,'1',?3,'failed','auto')")
+            .bind(thread).bind(title).bind(graph_id).execute(&pool).await.unwrap().last_insert_rowid();
+        thread_ids.push(thread);
+        interaction_ids.push(interaction);
+    }
+    sqlx::query("UPDATE interactions SET input_identity='b3-contexts',input_digest='sha256:b3-contexts' WHERE id=?1")
+        .bind(interaction_ids[2]).execute(&pool).await.unwrap();
+    for (position, node, layer) in [(0, 7, 500), (1, 8, 500), (2, 9, 501)] {
+        sqlx::query("INSERT INTO interaction_context_intents(interaction_id,position,target_node_id,source_interaction_node_id,source_layer_id) VALUES (?1,?2,?3,91,?4)")
+            .bind(interaction_ids[2]).bind(position).bind(node).bind(layer).execute(&pool).await.unwrap();
+    }
+    pool.close().await;
+    let mode = Arc::new(AtomicI64::new(0));
+    let owner_mode = mode.clone();
+    let metadata_mode = mode.clone();
+    let gate_mode = mode.clone();
+    let input_mode = mode.clone();
+    let owner_reads = Arc::new(AtomicUsize::new(0));
+    let observed_reads = owner_reads.clone();
+    let graph = Router::new()
+        .route("/api/control/interaction-features", axum::routing::get(move || {
+            let enabled = gate_mode.load(Ordering::SeqCst) != 4;
+            async move { axum::Json(json!({"interactionGraph":enabled})) }
+        }))
+        .route("/api/control/interactions/92/input", axum::routing::get(move || { let mode = input_mode.load(Ordering::SeqCst); async move {
+            if mode == 5 { return StatusCode::SERVICE_UNAVAILABLE.into_response(); }
+            axum::Json(json!({
+                "interaction":{"id":92,"kind":"user-interaction","icon":"user","title":"Consumer","detail":"Consumer","state":"accepted"},
+                "contexts":([7,8,9].map(|node| json!({"type":"interaction.context","targetNode":{"id":node,"kind":"concept","icon":"box","title":"Attached","detail":"Attached detail","state":"accepted"},"annotations":[]}))),
+                "submittedInputs":[]
+            })).into_response()
+        }}))
+        .route("/api/control/interactions/92/context-actions", axum::routing::get(|| async {
+            axum::Json(json!({"actions":([(7,500),(8,500),(9,501)].map(|(node,layer)| json!({
+                "id":node+100,"type":"interaction.context","sourceNodeId":92,
+                "target":{"nodeId":node,"sourceInteractionNodeId":91,"sourceLayerId":layer},"annotations":[],"state":"accepted"
+            })))}))
+        }))
+        .route("/api/control/interactions/92/layers/{layer}/owner", axum::routing::get(move |axum::extract::Path(layer):axum::extract::Path<i64>| {
+            observed_reads.fetch_add(1,Ordering::SeqCst);
+            let mode = owner_mode.load(Ordering::SeqCst);
+            async move { axum::Json(json!({"layerId":if mode==1 {999} else {layer},"ownerInteractionNodeId":if mode==2 {93} else {90}})) }
+        }))
+        .route("/api/control/interactions/92", axum::routing::get(move || {
+            let mode = metadata_mode.load(Ordering::SeqCst);
+            async move {
+                if mode==3 { StatusCode::SERVICE_UNAVAILABLE.into_response() }
+                else { axum::Json(json!({"nodeId":92,"invocation":{"sourceInteractionNodeId":91,"sourceActionId":41}})).into_response() }
+            }
+        }));
+    let (graph_url, graph_task) = serve_test_app(graph).await;
+    let (harness_url, harness_task) = serve_test_app(Router::new()).await;
+    let catalog = root.path().join("catalog.json");
+    fs::write(&catalog, json!({"schemaVersion":1,"configurations":[{"configuration":{
+        "schemaVersion":1,"name":"codex-basic","implementation":"test","implementationVersion":1,"permissionBindings":{"auto":{}},"settings":{}
+    },"digest":"sha256:test"}]}).to_string()).unwrap();
+    let app =
+        open_app_with_runtime(&database, root.path(), &catalog, &graph_url, &harness_url).await;
+    let uri = format!("/api/threads/{}/interactions", thread_ids[2]);
+    for scenario in 0..4 {
+        mode.store(scenario, Ordering::SeqCst);
+        owner_reads.store(0, Ordering::SeqCst);
+        let response = app
+            .clone()
+            .oneshot(api_request_with_token("GET", &uri, None, "review"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        let projection = &body["interactions"][0]["interactionGraph"];
+        assert_eq!(projection["enabled"], true, "{body}");
+        assert_eq!(projection["complete"], scenario == 0, "{body}");
+        assert_eq!(
+            owner_reads.load(Ordering::SeqCst),
+            2,
+            "one lookup per distinct attached layer"
+        );
+        let sources = projection["sources"].as_array().unwrap();
+        if scenario == 0 || scenario == 3 {
+            assert_eq!(sources[0]["interactionId"], interaction_ids[0]);
+            assert_eq!(
+                sources[0]["layers"],
+                json!([{"layerId":500,"nodeIds":[7,8]},{"layerId":501,"nodeIds":[9]}])
+            );
+            assert!(sources[0]["invocationActionId"].is_null());
+        }
+        if scenario != 3 {
+            let invocation = sources.last().unwrap();
+            assert_eq!(invocation["interactionId"], interaction_ids[1]);
+            assert_eq!(invocation["invocationActionId"], 41);
+            assert_eq!(invocation["layers"], json!([]));
+        }
+        assert_eq!(sources.len(), if scenario == 0 { 2 } else { 1 });
+    }
+    mode.store(5, Ordering::SeqCst);
+    let unavailable = response_json(
+        app.clone()
+            .oneshot(api_request_with_token("GET", &uri, None, "review"))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(unavailable["interactions"][0]["projectionFresh"], false);
+    assert_eq!(
+        unavailable["interactions"][0]["interactionGraph"]["complete"],
+        false
+    );
+    mode.store(4, Ordering::SeqCst);
+    let gated_off =
+        open_app_with_runtime(&database, root.path(), &catalog, &graph_url, &harness_url).await;
+    let body = response_json(
+        gated_off
+            .oneshot(api_request_with_token("GET", &uri, None, "review"))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert!(
+        body["interactions"][0].get("interactionGraph").is_none(),
+        "{body}"
+    );
+    graph_task.abort();
+    harness_task.abort();
 }

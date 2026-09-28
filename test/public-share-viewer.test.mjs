@@ -560,6 +560,8 @@ describe("public share HTML boundary", () => {
       expect(onRenderError).not.toHaveBeenCalled();
       expect(viewer).not.toBeNull();
       expect(viewer.adapter.selection.currentInteractionId).toBe("turn:1");
+      expect(windowRef.document.querySelector(".interaction-graph-stepper")).toBeNull();
+      expect(windowRef.document.querySelector(".interaction-graph-popover")).toBeNull();
       expect(windowRef.document.querySelector("#publicViewerHost")?.classList.contains("hidden")).toBe(false);
       const downloadCard = windowRef.document.querySelector(".public-share-download-card");
       expect(downloadCard?.parentElement?.classList.contains("workspace-layout")).toBe(true);

@@ -387,24 +387,28 @@ impl<'connection> CurrentTable<'connection> {
     /// Every accepted current that contributes to a canonical search rebuild,
     /// ordered deterministically by logical target and completion identity.
     pub(crate) async fn published_currents(&mut self) -> Result<Vec<PublishedCurrent>, GraphError> {
-        self.published_currents_selected(None).await
+        self.published_currents_selected(None, &[]).await
     }
 
-    pub(crate) async fn published_currents_for_action(
+    pub(crate) async fn published_currents_for_changes(
         &mut self,
-        action: crate::ActionId,
+        action: Option<crate::ActionId>,
+        nodes: &[i64],
     ) -> Result<Vec<PublishedCurrent>, GraphError> {
-        self.published_currents_selected(Some(action)).await
+        self.published_currents_selected(action, nodes).await
     }
 
     async fn published_currents_selected(
         &mut self,
         action: Option<crate::ActionId>,
+        nodes: &[i64],
     ) -> Result<Vec<PublishedCurrent>, GraphError> {
         sqlx::query_as::<_, PublishedCurrentRow>(
             r#"
             WITH RECURSIVE affected(layer_id) AS (
                 SELECT layer_id FROM layer_actions WHERE action_id=?1
+                UNION
+                SELECT layer_id FROM layer_nodes WHERE node_id IN (SELECT value FROM json_each(?2))
                 UNION
                 SELECT membership.layer_id FROM affected child
                 JOIN actions parent ON parent.target_layer_id=child.layer_id
@@ -414,12 +418,13 @@ impl<'connection> CurrentTable<'connection> {
             SELECT state.interaction_node_id,state.current_layer_id
             FROM completion_states state JOIN nodes n ON n.id=state.interaction_node_id
             WHERE state.current_layer_id IS NOT NULL
-                AND (?1 IS NULL OR state.current_layer_id IN (SELECT layer_id FROM affected))
+                AND ((?1 IS NULL AND json_array_length(?2)=0) OR state.current_layer_id IN (SELECT layer_id FROM affected))
             ORDER BY CASE WHEN n.project_id IS NULL THEN 1 ELSE 0 END,
                 n.project_id,n.thread_id,state.interaction_node_id
             "#,
         )
         .bind(action.map(crate::ActionId::value))
+        .bind(serde_json::to_string(nodes).map_err(|error| GraphError::Internal(error.to_string()))?)
         .fetch_all(&mut *self.connection)
         .await?
         .into_iter()

@@ -1,3 +1,4 @@
+import { interactionGraph, renderInteractionGraph } from "./interaction-graph.js";
 import { preferredLayerNode, rememberedLayerSelection, rememberLayerSelection } from "./layer-selection.js";
 import { escapeHtml, toast } from "../ui.js";
 import { actionCanRetry, actionWasInvoked, actionReviewKind } from "../action-invocation-state.js";
@@ -1323,15 +1324,17 @@ export async function navigateWorkspaceAction({
 
 
 export function resolveCompiledNodeDetailAction(actions, reference, node) {
-  if (!reference?.clientKey
-    || reference.sourceNode?.clientKey !== node?.clientKey
-    || !reference.sourceLayer?.clientKey) return undefined;
+  const matches = (ref, id, clientKey) => ref != null
+    && (ref.id != null || ref.clientKey != null)
+    && (ref.id == null || String(ref.id) === String(id))
+    && (ref.clientKey == null || ref.clientKey === clientKey);
+  if (!reference?.clientKey || !matches(reference.sourceNode, node?.id, node?.clientKey)) return undefined;
   return (actions || []).find((action) => (
     action.clientKey === reference.clientKey
-    && action.sourceNodeId != null
-    && String(action.sourceNodeId) === String(node.id)
-    && action.sourceLayerId != null
-    && action.sourceLayerClientKey === reference.sourceLayer.clientKey
+    && action.sourceNodeId != null && String(action.sourceNodeId) === String(node.id)
+    && (reference.sourceLayer == null
+      ? action.sourceLayerId == null
+      : matches(reference.sourceLayer, action.sourceLayerId, action.sourceLayerClientKey))
   ));
 }
 
@@ -3655,6 +3658,32 @@ export function createProductWorkspace({
     $("#previousTurn").disabled = turnIndex <= 0;
     $("#nextTurn").disabled = turnIndex < 0 || turnIndex >= turns.length - 1;
     const pickerButton = $("#turnPickerButton");
+    const graph = interactionGraph(turns, interaction?.id);
+    $("#turnPicker .turn-stepper").classList.toggle("interaction-graph-stepper", graph !== null);
+    $("#previousTurn").classList.toggle("hidden", graph !== null);
+    $("#nextTurn").classList.toggle("hidden", graph !== null);
+    pickerButton.classList.toggle("interaction-graph-trigger", graph !== null);
+    $("#turnPopover").classList.toggle("interaction-graph-popover", graph !== null);
+    if (graph) {
+      $("#turnPicker .turn-stepper").setAttribute("aria-label", "Interaction navigation");
+      pickerButton.disabled = !turns.length;
+      pickerButton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12M6 6v12m0-6h12"/><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/></svg><b>${graph.contextCount}</b>`;
+      pickerButton.setAttribute("aria-label", `Open interaction graph. ${graph.contextCount} attached context nodes`);
+      const title = graphDocument.createElement("div"); title.className = "interaction-graph-heading";
+      title.textContent = graph.incomplete ? "Interaction graph · Some connections unavailable" : "Interaction graph";
+      const viewport = graphDocument.createElement("div"); viewport.className = "interaction-graph-viewport";
+      viewport.append(renderInteractionGraph(graphDocument, graph, interaction?.id, async (node) => {
+        if (!await prepareNodeContextSelectionChange()) return;
+        closeTurnPopover(); collapseContextPreviews();
+        if (onSelectTurnById) await onSelectTurnById(node.id, { responseRoot: true, threadId: node.threadId });
+      }));
+      $("#turnPopover").replaceChildren(title, viewport);
+      if (focusedTurnId !== null) [...$("#turnPopover").querySelectorAll("[data-turn-id]")].find((row) => row.dataset.turnId === focusedTurnId)?.focus({ preventScroll: true });
+      $("#turnPopover").classList.toggle("hidden", !turnPopoverOpen);
+      pickerButton.setAttribute("aria-expanded", String(turnPopoverOpen));
+      return;
+    }
+    $("#turnPicker .turn-stepper").setAttribute("aria-label", "Turn navigation");
     pickerButton.disabled = turnIndex < 0 || !turns.length;
     pickerButton.textContent = `Turn ${turnIndex < 0 ? 0 : turnIndex + 1} of ${turns.length}`;
     pickerButton.setAttribute(

@@ -1079,3 +1079,12 @@ async function checkpointWithHostAssets(node: NodeObject, assets: readonly unkno
   })));
   return new RelayerGraphClient({ url: "http://127.0.0.1:1", token: "host", nodeId: 1 }).checkpointNodeDetail(node);
 }
+
+it("compiles node-owned navigate bindings without source-layer provenance", () => {
+  const node = new NodeObject("box", "Persistent", "Meaning", "concept", "persistent");
+  const action = { kind: "navigate", relation: "reference", label: "Evidence", target: 77, clientKey: "evidence" } satisfies ActionObject;
+  node.detailAuthoring.setComponent("main", html`<button gc=${detailCapability.reference("open", action)}>Evidence</button>`);
+  const compiled = node.detailAuthoring.checkpoint();
+  expect(compiled.mounts[0]).toMatchObject({ capability: { kind: "reference", action: { clientKey: "evidence", sourceNode: { clientKey: "persistent" } } } });
+  expect(compiled.mounts[0]).not.toHaveProperty("capability.action.sourceLayer");
+});

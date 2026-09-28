@@ -60,9 +60,10 @@ function workspace() {
       projectComposerGate.invalidate();
       return selectTurn(delta);
     },
-    onSelectTurnById: (turnId) => {
+    onSelectTurnById: async (turnId, options) => {
       projectComposerGate.invalidate();
-      return selectTurnById(turnId);
+      try { return await selectTurnById(turnId, options); }
+      catch (error) { toast(error.message); return false; }
     },
     onSelectionChange: (nodeId) => {
       replaceCurrentSelection(nodeId);

@@ -262,7 +262,7 @@ impl<'connection> ActionTable<'connection> {
         layer: LayerId,
     ) -> Result<Vec<ActionRecord>, GraphError> {
         sqlx::query_as::<_, ActionRow>(
-            concat!(action_projection!(), " WHERE owner_interaction_id=?1 AND type_id!='interaction.context' AND source_layer_id=?2 AND ((?3 IS NOT NULL AND project_id=?3) OR (?3 IS NULL AND project_id IS NULL AND thread_id=?4)) ORDER BY id"),
+            concat!(action_projection!(), " WHERE owner_interaction_id=?1 AND type_id!='interaction.context' AND source_layer_id=?2 AND NOT EXISTS(SELECT 1 FROM attached_navigation_actions m WHERE m.action_id=action_records.id) AND ((?3 IS NOT NULL AND project_id=?3) OR (?3 IS NULL AND project_id IS NULL AND thread_id=?4)) ORDER BY id"),
         )
         .bind(scope.root_node_id.value())
         .bind(layer.value())

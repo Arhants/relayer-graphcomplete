@@ -108,7 +108,6 @@ impl GraphDatabase {
     }
 
     /// Trusted process configuration, frozen separately on each new interaction.
-    /// Persistent attached-node mutation is unavailable even when enabled.
     pub async fn set_interaction_permissions_enabled(
         &self,
         enabled: bool,
@@ -120,6 +119,13 @@ impl GraphDatabase {
             .await?;
         transaction.commit().await?;
         Ok(())
+    }
+
+    pub async fn interaction_permissions_enabled(&self) -> Result<bool, GraphError> {
+        let mut transaction = self.storage.begin_read().await?;
+        let enabled = crate::storage::sqlite::permissions::enabled(&mut transaction).await?;
+        transaction.commit().await?;
+        Ok(enabled)
     }
 
     pub async fn interaction_permissions(
@@ -913,6 +919,33 @@ impl GraphDatabase {
              WHERE NOT EXISTS(SELECT 1 FROM graph_imports imported WHERE imported.thread_id=owner.thread_id)")
             .bind(serde_json::to_string(&ids).map_err(|error|GraphError::Internal(error.to_string()))?)
             .fetch_all(&mut *connection).await?;
+        rows.into_iter()
+            .map(|id| {
+                NodeId::new(id)
+                    .ok_or_else(|| GraphError::Internal("invalid completion identity".into()))
+            })
+            .collect()
+    }
+
+    /// Native accepted root views containing a persistently mutated attached node.
+    /// Historical mutations stay authoritative even when the gate is disabled.
+    pub async fn attached_navigation_roots(
+        &self,
+        completion_ids: &[NodeId],
+    ) -> Result<Vec<NodeId>, GraphError> {
+        if completion_ids.len() > 500 {
+            return Err(GraphError::validation(
+                "too_many_completions",
+                "completionIds",
+                "At most 500 completion IDs are allowed.",
+            ));
+        }
+        let mut connection = self.storage.acquire().await?;
+        let rows = crate::storage::sqlite::attached_navigation::affected_root_ids(
+            &mut connection,
+            completion_ids,
+        )
+        .await?;
         rows.into_iter()
             .map(|id| {
                 NodeId::new(id)

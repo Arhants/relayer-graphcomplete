@@ -441,6 +441,10 @@ export class CodexBasicHarness implements Harness {
         'model_providers.relayer_execution_provider.wire_api="responses"',
         "model_providers.relayer_execution_provider.requires_openai_auth=false",
         "model_providers.relayer_execution_provider.supports_websockets=false",
+        // Native snapshots capture the provider process environment and can
+        // restore excluded secrets after shell filtering. Disable that path
+        // only for secret-backed execution; keep the explicit exclusions below.
+        "features.shell_snapshot=false",
         'shell_environment_policy.inherit="all"',
         "shell_environment_policy.ignore_default_excludes=true",
         'shell_environment_policy.filters.OPENAI_API_KEY="exclude"',
@@ -562,6 +566,10 @@ Normalized interaction input:
 ${renderInteractionInput(context.interactionInput)}
 
 ${INTERACTION_INPUT_GUIDANCE} In JavaScript, call graph.getInteractionInput() to re-read it.
+
+Gated attached navigation: the server may authorize new navigate actions on the exact native accepted nodes attached to this input. This does not authorize invoke/input additions, title/detail edits, topology edits, or changes to other nodes. Use a stable clientKey and omit sourceLayer for a new node-owned action; target an accepted visible layer or a layer you authored in this interaction. A denied write is not permission to copy or broaden the attachment. These additions become visible only after terminal graph.submit, never after Advance.
+For a full Node Detail replacement accompanying an authorized addition, first call await graph.getNodePresentation(nodeId) to read the current node, revision, and actions. Author a complete compiled NodeObject presentation with the persistent node's existing clientKey, preserving every existing action binding and adding usable controls for the new actions. Call await graph.replaceNodePresentation(nodeId, revision, presentationBuilder); this stages presentation only, not the builder's title/detail. Retain original action clientKey, kind, and sourceLayer provenance when rebuilding controls; new actions with omitted provenance must omit it in their bindings too. On stale_presentation_revision, reread and repair the full presentation against the current actions. Do not synthesize supplemental controls. If retained rich HTML cannot expose a new action, provide an explicit full replacement before submitting.
+
 
 Use executable JavaScript and the Relayer graph client. Do not return a JSON graph in chat. Run exactly ${launcher}${launcherArgumentsClause}, including the displayed double quotes, and pass the program through standard input using a shell-native single-quoted here-document delimited by exactly RELAYER_GRAPH_PROGRAM;${launcherClause} never place authored graph code in a --eval argument, and do not create a script in either the project checkout or a temporary directory. ${this.dependencies.graphAuthoringLauncherPath ? "Request Codex sandbox escalation for this exact launcher command; Relayer preauthorizes only this pinned internal launcher, which applies its own narrower graph sandbox." : ""} The quoted here-document must prevent the provider shell from expanding environment variables in the program. Import from:
 ${this.clientModuleUrl}
@@ -700,6 +708,10 @@ Normalized interaction input:
 ${normalizedInput}
 
 ${INTERACTION_INPUT_GUIDANCE} In JavaScript, call graph.getInteractionInput() to re-read it.
+
+Gated attached navigation: the server may authorize new navigate actions on the exact native accepted nodes attached to this input. This does not authorize invoke/input additions, title/detail edits, topology edits, or changes to other nodes. Use a stable clientKey and omit sourceLayer for a new node-owned action; target an accepted visible layer or a layer you authored in this interaction. A denied write is not permission to copy or broaden the attachment. These additions become visible only after terminal graph.submit, never after Advance.
+For a full Node Detail replacement accompanying an authorized addition, first call await graph.getNodePresentation(nodeId) to read the current node, revision, and actions. Author a complete compiled NodeObject presentation with the persistent node's existing clientKey, preserving every existing action binding and adding usable controls for the new actions. Call await graph.replaceNodePresentation(nodeId, revision, presentationBuilder); this stages presentation only, not the builder's title/detail. Retain original action clientKey, kind, and sourceLayer provenance when rebuilding controls; new actions with omitted provenance must omit it in their bindings too. On stale_presentation_revision, reread and repair the full presentation against the current actions. Do not synthesize supplemental controls. If retained rich HTML cannot expose a new action, provide an explicit full replacement before submitting.
+
 
 Use executable JavaScript and the Relayer graph client. Do not return a JSON graph in chat. ${authoringInstructions}
 

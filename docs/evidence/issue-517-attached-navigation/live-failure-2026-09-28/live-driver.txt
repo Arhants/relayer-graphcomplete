@@ -1,0 +1,300 @@
+// Operator-only live driver. Uses the declared recursive-live production bootstrap.
+// Two sequential Codex Basic completions; no fixture harness, no semantic children.
+import { execFileSync } from "node:child_process";
+import { randomUUID, createHash } from "node:crypto";
+import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
+import { resolve, join } from "node:path";
+import { createManagedRuntimeInstaller } from "../../desktop/main/managed-runtimes/installer.mjs";
+import { createManagedRuntimeResolver } from "../../desktop/main/managed-runtimes/resolver.mjs";
+import { productionHarnessRuntimeDescriptor, productionProviderAdapterRegistry } from "../../desktop/main/providers/provider-adapter-registry.mjs";
+import { GraphCompleteRuntimeService } from "../../desktop/main/services/graphcomplete-runtime.mjs";
+import { createHarnessReadinessCoordinator } from "../../desktop/main/services/harness-readiness.mjs";
+import { RelayerAppServerService } from "../../desktop/main/services/relayer-app-server.mjs";
+import { managedRuntimeRequirementForHarness } from "../../desktop/shared/managed-runtime-requirements.mjs";
+import { productRequest, waitForSettledCompletionExecutionEvidence } from "../../scripts/recursive-live-run-transport.mjs";
+import { exportTraceEvidence } from "../../scripts/recursive-live-run-trace.mjs";
+const repositoryRoot = resolve(import.meta.dirname, "../..");
+const dataDirectory = join(repositoryRoot, ".relayer/attached-navigation-live");
+const outputDirectory = join(repositoryRoot, ".relayer/evidence/attached-navigation/live");
+const modelId = "gpt-5.6-sol";
+const save = async (name, value) => writeFile(join(outputDirectory, name + ".json"), JSON.stringify(value, null, 2) + "\n");
+if (process.env.RELAYER_ATTACHED_NAVIGATION_LIVE !== "1") throw new Error("Live execution requires explicit opt-in after frozen review.");
+const setupOnly = process.argv.includes("--setup-only");
+function codexVersion(executable) {
+  try {
+    return execFileSync(executable, ["--version"], { encoding: "utf8" }).trim();
+  } catch (error) {
+    throw new Error(`Could not read a version from ${executable}: ${error?.message ?? error}`);
+  }
+}
+
+// Standard managed Codex subscription lease; auth remains in its production home.
+function providerExecution(profile) {
+  const definition = { id: profile.providerId, adapterId: profile.adapterId, accessContract: profile.contract };
+  return async () => ({
+    definition,
+    descriptor: { adapterId: definition.adapterId, accessContract: definition.accessContract,
+      implementationVersion: productionProviderAdapterRegistry.get(definition.adapterId).implementationVersion },
+    runtime: { async executionAccess() { return {
+      kind: "managed-runtime", runtimeId: "codex", version: codexVersion(profile.codexExecutable), executable: profile.codexExecutable,
+      environment: { CODEX_HOME: profile.codexHome, RELAYER_CODEX_BINARY: profile.codexExecutable,
+        ...(process.env.PATH ? { PATH: process.env.PATH } : {}), ...(process.env.HOME ? { HOME: process.env.HOME } : {}) },
+    }; } },
+    async release() {},
+  });
+}
+
+async function prepareRoute({ session, productServer, runtime, resolver, profile }) {
+  const { providerId, modelId } = profile;
+  const catalog = {
+    providerId,
+    label: providerId,
+    connected: true,
+    models: [{
+      id: modelId,
+      label: modelId,
+      order: 0,
+      visible: true,
+      available: true,
+      providerDefault: true,
+      metadata: {},
+    }],
+    systemFamily: { key: providerId, name: providerId, modelIds: [modelId] },
+  };
+  await productServer.publishProviderCatalog(catalog);
+  const readiness = createHarnessReadinessCoordinator({
+    configurations: runtime.session.configurations,
+    digestConfiguration: runtime.session.digestConfiguration,
+    runtimeRequirements: {},
+    prepareRecipe: async (recipeId) => productionHarnessRuntimeDescriptor(await resolver.prepare(recipeId)),
+    checkers: { [profile.implementation]: async () => ({ available: true }) },
+    publishAvailability: async (updates) => {
+      await productServer.publishHarnessReadiness(updates);
+      await runtime.recordHarnessReadiness(updates);
+    },
+  });
+  const { readyHarnessIds, routeResults } = await readiness.evaluate({
+    trigger: "connect",
+    providerDefinition: { id: providerId, adapterId: profile.adapterId, accessContract: profile.contract },
+    models: [{ id: modelId, visible: true, available: true }],
+  });
+  if (!readyHarnessIds.includes(profile.harness)) {
+    const reason = routeResults.find(({ harnessId }) => harnessId === profile.harness)?.unavailableReason;
+    throw new Error(`Harness ${profile.harness} is not ready for ${providerId}/${modelId}${reason ? `: ${reason.code}` : ""}.`);
+  }
+
+  const settings = await productRequest(session, "/api/model-settings");
+  const existing = settings.families.find(family => family.name === "Live run models"
+    && family.enabled && family.members.some(member => member.providerId === providerId && member.modelId === modelId));
+  const family = existing ?? await productRequest(session, "/api/model-families", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Live run models",
+      enabled: true,
+      members: [{ providerId, modelId }],
+    }),
+  });
+  await productRequest(session, "/api/model-selection/validate", {
+    method: "POST",
+    body: JSON.stringify({ harnessId: profile.harness, familyId: family.id, providerId, modelId }),
+  });
+  return family;
+}
+
+const sourcePrompt = `Create a small, polished graph for a synthetic release-readiness walkthrough. Use your normal graph client and finish with graph.submit(interactionNode), the documented terminal authoring submission; do not call recursiveComplete. Do not delegate, invoke controls, browse, use any external service, or modify any files outside your normal graph-authoring workspace.
+The response root has exactly two connected nodes: "Launch decision" (clientKey launch-decision) and "Evidence shelf" (clientKey evidence-shelf). Launch decision's semantic detail is exactly "Release when error rate stays below 1% and rollback is ready." Its compiled Node Detail presents this concise decision in a clean layout and exposes one real invoke control labeled "Draft rollout recommendation". The invoke instruction asks for a rollout recommendation; author the control without invoking it.
+Evidence shelf has a real Expand control labeled "Inspect baseline" to a child layer with the SAME Launch decision node identity reused alongside one connected node titled "Traffic baseline". Do not clone Launch decision. The original invoke must remain usable in both occurrences. Give every node/layer/action a stable clientKey. Compile Node Details using supported graph-client APIs, use clear typography and restrained color, and set Launch decision as the default node of both layers. This is a synthetic fixture with no real customer data; do not invent external facts.`;
+
+function extensionPrompt(node, sourceRoot, sourceChild) {
+  return `Extend the attached persistent Launch decision node for a synthetic release-readiness walkthrough. Use the normal graph client and finish with graph.submit(interactionNode), the documented terminal authoring submission. Do not call recursiveComplete, delegate, execute invoke controls, browse, or call any external service.
+Create an independent response root with three connected nodes titled "Prepare", "Measure", and "Decide". Include a short expansion checklist layer with two connected nodes titled "Check error rate" and "Confirm rollback". Make a normal Expand from Measure to that checklist.
+Add TWO node-owned navigate actions to the exact attached Launch decision node id ${node.id}: a Reference labeled "Release readiness" targeting THIS interaction's new response ROOT, and an Expand labeled "Readiness checklist" targeting the new checklist layer. The attached node must not be inserted into the new response or checklist. Omit sourceLayerId on these new node-owned actions. Both new actions and their targets must be accepted atomically with this interaction.
+Explicitly replace the attached node's full compiled HTML Node Detail using getNodePresentation and replaceNodePresentation with its current optimistic revision. Preserve its persistent identity, title, and semantic detail EXACTLY; do not submit/update the existing node. Preserve and expose the original "Draft rollout recommendation" invoke action with the exact original binding, and expose both new navigate controls. Read the actual accepted action identities/provenance before compiling. The persistent node's clientKey is ${node.clientKey}; it appears in source root layer ${sourceRoot} and attached child layer ${sourceChild}. An existing action's sourceLayer binding is its original canonical provenance, not the attached occurrence. Build the compiler's binding objects from these stable identities without submitting synthetic existing builders/layers. For newly added navigation, a binding without sourceLayer is supported. Use supported graph-client declarations to confirm exact APIs.
+Use a coherent compact layout: decision summary, readiness status text, then all three clearly labeled controls. Do not discard old controls or synthesize inert HTML buttons. This request explicitly includes the full presentation replacement, so do not use the unresolved rich-detail/no-replacement path.`;
+}
+
+await mkdir(outputDirectory, { recursive: true });
+const sourceManifest = JSON.parse(await readFile("/tmp/attached-navigation-isolation-source-manifest.json", "utf8"));
+async function verifySource() {
+  for (const file of sourceManifest.files) {
+    const digest = createHash("sha256").update(await readFile(join(repositoryRoot, file.path))).digest("hex");
+    if (digest !== file.sha256) throw new Error(`Reviewed source changed: ${file.path}`);
+  }
+}
+await verifySource();
+const resolver = createManagedRuntimeResolver(createManagedRuntimeInstaller({ root: join(dataDirectory, "managed-runtimes") }));
+const prepared = await resolver.prepare(managedRuntimeRequirementForHarness("codex.basic").recipeId);
+const profile = {
+  harness: "codex-basic", implementation: "codex.basic", providerId: "codex", modelId,
+  adapterId: "codex-subscription", contract: "managed-runtime@1",
+  codexExecutable: prepared.executable,
+  codexHome: "/Users/vishaltandale/Library/Application Support/relayer/codex-home",
+};
+async function fileIdentity(path) {
+  const bytes = await readFile(path);
+  return { path, byteLength: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+}
+async function treeIdentity(directory) {
+  const entries = [];
+  async function visit(folder) {
+    for (const entry of (await readdir(folder, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = join(folder, entry.name);
+      if (entry.isDirectory()) await visit(path);
+      else entries.push(await fileIdentity(path));
+    }
+  }
+  await visit(directory);
+  return { directory, entries, sha256: createHash("sha256").update(JSON.stringify(entries)).digest("hex") };
+}
+const runtimeIdentities = {
+  codex: await fileIdentity(profile.codexExecutable),
+  graphServer: await fileIdentity(join(repositoryRoot, "target/debug/relayer-graph-server")),
+  appServer: await fileIdentity(join(repositoryRoot, "target/debug/relayer-app-server")),
+  harnessConfiguration: await fileIdentity(join(repositoryRoot, "harnesses/codex-basic.yaml")),
+  graphClient: await treeIdentity(join(repositoryRoot, "packages/graph-client/dist")),
+  harnessHost: await treeIdentity(join(repositoryRoot, "packages/harness-host/dist")),
+};
+await save("operator-provenance", {
+  sourceDigest: sourceManifest.sourceDigest, sourceHashMethod: sourceManifest.hashMethod, runtimeIdentities,
+  driverSha256: createHash("sha256").update(await readFile(import.meta.filename)).digest("hex"),
+  providerId: profile.providerId, modelId, harness: profile.harness,
+  executable: profile.codexExecutable, runtimeVersion: codexVersion(profile.codexExecutable),
+  dataDirectory, nativeKeyboardVerified: false, bootstrap: "scripts/run-recursive-live-run.mjs production services", setupOnly,
+});
+const runtime = new GraphCompleteRuntimeService({
+  userDataDirectory: dataDirectory,
+  graphServerBinary: join(repositoryRoot, "target/debug/relayer-graph-server"),
+  configurationPaths: [join(repositoryRoot, "harnesses/codex-basic.yaml")],
+  codexPathOverride: profile.codexExecutable,
+  interactionPermissions: true,
+  candidateTrace: { directory: join(dataDirectory, "candidate-trace-spool"), policy: {
+    mode: "required", requiredFeatures: {}, includeNativeArtifacts: false,
+    maxBytesPerTurn: 10 * 1024 * 1024, maxEventsPerTurn: 50_000,
+  } },
+  acquireProviderExecution: providerExecution(profile),
+});
+let productServer;
+let session;
+let activeInteraction;
+let activeThread;
+async function settle(threadId, interactionId) {
+  const deadline = Date.now() + 15 * 60 * 1000;
+  let previous;
+  for (;;) {
+    const detail = await productRequest(session, `/api/threads/${threadId}`);
+    const interaction = detail.interactions.find(value => value.id === interactionId);
+    if (!interaction) throw new Error("Missing live interaction projection");
+    if (interaction.completionStatus !== previous) {
+      previous = interaction.completionStatus;
+      console.log(JSON.stringify({ interactionId, completionStatus: previous }));
+    }
+    if (interaction.completionStatus === "accepted") return { detail, interaction };
+    if (interaction.latestAttempt?.finishedAt && interaction.latestAttempt.outcome !== "accepted") {
+      await save(`failed-interaction-${interactionId}`, detail);
+      throw new Error(`Live interaction ${interactionId} settled ${interaction.latestAttempt.outcome}; no retry performed`);
+    }
+    if (Date.now() > deadline || interaction.completionStatus === "waiting_for_approval") {
+      await save(`blocked-interaction-${interactionId}`, detail);
+      throw new Error(`Live interaction ${interactionId} requires attention (${interaction.completionStatus})`);
+    }
+    await new Promise(resolveWait => setTimeout(resolveWait, 1000));
+  }
+}
+try {
+  productServer = new RelayerAppServerService({
+    userDataDirectory: dataDirectory,
+    binaryPath: join(repositoryRoot, "target/debug/relayer-app-server"),
+    webDirectory: join(repositoryRoot, "desktop/renderer"),
+    permissionCatalogPath: join(repositoryRoot, "permissions/desktop.json"),
+    runtimeSession: await runtime.start(), defaultHarnessConfiguration: profile.harness,
+    allowHarnessOverride: true,
+  });
+  session = await productServer.start();
+  const family = await prepareRoute({ session, productServer, runtime, resolver, profile });
+  const modelSelection = { familyId: family.id, providerId: profile.providerId, modelId };
+  const state = await productRequest(session, "/api/state");
+  if (state.threads.length !== 0) throw new Error("Live profile already contains a thread; do not repeat paid execution automatically");
+  if (setupOnly) {
+    console.log("Production runtime/provider/model route ready; no inference requested.");
+  } else {
+    await save("source-prompt", { text: sourcePrompt });
+    await verifySource();
+    const thread = await productRequest(session, "/api/threads", { method: "POST", body: JSON.stringify({
+      title: "Attached navigation live walkthrough", initialMessage: sourcePrompt,
+      harnessId: profile.harness, permissionProfileId: "auto", modelSelection,
+    }) });
+    activeThread = thread.id;
+    activeInteraction = thread.rootInteractionId;
+    const source = await settle(thread.id, thread.rootInteractionId);
+    activeInteraction = null;
+    await save("source-accepted", source.detail);
+    const root = source.interaction.completionOutput.rootLayer;
+    const persistent = root.nodes.find(node => node.title === "Launch decision");
+    const shelf = root.nodes.find(node => node.title === "Evidence shelf");
+    const childAction = root.actions.find(action => action.sourceNodeId === shelf?.id && action.relation === "expand");
+    if (!persistent || !childAction) throw new Error("Live source did not fulfill the reusable-node fixture; no second call");
+    const child = await productRequest(session, `/api/threads/${thread.id}/interactions/${source.interaction.id}/layers/${childAction.targetLayerId}`);
+    await save("source-child-accepted", child);
+    if (!child.nodes?.some(node => node.id === persistent.id)) throw new Error("Source did not reuse persistent node identity; no second call");
+    const text = extensionPrompt(persistent, root.layer.id, child.layer.id);
+    await save("extension-prompt", { text });
+    await verifySource();
+    const edit = await productRequest(session, `/api/threads/${thread.id}/interactions`, { method: "POST", body: JSON.stringify({
+      text, inputId: randomUUID(), modelSelection,
+      contexts: [{ target: { nodeId: persistent.id, sourceInteractionNodeId: source.interaction.graphNodeId, sourceLayerId: child.layer.id }, annotations: ["Add readiness navigation and replace the full presentation while preserving the original invoke."] }],
+    }) });
+    activeInteraction = edit.id;
+    const extended = await settle(thread.id, edit.id);
+    activeInteraction = null;
+    await save("extended-accepted", extended.detail);
+    const refreshed = extended.detail.interactions.find(value => value.id === source.interaction.id).completionOutput.rootLayer;
+    const refreshedChild = await productRequest(session, `/api/threads/${thread.id}/interactions/${source.interaction.id}/layers/${child.layer.id}`);
+    await save("extended-source-child", refreshedChild);
+    for (const occurrence of [refreshed, refreshedChild]) {
+      const node = occurrence.nodes.find(value => value.id === persistent.id);
+      const actions = occurrence.actions.filter(value => value.sourceNodeId === persistent.id);
+      if (!node || node.title !== persistent.title || node.detail !== persistent.detail) throw new Error("Persistent identity/semantic text changed");
+      const original = root.actions.find(value => value.sourceNodeId === persistent.id && value.kind === "invoke");
+      if (!original || !actions.some(value => value.id === original.id && value.kind === "invoke")) throw new Error("Original invoke identity not retained");
+      if (!actions.some(value => value.relation === "reference" && value.targetLayerId === extended.interaction.completionOutput.rootLayer.layer.id)) throw new Error("Missing reference to response root");
+      if (!actions.some(value => value.relation === "expand") || !node.authoredDetail) throw new Error("Missing expansion/full replacement");
+    }
+    const traces = await exportTraceEvidence({ runtime, interactions: [source.interaction, extended.interaction],
+      directory: join(outputDirectory, "traces"), refPrefix: "traces",
+      correlation: { runId: "attached-navigation-explicit-replacement", harnessConfigurationName: profile.harness, model: modelId },
+    });
+    await save("trace-receipts", traces);
+    const expectedRoots = [source.interaction.graphNodeId, extended.interaction.graphNodeId];
+    const executions = await waitForSettledCompletionExecutionEvidence(join(dataDirectory, "product-data/product.sqlite3"), expectedRoots);
+    await save("execution-receipts", executions);
+    if (executions.length !== 2 || expectedRoots.some(id => executions.filter(row => row.completionId === id).length !== 1)
+      || executions.some(row => row.phase !== "settled" || row.settlement.completionStatus !== "accepted"
+        || !row.settlement.valid || row.sourceCompletionId !== null || row.attachment.provider !== "codex")) {
+      throw new Error("Expected exactly two settled accepted native Codex root executions with no semantic children");
+    }
+    const attempts = JSON.parse(execFileSync("/usr/bin/sqlite3", ["-readonly", "-json", join(dataDirectory, "product-data/product.sqlite3"),
+      "SELECT interaction_id AS interactionId,attempt_number AS attemptNumber,harness_configuration_name AS harness,harness_configuration_digest AS harnessDigest,provider_id AS providerId,adapter_id AS adapterId,model_id AS modelId,outcome,finished_at AS finishedAt FROM interaction_attempts ORDER BY id"], { encoding: "utf8" }));
+    await save("attempt-receipts", attempts);
+    const expectedInteractions = [source.interaction.id, extended.interaction.id];
+    if (attempts.length !== 2 || attempts.some(row => !expectedInteractions.includes(row.interactionId)
+      || row.attemptNumber !== 1 || row.harness !== profile.harness || row.providerId !== profile.providerId
+      || row.adapterId !== profile.adapterId || row.modelId !== modelId || row.outcome !== "accepted" || !row.finishedAt)) {
+      throw new Error("Durable attempt receipts do not prove exactly two accepted Codex Basic GPT-5.6-Sol attempts");
+    }
+    await save("result", { passed: true, threadId: thread.id, sourceInteractionId: source.interaction.id, editedInteractionId: edit.id,
+      persistentNodeId: persistent.id, sourceRootLayerId: root.layer.id, sourceChildLayerId: child.layer.id,
+      sourceDigest: sourceManifest.sourceDigest, modelId, harness: profile.harness, requestedCompletions: 2, observedRootExecutions: executions.length, observedAttempts: attempts.length,
+      nativeKeyboardVerified: false, visualInspectionPending: true,
+    });
+    console.log("Two live accepted completions and persistent-node invariants verified; visual walkthrough still pending.");
+  }
+} catch (error) {
+  if (session && activeInteraction && activeThread) {
+    await productRequest(session, `/api/threads/${activeThread}/interactions/${activeInteraction}/stop`, { method: "POST" }).catch(() => {});
+  }
+  await save("failure", { message: error.message, at: new Date().toISOString() });
+  throw error;
+} finally {
+  await productServer?.close().catch(() => {});
+  await runtime.close().catch(() => {});
+}

@@ -235,6 +235,42 @@ impl GraphWriter {
         Ok(node)
     }
 
+    pub async fn get_node_presentation(
+        &self,
+        node: NodeId,
+    ) -> Result<serde_json::Value, GraphError> {
+        let mut transaction = self.database.storage.begin_read().await?;
+        self.scope
+            .require_active_authority(&mut transaction)
+            .await?;
+        let result =
+            super::attached_navigation::presentation(&mut transaction, &self.scope, node).await?;
+        transaction.commit().await?;
+        Ok(result)
+    }
+
+    pub async fn stage_node_presentation(
+        &self,
+        node: NodeId,
+        expected_revision: u64,
+        package: &serde_json::Value,
+        assets: &[PreparedDetailAsset],
+    ) -> Result<(), GraphError> {
+        let mut transaction = self.database.storage.begin_write().await?;
+        self.ensure_writable(&mut transaction).await?;
+        super::attached_navigation::stage(
+            &mut transaction,
+            &self.scope,
+            node,
+            expected_revision,
+            package,
+            assets,
+        )
+        .await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
     pub async fn accepted_detail_asset(
         &self,
         node_id: NodeId,
@@ -409,6 +445,54 @@ impl GraphWriter {
             .record(draft.source_node_id)
             .await?
             .ok_or_else(|| GraphError::NotFound(format!("source node {}", draft.source_node_id)))?;
+        let attached = source.node.state == RecordState::Accepted
+            && draft.source_node_id != self.scope.root_node_id;
+        if attached {
+            crate::storage::sqlite::permissions::authorize(
+                &mut transaction,
+                &self.scope,
+                &crate::InteractionPermission::NavigateAdd {
+                    node_id: draft.source_node_id,
+                },
+            )
+            .await?;
+            NodeTable::new(&mut transaction)
+                .visible(&self.scope, draft.source_node_id)
+                .await?;
+            if draft.kind != crate::ActionKind::Navigate {
+                return Err(GraphError::Forbidden(
+                    "Attached nodes authorize navigate additions only.".into(),
+                ));
+            }
+            if let Some(layer_id) = draft.source_layer_id {
+                let layer = LayerTable::new(&mut transaction)
+                    .visible(&self.scope, layer_id)
+                    .await?;
+                if layer.state != RecordState::Accepted
+                    || !layer.nodes.contains(&draft.source_node_id)
+                {
+                    return Err(GraphError::validation(
+                        "invalid_source_provenance",
+                        "sourceLayerId",
+                        "Optional source-layer provenance must be an accepted visible occurrence of this node.",
+                    ));
+                }
+            }
+            let collision = crate::storage::sqlite::attached_navigation::identity_collision(
+                &mut transaction,
+                &self.scope,
+                draft.source_node_id,
+                &draft.client_key,
+            )
+            .await?;
+            if collision {
+                return Err(GraphError::validation(
+                    "action_identity_conflict",
+                    "clientKey",
+                    "This persistent node already has that action identity. Preserve it and use a new clientKey for the addition.",
+                ));
+            }
+        }
         if draft.source_node_id == self.scope.root_node_id {
             if draft.source_layer_id.is_some() {
                 return Err(GraphError::validation(
@@ -440,7 +524,7 @@ impl GraphWriter {
                     ),
                 ));
             }
-        } else {
+        } else if !attached {
             if !(source.node.state == RecordState::Draft
                 && source.owner == Some(self.scope.root_node_id))
             {
@@ -493,11 +577,31 @@ impl GraphWriter {
                 && (draft.kind != crate::ActionKind::Navigate
                     || draft.relation != Some(NavigateRelation::Reference))
             {
-                return Err(GraphError::validation(
-                    "reference_layer_authoring_restricted",
-                    "relation",
-                    "This action starts from a reference layer. Reference layers may author only reference navigation. Change the relation to reference, or author the action from an expansion layer.",
-                ));
+                // A backlink does not change the canonical response root's
+                // expansion meaning. Match CompletionPlan's exact root rule,
+                // after the ordinary source ownership/draft checks above.
+                let roots = ActionTable::new(&mut transaction)
+                    .for_source(
+                        &self.scope,
+                        self.scope.root_node_id,
+                        Some(self.scope.root_node_id),
+                        false,
+                    )
+                    .await?;
+                let is_response_root = roots.len() == 1 && {
+                    let root = &roots[0].action;
+                    root.kind == crate::ActionKind::Navigate
+                        && root.relation == Some(NavigateRelation::Expand)
+                        && root.source_layer_id.is_none()
+                        && root.target_layer_id == Some(source_layer_id)
+                };
+                if !is_response_root {
+                    return Err(GraphError::validation(
+                        "reference_layer_authoring_restricted",
+                        "relation",
+                        "This action starts from a reference layer. Reference layers may author only reference navigation. Change the relation to reference, or author the action from an expansion layer.",
+                    ));
+                }
             }
         }
         if let Some(layer_id) = draft.target_layer_id {
@@ -526,8 +630,10 @@ impl GraphWriter {
             };
             match draft.relation {
                 Some(NavigateRelation::Expand)
-                    if target.owner != self.scope.root_node_id
-                        || (target.layer.state != RecordState::Draft && !root_reuses_current) =>
+                    if !attached
+                        && (target.owner != self.scope.root_node_id
+                            || (target.layer.state != RecordState::Draft
+                                && !root_reuses_current)) =>
                 {
                     return Err(GraphError::validation(
                         "expand_target_must_be_current_draft",
@@ -535,7 +641,7 @@ impl GraphWriter {
                         "Expand actions must target a draft layer created for the current interaction. Create a current draft layer, or use relation=reference for visible accepted context.",
                     ));
                 }
-                Some(NavigateRelation::Reference)
+                Some(NavigateRelation::Reference | NavigateRelation::Expand)
                     if target.layer.state != RecordState::Accepted
                         && (target.owner != self.scope.root_node_id
                             || target.layer.state != RecordState::Draft) =>
@@ -570,6 +676,15 @@ impl GraphWriter {
             }
             None => actions.insert_draft(&self.scope, draft).await?,
         };
+        if attached {
+            crate::storage::sqlite::attached_navigation::mark_action(
+                &mut transaction,
+                &self.scope,
+                action.id,
+                action.source_node_id,
+            )
+            .await?;
+        }
         transaction.commit().await?;
         Ok(action)
     }

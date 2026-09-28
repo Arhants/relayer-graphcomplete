@@ -38,6 +38,18 @@ export class RelayerGraphClient {
     return body.node;
   }
 
+  async getNodePresentation(reference: NodeReference): Promise<{ node: GraphNode; revision: number; actions: readonly GraphAction[] }> {
+    return this.request(`/api/graph/nodes/${nodeId(reference)}/presentation`);
+  }
+
+  /** Stage a complete presentation only; the builder's title/detail never edit the persistent node. */
+  async replaceNodePresentation(reference: NodeReference, expectedRevision: number, presentation: NodeObject): Promise<void> {
+    const authoredDetail = await this.checkpointNodeDetail(presentation);
+    await this.request(`/api/graph/nodes/${nodeId(reference)}/presentation`, {
+      method: "POST", body: JSON.stringify({ expectedRevision, authoredDetail }),
+    });
+  }
+
   async getNeighbors(reference: NodeReference): Promise<readonly GraphNode[]> {
     const body = await this.request<{ nodes: GraphNode[] }>(`/api/graph/nodes/${nodeId(reference)}/neighbors`);
     return body.nodes;

@@ -183,3 +183,21 @@ html[data-theme="light"] .annotation-panel{background:#fafaf9;box-shadow:0 18px 
 body.sidebar-collapsed .sidebar-title{justify-content:center;gap:0}
 body.sidebar-collapsed .sidebar-title strong,body.sidebar-collapsed .new-thread-button kbd{display:none}
 body.sidebar-collapsed .new-thread-button{gap:0;padding-inline:0}
+
+/* B3: canonical interaction graph, disclosed from the existing banner. */
+.turn-stepper.interaction-graph-stepper{overflow:visible}
+.turn-picker-button.interaction-graph-trigger{position:relative;min-width:34px;width:34px;height:30px;padding:5px;border-radius:8px}
+.interaction-graph-trigger svg{width:20px;height:20px;fill:var(--panel);stroke:currentColor;stroke-width:1.6}
+.interaction-graph-trigger b{position:absolute;right:-6px;top:-7px;min-width:16px;height:16px;border-radius:9px;background:var(--raised);border:1px solid var(--line-strong);color:var(--text);font-size:9px;line-height:14px;text-align:center;padding:0 3px}
+.turn-popover.interaction-graph-popover{width:min(720px,calc(100vw - 48px));max-height:460px;padding:0;overflow:hidden;background:var(--panel);border:1px solid var(--line-strong);border-radius:12px;box-shadow:0 18px 50px #0005}
+.interaction-graph-heading{padding:14px 16px;border-bottom:1px solid var(--line);font-size:12px;font-weight:650;color:var(--text)}
+.interaction-graph-viewport{max-height:390px;overflow:auto;padding:6px;background:var(--panel)}
+.interaction-graph-surface{position:relative;min-width:100%}
+.interaction-graph-surface>svg{position:absolute;inset:0;pointer-events:none}
+.interaction-graph-surface path{fill:none;stroke:var(--muted);stroke-width:1.5;opacity:.65}
+.interaction-graph-surface .invoke-connection{stroke-dasharray:4 3}
+.interaction-graph-node{position:absolute;width:192px;min-height:68px;padding:11px 12px;border:1px solid var(--line-strong);border-radius:10px;background:var(--raised);color:var(--text);text-align:left;display:flex;flex-direction:column;gap:7px}
+.interaction-graph-node:hover,.interaction-graph-node:focus-visible{border-color:var(--text);outline:2px solid var(--line-strong);outline-offset:2px}
+.interaction-graph-node[aria-current="true"]{border-color:#a69ad5;box-shadow:inset 3px 0 #a69ad5}
+.interaction-graph-node-label{font-size:12px;font-weight:550;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.interaction-graph-node small{font-size:10px;color:var(--muted)}

@@ -330,14 +330,16 @@ fn valid_capability(value: &Value) -> bool {
                     .get("action")
                     .and_then(Value::as_object)
                     .is_some_and(|action| {
-                        has_exact_keys(action, &["clientKey", "sourceLayer", "sourceNode"])
+                        (has_exact_keys(action, &["clientKey", "sourceLayer", "sourceNode"])
+                            || (matches!(
+                                capability.get("kind").and_then(Value::as_str),
+                                Some("expand" | "reference")
+                            ) && has_exact_keys(action, &["clientKey", "sourceNode"])))
                             && action
                                 .get("clientKey")
                                 .and_then(Value::as_str)
                                 .is_some_and(is_bounded_identity)
-                            && action
-                                .get("sourceLayer")
-                                .is_some_and(valid_stable_reference)
+                            && action.get("sourceLayer").is_none_or(valid_stable_reference)
                             && action.get("sourceNode").is_some_and(valid_stable_reference)
                     })
         }

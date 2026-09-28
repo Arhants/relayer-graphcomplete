@@ -1,0 +1,65 @@
+// Zero-inference replay of accepted model data; generation and replay sources differ.
+import {readFile,writeFile,readdir} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {GraphCompleteRuntimeService} from '../../desktop/main/services/graphcomplete-runtime.mjs';
+import {RelayerAppServerService} from '../../desktop/main/services/relayer-app-server.mjs';
+import {productRequest,completionExecutionEvidence} from '../../scripts/recursive-live-run-transport.mjs';
+const root=resolve(import.meta.dirname,'../..'),profile=join(root,'.relayer/attached-navigation-live'),out=join(root,'.relayer/evidence/attached-navigation/live');
+const original=JSON.parse(await readFile(join(out,'operator-provenance.json'),'utf8'));
+const manifest=JSON.parse(await readFile('/tmp/attached-navigation-storage-source-manifest.json','utf8'));
+const source=JSON.parse(await readFile(join(out,'source-accepted.json'),'utf8'));
+const initial=source.interactions.find(i=>i.id===1), rootLayer=initial.completionOutput.rootLayer;
+const persistent=rootLayer.nodes.find(n=>n.title==='Launch decision');
+const childId=rootLayer.actions.find(a=>a.label==='Inspect baseline').targetLayerId;
+const oldInvoke=rootLayer.actions.find(a=>a.sourceNodeId===persistent.id&&a.kind==='invoke');
+for(const file of manifest.files){if(createHash('sha256').update(await readFile(join(root,file.path))).digest('hex')!==file.sha256)throw new Error('Changed reviewed source: '+file.path);}
+const save=(name,value)=>writeFile(join(out,name+'.json'),JSON.stringify(value,null,2)+'\n');
+async function fileIdentity(path){const bytes=await readFile(path);return {path,byteLength:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};}
+async function treeIdentity(directory){const entries=[];async function visit(folder){for(const entry of (await readdir(folder,{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))){const path=join(folder,entry.name);if(entry.isDirectory())await visit(path);else entries.push(await fileIdentity(path));}}await visit(directory);return {directory,entries,sha256:createHash('sha256').update(JSON.stringify(entries)).digest('hex')};}
+
+let executionRequests=0,product;
+const runtime=new GraphCompleteRuntimeService({userDataDirectory:profile,graphServerBinary:join(root,'target/debug/relayer-graph-server'),configurationPaths:[join(root,'harnesses/codex-basic.yaml')],codexPathOverride:original.executable,interactionPermissions:true,acquireProviderExecution:async()=>{executionRequests++;throw new Error('Replay forbids inference');}});
+try{
+ product=new RelayerAppServerService({userDataDirectory:profile,binaryPath:join(root,'target/debug/relayer-app-server'),webDirectory:join(root,'desktop/renderer'),permissionCatalogPath:join(root,'permissions/desktop.json'),runtimeSession:await runtime.start(),defaultHarnessConfiguration:'codex-basic',allowHarnessOverride:true});
+ const session=await product.start();
+ const detail=await productRequest(session,`/api/threads/${source.thread.id}`);
+ const edited=detail.interactions.find(i=>i.id===2);
+ const refreshed=detail.interactions.find(i=>i.id===1).completionOutput.rootLayer;
+ const direct=await productRequest(session,`/api/threads/${source.thread.id}/interactions/1/layers/${rootLayer.layer.id}`);
+ const child=await productRequest(session,`/api/threads/${source.thread.id}/interactions/1/layers/${childId}`);
+ for(const occurrence of [refreshed,direct,child]){
+  const node=occurrence.nodes.find(n=>n.id===persistent.id),actions=occurrence.actions.filter(a=>a.sourceNodeId===persistent.id);
+  if(!node||node.title!==persistent.title||node.detail!==persistent.detail)throw new Error('Persistent identity/semantic text changed');
+  if(!actions.some(a=>a.id===oldInvoke.id&&a.kind==='invoke'&&a.clientKey===oldInvoke.clientKey&&a.sourceLayerId===oldInvoke.sourceLayerId))throw new Error('Original invoke identity/provenance not retained');
+  if(!actions.some(a=>a.relation==='reference'&&a.targetLayerId===edited.completionOutput.rootLayer.layer.id))throw new Error('Missing reference to response root');
+  if(!actions.some(a=>a.relation==='expand')||!node.authoredDetail)throw new Error('Missing expansion/full replacement');
+ }
+ if(detail.interactions.some(i=>i.completionStatus!=='accepted'||i.projectionFresh===false))throw new Error('Accepted projection not fresh');
+ await save('replay-accepted',{detail,direct,child});
+ const executions=await completionExecutionEvidence(join(profile,'product-data/product.sqlite3'));
+ if(executions.length!==0)throw new Error('Unexpected execution rows for preserved compatibility generation');
+ const traceReceipts=[];
+ for(const interaction of [initial,edited]){
+  const folder=join(out,'recovered-trace-spool',String(interaction.id));
+  const m=JSON.parse(await readFile(join(folder,'manifest.json'),'utf8')),bytes=await readFile(join(folder,'events.jsonl')),a=m.artifacts.events;
+  if(m.productInteractionId!==interaction.id||m.interactionNodeId!==interaction.graphNodeId||m.implementation!=='codex.basic'||m.configurationName!=='codex-basic'||m.status!=='complete'||a.sha256!=='sha256:'+createHash('sha256').update(bytes).digest('hex')||a.byteLength!==bytes.length||a.eventCount!==bytes.toString('utf8').trim().split('\n').length)throw new Error('Recovered trace identity/integrity invalid');
+  traceReceipts.push({interactionId:interaction.id,completionId:interaction.graphNodeId,sha256:a.sha256,eventCount:a.eventCount,method:'recovered sanitized spool; not supported host export'});
+ }
+ await save('recovered-trace-receipts',traceReceipts);
+ const generationTemporalConfig=JSON.parse(execFileSync('/usr/bin/sqlite3',['-readonly','-json',join(profile,'graphcomplete-runtime/graph.sqlite3'),'SELECT * FROM temporal_feature_config'],{encoding:'utf8'}));
+ if(generationTemporalConfig.some(row=>['schema_read','root_current_write','projection_ui','invoke_resolution','provider_recursion'].some(key=>row[key]!==0)))throw new Error('Compatibility replay configuration changed');
+ await save('execution-receipts',executions);
+ const attempts=JSON.parse(execFileSync('/usr/bin/sqlite3',['-readonly','-json',join(profile,'product-data/product.sqlite3'),'SELECT interaction_id AS interactionId,attempt_number AS attemptNumber,harness_configuration_name AS harness,provider_id AS providerId,adapter_id AS adapterId,model_id AS modelId,outcome,finished_at AS finishedAt FROM interaction_attempts ORDER BY id'],{encoding:'utf8'}));
+ if(attempts.length!==2||attempts.some(a=>![1,2].includes(a.interactionId)||a.attemptNumber!==1||a.harness!=='codex-basic'||a.providerId!=='codex'||a.adapterId!=='codex-subscription'||a.modelId!=='gpt-5.6-sol'||a.outcome!=='accepted'||!a.finishedAt)||executionRequests!==0)throw new Error('Attempt receipts or replay execution count invalid');
+ await save('attempt-receipts',attempts);
+ const runtimeIdentities={};
+ for(const [name,path] of Object.entries({codex:original.executable,graphServer:join(root,'target/debug/relayer-graph-server'),appServer:join(root,'target/debug/relayer-app-server')})){const b=await readFile(path);runtimeIdentities[name]={path,byteLength:b.length,sha256:createHash('sha256').update(b).digest('hex')};}
+ runtimeIdentities.harnessConfiguration=await fileIdentity(join(root,'harnesses/codex-basic.yaml'));
+ runtimeIdentities.graphClient=await treeIdentity(join(root,'packages/graph-client/dist'));
+ runtimeIdentities.harnessHost=await treeIdentity(join(root,'packages/harness-host/dist'));
+ await save('replay-provenance',{sourceDigest:manifest.sourceDigest,generationSourceDigest:original.sourceDigest,executable:original.executable,runtimeIdentities,executionRequests,replayDriverSha256:createHash('sha256').update(await readFile(import.meta.filename)).digest('hex'),generationTemporalConfig,qualificationScope:'compatibility-generation replay only; native execution attachment proof unavailable',traceEvidence:'recovered-trace-spool; original in-memory graph-operation recorder unavailable'});
+ await save('result',{passed:true,threadId:source.thread.id,sourceInteractionId:1,editedInteractionId:2,persistentNodeId:persistent.id,sourceRootLayerId:rootLayer.layer.id,sourceChildLayerId:childId,sourceDigest:manifest.sourceDigest,generationSourceDigest:original.sourceDigest,modelId:'gpt-5.6-sol',harness:'codex-basic',observedRootExecutions:executions.length,nativeExecutionReceiptsAvailable:false,qualificationScope:"compatibility-generation replay only",observedAttempts:attempts.length,executionRequests,nativeKeyboardVerified:false,visualInspectionPending:true});
+ console.log('Accepted live data passed fresh thread/root/child readback with zero inference; visual replay pending.');
+}finally{await product?.close();await runtime.close();}

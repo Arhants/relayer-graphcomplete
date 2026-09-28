@@ -866,6 +866,7 @@ describe("CodexBasicHarness", () => {
         'model_providers.relayer_execution_provider.wire_api="responses"',
         "model_providers.relayer_execution_provider.requires_openai_auth=false",
         "model_providers.relayer_execution_provider.supports_websockets=false",
+        "features.shell_snapshot=false",
         'shell_environment_policy.inherit="all"',
         "shell_environment_policy.ignore_default_excludes=true",
         'shell_environment_policy.filters.OPENAI_API_KEY="exclude"',
@@ -1105,6 +1106,7 @@ describe("CodexBasicHarness", () => {
     });
 
     expect(submitted?.environment.CODEX_HOME).toBe("/isolated/codex-home");
+    expect(submitted?.codexConfigOverrides).toBeUndefined();
     expect(submitted?.environment).not.toHaveProperty("OPENAI_API_KEY");
     expect(submitted?.environment.RELAYER_GRAPH_TOKEN).toBe("authoritative-graph-token");
     expect(submitted?.environment.RELAYER_GRAPH_URL).toBe("http://127.0.0.1:43123");
