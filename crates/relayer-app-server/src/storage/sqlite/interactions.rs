@@ -1072,14 +1072,11 @@ mod tests {
 
     #[tokio::test]
     async fn omitted_model_is_inherited_inside_the_sequence_allocation_transaction() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-interaction-inheritance-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-interaction-inheritance-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_models(&store).await;
         let first_model = selection("first-model");
@@ -1122,19 +1119,15 @@ mod tests {
         assert_eq!(inherited.sequence, 3);
         assert_eq!(inherited.model_selection, Some(second_model));
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn last_successful_catalog_snapshot_remains_usable_until_replaced() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-stale-catalog-interaction-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-stale-catalog-interaction-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_models(&store).await;
         let model = selection("first-model");
@@ -1163,19 +1156,15 @@ mod tests {
         assert_eq!(store.list_interactions(thread.id).await.unwrap().len(), 2);
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn retry_claim_updates_the_same_draft_once_and_preserves_the_failed_receipt() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-interaction-retry-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-interaction-retry-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         seed_test_models(&store).await;
         let first_model = selection("first-model");
@@ -1300,19 +1289,15 @@ mod tests {
         assert_eq!(receipt.effect_boundary, "none");
 
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn restart_recovery_preserves_every_imported_completion_status() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-import-recovery-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-import-recovery-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("INSERT INTO conversation_imports(id,source_sha256,export_version,producer_json,header_json,state,created_at) VALUES ('import-1','sha256:abc',1,'{}','{}','published','1')")
             .execute(&store.pool).await.unwrap();
@@ -1387,7 +1372,6 @@ mod tests {
         .unwrap();
         assert_eq!(preserved, statuses);
         store.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 
     fn selection(model_id: &str) -> InteractionModelSelection {

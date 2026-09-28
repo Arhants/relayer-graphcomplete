@@ -105,3 +105,39 @@ source was changed to address the earlier intermittent duplicate-release failure
 The final node-input Electron proof also passed with zero paid inference calls.
 `environment-icon.png` captures the current icon and open overlay on the synthetic
 fixture at the source hashes in `source.sha256`; earlier PNGs are historical.
+
+## Main integration for merge readiness
+
+Integrated main `7093fececf2c74330135766d62ffeb86db67c71a`, including the upstream
+responsive embed viewer. The CSS conflict was resolved by retaining narrow embed
+replacement details and adapting the wide embed to the shared adjustable grid.
+The embed close-details checkpoint now measures the real layout content width,
+since the old `.thread-workspace` wrapper uses `display: contents` in wide views.
+Node visibility checks remain intact. No behavior assertion was deleted.
+
+Focused merged checks passed: 105 tests across reading context/layout, node detail,
+public viewer and embed suites. The native cross-origin embed runner passed all
+34 checkpoints, and standalone public-viewer captures passed. The merged wide
+embed screenshot was visually inspected. `merged-embed-manifest.json` preserves
+the runner's exact source hashes and assertions; `merged-embed-split.png` is its
+split capture. Original manifest output paths refer to the ignored runtime
+artifact directory. This does not certify hosted service deployment.
+
+Final merged source review against main `7093fececf2c74330135766d62ffeb86db67c71a`:
+- Standards reviewer `/root/layout_proof`: pass, no meaningful blockers; minor
+  duplicate host CSS is a nonblocking heuristic. Source manifest
+  `merge-standards-review.sha256`, aggregate
+  `111fbe2414030cefe6df98017095f34ca82979ae065fd102f529bab2e0089c7f`.
+- Spec reviewer `/root/review_mapping`: no additional concrete code defects;
+  conditional on the outstanding narrow desktop/Eval/standalone scope decision.
+  Source manifest `merge-spec-review.sha256`, aggregate
+  `f97f0255d659c851b513e00e1dcfd902844a57b67ce6cb6e2d9ee6c46115d7b8`.
+These manifests exclude evidence artifacts to avoid self-reference and supersede
+previous review assertions for the integrated source. Human scope acceptance and
+remote CI remain separate gates.
+
+Merged local gates: `npm run check` and the subsequent `npm run build` passed on
+this reviewed source snapshot. This includes the full native workspace/crash
+coverage, TypeScript/workspace checks, full Vitest suite, secret boundary, Python,
+receipt validation, and PRD readability. Fresh remote PR CI is still required for
+the conflict-resolution commit; local results do not substitute for that gate.

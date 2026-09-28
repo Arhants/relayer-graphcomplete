@@ -182,6 +182,8 @@
     { "exact": "docs/provider-model-family-harness-test-matrix.md", "chapters": [] }
   ],
   "scriptOwners": [
+    { "exact": "scripts/fixtures/public-share-embed.mjs", "chapters": ["vitest"], "vitestFiles": ["test/public-share-embed.test.mjs", "test/public-share-viewer.test.mjs"] },
+    { "exact": "scripts/capture-public-share-embed-evidence.mjs", "chapters": ["vitest"], "vitestFiles": ["test/public-share-embed.test.mjs", "test/public-share-viewer.test.mjs"] },
     { "prefix": "scripts/lint-ladybug-", "chapters": ["receipts", "vitest"], "vitestFiles": ["test/ladybug-native-receipts.test.mjs"] },
     { "prefix": "scripts/verify-ladybug-", "chapters": ["packaging", "receipts", "vitest"], "vitestFiles": ["test/ladybug-native-receipts.test.mjs", "test/ladybug-packaged-lifecycle.test.mjs"] },
     { "exact": "scripts/prepare-renderer-vendor.mjs", "chapters": ["typescript", "vitest", "packaging"], "rootTypeScript": true, "vitestFiles": ["test/desktop-shell.test.mjs"] },

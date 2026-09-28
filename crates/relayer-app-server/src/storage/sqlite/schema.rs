@@ -1365,14 +1365,11 @@ mod tests {
 
     #[tokio::test]
     async fn missing_action_input_detach_receipt_foreign_key_fails_current_schema_open() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-malformed-input-detach-receipt-schema-{}-{}.sqlite3",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-malformed-input-detach-receipt-schema-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("DROP TABLE action_input_detach_receipts")
             .execute(&store.pool)
@@ -1403,19 +1400,15 @@ mod tests {
             ),
             "{error}"
         );
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn missing_node_context_draft_order_index_fails_current_schema_open() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-malformed-context-draft-schema-{}-{}.sqlite3",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-malformed-context-draft-schema-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("DROP INDEX node_context_drafts_thread_order")
             .execute(&store.pool)
@@ -1429,7 +1422,6 @@ mod tests {
                 .contains("table node_context_drafts is missing its required non-unique index"),
             "{error}"
         );
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
@@ -1444,14 +1436,11 @@ mod tests {
                 "CREATE UNIQUE INDEX model_families_name_nocase ON model_families(name) WHERE lifecycle_state='active'",
             ),
         ] {
-            let path = std::env::temp_dir().join(format!(
-                "relayer-malformed-family-name-index-{label}-{}-{}.sqlite3",
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
-            ));
+            let temporary = tempfile::Builder::new()
+                .prefix(&format!("relayer-malformed-family-name-index-{label}-"))
+                .tempdir()
+                .unwrap();
+            let path = temporary.path().join("product.sqlite3");
             let store = SqliteProductStore::open(&path).await.unwrap();
             let mut connection = store.pool.acquire().await.unwrap();
             sqlx::query("DROP INDEX model_families_name_nocase")
@@ -1466,20 +1455,16 @@ mod tests {
             store.pool.close().await;
             let error = SqliteProductStore::open(&path).await.err().unwrap();
             assert!(error.to_string().contains("active-only unique name index"));
-            std::fs::remove_file(path).unwrap();
         }
     }
 
     #[tokio::test]
     async fn malformed_interaction_context_table_fails_current_schema_open() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-malformed-context-schema-{}-{}.sqlite3",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-malformed-context-schema-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("DROP TABLE interaction_context_annotations")
             .execute(&store.pool)
@@ -1498,6 +1483,5 @@ mod tests {
                 "table interaction_context_annotations does not match the supported schema"
             )
         );
-        std::fs::remove_file(path).unwrap();
     }
 }

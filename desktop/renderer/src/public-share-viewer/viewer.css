@@ -235,3 +235,107 @@ html[data-theme="light"] .public-share-error {
  .public-share-shell .workspace-divider{grid-row:3 / 5}
  .public-share-shell .inspector{grid-column:3;grid-row:3 / 5}
 }
+
+/* Embed presentation uses the same ProductWorkspace and authority boundary.
+   Narrow-screen replacement details are the next delivery slice. */
+.public-share-embed .public-share-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.public-share-embed-branding {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  background: var(--panel);
+}
+
+.public-share-attribution {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.public-share-embed-branding a {
+  color: var(--text);
+  text-underline-offset: 3px;
+}
+
+.public-share-embed .public-share-workspace-host {
+  flex: 1;
+  height: auto;
+}
+
+@media (min-width: 1101px) {
+  .public-share-embed .workspace-layout {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+  }
+
+  .public-share-embed .thread-header,
+  .public-share-embed .interaction-banner {
+    grid-column: 1;
+  }
+
+  .public-share-embed .thread-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .public-share-embed .thread-workspace:has(.inspector:not(.hidden)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .public-share-embed .inspector {
+    width: 100%;
+  }
+}
+
+/* Bounded reading surface at every embed width. */
+.public-share-embed .workspace-layout {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px;
+  gap: 8px;
+}
+.public-share-embed .thread-header { grid-column: 1; grid-row: 1; }
+.public-share-embed .interaction-banner { grid-column: 1; grid-row: 2; margin: 0; }
+.public-share-embed .thread-workspace { grid-column: 1; grid-row: 3; min-height: 0; }
+.public-share-embed .graph-stage { min-height: 0; touch-action: pan-y; }
+.public-share-embed .inspector { min-height: 0; }
+.public-share-embed .inspector-content { min-height: 0; overscroll-behavior: contain; }
+.public-share-embed #closeInspector { width: auto; padding: 6px 8px; font-size: 11px; }
+.public-share-embed :focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+@media (max-width: 1100px) {
+  .public-share-embed .thread-workspace { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .public-share-embed .graph-column { grid-area: 1 / 1; min-height: 0; }
+  .public-share-embed .thread-workspace:has(.inspector:not(.hidden)) .graph-column { display: none; }
+  .public-share-embed .inspector {
+    position: static; grid-area: 1 / 1; width: 100%; max-height: none;
+    height: 100%; border: 1px solid var(--line); border-radius: 12px;
+  }
+  .public-share-embed .graph-hint { display: none; }
+  .public-share-embed .interaction-banner { width: 100%; }
+  .public-share-embed .interaction-copy { overflow: hidden; }
+}
+/* Vertical touch reading also works when the gesture begins on a node. */
+.public-share-embed .graph-node { touch-action: pan-y; }
+
+/* Embedded viewers share the adjustable wide split, with branding outside it. */
+@media(min-width:1101px){
+ .public-share-embed .workspace-layout{grid-template-columns:minmax(280px,clamp(280px,calc(var(--graph-share,50%) - 6px),calc(100% - 292px))) 12px minmax(280px,1fr);grid-template-rows:auto auto minmax(0,1fr);column-gap:0}
+ .public-share-embed .thread-header{grid-column:1 / -1;grid-row:1}
+ .public-share-embed .interaction-banner{grid-column:1;grid-row:2}
+ .public-share-embed .thread-workspace{display:contents}
+ .public-share-embed .graph-column{grid-column:1;grid-row:3}
+ .public-share-embed .workspace-divider{grid-column:2;grid-row:2 / 4}
+ .public-share-embed .inspector{grid-column:3;grid-row:2 / 4}
+ .public-share-embed .workspace-layout:has(.inspector.hidden){grid-template-columns:minmax(0,1fr)}
+}

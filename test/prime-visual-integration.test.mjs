@@ -101,7 +101,7 @@ it.each(["prime-agent-basic", "prime-agent-deep"])("%s accepts Python authored a
     const expansion = freshTurn.completionOutput.rootLayer.actions.find((action) => action.label === 'Details');
     const child = await request(session, `/api/threads/${fresh.id}/interactions/${freshTurn.id}/layers/${expansion.targetLayerId}`);
     expect(child.nodes[0].title).toBe('Details');
-    expect(child.nodes[0].authoredDetail.components[0].html).toContain('useful depth');
+    expect(child.nodes[0].authoredDetail.components[0].html).toContain('Explain the evidence behind the answer.');
 
   } finally {
     await product?.close(); await runtime.close(); await rm(directory, { recursive: true, force: true });

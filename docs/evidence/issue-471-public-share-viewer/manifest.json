@@ -7,7 +7,7 @@
     "sha256": "b05db96cb2d008e213b3bc6e3398b958f4670ed919547329a607be8f0dc7d865"
   },
   "source": {
-    "commit": "a437a59bddd258fd55753fa63ee4c1326df80a8f",
+    "commit": "895f89223e2caa69d7d46467fe2d289632797a8e",
     "dirty": true,
     "sourceFiles": {
       "desktop/renderer/assets/relayer-logo.svg": {
@@ -99,8 +99,8 @@
         "sha256": "8638236175dcb4225866f6728c21e48ac8f50469842c127a03a18614e4a2943e"
       },
       "desktop/renderer/src/product-workspace/view.js": {
-        "bytes": 14753,
-        "sha256": "64e18e3bdda87cbae112550a7a7a9eeb677fc3b4689712cfdd651a304e5d2f75"
+        "bytes": 15062,
+        "sha256": "cbf2689f15b85244a7b07345a45fdbfcbd872f76adc5235cddbe164e711dc9ad"
       },
       "desktop/renderer/src/product-workspace/workspace-layout.js": {
         "bytes": 4687,
@@ -115,20 +115,20 @@
         "sha256": "4289fa31c5293732affe016e1b497f01c5155a42eab9a7c0c354e608905fc471"
       },
       "desktop/renderer/src/public-share-viewer/main.js": {
-        "bytes": 7149,
-        "sha256": "fbd6656b9a5551f595dbe85d310cf6ec84b3757c24e1c6718bb03b9b0d0328a9"
+        "bytes": 10584,
+        "sha256": "2f357c0bf7b9507fcb77c27bd130bdaf9a8ebce59a99eef94ace3b078a8511d4"
       },
       "desktop/renderer/src/public-share-viewer/snapshot.js": {
         "bytes": 40874,
         "sha256": "acc3193c372e0887f322dddf42ffba9eb2f4df069f85cc4204209a8a86524d09"
       },
       "desktop/renderer/src/public-share-viewer/template.js": {
-        "bytes": 6324,
-        "sha256": "9f73f4b5256d12998a9c2662af62c380653397848278655a9611ada5b57167ce"
+        "bytes": 7626,
+        "sha256": "bf78fb16eee2254d8aaaeae8e105449cb627b42d410924f546175c0d686133a9"
       },
       "desktop/renderer/src/public-share-viewer/viewer.css": {
-        "bytes": 4964,
-        "sha256": "f067ce3a16da40032e231b5c7ebf4c990a9186b618d0ba0c262f24ecc0dacacc"
+        "bytes": 8768,
+        "sha256": "d1eee7c8c878546a14617b7e073d13fc6fbe20110f067b31ba3916258c2083f9"
       },
       "desktop/renderer/src/share-publish-ui.js": {
         "bytes": 19669,
@@ -139,8 +139,8 @@
         "sha256": "d7cd6e4a2c45d2d85e6068bc2e5d1a66c35b75b546ba432600c5008180b3cab1"
       },
       "desktop/renderer/styles.css": {
-        "bytes": 108988,
-        "sha256": "7895d30160d3154bc7a84f4beb9345ff295a1a2a156e6ee1de6bce56464ba3ad"
+        "bytes": 109329,
+        "sha256": "1a56e218ff65544737f21677353dd240834107c153c7478394ef9a7d94ad88e4"
       },
       "desktop/renderer/vendor/lucide.min.js": {
         "bytes": 386702,
@@ -158,7 +158,7 @@
   },
   "browser": {
     "electron": "43.0.0",
-    "origin": "http://127.0.0.1:50696",
+    "origin": "http://127.0.0.1:61097",
     "networkRequests": [],
     "unchangedUrl": true,
     "paidInferenceCalls": 0,

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Window } from "happy-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NodeDetailAuthoring, html, css } from "../packages/graph-client/src/index.ts";
+import { NodeObject, html, css } from "../packages/graph-client/src/index.ts";
 
 import { compiledNodeDetailReviewControls, mountCompiledNodeDetail } from "../desktop/renderer/src/product-workspace/node-detail-runtime.js";
 import { createReviewPresentationAdapter } from "../desktop/renderer/src/review-tools.js";
@@ -50,7 +50,7 @@ describe("compiled Node Detail product runtime", () => {
     ['@media(min-width:0px){[data-relayer-theme="dark"] p{color:cyan}}', true],
   ])("adds a theme scope only for parsed theme selectors: %s", async (source, themed) => {
     const window = new Window();
-    const authoring = new NodeDetailAuthoring();
+    const authoring = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     authoring.setComponent("page", html`<p>Original presentation</p>`, css(Object.assign([source], { raw: [source] })));
     const detail = authoring.checkpoint();
     const host = window.document.createElement("div");
@@ -70,7 +70,7 @@ describe("compiled Node Detail product runtime", () => {
   it("mirrors product appearance for public compiled CSS and releases observation on disposal and failed mounting", async () => {
     const window = new Window();
     window.document.documentElement.dataset.theme = "light";
-    const authoring = new NodeDetailAuthoring();
+    const authoring = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     authoring.setComponent("theme", html`<p>Meaning stays the same.</p>`, css`
       [data-relayer-theme="light"] p { color: #182c34; }
       [data-relayer-theme="dark"] p { color: #edf2f3; }
