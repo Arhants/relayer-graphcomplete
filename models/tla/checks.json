@@ -42,7 +42,11 @@
       "HostReleasesOnSettle": "TRUE",
       "ClaimRejectsReleasing": "TRUE",
       "AckRetriesFinalize": "TRUE",
-      "QuarantineSettleWakesReconciler": "TRUE"
+      "QuarantineSettleWakesReconciler": "TRUE",
+      "StartupCleanupCanFail": "FALSE",
+      "PersistFailureEndsWait": "TRUE",
+      "RestartEndsWaits": "TRUE",
+      "StartupIsolatesProviders": "TRUE"
     }
   },
   "checks": [
@@ -307,7 +311,8 @@
         "RustCanAbandon": "TRUE",
         "PersistCanFail": "TRUE",
         "StartupQuarantine": "TRUE",
-        "HarnessCanHang": "TRUE"
+        "HarnessCanHang": "TRUE",
+        "StartupCleanupCanFail": "TRUE"
       },
       "invariants": [
         "TypeOK",
@@ -344,11 +349,11 @@
         "AccessKeptWhileTurnRuns",
         "LeaseEventuallyReleased",
         "DebtEventuallyReconciled",
-        "AttemptSettlesAfterTurn",
+        "AttemptEndsAfterTurn",
         "RemovalCompletes"
       ],
       "expect": "pass",
-      "finding": "With no faults, every safety invariant holds, every lease is released, every lease debt is reconciled, every attempt whose turn ended becomes terminal, and a removal completes without a restart."
+      "finding": "With no faults, every safety invariant holds, every lease is released, every lease debt is reconciled, every attempt whose turn ended stops holding the provider, and a removal completes without a restart."
     },
     {
       "id": "leases-abandon",
@@ -481,7 +486,8 @@
       "preset": "leases-today",
       "constants": {
         "PersistCanFail": "TRUE",
-        "QuarantineSettleWakesReconciler": "FALSE"
+        "QuarantineSettleWakesReconciler": "FALSE",
+        "PersistFailureEndsWait": "FALSE"
       },
       "fair": true,
       "properties": [
@@ -490,7 +496,7 @@
       "expect": {
         "violated": "DebtEventuallyReconciled"
       },
-      "finding": "Without the wake, a settled quarantined attempt's lease debt waits for a restart."
+      "finding": "Without the wake, a settled quarantined attempt's lease debt waits for a restart. C's fix is off here: it releases the lease when the native run ends, so the settle would leave no debt."
     },
     {
       "id": "leases-persist-lease",
@@ -512,7 +518,8 @@
       "preset": "leases-today",
       "constants": {
         "PersistCanFail": "TRUE",
-        "HostReleasesOnSettle": "FALSE"
+        "HostReleasesOnSettle": "FALSE",
+        "PersistFailureEndsWait": "FALSE"
       },
       "fair": true,
       "properties": [
@@ -521,7 +528,7 @@
       "expect": {
         "violated": "LeaseEventuallyReleased"
       },
-      "finding": "Without the host owning the release, a turn whose terminal state cannot be persisted holds its lease forever."
+      "finding": "Without the host owning the release, a turn whose terminal state cannot be persisted holds its lease forever. C's attempt fix is off here: it would release the lease from the product side."
     },
     {
       "id": "leases-restart-quarantine",
@@ -544,7 +551,8 @@
       "constants": {
         "StartupQuarantine": "TRUE",
         "MaxRestarts": "2",
-        "AckRetriesFinalize": "FALSE"
+        "AckRetriesFinalize": "FALSE",
+        "RestartEndsWaits": "FALSE"
       },
       "invariants": [
         "StartupSucceeds"
@@ -552,7 +560,7 @@
       "expect": {
         "violated": "StartupSucceeds"
       },
-      "finding": "Without it, the refused finalize in reconcileStartup fails every startup."
+      "finding": "Without it, the refused finalize in reconcileStartup fails every startup. E's removal fix is off here: it stops the quarantined attempt from counting, so the finalize would not be refused."
     },
     {
       "id": "leases-restart-persist",
@@ -580,10 +588,26 @@
       "properties": [
         "RemovalCompletes"
       ],
+      "expect": "pass",
+      "finding": "A removal that waited on a turn finishes at the next start even when startup quarantines that turn's submitted input: its attempt ran in the process that exited, so startup records its native-run end and the drain no longer counts it (fixed; E removal half)."
+    },
+    {
+      "id": "leases-restart-removal-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "StartupQuarantine": "TRUE",
+        "MaxRestarts": "1",
+        "RestartEndsWaits": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "RemovalCompletes"
+      ],
       "expect": {
         "violated": "RemovalCompletes"
       },
-      "finding": "Open (E, PR 2): after that restart the provider stays removal_pending while the quarantined attempt runs; and once the thread view settles it, the reconciler's release finds no host entry to acknowledge, so the finalize is not retried until the next restart."
+      "finding": "Without it, the quarantined attempt still counts as running after the restart, and nothing retries the finalize once the thread view settles it: the reconciler's release finds no host entry to acknowledge."
     },
     {
       "id": "leases-persist-attempt",
@@ -594,12 +618,90 @@
       },
       "fair": true,
       "properties": [
-        "AttemptSettlesAfterTurn"
+        "AttemptEndsAfterTurn"
+      ],
+      "expect": "pass",
+      "finding": "A turn whose terminal state cannot be persisted stops holding the provider once its native run ends: its attempt stays undecided for reconciliation, its lease is released, and the drain no longer counts it (fixed; C attempt half)."
+    },
+    {
+      "id": "leases-persist-attempt-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE",
+        "PersistFailureEndsWait": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "AttemptEndsAfterTurn"
       ],
       "expect": {
-        "violated": "AttemptSettlesAfterTurn"
+        "violated": "AttemptEndsAfterTurn"
       },
-      "finding": "Open (C attempt half, PR 2): when a turn's terminal state cannot be persisted, its attempt stays running, which blocks the provider tombstone."
+      "finding": "Without it, a turn whose terminal state cannot be persisted leaves its attempt running, which blocks the provider tombstone until a restart."
+    },
+    {
+      "id": "leases-persist-removal",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE"
+      },
+      "fair": true,
+      "properties": [
+        "RemovalCompletes",
+        "DebtEventuallyReconciled"
+      ],
+      "expect": "pass",
+      "finding": "A removal waiting on a turn whose terminal state cannot be persisted finishes without a restart, and the ended attempt's lease is reconciled once (fixed; C)."
+    },
+    {
+      "id": "leases-persist-removal-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "PersistCanFail": "TRUE",
+        "PersistFailureEndsWait": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "RemovalCompletes"
+      ],
+      "expect": {
+        "violated": "RemovalCompletes"
+      },
+      "finding": "Without it, that removal waits for a restart."
+    },
+    {
+      "id": "leases-startup-isolation",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "StartupCleanupCanFail": "TRUE",
+        "MaxRestarts": "2"
+      },
+      "invariants": [
+        "StartupSucceeds"
+      ],
+      "expect": "pass",
+      "finding": "A pending removal whose finalize or cleanup fails at startup for another reason is recorded and left for the next start; the app still starts (fixed; L6)."
+    },
+    {
+      "id": "leases-startup-isolation-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "StartupCleanupCanFail": "TRUE",
+        "MaxRestarts": "2",
+        "StartupIsolatesProviders": "FALSE"
+      },
+      "invariants": [
+        "StartupSucceeds"
+      ],
+      "expect": {
+        "violated": "StartupSucceeds"
+      },
+      "finding": "Without isolation, that failure rejects reconcileStartup and Relayer cannot start."
     },
     {
       "id": "leases-hang",

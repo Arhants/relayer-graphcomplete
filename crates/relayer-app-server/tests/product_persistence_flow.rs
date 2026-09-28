@@ -6562,7 +6562,7 @@ async fn persists_project_thread_and_interaction_across_restart() {
             .fetch_one(&migration_pool)
             .await
             .unwrap();
-    assert_eq!(applied_migrations, 33);
+    assert_eq!(applied_migrations, 34);
     migration_pool.close().await;
 
     let incompatible_database = root.join("incompatible.sqlite3");
@@ -8841,7 +8841,7 @@ async fn unreconciled_lease_debts(database: &Path) -> Vec<(i64, String)> {
     let pool = sqlite_pool(database).await;
     // Same predicate as SqliteStore::unreconciled_execution_lease_debts (attempts.rs).
     let rows: Vec<(i64, String)> = sqlx::query_as(
-        "SELECT a.id,a.execution_lease_id FROM interaction_attempts a JOIN interactions i ON i.id=a.interaction_id WHERE a.execution_lease_id IS NOT NULL AND a.execution_lease_reconciled_at IS NULL AND a.outcome!='running' ORDER BY a.id",
+        "SELECT a.id,a.execution_lease_id FROM interaction_attempts a JOIN interactions i ON i.id=a.interaction_id WHERE a.execution_lease_id IS NOT NULL AND a.execution_lease_reconciled_at IS NULL AND (a.outcome!='running' OR a.native_wait_ended_at IS NOT NULL) ORDER BY a.id",
     )
     .fetch_all(&pool)
     .await
@@ -8850,15 +8850,102 @@ async fn unreconciled_lease_debts(database: &Path) -> Vec<(i64, String)> {
     rows
 }
 
-/// Runs one ordinary Send whose native turn succeeds while the graph's canonical metadata read
-/// fails after the harness completion, so the interaction is quarantined as reconciliation pending.
+/// Waits until every attempt that holds an execution lease has had its release recorded.
+async fn await_lease_releases_recorded(
+    database: &Path,
+) -> Vec<(i64, String, Option<String>, Option<String>)> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let rows = attempt_lease_rows(database).await;
+        if rows
+            .iter()
+            .all(|(_, _, lease, reconciled)| lease.is_none() || reconciled.is_some())
+            || std::time::Instant::now() >= deadline
+        {
+            return rows;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// Finishes removing `provider_id` the way Relayer Desktop does: the removal was already
+/// accepted (`removal_pending`), and the tombstone is written through the definitions endpoint.
+async fn finish_provider_removal(
+    app: &Router,
+    database: &Path,
+    provider_id: &str,
+) -> (StatusCode, Value) {
+    let pool = sqlite_pool(database).await;
+    sqlx::query("UPDATE model_providers SET lifecycle_state='removal_pending' WHERE id=?1")
+        .bind(provider_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+    let mut definitions = response_json(
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/internal/provider-definitions")
+                    .header("authorization", "Bearer control")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+    )
+    .await;
+    for definition in definitions.as_array_mut().unwrap() {
+        if definition["id"] == provider_id {
+            definition["lifecycleState"] = json!("tombstoned");
+            definition["credentialReference"] = Value::Null;
+            definition["removedAt"] = json!("2");
+        }
+    }
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/internal/provider-definitions")
+                .header("authorization", "Bearer control")
+                .header("content-type", "application/json")
+                .body(Body::from(definitions.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+}
+
+/// How a model-selected turn's native run ends without Relayer persisting its outcome.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UnpersistedTurnEnding {
+    /// The native turn succeeds while the graph's canonical metadata read fails after it, so the
+    /// interaction is quarantined as reconciliation pending.
+    CanonicalVerificationFails,
+    /// The provider expires the turn's approval request mid-turn, which fails the interaction
+    /// before the native turn ends; its later success can no longer be accepted.
+    ApprovalExpires,
+}
+
 async fn run_turn_whose_canonical_verification_fails() -> QuarantinedTurn {
+    run_turn_whose_outcome_is_not_persisted(UnpersistedTurnEnding::CanonicalVerificationFails).await
+}
+
+/// Distinguishes fixtures that tests running in parallel create within one clock tick.
+static UNPERSISTED_TURN_FIXTURE: AtomicUsize = AtomicUsize::new(0);
+
+async fn run_turn_whose_outcome_is_not_persisted(ending: UnpersistedTurnEnding) -> QuarantinedTurn {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
+    let fixture = UNPERSISTED_TURN_FIXTURE.fetch_add(1, Ordering::SeqCst);
     let root = std::env::temp_dir().join(format!(
-        "relayer-quarantined-lease-{}-{unique}",
+        "relayer-quarantined-lease-{}-{unique}-{fixture}",
         std::process::id()
     ));
     fs::create_dir_all(&root).unwrap();
@@ -8966,11 +9053,19 @@ async fn run_turn_whose_canonical_verification_fails() -> QuarantinedTurn {
                 ),
             )
     };
+    // Approval-expiry fixture: the product interaction the harness is running, and whether the
+    // product has consumed the expiry (its approval cursor advanced past the resolution).
+    let approval_interaction = Arc::new(AtomicI64::new(0));
+    let expiry_consumed = Arc::new(AtomicBool::new(false));
     let harness = {
         let deletes = lease_deletes.clone();
         let completed = harness_completed.clone();
         let complete_healthy = graph_healthy.clone();
-        axum::Router::new()
+        let complete_interaction = approval_interaction.clone();
+        let complete_expiry_consumed = expiry_consumed.clone();
+        let events_interaction = approval_interaction.clone();
+        let events_expiry_consumed = expiry_consumed.clone();
+        let harness = axum::Router::new()
             .route(
                 "/sessions",
                 axum::routing::post(|| async { (StatusCode::CREATED, axum::Json(json!({}))) }),
@@ -9003,10 +9098,25 @@ async fn run_turn_whose_canonical_verification_fails() -> QuarantinedTurn {
                 axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
                     let completed = completed.clone();
                     let complete_healthy = complete_healthy.clone();
+                    let complete_interaction = complete_interaction.clone();
+                    let complete_expiry_consumed = complete_expiry_consumed.clone();
                     async move {
-                        // The native turn ends successfully; from now on the graph's
-                        // canonical metadata read is unavailable.
-                        complete_healthy.store(false, Ordering::SeqCst);
+                        if ending == UnpersistedTurnEnding::ApprovalExpires {
+                            // The native turn keeps running until the product has recorded
+                            // the provider's expiry of its approval request.
+                            complete_interaction
+                                .store(body["interactionId"].as_i64().unwrap(), Ordering::SeqCst);
+                            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                            while !complete_expiry_consumed.load(Ordering::SeqCst)
+                                && std::time::Instant::now() < deadline
+                            {
+                                tokio::time::sleep(Duration::from_millis(10)).await;
+                            }
+                        } else {
+                            // The native turn ends successfully; from now on the graph's
+                            // canonical metadata read is unavailable.
+                            complete_healthy.store(false, Ordering::SeqCst);
+                        }
                         completed.store(true, Ordering::SeqCst);
                         axum::Json(json!({
                             "output": {
@@ -9016,7 +9126,63 @@ async fn run_turn_whose_canonical_verification_fails() -> QuarantinedTurn {
                         }))
                     }
                 }),
+            );
+        if ending == UnpersistedTurnEnding::ApprovalExpires {
+            harness.route(
+                "/sessions/{id}/approval-events",
+                axum::routing::get(
+                    move |axum::extract::Path(thread_id): axum::extract::Path<i64>,
+                          axum::extract::Query(query): axum::extract::Query<
+                        HashMap<String, String>,
+                    >| {
+                        let interaction_id = events_interaction.load(Ordering::SeqCst);
+                        let expiry_consumed = events_expiry_consumed.clone();
+                        async move {
+                            let after = query
+                                .get("after")
+                                .and_then(|value| value.parse::<u64>().ok())
+                                .unwrap_or(0);
+                            if interaction_id == 0 {
+                                return axum::Json(json!({
+                                    "harnessSessionId": "session-1", "latestSequence": 0,
+                                    "pendingRequests": [], "events": []
+                                }));
+                            }
+                            if after >= 2 {
+                                expiry_consumed.store(true, Ordering::SeqCst);
+                            }
+                            let correlation = json!({
+                                "threadId": thread_id, "interactionId": interaction_id,
+                                "completeCallId": "complete-1", "harnessSessionId": "session-1"
+                            });
+                            let events = [
+                                json!({ "sequence": 1, "type": "requested", "request": {
+                                    "requestId": "request-expiring", "correlation": correlation,
+                                    "title": "Run tests", "reason": "The harness needs to run tests.",
+                                    "action": { "kind": "command", "command": "npm test",
+                                                "workingDirectory": "/workspace" },
+                                    "scopeKeys": ["command:npm test"],
+                                    "scopeDescription": "Run npm test in /workspace",
+                                    "createdAt": "2026-09-27T12:00:00Z"
+                                }}),
+                                json!({ "sequence": 2, "type": "resolved", "resolution": {
+                                    "requestId": "request-expiring", "correlation": correlation,
+                                    "outcome": "expired", "actor": "harness",
+                                    "resolvedAt": "2026-09-27T12:01:00Z"
+                                }}),
+                            ];
+                            axum::Json(json!({
+                                "harnessSessionId": "session-1", "latestSequence": 2,
+                                "pendingRequests": [],
+                                "events": events.into_iter().skip(after as usize).collect::<Vec<_>>()
+                            }))
+                        }
+                    },
+                ),
             )
+        } else {
+            harness
+        }
     };
     let (graph_url, graph_task) = serve_test_app(graph).await;
     let (harness_url, harness_task) = serve_test_app(harness).await;
@@ -9109,7 +9275,7 @@ async fn run_turn_whose_canonical_verification_fails() -> QuarantinedTurn {
                     Some("accepted" | "failed")
                 )
             });
-        if terminal {
+        if terminal && harness_completed.load(Ordering::SeqCst) {
             break state;
         }
         assert!(
@@ -9132,11 +9298,15 @@ async fn run_turn_whose_canonical_verification_fails() -> QuarantinedTurn {
         last["completionStatus"], "failed",
         "setup: expected quarantine: {last}"
     );
+    let expected_error = match ending {
+        UnpersistedTurnEnding::CanonicalVerificationFails => "Canonical reconciliation pending:",
+        UnpersistedTurnEnding::ApprovalExpires => "Approval request expired at the provider.",
+    };
     assert!(
         last["completionError"]
             .as_str()
-            .is_some_and(|error| error.starts_with("Canonical reconciliation pending:")),
-        "setup: expected reconciliation-pending quarantine: {last}"
+            .is_some_and(|error| error.starts_with(expected_error)),
+        "setup: expected {expected_error}: {last}"
     );
     QuarantinedTurn {
         app,
@@ -9150,10 +9320,133 @@ async fn run_turn_whose_canonical_verification_fails() -> QuarantinedTurn {
     }
 }
 
+/// Relayer stopped waiting on the native turn without persisting the attempt's outcome. The
+/// attempt ends with its interaction's decided outcome, or stays undecided for canonical
+/// reconciliation. Either way it stops blocking removal: its lease is released once, and the
+/// provider's removal finishes without a restart.
+async fn assert_ended_turn_released_its_provider(
+    turn: QuarantinedTurn,
+    expected: (&str, Option<&str>),
+) {
+    let attempts = await_lease_releases_recorded(&turn.database).await;
+    assert_eq!(attempts.len(), 1, "setup: exactly one attempt");
+    assert!(
+        attempts[0].2.is_some(),
+        "setup: attempt holds an execution lease"
+    );
+    let pool = sqlite_pool(&turn.database).await;
+    let outcome: (String, Option<String>) =
+        sqlx::query_as("SELECT outcome,failure_category FROM interaction_attempts WHERE id=?1")
+            .bind(attempts[0].0)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    pool.close().await;
+    assert_eq!(
+        (outcome.0.as_str(), outcome.1.as_deref()),
+        expected,
+        "the attempt's outcome"
+    );
+    assert!(
+        attempts[0].3.is_some(),
+        "the lease of a turn Relayer stopped waiting on was not released: {attempts:?}"
+    );
+    assert_eq!(turn.lease_deletes.load(Ordering::SeqCst), 1);
+    assert!(unreconciled_lease_debts(&turn.database).await.is_empty());
+
+    let (status, body) = finish_provider_removal(&turn.app, &turn.database, "codex").await;
+    assert_eq!(
+        status,
+        StatusCode::NO_CONTENT,
+        "removal still waits on an attempt Relayer stopped waiting on: {body}"
+    );
+    turn.graph_task.abort();
+    turn.harness_task.abort();
+    fs::remove_dir_all(turn.root).unwrap();
+}
+
+/// PROV-003 in session: a quarantined turn (reconciliation pending) releases its provider, and
+/// its attempt stays undecided so canonical output can still settle it.
 #[tokio::test]
-async fn opening_a_quarantined_thread_releases_its_settled_attempt_lease() {
+async fn a_turn_whose_outcome_cannot_be_persisted_releases_its_provider_in_session() {
+    assert_ended_turn_released_its_provider(
+        run_turn_whose_canonical_verification_fails().await,
+        ("running", None),
+    )
+    .await;
+}
+
+/// PROV-003 with no fault at all: the provider expires an approval request mid-turn, which fails
+/// the interaction before its native turn ends. That outcome is decided, so when the turn ends
+/// its attempt ends with it, and it releases its provider.
+#[tokio::test]
+async fn a_turn_failed_by_an_expired_approval_releases_its_provider_when_it_ends() {
+    assert_ended_turn_released_its_provider(
+        run_turn_whose_outcome_is_not_persisted(UnpersistedTurnEnding::ApprovalExpires).await,
+        ("execution_failed", Some("approval_expired")),
+    )
+    .await;
+}
+
+/// The thread view settling a quarantined attempt wakes the one lease reconciler (#538). Here
+/// the end of the wait was never recorded (its write failed), so the settle is what makes the
+/// lease debt, and the reconciler releases it in-session.
+#[tokio::test]
+async fn opening_a_quarantined_thread_wakes_the_reconciler_for_its_settled_attempt() {
     let turn = run_turn_whose_canonical_verification_fails().await;
+    await_lease_releases_recorded(&turn.database).await;
     let deletes_before = turn.lease_deletes.load(Ordering::SeqCst);
+    let pool = sqlite_pool(&turn.database).await;
+    sqlx::query(
+        "UPDATE interaction_attempts SET native_wait_ended_at=NULL,execution_lease_reconciled_at=NULL",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+    assert!(
+        unreconciled_lease_debts(&turn.database).await.is_empty(),
+        "setup: a running attempt whose wait end was lost is not debt"
+    );
+    turn.graph_healthy.store(true, Ordering::SeqCst);
+    let view = turn
+        .app
+        .clone()
+        .oneshot(api_request(
+            "GET",
+            &format!("/api/threads/{}", turn.thread_id),
+            None,
+            true,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(view.status(), StatusCode::OK, "setup: thread view");
+    let after = await_lease_releases_recorded(&turn.database).await;
+    assert_eq!(after[0].1, "accepted", "the view settled the attempt");
+    assert!(
+        after[0].3.is_some(),
+        "the settled attempt's lease was not reconciled: {after:?}"
+    );
+    assert_eq!(
+        turn.lease_deletes.load(Ordering::SeqCst),
+        deletes_before + 1
+    );
+    turn.graph_task.abort();
+    turn.harness_task.abort();
+    fs::remove_dir_all(turn.root).unwrap();
+}
+
+/// Opening the thread later settles the quarantined attempt from canonical graph output. Its
+/// lease was already released when the native run ended, so settling it releases nothing again.
+#[tokio::test]
+async fn opening_a_quarantined_thread_accepts_its_attempt_without_releasing_again() {
+    let turn = run_turn_whose_canonical_verification_fails().await;
+    let released = await_lease_releases_recorded(&turn.database).await;
+    assert!(
+        released[0].3.is_some(),
+        "setup: native-run end released the lease"
+    );
+    assert_eq!(turn.lease_deletes.load(Ordering::SeqCst), 1);
     // Graph recovers and has the canonical output.
     turn.graph_healthy.store(true, Ordering::SeqCst);
     let view = turn
@@ -9175,36 +9468,411 @@ async fn opening_a_quarantined_thread_releases_its_settled_attempt_lease() {
         .last()
         .unwrap()
         .clone();
-    let settled = attempt_lease_rows(&turn.database).await;
     assert_eq!(
         viewed["completionStatus"], "accepted",
-        "setup: view reconciled quarantine"
+        "canonical output still settles an attempt whose native run ended"
     );
-    assert_ne!(settled[0].1, "running", "setup: view settled the attempt");
-
-    // Settling the attempt turns its lease into debt; the reconciler releases it in-session.
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    let after = loop {
-        let after = attempt_lease_rows(&turn.database).await;
-        if after[0].3.is_some() || std::time::Instant::now() >= deadline {
-            break after;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    };
-    let debts = unreconciled_lease_debts(&turn.database).await;
+    // Settling wakes the lease reconciler; give it time to (wrongly) release again.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let settled = attempt_lease_rows(&turn.database).await;
+    assert_eq!(settled[0].1, "accepted");
+    assert_eq!(
+        settled[0].3, released[0].3,
+        "the recorded release is unchanged"
+    );
     assert_eq!(
         turn.lease_deletes.load(Ordering::SeqCst),
-        deletes_before + 1,
-        "thread view settled attempt {} to '{}' but its lease was not released; debts={debts:?}",
-        after[0].0,
-        after[0].1
+        1,
+        "lease released twice"
     );
-    assert!(
-        after[0].3.is_some(),
-        "released lease was not recorded as reconciled"
-    );
-    assert!(debts.is_empty(), "lease debt remains: {debts:?}");
+    assert!(unreconciled_lease_debts(&turn.database).await.is_empty());
     turn.graph_task.abort();
     turn.harness_task.abort();
     fs::remove_dir_all(turn.root).unwrap();
+}
+
+/// PROV-003 and Q26 after a restart: a turn with submitted inputs ran on a provider the user
+/// then removed. On relaunch a transient graph read quarantines it. Its attempt died with the
+/// application, so the removal finishes without a second restart, while its canonical output is
+/// still recovered when the thread is opened.
+#[tokio::test]
+async fn restart_finishes_a_removal_whose_quarantined_attempt_died_with_the_app() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "relayer-removal-after-restart-{}-{unique}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let database = root.join("product.sqlite3");
+    let offline = open_app(&database, &root).await;
+    let thread = response_json(
+        offline
+            .oneshot(api_request(
+                "POST",
+                "/api/threads",
+                Some(json!({"initialMessage":"Seed"})),
+                true,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let thread_id = thread["id"].as_i64().unwrap();
+    seed_explicit_test_model_default(&database, thread_id).await;
+
+    let pool = sqlite_pool(&database).await;
+    let created_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .to_string();
+    let interaction_id = sqlx::query(
+        "INSERT INTO interactions(
+            thread_id,sequence,text,created_at,graph_node_id,completion_status,
+            harness_configuration_name,harness_configuration_digest,permission_profile_id,
+            effective_execution_digest,effective_permission_receipt_json,input_identity,input_digest
+         ) VALUES (?1,2,'Use the committed answer',?2,78,'running','codex-basic','sha256:test',
+            'auto','sha256:execution','{}','send-removal-restart','sha256:removal-input')",
+    )
+    .bind(thread_id)
+    .bind(&created_at)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_rowid();
+    let (family_id, family_revision): (i64, i64) =
+        sqlx::query_as("SELECT id,revision FROM model_families ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        "INSERT INTO interaction_attempts(
+            interaction_id,attempt_number,started_at,family_id,family_revision,
+            harness_configuration_name,harness_configuration_revision,harness_configuration_digest,
+            provider_id,adapter_id,adapter_implementation_version,model_id,access_contract,
+            outcome,effect_boundary,execution_lease_id
+         ) VALUES (?1,1,?2,?3,?4,'codex-basic',1,'sha256:test',
+            'codex','test-adapter',1,'test-model','managed-runtime@1','running','unknown',
+            'lease-before-restart')",
+    )
+    .bind(interaction_id)
+    .bind(&created_at)
+    .bind(family_id)
+    .bind(family_revision)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO action_input_drafts(thread_id,revision,updated_at) VALUES (?1,2,?2)")
+        .bind(thread_id)
+        .bind(&created_at)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO interaction_submitted_input_attempts(
+            interaction_id,thread_id,draft_revision,authority_digest,semantic_digest,state,
+            graph_root_node_id,created_at,bound_at
+         ) VALUES (?1,?2,1,'sha256:removal-input','sha256:removal-semantic','running',78,?3,?3)",
+    )
+    .bind(interaction_id)
+    .bind(thread_id)
+    .bind(&created_at)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO interaction_submitted_input_attachments(
+            interaction_id,presenting_interaction_node_id,presenting_layer_id,action_id,
+            source_node_id,action_json,value_json,committed_at
+         ) VALUES (?1,11,21,31,41,?2,?3,?4)",
+    )
+    .bind(interaction_id)
+    .bind(json!({"control":"text","prompt":"Answer"}).to_string())
+    .bind(json!({"text":"accepted later"}).to_string())
+    .bind(&created_at)
+    .execute(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+
+    let catalog = root.join("catalog.json");
+    fs::write(
+        &catalog,
+        json!({
+            "schemaVersion":1,"configurations":[{"configuration":{
+                "schemaVersion":1,"name":"codex-basic","implementation":"test",
+                "implementationVersion":1,"permissionBindings":{"auto":{}},
+                "modelCompatibility":[{"providerId":"codex"}],
+                "executionAccessContracts":["managed-runtime@1"],
+                "settings":{"model":"test-model"}
+            },"digest":"sha256:test"}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    // The first canonical output read after the restart is transiently unavailable.
+    let output_reads = Arc::new(AtomicUsize::new(0));
+    let observed_output_reads = output_reads.clone();
+    let graph = Router::new()
+        .route(
+            "/api/control/interactions/78",
+            axum::routing::get(|| async {
+                axum::Json(json!({
+                    "nodeId":78,"invocation":null,
+                    "inputIdentity":"send-removal-restart","inputDigest":"sha256:removal-input"
+                }))
+            }),
+        )
+        .route(
+            "/api/control/interactions/78/output",
+            axum::routing::get(move || {
+                let observed_output_reads = observed_output_reads.clone();
+                async move {
+                    if observed_output_reads.fetch_add(1, Ordering::SeqCst) == 0 {
+                        return (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            axum::Json(json!({"error":{"code":"temporarily_unavailable"}})),
+                        )
+                            .into_response();
+                    }
+                    axum::Json(json!({
+                        "nodeId":78,
+                        "rootLayer":{"id":1,"nodes":[],"edges":[],"actions":[]}
+                    }))
+                    .into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/control/capabilities",
+            axum::routing::delete(|| async { axum::Json(json!({"revoked":true})) }),
+        );
+    // The harness host restarted with the application, so it no longer knows the lease.
+    let lease_deletes = Arc::new(AtomicUsize::new(0));
+    let observed_lease_deletes = lease_deletes.clone();
+    let harness = Router::new().route(
+        "/sessions/{id}/execution-leases/{lease}",
+        axum::routing::delete(move || {
+            let observed_lease_deletes = observed_lease_deletes.clone();
+            async move {
+                observed_lease_deletes.fetch_add(1, Ordering::SeqCst);
+                axum::Json(json!({"released": false}))
+            }
+        }),
+    );
+    let (graph_url, graph_task) = serve_test_app(graph).await;
+    let (harness_url, harness_task) = serve_test_app(harness).await;
+    let resumed =
+        open_app_with_runtime_allow_override(&database, &root, &catalog, &graph_url, &harness_url)
+            .await;
+
+    // Desktop's startup reconciliation finishes the removal as soon as the server is open.
+    let (status, body) = finish_provider_removal(&resumed, &database, "codex").await;
+    assert_eq!(
+        status,
+        StatusCode::NO_CONTENT,
+        "removal still waits on an attempt that died with the app: {body}"
+    );
+    let attempts = await_lease_releases_recorded(&database).await;
+    assert_eq!(
+        attempts[0].1, "running",
+        "the quarantined attempt's outcome waits for reconciliation"
+    );
+    assert!(
+        attempts[0].3.is_some(),
+        "the lease of an attempt that died with the app was not reconciled: {attempts:?}"
+    );
+    assert_eq!(lease_deletes.load(Ordering::SeqCst), 1);
+
+    let state = response_json(
+        resumed
+            .clone()
+            .oneshot(api_request(
+                "GET",
+                &format!("/api/state?threadId={thread_id}"),
+                None,
+                true,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let recovered = state["interactions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|interaction| interaction["id"] == interaction_id)
+        .unwrap();
+    assert_eq!(recovered["completionStatus"], "accepted");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let settled = attempt_lease_rows(&database).await;
+    assert_eq!(settled[0].1, "accepted");
+    assert_eq!(
+        lease_deletes.load(Ordering::SeqCst),
+        1,
+        "lease released twice"
+    );
+
+    drop(resumed);
+    graph_task.abort();
+    harness_task.abort();
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// PROV-003 across a restart with a recursive child: a child that settled while its provider
+/// was still unwinding keeps its attempt running over the restart. Startup observes it once
+/// before serving Desktop; a harness that restarted with the app knows no such run, so the
+/// child's attempt ends first, and the provider removal Desktop finishes at startup succeeds.
+#[tokio::test]
+async fn restart_ends_an_unwinding_child_before_startup_finishes_its_providers_removal() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "relayer-unwinding-child-removal-{}-{unique}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let database = root.join("product.sqlite3");
+    let offline = open_app(&database, &root).await;
+    let thread = response_json(
+        offline
+            .oneshot(api_request(
+                "POST",
+                "/api/threads",
+                Some(json!({"initialMessage":"Seed"})),
+                true,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let thread_id = thread["id"].as_i64().unwrap();
+    seed_explicit_test_model_default(&database, thread_id).await;
+    let pool = sqlite_pool(&database).await;
+    let created_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .to_string();
+    let child_id = sqlx::query(
+        "INSERT INTO interactions(
+            thread_id,sequence,text,created_at,graph_node_id,completion_status,
+            harness_configuration_name,harness_configuration_digest,permission_profile_id,
+            effective_execution_digest,effective_permission_receipt_json
+         ) VALUES (?1,2,'Child',?2,88,'accepted','codex-basic','sha256:test','auto',
+            'sha256:execution','{}')",
+    )
+    .bind(thread_id)
+    .bind(&created_at)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_rowid();
+    let (family_id, family_revision): (i64, i64) =
+        sqlx::query_as("SELECT id,revision FROM model_families ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        "INSERT INTO interaction_attempts(
+            interaction_id,attempt_number,started_at,family_id,family_revision,
+            harness_configuration_name,harness_configuration_revision,harness_configuration_digest,
+            provider_id,adapter_id,adapter_implementation_version,model_id,access_contract,
+            outcome,effect_boundary,execution_lease_id
+         ) VALUES (?1,1,?2,?3,?4,'codex-basic',1,'sha256:test',
+            'codex','test-adapter',1,'test-model','managed-runtime@1','running','unknown',
+            'child-lease-before-restart')",
+    )
+    .bind(child_id)
+    .bind(&created_at)
+    .bind(family_id)
+    .bind(family_revision)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO completion_executions(
+            interaction_id,graph_completion_id,harness_configuration_name,
+            harness_configuration_digest,model_execution_digest,permission_origin_digest,phase,
+            settlement_json,created_at,updated_at
+         ) VALUES (?1,88,'codex-basic','sha256:test','sha256:model','sha256:origin','settled',
+            '{}',?2,?2)",
+    )
+    .bind(child_id)
+    .bind(&created_at)
+    .execute(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+
+    let catalog = root.join("catalog.json");
+    fs::write(
+        &catalog,
+        json!({
+            "schemaVersion":1,"configurations":[{"configuration":{
+                "schemaVersion":1,"name":"codex-basic","implementation":"test",
+                "implementationVersion":1,"permissionBindings":{"auto":{}},
+                "modelCompatibility":[{"providerId":"codex"}],
+                "executionAccessContracts":["managed-runtime@1"],
+                "settings":{"model":"test-model"}
+            },"digest":"sha256:test"}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let graph = Router::new().route(
+        "/api/control/capabilities",
+        axum::routing::delete(|| async { axum::Json(json!({"revoked":true})) }),
+    );
+    // The harness restarted with the app: it knows no such run, and answers after a moment.
+    let lease_deletes = Arc::new(AtomicUsize::new(0));
+    let observed_lease_deletes = lease_deletes.clone();
+    let harness = Router::new()
+        .route(
+            "/sessions/{id}/invoked-completions/{completion}",
+            axum::routing::get(|| async {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(json!({"error":"Invoked completion is not registered"})),
+                )
+            }),
+        )
+        .route(
+            "/sessions/{id}/execution-leases/{lease}",
+            axum::routing::delete(move || {
+                let observed_lease_deletes = observed_lease_deletes.clone();
+                async move {
+                    observed_lease_deletes.fetch_add(1, Ordering::SeqCst);
+                    axum::Json(json!({"released": false}))
+                }
+            }),
+        );
+    let (graph_url, graph_task) = serve_test_app(graph).await;
+    let (harness_url, harness_task) = serve_test_app(harness).await;
+    let resumed =
+        open_app_with_runtime_allow_override(&database, &root, &catalog, &graph_url, &harness_url)
+            .await;
+
+    // Desktop's startup reconciliation finishes the removal as soon as the server is open.
+    let (status, body) = finish_provider_removal(&resumed, &database, "codex").await;
+    assert_eq!(
+        status,
+        StatusCode::NO_CONTENT,
+        "removal waits on a child the harness no longer runs: {body}"
+    );
+    let attempts = attempt_lease_rows(&database).await;
+    assert_eq!(attempts[0].1, "accepted", "the child's decided outcome");
+    assert!(attempts[0].3.is_some(), "the child's lease was reconciled");
+    assert_eq!(lease_deletes.load(Ordering::SeqCst), 1);
+
+    drop(resumed);
+    graph_task.abort();
+    harness_task.abort();
+    fs::remove_dir_all(root).unwrap();
 }

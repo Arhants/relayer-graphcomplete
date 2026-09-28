@@ -38,6 +38,8 @@ CONSTANTS
   PersistCanFail,     \* Rust terminal persistence fails (record_reconciliation_pending)
   StartupQuarantine,  \* startup reconciliation quarantines an interrupted submitted input
   HarnessCanHang,     \* a native turn may ignore cancellation (no fairness on NatEnd)
+  StartupCleanupCanFail, \* reconcileStartup's finalize fails with a non-drain error
+                         \* (catalog write, credential delete, runtime-state removal)
   \* --- fixes (TRUE once landed) ---
   HostReleasesOnSettle,  \* HH:1186-1188, 973-982: the host releases access as soon as
                          \* the native turn ends and keeps the entry until the owner's
@@ -49,15 +51,26 @@ CONSTANTS
                          \* drain-incomplete returns false instead of throwing
                          \* (RAS:392); the owner's acknowledgement
                          \* (HH:1003-1006 -> PDS:633-635) retries it
-  QuarantineSettleWakesReconciler \* THR:1185-1197: settling a quarantined
+  QuarantineSettleWakesReconciler, \* THR:1185-1197: settling a quarantined
                          \* interaction wakes the lease reconciler
+  PersistFailureEndsWait, \* EX:67-80, 1070-1101: when the task stops waiting on
+                         \* a native run without a terminal attempt, it ends the
+                         \* attempt with a decided interaction outcome, or records
+                         \* native_wait_ended_at (AT:311-371), and releases the lease
+  RestartEndsWaits,      \* INT:84-95: startup records native_wait_ended_at on the
+                         \* attempts it leaves open for reconciliation
+  StartupIsolatesProviders \* PDS:785-844: reconcileStartup records a provider's
+                         \* removal or cleanup failure and keeps starting
 
 Lives == {"active", "removal_pending", "tombstoned"}
 
 VARIABLES
   \* --- durable Rust SQLite (survives restart) ---
   rLife,     \* model_providers.lifecycle_state for P
-  att,       \* t -> none | running | terminal   (interaction_attempts.outcome)
+  att,       \* t -> none | running | ended | terminal
+             \*      (interaction_attempts.outcome; "ended" is outcome='running'
+             \*       with native_wait_ended_at set: undecided, but Relayer no
+             \*       longer waits on it, so the drain skips it)
   quar,      \* t -> no | ordinary | submitted  ("Canonical reconciliation pending")
   acked,     \* t -> execution_lease_reconciled_at IS NOT NULL
   \* --- Rust in-memory ---
@@ -90,8 +103,12 @@ vars == <<rLife, att, quar, acked, rpc, wake, wBusy, jLife, jsHeld, rt,
 hostVars == <<hl, hRel, hTimer, hReq, hOwn, abort>>
 
 Count == Cardinality({u \in Turns : jsHeld[u]})
+\* CAT:190-203: the drain counts only undecided attempts Relayer still
+\* waits on. Live native work is guarded by jsHeld (the host's claim and the
+\* PDS count), not by this.
 RustRunning == \E u \in Turns : att[u] = "running"
-Debt(t) == att[t] = "terminal" /\ ~acked[t]      \* AT:311-345
+\* AT:373-420: lease debt is any attempt the drain no longer counts.
+Debt(t) == att[t] \in {"terminal", "ended"} /\ ~acked[t]
 
 Init ==
   /\ rLife = "active" /\ jLife = "active"
@@ -116,7 +133,8 @@ Init ==
 (* #finalizeRemoval (PDS:760-783): definitionStore.save PUTs the tombstone *)
 (* to Rust, and sync_provider_definitions rejects it with                  *)
 (* provider_execution_drain_incomplete while any attempt on P is           *)
-(* outcome='running' (CAT:190-199). Only after the tombstone commits is    *)
+(* undecided and still waited on (CAT:190-203). Only after the           *)
+(* tombstone commits is                                                    *)
 (* the runtime closed. With AckRetriesFinalize the refusal returns false   *)
 (* and P stays removal_pending; before it, the refusal was thrown.         *)
 FinalizeOk == app = "up" /\ ~RustRunning
@@ -293,23 +311,32 @@ GiveUp(t) ==
 (* persistence or canonical-read failure it calls                          *)
 (* record_reconciliation_pending (EX:1051-1081), which fails only the      *)
 (* interaction and leaves the attempt 'running' (INT:884-903), or just    *)
-(* logs; either way it returns without a release. A submitted-input        *)
-(* interaction in that state is "quarantined".                             *)
+(* logs. A submitted-input interaction in that state is "quarantined".     *)
+(* An approval the provider aborts, expires or cancels mid-turn fails or  *)
+(* stops the interaction first (q = "decided", no fault needed), so the    *)
+(* later write fails the same way. With PersistFailureEndsWait the task    *)
+(* then ends its wait (end_native_wait, EX:1070-1101): a decided attempt   *)
+(* ends with its interaction's outcome; a quarantined one stays undecided  *)
+(* ("ended"). Either way its lease is released. Before the fix the task    *)
+(* returned without a release, and the attempt stayed running.            *)
 Persist(t, ok) ==
   /\ app = "up" /\ rpc[t] = "result"
   /\ IF ok
      THEN /\ att' = [att EXCEPT ![t] = IF att[t] = "running" THEN "terminal" ELSE att[t]]
           /\ rpc' = [rpc EXCEPT ![t] = "release"]
           /\ UNCHANGED quar
-     ELSE /\ PersistCanFail
-          /\ rpc' = [rpc EXCEPT ![t] = "done"]
-          /\ \E q \in {"ordinary", "submitted"} : quar' = [quar EXCEPT ![t] = q]
-          /\ UNCHANGED att
+     ELSE /\ rpc' = [rpc EXCEPT ![t] = IF PersistFailureEndsWait THEN "release" ELSE "done"]
+          /\ \E q \in {"ordinary", "submitted", "decided"} :
+               /\ PersistCanFail \/ q = "decided"
+               /\ quar' = [quar EXCEPT ![t] = IF q = "decided" THEN quar[t] ELSE q]
+               /\ att' = [att EXCEPT ![t] =
+                            IF ~PersistFailureEndsWait \/ att[t] /= "running" THEN att[t]
+                            ELSE IF q = "decided" THEN "terminal" ELSE "ended"]
   /\ UNCHANGED <<rLife, acked, wake, wBusy, jLife, jsHeld, rt, pClosed,
                  hostVars, nat, hClosed, app, restarts>>
 
 (* release_terminal_admission -> reconcile_terminal_execution_lease        *)
-(* (AS:455-500): read debt (terminal attempts only), DELETE the lease,     *)
+(* (AS:455-500): read debt (Debt above), DELETE the lease,                 *)
 (* acknowledge. On failure it wakes the one reconciler (EX:1094-1097).     *)
 (* Abstraction: the DELETE waits out a release already in flight           *)
 (* (HH:989 `??=`).                                                         *)
@@ -397,13 +424,15 @@ Remove ==
 (* Reading a quarantined submitted input settles it                        *)
 (* (reconcile_quarantined_interaction, THR:1185-1197) with                 *)
 (* finalize_quarantined_submitted_input_failure (INT:169-200) or           *)
-(* recover_interaction_accepted, both of which terminalize the attempt.   *)
+(* recover_interaction_accepted, both of which terminalize the attempt,   *)
+(* whether or not the end of the wait was recorded. An ended attempt's    *)
+(* lease was already released, so no new debt forms.                       *)
 (* Two readers call it: the thread view (refresh_accepted_outputs,         *)
 (* THR:1109-1140) and an invoke action's destination (THR:1067-1074).      *)
 (* Neither releases the lease; with QuarantineSettleWakesReconciler the    *)
 (* settle wakes the reconciler, which owns the new lease debt.             *)
 ReadQuarantined(t) ==
-  /\ app = "up" /\ quar[t] = "submitted" /\ att[t] = "running"
+  /\ app = "up" /\ quar[t] = "submitted" /\ att[t] \in {"running", "ended"}
   /\ att' = [att EXCEPT ![t] = "terminal"]
   /\ quar' = [quar EXCEPT ![t] = "no"]
   /\ wake' = (wake \/ QuarantineSettleWakesReconciler)
@@ -462,25 +491,35 @@ ShutdownDone ==
 
 (* Restart. Rust open: startup reconciliation may quarantine an           *)
 (* interrupted submitted input on a retryable error (AS:720-740,          *)
-(* INT:141-163); then recover_interrupted_interactions (AS:793, INT:44-88) *)
-(* fails every running attempt EXCEPT quarantined submitted inputs; the    *)
-(* reconciler is scheduled (AS:814-815). Then provider composition start   *)
-(* (PC:81-83, IDX:554) runs reconcileStartup (PDS:785-803), which          *)
-(* finalizes every removal_pending definition. A refused finalize threw    *)
-(* and quit the app before the window opened (IDX:597, 608-611); with     *)
-(* AckRetriesFinalize it returns false and P stays removal_pending. All    *)
-(* harness and PDS memory is fresh, so no host entry is left to           *)
-(* acknowledge a later release.                                            *)
-Restart(Q) ==
+(* INT:141-163); then recover_interrupted_interactions (AS:793, INT:44-100)*)
+(* fails every undecided attempt EXCEPT quarantined submitted inputs. With *)
+(* RestartEndsWaits it records the end of the wait on those kept attempts,*)
+(* their process exited with the app. The reconciler is scheduled          *)
+(* (AS:814-815). Then provider composition start (PC:81-83, IDX:554) runs  *)
+(* reconcileStartup (PDS:785-844), which finalizes every removal_pending   *)
+(* definition. A refused finalize threw and quit the app before the window *)
+(* opened (IDX:597, 608-611); with AckRetriesFinalize it returns false and *)
+(* P stays removal_pending. A finalize that fails otherwise (cf) quits the *)
+(* app too, unless StartupIsolatesProviders records it and starts; P then  *)
+(* stays removal_pending until the next start. All harness and PDS memory *)
+(* is fresh, so no host entry is left to acknowledge a later release.      *)
+Restart(Q, cf) ==
   /\ app \in {"down", "startFailed"} /\ restarts < MaxRestarts
   /\ Q \subseteq {t \in Turns : att[t] = "running" /\ quar[t] = "no"}
   /\ StartupQuarantine \/ Q = {}
-  /\ LET keep(t) == att[t] = "running" /\ (quar[t] = "submitted" \/ t \in Q)
+  /\ StartupCleanupCanFail \/ ~cf
+  /\ LET undecided(t) == att[t] \in {"running", "ended"}
+         keep(t) == undecided(t) /\ (quar[t] = "submitted" \/ t \in Q)
          att2 == [t \in Turns |->
-                    IF att[t] = "running" /\ ~keep(t) THEN "terminal" ELSE att[t]]
+                    IF undecided(t) /\ ~keep(t) THEN "terminal"
+                    ELSE IF keep(t) /\ RestartEndsWaits THEN "ended"
+                    ELSE att[t]]
          running2 == \E t \in Turns : att2[t] = "running"
-         fail == rLife = "removal_pending" /\ running2 /\ ~AckRetriesFinalize
-         life2 == IF rLife = "removal_pending" /\ ~running2 THEN "tombstoned" ELSE rLife
+         attempted == rLife = "removal_pending" /\ ~running2
+         cleanupFails == attempted /\ cf
+         fail == \/ rLife = "removal_pending" /\ running2 /\ ~AckRetriesFinalize
+                 \/ cleanupFails /\ ~StartupIsolatesProviders
+         life2 == IF attempted /\ ~cleanupFails THEN "tombstoned" ELSE rLife
      IN /\ att' = att2
         /\ quar' = [t \in Turns |-> IF keep(t) THEN "submitted" ELSE
                                     IF att2[t] = "running" THEN quar[t] ELSE "no"]
@@ -510,7 +549,7 @@ Next ==
        \/ ReadQuarantined(t)
   \/ WorkerWake \/ WorkerIdle \/ Remove
   \/ ShutdownBegin \/ HostCloseStart \/ PdsClose \/ ShutdownDone
-  \/ \E Q \in SUBSET Turns : Restart(Q)
+  \/ \E Q \in SUBSET Turns, cf \in BOOLEAN : Restart(Q, cf)
 
 (* Fairness: the code guarantees the Rust task, host timers and release   *)
 (* promises, the reconciler, and a begun shutdown keep running. User       *)
@@ -536,7 +575,7 @@ FairSpec == Spec /\ Fairness
 
 TypeOK ==
   /\ rLife \in Lives /\ jLife \in Lives
-  /\ att \in [Turns -> {"none", "running", "terminal"}]
+  /\ att \in [Turns -> {"none", "running", "ended", "terminal"}]
   /\ quar \in [Turns -> {"no", "ordinary", "submitted"}]
   /\ acked \in [Turns -> BOOLEAN]
   /\ rpc \in [Turns -> {"idle", "admitted", "attempt", "waiting", "result",
@@ -585,8 +624,8 @@ RuntimeOpenWhileTurnRunsAlways ==
 NoTimerOnClaimedAccess ==
   \A t \in Turns : hTimer[t] => hl[t] /= "claimed"
 
-\* DRAFT PROV-003 (restart finishes a removal) + CODE PC:81-83 (startup
-\* assumes reconcileStartup succeeds): the app always starts.
+\* PROV-003 (restart finishes a removal) + startup isolation (PDS:785-844):
+\* the app always starts.
 StartupSucceeds == app /= "startFailed"
 
 -----------------------------------------------------------------------------
@@ -595,7 +634,7 @@ StartupSucceeds == app /= "startFailed"
 
 Quiet == \A t \in Turns : nat[t] /= "running"
 
-\* DRAFT PROV-003: once nothing is actually running, removal_pending becomes
+\* PROV-003: once nothing is actually running, removal_pending becomes
 \* tombstoned without a restart.
 RemovalCompletes ==
   (rLife = "removal_pending" /\ Quiet /\ app = "up")
@@ -611,13 +650,14 @@ RemovalCompletesEvenIfHung ==
 LeaseEventuallyReleased ==
   \A t \in Turns : (jsHeld[t] /\ app = "up") ~> (~jsHeld[t] \/ app /= "up")
 
-\* DRAFT PROV-003 (the durable record is the drain authority): once a turn's
-\* native work has ended, its attempt eventually becomes terminal. A running
-\* attempt blocks the tombstone (CAT:190-199).
-AttemptSettlesAfterTurn ==
+\* PROV-003 (the durable record is the drain authority): once a turn's
+\* native work has ended, its attempt eventually stops holding P. It becomes
+\* terminal, or the end of the wait is recorded while its outcome awaits
+\* reconciliation. A running attempt blocks the tombstone (CAT:190-201).
+AttemptEndsAfterTurn ==
   \A t \in Turns :
     (att[t] = "running" /\ nat[t] = "done" /\ app = "up")
-      ~> (att[t] = "terminal" \/ app /= "up")
+      ~> (att[t] \in {"terminal", "ended"} \/ app /= "up")
 
 \* A cancelled turn's access is eventually released, even if its native
 \* turn ignores the cancellation.

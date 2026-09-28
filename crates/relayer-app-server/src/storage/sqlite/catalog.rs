@@ -188,7 +188,11 @@ impl SqliteProductStore {
                         .await?;
                 }
                 if old_state == "removal_pending" && definition.lifecycle_state == "tombstoned" {
-                    let running: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM interaction_attempts WHERE provider_id=?1 AND outcome='running')")
+                    // An undecided attempt Relayer no longer waits on does not count; its outcome
+                    // is reconciled from the canonical graph later. This drain is necessary but
+                    // not sufficient: live native work is guarded by the harness host's claim
+                    // and the provider service's lease count.
+                    let running: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM interaction_attempts WHERE provider_id=?1 AND outcome='running' AND native_wait_ended_at IS NULL)")
                         .bind(definition.id.as_str()).fetch_one(&mut *transaction).await?;
                     if running {
                         return Err(StorageError::Catalog(CatalogError::invalid(

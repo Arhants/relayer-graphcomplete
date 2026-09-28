@@ -2234,6 +2234,16 @@ impl ProductService {
             .map_err(Into::into)
     }
 
+    pub(crate) async fn end_attempt_native_wait(
+        &self,
+        attempt_id: i64,
+    ) -> Result<bool, ProductError> {
+        self.storage
+            .end_attempt_native_wait(attempt_id, &now())
+            .await
+            .map_err(Into::into)
+    }
+
     pub(crate) async fn execution_lease_debt(
         &self,
         attempt_id: i64,

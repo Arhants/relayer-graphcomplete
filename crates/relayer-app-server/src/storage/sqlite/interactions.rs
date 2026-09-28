@@ -51,7 +51,8 @@ impl SqliteProductStore {
         // Finalize the attempt in the same transaction: an interrupted harness has an unknown
         // effect boundary and therefore must never be silently replayed after restart. A
         // submitted-input attempt quarantined by a retryable canonical read stays open only for
-        // graph reconciliation; it is never replayed through the provider.
+        // graph reconciliation; it is never replayed through the provider, and the end of
+        // Relayer's wait on it is recorded.
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let finished_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -76,9 +77,22 @@ impl SqliteProductStore {
                    AND submitted.state NOT IN ('accepted','failed','stopped')
                )",
         )
-            .bind(finished_at)
+            .bind(&finished_at)
             .execute(&mut *transaction)
             .await?;
+        // The quarantined attempts left open above ran in the process that exited with the
+        // application, so nothing waits on them any more. Their outcome waits for graph
+        // reconciliation, but they no longer count toward the removal drain, and their
+        // execution leases become debt. Settled recursive children are excluded: a harness that
+        // outlived this server may still run them, and startup resumes their provider-end wait.
+        sqlx::query(
+            "UPDATE interaction_attempts SET native_wait_ended_at=?1
+             WHERE outcome='running' AND native_wait_ended_at IS NULL
+               AND interaction_id NOT IN (SELECT interaction_id FROM completion_executions WHERE phase='settled')",
+        )
+        .bind(&finished_at)
+        .execute(&mut *transaction)
+        .await?;
         let result = sqlx::query(
             "UPDATE interactions SET completion_status='failed',completion_error=?1 WHERE completion_status IN ('running','submitted') AND (?2=0 OR input_identity IS NULL) AND id NOT IN (SELECT result_interaction_id FROM action_invocations WHERE authoritative=1) AND thread_id IN (SELECT id FROM threads WHERE conversation_import_id IS NULL)",
         )
