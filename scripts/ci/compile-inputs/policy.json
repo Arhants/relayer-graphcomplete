@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "kind": "diagnostic-source-projection",
+  "includeFiles": ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "docs/graph-query-v1.md"],
+  "includeRoots": ["crates/", ".cargo/", "fixtures/graph-query-v1/"],
+  "runtimeRoots": ["permissions/", "models/tla/traces/"],
+  "assumptions": ["Pinned container image and toolchain", "Explicit fixed environment and canonical paths", "No network, host home or pre-existing compilation outputs"],
+  "unqualified": ["Optional excluded-file reads may change generated behavior", "Clock, randomness, proc/sys and process metadata", "Ordinary CI equivalence and full reusable-artifact identity"]
+}
