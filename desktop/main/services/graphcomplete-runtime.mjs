@@ -409,8 +409,9 @@ export class GraphCompleteRuntimeService {
           try {
             runtimeFilesValid = await this.#awaitStartupOperation(this.validateHarnessRuntime(configuration)) === true;
           } catch (error) {
-            // A runtime that was never installed is the normal state of an unused harness.
-            if (error?.code !== "managed_runtime_not_installed") {
+            // A runtime that was never installed, or has no recipe for this target, is the
+            // normal state of an unused harness.
+            if (error?.code !== "managed_runtime_not_installed" && error?.code !== "managed_runtime_unsupported_target") {
               try { await this.onHarnessRuntimeValidationFailure(configuration, error); } catch { /* diagnostics cannot block startup */ }
             }
           }

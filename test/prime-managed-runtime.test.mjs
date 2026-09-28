@@ -48,6 +48,11 @@ describe("Prime managed runtime", () => {
     expect(recipe.artifacts.some(({ kind }) => kind === "sdist")).toBe(false);
   });
 
+  it("marks a target without a Prime recipe so startup validation stays quiet", () => {
+    expect(() => resolveManagedRuntimeRecipe("prime@0.8.1", "linux-x64"))
+      .toThrow(expect.objectContaining({ code: "managed_runtime_unsupported_target" }));
+  });
+
   it("selects exactly the closure identity for the assembly environment", () => {
     const javascriptContract = resolveManagedRuntimeRecipe("prime@0.8.1", "macos-arm64").runtimeContract.javascript;
     expect(selectPrimeAgentDependencyClosureSha256({ isPackaged: true, javascriptContract }))

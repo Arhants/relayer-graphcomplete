@@ -3025,10 +3025,11 @@ mod provider_definition_tests {
         };
         before_rule.run(&pool).await.unwrap();
         // An older build left the route ready, for example restored from the JSON catalog.
-        sqlx::query("UPDATE product_harnesses SET available=1,unavailable_reason_code=NULL,unavailable_reason_message=NULL,runtime_configuration_digest='sha256:d1' WHERE configuration_name='codex-basic'")
+        let left_ready = sqlx::query("UPDATE product_harnesses SET available=1,unavailable_reason_code=NULL,unavailable_reason_message=NULL,runtime_configuration_digest='sha256:d1' WHERE configuration_name='codex-basic'")
             .execute(&pool)
             .await
             .unwrap();
+        assert_eq!(left_ready.rows_affected(), 1);
         pool.close().await;
 
         let store = SqliteProductStore::open(&database).await.unwrap();

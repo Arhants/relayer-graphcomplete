@@ -224,7 +224,7 @@ results in order.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `readiness-restart-restore` | Fixed; now passes | Before the fix (R1): readiness was written to Rust first, then to the JSON catalog. At startup Electron restored ready from the JSON, and Rust rebuilt its row from that JSON without reading its own. A crash or failed write between the two writes restored a ready that Rust had withdrawn, and Send was admitted. Now the JSON carries only whether the runtime files validate. `initialize_model_catalog` restores ready only from its own previous row for the same digest (PROV-006). Regression: `restart_keeps_the_app_server_record_of_an_unavailable_route`. |
+| `readiness-restart-restore` | Fixed; now passes | Before the fix (R1): readiness was written to Rust first, then to the JSON catalog. At startup Electron restored ready from the JSON, and Rust rebuilt its row from that JSON without reading its own. A crash or failed write between the two writes restored a ready that Rust had withdrawn, and Send was admitted. Now the JSON carries only whether the runtime files validate. `initialize_model_catalog` restores ready only from its own previous row for the same digest (PROV-006). Regressions: the desktop-shell test "hands startup readiness to the app server record instead of the previous catalog file" fails on the old code; `restart_keeps_the_app_server_record_of_an_unavailable_route` guards the new rule. |
 | `readiness-restart-restore-reverted` | violated: shows why the fix is needed | With the JSON catalog as a second record, a crash between the two writes restores the withdrawn ready, and Send is admitted on it. |
 | `readiness-single-record` | Fixed; now passes | Before the fix (R2): a failed JSON write left the two records split, with nothing to reconcile them. The JSON readiness write is gone, so there is one record. |
 | `readiness-single-record-reverted` | violated: shows why the fix is needed | With two records, a JSON write that fails after the Rust commit splits them. |
@@ -234,8 +234,9 @@ results in order.
 
 With the fix on, `PROV006_RestoreOnlyFromRecord` restates the `Restart`
 action and `ReadinessRecordsAgree` compares Rust with itself. They guard
-against a regression in the model, not in the code. The weight is carried by
-`PROV006_AdmitOnlyLatestReady`, `PROV005_NeverOverNewer`, and liveness. The
+against a regression in the model, not in the code. With the fixes on,
+`PROV006_AdmitOnlyLatestReady` and `PROV005_NeverOverNewer` also hold almost by
+construction; their discriminating power is in the `-reverted` checks. The
 model starts with no ready row, so it does not cover the JSON field that
 marks a coordinated harness. A row made ready before this fix is cleared once
 by migration 0034, which `first_launch_after_upgrade_reverifies_a_route_an_older_build_left_ready`

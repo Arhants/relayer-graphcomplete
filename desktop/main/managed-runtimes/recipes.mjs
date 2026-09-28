@@ -196,6 +196,10 @@ export function resolveManagedRuntimeRecipe(recipeId, target) {
       : recipeId === "prime@0.8.1"
         ? primeRecipe(target)
       : null;
-  if (!recipe) throw new Error(`Unknown managed runtime recipe: ${recipeId} for ${target}.`);
+  if (!recipe) {
+    throw Object.assign(new Error(`Unknown managed runtime recipe: ${recipeId} for ${target}.`), {
+      code: "managed_runtime_unsupported_target",
+    });
+  }
   return recipe;
 }
