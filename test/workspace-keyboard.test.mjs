@@ -752,7 +752,7 @@ describe("product workspace keyboard behavior", () => {
     const composerEnd = workspaceSource.indexOf("const releaseSendAttempt", composerStart);
     const composerSeam = workspaceSource.slice(composerStart, composerEnd);
     expect(composerSeam).toContain(
-      "threadHasPendingInputMutation(inputPending, thread.id)",
+      "threadHasPendingInputMutation(pendingInputDetaches, thread.id)",
     );
     expect(composerSeam).not.toContain("inputPending.size > 0");
   });

@@ -181,4 +181,21 @@ describe("An edit after Send that retypes the same text", () => {
     }
     expect(world.prompt.value).toBe(sentText);
   });
+
+  it("is kept when the send settles before its turn loads", async () => {
+    world = await new TurnComposerWorld({ maxText: 2, maxTurns: 2 }).ready();
+    await world.apply(["Type"]);
+    const sentText = world.prompt.value;
+    await world.apply(["ClickSend"]);
+    world.prompt.value = "";
+    world.prompt.dispatchEvent(new world.window.Event("input"));
+    world.prompt.value = sentText;
+    world.prompt.dispatchEvent(new world.window.Event("input"));
+    for (const step of [["PostInserted", "A"], ["PostSucceeds", "A"], ["RefreshSkipped", "A"], ["Settle", "A"], ["TurnArrives", "A"]]) {
+      await world.apply(step);
+    }
+    expect(world.prompt.value).toBe(sentText);
+    await world.apply(["BackgroundRender"]);
+    expect(world.prompt.value).toBe(sentText);
+  });
 });

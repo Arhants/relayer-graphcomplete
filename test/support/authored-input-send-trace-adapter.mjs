@@ -73,8 +73,10 @@ const AUTHORED_DETAIL = compiledPackage({
 
 export class AuthoredInputSendWorld {
   // contextDrafts: unconfirmed annotation drafts, which open the draft-send
-  // warning on Send.
-  constructor({ contextDrafts = [] } = {}) {
+  // warning on Send. authored: false shows the ordinary Node Details input,
+  // committed by its ✓ button, instead of the authored detail.
+  constructor({ contextDrafts = [], authored = true } = {}) {
+    this.authored = authored;
     this.window = new Window({ url: "http://127.0.0.1:3000" });
     vi.stubGlobal("document", this.window.document);
     vi.stubGlobal("window", this.window);
@@ -90,7 +92,10 @@ export class AuthoredInputSendWorld {
     this.sentWith = 0;
     this.clicked = false;
     this.refused = false;
-    const node = { id: 7, clientKey: "question", kind: "question", icon: "box", title: "Question", authoredDetail: AUTHORED_DETAIL };
+    const node = {
+      id: 7, clientKey: "question", kind: "question", icon: "box", title: "Question",
+      ...(authored ? { authoredDetail: AUTHORED_DETAIL } : {}),
+    };
     const actions = [{ id: 13, clientKey: "input-action", sourceNodeId: 7, sourceLayerId: 10, sourceLayerClientKey: "layer", kind: "input", ...ACTION }];
     const layer = {
       layer: { id: 99, clientKey: "layer", layout: { version: 1, placements: [{ nodeId: 7, x: 0.5, y: 0.5 }] } },
@@ -146,6 +151,7 @@ export class AuthoredInputSendWorld {
   }
 
   get input() {
+    if (!this.authored) return this.window.document.querySelector("#nodeInputActions textarea");
     return this.window.document.querySelector("#detailContent [data-node-detail-runtime]")
       ?.shadowRoot?.querySelector("[data-gc-mount='input']");
   }
@@ -171,7 +177,8 @@ export class AuthoredInputSendWorld {
         break;
       }
       case "Commit": {
-        this.input.dispatchEvent(new this.window.Event("change", { bubbles: true }));
+        if (this.authored) this.input.dispatchEvent(new this.window.Event("change", { bubbles: true }));
+        else this.window.document.querySelector('#nodeInputActions [data-input-control-role="commit"]').click();
         await until(() => this.put, "the commit request");
         break;
       }

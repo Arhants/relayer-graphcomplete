@@ -124,6 +124,83 @@ describe("Send after an answer did not save", () => {
   });
 });
 
+// Not in AuthoredInputSend.tla, which models the authored input.
+describe("An ordinary Node Details input committing when Send is clicked", () => {
+  it("lets that Send wait for the answer and carry it", async () => {
+    world = await new AuthoredInputSendWorld({ authored: false }).ready();
+    for (const step of [["Type", 1], ["Commit"]]) await world.apply(step);
+    expect(world.window.document.querySelector("#sendInteraction").disabled).toBe(false);
+    await world.click("#sendInteraction");
+    expect(world.post).toBeNull();
+    for (const step of [["ServeCommit"], ["CommitReturns"], ["ServeSend"], ["SendReturns"]]) await world.apply(step);
+    expect(world.sentWith).toBe(1);
+  });
+
+  it("stops that Send when the answer does not save", async () => {
+    world = await new AuthoredInputSendWorld({ authored: false }).ready();
+    for (const step of [["Type", 1], ["Commit"]]) await world.apply(step);
+    await world.click("#sendInteraction");
+    for (const step of [["CommitFails"], ["CommitReturns"]]) await world.apply(step);
+    expect(world.post).toBeNull();
+    expect(world.promptText).toBe("Here is my answer");
+  });
+
+  it("stops no later Send once Undo discards the answer that failed", async () => {
+    world = await new AuthoredInputSendWorld({ authored: false }).ready();
+    for (const step of [["Type", 1], ["Commit"], ["CommitFails"], ["CommitReturns"]]) await world.apply(step);
+    await world.click('#nodeInputActions [data-input-control-role="undo"]');
+    await world.click("#sendInteraction");
+    expect(world.post).not.toBeNull();
+  });
+});
+
+// AuthoredInputSend.tla assumes the prompt holds text.
+describe("An authored answer typed but not committed, with an empty composer", () => {
+  const sendDisabled = () => world.window.document.querySelector("#sendInteraction").disabled;
+
+  it("makes Send ready, and the Send that leaving the field commits carries it", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    await world.typePrompt("");
+    expect(sendDisabled()).toBe(true);
+    await world.apply(["Type", 1]);
+    expect(sendDisabled()).toBe(false);
+    // Pressing Send leaves the field first, which fires change.
+    world.input.dispatchEvent(new world.window.Event("change", { bubbles: true }));
+    expect(sendDisabled()).toBe(false);
+    await world.click("#sendInteraction");
+    for (const step of [["ServeCommit"], ["CommitReturns"], ["ServeSend"], ["SendReturns"]]) await world.apply(step);
+    expect(world.sentWith).toBe(1);
+  });
+
+  it("stops counting once the field is left without a change, cleared, or closed", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    await world.typePrompt("");
+    await world.apply(["Type", 1]);
+    world.input.dispatchEvent(new world.window.Event("blur"));
+    await world.settled();
+    expect(sendDisabled()).toBe(true);
+    await world.apply(["Type", 2]);
+    expect(sendDisabled()).toBe(false);
+    await world.apply(["Type", 0]);
+    expect(sendDisabled()).toBe(true);
+    await world.apply(["Type", 2]);
+    await world.click("#closeInspector");
+    expect(sendDisabled()).toBe(true);
+  });
+
+  it("stops the Send when leaving the field commits nothing", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    await world.typePrompt("");
+    await world.apply(["Type", 1]);
+    // Input editing is unavailable once the turn has no graph node.
+    world.state.interactions[0].graphNodeId = null;
+    world.input.dispatchEvent(new world.window.Event("change", { bubbles: true }));
+    await world.click("#sendInteraction");
+    expect(world.put).toBeNull();
+    expect(world.post).toBeNull();
+  });
+});
+
 describe("An answer that failed while its Node Detail was replaced", () => {
   it("shows the failure again when the input is shown", async () => {
     world = await new AuthoredInputSendWorld().ready();

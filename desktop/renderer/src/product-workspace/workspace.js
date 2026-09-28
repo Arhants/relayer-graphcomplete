@@ -99,6 +99,7 @@ export async function renderProductNodeDetail({
   onNavigate,
   onInvoke,
   onInput,
+  onInputEdit,
   capabilityState,
 }) {
   if (!node?.authoredDetail) {
@@ -118,7 +119,7 @@ export async function renderProductNodeDetail({
     appendCompatibilityNodeDetail(container, node);
     return Object.freeze({ authored: false, status: "fallback", error: compatibilityIssue });
   }
-  const adapters = { resolveAction, onNavigate, onInvoke, onInput };
+  const adapters = { resolveAction, onNavigate, onInvoke, onInput, onInputEdit };
   if (existing?.authored === true
     && existing.status === "mounted"
     && existing.mountKey === mountKey
@@ -144,6 +145,7 @@ export async function renderProductNodeDetail({
     onNavigate,
     onInvoke,
     onInput,
+    onInputEdit,
     capabilityState,
   });
   if (runtime.status !== "mounted") {
@@ -1709,6 +1711,9 @@ export function createProductWorkspace({
   const inputErrors = new Map();
   const inputTouched = new Set();
   const inputPending = createInputMutationTracker();
+  // Stage keys whose pending mutation is a commit. Send waits for a commit
+  // (through authoredInputCommits) instead of being disabled by it.
+  const committingInputStages = new Set();
   // An authored Node Detail input commits on change, and pressing Send blurs
   // it first. Send waits for these commits instead of being disabled by
   // them, so that click is not lost and it carries the committed answer.
@@ -1751,7 +1756,32 @@ export function createProductWorkspace({
     syncComposer();
     return commit;
   };
-  const pendingAuthoredInputCommits = (threadId) => authoredInputCommits.get(String(threadId))?.size ?? 0;
+  // mount key and input -> the thread of an authored text input edited and
+  // not yet committed. Pressing Send leaves the field, which commits it, so
+  // the answer counts toward Send being ready while its Node Detail shows.
+  const authoredInputEdits = new Map();
+  // The change that leaves the field starts its commit after an await; until
+  // onInput tracks that commit, the submission counts as the commit.
+  const trackAuthoredInputSubmit = (threadId, submitted) => {
+    const key = String(threadId);
+    const commits = authoredInputCommits.get(key) ?? new Set();
+    authoredInputCommits.set(key, commits);
+    commits.add(submitted);
+    void submitted.finally(() => {
+      commits.delete(submitted);
+      if (!commits.size && authoredInputCommits.get(key) === commits) authoredInputCommits.delete(key);
+      syncComposer();
+    });
+  };
+  const pendingAuthoredInputCommits = (threadId) => {
+    const key = String(threadId);
+    const mountKey = mountedAuthoredDetail?.host?.isConnected && !$("#inspector").classList.contains("hidden")
+      ? mountedAuthoredDetail.mountKey
+      : null;
+    const edits = [...authoredInputEdits].filter(([editKey, editThreadId]) => (
+      editThreadId === key && editKey.startsWith(`${mountKey}\u0000`))).length;
+    return (authoredInputCommits.get(key)?.size ?? 0) + edits;
+  };
   // Whether every answer saved. A failure stops this Send only, whether or
   // not its Node Detail is still open; the input shows why, and sending
   // again without the answer is the user's choice.
@@ -2764,6 +2794,11 @@ export function createProductWorkspace({
   // thread -> the scope and prompt revision of its submission in flight,
   // from the click on Send.
   const inFlightSubmissions = new Map();
+  // thread -> a send that settled before its turn loaded: the scope its
+  // text is in now, the scope it was sent from, and the sent text. What is
+  // left in that scope was typed after Send, so it is kept until the turn
+  // arrives, even when it repeats the sent text (SCP-018).
+  const settledSubmissions = new Map();
   // Text left in a turn's scope was sent once a later turn of the thread
   // carries it, as after a send that failed with a network or server error
   // (SCP-019) or one interrupted by a restart. It is neither carried into a
@@ -3500,6 +3535,8 @@ export function createProductWorkspace({
     const inputAttachments = pendingAuthoredInputCommits(thread.id)
       ? [...committedInputs, { pending: true }]
       : committedInputs;
+    // Send waits for a commit in flight; a detach in flight disables it.
+    const pendingInputDetaches = [...inputPending].filter((key) => !committingInputStages.has(key));
     const failedConfirmationSend = failedConfirmationSends.get(String(thread.id));
     const replayIntent = confirmationSendReplayIntent({
       intent: failedConfirmationSend?.intent,
@@ -3517,7 +3554,7 @@ export function createProductWorkspace({
       && (modelPicker?.isReady() ?? false)
       && !contextEditor;
     send.disabled = threadHasInFlightSend(inFlightSendThreads, thread.id)
-      || threadHasPendingInputMutation(inputPending, thread.id)
+      || threadHasPendingInputMutation(pendingInputDetaches, thread.id)
       || !contextDraftsReady || !inputDraftsReady || (!replayReady && !composerSubmissionReady(
       prompt.value,
       prompt.disabled,
@@ -3712,6 +3749,15 @@ export function createProductWorkspace({
         clearThreadFollowupDraft(settlement.submittedScopeKey);
       }
       composerDraftScopeState = clearedDraftScopeState;
+      // Blank text cannot be retyped, and would never show as sent.
+      if (String(submission.prompt.value).trim()
+        && !sentByLaterTurn(submittedThreadId, settlement.submittedScopeKey, submission.prompt.value)) {
+        settledSubmissions.set(String(submittedThreadId), Object.freeze({
+          scopeKey: settlement.submittedScopeKey,
+          originScopeKey: settlement.submittedScopeKey,
+          text: submission.prompt.value,
+        }));
+      }
       if (settlement.current.prompt !== currentComposer.prompt) {
         prompt.value = settlement.current.prompt.value;
         composerPromptRevision = settlement.current.prompt.revision;
@@ -3889,12 +3935,25 @@ export function createProductWorkspace({
             inputDraftRevision: reconciledInputDraftRevision(),
             inputCompositionRevision: sendRequest.inputCompositionRevision,
           }),
-          rebuildIntent: () => rebuildInteractionSendIntentAfterInputReconciliation({
-            clickedIntent: clickTimeIntentWithoutDraftAuthority(),
-            currentIntent: sendRequest.freshIntent,
-            inputDraftRevision: reconciledInputDraftRevision(),
-            inputCompositionRevision: currentInputCompositionRevision(threadId),
-          }),
+          rebuildIntent: () => {
+            const rebuilt = rebuildInteractionSendIntentAfterInputReconciliation({
+              clickedIntent: clickTimeIntentWithoutDraftAuthority(),
+              currentIntent: sendRequest.freshIntent,
+              inputDraftRevision: reconciledInputDraftRevision(),
+              inputCompositionRevision: currentInputCompositionRevision(threadId),
+            });
+            // An uncommitted answer made this Send ready; if leaving the field
+            // committed nothing, there is nothing to send.
+            if (!composerSubmissionReady(
+              rebuilt.promptValue,
+              false,
+              true,
+              rebuilt.contexts,
+              false,
+              inputDraftController?.current(threadId)?.attachments || [],
+            )) throw new Error("The answer in Node Details was not saved, so there was nothing to send.");
+            return rebuilt;
+          },
         });
         if (!intent || !sendIntentIsCurrentThread(threadId, intent.threadId)) return;
         if (unconfirmedContextDrafts.length > 0) {
@@ -4457,11 +4516,13 @@ export function createProductWorkspace({
     }
     // Drafts in older scopes that a later turn shows were sent. The scope of
     // a send still in flight is left to its revision (settlement and the
-    // carry's hold), so an edit after Send that repeats the text is kept.
+    // carry's hold), so an edit after Send that repeats the text is kept, as
+    // is what a send that settled before its turn loaded left behind.
     const inFlightScopeKey = inFlightSubmissions.get(threadId)?.scopeKey;
+    const settledScopeKey = settledSubmissions.get(threadId)?.scopeKey;
     const sentDrafts = turns.slice(0, -1).flatMap((turn) => {
       const scopeKey = composerDraftScopeKey(threadId, turn.id);
-      if (scopeKey === inFlightScopeKey) return [];
+      if (scopeKey === inFlightScopeKey || scopeKey === settledScopeKey) return [];
       const draft = scopeKey === composerDraftScopeState.activeScopeKey
         ? { promptValue: prompt.value, promptRevision: composerPromptRevision }
         : composerDraftScopeState.drafts.get(scopeKey);
@@ -4510,6 +4571,19 @@ export function createProductWorkspace({
     if (draftTransition.carriedFromScopeKey) {
       persistThreadFollowupDraft(composerDraftScopeState.activeScopeKey, prompt.value);
       clearThreadFollowupDraft(draftTransition.carriedFromScopeKey);
+    }
+    const settledSubmission = settledSubmissions.get(threadId);
+    if (settledSubmission) {
+      // The edit moves with its text; once the sent turn has loaded, it has
+      // been carried past that turn and needs no more protection.
+      if (sentByLaterTurn(threadId, settledSubmission.originScopeKey, settledSubmission.text)) {
+        settledSubmissions.delete(threadId);
+      } else if (draftTransition.carriedFromScopeKey === settledSubmission.scopeKey) {
+        settledSubmissions.set(threadId, Object.freeze({
+          ...settledSubmission,
+          scopeKey: composerDraftScopeState.activeScopeKey,
+        }));
+      }
     }
     const inheritanceKey = `${thread.id}:${latestInteraction?.id ?? "none"}`;
     if (modelPicker) {
@@ -5333,6 +5407,9 @@ export function createProductWorkspace({
       undo.onclick = () => {
         inputStages.set(stageKey, committedValue);
         inputErrors.delete(stageKey);
+        // The answer that failed is gone, with its error, so it stops no Send.
+        failedAuthoredInputs.get(String(thread.id))?.delete(authoredInputKey(occurrence));
+        authoredInputErrors.delete(`${thread.id}\u0000${authoredInputKey(occurrence)}`);
         inputTouched.delete(stageKey);
         renderNodeInputActions(state, node, actions);
       };
@@ -5345,6 +5422,7 @@ export function createProductWorkspace({
           presentingLayerId: layerId,
         };
         inputErrors.delete(stageKey);
+        committingInputStages.add(stageKey);
         beginNodeInputMutation({
           inputPending,
           stageKey,
@@ -5352,11 +5430,17 @@ export function createProductWorkspace({
           renderComposer: syncComposer,
         });
         try {
-          const next = await inputDraftController.commit(
+          // A Send clicked meanwhile waits for this answer, and stops if it
+          // does not save, as for an authored input.
+          const next = await trackAuthoredInputCommit(
             thread.id,
-            occurrence,
-            semantic,
-            inputStages.get(stageKey),
+            authoredInputKey(occurrence),
+            inputDraftController.commit(
+              thread.id,
+              occurrence,
+              semantic,
+              inputStages.get(stageKey),
+            ),
           );
           const nextAttachment = committedInputAttachment(next, occurrence);
           inputStages.set(stageKey, initialInputStageValue(semantic, nextAttachment));
@@ -5364,6 +5448,7 @@ export function createProductWorkspace({
         } catch (commitError) {
           inputErrors.set(stageKey, commitError?.message || "Input could not be committed.");
         } finally {
+          committingInputStages.delete(stageKey);
           settleNodeInputCommit({
             inputPending,
             stageKey,
@@ -5689,6 +5774,14 @@ export function createProductWorkspace({
           await onInvokeAction(action);
         }
       },
+      onInputEdit: (context, value, submitted) => {
+        const threadId = String(getThread()?.id);
+        const editKey = `${authoredDetailMountKey}\u0000${context.mountId}`;
+        if (typeof value === "string" && value.trim()) authoredInputEdits.set(editKey, threadId);
+        else authoredInputEdits.delete(editKey);
+        if (submitted) trackAuthoredInputSubmit(threadId, submitted);
+        syncComposer();
+      },
       onInput: async (action, value, context) => {
         const thread = getThread();
         const interactionNodeId = currentInteraction(state, thread)?.graphNodeId;
@@ -5735,6 +5828,9 @@ export function createProductWorkspace({
       if (authoredDetail !== mountedAuthoredDetail) authoredDetail.dispose?.();
       return false;
     }
+    // A new mount starts with no edits; one an unmounted field left behind
+    // was never committed.
+    if (authoredDetail !== mountedAuthoredDetail) authoredInputEdits.clear();
     mountedAuthoredDetail = authoredDetail.authored ? authoredDetail : null;
     if (authoredDetail.authored) {
       $("#nodeInputActions").replaceChildren();
