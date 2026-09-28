@@ -1238,6 +1238,68 @@ describe("CodexBasicHarness", () => {
     }
   });
 
+  it("never writes auth.json for a turn force-stopped while it waited behind another turn's removal", async () => {
+    const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-home-"));
+    let releaseStaleRemoval!: () => void;
+    const staleRemovalGate = new Promise<void>((resolve) => { releaseStaleRemoval = resolve; });
+    let removals = 0;
+    const removeCodexApiKeyAuthFile = async (home: string) => {
+      removals += 1;
+      if (removals === 1) await staleRemovalGate;
+      await unlink(join(home, "auth.json")).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+    };
+    const writes: string[] = [];
+    const writeCodexApiKeyAuthFile = async (_home: string, apiKey: string) => { writes.push(apiKey); };
+    let runs = 0;
+    const access = (apiKey: string) => ({
+      kind: "secret" as const, contract: "secret@1" as const, providerId: "openai-work", adapterId: "openai-api",
+      adapterImplementationVersion: "1", endpoint: "https://api.openai.test/v1", fields: { "api-key": apiKey },
+      runtime: {
+        runtimeId: "codex" as const, version: "0.147.0", executable: "/managed/codex",
+        environment: { CODEX_HOME: codexHome, RELAYER_CODEX_BINARY: "/managed/codex" },
+      },
+    });
+    const harness = new CodexBasicHarness(context("auto"), {
+      removeCodexApiKeyAuthFile,
+      writeCodexApiKeyAuthFile,
+      runAppServerTurn: async (options) => {
+        runs += 1;
+        await new Promise<void>((_resolve, reject) => options.forceSignal?.addEventListener("abort", () => reject(options.forceSignal?.reason), { once: true }));
+        return { threadId: "api-thread", turnId: "turn", status: "completed" as const };
+      },
+    });
+    const turn = (id: number, apiKey: string, forceSignal: AbortSignal): HarnessRunContext => ({
+      ...runContext(id, `token-${id}`),
+      model: { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" },
+      access: access(apiKey),
+      forceSignal,
+    });
+    try {
+      const firstForce = new AbortController();
+      const first = harness.complete(turn(1, "first-secret", firstForce.signal)).then(() => undefined, () => undefined);
+      await vi.waitFor(() => expect(runs).toBe(1));
+      firstForce.abort(new Error("force-stopped after two minutes"));
+      await vi.waitFor(() => expect(removals).toBe(1));
+
+      // The next turn queues its write behind the stalled removal and is force-stopped there.
+      const queuedForce = new AbortController();
+      const queued = harness.complete(turn(2, "queued-secret", queuedForce.signal));
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      queuedForce.abort(new Error("queued turn force-stopped"));
+      releaseStaleRemoval();
+      await expect(queued).rejects.toThrow("queued turn force-stopped");
+      await first;
+
+      expect(writes).toEqual(["first-secret"]);
+      expect(runs).toBe(1);
+    } finally {
+      releaseStaleRemoval();
+      await rm(codexHome, { recursive: true, force: true });
+    }
+  });
+
   it("keeps auth.json while overlapping secret turns share a CODEX_HOME", async () => {
     const codexHome = await mkdtemp(join(tmpdir(), "relayer-codex-home-"));
     const firstTurn = deferredTurn();

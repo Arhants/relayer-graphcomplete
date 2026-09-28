@@ -267,7 +267,12 @@ export class CodexBasicHarness implements Harness {
           retainCodexApiKeyAuth(codexHome);
           authHome = codexHome;
           const write = this.dependencies.writeCodexApiKeyAuthFile ?? writeCodexApiKeyAuthFile;
-          await serializedCodexApiKeyAuthFileOperation(codexHome, () => write(codexHome, apiKey));
+          await serializedCodexApiKeyAuthFileOperation(codexHome, async () => {
+            // The turn may have been force-stopped while it waited behind another turn's
+            // removal; it no longer holds access, so it must not write credentials.
+            context.forceSignal?.throwIfAborted();
+            await write(codexHome, apiKey);
+          });
         }
       }
       await this.runCodexTurn(context, attach, signal, environment, resolvedRuntime.executable, persistentRootSession, personalPresentationVersionId);

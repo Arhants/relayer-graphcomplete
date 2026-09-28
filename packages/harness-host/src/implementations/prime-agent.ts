@@ -459,6 +459,11 @@ export class PrimeAgentHarness implements Harness {
    * waiting at once, so its acquisition may still run when the next root turn starts.
    */
   private pendingRootSessionAcquisition: Promise<void> | undefined;
+  /**
+   * Advances when a root turn is force-stopped before it bound a session. Its acquisition may
+   * never settle; a late result from an older generation is discarded rather than installed.
+   */
+  private rootSessionGeneration = 0;
   private readonly presentationInstructions: { current: string };
 
   private constructor(
@@ -655,6 +660,10 @@ export class PrimeAgentHarness implements Harness {
   }
 
   private async executeRoot(context: HarnessRunContext, signal: AbortSignal, forceStop: PrimeTurnForceStop): Promise<void> {
+    // Until this turn binds a session, a force-stop abandons its acquisition, which may hang in
+    // reload(), disposeAsync() or session creation. A turn already force-stopped starts none.
+    const generation = this.rootSessionGeneration;
+    forceStop.bind(() => this.abandonRootSessionAcquisition(generation), false);
     const previous = this.pendingRootSessionAcquisition;
     const candidate = previous === undefined
       ? this.sessionFor(context)
@@ -869,6 +878,25 @@ export class PrimeAgentHarness implements Harness {
     this.disposeNativeOnce(handle);
   }
 
+  /**
+   * Abandons a root session acquisition a force-stopped turn left behind. Successors no longer
+   * wait for it. The root session it was working on may be half-reloaded or half-disposed, so
+   * it is force-disposed and the next root turn starts a fresh native session.
+   */
+  private abandonRootSessionAcquisition(generation: number): void {
+    if (this.rootSessionGeneration !== generation) return;
+    this.rootSessionGeneration += 1;
+    this.pendingRootSessionAcquisition = undefined;
+    const handle = this.sessionHandle;
+    if (handle !== undefined) this.forceStopRootSession(handle);
+    this.sessionPersonalPresentationVersionId = undefined;
+    this.resumableSessionFile = undefined;
+  }
+
+  private throwIfRootAcquisitionAbandoned(generation: number): void {
+    if (this.rootSessionGeneration !== generation) throw new Error("Prime Agent root session acquisition was abandoned");
+  }
+
   private sessionFor(context: HarnessRunContext): PrimeAgentSession | Promise<PrimeAgentSession> {
     this.throwIfShuttingDown();
     const versionId = context.personalPresentation?.attachment.versionInteractionNodeId ?? null;
@@ -898,12 +926,15 @@ export class PrimeAgentHarness implements Harness {
     if (reload === undefined) {
       throw new Error("Installed Prime Agent package cannot refresh interaction-scoped presentation instructions");
     }
+    const generation = this.rootSessionGeneration;
     const previousInstructions = this.presentationInstructions.current;
     this.presentationInstructions.current = instructions;
     return reload.call(session).then(() => {
+      this.throwIfRootAcquisitionAbandoned(generation);
       this.sessionPersonalPresentationVersionId = versionId;
       return session;
     }, (error: unknown) => {
+      this.throwIfRootAcquisitionAbandoned(generation);
       this.presentationInstructions.current = previousInstructions;
       throw error;
     });
@@ -914,9 +945,11 @@ export class PrimeAgentHarness implements Harness {
     versionId: number | null,
   ): Promise<PrimeAgentSession> {
     this.throwIfShuttingDown();
+    const generation = this.rootSessionGeneration;
     const previousHandle = this.sessionHandle;
     if (previousHandle !== undefined) await this.disposeSession(previousHandle);
     this.throwIfShuttingDown();
+    this.throwIfRootAcquisitionAbandoned(generation);
     if (this.sessionHandle === previousHandle) this.sessionHandle = undefined;
     this.presentationInstructions.current = personalPresentationNativeInstructions(context);
     const resumeSavedSession = this.resumableSessionFile !== undefined
@@ -926,6 +959,12 @@ export class PrimeAgentHarness implements Harness {
       : this.createSessionManager();
     const session = await this.createSession(sessionManager);
     const replacement = primeSessionHandle(session);
+    if (this.rootSessionGeneration !== generation) {
+      // A successor already runs on its own fresh session; never install or reuse this one.
+      this.installNativeDisposeGuard(replacement);
+      this.disposeNativeOnce(replacement);
+      throw new Error("Prime Agent root session acquisition was abandoned");
+    }
     if (this.isShuttingDown()) {
       await this.disposeSession(replacement);
       throw new Error("Prime Agent harness is shutting down");
