@@ -1,0 +1,10 @@
+{
+  "time": "2026-09-28T13:06:24.676774+00:00",
+  "sourceTree": "ed8c4ed981135ce690a62626865b1dbf59158f81",
+  "lastCapture": "native-760-expanded-composer-scrolled.png",
+  "lastCaptureUTC": "2026-09-28T13:03:17Z",
+  "observedWindow": "CUA screenshot shows761x640 nativewindow; no UI action issued",
+  "process": "Electron20718 idle NSApplication event loop; renderer20768 sleeping0CPU",
+  "cause": "unknown; pending animation frame/occlusion hypothesis only",
+  "externalCorrelation": "CUA inventory Chrome newtab opened13:03:16.572Z; not causality proof"
+}

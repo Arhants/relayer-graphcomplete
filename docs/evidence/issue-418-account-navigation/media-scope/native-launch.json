@@ -1,0 +1,24 @@
+{
+  "runnerPid": 36825,
+  "pid": 36852,
+  "command": [
+    "npm",
+    "run",
+    "test:desktop:narrow-sidebar"
+  ],
+  "start": "2026-09-28T13:26:41.449531+00:00",
+  "cutoff": "2026-09-28T13:36:31.492439+00:00",
+  "source": {
+    "head": "695b6fa9ffa70e20c1e3a9b4f24a074e864f627b",
+    "tree": "331e3d3fe48cb6eccda3a75aac7fec3b1e316c95"
+  },
+  "environment": {
+    "PATH": "/Users/vishal/.nvm/versions/node/v22.23.2/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Library/Apple/usr/bin:/Users/vishal/.cargo/bin:/Applications/ChatGPT.app/Contents/Resources/codex-cli/codex-path:/Users/vishal/.codex/tmp/arg0/codex-arg0xTXkIA:/Users/vishal/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override:/Users/vishal/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/Applications/ChatGPT.app/Contents/Resources:/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS",
+    "CARGO_TARGET_DIR": "/Volumes/2T-SSD/worktrees/factory-418/target",
+    "CARGO_BUILD_JOBS": "1",
+    "RUST_TEST_THREADS": "1",
+    "VITEST_MAX_WORKERS": "2",
+    "TMPDIR": "/Volumes/2T-SSD/evidence/temp/factory-418-scope-menu/attempt6-native/tmp",
+    "RELAYER_NARROW_EVIDENCE_DIR": "/Volumes/2T-SSD/evidence/temp/factory-418-scope-menu/attempt6-native/native"
+  }
+}

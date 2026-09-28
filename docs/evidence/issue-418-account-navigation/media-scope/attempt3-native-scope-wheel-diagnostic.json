@@ -1,0 +1,39 @@
+{
+  "stage": "hidden-overflow-mutant",
+  "scopeMenuBounds": {
+    "x": 218,
+    "y": 44,
+    "width": 149,
+    "height": 524,
+    "top": 44,
+    "right": 367,
+    "bottom": 568,
+    "left": 218
+  },
+  "hiddenHit": {
+    "point": {
+      "x": 293,
+      "y": 306
+    },
+    "hit": "SPAN",
+    "hitId": null,
+    "insideMenu": true,
+    "menu": {
+      "x": 218,
+      "y": 44,
+      "width": 149,
+      "height": 524,
+      "top": 44,
+      "right": 367,
+      "bottom": 568,
+      "left": 218
+    },
+    "scrollTop": 0
+  },
+  "focusAtWheel": {
+    "window": true,
+    "webContents": true
+  },
+  "hiddenReceipt": null,
+  "hiddenReceiptWaitError": "Error: Timed out: native-375-expanded-new-thread: hidden overflow wheel receipt"
+}

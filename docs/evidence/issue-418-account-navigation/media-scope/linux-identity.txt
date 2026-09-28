@@ -1,0 +1,13 @@
+uid=uid=1000(node) gid=1000(node) groups=1000(node)
+node=v22.23.2
+npm=10.9.8
+rustc=rustc 1.98.0 (88d9e12ae 2026-08-18)
+cargo=cargo 1.98.0 (797e8a9bc 2026-08-05)
+path=/opt/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+cargo_home=/cargo
+cargo_target_dir=/workspace/target
+cargo_build_jobs=2
+rust_test_threads=2
+workspace=/workspace
+image=sha256:9051430ada55d8edc9751e8e8a61811c7d29a41a502a2d4bedc3d762211cbeb8
+base_main_head=f80766648b4ff06b64584c042a7afcd5ccb410f3

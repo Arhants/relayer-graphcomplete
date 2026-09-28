@@ -1,0 +1,7 @@
+timestamp_utc=2026-09-28T13:39:38Z
+tree=331e3d3fe48cb6eccda3a75aac7fec3b1e316c95
+head=f80766648b4ff06b64584c042a7afcd5ccb410f3
+base=f80766648b4ff06b64584c042a7afcd5ccb410f3
+staged_patch_sha256=9515ec3598ff4996791a255d1e175c5f03efe5d303dc0387dc799db2e7177f17
+status=M  desktop/main/window.mjs;M  desktop/renderer/index.html;M  desktop/renderer/src/desktop-account.js;M  desktop/renderer/src/main.js;M  desktop/renderer/src/navigation.js;M  desktop/renderer/src/product-workspace/workspace.js;A  desktop/renderer/src/sidebar.js;M  desktop/renderer/styles.css;M  desktop/shared/telemetry-module-inventory.mjs;M  docs/architecture.md;M  docs/decisions/0008-direct-auth0-desktop-account.md;A  docs/evidence/issue-418-account-navigation/README.md;M  docs/prd/index.html;M  package.json;M  packages/eval-runner/src/fixtures/approval.ts;M  scripts/capture-provider-ux-video.mjs;M  scripts/provider-ux-evidence-browser.mjs;A  scripts/provider-ux-layout-audit.mjs;M  scripts/test-desktop-approval.mjs;A  scripts/test-desktop-narrow-sidebar.mjs;M  scripts/test-desktop-node-input-actions.mjs;M  scripts/test-desktop-visual-node-details.mjs;M  scripts/test-eval-web.mjs;M  test/desktop-account-ui.test.mjs;M  test/eval-sidebar-navigation.test.mjs;A  test/graph-viewport-resize.test.mjs;M  test/provider-electron-evidence.test.mjs;A  test/provider-ux-layout-audit.test.mjs;M  test/settings-navigation.test.mjs;A  test/sidebar.test.mjs;M  test/window-factory.test.mjs;
+workspace=/workspace

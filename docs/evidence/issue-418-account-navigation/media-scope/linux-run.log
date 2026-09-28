@@ -1,0 +1,5 @@
+step=node-version exit=0
+step=npm-ci exit=0
+step=canonical-npm-check exit=0
+step=canonical-npm-build exit=0
+step=diff-check exit=0

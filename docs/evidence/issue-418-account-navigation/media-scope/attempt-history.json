@@ -1,0 +1,69 @@
+[
+  {
+    "exitCode": 1,
+    "source": {
+      "head": "695b6fa9ffa70e20c1e3a9b4f24a074e864f627b",
+      "tree": "711dc5f1a4ff45113571f209c48518ac9dd4f867"
+    },
+    "finished": "2026-09-28T12:56:29.865758+00:00",
+    "directory": "final-native",
+    "meaning": "Wheel movement assertion failed; injected native delta did not move scrollTop.",
+    "repairPass": false
+  },
+  {
+    "exitCode": -15,
+    "source": {
+      "head": "695b6fa9ffa70e20c1e3a9b4f24a074e864f627b",
+      "tree": "ed8c4ed981135ce690a62626865b1dbf59158f81"
+    },
+    "finished": "2026-09-28T13:09:32.273530+00:00",
+    "directory": "attempt2-native",
+    "meaning": "Native execution indeterminate: stalled after760expanded; oneRaise did not resume; manually terminated ownedgroup.",
+    "repairPass": false
+  },
+  {
+    "exitCode": 1,
+    "source": {
+      "head": "695b6fa9ffa70e20c1e3a9b4f24a074e864f627b",
+      "tree": "f4e06ced2ca0f43580f28f98b61bed1efe083632"
+    },
+    "finished": "2026-09-28T13:14:19.039452+00:00",
+    "directory": "attempt3-native",
+    "meaning": "Input receipt assertion failed: focusednativewindow/contents and menu hit, no DOMwheelreceipt from sendInputEvent.",
+    "repairPass": false
+  },
+  {
+    "exitCode": 1,
+    "source": {
+      "head": "695b6fa9ffa70e20c1e3a9b4f24a074e864f627b",
+      "tree": "6a350cb9d0389603a7867ece9560c4a4fe80ad32"
+    },
+    "finished": "2026-09-28T13:19:32.955240+00:00",
+    "directory": "attempt4-native",
+    "meaning": "Immediatearia assertion failed beforewheel; failurecapture showsmenuopen aftersettle, supports delayedobservation.",
+    "repairPass": false
+  },
+  {
+    "exitCode": 1,
+    "source": {
+      "head": "695b6fa9ffa70e20c1e3a9b4f24a074e864f627b",
+      "tree": "c825a4684bddf22508c57c6e307fd5a8a4054824"
+    },
+    "finished": "2026-09-28T13:23:11.133094+00:00",
+    "directory": "attempt5-native",
+    "meaning": "Trusted browserwheel, hidden mutant,15Taboptions andlateprojectselection passed; overall native failedNoFolder Enterselectionwait. Nativekeyboardcharacter event missing in driver.",
+    "repairPass": false
+  },
+  {
+    "exitCode": 0,
+    "source": {
+      "head": "695b6fa9ffa70e20c1e3a9b4f24a074e864f627b",
+      "tree": "331e3d3fe48cb6eccda3a75aac7fec3b1e316c95"
+    },
+    "finished": "2026-09-28T13:27:16.724417+00:00",
+    "nativeScenarios": 59,
+    "directory": "attempt6-native",
+    "meaning": "Completed build and all59native scenarios with trusted wheel and Enter receipts; canonicalLinux separately passed exactsame331e3 tree.",
+    "repairPass": true
+  }
+]
