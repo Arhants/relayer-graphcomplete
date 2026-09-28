@@ -44,6 +44,18 @@ jobs:
           node-version-file: .node-version
       - name: Verify Node toolchain
         run: node scripts/check-node-version.mjs
+      - name: Record exact main and PR merge tested by CI
+        if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main'
+        run: node scripts/ci/merge-freshness.mjs record
+      - name: Upload merge freshness evidence
+        if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: merge-freshness-v1-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/freshness.json
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 2
       - name: Derive affected-module plan
         id: plan
         run: |
