@@ -2934,7 +2934,6 @@ async fn retire_absent_product_harness(
 #[cfg(test)]
 mod provider_definition_tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn definition(id: &str) -> ProviderDefinition {
         ProviderDefinition {
@@ -2967,14 +2966,11 @@ mod provider_definition_tests {
 
     #[tokio::test]
     async fn harness_readiness_batch_is_digest_guarded_and_atomic() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-harness-readiness-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-harness-readiness-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let harnesses = [
             runtime_harness("codex-basic"),
@@ -3048,7 +3044,6 @@ mod provider_definition_tests {
             codex_available,
             "the stale batch must roll back its earlier row"
         );
-        std::fs::remove_file(path).unwrap();
     }
 
     /// Desktop startup writes this catalog shape for a harness whose readiness the app
@@ -3124,17 +3119,11 @@ mod provider_definition_tests {
         }
     }
 
-    fn readiness_root(label: &str) -> std::path::PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "relayer-readiness-{label}-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&root).unwrap();
-        root
+    fn readiness_root(label: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("relayer-readiness-{label}-"))
+            .tempdir()
+            .unwrap()
     }
 
     /// PROV-006, finding R1: the app server last recorded the route unavailable, then
@@ -3142,7 +3131,8 @@ mod provider_definition_tests {
     /// bring back an older "ready".
     #[tokio::test]
     async fn restart_keeps_the_app_server_record_of_an_unavailable_route() {
-        let root = readiness_root("r1");
+        let directory = readiness_root("r1");
+        let root = directory.path();
         let catalog = root.join("harness-configurations.json");
         let store = SqliteProductStore::open(root.join("product.sqlite3"))
             .await
@@ -3164,14 +3154,14 @@ mod provider_definition_tests {
             !available,
             "startup restored ready although the app server last recorded unavailable"
         );
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// PROV-006 upgrade: a row that was ready before this rule may not come from an
     /// evaluation, so the first launch after the upgrade verifies every route again.
     #[tokio::test]
     async fn first_launch_after_upgrade_reverifies_a_route_an_older_build_left_ready() {
-        let root = readiness_root("upgrade");
+        let directory = readiness_root("upgrade");
+        let root = directory.path();
         let catalog = root.join("harness-configurations.json");
         let database = root.join("product.sqlite3");
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
@@ -3220,14 +3210,14 @@ mod provider_definition_tests {
         let reopened = SqliteProductStore::open(&database).await.unwrap();
         assert_eq!(start_app_server(&reopened, &catalog).await, (true, None));
         reopened.pool.close().await;
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// PROV-006: startup restores ready only from the app server's own ready record for
     /// the same digest, and only while the runtime files validate.
     #[tokio::test]
     async fn startup_restores_ready_only_from_the_app_server_record() {
-        let root = readiness_root("restore");
+        let directory = readiness_root("restore");
+        let root = directory.path();
         let catalog = root.join("harness-configurations.json");
         let store = SqliteProductStore::open(root.join("product.sqlite3"))
             .await
@@ -3278,14 +3268,14 @@ mod provider_definition_tests {
             (false, pending),
             "a changed digest starts pending"
         );
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// PROV-005, finding R3: within one app-server process, a readiness result from an
     /// older evaluation is never published over a newer one.
     #[tokio::test]
     async fn readiness_rejects_an_older_generation_within_a_process() {
-        let root = readiness_root("r3");
+        let directory = readiness_root("r3");
+        let root = directory.path();
         let catalog = root.join("harness-configurations.json");
         let store = SqliteProductStore::open(root.join("product.sqlite3"))
             .await
@@ -3334,19 +3324,15 @@ mod provider_definition_tests {
             .await
             .unwrap();
         restarted.pool.close().await;
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]
     async fn desktop_catalog_retires_product_codex_high_without_rewriting_history() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-product-codex-retirement-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-product-codex-retirement-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("INSERT INTO product_harnesses(configuration_name,label,product_visible,available,unavailable_reason_code,unavailable_reason_message) VALUES ('codex-basic-high','Codex Basic High',1,1,NULL,NULL)")
             .execute(&store.pool).await.unwrap();
@@ -3422,19 +3408,15 @@ mod provider_definition_tests {
             ("codex-basic-high".into(), "sha256:high".into())
         );
         drop(store);
-        let _ = std::fs::remove_file(path);
     }
 
     #[tokio::test]
     async fn eval_catalog_preserves_codex_basic_high_threads_and_preferences() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-eval-codex-high-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-eval-codex-high-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("INSERT INTO product_harnesses(configuration_name,label,product_visible,available,unavailable_reason_code,unavailable_reason_message) VALUES ('codex-basic-high','Codex Basic High',1,1,NULL,NULL)")
             .execute(&store.pool).await.unwrap();
@@ -3476,19 +3458,15 @@ mod provider_definition_tests {
         assert_eq!(default_harness, "codex-basic-high");
         assert_eq!(high, (true, true));
         drop(store);
-        let _ = std::fs::remove_file(path);
     }
 
     #[tokio::test]
     async fn product_catalog_retires_prime_agent_deep_onto_prime_agent_basic() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-prime-deep-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-prime-deep-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("INSERT INTO product_harnesses(configuration_name,label,product_visible,available,unavailable_reason_code,unavailable_reason_message) VALUES ('prime-agent-deep','Prime Agent Deep',1,1,NULL,NULL)")
             .execute(&store.pool).await.unwrap();
@@ -3533,19 +3511,15 @@ mod provider_definition_tests {
         // Accepted history keeps the identity of the harness that actually executed.
         assert_eq!(historical_harness, "prime-agent-deep");
         drop(store);
-        let _ = std::fs::remove_file(path);
     }
 
     #[tokio::test]
     async fn absent_prime_replacement_leaves_deep_threads_untouched() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-prime-deep-absent-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-prime-deep-absent-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("INSERT INTO threads(id,title,created_at,updated_at,harness_configuration_name,permission_profile_id) VALUES (1,'Deep','1','1','prime-agent-deep','auto')")
             .execute(&store.pool).await.unwrap();
@@ -3564,19 +3538,15 @@ mod provider_definition_tests {
 
         assert_eq!(thread_harness, "prime-agent-deep");
         drop(store);
-        let _ = std::fs::remove_file(path);
     }
 
     #[tokio::test]
     async fn sqlite_is_authoritative_for_provider_identity_and_removal_admission() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-provider-lifecycle-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-provider-lifecycle-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let codex = store.load_provider_definitions().await.unwrap();
         assert!(codex.iter().any(|value| value.id.as_str() == "codex"
@@ -3703,14 +3673,11 @@ mod provider_definition_tests {
 
     #[tokio::test]
     async fn provider_removal_preserves_a_default_family_member_resolvable_by_default_harness() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-provider-default-guard-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-provider-default-guard-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let mut removed = definition("removed-provider");
         removed.label = "Removed Provider".into();
@@ -3755,14 +3722,11 @@ mod provider_definition_tests {
 
     #[tokio::test]
     async fn provider_removal_waits_for_restart_to_finalize_a_durable_running_attempt() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-provider-removal-drain-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-provider-removal-drain-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let mut provider = definition("draining-provider");
         store
@@ -3826,19 +3790,15 @@ mod provider_definition_tests {
                 "unknown".into()
             )
         );
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn declarative_policy_retires_and_moves_a_legacy_system_default_atomically() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-legacy-managed-family-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-legacy-managed-family-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("UPDATE model_providers SET connected=1 WHERE id='codex'")
             .execute(&store.pool)
@@ -3907,14 +3867,11 @@ mod provider_definition_tests {
 
     #[tokio::test]
     async fn user_edited_harness_rules_are_revision_guarded_and_survive_runtime_sync() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-harness-rules-{}-{}.sqlite3",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-harness-rules-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let shipped = RuntimeProductHarness {
             id: "codex-basic".into(),
@@ -4026,7 +3983,7 @@ mod provider_definition_tests {
 
     #[tokio::test]
     async fn onboarding_projection_uses_exact_rules_access_and_app_default_without_fallback() {
-        let (store, path, provider_id) = onboarding_store().await;
+        let (_directory, store, provider_id) = onboarding_store().await;
         let allowed = HashSet::from(["codex-basic".to_owned(), "claude-basic".to_owned()]);
         let projection = store
             .provider_onboarding_projection(&provider_id, "codex-basic", &allowed)
@@ -4092,12 +4049,11 @@ mod provider_definition_tests {
                 .code,
             "harness_model_incompatible"
         );
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn unavailable_execution_configurations_are_hidden_behind_provider_recovery_state() {
-        let (store, path, provider_id) = onboarding_store().await;
+        let (_directory, store, provider_id) = onboarding_store().await;
         sqlx::query("UPDATE product_harnesses SET available=0,unavailable_reason_code='harness_readiness_failed',unavailable_reason_message='This execution configuration is currently unavailable.' WHERE configuration_name IN ('codex-basic','codex-alternate')")
             .execute(&store.pool).await.unwrap();
         let allowed = HashSet::from(["codex-basic".to_owned(), "codex-alternate".to_owned()]);
@@ -4127,12 +4083,11 @@ mod provider_definition_tests {
                 .code,
             "provider_no_available_execution_configurations"
         );
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn onboarding_create_and_defaults_commit_together_and_status_uses_saved_harness() {
-        let (store, path, provider_id) = onboarding_store().await;
+        let (_directory, store, provider_id) = onboarding_store().await;
         let allowed = HashSet::from(["codex-basic".to_owned(), "codex-alternate".to_owned()]);
         let projection = store
             .provider_onboarding_projection(&provider_id, "codex-basic", &allowed)
@@ -4169,12 +4124,11 @@ mod provider_definition_tests {
         assert!(status.complete);
         assert_eq!(status.defaults.harness_id, "codex-alternate");
         assert_eq!(status.resolution.unwrap(), completion.resolution);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn onboarding_revision_conflict_rolls_back_family_and_defaults() {
-        let (store, path, provider_id) = onboarding_store().await;
+        let (_directory, store, provider_id) = onboarding_store().await;
         let allowed = HashSet::from(["codex-basic".to_owned()]);
         let projection = store
             .provider_onboarding_projection(&provider_id, "codex-basic", &allowed)
@@ -4219,16 +4173,15 @@ mod provider_definition_tests {
             .unwrap(),
             0
         );
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn onboarding_managed_preview_uses_policy_and_avoids_custom_name_collision() {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-managed-onboarding-{}-{}.sqlite3",
-            std::process::id(),
-            uuid::Uuid::new_v4()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-managed-onboarding-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let rules = HarnessModelRules {
             allow: vec![HarnessModelRule {
@@ -4360,12 +4313,11 @@ mod provider_definition_tests {
                 .await
                 .unwrap();
         assert_eq!(retained_custom_name, custom_name);
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn model_settings_project_only_exactly_executable_harnesses_as_usable_now() {
-        let (store, path, provider_id) = onboarding_store().await;
+        let (_directory, store, provider_id) = onboarding_store().await;
         let allowed = HashSet::from(["codex-basic".to_owned(), "claude-basic".to_owned()]);
         let projection = store
             .provider_onboarding_projection(&provider_id, "codex-basic", &allowed)
@@ -4413,12 +4365,11 @@ mod provider_definition_tests {
         assert!(!claude.usable_now);
         assert!(claude.usable_provider_ids.is_empty());
         assert!(claude.usable_family_ids.is_empty());
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn configuration_owned_harness_can_become_default_with_a_saved_family() {
-        let (store, path, provider_id) = onboarding_store().await;
+        let (_directory, store, provider_id) = onboarding_store().await;
         let allowed = HashSet::from(["codex-basic".to_owned()]);
         let projection = store
             .provider_onboarding_projection(&provider_id, "codex-basic", &allowed)
@@ -4478,16 +4429,16 @@ mod provider_definition_tests {
 
         assert_eq!(defaults.harness_id, "configuration-owned");
         assert_eq!(defaults.family_id, Some(completion.resolution.family_id));
-        std::fs::remove_file(path).unwrap();
     }
 
-    async fn onboarding_store() -> (SqliteProductStore, std::path::PathBuf, ProviderId) {
-        let path = std::env::temp_dir().join(format!(
-            "relayer-provider-onboarding-{}-{}.sqlite3",
-            std::process::id(),
-            uuid::Uuid::new_v4()
-        ));
-        let store = SqliteProductStore::open(&path).await.unwrap();
+    async fn onboarding_store() -> (tempfile::TempDir, SqliteProductStore, ProviderId) {
+        let directory = tempfile::Builder::new()
+            .prefix("relayer-provider-onboarding-")
+            .tempdir()
+            .unwrap();
+        let store = SqliteProductStore::open(directory.path().join("product.sqlite3"))
+            .await
+            .unwrap();
         let allow = HarnessModelRules {
             allow: vec![HarnessModelRule {
                 adapter_id: "openai-api".into(),
@@ -4581,6 +4532,6 @@ mod provider_definition_tests {
             .create_provider_with_catalog(&definition, &snapshot, None, "1")
             .await
             .unwrap();
-        (store, path, provider_id)
+        (directory, store, provider_id)
     }
 }

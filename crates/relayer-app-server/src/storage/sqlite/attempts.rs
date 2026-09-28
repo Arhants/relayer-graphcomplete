@@ -412,11 +412,9 @@ mod tests {
     use std::{
         fs,
         sync::Arc,
-        sync::atomic::{AtomicU64, Ordering},
+        sync::atomic::Ordering,
         time::{SystemTime, UNIX_EPOCH},
     };
-
-    static TEST_STORE_ID: AtomicU64 = AtomicU64::new(1);
 
     fn retry_input(text: &str) -> crate::storage::NewInteractionInput<'_> {
         crate::storage::NewInteractionInput {
@@ -434,18 +432,16 @@ mod tests {
     ) -> (
         crate::runtime::RuntimeClient,
         tokio::task::JoinHandle<()>,
-        std::path::PathBuf,
+        tempfile::TempDir,
     ) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/", listener.local_addr().unwrap());
         let task = tokio::spawn(async move { axum::serve(listener, harness).await.unwrap() });
-        let unique = TEST_STORE_ID.fetch_add(1, Ordering::Relaxed);
-        let directory = std::env::temp_dir().join(format!(
-            "relayer-attempt-runtime-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&directory).unwrap();
-        let catalog = directory.join("catalog.json");
+        let directory = tempfile::Builder::new()
+            .prefix("relayer-attempt-runtime-")
+            .tempdir()
+            .unwrap();
+        let catalog = directory.path().join("catalog.json");
         fs::write(
             &catalog,
             json!({"schemaVersion":1,"configurations":[{"configuration":{
@@ -522,17 +518,19 @@ mod tests {
         )
     }
 
-    async fn seeded_store() -> (SqliteProductStore, InteractionId, ExecutionModelSelection) {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-attempts-{}-{nonce}-{}.sqlite",
-            std::process::id(),
-            TEST_STORE_ID.fetch_add(1, Ordering::Relaxed),
-        ));
-        let store = SqliteProductStore::open(path)
+    /// The returned directory owns the database and its WAL sidecars; keep it alive for as
+    /// long as the store is used.
+    async fn seeded_store() -> (
+        tempfile::TempDir,
+        SqliteProductStore,
+        InteractionId,
+        ExecutionModelSelection,
+    ) {
+        let directory = tempfile::Builder::new()
+            .prefix("relayer-attempts-")
+            .tempdir()
+            .expect("test directory");
+        let store = SqliteProductStore::open(directory.path().join("product.sqlite"))
             .await
             .expect("open test store");
         sqlx::query("UPDATE product_harnesses SET available=1,execution_access_contracts_json='[\"managed-runtime@1\"]' WHERE configuration_name='codex-basic'")
@@ -558,6 +556,7 @@ mod tests {
         let interaction_id = sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,completion_status,model_provider_id,provider_model_id,model_family_id) VALUES (?1,0,'hello','1','running','codex','gpt-test',?2)")
             .bind(thread_id).bind(family_id).execute(&store.pool).await.expect("interaction").last_insert_rowid();
         (
+            directory,
             store,
             InteractionId::from_database(interaction_id),
             ExecutionModelSelection {
@@ -572,7 +571,7 @@ mod tests {
 
     #[tokio::test]
     async fn attempt_receipt_is_immutable_and_terminal_transition_is_one_shot() {
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         sqlx::query("UPDATE model_providers SET endpoint='https://secret.example.test/v1?token=do-not-persist',credential_reference='provider:do-not-persist' WHERE id='codex'")
             .execute(&store.pool).await.expect("secret provider configuration");
         sqlx::query("UPDATE product_harnesses SET configuration_revision=7,configuration_digest='sha256:authoritative' WHERE configuration_name='codex-basic'")
@@ -644,7 +643,7 @@ mod tests {
 
     #[tokio::test]
     async fn pre_execution_model_failure_atomically_preserves_receipt_and_restores_draft() {
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         let thread_id: i64 = sqlx::query_scalar("SELECT thread_id FROM interactions WHERE id=?1")
             .bind(interaction_id.value())
             .fetch_one(&store.pool)
@@ -768,7 +767,7 @@ mod tests {
 
     #[tokio::test]
     async fn submitted_input_pre_execution_failure_restores_draft_without_erasing_bound_receipts() {
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         let thread_id: i64 = sqlx::query_scalar("SELECT thread_id FROM interactions WHERE id=?1")
             .bind(interaction_id.value())
             .fetch_one(&store.pool)
@@ -907,7 +906,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejected_attempt_admission_preserves_frozen_plan_and_release_debt() {
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         let policy = store
             .load_execution_harness_policy("codex-basic")
             .await
@@ -966,7 +965,7 @@ mod tests {
 
     #[tokio::test]
     async fn legacy_attempt_without_an_admitted_plan_remains_readable() {
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         sqlx::query("INSERT INTO interaction_attempts(interaction_id,attempt_number,started_at,finished_at,family_id,family_revision,harness_configuration_name,harness_configuration_revision,harness_configuration_digest,provider_id,adapter_id,adapter_implementation_version,model_id,access_contract,outcome,effect_boundary) VALUES (?1,1,'1','2',?2,1,'codex-basic',1,'sha256:legacy','codex','codex-subscription',1,'gpt-test','managed-runtime@1','accepted','graph_write')")
             .bind(interaction_id.value()).bind(route.family_id.value()).execute(&store.pool).await.unwrap();
         let attempt = store
@@ -982,7 +981,7 @@ mod tests {
 
     #[tokio::test]
     async fn restart_closes_running_attempt_with_unknown_effect_and_never_replays_it() {
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         let attempt = store
             .begin_interaction_attempt(receipt(interaction_id, &route), "10")
             .await
@@ -1030,7 +1029,7 @@ mod tests {
 
     #[tokio::test]
     async fn terminal_lease_reconciliation_retries_release_and_accepts_host_absence() {
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         let attempt = store
             .begin_interaction_attempt(receipt(interaction_id, &route), "10")
             .await
@@ -1056,7 +1055,7 @@ mod tests {
                 }
             }),
         );
-        let (runtime, task, directory) = test_runtime(harness).await;
+        let (runtime, task, _directory) = test_runtime(harness).await;
         let product = ProductService::new(store.clone(), true);
         assert!(
             !crate::app_server::reconcile_terminal_execution_lease(&product, &runtime, attempt)
@@ -1070,9 +1069,8 @@ mod tests {
         assert!(store.execution_lease_debt(attempt).await.unwrap().is_none());
         assert_eq!(calls.load(Ordering::SeqCst), 2);
         task.abort();
-        fs::remove_dir_all(directory).unwrap();
 
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         let attempt = store
             .begin_interaction_attempt(receipt(interaction_id, &route), "10")
             .await
@@ -1085,7 +1083,7 @@ mod tests {
             "/sessions/{thread}/execution-leases/{lease}",
             routing::delete(|| async { Json(json!({"released":false})) }),
         );
-        let (runtime, task, directory) = test_runtime(harness).await;
+        let (runtime, task, _directory) = test_runtime(harness).await;
         let product = ProductService::new(store.clone(), true);
         assert!(
             crate::app_server::reconcile_terminal_execution_lease(&product, &runtime, attempt)
@@ -1093,12 +1091,11 @@ mod tests {
         );
         assert!(store.execution_lease_debt(attempt).await.unwrap().is_none());
         task.abort();
-        fs::remove_dir_all(directory).unwrap();
     }
 
     #[tokio::test]
     async fn restart_preserves_a_recoverable_unsent_draft() {
-        let (store, interaction_id, _) = seeded_store().await;
+        let (_database, store, interaction_id, _) = seeded_store().await;
         sqlx::query("UPDATE interactions SET completion_status='not_started' WHERE id=?1")
             .bind(interaction_id.value())
             .execute(&store.pool)
@@ -1123,7 +1120,7 @@ mod tests {
 
     #[tokio::test]
     async fn attempt_admission_rejects_a_stale_harness_policy_snapshot() {
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         let policy = store
             .load_execution_harness_policy("codex-basic")
             .await
@@ -1147,7 +1144,7 @@ mod tests {
 
     #[tokio::test]
     async fn model_plan_preserves_resolvable_family_order_and_requires_the_orchestrator() {
-        let (store, _, route) = seeded_store().await;
+        let (_database, store, _, route) = seeded_store().await;
         sqlx::query("INSERT INTO model_providers(id,label,connected,refreshed_at,adapter_id,access_contract,lifecycle_state) VALUES ('openai-work','OpenAI work',1,'1','openai-api','managed-runtime@1','active')")
             .execute(&store.pool).await.unwrap();
         sqlx::query("INSERT INTO provider_models(provider_id,model_id,label,provider_order,visible,available,provider_default,metadata_json) VALUES ('openai-work','gpt-second','Second',0,1,1,0,'{}'),('openai-work','gpt-offline','Offline',1,1,0,0,'{}')")
@@ -1242,7 +1239,7 @@ mod tests {
 
     #[tokio::test]
     async fn attempt_admission_rejects_family_revision_race_and_freezes_the_admitted_plan() {
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         let stale = receipt(interaction_id, &route);
         sqlx::query("UPDATE model_families SET revision=2 WHERE id=?1")
             .bind(route.family_id.value())
@@ -1283,7 +1280,7 @@ mod tests {
 
     #[tokio::test]
     async fn no_effect_failure_atomically_returns_the_same_prompt_to_unsent() {
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         let attempt = store
             .begin_interaction_attempt(receipt(interaction_id, &route), "10")
             .await
@@ -1337,7 +1334,7 @@ mod tests {
 
     #[tokio::test]
     async fn repeated_retry_claim_is_idempotent_and_protected_effects_are_rejected() {
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         let refreshed_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -1405,7 +1402,8 @@ mod tests {
                 .unwrap()
         );
 
-        let (protected_store, protected_interaction, protected_route) = seeded_store().await;
+        let (_protected_database, protected_store, protected_interaction, protected_route) =
+            seeded_store().await;
         let protected_attempt = protected_store
             .begin_interaction_attempt(receipt(protected_interaction, &protected_route), "20")
             .await
@@ -1455,7 +1453,7 @@ mod tests {
     #[tokio::test]
     async fn model_failures_restore_the_same_draft_after_every_effect_boundary() {
         for boundary in ["partial_output", "graph_write", "tool_effect", "unknown"] {
-            let (store, interaction_id, route) = seeded_store().await;
+            let (_database, store, interaction_id, route) = seeded_store().await;
             let refreshed_at = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -1533,7 +1531,7 @@ mod tests {
 
     #[tokio::test]
     async fn submitted_input_model_failure_preserves_terminal_execution_receipts() {
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         let thread_id: i64 = sqlx::query_scalar("SELECT thread_id FROM interactions WHERE id=?1")
             .bind(interaction_id.value())
             .fetch_one(&store.pool)
@@ -1659,7 +1657,7 @@ mod tests {
     #[tokio::test]
     async fn partial_effect_boundaries_are_terminal_inspectable_and_one_shot() {
         for boundary in ["partial_output", "graph_write", "tool_effect", "unknown"] {
-            let (store, interaction_id, route) = seeded_store().await;
+            let (_database, store, interaction_id, route) = seeded_store().await;
             let attempt = store
                 .begin_interaction_attempt(receipt(interaction_id, &route), "10")
                 .await
@@ -1714,7 +1712,7 @@ mod tests {
 
     #[tokio::test]
     async fn accepted_attempt_and_interaction_commit_as_one_terminal_unit() {
-        let (store, interaction_id, route) = seeded_store().await;
+        let (_database, store, interaction_id, route) = seeded_store().await;
         let attempt = store
             .begin_interaction_attempt(receipt(interaction_id, &route), "10")
             .await

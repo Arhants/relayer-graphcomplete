@@ -52,7 +52,8 @@ fn turn(content: &Value) -> Value {
 
 #[tokio::test]
 async fn shared_large_content_crosses_real_import_routes_once_without_relaxing_body_limit() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     let app = router(ServerState::new(database.clone(), "control"));
     // This control-only transport test treats bytes as already media-validated by
@@ -211,7 +212,8 @@ async fn shared_large_content_crosses_real_import_routes_once_without_relaxing_b
 
 #[tokio::test]
 async fn staging_cleanup_failure_rolls_back_materialization_and_can_retry() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     let app = router(ServerState::new(database.clone(), "control"));
     let blob = content(b"retry-safe-content");
@@ -284,7 +286,8 @@ async fn staging_cleanup_failure_rolls_back_materialization_and_can_retry() {
 
 #[tokio::test]
 async fn staged_content_is_import_scoped_and_missing_pins_roll_back_publication() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     let app = router(ServerState::new(database.clone(), "control"));
     let blob = content(b"validated-content");
@@ -347,7 +350,8 @@ async fn staged_content_is_import_scoped_and_missing_pins_roll_back_publication(
 
 #[tokio::test]
 async fn removing_imports_reclaims_only_unreferenced_accepted_content() {
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     let app = router(ServerState::new(database.clone(), "control"));
     let blob = content(b"shared-validated-content");
@@ -416,7 +420,8 @@ async fn removing_imports_reclaims_only_unreferenced_accepted_content() {
 #[tokio::test]
 async fn draft_asset_replace_clear_and_failed_replace_reclaim_transactionally() {
     use relayer_graph_core::{AuthoredDetailUpdate, NodeDraft, PreparedDetailAsset, ThreadId};
-    let file = tempfile::NamedTempFile::new().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
     let database = GraphDatabase::open(file.path()).await.unwrap();
     let interaction = database
         .create_interaction(None, ThreadId::new(101).unwrap(), "Visual")

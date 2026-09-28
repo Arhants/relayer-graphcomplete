@@ -15,14 +15,12 @@ mod tests {
         HarnessModelRule, HarnessModelRules, RuntimeProductHarness, UpdateHarnessModelRulesCommand,
     };
     use sqlx::{Executor, Row, migrate::Migrator, sqlite::SqlitePoolOptions};
-    use std::{
-        borrow::Cow,
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use std::borrow::Cow;
 
     #[tokio::test]
     async fn schema_22_interactions_remain_unpinned_after_migration_and_reopen() {
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
         let url = format!("sqlite://{}", file.path().display());
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
@@ -134,7 +132,8 @@ mod tests {
         // through the input migrations (26-28). Published versions, the active
         // policy, a per-thread version override, and already-pinned interactions
         // must all come through unchanged.
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
         let url = format!("sqlite://{}", file.path().display());
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
@@ -454,14 +453,11 @@ mod tests {
 
     #[tokio::test]
     async fn legacy_reused_action_duplicates_are_canonicalized_before_open_validation() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-legacy-invocation-dedupe-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-legacy-invocation-dedupe-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         sqlx::query("INSERT INTO projects(id,name,path,created_at,updated_at) VALUES (1,'Shared','/tmp/legacy-shared','1','1')")
             .execute(&store.pool)
@@ -619,19 +615,15 @@ mod tests {
                 .to_string()
                 .contains("exactly one authoritative invocation result")
         );
-        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn legacy_ui_rule_overrides_reset_once_before_catalog_reseeding() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "relayer-legacy-harness-rules-{}-{unique}.sqlite3",
-            std::process::id()
-        ));
+        let temporary = tempfile::Builder::new()
+            .prefix("relayer-legacy-harness-rules-")
+            .tempdir()
+            .unwrap();
+        let path = temporary.path().join("product.sqlite3");
         let store = SqliteProductStore::open(&path).await.unwrap();
         let shipped = RuntimeProductHarness {
             id: "codex-basic".into(),
@@ -701,6 +693,5 @@ mod tests {
             .model_rules;
         assert_eq!(rules, shipped.model_rules);
         reopened.pool.close().await;
-        std::fs::remove_file(path).unwrap();
     }
 }
