@@ -52,7 +52,7 @@ function fakeGitHub(f) {
 }
 
 describe("scheduled merge freshness", () => {
-  it("records actual Git merge parents and then-current main in a local-only repository", async () => {
+  it.each([false, true])("records the actual main merge with a stale event base=%s", async (staleEventBase) => {
     const directory = await mkdtemp(join(tmpdir(), "freshness-git-"));
     const git = (args) => execFileSync("git", args, { cwd: directory, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
     try {
@@ -65,6 +65,11 @@ describe("scheduled merge freshness", () => {
       git(["checkout", "-b", "pr"]);
       git(["commit", "--allow-empty", "-m", "head"]);
       const headSha = git(["rev-parse", "HEAD"]);
+      if (staleEventBase) {
+        git(["checkout", "main"]);
+        git(["commit", "--allow-empty", "-m", "main advances after event base captured"]);
+      }
+      const currentMainSha = git(["rev-parse", "main"]);
       git(["checkout", "--detach", "main"]);
       git(["merge", "--no-ff", "pr", "-m", "test merge"]);
       const mergeSha = git(["rev-parse", "HEAD"]);
@@ -73,8 +78,16 @@ describe("scheduled merge freshness", () => {
       f.pr.base.sha = mainSha; f.pr.head.sha = headSha;
       const env = { GITHUB_SHA: mergeSha, GITHUB_REPOSITORY: repository, GITHUB_RUN_ID: "10", GITHUB_RUN_ATTEMPT: "1" };
       expect(recordEvidence({ pull_request: f.pr }, env, git)).toEqual({
-        ...f.receipt, baseSha: mainSha, headSha, mergeSha, observedMain: mainSha,
+        ...f.receipt, baseSha: currentMainSha, headSha, mergeSha, observedMain: currentMainSha,
       });
+      expect(() => recordEvidence({ pull_request: { ...f.pr, head: { sha: mainSha } } }, env, git))
+        .toThrow("exact main + PR merge");
+      expect(() => recordEvidence({ pull_request: f.pr }, { ...env, GITHUB_SHA: headSha }, git))
+        .toThrow("exact main + PR merge");
+      git(["checkout", "main"]);
+      git(["commit", "--allow-empty", "-m", "main advances beyond checkout"]);
+      git(["checkout", "--detach", mergeSha]);
+      expect(() => recordEvidence({ pull_request: f.pr }, env, git)).toThrow("observed main");
       git(["checkout", "pr"]);
       expect(() => recordEvidence({ pull_request: f.pr }, env, git)).toThrow("exact main + PR merge");
     } finally { await rm(directory, { recursive: true, force: true }); }

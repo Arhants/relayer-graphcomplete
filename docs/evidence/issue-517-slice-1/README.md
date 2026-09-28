@@ -288,3 +288,28 @@ passing DOM geometry checks. No claim extends beyond each observed boundary.
 Independent standards/spec reviewers found no unresolved findings on source digest
 `1eae477c40effc19cdeac99fd99f1beb6ca0bd236b1ffdae8b2a259a7f734b38`.
 Their exact scopes and execution limits are in integration-verification.json.
+
+## Shared CI recorder follow-up
+
+Fresh remote CI for 4f2bb250 stopped during planning: the event base was 17b50d95,
+but GitHub's actual synthetic merge used 507b6b22 and the exact PR head. The user
+explicitly authorized fixing this shared guard before merging. The recorder now
+checks the actual two-parent merge against GITHUB_SHA, the event's exact PR head,
+and observed origin/main. It does not use possibly stale event base metadata as
+the checkout authority. A different observed main fails closed.
+
+The declared CI contract and checkpoints live in docs/agents/ci.md; product PRD
+meaning is unchanged. The real temporary-Git fixture covers both current and stale
+event bases, then rejects mismatched head, merge SHA, remote main, and non-merge
+checkout. Existing policy cases retain expiry and receipt/run/workflow authority.
+Red/green results and required check/build outcomes are separate in
+[freshness-guard-verification.json](freshness-guard-verification.json).
+All 53 feature source hashes remain unchanged. No workflow permission, sweep,
+evaluator, or ruleset change is included, and no desktop or paid-inference rerun
+is required for this CI-only delta. Hosted CI/freshness evidence remains required.
+
+The guard delta passed the complete npm run check (2,674 main Vitest tests,
+2 secret-boundary tests, 43 Python tests, Rust/crash suites and lints) and build.
+Both independent reviewers passed exact guard digest
+`7809d3e9ca7fbf47836857bb9b1cc7daef9606128879662315f7f4fa93c776de`.
+This fresh full pass does not erase the earlier integration failures.
