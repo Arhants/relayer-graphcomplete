@@ -1,0 +1,17 @@
+{
+  "sourceCommit": "255d35b28987f35f584353e2537f207d29e07197",
+  "sourceTree": "62bd1d429f27ef1ebd033b1bd71262ee9d6da428",
+  "files": {
+    "collapsed-dark-620.png": "154af2deef0c4cf11783d8be3e9a4d722cf4479938c0d775e706e48f9cee56f4",
+    "collapsed-light-620.png": "dad16038ae3af4c704c6fadf879be98f303b207c6d6d17f21433012c6b46dbca",
+    "collapsed-graph-375.png": "7a90a5686216adb66834f38b1de45540e0922a3f7540da072c1b40ab68101925",
+    "expanded-620.png": "2cc09a3503a65feadd7ed153560a7f4ab50faec941b5060dd6336d84ddbfce07",
+    "sidebar-interaction.mp4": "62d779de834d1e1aab00afe48e9be487a8ae2abe30056402915debc6cf1676cf",
+    "pre-gates.json": "06a91da2ed65b9b6a23efba70321194ebf7810ef4de650dd99039bbf7230716a",
+    "post-gates.json": "06a91da2ed65b9b6a23efba70321194ebf7810ef4de650dd99039bbf7230716a",
+    "results.json": "21ee19df5f4b1f38511e42e441ba0edbe782e82ee813e49f60598d0ee1527a42",
+    "stop-375-expanded.png": "88d80490bf36fb48fd3ba5f50cc03fc5bc4d3acbfb0dfd835460598763e73b4e",
+    "stop-620-collapsed.png": "f1a169da3e7e7c08ea19168a6ae5671e7222504eec4e593d1a6c7113a8214cd2",
+    "stop-results.json": "8a88b3bc147cc5bdaf5383b3cb5e5a681ecb8393f4d6093363b78bb606a42a02"
+  }
+}

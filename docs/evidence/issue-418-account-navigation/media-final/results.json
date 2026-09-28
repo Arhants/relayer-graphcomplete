@@ -1,0 +1,52 @@
+[
+  {
+    "stage": "check",
+    "exitCode": 0,
+    "seconds": 428.63367986679077
+  },
+  {
+    "stage": "build",
+    "exitCode": 0,
+    "seconds": 5.611646890640259
+  },
+  {
+    "stage": "compiled-eval",
+    "exitCode": 0,
+    "seconds": 12.673507928848267
+  },
+  {
+    "stage": "eval-web",
+    "exitCode": 0,
+    "seconds": 11.687203884124756
+  },
+  {
+    "stage": "desktop-stop",
+    "exitCode": 0,
+    "seconds": 12.227349996566772
+  },
+  {
+    "stage": "sidebar-new-thread",
+    "exitCode": 0,
+    "seconds": 0.726172924041748
+  },
+  {
+    "stage": "sidebar-new-thread-light",
+    "exitCode": 0,
+    "seconds": 0.6614761352539062
+  },
+  {
+    "stage": "sidebar-thread-375",
+    "exitCode": 0,
+    "seconds": 0.6411080360412598
+  },
+  {
+    "stage": "sidebar-new-thread-expanded",
+    "exitCode": 0,
+    "seconds": 0.7778120040893555
+  },
+  {
+    "stage": "sidebar-thread-journey",
+    "exitCode": 0,
+    "seconds": 9.925719022750854
+  }
+]
