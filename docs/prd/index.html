@@ -956,7 +956,7 @@ type InteractionModelBinding = {
 <li><strong>AGT-010:</strong> An existing thread cannot switch harnesses in place. To use a different harness, the user starts or forks into a new thread.</li>
 <li><strong>AGT-011:</strong> A new conversation on an API-key provider keeps native agent state in that provider's private home under Relayer's data. That matches a subscription provider. It never uses the user's own Codex or Claude home.</li>
 <li><strong>AGT-012:</strong> A conversation from before these homes keeps the home it already used until it ends. Its native history therefore stays resumable, as issue 584 requires. Relayer never copies or moves native session files.</li>
-<li><strong>AGT-013:</strong> Each conversation's saved harness state records which home it uses. The record survives restarts and updates. It describes storage only. It does not mark a conversation as supporting provider-neutral continuation, which issue 584 designs separately.</li>
+<li><strong>AGT-013:</strong> Each conversation's saved harness state records which home it uses. The record survives restarts and updates. An unreadable record selects the private home. It describes storage only. It does not mark a conversation as supporting provider-neutral continuation, which issue 584 designs separately.</li>
 <li><strong>AGT-014:</strong> Removing an API-key provider deletes its private homes. It never deletes the user's own Codex or Claude home.</li>
 <li><strong>AGT-015:</strong> An API key reaches the native runtime only through that turn's process environment. Relayer never writes it into a home.</li>
 <li><strong>ACC-001:</strong> Optional account login is direct Auth0 Authorization Code plus PKCE with no Relayer API or database dependency.</li>

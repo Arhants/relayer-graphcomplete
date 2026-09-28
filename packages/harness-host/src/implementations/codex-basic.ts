@@ -165,10 +165,7 @@ export class CodexBasicHarness implements Harness {
     this.clientModuleUrl = dependencies.clientModuleUrl ?? import.meta.resolve("@relayer/graph-client");
     this.completeModuleUrl = dependencies.completeModuleUrl ?? new URL("../../../../dist/index.js", import.meta.url).href;
     validateBrowserMcpRuntime(dependencies.browserMcpRuntime);
-    // Only a conversation saved before per-provider homes has saved state without this marker.
-    this.providerHome = context.savedState === undefined || context.savedState.codexProviderHome === "isolated"
-      ? "isolated"
-      : "legacy-shared";
+    this.providerHome = savedProviderHome(context.savedState, "codexProviderHome");
     const codexThreadId = context.savedState?.codexThreadId;
     const savedPresentationVersionId = context.savedState?.codexThreadPersonalPresentationVersionId;
     const savedHome = context.savedState?.codexThreadHome;
@@ -232,6 +229,9 @@ export class CodexBasicHarness implements Harness {
     }
     const capability = context.graph.acquireCapability();
     const resolvedRuntime = await this.codexRuntime(context.access);
+    // A turn force-stopped while its runtime resolved never ran: it must not change the root
+    // thread, which the next turn may still resume.
+    context.forceSignal?.throwIfAborted();
     const environment = this.graphEnvironment(capability, context.completionBroker, context.access, resolvedRuntime.environment);
     // The effective home is the provider's private one for a new API-key conversation and
     // Codex's default home for a legacy one (codexProviderHome), so each keeps its own threads.
@@ -1337,3 +1337,17 @@ export function createCodexBasicFactory(dependencies: CodexBasicDependencies = {
 const CODEX_VISUAL_GUIDANCE = "The following public API recipe demonstrates authoring mechanics only; its placeholder content and layout are not a recommended response design. For visual Node Details: Import the exported html, css, and detailCapability helpers. At minimum, call node.detailAuthoring.setComponent(\"main\", html`<section><h2>Summary</h2><p>Details</p></section>`, css`section { display: grid; gap: 0.75rem; }`), await graph.checkpointNodeDetail(node), and then await graph.submitNode(node). Each node’s detail must explain that node’s title and purpose. Reuse styles and layout helpers, but do not copy a whole explanation across siblings. If several nodes would have the same explanation, consolidate them. HTML binds permanently on first attachment, including fragments. Create fresh html for each node; wrapping or copying an owned template cannot transfer it. Only node.detailAuthoring authors components. For same-node repair reusing an existing template, call graph.bindNode(original) and graph.bindNode(replacement) before attachment; both must have the same stable client key in this interaction. When a node has actions, create each stable action object with its sourceLayer before checkpointing, bind that same object in the page with the matching detailCapability helper, and pass it to graph.addAction after submitting the layer. Example with shared styles and distinct content: const common = css`section { padding: 1rem; }`; answer.detailAuthoring.setComponent(\"main\", html`<section><h2>Answer</h2><p>Explain the conclusion.</p></section>`, common); evidence.detailAuthoring.setComponent(\"main\", html`<section><h2>Supporting evidence</h2><p>Explain what supports the conclusion.</p></section>`, common).";
 
 const CODEX_ASSET_GUIDANCE = `For image assets, import assetRef from the supplied clientModuleUrl. Use const scope = await graph.visualAssets.scope(); await graph.visualAssets.listAssets({ scope }); await graph.visualAssets.listTags({ scope }); await graph.visualAssets.inspect(assetId, scope). Register caller-read bytes with await graph.visualAssets.add({ scope, name, file: { name, mediaType, async read() { return bytes; } } }); bind the returned asset.id with html\`<img asset=\${assetRef(asset.id)} alt="Description">\`. The host resolves and pins content. Never supply compiled packages, mounts, hashes, raw image URLs, or executable JavaScript.`;
+
+/**
+ * Only a conversation saved before per-provider homes has saved state without the marker, and
+ * only it keeps the shared default home. An unknown value, from corruption or a newer build,
+ * fails closed to the provider's private home: it never reaches the user's own home.
+ */
+function savedProviderHome(
+  savedState: HarnessSessionState | undefined,
+  key: "codexProviderHome" | "claudeProviderHome",
+): "isolated" | "legacy-shared" {
+  if (savedState === undefined) return "isolated";
+  if (!(key in savedState)) return "legacy-shared";
+  return savedState[key] === "legacy-shared" ? "legacy-shared" : "isolated";
+}

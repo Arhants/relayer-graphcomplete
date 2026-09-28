@@ -100,10 +100,7 @@ export class ClaudeBasicHarness implements Harness {
   ) {
     this.clientModuleUrl = dependencies.clientModuleUrl ?? import.meta.resolve("@relayer/graph-client");
     this.completeModuleUrl = dependencies.completeModuleUrl ?? new URL("../../../../dist/index.js", import.meta.url).href;
-    // Only a conversation saved before per-provider homes has saved state without this marker.
-    this.providerHome = context.savedState === undefined || context.savedState.claudeProviderHome === "isolated"
-      ? "isolated"
-      : "legacy-shared";
+    this.providerHome = savedProviderHome(context.savedState, "claudeProviderHome");
     const savedSessionId = context.savedState?.claudeSessionId;
     const savedProviderDefinitionId = context.savedState?.claudeSessionProviderDefinitionId;
     const savedPresentationVersionId = context.savedState?.claudeSessionPersonalPresentationVersionId;
@@ -464,4 +461,18 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 
 export function createClaudeBasicFactory(dependencies: ClaudeBasicDependencies = {}): HarnessFactory {
   return (context) => new ClaudeBasicHarness(context, dependencies);
+}
+
+/**
+ * Only a conversation saved before per-provider homes has saved state without the marker, and
+ * only it keeps the shared default home. An unknown value, from corruption or a newer build,
+ * fails closed to the provider's private home: it never reaches the user's own home.
+ */
+function savedProviderHome(
+  savedState: HarnessSessionState | undefined,
+  key: "codexProviderHome" | "claudeProviderHome",
+): "isolated" | "legacy-shared" {
+  if (savedState === undefined) return "isolated";
+  if (!(key in savedState)) return "legacy-shared";
+  return savedState[key] === "legacy-shared" ? "legacy-shared" : "isolated";
 }

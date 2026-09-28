@@ -36,6 +36,70 @@ const codexBasicConfiguration: HarnessConfiguration = {
 };
 
 describe("CodexBasicHarness", () => {
+  const apiKeyTurn = (id: number, providerId: string, home: string, forceSignal?: AbortSignal): HarnessRunContext => ({
+    ...runContext(id, `token-${id}`),
+    model: { providerId, adapterId: "openai-api", modelId: "gpt-5.2" },
+    access: {
+      kind: "secret", contract: "secret@1", providerId, adapterId: "openai-api",
+      adapterImplementationVersion: "2", endpoint: "https://api.openai.test/v1", fields: { "api-key": `key-${providerId}` },
+      environment: { CODEX_HOME: home },
+    },
+    ...(forceSignal === undefined ? {} : { forceSignal }),
+  });
+
+  it("keeps the root thread when a turn to another home is force-stopped while its runtime resolves", async () => {
+    let gate: Promise<void> = Promise.resolve();
+    let resolving!: () => void;
+    const resolvingStarted = new Promise<void>((resolve) => { resolving = resolve; });
+    const submissions: CodexAppServerTurnOptions[] = [];
+    const harness = new CodexBasicHarness(context("auto"), {
+      resolveCodexRuntime: async () => {
+        resolving();
+        await gate;
+        return { executable: "/managed/codex", environment: {} };
+      },
+      runAppServerTurn: async (options) => {
+        submissions.push(options);
+        await options.onThreadId("thread-a");
+        options.onTurnStarting?.("thread-a");
+        await options.onTurnId?.("thread-a", "turn-1");
+        return { threadId: "thread-a", turnId: "turn-1", status: "completed" };
+      },
+    });
+    await harness.complete(apiKeyTurn(1, "openai-a", "/homes/openai-a"));
+    const saved = harness.state();
+    expect(saved).toMatchObject({ codexThreadId: "thread-a", codexThreadHome: "/homes/openai-a" });
+
+    let release!: () => void;
+    gate = new Promise<void>((resolve) => { release = resolve; });
+    const force = new AbortController();
+    const stopped = harness.complete(apiKeyTurn(2, "openai-b", "/homes/openai-b", force.signal));
+    await resolvingStarted;
+    force.abort(new Error("force-stopped after two minutes"));
+    release();
+
+    await expect(stopped).rejects.toThrow("force-stopped after two minutes");
+    // The stopped turn never ran, so the thread the user can still resume is kept.
+    expect(submissions).toHaveLength(1);
+    expect(harness.state()).toEqual(saved);
+  });
+
+  it.each(["future-home", 7, null])("fails closed to the provider's private home for an unknown marker %s", async (marker) => {
+    let submitted: CodexAppServerTurnOptions | undefined;
+    const harness = new CodexBasicHarness({ ...context("auto"), savedState: { codexProviderHome: marker } }, {
+      codexPathOverride: "/managed/codex",
+      runAppServerTurn: async (options) => {
+        submitted = options;
+        return { threadId: "thread-1", turnId: "turn-1", status: "completed" };
+      },
+    });
+
+    await harness.complete(apiKeyTurn(1, "openai-a", "/homes/openai-a"));
+
+    expect(submitted?.environment.CODEX_HOME).toBe("/homes/openai-a");
+    expect(harness.state()).toMatchObject({ codexProviderHome: "isolated" });
+  });
+
   it("renders V1 after generic guidance and leaves neutral V0 at baseline", () => {
     const baseline = buildLayeredNavigationPrompt(runContext(1, "token"), "@relayer/graph-client");
     const brokerAuthorized = buildLayeredNavigationPrompt({

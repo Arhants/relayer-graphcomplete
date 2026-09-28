@@ -167,6 +167,19 @@ function personalPresentationRunContext(
 }
 
 describe("ClaudeBasicHarness", () => {
+  it.each(["future-home", 7, null])("fails closed to the provider's private home for an unknown marker %s", async (marker) => {
+    let env: Readonly<Record<string, string>> | undefined;
+    const harness = new ClaudeBasicHarness(factoryContext("ask", { claudeProviderHome: marker }), {
+      query: sdkQuery([{ type: "result", subtype: "success", result: "done" }], (input) => { env = input.options.env; }),
+      browserSdk: browserSdk(),
+    });
+
+    await harness.complete(runContext(secretAccess()));
+
+    expect(env?.CLAUDE_CONFIG_DIR).toBe("/isolated/anthropic-work");
+    expect(harness.state()).toMatchObject({ claudeProviderHome: "isolated" });
+  });
+
   it("maps product approval modes onto supported Claude SDK permission modes", () => {
     expect(claudePermissionMode("ask")).toBe("default");
     expect(claudePermissionMode("auto")).toBe("acceptEdits");
