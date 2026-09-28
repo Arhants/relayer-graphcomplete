@@ -1182,7 +1182,8 @@ export class HarnessHost {
     let releaseAccessAfterCompletion = false;
     let claimedExecutionLeaseId: string | undefined;
     let harnessStarted = false;
-    let forceStopped = false;
+    /** Set when the force-stop fired before the native turn settled: how that turn ended. */
+    let forceStoppedNativeOutcome: string | undefined;
     try {
       const acceptedContracts = session.descriptor.configuration.executionAccessContracts;
       if (executionLeaseId !== undefined) {
@@ -1254,16 +1255,11 @@ export class HarnessHost {
       }, signal);
       onNativeExecution?.(isNativeExecutionHandle(native) ? native : undefined);
       await settledOrForceStopped(native, forceSignal);
+      // Checked at once: the timer may still fire during later cleanup, after a natural settle.
+      if (forceSignal.aborted) forceStoppedNativeOutcome = "settled";
     } catch (error) {
       if (forceSignal.aborted && harnessStarted) {
-        // A force-stop only follows a cancellation, so the turn settles exactly as that
-        // cancellation does: a user's Stop stays stopped. The force-stop and however the
-        // native work ended are diagnostics only.
-        forceStopped = true;
-        traceSink.emit({
-          type: "warning",
-          data: { message: FORCE_STOPPED_TURN_MESSAGE, forceStopped: true, nativeOutcome: errorMessage(error) },
-        });
+        forceStoppedNativeOutcome = errorMessage(error);
       } else if (!signal.aborted || (error !== signal.reason && !(error instanceof NativeExecutionCancelled))) {
         // Adapters may reject with this exact AbortSignal reason before native work
         // starts. Distinct abort, quiescence, or cleanup errors remain failures.
@@ -1281,6 +1277,16 @@ export class HarnessHost {
           completionError ??= normalizeHarnessFailure(error, true, observedTrace.effectBoundary());
         }
       }
+    }
+    const forceStopped = forceStoppedNativeOutcome !== undefined;
+    if (forceStoppedNativeOutcome !== undefined) {
+      // A force-stop only follows a cancellation, so the turn settles exactly as that
+      // cancellation does, whether the harness resolved or rejected while being stopped: a
+      // user's Stop stays stopped. The force-stop and the native outcome are diagnostics only.
+      traceSink.emit({
+        type: "warning",
+        data: { message: FORCE_STOPPED_TURN_MESSAGE, forceStopped: true, nativeOutcome: forceStoppedNativeOutcome },
+      });
     }
     if (completionError !== undefined) {
       // A harness can successfully accept the graph and then fail while unwinding. The accepted

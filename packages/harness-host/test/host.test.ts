@@ -2068,6 +2068,64 @@ describe("HarnessHost", () => {
     }
   });
 
+  it.each(["resolves", "rejects"] as const)("settles a Stop the harness %s while being force-stopped as one stop", async (ending) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-force-stop-outcome-"));
+    let started = false;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+      : url.endsWith("/neighbors")
+        ? new Response(JSON.stringify({ nodes: [] }), { status: 200, headers: { "content-type": "application/json" } })
+        : graphReadResponse(url)));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        trace: {
+          directory: join(directory, "traces"),
+          policy: { mode: "required", requiredFeatures: {}, includeNativeArtifacts: false, maxBytesPerTurn: 100_000, maxEventsPerTurn: 100 },
+        },
+        implementations: { test: () => ({
+          supportsForceStop: true,
+          complete(context) {
+            started = true;
+            // Ignores the Stop; the force-stop ends it, and the adapter then resolves or rejects.
+            return new Promise<void>((resolve, reject) => {
+              context.forceSignal?.addEventListener("abort", () => {
+                if (ending === "resolves") resolve();
+                else reject(new Error("native process killed"));
+              }, { once: true });
+            });
+          },
+          state: emptyState,
+        }) },
+      });
+      await host.initialize();
+      await host.createSession({ threadId: 1, permissionProfileId: "auto", configuration: testConfiguration, workingDirectory: directory });
+      const running = host.complete(1, 1, graph(), undefined, undefined, { productInteractionId: 41 })
+        .then(() => undefined, (error: unknown) => error);
+      await vi.waitFor(() => expect(started).toBe(true));
+
+      expect(host.cancel(1)).toBe(true);
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      const outcome = await running;
+      expect(outcome).not.toBeInstanceOf(HarnessExecutionFailure);
+      expect((outcome as Error).constructor.name).toBe("HarnessCancellationSettled");
+      expect((outcome as Error).message).toBe("Harness completion cancelled for thread 1");
+      const exported = join(directory, "exported");
+      await host.exportCandidateTrace(41, exported, {
+        runId: "run", executionId: "execution", interactionId: "41", harnessConfigurationName: "test-default",
+      });
+      const events = await readFile(join(exported, "events.jsonl"), "utf8");
+      expect(events).toContain("was force-stopped");
+      expect(events).toContain(ending === "resolves" ? '"nativeOutcome":"settled"' : '"nativeOutcome":"native process killed"');
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("keeps a cancelled turn's access until it settles when its harness cannot force-stop", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-no-force-stop-"));
