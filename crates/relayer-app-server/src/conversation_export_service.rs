@@ -2029,12 +2029,21 @@ impl ProjectPathRedactor {
     }
 
     fn contains_markdown_private_path(&self, value: &str) -> bool {
-        let skeleton = markdown_security_skeleton(value);
-        self.contains_private_path(&skeleton)
-            || self.project_paths.iter().any(|path| {
-                let projected_path = markdown_security_skeleton(path);
-                !projected_path.is_empty() && skeleton.contains(&projected_path)
-            })
+        let without_subtrees = strip_dangerous_markdown_subtrees(value);
+        let without_images = strip_markdown_images(value);
+        let skeletons = [
+            markdown_security_skeleton(value),
+            markdown_html_stripped_skeleton(value),
+            security_skeleton(&without_subtrees),
+            security_skeleton(&without_images),
+        ];
+        skeletons.iter().any(|skeleton| {
+            self.contains_private_path(skeleton)
+                || self.project_paths.iter().any(|path| {
+                    let projected_path = markdown_security_skeleton(path);
+                    !projected_path.is_empty() && skeleton.contains(&projected_path)
+                })
+        })
     }
 
     fn optional(&self, value: Option<&str>) -> Option<String> {
@@ -2142,7 +2151,7 @@ fn redact_share_secrets(value: &str) -> String {
         .replace_all(&redacted, "$1[redacted-secret]")
         .into_owned();
     if contains_raw_share_secret(&markdown_rendered_text(&redacted))
-        || contains_relaxed_share_secret(&markdown_security_skeleton(&redacted))
+        || contains_markdown_share_secret(&redacted)
     {
         return "[redacted-secret]".into();
     }
@@ -2156,7 +2165,7 @@ fn redact_share_secrets(value: &str) -> String {
             if step_changed
                 && (contains_raw_share_secret(&next)
                     || contains_raw_share_secret(&markdown_rendered_text(&next))
-                    || contains_relaxed_share_secret(&markdown_security_skeleton(&next)))
+                    || contains_markdown_share_secret(&next))
             {
                 return "[redacted-secret]".into();
             }
@@ -2235,7 +2244,17 @@ fn markdown_rendered_text(value: &str) -> String {
 /// credentials. The relaxed credential matcher intentionally tolerates a
 /// visible-label prefix; false positives redact one public field.
 fn markdown_security_skeleton(value: &str) -> String {
-    strip_closed_markdown_destinations(value)
+    security_skeleton(&strip_closed_markdown_destinations(value))
+}
+
+fn markdown_html_stripped_skeleton(value: &str) -> String {
+    let without_subtrees = strip_dangerous_markdown_subtrees(value);
+    let without_images = strip_markdown_images(&without_subtrees);
+    security_skeleton(&strip_grammar_html(&without_images))
+}
+
+fn security_skeleton(value: &str) -> String {
+    value
         .chars()
         .filter(|character| {
             character.is_alphanumeric()
@@ -2243,6 +2262,103 @@ fn markdown_security_skeleton(value: &str) -> String {
                 || character.is_whitespace()
         })
         .collect()
+}
+
+fn strip_grammar_html(value: &str) -> String {
+    let characters: Vec<char> = value.chars().collect();
+    let mut stripped = String::with_capacity(value.len());
+    let mut index = 0;
+    while index < characters.len() {
+        if characters[index] == '<'
+            && let Some(end) = inline_html_end(&characters, index)
+        {
+            index = end;
+            continue;
+        }
+        stripped.push(characters[index]);
+        index += 1;
+    }
+    stripped
+}
+
+fn strip_dangerous_markdown_subtrees(value: &str) -> String {
+    let mut stripped = value.to_owned();
+    for _ in 0..8 {
+        let next = dangerous_markdown_subtree_regex()
+            .replace_all(&stripped, "")
+            .into_owned();
+        if next == stripped {
+            return stripped;
+        }
+        stripped = next;
+    }
+    stripped
+}
+
+fn strip_markdown_images(value: &str) -> String {
+    let characters: Vec<char> = value.chars().collect();
+    let mut stripped = String::with_capacity(value.len());
+    let mut index = 0;
+    while index < characters.len() {
+        if characters[index] != '!' || characters.get(index + 1) != Some(&'[') {
+            stripped.push(characters[index]);
+            index += 1;
+            continue;
+        }
+        let mut cursor = index + 2;
+        let mut bracket_depth = 1usize;
+        while cursor < characters.len() && bracket_depth > 0 {
+            match characters[cursor] {
+                '[' => bracket_depth = bracket_depth.saturating_add(1),
+                ']' => bracket_depth = bracket_depth.saturating_sub(1),
+                '\\' => cursor = cursor.saturating_add(1),
+                _ => {}
+            }
+            cursor += 1;
+        }
+        if bracket_depth != 0 {
+            stripped.push('!');
+            index += 1;
+            continue;
+        }
+        let destination_end = match characters.get(cursor) {
+            Some('(') => {
+                let mut end = cursor + 1;
+                let mut depth = 1usize;
+                while end < characters.len() && depth > 0 {
+                    match characters[end] {
+                        '(' => depth = depth.saturating_add(1),
+                        ')' => depth = depth.saturating_sub(1),
+                        '\\' => end = end.saturating_add(1),
+                        _ => {}
+                    }
+                    end += 1;
+                }
+                (depth == 0).then_some(end)
+            }
+            Some('[') => characters[cursor + 1..]
+                .iter()
+                .position(|character| *character == ']')
+                .map(|offset| cursor + 1 + offset + 1),
+            _ => None,
+        };
+        // A bare `![label]` can resolve through a later shortcut reference.
+        // Removing it in this security-only projection is deliberately
+        // fail-closed; the original bytes are preserved when no secret/path is
+        // exposed by the projection.
+        index = destination_end.unwrap_or(cursor);
+    }
+    stripped
+}
+
+fn dangerous_markdown_subtree_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(
+            r"(?is)<(?:iframe|math|object|script|style|svg|template)\b[^>]*>.*</(?:iframe|math|object|script|style|svg|template)\s*>",
+        )
+        .expect("valid dangerous Markdown subtree regex")
+    })
 }
 
 /// Remove only closed inline-link destinations for the lossy security
@@ -2292,12 +2408,25 @@ fn inline_html_end(characters: &[char], index: usize) -> Option<usize> {
             .position(|window| window == ['-', '-', '>'])
             .map(|offset| index + 4 + offset + 3);
     }
+    if characters[index..].starts_with(&['<', '?']) {
+        return characters[index + 2..]
+            .windows(2)
+            .position(|window| window == ['?', '>'])
+            .map(|offset| index + 2 + offset + 2);
+    }
+    if characters[index..].starts_with(&['<', '!']) {
+        let mut cursor = index + 2;
+        while cursor < characters.len() {
+            if characters[cursor] == '>' {
+                return Some(cursor + 1);
+            }
+            cursor += 1;
+        }
+        return None;
+    }
 
-    let name_start = if characters.get(index + 1) == Some(&'/') {
-        index + 2
-    } else {
-        index + 1
-    };
+    let closing = characters.get(index + 1) == Some(&'/');
+    let name_start = if closing { index + 2 } else { index + 1 };
     if !characters
         .get(name_start)
         .is_some_and(|character| character.is_ascii_alphabetic())
@@ -2311,30 +2440,82 @@ fn inline_html_end(characters: &[char], index: usize) -> Option<usize> {
     {
         cursor += 1;
     }
-    if !characters
-        .get(cursor)
-        .is_some_and(|character| character.is_whitespace() || matches!(character, '/' | '>'))
-    {
-        return None;
+    if closing {
+        while characters
+            .get(cursor)
+            .is_some_and(|value| value.is_whitespace())
+        {
+            cursor += 1;
+        }
+        return (characters.get(cursor) == Some(&'>')).then_some(cursor + 1);
     }
 
-    let mut quote = None;
-    while cursor < characters.len() {
-        let character = characters[cursor];
-        if let Some(active) = quote {
-            if character == active {
-                quote = None;
-            }
-        } else if matches!(character, '\'' | '"') {
-            quote = Some(character);
-        } else if character == '<' {
-            return None;
-        } else if character == '>' {
-            return Some(cursor + 1);
+    loop {
+        while characters
+            .get(cursor)
+            .is_some_and(|value| value.is_whitespace())
+        {
+            cursor += 1;
+        }
+        match characters.get(cursor) {
+            Some('>') => return Some(cursor + 1),
+            Some('/') if characters.get(cursor + 1) == Some(&'>') => return Some(cursor + 2),
+            Some(character)
+                if character.is_ascii_alphabetic() || matches!(character, '_' | ':') => {}
+            _ => return None,
+        }
+
+        cursor += 1;
+        while characters.get(cursor).is_some_and(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | ':' | '.')
+        }) {
+            cursor += 1;
+        }
+        while characters
+            .get(cursor)
+            .is_some_and(|value| value.is_whitespace())
+        {
+            cursor += 1;
+        }
+        if characters.get(cursor) != Some(&'=') {
+            continue;
         }
         cursor += 1;
+        while characters
+            .get(cursor)
+            .is_some_and(|value| value.is_whitespace())
+        {
+            cursor += 1;
+        }
+        match characters.get(cursor).copied() {
+            Some(quote @ ('\'' | '"')) => {
+                cursor += 1;
+                while let Some(character) = characters.get(cursor) {
+                    if *character == quote {
+                        cursor += 1;
+                        break;
+                    }
+                    cursor += 1;
+                }
+                if characters.get(cursor.saturating_sub(1)) != Some(&quote) {
+                    return None;
+                }
+            }
+            Some(character)
+                if !character.is_whitespace()
+                    && !matches!(character, '"' | '\'' | '`' | '=' | '<' | '>') =>
+            {
+                cursor += 1;
+                while characters.get(cursor).is_some_and(|character| {
+                    !character.is_whitespace()
+                        && !matches!(character, '"' | '\'' | '`' | '=' | '<' | '>')
+                }) {
+                    cursor += 1;
+                }
+            }
+            _ => return None,
+        }
     }
-    None
 }
 
 fn contains_relaxed_share_secret(value: &str) -> bool {
@@ -2342,6 +2523,19 @@ fn contains_relaxed_share_secret(value: &str) -> bool {
         || relaxed_bearer_secret_regex().is_match(value)
         || relaxed_jwt_secret_regex().is_match(value)
         || relaxed_provider_secret_regex().is_match(value)
+}
+
+fn contains_markdown_share_secret(value: &str) -> bool {
+    let without_subtrees = strip_dangerous_markdown_subtrees(value);
+    let without_images = strip_markdown_images(value);
+    [
+        markdown_security_skeleton(value),
+        markdown_html_stripped_skeleton(value),
+        security_skeleton(&without_subtrees),
+        security_skeleton(&without_images),
+    ]
+    .iter()
+    .any(|candidate| contains_relaxed_share_secret(candidate))
 }
 
 fn contains_raw_share_secret(value: &str) -> bool {
@@ -3376,6 +3570,25 @@ mod tests {
             "[label](s<em>k</em>-proj-12345678901234567890",
             "[label][s**k**-proj-12345678901234567890",
             "[label][s**k**-proj-12345678901234567890]",
+            "[label][s<em>k</em>-proj-12345678901234567890]",
+            "[label][s<!-- > -->k-proj-12345678901234567890]",
+            "[label](s<em>k</em>-proj-12345678901234567890 extra)",
+            "s<span title=\"<\">k</span>-proj-12345678901234567890",
+            "s<em title='x<y'>k</em>-proj-12345678901234567890",
+            "s<?test?>k-proj-12345678901234567890",
+            "s<!DOCTYPE html>k-proj-12345678901234567890",
+            "s<!doctype html>k-proj-12345678901234567890",
+            "s<![CDATA[hidden]]>k-proj-12345678901234567890",
+            "s<!DOCTYPE \"unterminated>k-proj-12345678901234567890",
+            "s<script>hidden</script>k-proj-12345678901234567890",
+            "s<style>hidden</style>k-proj-12345678901234567890",
+            "s<template>hidden</template>k-proj-12345678901234567890",
+            "s<svg>hidden</svg>k-proj-12345678901234567890",
+            "s![alt](https://example.test/img.png)k-proj-12345678901234567890",
+            "<x s<script>hidden</script>k-proj-12345678901234567890>",
+            "<x s![alt](https://example.test/img.png)k-proj-12345678901234567890>",
+            "s<template>a<template>b</template>c</template>k-proj-12345678901234567890",
+            "s![alt]k-proj-12345678901234567890\n\n[alt]: https://example.test/image.png",
             "a < B**earer** abc.def.ghi >",
             "a < e**yJ**hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.synthetic_signature >",
             "[label](e**yJ**hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.synthetic_signature",
