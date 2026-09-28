@@ -252,6 +252,10 @@ The `*-reverted` checks turn one landed fix off and show its old trace. In
 them the acknowledgement call is attributed to `AckRetriesFinalize`, so a
 reverted `HostReleasesOnSettle` still acknowledges. The open findings C and
 E have no fix constants yet. Startup error isolation (L6) is not modeled.
+A release and its acknowledgement are one step, and acknowledgements do not
+fail in the model. The code retries a failed acknowledgement on the host's
+timer, and forgets access released without an owner after ten minutes;
+neither is modeled.
 
 ## Limits
 

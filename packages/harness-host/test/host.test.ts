@@ -1816,9 +1816,16 @@ describe("HarnessHost", () => {
     }
   });
 
-  it("keeps a running turn's access when its owner releases it, cancels the turn, and releases on settle", async () => {
+  it("keeps a running turn's access when its owner releases it, then releases and acknowledges on settle", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-release-live-turn-"));
-    const release = vi.fn();
+    const events: string[] = [];
+    const release = vi.fn(() => { events.push("release"); });
+    let failAcknowledge = true;
+    const acknowledge = vi.fn(() => {
+      events.push("acknowledge");
+      if (failAcknowledge) throw new Error("provider store is busy");
+    });
     let finishNative!: () => void;
     const nativeFinished = new Promise<void>((resolve) => { finishNative = resolve; });
     let nativeStarted!: () => void;
@@ -1837,6 +1844,7 @@ describe("HarnessHost", () => {
               adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
             },
             release,
+            acknowledge,
           };
         } },
         // Like Codex's turn/interrupt or Prime's quiescence wait: the native turn observes the
@@ -1869,9 +1877,15 @@ describe("HarnessHost", () => {
 
       finishNative();
       await running;
-      await vi.waitFor(() => expect(release).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(events).toEqual(["release", "acknowledge"]));
+      // The owner will not ask again, so the host retries a failed acknowledgement itself.
+      failAcknowledge = false;
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(events).toEqual(["release", "acknowledge", "acknowledge"]);
+      expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(false);
     } finally {
       finishNative();
+      vi.useRealTimers();
       vi.unstubAllGlobals();
       await rm(directory, { recursive: true, force: true });
     }
@@ -1927,6 +1941,48 @@ describe("HarnessHost", () => {
       expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(false);
     } finally {
       vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("forgets access released without an owner once the acknowledgement window passes", async () => {
+    vi.useFakeTimers();
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-unacknowledged-release-"));
+    const release = vi.fn();
+    const acknowledge = vi.fn();
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        accessBroker: { async acquire() {
+          return {
+            access: {
+              kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+              adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" },
+            },
+            release,
+            acknowledge,
+          };
+        } },
+        implementations: { test: () => ({ async complete() {}, state: emptyState }) },
+      });
+      await host.initialize();
+      await host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: {
+          ...testConfiguration,
+          modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      const model = { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" };
+      const admission = await host.admitProviderExecution(1, model, new AbortController().signal);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(release).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(await host.releaseProviderExecution(admission.executionLeaseId)).toBe(false);
+      expect(acknowledge).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
       await rm(directory, { recursive: true, force: true });
     }
   });

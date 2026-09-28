@@ -27,6 +27,7 @@ import {
   createProviderRuntimeStateRemover,
   providerRuntimeDirectory,
 } from "../desktop/main/providers/provider-runtime-state.mjs";
+import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 import { ModelCatalogService } from "../desktop/main/models/model-catalog-service.mjs";
 import { toProductCatalogSnapshot } from "../desktop/main/models/model-catalog-adapter.mjs";
 import { withProviderRetry } from "../desktop/main/providers/provider-retry.mjs";
@@ -1623,6 +1624,27 @@ describe("provider definition lifecycle", () => {
     expect(fixture.definitions()[0]).toMatchObject({ lifecycleState: "tombstoned", credentialReference: null });
     expect(fixture.credentials.size).toBe(0);
     expect(removals).toEqual([providerId]);
+  });
+
+  it("reads the catalog's drain refusal code from the app server's error body", async () => {
+    const service = new RelayerAppServerService({
+      userDataDirectory: "/unused", binaryPath: "/unused", webDirectory: "/unused", permissionCatalogPath: "/unused",
+    });
+    service.start = async () => ({ origin: "http://127.0.0.1:1", cookie: { value: "control" } });
+    // The exact shape api/error.rs catalog_error sends for a refused tombstone.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      code: "provider_execution_drain_incomplete",
+      error: "Provider removal cannot finish while an execution attempt is running.",
+      familyId: null, harnessId: null, modelId: null, providerId: null,
+    }), { status: 422, headers: { "content-type": "application/json" } })));
+    try {
+      await expect(service.providerDefinitionStore().save([])).rejects.toMatchObject({
+        code: "provider_execution_drain_incomplete",
+        message: "Provider removal cannot finish while an execution attempt is running.",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("defers a removal with no lease while the store still counts an attempt as running", async () => {

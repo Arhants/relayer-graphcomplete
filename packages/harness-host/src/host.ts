@@ -160,6 +160,8 @@ interface InvokedCompletionRun {
 
 const EXECUTION_ADMISSION_TIMEOUT_MS = 30_000;
 const EXECUTION_RELEASE_RETRY_MS = 30_000;
+/** How long access released without an owner waits for the owner's acknowledgement. */
+const UNACKNOWLEDGED_RELEASE_TTL_MS = 10 * 60_000;
 const HARNESS_CLOSE_SESSION_TIMEOUT_MS = 5_000;
 
 export type HarnessEffectBoundary = "none" | "partial_output" | "graph_write" | "tool_effect" | "unknown";
@@ -976,8 +978,50 @@ export class HarnessHost {
     pending.state = "settled";
     delete pending.abandon;
     void this.releaseHeldExecution(executionLeaseId, pending)
-      .then(() => pending.ownerReleased ? this.acknowledgeReleasedExecution(executionLeaseId, pending) : undefined)
+      .then(() => this.finishReleasedExecution(executionLeaseId, pending))
       .catch(() => {});
+  }
+
+  /**
+   * After access is released without the owner waiting on it: acknowledge it if the owner has
+   * already given the lease up, retrying on failure because the owner will not ask again;
+   * otherwise keep it for the owner's acknowledgement for a bounded time.
+   */
+  private async finishReleasedExecution(executionLeaseId: string, pending: PendingExecutionAccess): Promise<void> {
+    if (this.pendingExecutionAccess.get(executionLeaseId) !== pending) return;
+    if (pending.timeout !== undefined) clearTimeout(pending.timeout);
+    pending.timeout = undefined;
+    if (!pending.ownerReleased) {
+      pending.timeout = this.expireUnacknowledged(executionLeaseId, pending);
+      return;
+    }
+    try {
+      await this.acknowledgeReleasedExecution(executionLeaseId, pending);
+    } catch (error) {
+      if (this.pendingExecutionAccess.get(executionLeaseId) === pending && !this.closed) {
+        pending.timeout = this.retryAcknowledgement(executionLeaseId, pending);
+      }
+      throw error;
+    }
+  }
+
+  private retryAcknowledgement(executionLeaseId: string, pending: PendingExecutionAccess): NodeJS.Timeout {
+    const timer = setTimeout(() => {
+      pending.timeout = undefined;
+      void this.finishReleasedExecution(executionLeaseId, pending).catch(() => {});
+    }, EXECUTION_RELEASE_RETRY_MS);
+    timer.unref?.();
+    return timer;
+  }
+
+  private expireUnacknowledged(executionLeaseId: string, pending: PendingExecutionAccess): NodeJS.Timeout {
+    const timer = setTimeout(() => {
+      if (this.pendingExecutionAccess.get(executionLeaseId) === pending && !pending.ownerReleased) {
+        this.pendingExecutionAccess.delete(executionLeaseId);
+      }
+    }, UNACKNOWLEDGED_RELEASE_TTL_MS);
+    timer.unref?.();
+    return timer;
   }
 
   /** Releases held access, retrying on the host's own timer until it succeeds. */
@@ -993,6 +1037,7 @@ export class HarnessHost {
     } catch (error) {
       pending.releasePromise = undefined;
       if (this.pendingExecutionAccess.get(executionLeaseId) === pending && !this.closed) {
+        if (pending.timeout !== undefined) clearTimeout(pending.timeout);
         pending.timeout = this.releaseAfter(executionLeaseId, EXECUTION_RELEASE_RETRY_MS);
       }
       throw error;
@@ -1001,6 +1046,8 @@ export class HarnessHost {
 
   /** Tells each provider its access ended durably, then forgets the lease. */
   private async acknowledgeReleasedExecution(executionLeaseId: string, pending: PendingExecutionAccess): Promise<void> {
+    if (pending.timeout !== undefined) clearTimeout(pending.timeout);
+    pending.timeout = undefined;
     for (const held of pending.heldLeases) await held.lease.acknowledge?.();
     if (this.pendingExecutionAccess.get(executionLeaseId) === pending) this.pendingExecutionAccess.delete(executionLeaseId);
   }
@@ -1011,7 +1058,7 @@ export class HarnessHost {
       if (pending === undefined || pending.state === "claimed" || pending.state === "released") return;
       pending.releaseRequested = true;
       void this.releaseHeldExecution(executionLeaseId, pending)
-        .then(() => pending.ownerReleased ? this.acknowledgeReleasedExecution(executionLeaseId, pending) : undefined)
+        .then(() => this.finishReleasedExecution(executionLeaseId, pending))
         .catch(() => {});
     }, delay);
     timer.unref?.();
