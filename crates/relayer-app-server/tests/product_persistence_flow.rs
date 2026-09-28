@@ -9722,6 +9722,155 @@ async fn restart_finishes_a_removal_whose_quarantined_attempt_died_with_the_app(
     fs::remove_dir_all(root).unwrap();
 }
 
+/// Startup observes unwinding children concurrently under one bound, so a harness that
+/// cannot answer never holds the app server past Desktop's readiness window; those children
+/// keep waiting in the background.
+#[tokio::test]
+async fn startup_does_not_wait_on_a_harness_that_cannot_report_unwinding_children() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "relayer-unwinding-children-bound-{}-{unique}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let database = root.join("product.sqlite3");
+    let offline = open_app(&database, &root).await;
+    let thread = response_json(
+        offline
+            .oneshot(api_request(
+                "POST",
+                "/api/threads",
+                Some(json!({"initialMessage":"Seed"})),
+                true,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let thread_id = thread["id"].as_i64().unwrap();
+    seed_explicit_test_model_default(&database, thread_id).await;
+    let pool = sqlite_pool(&database).await;
+    let created_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .to_string();
+    let (family_id, family_revision): (i64, i64) =
+        sqlx::query_as("SELECT id,revision FROM model_families ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    for (sequence, graph_node_id) in [(2_i64, 88_i64), (3, 89), (4, 90)] {
+        let child_id = sqlx::query(
+            "INSERT INTO interactions(
+                thread_id,sequence,text,created_at,graph_node_id,completion_status,
+                harness_configuration_name,harness_configuration_digest,permission_profile_id,
+                effective_execution_digest,effective_permission_receipt_json
+             ) VALUES (?1,?2,'Child',?3,?4,'accepted','codex-basic','sha256:test','auto',
+                'sha256:execution','{}')",
+        )
+        .bind(thread_id)
+        .bind(sequence)
+        .bind(&created_at)
+        .bind(graph_node_id)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_rowid();
+        sqlx::query(
+            "INSERT INTO interaction_attempts(
+                interaction_id,attempt_number,started_at,family_id,family_revision,
+                harness_configuration_name,harness_configuration_revision,harness_configuration_digest,
+                provider_id,adapter_id,adapter_implementation_version,model_id,access_contract,
+                outcome,effect_boundary,execution_lease_id
+             ) VALUES (?1,1,?2,?3,?4,'codex-basic',1,'sha256:test',
+                'codex','test-adapter',1,'test-model','managed-runtime@1','running','unknown',?5)",
+        )
+        .bind(child_id)
+        .bind(&created_at)
+        .bind(family_id)
+        .bind(family_revision)
+        .bind(format!("child-lease-{graph_node_id}"))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO completion_executions(
+                interaction_id,graph_completion_id,harness_configuration_name,
+                harness_configuration_digest,model_execution_digest,permission_origin_digest,phase,
+                settlement_json,created_at,updated_at
+             ) VALUES (?1,?2,'codex-basic','sha256:test','sha256:model','sha256:origin','settled',
+                '{}',?3,?3)",
+        )
+        .bind(child_id)
+        .bind(graph_node_id)
+        .bind(&created_at)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    pool.close().await;
+
+    let catalog = root.join("catalog.json");
+    fs::write(
+        &catalog,
+        json!({
+            "schemaVersion":1,"configurations":[{"configuration":{
+                "schemaVersion":1,"name":"codex-basic","implementation":"test",
+                "implementationVersion":1,"permissionBindings":{"auto":{}},
+                "modelCompatibility":[{"providerId":"codex"}],
+                "executionAccessContracts":["managed-runtime@1"],
+                "settings":{"model":"test-model"}
+            },"digest":"sha256:test"}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let graph = Router::new().route(
+        "/api/control/capabilities",
+        axum::routing::delete(|| async { axum::Json(json!({"revoked":true})) }),
+    );
+    // A wedged harness never answers an observation.
+    let harness = Router::new().route(
+        "/sessions/{id}/invoked-completions/{completion}",
+        axum::routing::get(|| async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            axum::Json(json!({}))
+        }),
+    );
+    let (graph_url, graph_task) = serve_test_app(graph).await;
+    let (harness_url, harness_task) = serve_test_app(harness).await;
+    let started = std::time::Instant::now();
+    let resumed =
+        open_app_with_runtime_allow_override(&database, &root, &catalog, &graph_url, &harness_url)
+            .await;
+    let elapsed = started.elapsed();
+    // Serial five-second probes of three children would take fifteen seconds.
+    assert!(
+        elapsed < Duration::from_secs(6),
+        "startup waited {elapsed:?} on a harness that cannot report its children"
+    );
+    let attempts = attempt_lease_rows(&database).await;
+    assert!(
+        attempts
+            .iter()
+            .filter(|attempt| attempt
+                .2
+                .as_deref()
+                .is_some_and(|lease| lease.starts_with("child-lease-")))
+            .all(|attempt| attempt.1 == "running"),
+        "an unreported child was ended without its harness confirming it: {attempts:?}"
+    );
+
+    drop(resumed);
+    graph_task.abort();
+    harness_task.abort();
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// PROV-003 across a restart with a recursive child: a child that settled while its provider
 /// was still unwinding keeps its attempt running over the restart. Startup observes it once
 /// before serving Desktop; a harness that restarted with the app knows no such run, so the
