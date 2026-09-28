@@ -142,6 +142,12 @@ export class ProviderDefinitionService {
     });
   }
 
+  async activeDefinitions() {
+    return (await this.#initialize())
+      .filter(({ lifecycleState }) => lifecycleState === "active")
+      .map(publicDefinition);
+  }
+
   async #initialize() {
     if (this.definitions === null) this.definitions = await this.definitionStore.load();
     return this.definitions;

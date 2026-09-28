@@ -18,6 +18,9 @@ export function createProviderComposition({
   diagnostics = null,
   modelCatalogOptions = {},
 }) {
+  // The models each provider's catalog last published in this process. A post-upgrade
+  // readiness evaluation evaluates the routes they give (#556).
+  const publishedModels = new Map();
   const modelCatalog = new ModelCatalogService({
     adapters: [],
     diagnostics,
@@ -34,7 +37,9 @@ export function createProviderComposition({
           "explicit-repair",
         );
       }
-      return publishCatalog(snapshot, options);
+      const published = await publishCatalog(snapshot, options);
+      publishedModels.set(snapshot.providerId, snapshot.models ?? []);
+      return published;
     },
     ...modelCatalogOptions,
   });
@@ -87,6 +92,16 @@ export function createProviderComposition({
       await providerDefinitions.reconcileStartup();
       await providerDefinitions.activate();
       await modelCatalog.startup();
+    },
+    // Every active provider with its last published models, for an evaluation that is not
+    // tied to one provider (the recipe-update trigger).
+    async readinessRoutes() {
+      return (await providerDefinitions.activeDefinitions())
+        .filter(({ id }) => publishedModels.get(id)?.length)
+        .map((providerDefinition) => Object.freeze({
+          providerDefinition,
+          models: publishedModels.get(providerDefinition.id),
+        }));
     },
     async close() {
       const results = await Promise.allSettled([providerDefinitions.close(), modelCatalog.close()]);

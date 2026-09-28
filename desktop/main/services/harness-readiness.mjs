@@ -18,6 +18,25 @@ function modelAvailable(model) {
     && model?.availability !== "unavailable";
 }
 
+// #556: after startup, one background evaluation of the routes an upgrade left pending.
+// It returns at once; startup never waits for the evaluation, and a failure only reports.
+export function startPostUpgradeReadiness({
+  readiness,
+  updatesDue,
+  recipeUpdates = [],
+  routes,
+  onError = () => {},
+}) {
+  const evaluation = Promise.resolve().then(async () => {
+    const [due, providers] = await Promise.all([updatesDue(), routes()]);
+    return readiness.evaluateRecipeUpdate({ updatesDue: due, recipeUpdates, providers });
+  }).catch((error) => {
+    onError(error);
+    return null;
+  });
+  return Object.freeze({ evaluation });
+}
+
 export function createHarnessReadinessCoordinator({
   configurations,
   digestConfiguration,
@@ -25,6 +44,9 @@ export function createHarnessReadinessCoordinator({
   prepareRecipe,
   checkers,
   publishAvailability,
+  // Whether a recipe has an installation on disk, valid or not. Only the post-upgrade
+  // evaluation asks; without it, that evaluation assumes none is installed.
+  recipeInstalled = async () => false,
   diagnostics = null,
 }) {
   if (!(configurations instanceof Map) || typeof digestConfiguration !== "function"
@@ -41,17 +63,34 @@ export function createHarnessReadinessCoordinator({
   const harnessGenerations = new Map();
   let publication = Promise.resolve();
 
-  async function evaluate({ trigger, providerDefinition, models = [] }) {
-    if (!READINESS_TRIGGERS.has(trigger)) {
-      return Object.freeze({ readyHarnessIds: [], routeResults: [] });
-    }
-    const candidates = [...configurations.values()].filter((configuration) => (
+  function routeProvider(configuration, providers) {
+    return providers.find(({ providerDefinition, models = [] }) => (
       configuration.executionAccessContracts?.includes(providerDefinition.accessContract)
       && models.some((model) => modelAvailable(model) && harnessAllowsModel(configuration.modelRules, {
         adapterId: providerDefinition.adapterId,
         modelId: model.id,
       }))
-    ));
+    ))?.providerDefinition ?? null;
+  }
+
+  // One evaluation with one generation. A provider trigger evaluates the routes of one
+  // provider. The recipe-update trigger evaluates named harnesses once for every connected
+  // provider that has a route through them (#556: ChatGPT and OpenRouter share codex-basic).
+  async function evaluate({ trigger, providerDefinition, models = [], providers, harnessIds }) {
+    if (!READINESS_TRIGGERS.has(trigger)) {
+      return Object.freeze({ readyHarnessIds: [], routeResults: [] });
+    }
+    const routes = providers ?? [{ providerDefinition, models }];
+    const named = harnessIds ? new Set(harnessIds) : null;
+    const candidates = [];
+    const candidateProviders = new Map();
+    for (const configuration of configurations.values()) {
+      if (named && !named.has(configuration.name)) continue;
+      const provider = routeProvider(configuration, routes);
+      if (!provider) continue;
+      candidates.push(configuration);
+      candidateProviders.set(configuration.name, provider);
+    }
     if (candidates.length === 0) {
       return Object.freeze({ readyHarnessIds: [], routeResults: [] });
     }
@@ -81,7 +120,10 @@ export function createHarnessReadinessCoordinator({
         await diagnostics?.write({
           level: "error",
           category: "harness_readiness_failed",
-          providerId: providerDefinition.id,
+          // A recipe-update result belongs to the harness, not to one of its providers.
+          ...(trigger === "recipe-update"
+            ? { trigger }
+            : { providerId: candidateProviders.get(configuration.name).id }),
           harnessId: configuration.name,
           code: result.reason.code,
         }).catch(() => undefined);
@@ -119,5 +161,24 @@ export function createHarnessReadinessCoordinator({
     });
   }
 
-  return Object.freeze({ evaluate });
+  // #556: after an upgrade, one evaluation through the recipe-update trigger covers every
+  // harness whose digest the app server marked due, and every harness whose runtime recipe
+  // was newly activated. The app server clears its mark when the result commits.
+  // It never makes a first installation: a harness whose runtime was never installed
+  // waits for Connect or Repair, as on a first launch.
+  async function evaluateRecipeUpdate({ updatesDue = [], recipeUpdates = [], providers = [] }) {
+    const due = new Set(updatesDue);
+    const activated = new Set(recipeUpdates);
+    const harnessIds = [];
+    for (const { name, implementation } of configurations.values()) {
+      const recipeId = runtimeRequirements[implementation]?.recipeId;
+      if (!due.has(name) && !activated.has(recipeId)) continue;
+      if (recipeId && !await recipeInstalled(recipeId)) continue;
+      harnessIds.push(name);
+    }
+    if (harnessIds.length === 0) return Object.freeze({ readyHarnessIds: [], routeResults: [] });
+    return evaluate({ trigger: "recipe-update", providers, harnessIds });
+  }
+
+  return Object.freeze({ evaluate, evaluateRecipeUpdate });
 }

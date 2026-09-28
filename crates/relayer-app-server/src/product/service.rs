@@ -176,6 +176,13 @@ impl ProductService {
             .map_err(Into::into)
     }
 
+    pub(crate) async fn harness_readiness_updates_due(&self) -> Result<Vec<String>, ProductError> {
+        self.storage
+            .harness_readiness_updates_due()
+            .await
+            .map_err(Into::into)
+    }
+
     pub(crate) async fn provider_definitions(
         &self,
     ) -> Result<Vec<super::ProviderDefinition>, ProductError> {

@@ -730,6 +730,73 @@ async fn a_catalog_result_from_a_superseded_connection_generation_has_no_effect(
     assert_eq!(state().await, (true, 4, "active".to_owned()));
 }
 
+/// #556: Desktop reads which routes an upgrade left due for their one automatic readiness
+/// evaluation. The read is internal, and the evaluation's committed result clears it.
+#[tokio::test]
+async fn post_upgrade_readiness_due_is_internal_and_clears_when_a_result_commits() {
+    let temporary = tempfile::Builder::new()
+        .prefix("relayer-readiness-due-")
+        .tempdir()
+        .unwrap();
+    let root = temporary.path().to_path_buf();
+    let database = root.join("product.sqlite3");
+    let app = open_app(&database, &root).await;
+    let pool = sqlite_pool(&database).await;
+    sqlx::query("UPDATE product_harnesses SET readiness_update_due=1,runtime_configuration_digest='sha256:upgraded' WHERE configuration_name='codex-basic'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+    let due = |app: Router| async move {
+        response_json(
+            app.oneshot(bearer_request(
+                "GET",
+                "/api/internal/harness-readiness",
+                None,
+            ))
+            .await
+            .unwrap(),
+        )
+        .await
+    };
+
+    assert_eq!(
+        app.clone()
+            .oneshot(cookie_request(
+                "GET",
+                "/api/internal/harness-readiness",
+                None
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        due(app.clone()).await,
+        json!({ "updateDue": ["codex-basic"] })
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(bearer_request(
+                "PUT",
+                "/api/internal/harness-readiness",
+                Some(json!([{
+                    "harnessId": "codex-basic",
+                    "configurationDigest": "sha256:upgraded",
+                    "generation": 1,
+                    "available": true,
+                    "unavailableReason": null
+                }])),
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(due(app).await, json!({ "updateDue": [] }));
+}
+
 fn provider_snapshot(unavailable: Option<&str>) -> Value {
     provider_snapshot_for("codex", "Codex", unavailable)
 }

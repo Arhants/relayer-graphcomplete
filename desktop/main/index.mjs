@@ -59,7 +59,7 @@ import {
 import { createDesktopUpdater, resolveUpdateChannel } from "./services/updater.mjs";
 import { createManagedRuntimeInstaller } from "./managed-runtimes/installer.mjs";
 import { createManagedRuntimeResolver } from "./managed-runtimes/resolver.mjs";
-import { createHarnessReadinessCoordinator } from "./services/harness-readiness.mjs";
+import { createHarnessReadinessCoordinator, startPostUpgradeReadiness } from "./services/harness-readiness.mjs";
 import { confirmManagedRuntimeQuit } from "./managed-runtimes/quit-guard.mjs";
 import { claimPrimaryDesktopInstance } from "./single-instance.mjs";
 import { createWindowFactory } from "./window.mjs";
@@ -503,6 +503,12 @@ if (primaryInstance) {
       },
       // The app server's record is the only readiness record (PROV-006).
       publishAvailability: (updates) => productServer.publishHarnessReadiness(updates),
+      // A broken or mismatched installation counts: the post-upgrade evaluation repairs it.
+      recipeInstalled: (recipeId) => managedRuntimeResolver.validate(recipeId).then(
+        () => true,
+        (error) => error?.code !== "managed_runtime_not_installed"
+          && error?.code !== "managed_runtime_unsupported_target",
+      ),
       diagnostics: providerDiagnostics,
     });
     const publishCatalog = (snapshot, { signal, connectionGeneration, connectionEvent } = {}) => (
@@ -556,6 +562,16 @@ if (primaryInstance) {
     });
     ({ modelCatalog, providerDefinitions: providerSetup } = providerComposition);
     await providerComposition.start();
+    // #556: an upgrade that changed a route's configuration digest, or activated a new
+    // runtime recipe, gets one readiness evaluation through the recipe-update trigger. It
+    // runs in the background, so startup's cheap path never waits for it.
+    startPostUpgradeReadiness({
+      readiness,
+      updatesDue: () => productServer.harnessReadinessUpdatesDue(),
+      recipeUpdates: activation.recipeUpdates,
+      routes: () => providerComposition.readinessRoutes(),
+      onError: (error) => console.error("Post-upgrade harness readiness evaluation failed:", error),
+    });
     const conversationExporter = createConversationExportService({
       dialog,
       getWindow: () => mainWindow,
