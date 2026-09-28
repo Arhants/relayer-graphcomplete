@@ -2691,6 +2691,8 @@ export function createProductWorkspace({
   let composerDraftScopeState = createComposerDraftScopeState();
   let composerPromptRevision = 0;
   let restoredDraftActive = false;
+  // The latest turn's retry restoration, applied when the composer is empty.
+  let pendingRestoration = null;
   let modelPicker;
   const replaceComposerContexts = (value) => {
     composerContextState = transitionComposerContextState(composerContextState, {
@@ -3849,6 +3851,21 @@ export function createProductWorkspace({
       preserve: false,
     });
     composerPromptRevision += 1;
+    // Emptying the composer while a newer draft held a restoration out
+    // brings the retry text back at once (SCP-020).
+    const activeScopeKey = composerDraftScopeState.activeScopeKey;
+    const activeDraft = composerDraftScopeState.drafts.get(activeScopeKey);
+    if (!prompt.value && pendingRestoration?.scopeKey === activeScopeKey
+      && String(activeDraft?.restoredDraftInteractionId) !== String(pendingRestoration.interactionId)) {
+      prompt.value = pendingRestoration.text;
+      const drafts = new Map(composerDraftScopeState.drafts);
+      drafts.set(activeScopeKey, {
+        promptValue: prompt.value,
+        promptRevision: composerPromptRevision,
+        restoredDraftInteractionId: pendingRestoration.interactionId,
+      });
+      composerDraftScopeState = { ...composerDraftScopeState, drafts };
+    }
     // An empty value is kept as a tombstone only when it clears restored
     // retry text that was shown. Clearing a draft that kept a restoration
     // out leaves no draft, so the retry text returns, after a restart too
@@ -4279,6 +4296,9 @@ export function createProductWorkspace({
     }
     const restoredDraft = restoredDraftForInteraction(latestInteraction);
     restoredDraftActive = Boolean(restoredDraft);
+    pendingRestoration = restoredDraft
+      ? { scopeKey: composerDraftScopeKey(threadId, latestInteraction?.id), interactionId: latestInteraction?.id, text: restoredDraft.text }
+      : null;
     const restoredConfirmationKey = confirmationRestorationKey(threadId, latestInteraction);
     if (restoredConfirmationKey
       && !recoveredConfirmationThreads.has(restoredConfirmationKey)
@@ -4308,8 +4328,13 @@ export function createProductWorkspace({
         const scopeKey = composerDraftScopeKey(threadId, turn.id);
         const text = drafts.has(scopeKey) ? null : threadFollowupDraft(scopeKey);
         if (!text) return;
-        // Sent text is not kept (SCP-016).
-        if (sentByLaterTurn(threadId, scopeKey, text)) {
+        // Sent text is not kept (SCP-016), and text a newer turn's draft
+        // superseded is retired (SCP-021).
+        const superseded = turns.slice(index + 1).some((later) => {
+          const laterKey = composerDraftScopeKey(threadId, later.id);
+          return Boolean(threadFollowupDraft(laterKey) || drafts.get(laterKey)?.promptValue);
+        });
+        if (sentByLaterTurn(threadId, scopeKey, text) || superseded) {
           clearThreadFollowupDraft(scopeKey);
           return;
         }

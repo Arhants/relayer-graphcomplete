@@ -78,6 +78,20 @@ describe("After a restart, text an earlier session left in an older turn", () =>
     expect(world.persistedDraft(1)).toBeNull();
   });
 
+  it("is retired when a newer turn's draft superseded it", async () => {
+    world = await new TurnComposerWorld({
+      maxText: 2, maxTurns: 3,
+      turnsA: [{ status: "accepted" }, { status: "accepted", text: "Invoked" }],
+      persisted: { 1: "older text", 2: "newer text" },
+    }).ready();
+    expect(world.prompt.value).toBe("newer text");
+    expect(world.persistedDraft(1)).toBeNull();
+    world.prompt.value = "";
+    world.prompt.dispatchEvent(new world.window.Event("input"));
+    await world.turnArrivesWithText("Invoked again");
+    expect(world.prompt.value).toBe("");
+  });
+
   it("is not carried when a later turn shows it was sent", async () => {
     world = await new TurnComposerWorld({
       maxText: 2, maxTurns: 2,
@@ -112,6 +126,17 @@ describe("Retry text a newer draft kept out", () => {
   const failedTurn = {
     status: "not_started", text: "the failed prompt", latestAttempt: { id: 1, outcome: "model_failed" },
   };
+
+  it("returns as soon as the draft is cleared", async () => {
+    world = await new TurnComposerWorld({
+      maxText: 2, maxTurns: 2, turnsA: [failedTurn], persisted: { 1: "my newer draft" },
+    }).ready();
+    expect(world.prompt.value).toBe("my newer draft");
+    world.prompt.value = "";
+    world.prompt.dispatchEvent(new world.window.Event("input"));
+    expect(world.prompt.value).toBe("the failed prompt");
+    expect(world.persistedDraft(1)).toBe("the failed prompt");
+  });
 
   it("returns after the draft is cleared and the app restarts", async () => {
     world = await new TurnComposerWorld({

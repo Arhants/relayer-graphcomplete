@@ -446,8 +446,9 @@ The candidate fixes are:
 A restored retry that the user's non-empty draft keeps out stays pending,
 and returns once the user empties the composer; an empty value persisted
 after the user cleared restored text is a tombstone, and wins (SCP-020).
-Clearing a draft that kept a restoration out persists nothing, so the retry
-text also returns after a restart; a test covers it. The
+Clearing a draft that kept a restoration out brings the retry text back at
+once, and persists nothing, so it also returns after a restart; tests cover
+both. The
 model leaves restored retry drafts out; unit tests in
 `test/workspace-keyboard.test.mjs` cover these rules.
 
@@ -462,7 +463,8 @@ PRD).
 The model does not restart the app. After a restart, text an earlier session
 left in an older turn's scope, such as one closed while a send was in
 flight, is carried into the newest turn unless a later turn with that text
-shows it was sent, and text restored after a restart is not carried into
+shows it was sent or a newer turn's persisted draft superseded it (which
+retires it, SCP-021), and text restored after a restart is not carried into
 a turn with that text that arrives later. Text a later turn shows was sent
 is also deleted from storage (SCP-016); the model deletes an uncertain
 send's draft once its turn lands, and leaves a send in flight to its
