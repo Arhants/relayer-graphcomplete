@@ -458,7 +458,13 @@ model leaves restored retry drafts out; unit tests in
 to stay in the prompt of the scope it was sent from, where the user sees it
 until its turn arrives. `UnsentDraftSurvives` drops its promise for such text
 only when a newer turn already arrived before the error; SCP-019 then does
-not restore it. Stranded text is restored only into an empty prompt: text the user typed
+not restore it. Text the user cleared while a Send waited stays cleared when that Send
+stops (SCP-021). A restoration the user already saw, persisted before a
+restart, counts as applied, so clearing it leaves the composer empty. While
+a Send is in flight, its scope is judged by revision, so an edit after Send
+that retypes the same text is kept (SCP-018).
+
+Stranded text is restored only into an empty prompt: text the user typed
 since wins, and the stranded text is retired (a decision recorded in the
 PRD).
 

@@ -1214,6 +1214,10 @@ export function transitionComposerDraftScope(state, {
   const restorationId = restoredDraft?.retryAttemptId != null
     ? `${interactionId}:${restoredDraft.retryAttemptId}`
     : interactionId;
+  // Persisted text equal to the retry text is that restoration, already shown
+  // (and persisted) before a restart: it counts as applied, so clearing it
+  // leaves the composer empty.
+  const restorationPersisted = Boolean(restoredDraft) && persistedDraftText === restoredDraft.text;
   if (state.activeScopeKey === nextScopeKey) {
     const currentDraft = state.drafts.get(nextScopeKey) ?? {
       promptValue: currentPromptValue,
@@ -1239,7 +1243,7 @@ export function transitionComposerDraftScope(state, {
       promptRevision,
       // A restoration the user's draft keeps out stays pending: once the
       // user empties the composer, the retry text returns (SCP-020).
-      restoredDraftInteractionId: restores
+      restoredDraftInteractionId: restores || restorationPersisted
         ? restorationId
         : currentDraft.restoredDraftInteractionId,
     });
@@ -1291,11 +1295,11 @@ export function transitionComposerDraftScope(state, {
     drafts.set(nextScopeKey, {
       promptValue: persistedDraftText,
       promptRevision: Math.max(stored?.promptRevision ?? 0, currentPromptRevision) + 1,
-      restoredDraftInteractionId: restoredDraft && !persistedDraftText
+      restoredDraftInteractionId: (restoredDraft && !persistedDraftText) || restorationPersisted
         ? restorationId
         : stored?.restoredDraftInteractionId ?? null,
     });
-  } else if (persistedDraftText === "" && restoredDraft) {
+  } else if ((persistedDraftText === "" || restorationPersisted) && restoredDraft) {
     // An unchanged empty tombstone keeps its revision and consumes the restoration.
     drafts.set(nextScopeKey, { ...stored, restoredDraftInteractionId: restorationId });
   } else if (!drafts.has(nextScopeKey)) {
@@ -4451,9 +4455,13 @@ export function createProductWorkspace({
       });
       composerDraftScopeState = { ...composerDraftScopeState, drafts };
     }
-    // Drafts in older scopes that a later turn shows were sent.
+    // Drafts in older scopes that a later turn shows were sent. The scope of
+    // a send still in flight is left to its revision (settlement and the
+    // carry's hold), so an edit after Send that repeats the text is kept.
+    const inFlightScopeKey = inFlightSubmissions.get(threadId)?.scopeKey;
     const sentDrafts = turns.slice(0, -1).flatMap((turn) => {
       const scopeKey = composerDraftScopeKey(threadId, turn.id);
+      if (scopeKey === inFlightScopeKey) return [];
       const draft = scopeKey === composerDraftScopeState.activeScopeKey
         ? { promptValue: prompt.value, promptRevision: composerPromptRevision }
         : composerDraftScopeState.drafts.get(scopeKey);

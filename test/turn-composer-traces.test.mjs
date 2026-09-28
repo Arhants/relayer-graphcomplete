@@ -138,6 +138,17 @@ describe("Retry text a newer draft kept out", () => {
     expect(world.persistedDraft(1)).toBe("the failed prompt");
   });
 
+  it("can be cleared after a restart that kept it on screen", async () => {
+    world = await new TurnComposerWorld({
+      maxText: 2, maxTurns: 2, turnsA: [failedTurn], persisted: { 1: "the failed prompt" },
+    }).ready();
+    expect(world.prompt.value).toBe("the failed prompt");
+    world.prompt.value = "";
+    world.prompt.dispatchEvent(new world.window.Event("input"));
+    await world.apply(["BackgroundRender"]);
+    expect(world.prompt.value).toBe("");
+  });
+
   it("returns after the draft is cleared and the app restarts", async () => {
     world = await new TurnComposerWorld({
       maxText: 2, maxTurns: 2, turnsA: [failedTurn], persisted: { 1: "my newer draft" },
@@ -151,5 +162,23 @@ describe("Retry text a newer draft kept out", () => {
       maxText: 2, maxTurns: 2, turnsA: [failedTurn], persisted: { 1: persisted },
     }).ready();
     expect(world.prompt.value).toBe("the failed prompt");
+  });
+});
+
+// Not in TurnComposer.tla, whose typed values never repeat.
+describe("An edit after Send that retypes the same text", () => {
+  it("is kept once the send's turn arrives and settles", async () => {
+    world = await new TurnComposerWorld({ maxText: 2, maxTurns: 2 }).ready();
+    await world.apply(["Type"]);
+    const sentText = world.prompt.value;
+    await world.apply(["ClickSend"]);
+    world.prompt.value = "";
+    world.prompt.dispatchEvent(new world.window.Event("input"));
+    world.prompt.value = sentText;
+    world.prompt.dispatchEvent(new world.window.Event("input"));
+    for (const step of [["PostInserted", "A"], ["PostSucceeds", "A"], ["RefreshReturns", "A"], ["Settle", "A"]]) {
+      await world.apply(step);
+    }
+    expect(world.prompt.value).toBe(sentText);
   });
 });

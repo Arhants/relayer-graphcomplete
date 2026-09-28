@@ -82,6 +82,15 @@ describe("A newer turn arriving while Send waits for an authored commit", () => 
     expect(world.promptText).toBe("second thought");
   });
 
+  it("leaves text the user cleared while the Send waited cleared when it stops", async () => {
+    world = await new AuthoredInputSendWorld().ready();
+    for (const step of [["Type", 1], ["Commit"], ["ClickSend"]]) await world.apply(step);
+    await world.typePrompt("");
+    for (const step of [["CommitFails"], ["CommitReturns"]]) await world.apply(step);
+    expect(world.post).toBeNull();
+    expect(world.promptText).toBe("");
+  });
+
   it("hands the text back when that Send stops", async () => {
     world = await new AuthoredInputSendWorld().ready();
     for (const step of [["Type", 1], ["Commit"], ["ClickSend"]]) await world.apply(step);
