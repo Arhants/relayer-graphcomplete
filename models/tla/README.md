@@ -301,7 +301,7 @@ turn settles.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `leases-safety` | passes | With every fault on, a leased runtime stays open, a turn runs only under held access, access is never released while its turn runs (`AccessKeptWhileTurnRuns`), and the app always starts. |
+| `leases-safety` | passes | With every fault on, a leased runtime stays open, a turn runs only under held access, access is never released while its turn runs (`AccessKeptWhileTurnRuns`), only a cancelled turn is ever force-stopped (`OnlyCancelledTurnsForceStopped`), and the app always starts. |
 | `leases-ideal` | passes | With no faults, every lease is released, every lease debt is reconciled, every attempt whose turn ended stops holding the provider, and a removal completes without a restart. |
 | `leases-abandon` | Fixed; now passes | Finding B. Before the fix: after Rust gave up on a running turn, its lease release freed the access while the native turn still ran. Removal could then close the runtime and delete its home under it. Now access lives as long as the native turn. An owner's release of a running turn cancels the turn and returns at once. The host releases the access as soon as the native turn ends, and keeps the entry until the owner's release (`HostReleasesOnSettle`). `leases-abandon-reverted` shows the old trace. |
 | `leases-timer-claim` | Fixed; now passes | Finding A, plausible: needs a 30 s stall. Before the fix: the admission timer's release could be in flight when the claim ran, and it then freed the access under the running turn. Once any release is decided for an admission, the claim refuses it, even if that release failed (`ClaimRejectsReleasing`). `leases-timer-claim-reverted` shows the old trace. `leases-claim-after-failed-release` covers a failed release. It turns A2's fix off, because a refused finalize is the only way the model has for a release to fail. |
@@ -313,7 +313,7 @@ turn settles.
 | `leases-restart-removal` | Fixed in PR #545; now passes | Finding E, removal half. Before the fix: after that restart, the quarantined attempt stayed `running` until its thread was opened or the app restarted again. Opening the thread is a user action, so the removal could stay pending meanwhile. Startup now records the end of the wait on the attempts it leaves open for reconciliation, since their process exited with the app (`RestartEndsWaits`). The drain skips them, so startup's finalize succeeds. `leases-restart-removal-reverted` shows the old trace. |
 | `leases-persist-attempt`, `leases-persist-removal` | Fixed in PR #545; now pass | Finding C, attempt half. Before the fix: when a turn's terminal state could not be persisted, its attempt stayed `running`, which blocked the provider tombstone until a restart. A harness approval that is aborted, expired or cancelled reached this with no fault (`Persist` with `q = "decided"`). The execution task now ends its wait on any attempt it leaves running and releases its lease (`PersistFailureEndsWait`). An attempt whose interaction already failed or stopped ends with that outcome; a quarantined one stays undecided. The owner's release acknowledges the access, which retries the finalize. The `-reverted` checks show the old traces. |
 | `leases-startup-isolation` | Fixed in PR #545; now passes | Finding L6. Before the fix: a removal or cleanup failure other than a drain refusal rejected `reconcileStartup`, so Relayer could not start. Startup now records each provider's failure and continues (`StartupIsolatesProviders`). `leases-startup-isolation-reverted` shows the old trace. The model has one provider, so "other providers still activate" is covered by the composition test, not the model. |
-| `leases-hang` | Confirmed (missing feature), open | Finding G. A cancelled native turn that ignores the cancellation keeps its provider access forever, so removal waits forever. A per-turn force-stop is planned for a later PR. |
+| `leases-hang` | Fixed for Codex and Prime; now passes | Finding G. Before the fix: a cancelled native turn that ignored the cancellation kept its provider access forever, so removal waited forever. Now a cancelled turn still running after two minutes is force-stopped, and its access is then released (`ForceStopsCancelledTurn`, action `ForceStop`). The force-stop ends only that turn. The model assumes every harness supports it and that it always ends the native work. In the code the kill or disposal is best effort, and the host releases the access at most ten seconds later, so `AccessKeptWhileTurnRuns` holds only under that assumption. `claude.basic` has no force-stop, so its turn that never settles still keeps its access. `OnlyCancelledTurnsForceStopped` follows from the action's guard; it documents the promise rather than testing the sibling case. `leases-hang-reverted` shows the old trace. |
 
 The fixes are:
 
@@ -335,6 +335,8 @@ The fixes are:
    reconciliation (`RestartEndsWaits`). PR #545.
 8. Startup isolates each provider's removal and cleanup failure
    (`StartupIsolatesProviders`). PR #545.
+9. A cancelled turn still running after two minutes is force-stopped, and
+   its access is released (`ForceStopsCancelledTurn`). Landed.
 
 The `*-reverted` checks turn one landed fix off and show its old trace. In
 them the acknowledgement call is attributed to `AckRetriesFinalize`, so a
@@ -406,9 +408,10 @@ counter only grows.
 - **Bounds:** one provider plus one new connection, one renderer, one lease,
   and a single child at depth 1 with head revision at most 3. The lease model
   has one provider, at most two turns and two restarts, and one turn per
-  thread. `CatalogRefresh`
-  has two providers, two queued refreshes per provider, and at most two
-  lifecycle events. A bug that needs more actors is out of reach.
+  thread, so it cannot show that a force-stop spares a sibling turn on the
+  same thread; the harness-host, Codex and Prime tests cover that.
+  `CatalogRefresh` has two providers, two queued refreshes per provider, and
+  at most two lifecycle events. A bug that needs more actors is out of reach.
 - **Connection generation:** removing the generation check from `Publish`
   makes `catalog-stale-refresh-after-reconnect`, `catalog-old-account-repopulates`
   and `catalog-stale-adapter-capture` fail, so their passes are not vacuous.

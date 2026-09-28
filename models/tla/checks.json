@@ -47,7 +47,8 @@
       "StartupCleanupCanFail": "FALSE",
       "PersistFailureEndsWait": "TRUE",
       "RestartEndsWaits": "TRUE",
-      "StartupIsolatesProviders": "TRUE"
+      "StartupIsolatesProviders": "TRUE",
+      "ForceStopsCancelledTurn": "TRUE"
     },
     "catalog-today": {
       "MaxQ": "2",
@@ -348,13 +349,14 @@
         "LeaseHeldWhileTurnRuns",
         "RuntimeOpenWhileTurnRuns",
         "NoTimerOnClaimedAccess",
-        "StartupSucceeds"
+        "StartupSucceeds",
+        "OnlyCancelledTurnsForceStopped"
       ],
       "properties": [
         "AccessKeptWhileTurnRuns"
       ],
       "expect": "pass",
-      "finding": "With every fault on, a leased runtime stays open, no runtime closes under a running turn, a turn runs only under held access, access is never released while its turn runs, no host timer targets a running turn's access, and the app always starts."
+      "finding": "With every fault on, a leased runtime stays open, no runtime closes under a running turn, a turn runs only under held access, access is never released while its turn runs, no host timer targets a running turn's access, only a cancelled turn is ever force-stopped, and the app always starts."
     },
     {
       "id": "leases-ideal",
@@ -371,7 +373,8 @@
         "LeaseHeldWhileTurnRuns",
         "RuntimeOpenWhileTurnRuns",
         "NoTimerOnClaimedAccess",
-        "StartupSucceeds"
+        "StartupSucceeds",
+        "OnlyCancelledTurnsForceStopped"
       ],
       "properties": [
         "AccessKeptWhileTurnRuns",
@@ -775,10 +778,26 @@
       "properties": [
         "CancelledAccessEventuallyReleased"
       ],
+      "expect": "pass",
+      "finding": "A cancelled native turn that ignores the cancellation is force-stopped after two minutes, and its access is then released (fixed; G; was: it kept its provider access forever)."
+    },
+    {
+      "id": "leases-hang-reverted",
+      "module": "ExecutionLeases",
+      "preset": "leases-today",
+      "constants": {
+        "HarnessCanHang": "TRUE",
+        "RustCanAbandon": "TRUE",
+        "ForceStopsCancelledTurn": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "CancelledAccessEventuallyReleased"
+      ],
       "expect": {
         "violated": "CancelledAccessEventuallyReleased"
       },
-      "finding": "Open (per-turn force-stop PR): a cancelled native turn that ignores the cancellation keeps its provider access forever."
+      "finding": "Without the per-turn force-stop, a cancelled native turn that ignores the cancellation keeps its provider access forever."
     },
     {
       "id": "catalog-refresh-keeps-chosen-default",
