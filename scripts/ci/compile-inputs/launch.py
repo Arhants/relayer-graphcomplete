@@ -160,10 +160,14 @@ def main():
             for directory in ('cargo/registry/src', 'cargo/registry/index', 'cargo/registry/cache', 'evidence', 'target', 'recipe'):
                 (phase / directory).mkdir(parents=True, exist_ok=True)
         write(args.output / 'sources.json', sources)
+        # Both phases must describe the same tracked snapshot, including excluded inputs.
+        for key in ('trackedSourceDigest', 'candidateCompileDigest', 'policyDigest'):
+            if sources['full'][key] != sources['projected'][key]:
+                raise ValueError(f'source changed between phase staging: {key}')
         registry = args.output / 'registry'
         registry.mkdir()
         copy_registry_inputs(args.registry, registry)
-        registry_receipt = prepare(args.repository / 'Cargo.lock', registry / 'cache', registry / 'src')
+        registry_receipt = prepare(args.output / 'full/source/Cargo.lock', registry / 'cache', registry / 'src')
         registry_files = inventory(registry)
         write(args.output / 'registry.json', registry_receipt)
         native = args.output / 'native'

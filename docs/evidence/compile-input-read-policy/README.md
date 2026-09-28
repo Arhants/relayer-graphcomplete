@@ -30,6 +30,9 @@ so the outer watchdog can target it even if the launcher is interrupted. No prev
 default workspace `cargo test --workspace --frozen --no-run --message-format=json`.
 The production test chapter is unchanged and remains authoritative.
 
+The launcher rejects differing tracked-source, candidate or policy digests between
+control and treatment staging before dependency preparation or compilation. Registry
+preparation reads the staged control lockfile, so it remains bound to that snapshot.
 The script validates declared inputs before and after execution. It is not a
 sandbox by itself; isolation belongs to the recorded launcher. Native preparation
 uses the unchanged production verifier and 800 MiB ceiling. One cache-only Actions
@@ -68,6 +71,7 @@ established by this compile-only diagnostic.
 | Executable seam | Checkpoint |
 | --- | --- |
 | Source staging and identity | Real included read succeeds; excluded required read fails; optional read remains a limitation; bytes/mode/new/untracked input drift is visible |
+| Paired launcher staging | Included or excluded tracked-file mutation between phases stops before dependency preparation or any container execution; unchanged snapshots reach preparation using the staged lockfile despite later original-lock mutation |
 | Recipe execution | Wrong source/native/toolchain/image/environment/registry rejects before execution; receipts preserve inner exits independently |
 | Owned-container cleanup | Stop/inspect timeouts still attempt forced removal; cleanup errors remain explicit |
 | Native consumer extraction | Exact transported archive and extracted inventory match; corruption and links reject before unchanged native qualification |

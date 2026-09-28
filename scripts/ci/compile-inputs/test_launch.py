@@ -5,11 +5,68 @@ import tempfile
 import unittest
 import subprocess
 from unittest.mock import patch
-from launch import extract_native, cleanup_container, copy_registry_inputs
+from launch import extract_native, cleanup_container, copy_registry_inputs, main, IMAGE
+from probe import stage
 from probe import file_digest, inventory
 
 
 class NativeConsumerTests(unittest.TestCase):
+    def test_launcher_rejects_cross_phase_drift_before_dependency_preparation_or_execution(self):
+        policy = json.loads(Path(__file__).with_name('policy.json').read_text())
+        for changed in (None, 'Cargo.lock', 'excluded.txt'):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                repository, output = root / 'repo', root / 'output'
+                repository.mkdir()
+                subprocess.run(['git', 'init', '-q', str(repository)], check=True)
+                for name in [*policy['includeFiles'], 'excluded.txt']:
+                    path = repository / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text('original')
+                subprocess.run(['git', 'add', '.'], cwd=repository, check=True)
+                actual_check_output = subprocess.check_output
+                def inspect_or_git(command, **kwargs):
+                    if command[:3] == ['docker', 'image', 'inspect']:
+                        return IMAGE + '\n'
+                    return actual_check_output(command, **kwargs)
+                def staging(*args):
+                    manifest = stage(*args)
+                    if args[-1] and changed:
+                        (repository / changed).write_text('mutated between phases')
+                    return manifest
+                argv = ['launch.py', '--repository', str(repository), '--registry', str(root / 'registry'),
+                        '--native-export', str(root / 'native'), '--output', str(output),
+                        '--deadline-seconds', '60', '--grant', 'deterministic-fixture']
+                def mutate_original_lock(*_args):
+                    (repository / 'Cargo.lock').write_text('changed after staging')
+                def inspect_staged_lock(lock, *_args):
+                    self.assertEqual(lock, output.resolve() / 'full/source/Cargo.lock')
+                    self.assertEqual(lock.read_text(), 'original')
+                    raise ValueError('preparation checkpoint')
+                with patch('sys.argv', argv), patch('launch.os.getuid', return_value=1000), \
+                        patch('launch.subprocess.check_output', side_effect=inspect_or_git), \
+                        patch('launch.stage', side_effect=staging), \
+                        patch('launch.copy_registry_inputs', side_effect=mutate_original_lock) as prepare_registry, \
+                        patch('launch.prepare', side_effect=inspect_staged_lock) as prepare_locked:
+                    self.assertEqual(main(), 1)
+                receipt = json.loads((output / 'receipt.json').read_text())
+                sources = json.loads((output / 'sources.json').read_text())
+                self.assertEqual(receipt['status'], 'stopped')
+                self.assertEqual(receipt['phases'], [])
+                self.assertFalse((output / 'active-container.txt').exists())
+                if changed:
+                    prepare_registry.assert_not_called()
+                    prepare_locked.assert_not_called()
+                    self.assertIn('source changed between phase staging', receipt['error'])
+                    self.assertNotEqual(sources['full']['trackedSourceDigest'], sources['projected']['trackedSourceDigest'])
+                    if changed == 'excluded.txt':
+                        self.assertEqual(sources['full']['candidateCompileDigest'], sources['projected']['candidateCompileDigest'])
+                else:
+                    prepare_registry.assert_called_once()
+                    prepare_locked.assert_called_once()
+                    self.assertEqual(receipt['error'], 'preparation checkpoint')
+                    self.assertEqual(sources['full']['trackedSourceDigest'], sources['projected']['trackedSourceDigest'])
+
     def test_registry_copy_declares_tag_and_excludes_prior_extracted_sources(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
