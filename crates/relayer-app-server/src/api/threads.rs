@@ -1221,7 +1221,8 @@ fn is_reconciliation_pending(interaction: &Interaction) -> bool {
 
 /// Settles a quarantined interaction from canonical graph state. Settling it also ends its
 /// attempt, which turns the attempt's provider lease into debt, so the one worker that owns
-/// that debt is woken rather than left until the next restart.
+/// that debt is woken rather than left until the next restart. The wake also follows a failed
+/// settle, since its commit may have landed before a later read failed.
 async fn reconcile_quarantined_interaction(
     product: &crate::product::ProductService,
     runtime: &crate::runtime::RuntimeClient,
@@ -1229,9 +1230,10 @@ async fn reconcile_quarantined_interaction(
     interaction: &mut Interaction,
 ) -> Result<(), RuntimeError> {
     let settled = settle_quarantined_interaction(product, runtime, interaction).await;
-    if settled.is_ok()
-        && let Some(execution) = execution
-    {
+    // Wake even when a read after the settling commit failed: the commit may already have
+    // made durable lease debt, and later reads will not retry this path. A wake with no debt
+    // does nothing.
+    if let Some(execution) = execution {
         execution.schedule_execution_lease_reconciliation();
     }
     settled
