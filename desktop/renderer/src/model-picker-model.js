@@ -68,6 +68,13 @@ export function defaultFamilyModelSetup(settings) {
   return familyModelSetup(settings, settings?.defaults?.familyId);
 }
 
+// An automatic caller's default selection. While the default family recovers, the refusal carries
+// its code; otherwise a missing selection fails with the caller's own message.
+export function requireDefaultModelSelection(selection, settings, missingMessage) {
+  if (selection) return selection;
+  throw defaultFamilyRecoveryError(settings) ?? new Error(missingMessage);
+}
+
 // The typed error an automatic caller, such as Eval, reports while the default family recovers.
 export function defaultFamilyRecoveryError(settings) {
   const recovery = settings?.defaultFamilyRecovery;

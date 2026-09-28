@@ -11,10 +11,12 @@ import {
   defaultFamilyModelSetup,
   defaultFamilyRecoveryError,
   firstAvailableSelection,
+  requireDefaultModelSelection,
   isModelSelectionCatalogError,
   pickerSelectionIsAvailable,
 } from "../desktop/renderer/src/model-picker-model.js";
 import { createProviderModelsRefreshedHandler } from "../desktop/renderer/src/provider-ui-model.js";
+import { createLiveModelRouteResolver } from "../desktop/eval-main/live-credentials.mjs";
 import {
   composerSendTitle,
   createModelPicker,
@@ -341,6 +343,22 @@ describe("default family that needs model setup (PROV-008)", () => {
     expect(firstAvailableSelection(restored(), "codex-basic")).toMatchObject({ familyId: 1 });
   });
 
+  it("gives Claude Eval the recovery code when the default selection is refused", async () => {
+    // /api/model-selection/default returns null while the default family is tombstoned.
+    const resolve = createLiveModelRouteResolver({
+      readModelSettings: async () => recovering(),
+      readDefaultModelSelection: async () => null,
+    });
+    await expect(resolve({ implementation: "claude.basic", name: "claude-basic" }))
+      .rejects.toMatchObject({ code: "provider_no_eligible_execution_models" });
+
+    expect(() => requireDefaultModelSelection(null, recovering(), "no model"))
+      .toThrow(expect.objectContaining({ code: "provider_no_eligible_execution_models" }));
+    expect(() => requireDefaultModelSelection(null, restored(), "no model")).toThrow("no model");
+    const selection = { harnessId: "claude-basic", familyId: 1, providerId: "codex", modelId: "gpt-5.6-sol" };
+    expect(requireDefaultModelSelection(selection, recovering(), "no model")).toBe(selection);
+  });
+
   it("says why Send is blocked", () => {
     const modelSetup = defaultFamilyModelSetup(recovering());
     expect(composerSendTitle({ ready: false, modelSetup, readyTitle: "Send" })).toBe(
@@ -420,6 +438,7 @@ describe("default family that needs model setup (PROV-008)", () => {
     ]);
     for (const evalSource of [evalService, liveCredentials]) {
       expect(evalSource).toContain("defaultFamilyRecoveryError(");
+      expect(evalSource).toContain("requireDefaultModelSelection(");
     }
     // Picker "Open Settings" opens the tab the recovery needs.
     for (const opener of [graph, main]) {

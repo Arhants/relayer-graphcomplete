@@ -2889,8 +2889,10 @@ async fn tombstone_managed_provider_families(
                 .bind(provider_id)
                 .execute(&mut *connection)
                 .await?;
+            // Families already tombstoned, including one in zero-eligible recovery, are retired
+            // the same way.
             sqlx::query(
-                "UPDATE model_families SET tombstone_cause=NULL WHERE managed_provider_id=?1",
+                "UPDATE model_families SET enabled=0,tombstone_cause=NULL WHERE managed_provider_id=?1",
             )
             .bind(provider_id)
             .execute(&mut *connection)
@@ -3150,7 +3152,8 @@ mod provider_definition_tests {
         }
     }
 
-    // Provider removal retires its managed family as before: disabled, and not kept for recovery.
+    // Provider removal retires its managed family as before, disabled and not kept for recovery,
+    // including a family already tombstoned for zero-eligible recovery.
     #[tokio::test]
     async fn provider_removal_retires_its_managed_family_without_a_recovery_cause() {
         let temporary = tempfile::Builder::new()
@@ -3195,6 +3198,32 @@ mod provider_definition_tests {
             .execute(&store.pool)
             .await
             .unwrap();
+        // The family is already in zero-eligible recovery when the provider is removed.
+        let mut zero_eligible = snapshot.clone();
+        zero_eligible.system_family = None;
+        zero_eligible.unavailable_reason = Some(UnavailableReason {
+            code: "provider_no_eligible_execution_models".into(),
+            message: "No eligible models.".into(),
+        });
+        store
+            .publish_provider_catalog(
+                &zero_eligible,
+                ProviderConnectionStamp::refresh(1),
+                Some(&policy),
+                "2",
+            )
+            .await
+            .unwrap();
+        let recovering: (String, bool, Option<String>) = sqlx::query_as(
+            "SELECT lifecycle_state,enabled,tombstone_cause FROM model_families WHERE managed_provider_id='work-openai'",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            recovering,
+            ("tombstoned".into(), true, Some("no_eligible_models".into()))
+        );
         work.lifecycle_state = "removal_pending".into();
         store.sync_provider_definitions(&[work]).await.unwrap();
         let family: (String, bool, Option<String>) = sqlx::query_as(
