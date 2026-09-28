@@ -41,7 +41,8 @@
       "StableScopeRevision": "TRUE",
       "OtherTurns": "FALSE",
       "HoldFromClick": "TRUE",
-      "HoldUncertain": "TRUE"
+      "HoldUncertain": "TRUE",
+      "RetireSuperseded": "TRUE"
     },
     "composer-fixed": {
       "Threads": "{\"A\", \"B\"}",
@@ -53,7 +54,8 @@
       "StableScopeRevision": "TRUE",
       "OtherTurns": "TRUE",
       "HoldFromClick": "TRUE",
-      "HoldUncertain": "TRUE"
+      "HoldUncertain": "TRUE",
+      "RetireSuperseded": "TRUE"
     },
     "composer-replay": {
       "Threads": "{\"A\", \"B\"}",
@@ -65,7 +67,8 @@
       "StableScopeRevision": "TRUE",
       "OtherTurns": "TRUE",
       "HoldFromClick": "TRUE",
-      "HoldUncertain": "TRUE"
+      "HoldUncertain": "TRUE",
+      "RetireSuperseded": "TRUE"
     },
     "inspector-today": {
       "Nodes": "{\"n1\", \"n2\"}",
@@ -422,7 +425,8 @@
         "UnsentDraftSurvives",
         "SettlementClearsOnlySentText",
         "SentTextIsNotShownAgain",
-        "OneSendPerThread"
+        "OneSendPerThread",
+        "SupersededStaysGone"
       ],
       "expect": "pass",
       "finding": "Moving unsent text to the newest turn's scope and keeping a scope's revision unless its text changes restore every composer promise."
@@ -532,7 +536,8 @@
         "UnsentDraftSurvives",
         "SettlementClearsOnlySentText",
         "SentTextIsNotShownAgain",
-        "OneSendPerThread"
+        "OneSendPerThread",
+        "SupersededStaysGone"
       ],
       "expect": "pass",
       "finding": "With turns created elsewhere in the thread (an authored invoke) arriving while Send waits for an input commit, the composer keeps its promises (fixed in review of #512: the text was carried into the newer turn and stayed after it was sent)."
@@ -571,6 +576,23 @@
         "violated": "SentTextIsNotShownAgain"
       },
       "finding": "Without holding a send that may have been sent, its text is carried into the turn it created and can be sent again (review of #512; SCP-019)."
+    },
+    {
+      "id": "composer-without-retire",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "RetireSuperseded": "FALSE",
+        "OtherTurns": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SupersededStaysGone"
+      ],
+      "expect": {
+        "violated": "SupersededStaysGone"
+      },
+      "finding": "Without retiring it, stranded text the user replaced by typing stays in its scope and is carried forward once the prompt empties (review of #512, SCP-021)."
     },
     {
       "id": "inspector-without-queue",

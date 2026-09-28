@@ -81,6 +81,7 @@
           "B": false
         },
         "sent": {},
+        "superseded": {},
         "text": 0,
         "uncertainAt": {},
         "unsent": {
@@ -164,6 +165,7 @@
           "B": false
         },
         "sent": {},
+        "superseded": {},
         "text": 1,
         "uncertainAt": {},
         "unsent": {
@@ -247,6 +249,7 @@
           "B": false
         },
         "sent": {},
+        "superseded": {},
         "text": 1,
         "uncertainAt": {},
         "unsent": {
@@ -333,6 +336,7 @@
         "sent": {
           "1": 1
         },
+        "superseded": {},
         "text": 1,
         "uncertainAt": {},
         "unsent": {
@@ -428,6 +432,7 @@
         "sent": {
           "1": 1
         },
+        "superseded": {},
         "text": 1,
         "uncertainAt": {
           "1": {
@@ -531,6 +536,7 @@
         "sent": {
           "1": 1
         },
+        "superseded": {},
         "text": 0,
         "uncertainAt": {
           "1": {

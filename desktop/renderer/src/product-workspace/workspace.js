@@ -3430,24 +3430,24 @@ export function createProductWorkspace({
 
   // A send that fails after its thread's newer turn arrived leaves its text
   // in the older turn's scope; bring it back into the empty prompt. Text the
-  // user typed since wins, and the older text is not restored.
+  // user typed since wins, and the older text is retired, so it cannot be
+  // carried forward later (SCP-021).
   const restoreStrandedSubmission = (submission) => {
     const { activeScopeKey } = composerDraftScopeState;
     if (String(getThread()?.id) !== String(submission.threadId)
-      || activeScopeKey === submission.scopeKey
-      || prompt.value) return;
+      || activeScopeKey === submission.scopeKey) return;
     const stored = composerDraftScopeState.drafts.get(submission.scopeKey);
     const stranded = stored?.promptValue;
     if (!stranded) return;
     if (sentByLaterTurn(submission.threadId, submission.scopeKey, stranded)) return;
-    const text = stranded;
     const drafts = new Map(composerDraftScopeState.drafts);
     drafts.delete(submission.scopeKey);
     composerDraftScopeState = { activeScopeKey, drafts };
-    prompt.value = text;
-    composerPromptRevision += 1;
-    persistThreadFollowupDraft(activeScopeKey, text);
     clearThreadFollowupDraft(submission.scopeKey);
+    if (prompt.value) return;
+    prompt.value = stranded;
+    composerPromptRevision += 1;
+    persistThreadFollowupDraft(activeScopeKey, stranded);
   };
 
   const submitInteraction = async (intent) => {

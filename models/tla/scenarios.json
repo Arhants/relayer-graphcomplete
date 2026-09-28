@@ -1131,6 +1131,53 @@
       ]
     },
     {
+      "id": "composer-superseded-text-retired",
+      "module": "TurnComposer",
+      "preset": "composer-replay",
+      "init": "view = \"A\"",
+      "promises": [
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain",
+        "SupersededStaysGone"
+      ],
+      "summary": "A send is refused after a newer turn arrived and the user typed new text; the refused text stays out, even after the new text is erased and the thread is shown again.",
+      "steps": [
+        [
+          "Type"
+        ],
+        [
+          "ClickSend"
+        ],
+        [
+          "InvokeTurn",
+          "A"
+        ],
+        [
+          "TurnFinishes",
+          "A"
+        ],
+        [
+          "Type"
+        ],
+        [
+          "PostFails",
+          "A"
+        ],
+        [
+          "Erase"
+        ],
+        [
+          "SwitchThread",
+          "B"
+        ],
+        [
+          "SwitchThread",
+          "A"
+        ]
+      ]
+    },
+    {
       "id": "inspector-annotate-and-switch",
       "module": "NodeInspector",
       "preset": "inspector-replay",

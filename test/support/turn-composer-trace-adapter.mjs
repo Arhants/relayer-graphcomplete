@@ -250,6 +250,13 @@ export class TurnComposerWorld {
         this.#turnArrives(arg);
         break;
       }
+      case "InvokeTurn": {
+        // A turn created elsewhere in the thread, such as by an authored invoke.
+        this.turns[arg].push({ status: "running", text: "Invoked" });
+        if (arg === this.view) this.#render();
+        else this.#syncState();
+        break;
+      }
       case "TurnFinishes": {
         this.turns[arg].at(-1).status = "accepted";
         if (arg === this.view) this.#render();
@@ -320,6 +327,7 @@ export const PROMISES = {
     const sending = model.pc[t] !== "idle" && model.intent[t].text === model.unsent[t];
     return model.unsent[t] === 0 || sending || real.text === model.unsent[t];
   },
+  SupersededStaysGone: (real, model) => real.text === 0 || !values(model.superseded).includes(real.text),
   SettlementClearsOnlySentText: (_real, model) => model.cleared === 0 || values(model.sent).includes(model.cleared),
   // A send that may have been sent leaves its text in the prompt of the
   // scope it was sent from (SCP-019).

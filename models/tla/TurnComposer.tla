@@ -44,6 +44,10 @@ CONSTANTS
                     \* the click, through Send's input reconciliation, and a
                     \* Send that ends without posting hands back stranded
                     \* text. Before, it was held only once the POST began
+  RetireSuperseded, \* TRUE since review of #512: stranded text that text typed
+                    \* since keeps out of the prompt is retired from its
+                    \* scope (SCP-021). Before, it stayed and could be carried
+                    \* forward later
   HoldUncertain     \* TRUE since review of #512: a send whose failure leaves
                     \* it unknown whether it was sent is held once its turn
                     \* arrives (SCP-019). Before, its text could be carried
@@ -82,14 +86,16 @@ VARIABLES
   sent,         \* texts a successful follow-up POST carried
   unsent,       \* thread -> the user's latest text there, until it is sent
   cleared,      \* the text the last settlement removed from the prompt, or 0
-  uncertainAt   \* [text, scope] of sends that may have been sent
+  uncertainAt,  \* [text, scope] of sends that may have been sent
+  superseded    \* stranded texts the user replaced by typing newer text
 
 vars == <<view, latest, running, pendingTurn, active, drafts, text, rev, disabled,
-          persisted, pc, owner, intent, fresh, sent, unsent, cleared, held, uncertainAt>>
+          persisted, pc, owner, intent, fresh, sent, unsent, cleared, held, uncertainAt,
+          superseded>>
 productVars == <<latest, running, pendingTurn>>
 composerVars == <<active, drafts, text, rev, disabled, persisted>>
 ghostVars == <<fresh, sent, unsent, cleared>>
-holdVars == <<held, uncertainAt>>
+holdVars == <<held, uncertainAt, superseded>>
 
 Max(a, b) == IF a >= b THEN a ELSE b
 Scope(t) == <<t, latest[t]>>
@@ -180,7 +186,7 @@ Init ==
   /\ owner = None
   /\ intent = [t \in Threads |-> [text |-> 0, rev |-> 0, scope |-> <<t, 1>>]]
   /\ fresh = 0 /\ sent = {} /\ unsent = [t \in Threads |-> 0] /\ cleared = 0
-  /\ held = {} /\ uncertainAt = {}
+  /\ held = {} /\ uncertainAt = {} /\ superseded = {}
 
 -----------------------------------------------------------------------------
 (* User actions.                                                          *)
@@ -279,19 +285,24 @@ ReconcileEnds(t) ==
   /\ pc[t] = "reconcile"
   /\ LET i == intent[t]
          stranded == IF drafts[i.scope] # NoDraft THEN drafts[i.scope].text ELSE 0
-         restore == HoldFromClick /\ view = t /\ active # i.scope
-                    /\ text = 0 /\ stranded # 0 /\ ~Uncertain(i.scope)
+         handsBack == HoldFromClick /\ view = t /\ active # i.scope
+                      /\ stranded # 0 /\ ~Uncertain(i.scope)
+         restore == handsBack /\ text = 0
+         \* Text typed since wins; the stranded text is retired (SCP-021).
+         retire == handsBack /\ text # 0 /\ RetireSuperseded
      IN /\ text' = IF restore THEN stranded ELSE text
         /\ rev' = IF restore THEN rev + 1 ELSE rev
-        /\ drafts' = IF restore THEN [drafts EXCEPT ![i.scope] = NoDraft] ELSE drafts
+        /\ drafts' = IF restore \/ retire THEN [drafts EXCEPT ![i.scope] = NoDraft] ELSE drafts
         /\ persisted' = IF restore
                         THEN [persisted EXCEPT ![active] = stranded, ![i.scope] = Null]
+                        ELSE IF retire THEN [persisted EXCEPT ![i.scope] = Null]
                         ELSE persisted
+        /\ superseded' = IF handsBack /\ text # 0 THEN superseded \cup {stranded} ELSE superseded
   /\ pc' = [pc EXCEPT ![t] = "idle"]
   /\ owner' = IF owner = t THEN None ELSE owner
   /\ cleared' = 0
   /\ UNCHANGED <<view, productVars, active, disabled, intent, fresh, sent, unsent>>
-  /\ UNCHANGED holdVars
+  /\ UNCHANGED <<held, uncertainAt>>
 
 -----------------------------------------------------------------------------
 (* The follow-up POST and its continuations (TH:733-812).                 *)
@@ -314,18 +325,23 @@ PostFails(t) ==
   /\ pc[t] = "post"
   /\ LET i == intent[t]
          stranded == IF drafts[i.scope] # NoDraft THEN drafts[i.scope].text ELSE 0
-         restore == CarryUnsentDraft /\ view = t /\ active # i.scope
-                    /\ text = 0 /\ stranded # 0 /\ ~Uncertain(i.scope)
+         handsBack == CarryUnsentDraft /\ view = t /\ active # i.scope
+                      /\ stranded # 0 /\ ~Uncertain(i.scope)
+         restore == handsBack /\ text = 0
+         \* Text typed since wins; the stranded text is retired (SCP-021).
+         retire == handsBack /\ text # 0 /\ RetireSuperseded
      IN /\ text' = IF restore THEN stranded ELSE text
         /\ rev' = IF restore THEN rev + 1 ELSE rev
-        /\ drafts' = IF restore THEN [drafts EXCEPT ![i.scope] = NoDraft] ELSE drafts
+        /\ drafts' = IF restore \/ retire THEN [drafts EXCEPT ![i.scope] = NoDraft] ELSE drafts
         /\ persisted' = IF restore
                         THEN [persisted EXCEPT ![active] = stranded, ![i.scope] = Null]
+                        ELSE IF retire THEN [persisted EXCEPT ![i.scope] = Null]
                         ELSE persisted
+        /\ superseded' = IF handsBack /\ text # 0 THEN superseded \cup {stranded} ELSE superseded
   /\ FinallyEffect(t)
   /\ cleared' = 0
   /\ UNCHANGED <<view, productVars, active, intent, fresh, sent, unsent>>
-  /\ UNCHANGED holdVars
+  /\ UNCHANGED <<held, uncertainAt>>
 
 \* The POST fails with a network or server error, before or after the
 \* server recorded the turn (WS confirmationSendFailureMayHaveCommitted).
@@ -353,6 +369,7 @@ PostLost(t) ==
   /\ FinallyEffect(t)
   /\ cleared' = 0
   /\ UNCHANGED <<view, productVars, active, drafts, text, rev, persisted, intent, fresh, sent>>
+  /\ UNCHANGED superseded
 
 \* The server records the follow-up turn before it starts the run and
 \* answers (crates/relayer-app-server/src/api/threads.rs:600-666). It does so
@@ -557,6 +574,10 @@ SentTextIsNotShownAgain ==
   \A t \in Threads : pc[t] = "idle" /\ Shown(t) # 0 =>
     \/ Shown(t) \notin sent
     \/ [text |-> Shown(t), scope |-> Scope(t)] \in uncertainAt
+
+\* "Text the user typed since is kept, and the earlier text is not restored"
+\* (SCP-021): stranded text the user replaced is not shown again.
+SupersededStaysGone == \A t \in Threads : Shown(t) \notin superseded
 
 \* One follow-up POST per thread at a time (WS:3354-3356).
 OneSendPerThread == \A t \in Threads : pc[t] = "post" => intent[t].scope[1] = t
