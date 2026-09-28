@@ -350,6 +350,8 @@ pub struct ExportResolvedLayer {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportLayer {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_node_id: Option<String>,
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_key: Option<String>,
@@ -2276,6 +2278,18 @@ fn validate_layer(resolved: &ExportResolvedLayer, path: &str) -> Result<(), Expo
             "duplicate_layer_member",
             path,
             "A node or edge may appear only once in a layer.",
+        ));
+    }
+    if resolved
+        .layer
+        .default_node_id
+        .as_ref()
+        .is_some_and(|id| !node_ids.contains(id))
+    {
+        return Err(ExportValidationError::new(
+            "default_node_outside_layer",
+            path,
+            "The default detail node must belong to its layer.",
         ));
     }
     let members = node_ids.iter().map(String::as_str).collect::<HashSet<_>>();

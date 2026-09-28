@@ -1,3 +1,4 @@
+import { preferredLayerNode, rememberedLayerSelection, rememberLayerSelection } from "./layer-selection.js";
 import { escapeHtml, toast } from "../ui.js";
 import { actionCanRetry, actionWasInvoked, actionReviewKind } from "../action-invocation-state.js";
 import { setControlActivationCompletion } from "../control-activation.js";
@@ -1527,6 +1528,7 @@ export function createProductWorkspace({
   onSelectTurn = () => {},
   onSelectTurnById,
   onSelectionChange = () => {},
+  layerSelectionMemoryOwner = globalThis.window,
   onExportConversation = null,
   shareApi = null,
   onSubmitInteraction = async () => {},
@@ -4066,6 +4068,7 @@ export function createProductWorkspace({
   }
 
   function render() {
+    if (disposed) return;
     const state = getState();
     const thread = getThread();
     if (!thread) {
@@ -4582,6 +4585,7 @@ export function createProductWorkspace({
       contextNodeOverrides,
     );
     if (enteringView) {
+      clearInputStagesForThread(thread?.id);
       nodeSelectionSequence += 1;
       cancelInspectorFit();
       if (!preserveHistoricalSelection) $("#inspector").classList.add("hidden");
@@ -4791,6 +4795,14 @@ export function createProductWorkspace({
       clearInputStagesForThread(getThread()?.id);
       selection.selectedNodeId = null;
       $("#inspector").classList.add("hidden");
+    }
+    if (!preserveHistoricalSelection && !selection.nodeDetailsClosed && (enteringView || (selection.selectedNodeId != null && !ids.has(String(selection.selectedNodeId))))) {
+      const previousSelection = selection.selectedNodeId;
+      selection.selectedNodeId = preferredLayerNode(state.visibleLayer ?? { nodes: responseNodes }, selection.selectedNodeId,
+        rememberedLayerSelection(thread?.id, state.currentInteractionId, state.visibleLayer?.layer?.id, layerSelectionMemoryOwner));
+      if (selection.selectedNodeId != null && String(previousSelection) !== String(selection.selectedNodeId)) {
+        onSelectionChange(selection.selectedNodeId);
+      }
     }
     if (cachedView && cachedLayoutMatches) {
       camera = { ...cachedView.camera };
@@ -5177,6 +5189,7 @@ export function createProductWorkspace({
     contextTarget,
     origin = null,
   } = {}) {
+    if (disposed) return false;
     const options = { notify, userInitiated, focusInspector, contextTarget, origin };
     if (contextEditor?.resolving) {
       // A refresh is dropped: the resolution re-renders the selection when it
@@ -5262,6 +5275,9 @@ export function createProductWorkspace({
       clearInputStagesForThread(getThread()?.id);
     }
     selection.selectedNodeId = id;
+    if (state.visibleLayer?.nodes?.some((member) => String(member.id) === String(id))) {
+      rememberLayerSelection(getThread()?.id, state.currentInteractionId, state.visibleLayer?.layer?.id, id, layerSelectionMemoryOwner);
+    }
     selectedContextTarget = nextSelectedContextTarget;
     if (!contextEditor && contextDraftController) {
       const draft = nodeContextDraftForSelection(

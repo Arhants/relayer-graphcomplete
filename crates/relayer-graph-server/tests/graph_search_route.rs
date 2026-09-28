@@ -412,6 +412,7 @@ async fn author_answer(graph: &GraphDatabase, interaction: &CreateInteractionRes
         .unwrap();
     let layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "search-layer".into(),
             nodes: vec![answer.id],
             edges: vec![],
@@ -708,6 +709,7 @@ async fn a_different_retry_cannot_confirm_an_orphaned_publication() {
         .unwrap();
     let replacement_layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "replacement-layer".into(),
             nodes: vec![replacement.id],
             edges: vec![],
@@ -936,6 +938,7 @@ async fn advance_acknowledgement_is_immediately_searchable_through_the_public_ro
         .unwrap();
     let layer = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "working-search-layer".into(),
             nodes: vec![answer.id],
             edges: vec![],

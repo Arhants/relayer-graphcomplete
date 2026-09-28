@@ -63,6 +63,7 @@ async fn author(database: &GraphDatabase) -> NodeId {
         .unwrap();
     let child = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "child".into(),
             nodes: vec![worker.id],
             edges: vec![],
@@ -77,6 +78,7 @@ async fn author(database: &GraphDatabase) -> NodeId {
         .unwrap();
     let reference_child = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "reference-child".into(),
             nodes: vec![queue.id],
             edges: vec![],
@@ -91,6 +93,7 @@ async fn author(database: &GraphDatabase) -> NodeId {
         .unwrap();
     let root = writer
         .submit_layer(&LayerDraft {
+            default_node_id: None,
             client_key: "root".into(),
             nodes: vec![queue.id, worker.id],
             edges: vec![edge.id],

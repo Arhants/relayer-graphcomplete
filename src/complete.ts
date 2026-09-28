@@ -44,7 +44,7 @@ function completionRuntimeFromEnvironment(environment: NodeJS.ProcessEnv = proce
         method: "POST",
         body: JSON.stringify({ interactionNode: completionId }),
       }).then(async (response) => {
-        if (response.status !== 200 && response.status !== 201) throw await brokerError(response);
+        if (response.status !== 200 && response.status !== 201) throw await brokerRefusal(response);
         return response.json() as Promise<{ completionId: number }>;
       }).then((response) => {
         if (response.completionId !== completionId) {
@@ -57,7 +57,7 @@ function completionRuntimeFromEnvironment(environment: NodeJS.ProcessEnv = proce
       const snapshot = async (): Promise<CompletionCurrentSnapshot> => {
         await started;
         const response = await brokerRequest(url, token, `/${completionId}/current`);
-        if (response.status !== 200) throw await brokerError(response);
+        if (response.status !== 200) throw await brokerRefusal(response);
         return normalizeCurrent(await response.json());
       };
       let observation: Promise<ResolvedGraphLayer> | undefined;
@@ -81,7 +81,7 @@ function completionRuntimeFromEnvironment(environment: NodeJS.ProcessEnv = proce
             method: "POST",
             body: JSON.stringify({ reason }),
           });
-          if (response.status !== 200) throw await brokerError(response);
+          if (response.status !== 200) throw await brokerRefusal(response);
         },
       });
     },
@@ -102,10 +102,10 @@ async function observeNextCurrent(
   for (;;) {
     const query = afterRevision === undefined ? "" : `?afterRevision=${afterRevision}`;
     const response = await brokerRequest(url, token, `/${completionId}/result${query}`);
-    const value = await response.json() as unknown;
+    const value = await responseBody(response);
     if (response.status === 200) {
       const current = await brokerRequest(url, token, `/${completionId}/current`);
-      if (current.status !== 200) throw await brokerError(current);
+      if (current.status !== 200) throw await brokerRefusal(current);
       return normalizeCurrent(await current.json());
     }
     if ((response.status === 202 || response.status === 409) && isRecord(value) && isRecord(value.current)) {
@@ -115,7 +115,7 @@ async function observeNextCurrent(
       }
       continue;
     }
-    throw await brokerError(response, value);
+    throw brokerError(response.status, value);
   }
 }
 
@@ -207,7 +207,7 @@ async function observeResult(url: string, token: string, completionId: number): 
   for (;;) {
     const query = afterRevision === undefined ? "" : `?afterRevision=${afterRevision}`;
     const response = await brokerRequest(url, token, `/${completionId}/result${query}`);
-    const value = await response.json() as unknown;
+    const value = await responseBody(response);
     if (response.status === 200) return value as ResolvedGraphLayer;
     if (response.status === 202) {
       if (!isRecord(value) || !isRecord(value.current)) {
@@ -228,7 +228,7 @@ async function observeResult(url: string, token: string, completionId: number): 
         );
       }
     }
-    throw await brokerError(response, value);
+    throw brokerError(response.status, value);
   }
 }
 
@@ -272,23 +272,33 @@ function isNullableGraphId(value: unknown): value is number | null {
   return value === null || (Number.isSafeInteger(value) && Number(value) > 0);
 }
 
-async function brokerError(response: Response, parsed?: unknown): Promise<Error> {
-  let value = parsed;
-  if (value === undefined) {
-    try {
-      value = await response.json() as unknown;
-    } catch {
-      value = undefined;
-    }
+/** Reads a broker answer. A success must be JSON; a refusal need not be. */
+function responseBody(response: Response): Promise<unknown> {
+  return response.ok ? response.json() as Promise<unknown> : refusalBody(response);
+}
+
+/** A refusal without a JSON body, such as a proxy's error page, is still named by its status. */
+async function refusalBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json() as unknown;
+  } catch {
+    return undefined;
   }
-  const safeClientDetail = response.status >= 400
-    && response.status < 500
+}
+
+async function brokerRefusal(response: Response): Promise<Error> {
+  return brokerError(response.status, await refusalBody(response));
+}
+
+function brokerError(status: number, value: unknown): Error {
+  const safeClientDetail = status >= 400
+    && status < 500
     && isRecord(value)
     && typeof value.error === "string"
     && value.error.length <= 200
     && !/[\u0000-\u001f\u007f]/u.test(value.error);
   const detail = safeClientDetail && isRecord(value) ? `: ${String(value.error)}` : "";
-  return new Error(`Completion broker returned HTTP ${response.status}${detail}`);
+  return new Error(`Completion broker returned HTTP ${status}${detail}`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
