@@ -1,0 +1,261 @@
+{
+  "format": 1,
+  "name": "H · Sticker × Cocoa",
+  "structure": "sticker",
+  "palette": {
+    "roles": {
+      "bg": {
+        "light": "#F7F9F7",
+        "dark": "#0F100F"
+      },
+      "sidebar": {
+        "light": "#F7F9F7",
+        "dark": "#141614"
+      },
+      "surface": {
+        "light": "#FBFDFB",
+        "dark": "#141614"
+      },
+      "field": {
+        "light": "#EEF2EE",
+        "dark": "#1D1F1D"
+      },
+      "overlay": {
+        "light": "#FBFDFB",
+        "dark": "#242624"
+      },
+      "hover": {
+        "light": "#E7EAE7",
+        "dark": "#242624"
+      },
+      "selected": {
+        "light": "#DFE3DF",
+        "dark": "#2B2E2B"
+      },
+      "border": {
+        "light": "#D7DBD7",
+        "dark": "#353835"
+      },
+      "border-strong": {
+        "light": "#747874",
+        "dark": "#707470"
+      },
+      "text": {
+        "light": "#191B19",
+        "dark": "#ECEEEC"
+      },
+      "text-muted": {
+        "light": "#5E615E",
+        "dark": "#B6BAB6"
+      },
+      "text-faint": {
+        "light": "#888C88",
+        "dark": "#6C706C"
+      },
+      "accent-solid": {
+        "light": "#9F7E6F",
+        "dark": "#9F7E6F"
+      },
+      "accent-solid-text": {
+        "light": "#191B19",
+        "dark": "#0F100F"
+      },
+      "accent-solid-hover": {
+        "light": "#AC8A7B",
+        "dark": "#AC8A7B"
+      },
+      "accent-solid-alt": {
+        "light": "#725345",
+        "dark": "#7C5C4E"
+      },
+      "accent-solid-alt-text": {
+        "light": "#FFFFFF",
+        "dark": "#FFFFFF"
+      },
+      "accent-soft-bg": {
+        "light": "#EBE3DB",
+        "dark": "#2B221C"
+      },
+      "accent-text": {
+        "light": "#725345",
+        "dark": "#ECC8B8"
+      },
+      "selection-ring": {
+        "light": "#725345",
+        "dark": "#ECC8B8"
+      },
+      "running": {
+        "light": "#D43064",
+        "dark": "#DE5276"
+      },
+      "running-text": {
+        "light": "#B00D4C",
+        "dark": "#F67591"
+      },
+      "running-soft-bg": {
+        "light": "#FFE8EB",
+        "dark": "#38121B"
+      },
+      "running-ink": {
+        "light": "#FFFFFF",
+        "dark": "#0F100F"
+      },
+      "accepted-fill": {
+        "light": "#80D497",
+        "dark": "#80D497"
+      },
+      "accepted-fill-text": {
+        "light": "#191B19",
+        "dark": "#0F100F"
+      },
+      "accepted-mark": {
+        "light": "#2F7C49",
+        "dark": "#80D497"
+      },
+      "canvas-bg": {
+        "light": "#D9DCD9",
+        "dark": "#0F100F"
+      },
+      "edge": {
+        "light": "#747874",
+        "dark": "#626562"
+      },
+      "edge-strong": {
+        "light": "#5E615E",
+        "dark": "#B0B4B0"
+      },
+      "node-fill": {
+        "light": "#FBFDFB",
+        "dark": "#1D1F1D"
+      },
+      "node-stroke": {
+        "light": "#747874",
+        "dark": "#6C706C"
+      },
+      "draft-outline": {
+        "light": "#747874",
+        "dark": "#6C706C"
+      },
+      "danger-solid": {
+        "light": "#A93800",
+        "dark": "#FE8160"
+      },
+      "danger-strong": {
+        "light": "#A93800",
+        "dark": "#BB4717"
+      },
+      "danger-text": {
+        "light": "#A93800",
+        "dark": "#FFA289"
+      },
+      "danger-soft-bg": {
+        "light": "#FFEBE6",
+        "dark": "#3A1C14"
+      },
+      "warning-solid": {
+        "light": "#976712",
+        "dark": "#C08E43"
+      },
+      "warning-text": {
+        "light": "#93640C",
+        "dark": "#E9B452"
+      },
+      "warning-soft-bg": {
+        "light": "#FEEED8",
+        "dark": "#30220E"
+      },
+      "success-text": {
+        "light": "#2F7C49",
+        "dark": "#86D29B"
+      },
+      "draft-solid": {
+        "light": "#4D594D",
+        "dark": "#667366"
+      },
+      "draft-text": {
+        "light": "#536253",
+        "dark": "#B4C2B4"
+      },
+      "draft-soft-bg": {
+        "light": "#EDF1ED",
+        "dark": "#232623"
+      },
+      "diff-add": {
+        "light": "#2F7C49",
+        "dark": "#86D29B"
+      },
+      "diff-del": {
+        "light": "var(--text-muted)",
+        "dark": "var(--text-muted)"
+      },
+      "ink": {
+        "light": "#1B1B17",
+        "dark": "#1B1B17"
+      },
+      "white": {
+        "light": "#FFFFFF",
+        "dark": "#FFFFFF"
+      },
+      "cream": {
+        "light": "#FAF2E6",
+        "dark": "#FAF2E6"
+      },
+      "deck": {
+        "light": "#D74326",
+        "dark": "#D74326"
+      },
+      "sticker-bg": {
+        "light": "#FBFDFB",
+        "dark": "#141614"
+      },
+      "scrim": {
+        "light": "rgba(25,27,25,.32)",
+        "dark": "rgba(0,0,0,.56)"
+      }
+    },
+    "families": {
+      "f1": {
+        "name": "Document",
+        "light": "#641F9F",
+        "lightIcon": "#FFFFFF",
+        "dark": "#BC85FF",
+        "darkIcon": "#1B1B17"
+      },
+      "f2": {
+        "name": "Code",
+        "light": "#003F6E",
+        "lightIcon": "#FFFFFF",
+        "dark": "#87C3FF",
+        "darkIcon": "#1B1B17"
+      },
+      "f3": {
+        "name": "Data",
+        "light": "#00707E",
+        "lightIcon": "#FFFFFF",
+        "dark": "#009EB1",
+        "darkIcon": "#1B1B17"
+      },
+      "f4": {
+        "name": "Systems",
+        "light": "#4A5700",
+        "lightIcon": "#FFFFFF",
+        "dark": "#6B9F00",
+        "darkIcon": "#1B1B17"
+      },
+      "f5": {
+        "name": "People & agents",
+        "light": "#B247B3",
+        "lightIcon": "#FFFFFF",
+        "dark": "#AB40AD",
+        "darkIcon": "#FFFFFF"
+      },
+      "f6": {
+        "name": "Reasoning",
+        "light": "#6068E8",
+        "lightIcon": "#FFFFFF",
+        "dark": "#5B62E1",
+        "darkIcon": "#FFFFFF"
+      }
+    }
+  }
+}
