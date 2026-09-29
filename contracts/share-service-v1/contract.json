@@ -166,6 +166,12 @@
     },
     {
       "method": "GET",
+      "path": "/t/{shareId}/preview.png",
+      "authentication": "public",
+      "operation": "preview"
+    },
+    {
+      "method": "GET",
       "path": "/t/{shareId}/embed",
       "authentication": "public",
       "operation": "embed"
@@ -180,6 +186,7 @@
   "stableErrors": {
     "400": [
       "invalid_attempt_id",
+      "invalid_preview",
       "invalid_project_name",
       "invalid_request",
       "invalid_share_title",
@@ -213,6 +220,7 @@
       "snapshot_too_large"
     ],
     "422": [
+      "preview_mismatch",
       "snapshot_empty",
       "snapshot_empty_line",
       "snapshot_invalid_json",
@@ -222,6 +230,7 @@
       "snapshot_line_too_large",
       "snapshot_mismatch",
       "snapshot_unsupported_version",
+      "staged_preview_missing",
       "staged_snapshot_missing"
     ],
     "429": [
@@ -232,6 +241,7 @@
       "service_unavailable"
     ],
     "503": [
+      "preview_unavailable",
       "share_id_unavailable",
       "storage_unavailable"
     ]
