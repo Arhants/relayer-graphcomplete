@@ -90,8 +90,16 @@ function harnessFor(settings, harnessId) {
   return settings.harnesses.find((harness) => harness.id === harnessId);
 }
 
+// Only a legacy conversation is contained to its original route (#597). A portable
+// continuation conversation (ADR 0013) is offered every route an unrestricted one is. Any
+// other or missing status is treated as restricted, so an unknown state never widens routes.
+export function compatibilityRestrictsRoute(compatibility) {
+  if (!compatibility) return false;
+  return compatibility.status !== "unrestricted" && compatibility.status !== "portable";
+}
+
 export function harnessUsesConfigurationModel(settings, harnessId) {
-  if (settings.conversationCompatibility && settings.conversationCompatibility.status !== "unrestricted") return false;
+  if (compatibilityRestrictsRoute(settings.conversationCompatibility)) return false;
   const harness = harnessFor(settings, harnessId);
   return Boolean(
     harness

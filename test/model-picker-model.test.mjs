@@ -426,4 +426,22 @@ describe("legacy conversation compatibility", () => {
     catalog.conversationCompatibility = { status: "blocked", message: "History ownership cannot be verified." };
     expect(availablePickerFamilies(catalog, "codex-basic")).toEqual([]);
   });
+
+  it("offers a portable continuation conversation every route an unrestricted one gets (CONT-005)", () => {
+    const catalog = settings();
+    catalog.providers[1].connected = true;
+    catalog.harnesses[0].compatibleProviderIds.push("future");
+    catalog.harnesses.push({
+      id: "prime-agent-basic",
+      label: "Prime Agent Basic",
+      available: true,
+      compatibleProviderIds: [],
+      modelCompatibility: [],
+    });
+    const unrestricted = availablePickerFamilies(catalog, "codex-basic");
+    catalog.conversationCompatibility = { status: "portable", threadId: 1, harnessId: "codex-basic", providerId: null, message: null };
+    expect(harnessUsesConfigurationModel(catalog, "prime-agent-basic")).toBe(true);
+    expect(availablePickerFamilies(catalog, "codex-basic")).toEqual(unrestricted);
+    expect(pickerSelectionIsAvailable(catalog, { harnessId: "codex-basic", familyId: 1, providerId: "future", modelId: "three" })).toBe(true);
+  });
 });

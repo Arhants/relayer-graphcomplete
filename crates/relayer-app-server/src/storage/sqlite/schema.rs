@@ -27,6 +27,7 @@ const THREAD_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("conversation_import_id", "TEXT", false, 0),
     ("surface", "TEXT", true, 0),
     ("personal_presentation_version_key", "TEXT", false, 0),
+    ("conversation_format", "TEXT", true, 0),
 ];
 const CONVERSATION_IMPORT_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("id", "TEXT", true, 1),
