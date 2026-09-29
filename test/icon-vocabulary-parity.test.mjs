@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { RELAYER_ICON_NAMES as clientIconNames } from "../packages/graph-client/src/icons.js";
-import { RELAYER_ICON_NAMES as rendererIconNames } from "../desktop/renderer/src/product-workspace/icons.js";
+import { RELAYER_ICON_FAMILIES as clientIconFamilies, RELAYER_ICON_NAMES as clientIconNames } from "../packages/graph-client/src/icons.js";
+import { RELAYER_ICON_FAMILIES as rendererIconFamilies, RELAYER_ICON_NAMES as rendererIconNames } from "../desktop/renderer/src/product-workspace/icons.js";
 
 const repositoryFile = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const quotedNames = (block) => [...block.matchAll(/"([a-z0-9-]+)"/g)].map((match) => match[1]);
@@ -21,5 +21,9 @@ describe("cross-language Relayer icon vocabulary", () => {
     expect(rustIconNames()).toEqual([...clientIconNames]);
     expect(pythonIconNames()).toEqual([...clientIconNames]);
     expect(rendererIconNames).toEqual(clientIconNames);
+  });
+
+  it("colours the same icons in the agent guidance and the renderer", () => {
+    expect(rendererIconFamilies).toEqual(clientIconFamilies);
   });
 });
