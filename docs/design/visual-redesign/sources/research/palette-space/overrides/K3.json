@@ -1,0 +1,7 @@
+{
+ "K3": {
+  "_why": "K3 is Gen-1 C: restore report 08's hand-set orange warning (h65, L 0.64/0.80, 'away from the yellow') and success h155. The shared rule gave light warning #9A6700, only dE 7.1 (CVD 0.5) from C's own draft solid #787800, so 'needs approval' and 'not yet accepted' collapsed",
+  "warning": { "h": 65, "L": { "light": 0.64, "dark": 0.8 } },
+  "success": { "h": 155 }
+ }
+}

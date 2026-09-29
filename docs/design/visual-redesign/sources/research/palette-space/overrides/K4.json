@@ -1,0 +1,11 @@
+{
+ "K4": {
+  "_why": "K4 is Gen-1 D: report 08's D status hues (warning 80, success 150) instead of the shared 75/152; the brief §6.4 sidebar-selected the engine does not emit (exact ice in light, deep olive in dark; text 13.34 / 9.25, ice bar 8.32); and accent-solid-alt folded onto the ink/ice primary, because D has no chrome accent and blue means selection only (the engine's derived #4E76BE alt would put a blue button in D's chrome)",
+  "warning": { "h": 80 },
+  "success": { "h": 150 },
+  "tokens": {
+   "light": { "sidebar-selected": "#D5E3FB", "accent-solid-alt": "#1B1B16", "accent-solid-alt-label": "#F9F9F2" },
+   "dark": { "sidebar-selected": "#403F1F", "accent-solid-alt": "#D5E3FB", "accent-solid-alt-label": "#10100C" }
+  }
+ }
+}

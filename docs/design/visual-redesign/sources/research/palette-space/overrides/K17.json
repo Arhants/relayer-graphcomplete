@@ -1,0 +1,18 @@
+{
+ "K17": {
+  "danger": { "h": 36 },
+  "tokens": {
+   "light": {
+    "canvas-bg": "#E2E2B4",
+    "edge": "#7A7A7F",
+    "node-stroke": "#7A7A7F",
+    "draft-outline": "#7A7A7F",
+    "edge-strong": "#626266",
+    "canvas-label-muted": "#626266",
+    "signal-mark": "#008E27",
+    "accepted-mark": "#008E27"
+   }
+  },
+  "_why": "danger: the candidate asks for 'a derived orange-red, never next to the pink'; the hue rule picked h25 (red), which left the dark Failed badge (danger-strong) dE 7.9 from the pink comment badge (accent-solid-alt); h36 is Gen-1 B's orange-red and lifts that pair to 10.8. tokens.light: role_origin makes butter cream #E2E2B4 the light-theme paper, which the engine cannot place (support colours are not placed); it becomes the light poster canvas, mirroring the exact #17171B canvas in dark, and the canvas-dependent tokens are re-lifted by the engine's own L-only rules (strokes 3.2:1, edge-strong and muted label 4.5:1, accepted mark 3.2:1 on the cream)."
+ }
+}

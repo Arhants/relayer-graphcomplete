@@ -1,0 +1,10 @@
+{
+ "M2": {
+  "danger": { "swatch": "#BD1F44", "L": { "light": 0.52, "dark": 0.58 } },
+  "tokens": {
+   "light": { "accent-solid-alt": "#8C6450", "accent-text": "#805945", "selection-ring": "#8C6450" },
+   "dark": { "accent-solid-alt": "#926A56", "accent-text": "#F3C6AF" }
+  },
+  "_why": "danger: the candidate asks for 'a derived red, kept clearly more saturated than the blush'; the derived rule sets status chroma from the latte ink (0.11), so dark danger-solid #E88D94 landed dE 4.4 (CVD 3.1) from the blush live-work glow #DF927A. The swatch keeps the engine's hue 15 at chroma 0.19; L 0.52 light / 0.58 dark keeps it darker than the blush (dE 16-18). tokens: report 08's chroma floor (0.12) turned the latte ink ramp into rust and peach, a second warm glow next to the blush (light alt dE 7.2, dark link dE 6.9 from it). These tokens go back to latte hue 48 at chroma 0.06 (source 0.037) at the nearest L that clears their contrast floor and stays dE >= 10 from the blush: alt and ring L 0.54, light link L 0.50, dark link L 0.86, dark alt L 0.56."
+ }
+}

@@ -1,0 +1,25 @@
+{
+ "_readme": "M12 (Parchment Chilli) tuning overrides. Run: node engine.mjs --overrides overrides/M12.json M12. Token values the plan cannot express were derived by m12-derive.mjs with the engine's L-only walk.",
+ "M12": {
+  "_why": "D-style ink primary as the candidate asks (cocoa in light, parchment in dark) instead of a chroma-lifted terracotta ramp; one-red diffs (red = failure only, A/D gene); the source's #1E1313 as the dark panels",
+  "interaction": { "light": "#4E3F39", "dark": "#E6DECD" },
+  "tokens": {
+   "light": {
+    "accent-solid-alt": "#4E3F39",
+    "accent-solid-alt-label": "#FFFFFF",
+    "accent-soft-bg": "#E9E1D0",
+    "accent-text": "#4E3F39",
+    "diff-del": "#67645E"
+   },
+   "dark": {
+    "sidebar": "#1E1313",
+    "surface": "#1E1313",
+    "accent-solid-alt": "#E6DECD",
+    "accent-solid-alt-label": "#100F0D",
+    "accent-soft-bg": "#4E3F39",
+    "accent-text": "#E6DECD",
+    "diff-del": "#BCB9B2"
+   }
+  }
+ }
+}

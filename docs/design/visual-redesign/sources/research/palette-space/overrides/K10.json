@@ -1,0 +1,8 @@
+{
+ "_readme": "K10 (Blaze Periwinkle) tuning overrides. Run: node engine.mjs --overrides overrides/K10.json K10",
+ "K10": {
+  "_why": "K10 tuning: fixes the family failure (was 10.2/5.6 light, 11.4/5.9 dark; olive #3E5E00 vs ochre #7B6800). Periwinkle (241-301), blaze danger (21-61), warning (55-95) and success at 152 (132-172) left only 96-131 for two yellow-green families; in light no teal/cyan reaches C 0.10 at 3:1 on white. Success moves to h165, the third hue in report 08's own list, so 132-144 opens for a green family. Search effort raised because the default 40/200 restarts had not converged (light CVD 6.4 -> 7.7 at 120/1200; 200/3000 gives the same set)",
+  "success": { "h": 165 },
+  "familySearch": { "restarts": 120, "randomRestarts": 1200 }
+ }
+}

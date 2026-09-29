@@ -1,0 +1,12 @@
+{
+ "K6": {
+  "_why": "K6: (1) interaction role swap from overrides.json kept (oxblood primary in light, mustard in dark). (2) danger = signal red #F54731 exact, as semantic_plan.danger asks (a separate bright red >= 20 deg from berry and lighter than it); the derived h45 rust #9C522E sat dE 6.4 from warning and 10.5 from the berry ring, and the dark h36 salmon 9.8 from the dark ring. It reuses Gen-1 A/D's red set. (3) warning h70 (Gen-1 B/D hue, still 20 deg from mustard) at dark L 0.62: the derived dark amber sat dE 5.5 from the mustard primary, so an approval pill read as a button; L 0.62 clears mustard (16.9) and keeps red-vs-amber CVD at 3.6, inside Gen-1's 2.1-4.6 (L 0.66 would collapse it to 0.5; above mustard the amber goes pastel and meets success green under CVD). Light stays at the engine's L 0.55. (4) light sidebar-text = oxblood #390F14 exact: the poster's own type-on-mustard pair (8.43:1, 6.81 on hover). (5) accent-solid-alt folded onto the primary (oxblood light, mustard dark), as K4 does for gene D (no chrome accent): the derived alts were a dusty rose #C4666D (dE 10.5 from danger, in no source chip) and a dark mustard #917200 (dE 6.8 from the new warning)",
+  "interaction": { "light": "#390F14", "dark": "#D8B44D" },
+  "danger": { "swatch": "#F54731" },
+  "warning": { "h": 70, "L": { "light": 0.55, "dark": 0.62 } },
+  "tokens": {
+   "light": { "sidebar-text": "#390F14", "accent-solid-alt": "#390F14", "accent-solid-alt-label": "#FFFFFF" },
+   "dark": { "accent-solid-alt": "#D8B44D", "accent-solid-alt-label": "#110F0C" }
+  }
+ }
+}
