@@ -1,0 +1,100 @@
+
+> relayer-graphcomplete@0.0.0 precheck
+> npm run prepare:renderer
+
+
+> relayer-graphcomplete@0.0.0 prepare:renderer
+> node scripts/prepare-renderer-vendor.mjs
+
+
+> relayer-graphcomplete@0.0.0 check
+> cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace && npm run check:graph-crash-reconciliation && cargo build -p relayer-app-server -p relayer-graph-server && npm run build:packages && tsc --noEmit && npm run check --workspaces --if-present && vitest run && npm run test:codex-secret-boundary && PYTHONPATH=python/relayer-graph/src python3 -m unittest discover -s python/relayer-graph/tests && npm run lint:ladybug-receipt && npm run prd:check-readability
+
+   Compiling relayer-graph-core v0.0.0 (/Users/vishaltandale/.codex/worktrees/permissions-merge-ready/relayer-graphcomplete/crates/relayer-graph-core)
+    Checking relayer-telemetry-capability v0.0.0 (/Users/vishaltandale/.codex/worktrees/permissions-merge-ready/relayer-graphcomplete/crates/relayer-telemetry-capability)
+   Compiling relayer-graph-server v0.0.0 (/Users/vishaltandale/.codex/worktrees/permissions-merge-ready/relayer-graphcomplete/crates/relayer-graph-server)
+    Checking relayer-app-server v0.0.0 (/Users/vishaltandale/.codex/worktrees/permissions-merge-ready/relayer-graphcomplete/crates/relayer-app-server)
+error[E0277]: the trait bound `[product::models::ActionInvocation]: std::default::Default` is not satisfied
+    --> crates/relayer-app-server/src/api/threads.rs:4001:18
+     |
+4001 |                 &Default::default()
+     |                  ^^^^^^^^^^^^^^^^^^ the trait `std::default::Default` is not implemented for `[product::models::ActionInvocation]`
+     |
+help: consider borrowing here
+     |
+4001 |                 &&Default::default()
+     |                  +
+4001 |                 &&mut Default::default()
+     |                  ++++
+
+error[E0061]: this function takes 6 arguments but 5 arguments were supplied
+    --> crates/relayer-app-server/src/api/threads.rs:3996:13
+     |
+3996 |             refresh_accepted_outputs(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+3999 |                 &mut offline,
+     |                 ------------ argument #3 of type `std::option::Option<&product::execution::InteractionExecutionService>` is missing
+     |
+note: expected `&HashSet<ThreadId>`, found `&[_; 0]`
+    --> crates/relayer-app-server/src/api/threads.rs:4000:17
+     |
+4000 |                 &[],
+     |                 ^^^
+     = note: expected reference `&std::collections::HashSet<product::ids::ThreadId>`
+                found reference `&[_; 0]`
+note: function defined here
+    --> crates/relayer-app-server/src/api/threads.rs:1163:21
+     |
+1163 | pub(super) async fn refresh_accepted_outputs(
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1166 |     execution: Option<&crate::product::InteractionExecutionService>,
+     |     ---------------------------------------------------------------
+...
+1169 |     imported_threads: &std::collections::HashSet<ThreadId>,
+     |     ------------------------------------------------------
+help: provide the argument
+     |
+3996 ~             refresh_accepted_outputs(
+3997 +                 &fixture.product,
+3998 +                 None,
+3999 +                 /* std::option::Option<&product::execution::InteractionExecutionService> */,
+4000 +                 &mut offline,
+4001 +                 &Default::default(),
+4002 +                 /* &std::collections::HashSet<product::ids::ThreadId> */,
+4003 +             )
+     |
+
+error[E0061]: this function takes 6 arguments but 5 arguments were supplied
+    --> crates/relayer-app-server/src/api/threads.rs:4009:13
+     |
+4009 |             refresh_accepted_outputs(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+4012 |                 &mut imported,
+     |                 ------------- argument #3 of type `std::option::Option<&product::execution::InteractionExecutionService>` is missing
+     |
+note: function defined here
+    --> crates/relayer-app-server/src/api/threads.rs:1163:21
+     |
+1163 | pub(super) async fn refresh_accepted_outputs(
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1166 |     execution: Option<&crate::product::InteractionExecutionService>,
+     |     ---------------------------------------------------------------
+help: provide the argument
+     |
+4009 ~             refresh_accepted_outputs(
+4010 +                 &fixture.product,
+4011 +                 fixture.state.runtime.as_ref(),
+4012 +                 /* std::option::Option<&product::execution::InteractionExecutionService> */,
+4013 +                 &mut imported,
+4014 +                 &[],
+4015 +                 &std::collections::HashSet::from([fixture.thread.id]),
+4016 +             )
+     |
+
+Some errors have detailed explanations: E0061, E0277.
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `relayer-app-server` (lib test) due to 3 previous errors

@@ -1,0 +1,43 @@
+Starting isolated project-row New Thread test...
+Error occurred in handler for 'relayer:composer-drafts-write': TypeError: Composer drafts exceed the local persistence limit.
+    at normalizeComposerDrafts (file:///Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/desktop/main/ipc/register-ipc.mjs:105:11)
+    at file:///Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/desktop/main/ipc/register-ipc.mjs:116:28
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:114940)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:workspace-layout-read': Error: No handler registered for 'relayer:workspace-layout-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:workspace-layout-read': Error: No handler registered for 'relayer:workspace-layout-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:workspace-layout-read': Error: No handler registered for 'relayer:workspace-layout-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+RELAYER_PROJECT_NEW_THREAD {"passed":true,"projectId":1,"threads":2,"restartPersistence":true,"layerSelectionRestartPersistence":true,"evidence":{"resting":"/Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/.relayer/evidence/project-new-thread/01-resting.png","hover":"/Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/.relayer/evidence/project-new-thread/02-hover.png","activated":"/Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/.relayer/evidence/project-new-thread/03-activated.png"}}

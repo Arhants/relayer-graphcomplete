@@ -1,0 +1,2 @@
+mod environment { include!("/Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/crates/relayer-app-server/src/environment.rs"); pub fn probe(path: &std::path::Path) { let started = std::time::Instant::now(); let value = inspect_with(path, "fixture", &SystemGitRunner, started + SNAPSHOT_TIMEOUT); println!("elapsed={:?} snapshot={:?}", started.elapsed(), value); } }
+fn main() { environment::probe(std::path::Path::new(&std::env::args().nth(1).unwrap())); }

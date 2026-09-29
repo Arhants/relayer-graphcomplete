@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "format": "relayer-harness-trace-v1",
+  "traceId": "66d01f42-c049-449f-b801-8483d8233a21",
+  "createdAt": "2026-09-28T14:03:04.330Z",
+  "completedAt": "2026-09-28T14:04:38.976Z",
+  "status": "complete",
+  "terminalReason": null,
+  "implementation": "codex.basic",
+  "configurationName": "codex-basic",
+  "threadId": 1,
+  "interactionNodeId": 31,
+  "productInteractionId": 3,
+  "personalPresentationVersionId": 15,
+  "personalPresentationVersionKey": "personal-presentation-v4",
+  "declaredCoverage": {
+    "prompt": "full",
+    "messages": "full",
+    "reasoningSummaries": "full",
+    "modelCalls": "full",
+    "toolCalls": "full",
+    "usage": "full",
+    "childStreams": "none",
+    "nativeArtifacts": "none"
+  },
+  "achievedCoverage": {
+    "prompt": "full",
+    "messages": "full",
+    "reasoningSummaries": "full",
+    "modelCalls": "full",
+    "toolCalls": "full",
+    "usage": "full",
+    "childStreams": "none",
+    "nativeArtifacts": "none"
+  },
+  "policy": {
+    "mode": "required",
+    "requiredFeatures": {},
+    "includeNativeArtifacts": false,
+    "maxBytesPerTurn": 10485760,
+    "maxEventsPerTurn": 50000
+  },
+  "redactionPolicyVersion": 1,
+  "redactionCount": 27,
+  "truncation": null,
+  "artifacts": {
+    "events": {
+      "ref": "events.jsonl",
+      "sha256": "sha256:b832680b22d174b8c0fc9820fb4d4c3a50abc54966a604cf51c35f94ff182a6e",
+      "byteLength": 270406,
+      "eventCount": 200
+    },
+    "attachments": [],
+    "graphOperations": {
+      "status": "complete",
+      "promotable": true,
+      "format": "relayer-graph-operations-v1",
+      "ref": "graph-operations.jsonl",
+      "sha256": "sha256:604f5f96e9a73330439ad6c5cd57a9d3025de51804b3a05a76d55d7fd42934d1",
+      "byteLength": 4131,
+      "eventCount": 22,
+      "truncated": false
+    }
+  },
+  "correlation": {
+    "runId": "attached-navigation-one-native-repair",
+    "harnessConfigurationName": "codex-basic",
+    "model": "gpt-5.6-sol",
+    "interactionId": "3"
+  }
+}

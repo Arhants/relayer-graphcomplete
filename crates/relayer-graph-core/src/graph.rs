@@ -1,3 +1,4 @@
+mod attached_navigation;
 mod completion;
 mod database;
 mod import;
@@ -29,13 +30,14 @@ pub use model::{
     EdgeDraft, EdgeId, GraphAction, GraphEdge, GraphLayer, GraphNode, InputAction, InputControl,
     InputOption, InteractionContext, InteractionContextAction, InteractionContextDraft,
     InteractionContextTarget, InteractionInput, InteractionInputChild, InteractionInputChildId,
-    InteractionInputNode, InteractionInputPreparation, InteractionInvocation, LayerDraft, LayerId,
-    LayerLayout, NavigateRelation, NodeDraft, NodeId, NodePlacement,
-    PERSONAL_PRESENTATION_PROFILE_THREAD_ID, PreparedDetailAsset, PresentingInputOccurrence,
-    ProjectId, RELAYER_ICON_ALIASES, RELAYER_ICON_NAMES, RecordState, ResolvedLayer,
-    SubmittedInput, SubmittedInputDraft, SubmittedInputValue, TemporalFeatureConfig, ThreadId,
-    interaction_input_authority_digest, interaction_input_digest,
-    interaction_input_semantic_digest, is_supported_icon, normalize_icon_name, resolve_icon_name,
+    InteractionInputNode, InteractionInputPreparation, InteractionInvocation,
+    InteractionPermission, InteractionPermissions, LayerDraft, LayerId, LayerLayout,
+    NavigateRelation, NodeDraft, NodeId, NodePlacement, PERSONAL_PRESENTATION_PROFILE_THREAD_ID,
+    PreparedDetailAsset, PresentingInputOccurrence, ProjectId, RELAYER_ICON_ALIASES,
+    RELAYER_ICON_NAMES, RecordState, ResolvedLayer, SubmittedInput, SubmittedInputDraft,
+    SubmittedInputValue, TemporalFeatureConfig, ThreadId, interaction_input_authority_digest,
+    interaction_input_digest, interaction_input_semantic_digest, is_supported_icon,
+    normalize_icon_name, resolve_icon_name,
 };
 pub use personal_presentation::{
     PersonalPresentationAttachment, PublishedPersonalPresentationVersion,

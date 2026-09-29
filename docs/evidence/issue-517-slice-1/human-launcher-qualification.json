@@ -1,0 +1,75 @@
+{
+  "sourceSha256": "cc93bd318dcc5fcba764857c416589e198a5ea9f90ce9c374be30e995196ee42",
+  "operator": "Codex via native CUA",
+  "humanAcceptance": "pending",
+  "inferenceCalls": 0,
+  "dataDirectory": "/tmp/relayer-pr536-human-qualification-2",
+  "seedGate": false,
+  "interactiveGate": true,
+  "nativeKeyboard": {
+    "typedText": "Keyboard focus check\nSecond line",
+    "shiftEnterInsertedNewline": true,
+    "didNotSend": true,
+    "draftCleared": true
+  },
+  "observed": [
+    "invoke creates accepted interaction 2",
+    "original source compiled button navigates to interaction 2",
+    "Incoming queue / See queue behavior / Results store second occurrence navigates to interaction 2",
+    "window closed; services reopened using same directory",
+    "original button navigates after reopen"
+  ],
+  "positiveInteractionRowsAfterReopen": [
+    [
+      1,
+      "accepted"
+    ],
+    [
+      2,
+      "accepted"
+    ]
+  ],
+  "initialLauncherFailure": "First startup used raw harnessConfigurationName, rejected by Product; repaired to public harnessId and qualified in a fresh directory.",
+  "integratedVerification": {
+    "sourceSha256": "4da1aa4d7df66e198bf1cbf961a901f9fff0f540519b2fb0d77e95eb79ae7f78",
+    "nativeTypedText": "Integrated keyboard\nSecond line",
+    "shiftEnterDidNotSend": true,
+    "draftCleared": true,
+    "reopenedRetainedData": true,
+    "originalCompiledControlNavigatedToInteraction": 2,
+    "positiveInteractionRows": [
+      [
+        1,
+        "accepted"
+      ],
+      [
+        2,
+        "accepted"
+      ]
+    ],
+    "integratedSecondOccurrence": "gated-result.json",
+    "humanAcceptance": "pending"
+  },
+  "finalReceiptCacheVerification": {
+    "sourceDigest": "98841616043a5a4bae0fa992b7f8caee4ea4f162a2ce98e556a15edbf122f9c2",
+    "recordedAt": "2026-09-28T02:58:15.634574+00:00",
+    "retainedDirectory": "/tmp/relayer-pr536-human-qualification-2",
+    "nativeTypedValue": "Final keyboard check\nSecond line",
+    "shiftEnterDidNotSend": true,
+    "draftCleared": true,
+    "reopenedPreviousData": true,
+    "nestedCompiledNavigation": "Turn 1 \u2192 Incoming queue \u2192 Results store \u2192 Plan the next improvement \u2192 Turn 2 of 2",
+    "humanAcceptance": "pending"
+  },
+  "finalVerification": {
+    "sourceDigest": "94192d26e3a9897664e79bc811ef02d1e5cd7c4b83e768169bc666d361b4b2d0",
+    "recordedAt": "2026-09-28T03:03:25.229125+00:00",
+    "retainedDirectory": "/tmp/relayer-pr536-human-qualification-2",
+    "nativeTypedValue": "Ready for review\nSecond line",
+    "shiftEnterDidNotSend": true,
+    "draftCleared": true,
+    "reopenedPreviousData": true,
+    "compiledNavigation": "Turn 1 Results store button \u2192 Turn 2 of 2",
+    "humanAcceptance": "pending"
+  }
+}

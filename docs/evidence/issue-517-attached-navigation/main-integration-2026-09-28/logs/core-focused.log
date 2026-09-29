@@ -1,0 +1,15 @@
+   Compiling relayer-graph-core v0.0.0 (/Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/crates/relayer-graph-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 26.20s
+     Running tests/graph_database.rs (target/debug/deps/graph_database-ab81e4d74e1ef132)
+
+running 7 tests
+test attached_navigation_without_replacement_preserves_plain_detail_and_reference_cycle ... ok
+test required_attached_navigation_covers_distinct_nodes_and_rich_controls ... ok
+test attached_navigation_advance_is_inert_and_terminal_cycles_are_atomic ... ok
+test attached_navigation_reference_targets_keep_reference_authoring_restrictions ... ok
+test attached_navigation_concurrent_replacements_preserve_controls_and_reopen_occurrences ... ok
+test required_attached_navigation_rejects_response_only_then_repairs_after_reopen ... ok
+test required_attached_navigation_preserves_old_and_disabled_preparations ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 93 filtered out; finished in 0.52s
+

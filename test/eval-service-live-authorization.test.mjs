@@ -25,6 +25,14 @@ afterEach(async () => {
 });
 
 describe("EvalService live external authorization", () => {
+  it("rejects external human tasks before preparation because that mode has no authorization flow", async () => {
+    const { service, validateLiveCredential, product } = await openService();
+    const callsBefore = product.mock.calls.length;
+    await expect(service.prepareHumanTask({ testCaseId: externalCaseIds[0], harnessConfigurationName: "codex-basic", sessionId: "human-external" }))
+      .rejects.toThrow("External catalog human tasks require budget and credential approval");
+    expect(validateLiveCredential).not.toHaveBeenCalled();
+    expect(product.mock.calls).toHaveLength(callsBefore);
+  });
   it.each([
     ["individual", { testCaseIds: [externalCaseIds[0]] }],
     ["suite", { suiteId: externalSuiteId }],
@@ -139,14 +147,15 @@ describe("EvalService live external authorization", () => {
     });
   });
 
-  it("preserves the admitted configuration-owned Codex model without a product selection override", async () => {
+  it("preserves the admitted configuration-owned Codex model across follow-ups without reselecting", async () => {
     const pinnedModelResolution = {
       selectedModel: null,
       productModelSelection: false,
       configurationModel: "gpt-5.6-luna",
     };
     const validateLiveCredential = vi.fn(async () => pinnedModelResolution);
-    const { service, product } = await openService({ validateLiveCredential });
+    const selectModel = vi.fn(async () => { throw new Error("Configuration-owned execution must not reselect a product model."); });
+    const { service, product } = await openService({ validateLiveCredential, selectModel, followUpPrompt: "Check the implementation once more." });
 
     const created = await service.createRun(liveSelection({
       testCaseIds: [externalCaseIds[0]],
@@ -172,6 +181,11 @@ describe("EvalService live external authorization", () => {
     const threadBody = JSON.parse(threadRequest[1].body);
     expect(threadBody.harnessConfigurationName).toBe("codex-layered-navigation-luna");
     expect(threadBody).not.toHaveProperty("modelSelection");
+    expect(completed.status).toBe("passed");
+    expect(selectModel).not.toHaveBeenCalled();
+    const followUps = product.mock.calls.filter(([url, options]) => new URL(url).pathname === "/api/threads/thread-1/interactions" && options?.method === "POST");
+    expect(followUps).toHaveLength(1);
+    expect(JSON.parse(followUps[0][1].body)).toEqual({ text: "Check the implementation once more." });
   });
 
   it("rejects a credential route that would omit its selected model before queueing", async () => {
@@ -266,12 +280,17 @@ async function openService(options = {}) {
   const stateFile = join(directory, "eval-data", "test-runs.json");
   const product = fakeExternalProduct();
   globalThis.fetch = product;
+  const catalog = createSyntheticExternalCatalog();
+  if (options.followUpPrompt) catalog.cases = catalog.cases.map((entry) => ({ ...entry, definition: {
+    ...entry.definition, threads: entry.definition.threads.map((thread) => ({ ...thread, prompts: [...thread.prompts, options.followUpPrompt] })),
+  } }));
   const service = await new EvalService({
     stateFile,
     productSession: { origin: "http://127.0.0.1:43123", cookie: { name: "relayer", value: "test" } },
     configurationPaths: directoriesForFixture(),
     platform: "darwin",
-    externalCatalog: withExternalIdentity(createSyntheticExternalCatalog()),
+    externalCatalog: withExternalIdentity(catalog),
+    selectModel: options.selectModel ?? null,
     validateLiveCredential,
     simulatedUserJudgeRunner,
     targetKey: "macos-arm64",
@@ -330,6 +349,7 @@ function fakeExternalProduct() {
     },
   };
   const interaction = { id: "interaction-1", sequence: 1, graphNodeId: 1, completionStatus: "accepted", completionOutput: output, completionError: null, text: "Synthetic project task.", permissionProfileId: "auto", effectiveExecutionDigest: `sha256:${"d".repeat(64)}`, effectivePermissionReceipt: { permissionProfileId: "auto" } };
+  const interactions = [interaction];
   let projectId = 0;
   const fetch = vi.fn(async (url, options = {}) => {
     const path = new URL(url).pathname;
@@ -344,8 +364,13 @@ function fakeExternalProduct() {
     });
     if (path === "/api/projects" && options.method === "POST") return jsonResponse({ id: `project-${++projectId}` });
     if (path === "/api/threads" && options.method === "POST") return jsonResponse({ id: "thread-1", rootInteractionId: interaction.id });
-    if (path === "/api/threads/thread-1" && (!options.method || options.method === "GET")) return jsonResponse({ id: "thread-1", interactions: fetch.emptyAcceptedThread ? [] : [interaction] });
-    const layerRoute = /^\/api\/threads\/thread-1\/interactions\/interaction-1\/layers\/(\d+)$/.exec(path);
+    if (path === "/api/threads/thread-1" && (!options.method || options.method === "GET")) return jsonResponse({ id: "thread-1", interactions: fetch.emptyAcceptedThread ? [] : interactions });
+    if (path === "/api/threads/thread-1/interactions" && options.method === "POST") {
+      const next = { ...interaction, id: `interaction-${interactions.length + 1}`, sequence: interactions.length + 1, text: JSON.parse(options.body).text };
+      interactions.push(next);
+      return jsonResponse(next);
+    }
+    const layerRoute = /^\/api\/threads\/thread-1\/interactions\/interaction-\d+\/layers\/(\d+)$/.exec(path);
     if (layerRoute) return jsonResponse({ layer: output.rootLayer.layer, nodes: output.rootLayer.nodes, edges: [], actions: [] });
     return jsonResponse({ error: `Unexpected test request ${options.method || "GET"} ${path}` }, 404);
   });

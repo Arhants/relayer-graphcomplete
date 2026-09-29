@@ -62,6 +62,7 @@ export interface InputOption {
 }
 
 export interface GraphAction {
+  readonly resolvedInvokeInteractionId?: GraphId;
   readonly id: GraphId;
   /** Stable author-assigned identity; absent only in projections written before client keys were exposed. */
   readonly clientKey?: string;
@@ -155,7 +156,18 @@ export interface InteractionContext {
   readonly annotations: readonly string[];
 }
 
+/** Read-only frozen policy; only trusted graph preparation creates authority. */
+export interface InteractionPermissions {
+  readonly version: "1" | "2";
+  readonly enabled: boolean;
+  readonly permissions: readonly (
+    | { readonly kind: "navigate.add"; readonly nodeId: GraphId }
+    | { readonly kind: "invoke.resolve"; readonly actionId: GraphId }
+  )[];
+}
+
 export interface InteractionInput {
+  readonly interactionPermissions?: InteractionPermissions;
   readonly interaction: InteractionInputNode;
   readonly contexts: readonly InteractionContext[];
   readonly submittedInputs?: readonly SubmittedInput[];

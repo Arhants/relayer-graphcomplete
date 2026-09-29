@@ -199,7 +199,7 @@ async function shell(name, expanded) {
       return {selector,visible:e?.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}),rect:r&&{left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height},contained:r&&r.left>=header.left-.5&&r.right<=header.right+.5&&r.top>=0&&r.bottom<=innerHeight};
     });
   })()`);
-  const headerControls=await auditHeader(['#historyBack','#historyForward','#conversationSettingsButton','#shareConversation']);
+  const headerControls=await auditHeader(['#historyBack','#historyForward','#conversationSettingsButton','#environmentToggle','#shareConversation']);
   assert.ok(headerControls.every(c=>c.visible&&c.rect.width>0&&c.rect.height>0&&c.contained), `${name}: header controls ${JSON.stringify(headerControls)}`);
   for(let i=0;i<headerControls.length;i++) for(let j=i+1;j<headerControls.length;j++) {
     const a=headerControls[i].rect,b=headerControls[j].rect;

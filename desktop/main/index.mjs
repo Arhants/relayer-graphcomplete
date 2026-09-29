@@ -203,6 +203,7 @@ if (primaryInstance) {
   };
   const graphRuntime = new GraphCompleteRuntimeService({
     userDataDirectory: userDataPath,
+    interactionPermissions: !app.isPackaged && process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1",
     graphServerBinary: relayerGraphServerBinary,
     configurationPaths: [...new Set([
       defaultHarnessConfiguration,
@@ -373,6 +374,9 @@ if (primaryInstance) {
   async function shutdownServices() {
     shutdownPromise ??= (async () => {
       const results = [];
+      // Provider admission closes first, so no turn takes provider access while shutdown
+      // awaits the app server; the provider teardown below would close it underneath (PROV-004).
+      providerComposition?.beginShutdown();
       updater.stopPolling();
       try {
         electronMainErrorAdapter?.close();

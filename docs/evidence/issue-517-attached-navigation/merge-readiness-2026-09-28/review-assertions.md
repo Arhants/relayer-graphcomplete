@@ -1,0 +1,18 @@
+# Final candidate independent review assertions
+
+Fixed review base: `015e5058a25b7f191da3a3addf56454d0e34b6d0`; existing PR head: `c1db3d10825183c5ab7209b3abd22ef2ef7bbd97`. Both reviewers examined the full PR plus consolidated working changes, not only the popover delta. Each independently verified the historical 36-path source manifest `c37a7b3d24577349032edeb232859e4aa16523f06f3da25abbdcd9d00831b01d` and 79-path candidate manifest `d0c414ff63b86e9f0b29d0aa3e6e1b80f9d0629d49b4079e21219cc331c107cd`.
+
+- Reviewer `/root/merge_ready_spec`: no actionable production mismatch against the superseding PRD/ADR decision. One P3 evidence-index finding: older optional-policy/undecided/human-gate wording appeared current. A dated current-state section and explicit historical labeling repair that documentation finding. Static review; no test execution. Required automated Product/Eval/reopen proof remains a separate gate.
+- Reviewer `/root/merge_ready_standards`: PASS, no actionable findings against AGENTS/CONTRIBUTING/CI conventions. Reviewed production, tests, runner and evidence; retained authority assertions/overlapping failure boundaries and observer cleanup; no test weakening or unrelated churn. Credential-pattern scan of216 evidence text files found no matches. Static review; no test execution.
+
+The evidence-index-only delta has SHA256 `935fb3e909196b0655b90abbd9694e56c2cf6dd56c52eda3dd714dea51efd40b`; both parent-owned Spec and Standards delta reviews passed; the P3 is resolved, and relative links resolve. All executable/test bytes remain identical to both reviewed manifests. Subsequent result records do not expand the static source review into execution evidence.
+
+Before publishing the PR assertion, bridge the final commit to this reviewed scope by exact file-hash equality, explicitly allowing only the reviewed evidence-index delta and appended provenance/results. A source/test change invalidates its affected assertion. These are local assertions until attached to the exact published PR commit; no merge approval is implied.
+
+## Bounded assembled-evidence audit
+
+Reviewer `/root/merge_ready_spec` independently audited the complete minimal probe and combined declared Product/Eval/reopen evidence. PASS: the outstanding deterministic Eval visible-control/activation gap is closed on all36 unchanged `c37a7b3d24577349032edeb232859e4aa16523f06f3da25abbdcd9d00831b01d` source paths. The probe uses real Product API/graph-client acceptance, production read-only Eval renderer and its rendered button; no injected button or navigation mock. Both images show source24/layer7, and the actual click changes the canonical selection to response34/layer10.
+
+Audited SHA256 values: probe `371943a1d80e3b667426fafe12d01142f0563a9c9b071349d9476980452d7780`; log `c7a92339de4c9d4b7cc3dc1f352d5ec33ecd2e7135068fa6614fa058590fc032`; result `f6031c6613a605579e0d3e83831cd60ae1938cb2f31a4d4603572457d8eb1ff1`; both PNGs `cb3422801cd50d1c3b395ece262a0c2a057267d0a8bd9c297e855b56f37fdc44`. Declared-run first-message runner SHA256 `e776ecb8fb58251e586b70ee3a428bbaa26b00f65f457a8bb0b6420ac5156736`; gated log `8ad54529e8ff8710e7b686f3f3a4c1c6ef306b089e7c69f4f99c4df9f2d93d01`.
+
+The audit itself was static, with no extra execution or edits. The probe is separate diagnostic evidence using programmatic DOM activation, not native keyboard or model-compliance proof. AN-007 prompt delivery remains covered by its existing tests. The original Eval13 image discrepancy is preserved unresolved; it was neither root-caused nor fixed. Parent PR #536 remains open, so this does not assert readiness to merge directly into main.

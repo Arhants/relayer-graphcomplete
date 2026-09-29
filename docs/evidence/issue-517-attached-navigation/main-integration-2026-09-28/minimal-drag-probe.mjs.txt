@@ -1,0 +1,24 @@
+import {app,BrowserWindow} from 'electron';
+app.commandLine.appendSwitch('disable-gpu');
+app.whenReady().then(async()=>{
+const win=new BrowserWindow({width:1420,height:940,show:true,webPreferences:{backgroundThrottling:false}});
+try {
+ await win.loadURL('http://127.0.0.1:57362/desktop/renderer/index.html');
+ win.show();win.focus();
+ const wc=win.webContents;
+ const point=await wc.executeJavaScript(`(async()=>{
+ while(!window.layoutWorkspace) await new Promise(resolve=>requestAnimationFrame(resolve));
+ document.querySelector('#closeInspector').click();
+ await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+ window.events=[];
+ for(const type of ['pointerdown','pointermove','pointerup','click'])document.addEventListener(type,e=>events.push({type,buttons:e.buttons}),true);
+ const r=document.querySelector('[data-node]').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+23)};
+ })()`);
+ wc.sendInputEvent({type:'mouseDown',...point,button:'left',clickCount:1});
+ wc.sendInputEvent({type:'mouseMove',x:point.x+24,y:point.y+12,...(process.argv.includes('--held')?{modifiers:['leftButtonDown']}:{})});
+ wc.sendInputEvent({type:'mouseUp',x:point.x+24,y:point.y+12,button:'left',clickCount:1});
+ const result=await wc.executeJavaScript(`(async()=>{await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return {events,inspectorClosed:document.querySelector('#inspector').classList.contains('hidden')}})()`);
+ console.log(JSON.stringify(result));app.exit(result.inspectorClosed?0:1);
+}catch(e){console.error(e);app.exit(1)}
+
+});

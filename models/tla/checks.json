@@ -31,6 +31,108 @@
       "TerminalReadSettlesCleanup": "TRUE",
       "ChildAdmission": "TRUE"
     },
+    "composer-today": {
+      "Threads": "{\"A\", \"B\"}",
+      "MaxTurns": "2",
+      "MaxText": "2",
+      "MaxRev": "5",
+      "BackgroundRenders": "TRUE",
+      "CarryUnsentDraft": "TRUE",
+      "StableScopeRevision": "TRUE",
+      "OtherTurns": "FALSE",
+      "HoldFromClick": "TRUE",
+      "HoldUncertain": "TRUE",
+      "RetireSuperseded": "TRUE",
+      "HandBackUncertain": "TRUE"
+    },
+    "composer-fixed": {
+      "Threads": "{\"A\", \"B\"}",
+      "MaxTurns": "2",
+      "MaxText": "2",
+      "MaxRev": "5",
+      "BackgroundRenders": "TRUE",
+      "CarryUnsentDraft": "TRUE",
+      "StableScopeRevision": "TRUE",
+      "OtherTurns": "TRUE",
+      "HoldFromClick": "TRUE",
+      "HoldUncertain": "TRUE",
+      "RetireSuperseded": "TRUE",
+      "HandBackUncertain": "TRUE"
+    },
+    "composer-replay": {
+      "Threads": "{\"A\", \"B\"}",
+      "MaxTurns": "2",
+      "MaxText": "2",
+      "MaxRev": "12",
+      "BackgroundRenders": "TRUE",
+      "CarryUnsentDraft": "TRUE",
+      "StableScopeRevision": "TRUE",
+      "OtherTurns": "TRUE",
+      "HoldFromClick": "TRUE",
+      "HoldUncertain": "TRUE",
+      "RetireSuperseded": "TRUE",
+      "HandBackUncertain": "TRUE"
+    },
+    "inspector-today": {
+      "Nodes": "{\"n1\", \"n2\"}",
+      "MaxRev": "3",
+      "MaxEditors": "3",
+      "Slots": "{1, 2, 3}",
+      "QueueWhileResolving": "TRUE",
+      "RefreshAfterResolve": "TRUE",
+      "LatestRequestSupersedes": "TRUE"
+    },
+    "inspector-replay": {
+      "Nodes": "{\"n1\", \"n2\"}",
+      "MaxRev": "6",
+      "MaxEditors": "6",
+      "Slots": "{1, 2, 3, 4}",
+      "QueueWhileResolving": "TRUE",
+      "RefreshAfterResolve": "TRUE",
+      "LatestRequestSupersedes": "TRUE"
+    },
+    "input": {
+      "MaxVal": "2",
+      "MaxRev": "5",
+      "SendAwaitsAuthoredCommits": "TRUE",
+      "KeepFailedCommit": "TRUE"
+    },
+    "canvas": {
+      "L": "3",
+      "MaxGen": "6",
+      "KeepDragAcrossRender": "TRUE",
+      "FitLayoutAfterDrop": "TRUE",
+      "FitBeforeLeaving": "TRUE"
+    },
+    "catalog-today": {
+      "MaxQ": "2",
+      "MaxEvents": "2",
+      "AllowPre": "TRUE",
+      "AllowClose": "TRUE",
+      "WithQ": "TRUE",
+      "UserOps": "TRUE",
+      "MaxFlips": "2",
+      "InitAdapters": "{\"real\", \"stub\"}",
+      "Ops": "{\"logout\", \"reconnect\", \"remove\"}",
+      "InitDefFams": "{\"mP\", \"C\", \"none\"}",
+      "DefaultProviderPairsFamily": "TRUE",
+      "ConnectionGeneration": "TRUE",
+      "ReconnectKeepsAdapter": "TRUE",
+      "AdapterAfterCommit": "TRUE",
+      "RefreshSkipsPendingReconnect": "TRUE",
+      "CancelSignsOut": "TRUE"
+    },
+    "readiness-today": {
+      "Evals": "{1, 2, 3}",
+      "Digests": "{\"d1\", \"d2\"}",
+      "InitDigest": "\"d1\"",
+      "MaxRestarts": "1",
+      "JsonWriteCanFail": "TRUE",
+      "ValidationCanFail": "TRUE",
+      "RequestCanOutliveClient": "TRUE",
+      "RustIsReadinessRecord": "TRUE",
+      "RustRejectsOlderGeneration": "TRUE"
+    },
     "leases-today": {
       "Turns": "{1}",
       "MaxRestarts": "0",
@@ -51,32 +153,47 @@
       "StartupIsolatesProviders": "TRUE",
       "ForceStopsCancelledTurn": "TRUE"
     },
-    "catalog-today": {
-      "MaxQ": "2",
-      "MaxEvents": "2",
-      "AllowPre": "TRUE",
-      "AllowClose": "TRUE",
-      "WithQ": "TRUE",
-      "UserOps": "TRUE",
-      "MaxFlips": "2",
-      "InitAdapters": "{\"real\", \"stub\"}",
-      "Ops": "{\"logout\", \"reconnect\", \"remove\"}",
-      "InitDefFams": "{\"mP\", \"C\", \"none\"}",
-      "DefaultProviderPairsFamily": "TRUE",
-      "ConnectionGeneration": "TRUE",
-      "ReconnectKeepsAdapter": "TRUE",
-      "AdapterAfterCommit": "TRUE"
+    "codex-thread-today": {
+      "AllowSwitch": "TRUE",
+      "AllowCancel": "TRUE",
+      "LegacyState": "TRUE",
+      "CommitAtTurnStart": "TRUE",
+      "ThreadRecordsHome": "TRUE",
+      "BindToHome": "TRUE",
+      "RecoverMissingRollout": "TRUE",
+      "ForceForgets": "TRUE",
+      "CommitChecksForce": "TRUE",
+      "ForgetOnlyAfterTurnStart": "TRUE",
+      "StopForgetsPendingStart": "TRUE",
+      "ResetsVisible": "TRUE"
     },
-    "readiness-today": {
-      "Evals": "{1, 2, 3}",
-      "Digests": "{\"d1\", \"d2\"}",
-      "InitDigest": "\"d1\"",
-      "MaxRestarts": "1",
-      "JsonWriteCanFail": "TRUE",
-      "ValidationCanFail": "TRUE",
-      "RequestCanOutliveClient": "TRUE",
-      "RustIsReadinessRecord": "TRUE",
-      "RustRejectsOlderGeneration": "TRUE"
+    "prime-root-today": {
+      "CanForceClose": "TRUE",
+      "CanCrash": "FALSE",
+      "CanClose": "TRUE",
+      "ForcePersists": "TRUE",
+      "ForceShutdownForgets": "TRUE",
+      "ForgetOnlyRunning": "TRUE",
+      "ForceClosePersists": "TRUE",
+      "SessionScopedInstructions": "TRUE"
+    },
+    "codex-auth": {},
+    "lifecycle-today": {
+      "MaxRt": "3",
+      "MaxGen": "4",
+      "SignOutPublishCanFail": "TRUE",
+      "CancelPublishCanFail": "TRUE",
+      "ReconnectAnswerCanBeLost": "TRUE",
+      "LeaseWaitsForReconnect": "TRUE",
+      "CancelSparesLease": "TRUE",
+      "ShutdownRefusesLeases": "TRUE",
+      "RefreshSkipsPendingReconnect": "TRUE",
+      "LostReconnectAdopted": "TRUE",
+      "AdoptChecksBaseline": "TRUE",
+      "CancelSignsOut": "TRUE",
+      "CancelKeepsUnrecordedLogin": "TRUE",
+      "SupersededCancelWipes": "TRUE",
+      "AdoptTracksLostWrites": "TRUE"
     },
     "readiness-repair-today": {
       "Providers": "{chatgpt, openrouter}",
@@ -99,10 +216,8 @@
         "TypeOK",
         "LeasedRuntimeStaysOpen"
       ],
-      "expect": {
-        "violated": "LeasedRuntimeStaysOpen"
-      },
-      "finding": "A turn admitted while the provider looked connected leases the runtime a pending reconnect registered; cancelling that reconnect closes it under the turn."
+      "expect": "pass",
+      "finding": "A turn's lease waits for a pending reconnect, and a reconnect never closes a leased runtime (fixed; was: a turn admitted while the provider looked connected leased the runtime a pending reconnect registered, and cancelling that reconnect closed it under the turn)."
     },
     {
       "id": "provider-remove-during-reconnect",
@@ -134,10 +249,8 @@
         "TypeOK",
         "CloseLeavesNoOpenRuntime"
       ],
-      "expect": {
-        "violated": "CloseLeavesNoOpenRuntime"
-      },
-      "finding": "close() does not drain the provider queue or refuse leases: a turn admitted before shutdown creates and registers a runtime after the maps are cleared."
+      "expect": "pass",
+      "finding": "Leases are refused once close() begins, and a runtime that finishes starting after it is closed again (fixed; was: a turn admitted before shutdown created and registered a runtime after the maps were cleared)."
     },
     {
       "id": "provider-default-family",
@@ -145,12 +258,10 @@
       "preset": "providers",
       "invariants": [
         "TypeOK",
-        "DefaultFamilyIsLive"
+        "DefaultFamilyIsLiveOrManagedByActiveProvider"
       ],
-      "expect": {
-        "violated": "DefaultFamilyIsLive"
-      },
-      "finding": "Open product question: a catalog refresh reporting no eligible models tombstones the default family until a later refresh reactivates it. No PRD promise covers this."
+      "expect": "pass",
+      "finding": "The default family is live, or P's managed family while P is active, as after a no-eligible refresh whether P stays connected or disconnects (decided; PROV-008 Q15). The enabled choice and the recovery cause are checked by the Rust tests, not this model."
     },
     {
       "id": "completion-safety-holds",
@@ -851,236 +962,6 @@
       "finding": "Without the per-turn force-stop, a cancelled native turn that ignores the cancellation keeps its provider access forever."
     },
     {
-      "id": "catalog-refresh-keeps-chosen-default",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "MaxEvents": "1",
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "MaxFlips": "1",
-        "InitAdapters": "{\"real\"}",
-        "InitDefFams": "{\"mP\", \"C\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "DefaultIsPaired",
-        "RefreshKeepsUserDefault",
-        "RefreshKeepsOtherDefault"
-      ],
-      "expect": "pass",
-      "finding": "Choosing a default provider also selects its managed family, so no later refresh changes the chosen provider or family (fixed, PROV-008; was: the next refresh of the family's provider moved the default provider back to it)."
-    },
-    {
-      "id": "catalog-refresh-keeps-default-chosen-from-unset",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "MaxEvents": "1",
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "MaxFlips": "1",
-        "InitAdapters": "{\"real\"}",
-        "InitDefFams": "{\"none\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "DefaultIsPaired",
-        "RefreshKeepsUserDefault"
-      ],
-      "expect": "pass",
-      "finding": "From an unset default family, a refresh may fill the family with its provider, but once the user chooses a provider and family no refresh changes them (PROV-008)."
-    },
-    {
-      "id": "catalog-chosen-default-reverted",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "MaxEvents": "1",
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "MaxFlips": "1",
-        "InitAdapters": "{\"real\"}",
-        "InitDefFams": "{\"mP\", \"C\"}",
-        "DefaultProviderPairsFamily": "FALSE"
-      },
-      "invariants": [
-        "RefreshKeepsUserDefault"
-      ],
-      "expect": {
-        "violated": "RefreshKeepsUserDefault"
-      },
-      "finding": "Without the pairing, the Settings provider choice stores only the provider, and the next refresh of the default family's provider moves the default provider back to it."
-    },
-    {
-      "id": "catalog-stale-refresh-after-reconnect",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxFlips": "0",
-        "InitAdapters": "{\"real\"}",
-        "Ops": "{\"logout\", \"reconnect\"}",
-        "InitDefFams": "{\"mP\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "NoStaleEffect",
-        "NoPersistingStaleEffect"
-      ],
-      "expect": "pass",
-      "finding": "A refresh that discovered before a reconnect carries the older connection generation, so its stale result has no effect (fixed, PROV-002; was: it published over the reconnect and nothing queued behind it corrected that)."
-    },
-    {
-      "id": "catalog-old-account-repopulates",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "MaxFlips": "1",
-        "InitAdapters": "{\"real\"}",
-        "Ops": "{\"reconnect\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "NoUnsafePopulate"
-      ],
-      "expect": "pass",
-      "finding": "An eligible result discovered before a zero-eligible reconnect carries the older generation and cannot reactivate the tombstoned family (fixed, PROV-002)."
-    },
-    {
-      "id": "catalog-stale-adapter-capture",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "MaxFlips": "0",
-        "InitAdapters": "{\"stub\"}",
-        "Ops": "{\"reconnect\"}",
-        "InitDefFams": "{\"mP\"}"
-      },
-      "invariants": [
-        "TypeOK",
-        "NoContradictingReplacedAdapterEffect"
-      ],
-      "expect": "pass",
-      "finding": "A refresh resolves its adapter when it runs, so a refresh queued before a reconnect runs through the reconnect's runtime (fixed, PROV-002; was: it ran through the captured unavailable stub and contradicted the reconnect)."
-    },
-    {
-      "id": "catalog-stub-recovery-logout-deadlock",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "MaxFlips": "0",
-        "InitAdapters": "{\"stub\"}",
-        "Ops": "{\"logout\"}",
-        "InitDefFams": "{\"mP\"}"
-      },
-      "fair": true,
-      "properties": [
-        "LogoutReturns"
-      ],
-      "expect": "pass",
-      "finding": "Logout commits its signed-out state with the next generation and no longer waits inside the provider queue for its refresh, so it returns (fixed, CR-V7)."
-    },
-    {
-      "id": "catalog-no-restore-after-cancelled-reconnect",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "MaxFlips": "2",
-        "InitAdapters": "{\"stub\"}",
-        "Ops": "{\"reconnect\"}",
-        "InitDefFams": "{\"mP\"}"
-      },
-      "fair": true,
-      "invariants": [
-        "TypeOK",
-        "ActiveProviderHasAdapter"
-      ],
-      "properties": [
-        "DefaultRestores"
-      ],
-      "expect": "pass",
-      "finding": "A cancelled reconnect leaves the active provider a catalog adapter: a fresh runtime, or the recovery adapter when none can start. With the real adapter, a tombstoned default family restores once the provider is healthy (fixed, F4/V8)."
-    },
-    {
-      "id": "catalog-own-family",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxFlips": "1"
-      },
-      "properties": [
-        "OnlyOwnFamily"
-      ],
-      "expect": "pass",
-      "finding": "A catalog publish changes only its own provider's managed family and never a custom family."
-    },
-    {
-      "id": "catalog-tombstoned-default-blocks-send",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxFlips": "1"
-      },
-      "invariants": [
-        "TypeOK",
-        "TombDefaultBlocksSend"
-      ],
-      "expect": "pass",
-      "finding": "A default family tombstoned by a zero-eligible refresh stays the default and blocks Send."
-    },
-    {
-      "id": "catalog-default-restores",
-      "module": "CatalogRefresh",
-      "preset": "catalog-today",
-      "constants": {
-        "AllowPre": "FALSE",
-        "AllowClose": "FALSE",
-        "WithQ": "FALSE",
-        "UserOps": "FALSE",
-        "MaxEvents": "1",
-        "InitAdapters": "{\"real\"}",
-        "Ops": "{\"logout\", \"reconnect\"}"
-      },
-      "fair": true,
-      "properties": [
-        "DefaultRestores"
-      ],
-      "expect": "pass",
-      "finding": "A tombstoned default family restores once its provider is healthy and its real adapter is registered."
-    },
-    {
       "id": "readiness-restart-restore",
       "module": "HarnessReadiness",
       "preset": "readiness-today",
@@ -1182,6 +1063,90 @@
       "finding": "The latest evaluation always reaches the app server."
     },
     {
+      "id": "catalog-refresh-keeps-chosen-default",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "InitDefFams": "{\"mP\", \"C\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "DefaultIsPaired",
+        "RefreshKeepsUserDefault",
+        "RefreshKeepsOtherDefault"
+      ],
+      "expect": "pass",
+      "finding": "Choosing a default provider also selects its managed family, so no later refresh changes the chosen provider or family (fixed, PROV-008; was: the next refresh of the family's provider moved the default provider back to it)."
+    },
+    {
+      "id": "catalog-refresh-keeps-default-chosen-from-unset",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "InitDefFams": "{\"none\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "DefaultIsPaired",
+        "RefreshKeepsUserDefault"
+      ],
+      "expect": "pass",
+      "finding": "From an unset default family, a refresh may fill the family with its provider, but once the user chooses a provider and family no refresh changes them (PROV-008)."
+    },
+    {
+      "id": "catalog-chosen-default-reverted",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "MaxEvents": "1",
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "InitDefFams": "{\"mP\", \"C\"}",
+        "DefaultProviderPairsFamily": "FALSE"
+      },
+      "invariants": [
+        "RefreshKeepsUserDefault"
+      ],
+      "expect": {
+        "violated": "RefreshKeepsUserDefault"
+      },
+      "finding": "Without the pairing, the Settings provider choice stores only the provider, and the next refresh of the default family's provider moves the default provider back to it."
+    },
+    {
+      "id": "catalog-stale-refresh-after-reconnect",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"logout\", \"reconnect\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoStaleEffect",
+        "NoPersistingStaleEffect"
+      ],
+      "expect": "pass",
+      "finding": "A refresh that discovered before a reconnect carries the older connection generation, so its stale result has no effect (fixed, PROV-002; was: it published over the reconnect and nothing queued behind it corrected that)."
+    },
+    {
       "id": "catalog-stale-refresh-after-reconnect-reverted",
       "module": "CatalogRefresh",
       "preset": "catalog-today",
@@ -1205,6 +1170,27 @@
       "finding": "Without the connection generation, a refresh that discovered before a reconnect publishes its stale disconnected result after the reconnect, and nothing queued behind it corrects that."
     },
     {
+      "id": "catalog-old-account-repopulates",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "1",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"reconnect\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoUnsafePopulate"
+      ],
+      "expect": "pass",
+      "finding": "An eligible result discovered before a zero-eligible reconnect carries the older generation and cannot reactivate the tombstoned family (fixed, PROV-002)."
+    },
+    {
       "id": "catalog-old-account-repopulates-reverted",
       "module": "CatalogRefresh",
       "preset": "catalog-today",
@@ -1226,6 +1212,28 @@
         "violated": "NoUnsafePopulate"
       },
       "finding": "Without the connection generation, an eligible result discovered before a reconnect that found zero eligible models reactivates the tombstoned managed family."
+    },
+    {
+      "id": "catalog-stale-adapter-capture",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"reconnect\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoContradictingReplacedAdapterEffect"
+      ],
+      "expect": "pass",
+      "finding": "A refresh resolves its adapter when it runs, so a refresh queued before a reconnect runs through the reconnect's runtime (fixed, PROV-002; was: it ran through the captured unavailable stub and contradicted the reconnect)."
     },
     {
       "id": "catalog-stale-adapter-capture-reverted",
@@ -1252,6 +1260,28 @@
       "finding": "Without run-time resolution, a refresh captures its adapter when requested; the unavailable stub it captured publishes after a reconnect replaced it and contradicts the reconnect."
     },
     {
+      "id": "catalog-stub-recovery-logout-deadlock",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "0",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"logout\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "fair": true,
+      "properties": [
+        "LogoutReturns"
+      ],
+      "expect": "pass",
+      "finding": "Logout commits its signed-out state with the next generation and no longer waits inside the provider queue for its refresh, so it returns (fixed, CR-V7)."
+    },
+    {
       "id": "catalog-stub-recovery-logout-deadlock-reverted",
       "module": "CatalogRefresh",
       "preset": "catalog-today",
@@ -1275,6 +1305,32 @@
         "violated": "LogoutReturns"
       },
       "finding": "Logout waits inside the provider queue for its own refresh, which is queued behind an explicit stub recovery that waits for the provider queue: neither returns."
+    },
+    {
+      "id": "catalog-no-restore-after-cancelled-reconnect",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "MaxFlips": "2",
+        "InitAdapters": "{\"stub\"}",
+        "Ops": "{\"reconnect\"}",
+        "InitDefFams": "{\"mP\"}"
+      },
+      "fair": true,
+      "invariants": [
+        "TypeOK",
+        "ActiveProviderHasAdapter"
+      ],
+      "properties": [
+        "DefaultRestores"
+      ],
+      "expect": "pass",
+      "finding": "A cancelled reconnect leaves the active provider a catalog adapter: a fresh runtime, or the recovery adapter when none can start. With the real adapter, a tombstoned default family restores once the provider is healthy (fixed, F4/V8)."
     },
     {
       "id": "catalog-no-restore-after-cancelled-reconnect-reverted",
@@ -1343,6 +1399,1187 @@
         "violated": "AdapterOnlyForDefinition"
       },
       "finding": "Registering the catalog adapter before the commit gives a provider an adapter before its definition exists."
+    },
+    {
+      "id": "catalog-own-family",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "1"
+      },
+      "properties": [
+        "OnlyOwnFamily"
+      ],
+      "expect": "pass",
+      "finding": "A catalog publish changes only its own provider's managed family and never a custom family."
+    },
+    {
+      "id": "catalog-tombstoned-default-blocks-send",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxFlips": "1"
+      },
+      "invariants": [
+        "TypeOK",
+        "TombDefaultBlocksSend"
+      ],
+      "expect": "pass",
+      "finding": "A default family tombstoned by a zero-eligible refresh stays the default and blocks Send."
+    },
+    {
+      "id": "catalog-default-restores",
+      "module": "CatalogRefresh",
+      "preset": "catalog-today",
+      "constants": {
+        "AllowPre": "FALSE",
+        "AllowClose": "FALSE",
+        "WithQ": "FALSE",
+        "UserOps": "FALSE",
+        "MaxEvents": "1",
+        "InitAdapters": "{\"real\"}",
+        "Ops": "{\"logout\", \"reconnect\"}"
+      },
+      "fair": true,
+      "properties": [
+        "DefaultRestores"
+      ],
+      "expect": "pass",
+      "finding": "A tombstoned default family restores once its provider is healthy and its real adapter is registered."
+    },
+    {
+      "id": "composer-typing-during-send",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives"
+      ],
+      "expect": "pass",
+      "finding": "Text typed while a follow-up is in flight survives the new turn loading (fixed; #512: it stayed in the old turn's draft scope, which was never shown again)."
+    },
+    {
+      "id": "composer-typing-during-send-without-renders",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "BackgroundRenders": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives"
+      ],
+      "expect": "pass",
+      "finding": "The same holds when the prompt was re-enabled by leaving the thread and returning during the POST (fixed; #512)."
+    },
+    {
+      "id": "composer-settlement-erases-edit",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "invariants": [
+        "TypeOK",
+        "SettlementClearsOnlySentText"
+      ],
+      "expect": "pass",
+      "finding": "Settlement clears only text the send carried (fixed; #513: re-entering a scope could repeat a revision, so a successful send cleared and deleted text typed after Send)."
+    },
+    {
+      "id": "composer-sent-text-lingers",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "invariants": [
+        "TypeOK",
+        "SentTextIsNotShownAgain"
+      ],
+      "expect": "pass",
+      "finding": "A settled send does not leave its text in the composer (fixed; #513: re-entering a scope during a send bumped its revision without a text change, so settlement kept the sent text)."
+    },
+    {
+      "id": "composer-one-send-per-thread",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "invariants": [
+        "TypeOK",
+        "OneSendPerThread"
+      ],
+      "properties": [
+        "SendReleases"
+      ],
+      "fair": true,
+      "expect": "pass",
+      "finding": "At most one follow-up per thread is in flight, and every send releases its thread's Send button.",
+      "constants": {
+        "MaxRev": "4"
+      }
+    },
+    {
+      "id": "composer-fixed",
+      "module": "TurnComposer",
+      "preset": "composer-fixed",
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain",
+        "OneSendPerThread",
+        "SupersededStaysGone"
+      ],
+      "expect": "pass",
+      "finding": "Moving unsent text to the newest turn's scope and keeping a scope's revision unless its text changes restore every composer promise."
+    },
+    {
+      "id": "inspector-promises",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "invariants": [
+        "TypeOK",
+        "LastRequestWins",
+        "InspectorShowsSelection",
+        "InspectorIsCurrent",
+        "DraftedSelectionHasEditor",
+        "OnlyLatestRequestSelects"
+      ],
+      "expect": "pass",
+      "finding": "Input made while an annotation draft resolves waits and the latest proceeds (fixed; #514), the selection is re-rendered from the latest state once the draft resolves (fixed; #515), and a drafted node reopens its editor (PRD L2203)."
+    },
+    {
+      "id": "inspector-without-supersede",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "constants": {
+        "LatestRequestSupersedes": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "OnlyLatestRequestSelects"
+      ],
+      "expect": {
+        "violated": "OnlyLatestRequestSelects"
+      },
+      "finding": "Without superseding it, a switch waiting on a draft save commits its node, reporting it and recording it in history, before a click queued meanwhile replaces it (review of #514)."
+    },
+    {
+      "id": "input-send-carries-answer",
+      "module": "AuthoredInputSend",
+      "preset": "input",
+      "invariants": [
+        "TypeOK",
+        "SendCarriesEnteredAnswer",
+        "SendNotRefusedByOwnAnswer"
+      ],
+      "expect": "pass",
+      "finding": "Send waits for an authored input commit started by the click, so it carries the answer and is not refused (fixed; #521: the Send could go without the answer, or be refused by it)."
+    },
+    {
+      "id": "input-send-without-waiting",
+      "module": "AuthoredInputSend",
+      "preset": "input",
+      "constants": {
+        "SendAwaitsAuthoredCommits": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SendCarriesEnteredAnswer"
+      ],
+      "expect": {
+        "violated": "SendCarriesEnteredAnswer"
+      },
+      "finding": "Without the wait, a Send served before the commit goes without the answer (#521)."
+    },
+    {
+      "id": "input-send-forgets-early-failure",
+      "module": "AuthoredInputSend",
+      "preset": "input",
+      "constants": {
+        "KeepFailedCommit": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SendCarriesEnteredAnswer"
+      ],
+      "expect": {
+        "violated": "SendCarriesEnteredAnswer"
+      },
+      "finding": "Without keeping a failed commit, one that fails before the click is forgotten, and the Send goes without the answer (review of #521)."
+    },
+    {
+      "id": "composer-without-carry",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "CarryUnsentDraft": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives"
+      ],
+      "expect": {
+        "violated": "UnsentDraftSurvives"
+      },
+      "finding": "Without moving unsent text into the newest turn's scope, text typed during a send is stranded (#512)."
+    },
+    {
+      "id": "composer-invoked-turns",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "Threads": "{\"A\"}",
+        "MaxTurns": "3",
+        "OtherTurns": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives",
+        "SettlementClearsOnlySentText",
+        "SentTextIsNotShownAgain",
+        "OneSendPerThread",
+        "SupersededStaysGone"
+      ],
+      "expect": "pass",
+      "finding": "With turns created elsewhere in the thread (an authored invoke) arriving while Send waits for an input commit, the composer keeps its promises (fixed in review of #512: the text was carried into the newer turn and stayed after it was sent)."
+    },
+    {
+      "id": "composer-without-click-hold",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "Threads": "{\"A\"}",
+        "MaxTurns": "3",
+        "HoldFromClick": "FALSE",
+        "OtherTurns": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SentTextIsNotShownAgain"
+      ],
+      "expect": {
+        "violated": "SentTextIsNotShownAgain"
+      },
+      "finding": "Without holding the submission from the click, a newer turn that arrives while Send waits for an input commit carries the text it then sends, and the text stays after the send (review of #512)."
+    },
+    {
+      "id": "composer-without-uncertain-hold",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "HoldUncertain": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SentTextIsNotShownAgain"
+      ],
+      "expect": {
+        "violated": "SentTextIsNotShownAgain"
+      },
+      "finding": "Without holding a send that may have been sent, its text is carried into the turn it created and can be sent again (review of #512; SCP-019)."
+    },
+    {
+      "id": "composer-without-retire",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "RetireSuperseded": "FALSE",
+        "OtherTurns": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SupersededStaysGone"
+      ],
+      "expect": {
+        "violated": "SupersededStaysGone"
+      },
+      "finding": "Without retiring it, stranded text the user replaced by typing stays in its scope and is carried forward once the prompt empties (review of #512, SCP-021)."
+    },
+    {
+      "id": "composer-without-uncertain-hand-back",
+      "module": "TurnComposer",
+      "preset": "composer-today",
+      "constants": {
+        "HandBackUncertain": "FALSE",
+        "OtherTurns": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "UnsentDraftSurvives"
+      ],
+      "expect": {
+        "violated": "UnsentDraftSurvives"
+      },
+      "finding": "Without handing it back, the text of a send lost to a network or server error stays stranded in its scope when an unrelated turn arrived while it was pending (review of #512, SCP-019)."
+    },
+    {
+      "id": "inspector-without-queue",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "constants": {
+        "QueueWhileResolving": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "LastRequestWins"
+      ],
+      "expect": {
+        "violated": "LastRequestWins"
+      },
+      "finding": "Without waiting, input made while a draft resolves is dropped (#514)."
+    },
+    {
+      "id": "inspector-without-refresh",
+      "module": "NodeInspector",
+      "preset": "inspector-today",
+      "constants": {
+        "RefreshAfterResolve": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "InspectorShowsSelection"
+      ],
+      "expect": {
+        "violated": "InspectorShowsSelection"
+      },
+      "finding": "Without the refresh, a refused switch can leave the kept node's detail disposed (#515)."
+    },
+    {
+      "id": "canvas-promises",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "invariants": [
+        "TypeOK",
+        "DragFollowsPointer",
+        "DropStays",
+        "DropFitsNewLayout"
+      ],
+      "expect": "pass",
+      "finding": "A dragged node follows the pointer and stays where it is left across renders and view round trips, and only a pan or a new layout moves the camera (fixed; #531: a render during a drag froze the node).",
+      "properties": [
+        "CameraMovesOnlyByPanOrFit"
+      ]
+    },
+    {
+      "id": "canvas-without-rebind",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "constants": {
+        "KeepDragAcrossRender": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "DragFollowsPointer"
+      ],
+      "expect": {
+        "violated": "DragFollowsPointer"
+      },
+      "finding": "Without re-binding, a render during a drag leaves the drag on the replaced node, which stops following the pointer (#531)."
+    },
+    {
+      "id": "canvas-without-fit-after-drop",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "constants": {
+        "FitLayoutAfterDrop": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "DropFitsNewLayout"
+      ],
+      "expect": {
+        "violated": "DropFitsNewLayout"
+      },
+      "finding": "Without the fit after the drop, a layout that changed mid-drag is never fitted, and new nodes can stay off-screen (review of #531)."
+    },
+    {
+      "id": "canvas-without-fit-before-leaving",
+      "module": "CanvasGesture",
+      "preset": "canvas",
+      "constants": {
+        "FitBeforeLeaving": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "DropFitsNewLayout"
+      ],
+      "expect": {
+        "violated": "DropFitsNewLayout"
+      },
+      "finding": "Without fitting before the view is cached, leaving mid-drag after a layout change caches the unfitted camera, and returning restores it (review of #531)."
+    },
+    {
+      "id": "codex-thread-resumable",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "invariants": [
+        "TypeOK",
+        "NoDeadResume",
+        "ResumeOnlyMaterialized",
+        "NoKilledResume",
+        "NoNeedlessForget",
+        "NoSilentReset"
+      ],
+      "expect": "pass",
+      "finding": "A root turn never fails on a thread Codex cannot resume, never resumes a killed conversation, keeps resuming across providers that share a Codex home, and reports every reset (fixed; was: a provider switch or a Stop before turn/start pinned an unresumable thread, and every later root turn failed with \"no rollout found\", even across restart)."
+    },
+    {
+      "id": "codex-thread-home-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "ThreadRecordsHome": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ResumeOnlyMaterialized"
+      ],
+      "expect": {
+        "violated": "ResumeOnlyMaterialized"
+      },
+      "finding": "Without a recorded binding, a follow-up in another Codex home resumes a thread that has no rollout there."
+    },
+    {
+      "id": "codex-thread-commit-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "CommitAtTurnStart": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ResumeOnlyMaterialized"
+      ],
+      "expect": {
+        "violated": "ResumeOnlyMaterialized"
+      },
+      "finding": "Saving the thread when thread/start answers, not when turn/start is accepted, pins a thread a Stop left without a rollout."
+    },
+    {
+      "id": "codex-thread-recovery-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "RecoverMissingRollout": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoDeadResume"
+      ],
+      "expect": {
+        "violated": "NoDeadResume"
+      },
+      "finding": "Without the missing-rollout recovery, a thread saved by an earlier release that has no rollout in the turn's home fails the root turn."
+    },
+    {
+      "id": "codex-thread-force-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "ForceForgets": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoKilledResume"
+      ],
+      "expect": {
+        "violated": "NoKilledResume"
+      },
+      "finding": "If a force-stop or force shutdown keeps the saved thread, the next root turn resumes the conversation the killed turn may have left mid-write."
+    },
+    {
+      "id": "codex-thread-late-commit-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "CommitChecksForce": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoKilledResume"
+      ],
+      "expect": {
+        "violated": "NoKilledResume"
+      },
+      "finding": "If onTurnId saves a thread whose turn/start answer arrives after the force, the forced conversation is saved again and resumed."
+    },
+    {
+      "id": "codex-thread-forget-unwritten-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "ForgetOnlyAfterTurnStart": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoNeedlessForget"
+      ],
+      "expect": {
+        "violated": "NoNeedlessForget"
+      },
+      "finding": "If a force before turn/start also forgets the saved thread, the next root turn starts fresh although nothing wrote the thread."
+    },
+    {
+      "id": "codex-thread-home-binding-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "BindToHome": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoNeedlessForget"
+      ],
+      "expect": {
+        "violated": "NoNeedlessForget"
+      },
+      "finding": "Binding the thread to its provider definition instead of its Codex home drops native history when a follow-up moves between API-key providers that share Codex's default home (#584)."
+    },
+    {
+      "id": "codex-thread-stop-kill-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "StopForgetsPendingStart": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoKilledResume"
+      ],
+      "expect": {
+        "violated": "NoKilledResume"
+      },
+      "finding": "If a Stop that kills the app-server while turn/start is pending keeps the saved thread, the next root turn resumes a conversation the kill may have left mid-write."
+    },
+    {
+      "id": "codex-thread-silent-reset-reverted",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "constants": {
+        "ResetsVisible": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoSilentReset"
+      ],
+      "expect": {
+        "violated": "NoSilentReset"
+      },
+      "finding": "Without the reset notice, a root turn silently starts a fresh thread after the previous native conversation was lost (#584)."
+    },
+    {
+      "id": "codex-thread-resume-witness",
+      "module": "HarnessCodexThread",
+      "preset": "codex-thread-today",
+      "invariants": [
+        "NeverResumes"
+      ],
+      "expect": {
+        "violated": "NeverResumes"
+      },
+      "finding": "Witness: a root turn really resumes a saved thread, so the resume properties are not vacuous."
+    },
+    {
+      "id": "prime-root-serialized",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "constants": {
+        "CanCrash": "TRUE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoChain",
+        "RootsSerialized"
+      ],
+      "expect": "pass",
+      "finding": "Root turns stay serialized, no chained acquisition starts, and two root natives never share a session, with close, force close and crashes."
+    },
+    {
+      "id": "prime-root-memory",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "invariants": [
+        "MemoryNeverTainted"
+      ],
+      "expect": "pass",
+      "finding": "While the harness is live it never pins or resumes a force-stopped root conversation."
+    },
+    {
+      "id": "prime-root-capture",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "constants": {
+        "CanForceClose": "FALSE"
+      },
+      "properties": [
+        "CapturedNotTainted"
+      ],
+      "expect": "pass",
+      "finding": "No state the host captures after a force-stop names the stopped session (fixed; was: a graceful close captured the state, a force-stop then fired, and the close persisted the stale capture)."
+    },
+    {
+      "id": "prime-root-capture-reverted",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "constants": {
+        "CanForceClose": "FALSE",
+        "ForcePersists": "FALSE"
+      },
+      "properties": [
+        "CapturedNotTainted"
+      ],
+      "expect": {
+        "violated": "CapturedNotTainted"
+      },
+      "finding": "Without recording at the force-stop, a close that captured before the force persists the stopped session."
+    },
+    {
+      "id": "prime-root-restart-close",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "constants": {
+        "CanForceClose": "FALSE"
+      },
+      "invariants": [
+        "RestartNotTainted"
+      ],
+      "expect": "pass",
+      "finding": "After a graceful close and restart, the restored session is never a force-stopped conversation (fixed)."
+    },
+    {
+      "id": "prime-root-restart-close-reverted",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "constants": {
+        "CanForceClose": "FALSE",
+        "ForcePersists": "FALSE"
+      },
+      "invariants": [
+        "RestartNotTainted"
+      ],
+      "expect": {
+        "violated": "RestartNotTainted"
+      },
+      "finding": "Without recording at the force-stop, a turn force-stopped after close persisted is restored after the restart."
+    },
+    {
+      "id": "prime-root-force-close",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "invariants": [
+        "RestartNotTainted",
+        "NoNeedlessForget"
+      ],
+      "expect": "pass",
+      "finding": "Quitting while a root turn runs (force close) does not leave the killed conversation resumable after the restart, and an idle root session, or one a root turn is still acquiring, is kept (fixed; was: force shutdown kept the root session and nothing persisted the change)."
+    },
+    {
+      "id": "prime-root-force-close-forget-reverted",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "constants": {
+        "ForceShutdownForgets": "FALSE"
+      },
+      "invariants": [
+        "RestartNotTainted"
+      ],
+      "expect": {
+        "violated": "RestartNotTainted"
+      },
+      "finding": "If force shutdown keeps the root session, force close persists the killed conversation and the restart resumes it."
+    },
+    {
+      "id": "prime-root-force-close-persist-reverted",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "constants": {
+        "ForceClosePersists": "FALSE"
+      },
+      "invariants": [
+        "RestartNotTainted"
+      ],
+      "expect": {
+        "violated": "RestartNotTainted"
+      },
+      "finding": "If force close does not persist, the previously saved killed conversation is resumed after the restart."
+    },
+    {
+      "id": "prime-root-forget-running-reverted",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "constants": {
+        "ForgetOnlyRunning": "FALSE"
+      },
+      "invariants": [
+        "NoNeedlessForget"
+      ],
+      "expect": {
+        "violated": "NoNeedlessForget"
+      },
+      "finding": "If force shutdown forgets the root session whenever a root turn is in flight, a force close during that turn's session acquisition forgets a session nothing ran on."
+    },
+    {
+      "id": "prime-root-keep-witness",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "invariants": [
+        "NeverKeptAcrossForceClose"
+      ],
+      "expect": {
+        "violated": "NeverKeptAcrossForceClose"
+      },
+      "finding": "Witness: an idle root session survives a force close and the restart, so NoNeedlessForget is not vacuous."
+    },
+    {
+      "id": "prime-root-crash",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "constants": {
+        "CanForceClose": "FALSE",
+        "CanClose": "FALSE",
+        "CanCrash": "TRUE"
+      },
+      "invariants": [
+        "RestartNotTainted"
+      ],
+      "expect": {
+        "violated": "RestartNotTainted"
+      },
+      "finding": "Open, narrowed: a crash after a per-turn force-stop but before its state write lands restores the stopped conversation. The write now starts when the force fires rather than when the host run ends."
+    },
+    {
+      "id": "prime-root-instructions",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "invariants": [
+        "RootSessionHasOwnInstructions"
+      ],
+      "expect": "pass",
+      "finding": "A running root turn's session carries its own pinned version's presentation instructions (fixed; was: a rotated session was built from the shared loader's stale cache, PPG-003)."
+    },
+    {
+      "id": "prime-root-instructions-reverted",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "constants": {
+        "SessionScopedInstructions": "FALSE"
+      },
+      "invariants": [
+        "RootSessionHasOwnInstructions"
+      ],
+      "expect": {
+        "violated": "RootSessionHasOwnInstructions"
+      },
+      "finding": "With one shared loader cache that only reload() refreshes, a rotated root session runs with the previous version's instructions."
+    },
+    {
+      "id": "prime-root-liveness",
+      "module": "HarnessPrimeRoot",
+      "preset": "prime-root-today",
+      "constants": {
+        "CanForceClose": "FALSE",
+        "CanClose": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "ForcedReleasesLock"
+      ],
+      "expect": "pass",
+      "finding": "A force-stopped root turn's host run always ends and frees the session lock, even when its native turn never settles."
+    },
+    {
+      "id": "codex-auth-safety",
+      "module": "HarnessCodexAuth",
+      "preset": "codex-auth",
+      "invariants": [
+        "TypeOK",
+        "RunningHasKey",
+        "CountExact",
+        "NoLeftoverKey"
+      ],
+      "expect": "pass",
+      "finding": "A running Codex turn always finds its provider key file, the user count is exact, and no key file remains once every turn ends, with force-stops and a host that stops waiting."
+    },
+    {
+      "id": "codex-auth-liveness",
+      "module": "HarnessCodexAuth",
+      "preset": "codex-auth",
+      "fair": true,
+      "properties": [
+        "EventuallyClean"
+      ],
+      "expect": "pass",
+      "finding": "The key file is eventually removed for good."
+    },
+    {
+      "id": "lifecycle-lease-during-reconnect",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "PROV004_NoCloseUnderLease"
+      ],
+      "expect": "pass",
+      "finding": "A turn's lease waits for a pending reconnect, so settling that reconnect never closes or wipes the runtime a turn uses (PROV-004), with every publish fault on."
+    },
+    {
+      "id": "lifecycle-lease-acquire-guard-alone",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "CancelSparesLease": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "PROV004_NoCloseUnderLease"
+      ],
+      "expect": "pass",
+      "finding": "The acquire guard alone keeps PROV-004: with CancelSparesLease off, no lease exists while a reconnect is pending."
+    },
+    {
+      "id": "lifecycle-lease-cancel-guard-alone",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "LeaseWaitsForReconnect": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "PROV004_NoCloseUnderLease"
+      ],
+      "expect": "pass",
+      "finding": "The cancel guard alone also keeps PROV-004: with LeaseWaitsForReconnect off, a settling reconnect spares the runtime a lease holds."
+    },
+    {
+      "id": "lifecycle-lease-during-reconnect-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "LeaseWaitsForReconnect": "FALSE",
+        "CancelSparesLease": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "PROV004_NoCloseUnderLease"
+      ],
+      "expect": {
+        "violated": "PROV004_NoCloseUnderLease"
+      },
+      "finding": "With both lease fixes off, a turn leases the runtime a pending reconnect is signing in, and cancelling the reconnect closes it and wipes its home under the turn."
+    },
+    {
+      "id": "lifecycle-close",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "CloseLeavesNoOpenRuntime"
+      ],
+      "expect": "pass",
+      "finding": "Leases are refused once close() begins, and a runtime that finishes starting after it is closed again."
+    },
+    {
+      "id": "lifecycle-close-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "ShutdownRefusesLeases": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "CloseLeavesNoOpenRuntime"
+      ],
+      "expect": {
+        "violated": "CloseLeavesNoOpenRuntime"
+      },
+      "finding": "With ShutdownRefusesLeases off, a lease queued before shutdown registers a runtime after close() cleared the maps, and nothing closes it."
+    },
+    {
+      "id": "lifecycle-refresh-during-reconnect",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE",
+        "ReconnectAnswerCanBeLost": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyMeansSignedIn",
+        "PendingReconnectNotReady"
+      ],
+      "expect": "pass",
+      "finding": "No refresh starts or publishes during a pending reconnect, so an automatic result never stands for the reconnect's sign-in, and Rust never reads P ready with no login."
+    },
+    {
+      "id": "lifecycle-refresh-during-reconnect-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE",
+        "ReconnectAnswerCanBeLost": "FALSE",
+        "RefreshSkipsPendingReconnect": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "PendingReconnectNotReady"
+      ],
+      "expect": {
+        "violated": "PendingReconnectNotReady"
+      },
+      "finding": "With RefreshSkipsPendingReconnect off, a refresh publishes ready through the runtime a reconnect is signing in, before the user's reconnect settles."
+    },
+    {
+      "id": "lifecycle-lost-reconnect-answer",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyMeansSignedIn"
+      ],
+      "expect": "pass",
+      "finding": "A reconnect whose answer was lost is adopted when the generation reads back advanced, and keeps its login when the read fails too."
+    },
+    {
+      "id": "lifecycle-lost-reconnect-answer-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE",
+        "LostReconnectAdopted": "FALSE",
+        "CancelSignsOut": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyMeansSignedIn"
+      ],
+      "expect": {
+        "violated": "ReadyMeansSignedIn"
+      },
+      "finding": "With LostReconnectAdopted and CancelSignsOut off (the code before this fix), a reconnect the app server committed settles as failed and its cancel wipes the login the app server reads as connected."
+    },
+    {
+      "id": "lifecycle-lost-answer-adopts-only-commit",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "AdoptsOnlyCommittedReconnect"
+      ],
+      "expect": "pass",
+      "finding": "An unanswered reconnect is adopted only when the app server committed it, including after a sign-out during the reconnect, a baseline read that failed, and an earlier sign-out request that commits late."
+    },
+    {
+      "id": "lifecycle-lost-answer-adopts-only-commit-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "AdoptChecksBaseline": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "AdoptsOnlyCommittedReconnect"
+      ],
+      "expect": {
+        "violated": "AdoptsOnlyCommittedReconnect"
+      },
+      "finding": "With AdoptChecksBaseline off, any advance past the reconnect's baseline is adopted: a sign-out during the reconnect supersedes it, the refusal's answer is lost, and the refused reconnect is adopted."
+    },
+    {
+      "id": "lifecycle-late-sign-out-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "AdoptTracksLostWrites": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "AdoptsOnlyCommittedReconnect"
+      ],
+      "expect": {
+        "violated": "AdoptsOnlyCommittedReconnect"
+      },
+      "finding": "With AdoptTracksLostWrites off, a sign-out whose answer was lost commits only after the next reconnect read its baseline; the reconnect's refused publish loses its answer too, reads one step past the baseline, and is adopted."
+    },
+    {
+      "id": "lifecycle-committed-reconnect-keeps-login",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "CommittedReconnectKeepsLogin"
+      ],
+      "expect": "pass",
+      "finding": "A reconnect the app server committed is never settled and wiped, with every fault on, including a sign-out during the reconnect whose publish got no answer."
+    },
+    {
+      "id": "lifecycle-committed-reconnect-keeps-login-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "LostReconnectAdopted": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "CommittedReconnectKeepsLogin"
+      ],
+      "expect": {
+        "violated": "CommittedReconnectKeepsLogin"
+      },
+      "finding": "With LostReconnectAdopted off, a reconnect whose committed publish lost its answer is settled and its login wiped."
+    },
+    {
+      "id": "lifecycle-cancel-records-signed-out",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "CancelRecordsSignedOut"
+      ],
+      "expect": "pass",
+      "finding": "A settled reconnect never leaves the app server reading ready over the login it wiped: it commits signed-out first, and keeps the login when that publish fails, with every fault on."
+    },
+    {
+      "id": "lifecycle-cancel-records-signed-out-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "CancelSignsOut": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "CancelRecordsSignedOut"
+      ],
+      "expect": {
+        "violated": "CancelRecordsSignedOut"
+      },
+      "finding": "With CancelSignsOut off, a sign-out whose publish failed leaves Rust ready; a reconnect then starts and is cancelled, wiping the login while Rust still reads ready."
+    },
+    {
+      "id": "lifecycle-cancel-keeps-unrecorded-login-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "CancelKeepsUnrecordedLogin": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "CancelRecordsSignedOut"
+      ],
+      "expect": {
+        "violated": "CancelRecordsSignedOut"
+      },
+      "finding": "With CancelKeepsUnrecordedLogin off, a cancel whose signed-out publish fails still wipes the login, while a failed sign-out left the app server reading ready."
+    },
+    {
+      "id": "lifecycle-confirmed-sign-out-stands",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "ConfirmedSignOutStands"
+      ],
+      "expect": "pass",
+      "finding": "Once the app server answered a sign-out, the home holds no login again until the user starts a new reconnect, with every fault on."
+    },
+    {
+      "id": "lifecycle-confirmed-sign-out-stands-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SupersededCancelWipes": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ConfirmedSignOutStands"
+      ],
+      "expect": {
+        "violated": "ConfirmedSignOutStands"
+      },
+      "finding": "With SupersededCancelWipes off, a sign-out answered during a reconnect is followed by the browser sign-in; the refused reconnect's settle cannot publish, keeps the new login, and the next refresh would publish connected over the confirmed sign-out."
+    },
+    {
+      "id": "lifecycle-straddling-refresh",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE",
+        "ReconnectAnswerCanBeLost": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyMeansSignedIn"
+      ],
+      "expect": "pass",
+      "finding": "A refresh that resolved its generation before a reconnect and read the account mid-sign-in is dropped after the reconnect is cancelled, because the cancel advanced the generation."
+    },
+    {
+      "id": "lifecycle-straddling-refresh-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE",
+        "ReconnectAnswerCanBeLost": "FALSE",
+        "CancelSignsOut": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyMeansSignedIn"
+      ],
+      "expect": {
+        "violated": "ReadyMeansSignedIn"
+      },
+      "finding": "With CancelSignsOut off, a refresh straddling a cancelled reconnect passes both generation checks and publishes ready over the wiped login."
+    },
+    {
+      "id": "lifecycle-overlapping-refresh",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "OverlappingRefreshNeverReadiesWipedLogin"
+      ],
+      "expect": "pass",
+      "finding": "A refresh that overlapped a reconnect never readies the app server over a wiped login, including when the cancel's own publish fails: every path that wipes first advances the generation, and a cancel that cannot keeps the login. The sign-out fault is off; its own straddle is the known limit.",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE"
+      }
+    },
+    {
+      "id": "lifecycle-overlapping-refresh-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "CancelKeepsUnrecordedLogin": "FALSE",
+        "SignOutPublishCanFail": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "OverlappingRefreshNeverReadiesWipedLogin"
+      ],
+      "expect": {
+        "violated": "OverlappingRefreshNeverReadiesWipedLogin"
+      },
+      "finding": "With CancelKeepsUnrecordedLogin off, a cancel whose signed-out publish fails wipes the login without advancing the generation, and a refresh that straddled the reconnect publishes ready over it."
+    },
+    {
+      "id": "lifecycle-removal-completes",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "fair": true,
+      "properties": [
+        "RemovalCompletes"
+      ],
+      "invariants": [
+        "TypeOK"
+      ],
+      "expect": "pass",
+      "finding": "PROV-003: a removal that waited on the turn finishes once the turn releases, with every fault on."
     },
     {
       "id": "repair-validated",

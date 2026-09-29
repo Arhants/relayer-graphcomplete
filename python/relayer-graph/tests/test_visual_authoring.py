@@ -13,6 +13,23 @@ from relayer_graph.exceptions import ValidationError
 
 
 class VisualAuthoringTests(unittest.IsolatedAsyncioTestCase):
+    async def test_presentation_read_and_frozen_policy_versions(self):
+        from relayer_graph import InteractionInput
+        node = {"id": 1, "kind": "interaction", "icon": "box", "title": "Ask", "detail": "Ask", "state": "accepted"}
+        for policy in (None, {"version": "1", "enabled": True, "permissions": [{"kind": "navigate.add", "nodeId": 2}]},
+                       {"version": "2", "enabled": True, "permissions": [{"kind": "navigate.add", "nodeId": 2}, {"kind": "invoke.resolve", "actionId": 3}]},
+                       {"version": "2", "enabled": False, "permissions": []}):
+            graph = GraphSession("http://unused", "run", 1)
+            async def request(method, path, body=None):
+                self.assertEqual(method, "GET")
+                if path == "/api/graph/input":
+                    return {"interaction": node, **({} if policy is None else {"interactionPermissions": policy})}
+                self.assertEqual(path, "/api/graph/nodes/2/presentation")
+                return {"node": {**node, "id": 2, "clientKey": "persistent"}, "revision": 4, "actions": []}
+            graph._request = request
+            self.assertEqual((await graph.get_interaction_input()).interaction_permissions, policy)
+            self.assertEqual((await graph.get_node_presentation(2))["node"]["clientKey"], "persistent")
+
     async def test_session_binding_snapshot_and_frozen_submission(self):
         node = NodeObject('box', 'Answer', 'Fallback', client_key='answer')
         layer = LayerObject([node], [], LayerLayoutObject([NodePlacementObject(node, .5, .5)]), client_key='root')
@@ -47,13 +64,73 @@ class VisualAuthoringTests(unittest.IsolatedAsyncioTestCase):
             graph = GraphSession('http://unused', 'run', 1)
             first = asyncio.create_task(graph.submit_node(node))
             await entered.wait()
+            node.client_key = "mutated-after-snapshot"
+            node.detail_authoring._object_id = "mutated-after-snapshot"
             second = asyncio.create_task(graph.submit_node(node))
             with self.assertRaisesRegex(ValueError, 'in_progress'):
                 node.detail_authoring.clear()
             release.set()
             left, right = await asyncio.gather(first, second)
             self.assertIs(left, right)
+            self.assertEqual(calls[0]["node"]["clientKey"], "answer")
+            self.assertIs(await graph.submit_node(node), left)
+            graph.node_id = 2
+            with self.assertRaisesRegex(ValueError, "scope_mismatch"):
+                await graph.submit_node(node)
             self.assertEqual(len(calls), 1)
+            graph.node_id = 1
+            replacement = NodeObject('box', 'Replacement', 'Different', client_key='answer')
+            replacement.detail_authoring._object_id = calls[0]["objectId"]
+            replacement.detail_authoring.set_component('main', html('<p>Replacement</p>'))
+            await graph.submit_node(replacement)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[1]['node']['title'], 'Replacement')
+
+    async def test_host_result_freezes_captured_builder_after_live_field_replacement(self):
+        node = NodeObject('box', 'Original', 'Fallback', client_key='answer')
+        other = NodeObject('box', 'Other', 'Fallback', client_key='other')
+        original_authoring = node.detail_authoring
+        original_authoring.set_component('main', html('<p>Original</p>'))
+        async def host_request(method, payload):
+            node.detail_authoring = other.detail_authoring
+            return {'ok': True, 'frozen': True, 'value': {'id': 2, 'kind': 'concept', 'icon': 'box', 'title': 'Original', 'detail': 'Fallback', 'state': 'draft'}}
+        with patch.dict(sys.modules, {'rlm': types.SimpleNamespace(host_request=host_request)}):
+            await GraphSession('http://unused', 'run', 1).submit_node(node)
+        node.detail_authoring = original_authoring
+        with self.assertRaisesRegex(ValueError, "detail_finalized"):
+            original_authoring.set_component('main', html('<p>Changed</p>'))
+        other.detail_authoring.set_component('main', html('<p>Other</p>'))
+
+    async def test_locked_failures_replay_exact_envelope_despite_live_mutation(self):
+        for failure_kind in ("transport", "frozen-host"):
+            with self.subTest(failure_kind=failure_kind):
+                node = NodeObject('box', 'Original', 'Fallback', client_key='answer')
+                node.detail_authoring.set_component('main', html('<p>Original</p>'))
+                calls = []
+                async def host_request(method, payload):
+                    calls.append(payload)
+                    if len(calls) == 1:
+                        if failure_kind == "transport":
+                            raise RuntimeError("lost response")
+                        return {"ok": False, "frozen": True, "message": "lost graph response"}
+                    return {'ok': True, 'frozen': True, 'value': {'id': 2, 'kind': 'concept', 'icon': 'box', 'title': 'Original', 'detail': 'Fallback', 'state': 'draft'}}
+                with patch.dict(sys.modules, {'rlm': types.SimpleNamespace(host_request=host_request)}):
+                    graph = GraphSession('http://unused', 'run', 1)
+                    with self.assertRaises((RuntimeError, ValidationError)):
+                        await graph.submit_node(node)
+                    node.client_key, node.title = "changed", "Changed"
+                    node.detail_authoring._object_id = "changed"
+                    with self.assertRaisesRegex(ValueError, "detail_finalized"):
+                        node.detail_authoring.clear()
+                    graph.node_id = 2
+                    with self.assertRaisesRegex(ValueError, "scope_mismatch"):
+                        await graph.submit_node(node)
+                    self.assertEqual(len(calls), 1)
+                    graph.node_id = 1
+                    result = await graph.submit_node(node)
+                    self.assertEqual(calls[0], calls[1])
+                    self.assertEqual(calls[1]["node"]["clientKey"], "answer")
+                    self.assertEqual(result.title, "Original")
 
     async def test_checkpoint_and_submit_errors_preserve_guidance_and_allow_repair(self):
         for operation in ('checkpoint_node_detail', 'submit_node'):
@@ -91,7 +168,9 @@ class VisualAuthoringTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, 'exact owning'):
             await GraphSession('http://unused', 'run', 1).submit_node(owner)
         owner.detail_authoring.clear()
-        owner.detail_authoring = type(owner.detail_authoring)()
+        with self.assertRaisesRegex(TypeError, "owning node"):
+            type(owner.detail_authoring)()
+        owner = NodeObject('box', 'Answer', 'Fallback', client_key='answer')
 
         self.assertEqual(owner.detail_authoring.to_wire(owner), {'clear': False, 'components': []})
         owner.detail_authoring.clear()

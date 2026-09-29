@@ -21,7 +21,7 @@ npm run check:models
 Pass check ids to run a subset. The runner needs Java 11 or newer and the
 pinned `tla2tools.jar` (version and sha256 in `checks.json`). It never
 downloads the jar; place it at `~/.cache/tlaplus/tla2tools-1.8.0.jar` or set
-`TLA2TOOLS_JAR`. All checks and scenarios together take about 90 seconds on an idle machine.
+`TLA2TOOLS_JAR`. All checks and scenarios together take a few minutes on an idle machine.
 `--render` rewrites the scenario traces (see below).
 
 `check:models` is not part of `npm run check` yet. Adding it there requires a
@@ -47,7 +47,8 @@ check can therefore come only from its own mechanism.
 
 `CatalogRefresh` follows the same rule with `catalog-today`, which mirrors
 the code. It has one constant per landed fix, and each open bug check keeps
-every landed fix on.
+every landed fix on. `ProviderLeaseLifecycle` does the same with
+`lifecycle-today`.
 
 A fix PR flips its constant in `completion-today` or `catalog-today`. That
 check then passes, so the PR must also flip its expectation to `pass`;
@@ -118,6 +119,37 @@ replays against the real app-server code:
 The first replay found a model error. The IPC layer releases a renderer
 binding once its connection settles, and the model did not.
 
+For `TurnComposer` and `NodeInspector`, the adapters render the real
+Product workspace (`createProductWorkspace`) in happy-dom:
+
+- [`test/support/turn-composer-trace-adapter.mjs`](../../test/support/turn-composer-trace-adapter.mjs)
+  types into `#threadPrompt`, clicks Send, and switches threads by calling
+  `render()`, as `renderThread()` does. A fake `threads.submitInteraction`
+  holds the POST, the refresh that loads the new turn, and the await before
+  settlement on deferreds. `observe()` reads the prompt's value and disabled
+  state and the drafts persisted in `composer-drafts`.
+- [`test/support/node-inspector-trace-adapter.mjs`](../../test/support/node-inspector-trace-adapter.mjs)
+  clicks graph nodes, `+`, `×`, and Close, and types in the annotation
+  editor, with the real node context draft controller. Every draft save and
+  discard request and every Node Detail asset is held on a deferred, and the
+  controller's 350 ms autosave runs on fake timers. `observe()` reads the
+  selection, the inspector, its header, the Node Detail host and whether its
+  page is shown, and the annotation dock.
+
+- [`test/support/authored-input-send-trace-adapter.mjs`](../../test/support/authored-input-send-trace-adapter.mjs)
+  types into an authored Node Detail input, commits it with `change`, and
+  clicks Send, with the real input draft controller. A fake app server
+  applies the commit and reservation rules of the SQLite storage it cites;
+  the replay checks what the renderer decides: whether Send is enabled and
+  which draft revision each request carries.
+
+A scenario may list `violatedAtEnd`: promises of an open bug. The replay must
+match the model at every step, and those promises must hold until the final
+step and break at it. This records the bug on the real code while the suite
+stays green. A fix removes them from `violatedAtEnd`, and the replay then
+requires them to hold. Deleting the guard a scenario depends on makes its
+replay diverge at the step the guard governs.
+
 A bug fix follows these steps:
 
 1. Add the counterexample's steps as a scenario, render it, and watch the
@@ -158,11 +190,11 @@ renderer.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `provider-leased-runtime` | Plausible: narrow window | Rust admits a turn while `P` still reads connected in SQLite, and the user then signs out and reconnects. When the harness takes its lease, `acquireExecution` hands out the runtime the pending reconnect registered, because it never checks `pendingConnections`. A failed handoff, a cancel or a terminal check then runs `#cancelPendingConnection`, which closes that runtime under the turn. Since PR 4 the cancel registers a fresh runtime in its place (F4), but the leased one still closes. |
+| `provider-leased-runtime` | Fixed; now passes | Before the fix (plausible: narrow window): Rust admitted a turn while `P` still read connected in SQLite, and the user then signed out and reconnected. When the harness took its lease, `acquireExecution` handed out the runtime the pending reconnect registered, because it never checked `pendingConnections`. A failed handoff, a cancel or a terminal check then ran `#cancelPendingConnection`, which closed that runtime and wiped its home under the turn (PROV-004). Now `acquireExecution` refuses while a reconnect is pending, and a settling reconnect never closes or wipes a runtime a lease holds. When the sign-out's publish failed, Rust kept admitting turns through the whole reconnect, so the window was wide. `ProviderLeaseLifecycle` checks each fix and its reverted form. Regression tests: `refuses a turn's provider access while a reconnect is pending`, `refuses access during a reconnect after a sign-out the app server never recorded` and `never closes or wipes a leased runtime when a reconnect settles` in `provider-connection-generation.test.mjs`. |
 | `provider-remove-during-reconnect` | Fixed; now passes | Before the fix: after sign out, Reconnect, then Remove, the pending reconnect outlived the removal and could still complete. Now `remove()` drops it as the provider enters `removal_pending`, which "immediately blocks new attempts through it" (docs/architecture.md). The runtime stays in `this.runtimes` for turns still draining, and it closes with the tombstone. The PRD is silent here, so this is an architecture-backed decision. Scenario: `provider-remove-during-reconnect`. |
 | `provider-attempt-ownership` | Fixed; now passes | Before the fix: `bindConnection` ran only after `connect()`/`reconnect()` (including `login()`) and `openExternal` resolved. It added a `destroyed` listener to contents already destroyed, and that listener never fired. It now cancels the attempt instead. This restores PRD BRW-005. Scenario: `provider-destroyed-before-bind`. |
-| `provider-close` | Plausible: depends on shutdown order | `close()` waits for lifecycle tasks but not for the queue, and `acquireExecution` ignores `closing`. A turn admitted before shutdown can create and register a runtime after the maps are cleared. |
-| `provider-default-family` | Needs a product decision | A catalog refresh that reports `provider_no_eligible_execution_models` tombstones the provider's managed family even when it is the default family. A later refresh with eligible models reactivates the same family. Disable, delete and removal all refuse to break the default family, but the PRD makes no promise here. |
+| `provider-close` | Fixed; now passes | Before the fix (plausible: depends on shutdown order): `close()` waited for lifecycle tasks but not for the queue, and `acquireExecution` ignored `closing`. A turn admitted before shutdown could create and register a runtime after the maps were cleared, and nothing closed it. Now `acquireExecution` refuses once `close()` begins, and `#runtimeFor` closes a runtime that finishes starting after it. `close()` still does not wait for the queue. Regression test: `refuses access once shutdown begins, and closes a runtime that finished starting after it`. |
+| `provider-default-family` | Decided; now passes | A catalog refresh that reports `provider_no_eligible_execution_models` tombstones the provider's managed family even when it is the default family. PRD PROV-008 (decision Q15) makes this a recovery state. The family stays the default and Send is refused with that code. Settings and both composers show "Needs model setup" with an exact-provider **Refresh models** action. If the provider then disconnects, the family stays selected and shows the disconnected state with a reconnect through Settings. A managed family the user disabled is not in recovery and restores still disabled. A later eligible refresh restores the family, or after a policy upgrade its successor. The invariant was `DefaultFamilyIsLive`; it is now `DefaultFamilyIsLiveOrManagedByActiveProvider`, named for what it checks. It allows a non-live default only for `P`'s managed family while `P` is active, including after `P` disconnects. It does not model the user's enabled choice, the tombstone cause, or which family is kept for recovery; the Rust flow, storage and migration tests check those. Regression tests: `a_default_family_without_eligible_models_needs_model_setup_until_a_refresh_restores_it` and `test/default-family-recovery.test.mjs`. |
 
 ### `CatalogRefresh.tla`
 
@@ -186,7 +218,7 @@ and `mQ`, and one custom family `C` with members from both. Each check
 shrinks the bounds in `catalog-today`. On an idle machine the two slowest,
 the default-provider checks, take about 10 and 20 seconds.
 
-`catalog-today` has four fix constants, all landed:
+`catalog-today` has six fix constants, all landed:
 
 - `DefaultProviderPairsFamily`: choosing a default provider also selects that
   provider's enabled managed family, in the same transaction. A provider
@@ -202,6 +234,14 @@ the default-provider checks, take about 10 and 20 seconds.
   so it never discovers through that reconnect's runtime (F4, L1).
 - `AdapterAfterCommit`: connect registers the catalog adapter only after the
   definition commits (PROV-007).
+- `RefreshSkipsPendingReconnect`: while a reconnect is pending, a refresh
+  resolves no generation. It neither runs nor publishes until the reconnect
+  settles, and `DefaultRestores` counts a provider as healthy only then. This
+  model has no provider home, so `ProviderLeaseLifecycle` checks what the fix
+  prevents.
+- `CancelSignsOut`: a cancelled or failed reconnect commits signed-out with
+  the next generation, as logout does, and its wipe signs the account out.
+  Every result in flight is superseded.
 
 Each `-reverted` check turns one constant off and keeps the others on, so its
 violation comes only from its own mechanism.
@@ -356,6 +396,290 @@ fail in the model, so the host's retry of a failed acknowledgement is not
 modeled. The ten-minute forget of access released without an owner is
 modeled (`ForgetReleased`).
 
+### `TurnComposer.tla`
+
+This model covers the follow-up composer across two threads:
+
+- typing, which persists the draft under the active scope `thread:latest turn`;
+- Send, the follow-up POST, the server recording the turn before it answers,
+  and its `interaction_in_progress` rule;
+- the refresh that loads the new turn, or skips it when the navigation entry
+  `[thread, turn, layer path]` changed or the refresh failed;
+- settlement of the submitted draft and its revision comparison;
+- thread switches, which load the thread's state, and `renderThread()` for
+  unrelated reasons (the environment refresh every 5 s and on window focus,
+  which does not fetch `/api/state`);
+- the new turn arriving by polling, and finishing;
+- a Send that waits for an authored input commit before it posts, and ends
+  there without posting when the answer does not save or the thread changes;
+- a turn created elsewhere in the thread, such as by an authored invoke;
+- a POST that fails with a network or server error, before or after the
+  server recorded the turn.
+
+Context annotations, restored retry drafts, the model picker, and the
+unconfirmed-draft warning are not modeled. `composer-today` leaves out turns
+created elsewhere to keep the per-promise checks fast; `composer-fixed` and
+`composer-invoked-turns` include them.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `composer-typing-during-send` | Fixed; now passes | Before the fix (#512): `submitInteraction` disables the prompt, but any `renderThread()` during the POST re-enables it through `renderInteractionState`, because the loaded latest turn still reads as settled; the environment refresh renders every 5 s on project threads and on window focus. Text typed then stayed in the old turn's draft scope, and when the new turn loaded the composer moved to that turn's empty scope, so the text was never shown again. Entering a newer turn's empty scope now moves the thread's unsent text written this session into it (settlement deletes a sent draft, so what remains is unsent; after a restart, persisted text is moved only if no later turn shows it was sent), and a send definitely rejected after its turn arrived restores its text. The prompt now stays editable for the whole send (SCP-019, a decision made in review of this PR), so typing during a send no longer depends on a re-render. A user's persisted draft also wins over a restored retry that arrives in its scope, so the prompt no longer flips between them. Scenarios: `composer-typing-during-send`, `composer-failed-send-restores-draft`. |
+| `composer-typing-during-send-without-renders` | Fixed; now passes | The same loss, reached by leaving the thread and returning during the POST before the server records the turn. Scenario: `composer-return-during-send`. |
+| `composer-without-carry` | Records the bug | With `CarryUnsentDraft` off, text typed during a send is stranded. |
+| `composer-settlement-erases-edit` | Fixed; now passes | Before the fix (#513): re-entering a scope with persisted text assigned `currentPromptRevision + 1`, which could repeat a revision the scope already had. An edit after Send could then reach the submitted revision, and settlement cleared the prompt and deleted the persisted draft. A scope's revision now only moves forward. Scenario: `composer-settlement-erases-edit`. |
+| `composer-sent-text-lingers` | Fixed; now passes | Before the fix (#513): re-entering a scope during a send bumped its revision though the text was unchanged, so settlement no longer recognized the sent text and left it in an enabled composer. Unchanged text now keeps its revision. Scenario: `composer-sent-text-lingers`. |
+| `composer-one-send-per-thread` | passes | Every send releases its thread's Send button. The model has one send slot per thread, so it cannot attempt a second Send; a test in `test/turn-composer-traces.test.mjs` forces one while the first is in flight, after leaving and returning to the thread, and checks it does not post. |
+| `composer-invoked-turns` | Fixed; now passes | Before the fix (review of #512): the submission was held only once `submitInteraction` began, after Send had waited for authored input commits. A turn created elsewhere that arrived during the wait carried the text into its scope, and the Send then posted it and cleared only the older scope, so the sent text stayed. The submission is now held from the click. A Send that ends without posting hands back text a newer turn left in its scope into the empty prompt, as a rejected POST does; text typed since wins. One thread, three turns. Regression tests: the "newer turn arriving while Send waits" cases in `test/authored-input-send-traces.test.mjs`, since only that world holds a Send on an authored commit. The draft-send warning, which the model leaves out, also holds the text while open and hands it back when cancelled; a test in the same file covers it. |
+| `composer-without-click-hold` | Records the bug | With `HoldFromClick` off, the text is carried away while Send waits. |
+| `composer-without-uncertain-hold` | Records the bug | With `HoldUncertain` off, the text of a POST that failed after the server recorded it is carried into the turn it created, and could be sent again (SCP-019). The renderer recognizes that turn by the text: any draft whose text a later turn of the thread carries was sent, which also holds after a restart. A turn an invoke action created does not count, so a definitely rejected send still comes back. An unrelated turn, or a POST that never reached the server, still carries the text forward. A retry refused after the turn arrived does not hand the text back. Scenarios: `composer-uncertain-send-stays-put`, `composer-retry-of-landed-send`. |
+| `composer-without-uncertain-hand-back` | Records the bug | With `HandBackUncertain` off, the text of a send lost to a network or server error stays stranded in its scope when an unrelated turn arrived while it was pending. It is now handed back as for a rejection, unless the send's own turn already arrived; the renderer and the model recognize that turn by the text. Until its own turn arrives, such text may be shown, and `SentTextIsNotShownAgain` allows it. Scenario: `composer-lost-send-after-unrelated-turn`. |
+| `composer-without-retire` | Records the bug | With `RetireSuperseded` off, stranded text that newer typing kept out of the prompt stays in its scope, and is carried forward once the prompt empties (`SupersededStaysGone`, SCP-021). It is now retired from its scope and storage, also when the send settles while another thread is shown and that thread's newest scope holds newer text. Scenarios: `composer-superseded-text-retired`, `composer-superseded-text-retired-off-thread`. |
+| `composer-fixed` | passes | With every candidate fix, every composer promise holds. |
+
+The candidate fixes are:
+
+1. `CarryUnsentDraft`: moving a turn's unsent text into the newest turn's
+   empty scope, and restoring it into the prompt when a send fails after the
+   new turn arrived. Text still owned by an in-flight send is not moved.
+   Landed (#512).
+2. `StableScopeRevision`: re-entering a scope keeps its revision when its
+   text is unchanged, and otherwise takes a revision above any it had.
+   Landed (#513).
+3. `HoldFromClick`: holding the submission from the click on Send, and
+   handing back stranded text when that Send ends without posting. Landed
+   in review of #512.
+4. `HoldUncertain`: after a network or server error, holding the
+   submission once a turn with its text arrives, so its text is neither
+   carried into that turn nor handed back. Landed in review of #512.
+
+A restored retry that the user's non-empty draft keeps out stays pending,
+and returns once the user empties the composer; an empty value persisted
+after the user cleared restored text is a tombstone, and wins (SCP-020).
+A restoration is identified by its interaction and retry attempt, so a
+later failed attempt of the same interaction restores again.
+Clearing a draft that kept a restoration out brings the retry text back at
+once, and persists nothing, so it also returns after a restart; tests cover
+both. The
+model leaves restored retry drafts out; unit tests in
+`test/workspace-keyboard.test.mjs` cover these rules.
+
+`SentTextIsNotShownAgain` allows the text of a send that may have been sent
+to stay in the prompt of the scope it was sent from, where the user sees it
+until its turn arrives. `UnsentDraftSurvives` drops its promise for such text
+only when a newer turn already arrived before the error; SCP-019 then does
+not restore it. Text the user cleared while a Send waited stays cleared when that Send
+stops (SCP-021). A restoration the user already saw, persisted before a
+restart, counts as applied, so clearing it leaves the composer empty. While
+a Send is in flight, its scope is judged by revision, so an edit after Send
+that retypes the same text is kept (SCP-018).
+
+Stranded text is restored only into an empty prompt: text the user typed
+since wins, and the stranded text is retired (a decision recorded in the
+PRD).
+
+The model does not restart the app. After a restart, text an earlier session
+left in an older turn's scope, such as one closed while a send was in
+flight, is carried into the newest turn unless a later turn with that text
+shows it was sent or a newer turn's persisted draft superseded it (which
+retires it, SCP-021), and text restored after a restart is not carried into
+a turn with that text that arrives later. Text a later turn shows was sent
+is also deleted from storage (SCP-016); the model deletes an uncertain
+send's draft once its turn lands, and leaves a send in flight to its
+settlement. Tests in
+`test/turn-composer-traces.test.mjs` cover these cases.
+
+`CarryUnsentDraft` recognizes the in-flight submission by its revision, so
+it is sound only together with `StableScopeRevision`.
+
+Every fix has landed, so `composer-today` and `composer-fixed` now agree.
+Keeping per-turn draft scopes and carrying unsent text forward is the recorded
+product decision (PRD SCP-018 to SCP-020).
+
+### `NodeInspector.tla`
+
+This model covers node selection on the graph canvas and the Node Details
+inspector with a durable annotation draft:
+
+- `selectNode`, including the draft flush before switching nodes and the
+  asynchronous Node Detail mount;
+- `prepareNodeContextSelectionChange` before Close and before a turn change;
+- `+`, typing, autosave, and `×` on an annotation draft;
+- `render()` with newer state, which re-selects the node or, on entering a
+  new view, may clear the selection;
+- the dock reconciliation in `renderNodeContextDock`;
+- reuse or disposal of the mounted Node Detail runtime.
+
+A draft's target includes the layer it was made in, so drafts and editors
+belong to a view: entering a new view drops the editor, and a draft is
+reopened only in its own view. `nodeSelectionSequence` is compared only for equality, so each request in
+flight carries whether it is still the latest. Historical context
+selections, node inputs, annotation comments, and confirm are not modeled;
+confirm resolves like discard.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `inspector-promises` | Fixed; now passes | Before the fixes: (#514) while a draft save, confirm, or discard was in flight, `selectNode` returned at once and `prepareNodeContextSelectionChange` returned false, so a node click, Close, or turn change did nothing; a dropped Close or turn change also incremented `nodeSelectionSequence`, cancelling a pending click or the first Close, so a double-clicked Close closed nothing. (#515) A switch refused by a failed flush returned without re-rendering the kept node; if the switch had superseded that node's own Node Detail mount, the inspector showed its header over a disposed, empty page. A render during the flush was dropped, so the inspector kept older state or, on entering a new view, stayed hidden. Now such a request waits for the draft to resolve and the latest one proceeds; a click made in a view the user has since left is void; a prepare whose editor was replaced prepares again. A switch continues from the latest state, and a resolved draft re-renders the selection unless a waiting request or the switch will. Selecting a node with an unconfirmed draft still reopens its editor (PRD L2203). Scenarios: `inspector-click-during-discard`, `inspector-close-during-flush`, `inspector-double-close`, `inspector-refused-switch-rerenders`, `inspector-view-change-during-discard`. |
+| `inspector-without-supersede` | Records the bug | With `LatestRequestSupersedes` off, a switch waiting on a draft save commits its node, reporting it through `onSelectionChange` and recording it in history, before a click queued meanwhile replaces it. Before the fix (review of #514), a queued click did not advance `nodeSelectionSequence`, and a request that proceeded at once did not void one still waiting, so a waiting Close could run after a newer click. `OnlyLatestRequestSelects` is checked on the real workspace through the nodes it reports. Scenarios: `inspector-click-during-switch`, `inspector-click-voids-waiting-close`. The same rule for a Close or turn change that proceeds at once has no replay, because the adapter does not change turns. |
+| `inspector-without-queue` | Records the bug | With `QueueWhileResolving` off, input made while a draft resolves is dropped. |
+| `inspector-without-refresh` | Records the bug | With `RefreshAfterResolve` off, a refused switch can leave the kept node's detail disposed. |
+
+The candidate fixes are:
+
+1. `QueueWhileResolving`: a click, Close, or turn change that arrives while
+   a draft resolves waits for it, and the latest one then proceeds against
+   the state it finds; a click whose node is gone does nothing. A prepare
+   whose editor was replaced prepares again. Landed (#514).
+2. `RefreshAfterResolve`: continuing a switch from the latest state, and
+   re-rendering the selection once a draft resolves unless a waiting request
+   or the switch will. Landed (#515).
+3. `LatestRequestSupersedes`: a user's newest request supersedes every
+   earlier one, whether it waits for a resolving draft or proceeds at once.
+   Landed in review of #514.
+
+The replay reads which state revision the inspector shows: each refresh
+delivers a new state object whose node kinds name the revision, and the
+header's kind is compared with the model's `title.rev` at every step, so
+`InspectorIsCurrent` is checked on the real inspector. The desktop host
+mutates one `appState` in place, so a stale state would not show there
+today; the replay would still catch code that continues from a stale state.
+Scenario: `inspector-switch-sees-refresh`.
+
+✓ (confirm) resolves like × in the model. The replay drives the real
+confirm button and holds its request, so a request queued behind a
+confirmation is checked on the real workspace. Scenario:
+`inspector-click-during-confirm`.
+
+Entering a view selects a node unless the user closed Node Details
+(#542): the model keeps a node still in the view and otherwise selects the
+layer's first node, and tracks the host's `nodeDetailsClosed` as `closed`.
+The replay starts with Node Details closed, as the spec's initial state is,
+and its host marks them closed when the workspace reports no selection.
+Scenario: `inspector-new-view-selects-first-node`.
+
+A request waiting for a draft is void once the workspace enters another
+view (a view-entry epoch, so a round trip back to a view with the same key
+does not revive it), whether it is a click, Close, turn change, Back or Forward, or a layer
+change. The model clears any remembered request on entering a view.
+Scenario: `inspector-view-change-voids-waiting-close`.
+
+While a draft resolves, an editor the dock shows must be locked
+(`ResolvingEditorLocked`, checked at every step on the real dock). When a
+switch's destination disappears during its save, the kept node is shown
+again from the latest state; a test covers it.
+
+An editor remounted while its draft's confirm or discard is in flight, after
+the user left the thread and returned, resolves until that operation
+settles, so requests still wait for it. It waits for the workspace's own
+confirm or discard promise, which settles only after any revision-conflict
+reload and retry, not for the draft's momentary operation kind. Tests cover
+the plain remount and the conflict retry.
+
+The model has one thread. Switching threads voids a request still waiting
+for a draft, so a turn change queued in one thread cannot act on the next;
+a test in `test/node-inspector-traces.test.mjs` covers it. After each step
+the replay waits for in-flight `crypto.subtle` digests and a steady
+inspector, since a Node Detail mount verifies its package off the event
+loop.
+
+The replay also showed the dock keeps the previous node's locked editor
+until the new node's Node Detail mount finishes. The replay compares the
+dock only once the renderer is quiet.
+
+The model reuses the mounted runtime when the node matches; the code also
+requires the same interaction, layer, and package, which differs only on
+entering a new view. Discard is modeled only for a saved draft with no newer
+text. Other callers of `prepareNodeContextSelectionChange` (sidebar thread
+switch, Back and Forward, breadcrumbs, navigate actions) are dropped the same
+way but are not modeled.
+
+### `AuthoredInputSend.tla`
+
+This model covers one input action in an authored Node Detail and the
+follow-up Send:
+
+- typing, and the commit on `change` at the controller's draft revision;
+- Send's gates and the draft revision it captures;
+- the server's commit rule and its reservation of committed attachments;
+- the turn ending, with the failure restore;
+- a commit that fails in transport or on the server;
+- draft reloads, which the controller queues behind a commit in flight;
+- the lock on authored inputs while a Send is in flight;
+- the renderer's reloads after each response.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `input-send-carries-answer` | Fixed; now passes | Before the fix (#521): legacy input controls registered each commit with `inputPending`, which kept Send disabled; an authored input's commit did not. Mousedown on Send blurs the input, whose `change` commits it, so the commit and the Send went out together at the same revision. A Send served first went without the answer, which then landed in the next turn's draft; a commit served first got the Send refused with `input_draft_revision_conflict`. Send now waits for the thread's authored commits before it captures the draft revision, and stops if one fails, since the answer did not save; a commit still in flight counts toward Send being ready. Authored inputs are locked while a Send is in flight; a commit during a run still goes to the next turn's draft (ADR 0008). Scenarios: `input-send-waits-for-commit`, `input-failed-answer-stops-send`. |
+| `input-send-without-waiting` | Records the bug | With `SendAwaitsAuthoredCommits` off, a Send served before the commit goes without the answer. |
+| `input-send-forgets-early-failure` | Records the bug | With `KeepFailedCommit` off, a commit that fails before the click is forgotten, and the Send goes without the answer. Before the fix (review of #521), a failed commit left the set Send waits on as soon as it settled. Now an input's latest failed commit is kept until a Send it stops, a newer commit of that input, or detaching it accounts for it. It stops the next Send once, whether or not its Node Detail is still open; clicking Send again sends without it. Its error is shown again when a new Node Detail mounts the input, until a later commit or detaching it clears it. Scenario: `input-early-failure-stops-send`; the closed-inspector case is a test in `test/authored-input-send-traces.test.mjs`. |
+
+Send waits rather than being disabled during the commit, because disabling it
+would swallow the click that caused the blur. The composer's committed-input
+pills lock from the click, so an answer the Send will reserve cannot be
+detached while it waits; a test covers it. The replay observes whether the
+authored input is locked (its own commit busy, or a Send in flight), and
+reads whether a Send stopped by a failed commit released the Send button
+from the real button.
+
+The ghost `intended` is the answer in the field when Send is clicked. The
+model first recorded the committed value when no commit was in flight, which
+hid the early failure. A Send stopped for an answer that did not save is
+told so; if the user clicks Send again without editing it, the message goes
+without that answer.
+
+### `CanvasGesture.tla`
+
+This model covers pointer gestures on the graph canvas while the workspace
+re-renders underneath:
+
+- pressing, moving, and releasing on a node, with the pointer capture that
+  routes the node's events;
+- panning the stage;
+- renders that keep the layout, change it, or switch to another view and
+  back, with the view cache that restores pinned positions and the camera.
+
+Positions are locations on a ring of `L` points; a node's screen location is
+its world location plus the camera offset. There is one draggable node, and
+the other view does not contain it. Pinch and wheel zoom, keyboard
+navigation, the inspector's camera fit, and the click that selects a node
+are not checked. A gesture never spans a return to the home view. The canvas
+has no force simulation: layouts are authored and normalized, and the camera
+is the only transform (`docs/architecture.md`).
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `canvas-promises` | Fixed; now passes | Before the fix (#531): `renderGraph` replaced `graphNodes` and the node elements on every render, but `dragging` kept the replaced object and the capture on the removed element. After a render mid-drag, moves went to the old object and the node stopped following the pointer (`DragFollowsPointer`, Press → Move → RenderLayout). The next render rebuilt positions from the new objects, so the drop was lost (`DropStays`, Press → RenderSame → Move → Release). A render now re-binds the drag to the node's new object and captures the pointer on its new element. A node that has moved stays under the pointer, pinned, and the camera is not refit while it is dragged. Entering another view, the node disappearing, a failed re-capture, or a move with no button pressed ends the drag. `CameraMovesOnlyByPanOrFit` is a property of steps: in the home view, only a pan, a new layout, or the fit after a drop moves the camera. Scenarios: `canvas-drag-across-render`, `canvas-drag-across-layout`, `canvas-drop-round-trip`, `canvas-pan-across-render`, `canvas-drag-into-view-change`. |
+| `canvas-without-rebind` | Records the bug | With `KeepDragAcrossRender` off, a render during a drag leaves the drag on the replaced node. |
+| `canvas-without-fit-before-leaving` | Records the bug | With `FitBeforeLeaving` off, leaving the view mid-drag after a layout change caches the unfitted camera, and returning restores it. The view is now fitted before it is cached. Scenario: `canvas-leave-after-layout-change`. |
+| `canvas-without-fit-after-drop` | Records the bug | With `FitLayoutAfterDrop` off, a layout that changed mid-drag is never fitted, and new nodes can stay off-screen (`DropFitsNewLayout`). Now the view fits the new layout once the node is dropped, and the node stays where it was dropped. Scenario: `canvas-drag-across-layout`. |
+
+The replay dispatches pointer events the way a browser routes them. An event
+goes to the element holding capture while that element is still in the
+document, and otherwise to the element under the pointer. Each refresh
+delivers a new state object. `RenderLayout` is replayed only while a moved
+drag holds the node, because a new placement does not otherwise map onto
+evenly spaced locations. Tests outside the model cover a graph that
+empties mid-drag (the node elements are removed with the graph, so the
+release cannot click a node that is gone) and each way a drag ends: a move
+with no button pressed, a failed re-capture, and entering another view that
+also shows the node. The camera and layout functions
+have their own tests (`test/graph-camera.test.mjs`,
+`test/graph-layout.test.mjs`).
+
+Since #477, returning to a view restores its camera only if the user moved
+it (camera revision above 0). An automatic camera is refitted, and so are
+the fits after a drop and before leaving, which the model tracks as
+`manualCam`. The fit before leaving therefore matters only for a camera the
+user panned. `Hover` moves the pointer with no button pressed, so a pan can
+be followed by a node drag. Scenario `canvas-leave-after-pan-and-layout-change`
+replays that path, and fails without the fit before leaving.
+
+A fit centers the graph, which the model writes as `Fit`: the one node at
+location 0. The replay reads locations and camera offsets modulo `L`, and
+`FitCentersNode` checks, unreduced, that whenever the camera is a fit of the
+node (the ghost `fitted`) the real node is exactly where the first fit put
+it. The replay also observes the selection, so a moved drag must not select
+the node on release. Scenario: `canvas-click-selects`.
+
 ### `HarnessReadiness.tla`
 
 This model covers harness readiness from evaluation to admission:
@@ -463,30 +787,301 @@ exact incoming recipe" covers which activations count. A mark stays set
 when its evaluation found no provider with a route. The next start looks
 again, but it prepares nothing until a provider has a route.
 
+### `ProviderLeaseLifecycle.tla`
+
+This model covers one managed provider `P` where its lifecycle meets a turn's
+execution lease, the catalog refresh and the connection generation:
+
+- **Desktop main:** sign-out, reconnect, its cancel and completion, removal,
+  `close()`, and `acquireExecution` with the runtime it may start. The provider
+  queue is a lock, and a lease that starts a runtime holds it across
+  `#runtimeFor`'s awaits, which `close()` does not wait for.
+- **Provider home:** one boolean, whether it holds a login. Wiping the runtime
+  state removes it.
+- **App server:** the connection generation and whether `P` reads ready. Rust
+  admits the turn only while it does (PROV-006).
+
+There is one turn and at most three runtimes. Two faults are constants. The
+sign-out's publish can fail, which is only logged. A reconnect's publish can
+get no answer, whether or not it committed. Reading the generation, at the
+reconnect's start or back after that publish, can fail too. Sign-out is also
+accepted while a reconnect is pending: Settings does not offer it then, but
+the service does not refuse it. A sign-out's publish can fail before it
+commits, commit and lose its answer, or lose its answer and commit later
+(`LateCommit`), when the app server applies it only at the generation it
+carried. A settling reconnect's signed-out publish can fail too
+(`CancelPublishCanFail`).
+
+`lifecycle-today` mirrors the code. It has every fault on and ten fix
+constants, all landed. The refresh runs in three steps: it resolves its
+generation, reads the account, then publishes.
+
+- `LeaseWaitsForReconnect`: `acquireExecution` refuses while a reconnect is
+  pending (PROV-004).
+- `CancelSparesLease`: a settling reconnect never closes or wipes a runtime a
+  lease holds. With the first fix this is unreachable; it guards the
+  invariant.
+- `ShutdownRefusesLeases`: `acquireExecution` refuses once `close()` begins,
+  and a runtime that finishes starting after it is closed again.
+- `RefreshSkipsPendingReconnect`: no refresh runs or publishes while a
+  reconnect is pending (PROV-002: user actions supersede automatic ones).
+- `LostReconnectAdopted`: a reconnect whose publish got no answer reads the
+  generation back. Unmoved, the publish never committed, and the reconnect
+  settles as before. Otherwise the login may be committed, so it is kept.
+- `AdoptChecksBaseline`: the reconnect is adopted as connected only when the
+  generation reads exactly one past a baseline it read at its start, and no
+  sign-out ran meanwhile. A sign-out the app server answered makes the
+  refusal certain, so the reconnect settles as failed. An unanswered
+  sign-out, any other advance, or a failed read keeps the reconnect's runtime
+  and login without adopting it. This unknown outcome is a PRD decision: the
+  reconnect reports a failure, and the next refresh settles the state.
+- `CancelSignsOut`: a cancelled or failed reconnect commits signed-out with
+  the next generation before it wipes the home, as sign-out does. Its publish
+  can fail like sign-out's, and `close()` skips it.
+- `CancelKeepsUnrecordedLogin`: when that publish fails, or during shutdown,
+  the cancel keeps the login and the reconnect's runtime instead of wiping
+  them, as an unknown reconnect outcome does. The app server may still read
+  `P` connected, so a wipe would leave it admitting turns with no login.
+- `SupersededCancelWipes`: a reconnect that a sign-out the app server
+  answered superseded is settled by wiping, even when its own signed-out
+  publish fails. That sign-out already recorded signed out, and no refresh
+  ran since, so nothing is unknown.
+- `AdoptTracksLostWrites`: a lifecycle write whose answer was lost, even one
+  sent before the reconnect started, may still commit. While one is
+  outstanding, an advance in the generation proves nothing, so the reconnect
+  is not adopted. A later answered write that advances the generation ends
+  the doubt, because the app server refuses every older write.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `lifecycle-lease-during-reconnect` | Fixed; now passes | Checks `PROV004_NoCloseUnderLease` with every fault on. This is `provider-leased-runtime`, with the provider home added. |
+| `lifecycle-lease-acquire-guard-alone` | passes | With `CancelSparesLease` off, the acquire guard alone keeps PROV-004: no lease exists while a reconnect is pending. |
+| `lifecycle-lease-cancel-guard-alone` | passes | With `LeaseWaitsForReconnect` off, the cancel guard alone also keeps PROV-004. |
+| `lifecycle-lease-during-reconnect-reverted` | violated: shows why the fix is needed | With both lease fixes off, a turn leases the runtime a pending reconnect is signing in, and cancelling the reconnect closes it and wipes its home. Either fix alone passes, so this check turns both off. |
+| `lifecycle-close` | Fixed; now passes | Checks `CloseLeavesNoOpenRuntime`. This is `provider-close`. |
+| `lifecycle-close-reverted` | violated: shows why the fix is needed | With `ShutdownRefusesLeases` off, a lease queued before shutdown registers a runtime after `close()` cleared the maps. |
+| `lifecycle-refresh-during-reconnect` | Fixed; now passes | Before the fix (plausible: Settings reopened while a reconnect is pending): the refresh discovered through the runtime the reconnect reuses and published ready. Cancelling the reconnect wiped the login but superseded nothing, so Rust admitted turns that Settings showed signed out, and they failed. Checks `ReadyMeansSignedIn` and `PendingReconnectNotReady` with the sign-out fault off. Since `CancelSignsOut`, the cancel alone restores `ReadyMeansSignedIn`, so the skip's own promise is `PendingReconnectNotReady`: no automatic result stands for the user's sign-in. Regression test: `runs no refresh while a reconnect is pending, so a cancelled reconnect leaves the app server signed out`. |
+| `lifecycle-refresh-during-reconnect-reverted` | violated: shows why the fix is needed | With `RefreshSkipsPendingReconnect` off: sign out, reconnect, sign in, and a refresh publishes ready while the reconnect is pending. |
+| `lifecycle-lost-reconnect-answer` | Fixed; now passes | Before the fix (plausible: needs a lost answer): only a superseded refusal relearned the generation. Any other error settled the reconnect and wiped the login the app server had just committed. Rust then read connected with no login. This was the reconnect counterpart of F2. Regression tests: `adopts a reconnect the app server committed before its answer was lost`, `keeps the login of a reconnect whose outcome is unknown` and `registers the runtime a reconnect created when its outcome is unknown`. Keeping the login of an unknown outcome is a PRD decision. If the publish never committed, the next refresh publishes the signed-in account at the old generation, with no reconnect event. |
+| `lifecycle-lost-reconnect-answer-reverted` | violated: shows why the fix is needed | With `LostReconnectAdopted` and `CancelSignsOut` off, as before these fixes, the committed reconnect's cancel wipes its login while Rust reads connected. With `CancelSignsOut` on, that cancel would record signed out instead, so `lifecycle-committed-reconnect-keeps-login-reverted` shows the login lost. |
+| `lifecycle-lost-answer-adopts-only-commit` | Fixed; now passes | Checks `AdoptsOnlyCommittedReconnect`: an unanswered reconnect is adopted only when the app server committed it. An independent review found that an earlier draft of this fix adopted any advance past the baseline. Regression tests: `settles a reconnect whose unanswered publish did not commit`, which also covers a publish or discovery that failed before any commit; `neither adopts nor wipes a reconnect whose unanswered publish cannot be proven`; and `settles a reconnect the app server refused with a code it could not have committed`. |
+| `lifecycle-lost-answer-adopts-only-commit-reverted` | violated: shows why the fix is needed | With `AdoptChecksBaseline` off: a sign-out commits but loses its answer, and the reconnect cannot read its baseline. Its publish at the older generation never commits, yet the read shows an advance, and the reconnect is adopted. Before the baseline and sign-out checks, a sign-out during the reconnect led to the same adoption. |
+| `lifecycle-late-sign-out-reverted` | violated: shows why the fix is needed | Found by a Codex review of #572. With `AdoptTracksLostWrites` off: a sign-out's answer is lost while its request is still in flight, a reconnect reads its baseline, the sign-out commits, and the reconnect's refused publish loses its answer too. The read shows one step past the baseline, and the refused reconnect is adopted. Regression tests: `does not adopt a reconnect when an earlier unanswered sign-out may have moved the generation`, and `adopts a reconnect again once an answered sign-out supersedes an unanswered one` for the doubt's end. |
+| `lifecycle-committed-reconnect-keeps-login` | Fixed; now passes | Checks `CommittedReconnectKeepsLogin` with every fault on: a reconnect the app server committed is never settled and wiped. The review found that marking every sign-out as superseding, answered or not, broke this through a failed sign-out publish during the reconnect; this check catches that version. Regression test: `neither adopts nor wipes a reconnect whose unanswered publish cannot be proven`. |
+| `lifecycle-committed-reconnect-keeps-login-reverted` | violated: shows why the fix is needed | With `LostReconnectAdopted` off, the committed reconnect whose answer was lost is settled and its login wiped. |
+| `lifecycle-cancel-records-signed-out` | Fixed; now passes | Checks `CancelRecordsSignedOut` with every fault on: no settled reconnect wipes the login while Rust reads ready. Before the fix (the known limit): a sign-out whose publish failed left Rust reading ready. A reconnect started and was cancelled; the cancel wiped the login and recorded nothing, so Rust kept admitting turns until some later refresh. Regression test: `records signed out in the app server when a reconnect is cancelled after a failed sign-out`. |
+| `lifecycle-cancel-records-signed-out-reverted` | violated: shows why the fix is needed | With `CancelSignsOut` off: a sign-out whose publish fails, a reconnect, a cancel. |
+| `lifecycle-cancel-keeps-unrecorded-login-reverted` | violated: shows why the fix is needed | Found by a Codex review of #572. With `CancelKeepsUnrecordedLogin` off: a sign-out whose publish fails, a reconnect, and a cancel whose own publish fails and still wipes the login. Regression test: `keeps the login when a cancelled reconnect cannot record signed out`. |
+| `lifecycle-confirmed-sign-out-stands` | Fixed; now passes | Checks `ConfirmedSignOutStands` with every fault on. Found by a Codex review of #572: a sign-out answered during a pending reconnect was followed by the browser sign-in. The refused reconnect's settle could not publish, so it kept the new login as an unknown outcome, and the next refresh published connected over the confirmed sign-out. Shutdown is excluded, because `close()` drops a pending reconnect without settling it. Regression test: `keeps a confirmed sign-out when a superseded reconnect cannot record signed out again`. |
+| `lifecycle-confirmed-sign-out-stands-reverted` | violated: shows why the fix is needed | With `SupersededCancelWipes` off: sign out, reconnect, sign out (answered), sign in, and a cancel whose publish fails keeps the login. |
+| `lifecycle-straddling-refresh` | Fixed; now passes | Checks `ReadyMeansSignedIn` with the sign-out fault off. Before the fix: a refresh resolved its generation before a reconnect, read the account after the browser sign-in, and reached its publish after the cancel. The cancel had not moved the generation, so both checks passed and Rust read ready over the wiped login. The cancel now advances it, so the result is stale. Regression test: `drops a refresh that straddles a cancelled reconnect`. |
+| `lifecycle-straddling-refresh-reverted` | violated: shows why the fix is needed | With `CancelSignsOut` off: sign out, refresh starts, reconnect, sign in, refresh reads, cancel, refresh publishes. |
+| `lifecycle-overlapping-refresh` | passes | Checks `OverlappingRefreshNeverReadiesWipedLogin`, with every fault but the sign-out's on. A Codex review of #572 asked for a refresh epoch across the reconnect, since `refreshGeneration` is only a level check. This check shows the epoch is not needed: every path that ends a reconnect and wipes the login first advances the generation, and a cancel that cannot keeps the login, so a straddling refresh is either stale or truthful. A refresh straddling a failed sign-out is the sign-out's known limit and is excluded. |
+| `lifecycle-overlapping-refresh-reverted` | violated: shows why the fix is needed | With `CancelKeepsUnrecordedLogin` off, a cancel whose publish fails wipes the login without advancing the generation, and the straddling refresh publishes ready over it. |
+| `lifecycle-removal-completes` | passes | PROV-003: a removal that waited on the turn finishes once the turn releases, with every fault on. |
+
+`ReadyMeansSignedIn` is checked with the sign-out fault off. A failed
+sign-out publish leaves Rust ready with no login by itself; the next refresh
+corrects it. While a reconnect is pending, no refresh runs, and the lease
+guard keeps turns off the reconnect's runtime. Settling the reconnect commits
+signed-out, which ends that state. If that publish fails too, the login is
+kept, so Rust stays ready with a login until the next refresh.
+
+Two code seams sit inside single model steps, and the code now matches the
+model's assumption at each. `RefreshPublish` checks for a pending reconnect
+at the write. An explicit refresh awaits a readiness evaluation after the
+catalog service's check, so the composition rechecks the refresh generation
+just before it publishes. The regression test is `publishes no explicit
+refresh whose readiness evaluation outlasted the start of a reconnect`.
+`Close` is the moment admission closes. Desktop shutdown awaits the app
+server before it closes the providers, so it now calls `beginShutdown()`
+first; leases requested meanwhile are refused. The regression tests are
+`refuses provider access from the moment shutdown begins` and a source-text
+check of `shutdownServices` in `desktop-shell.test.mjs`. Both were found by a
+Codex review of #572.
+
+### `HarnessCodexThread.tla`
+
+This model covers `codex.basic`'s persistent root thread across serialized
+root turns. Prompts carry only the current turn, so the native thread is the
+only holder of prior conversation ([#584](https://github.com/vishaltandale00/relayer-graphcomplete/issues/584)).
+It must be kept whenever it can be resumed, and a reset must be visible.
+
+- **Harness:** the saved thread, the Codex home it is bound to, the step that
+  saves it, and the pending reset notice.
+- **App server:** `thread/start`, `thread/resume` and `turn/start`. A thread
+  has a rollout only in the `CODEX_HOME` whose `turn/start` was accepted on it.
+  `thread/resume` without one fails with "no rollout found", as the pinned
+  Codex 0.147.0 binary does.
+- **Providers and homes:** the subscription `s` has its own home `S`. Two
+  API-key providers, `k1` and `k2`, share Codex's default home `D`, as they do
+  in production today.
+- **Interruptions:** Stop, the per-turn force-stop and force shutdown, and a
+  thread saved by an earlier release, whose home is unknown and whose rollout
+  may be missing. A force marks the turn, and the kill lands later (`Kill`), so
+  a `turn/start` answer already in flight can still arrive. A Stop while
+  `turn/start` is pending kills the app-server.
+
+The model decides only resumption for the provider each turn uses. Which
+providers an existing conversation may select belongs to the legacy
+compatibility policy, so the model lets every turn pick any provider.
+
+`codex-thread-today` mirrors the code, and each `-reverted` check turns one fix
+off. Nine constants hold the fixes:
+
+- `CommitAtTurnStart`: the thread is saved when `turn/start` is accepted
+  (`onTurnId`), not when `thread/start` answers.
+- `ThreadRecordsHome`: the saved thread records a binding, and a turn that
+  does not match it starts a fresh thread.
+- `BindToHome`: that binding is the Codex home, not the provider definition, so
+  providers that share a home keep resuming the thread.
+- `RecoverMissingRollout`: a `thread/resume` that finds no rollout forgets the
+  saved thread and starts a fresh one in the same turn.
+- `ForceForgets`: a force-stop or force shutdown of a root turn that sent
+  `turn/start` forgets the saved thread.
+- `CommitChecksForce`: a `turn/start` answer that arrives after the force is not
+  saved (`onTurnId` checks the force signal).
+- `ForgetOnlyAfterTurnStart`: a turn forced before it sent `turn/start` wrote
+  nothing, so the saved thread is kept.
+- `StopForgetsPendingStart`: a Stop that kills the app-server while
+  `turn/start` is pending forgets the thread, as a force does.
+- `ResetsVisible`: every forget leaves a reset notice, which the next fresh
+  root thread reports.
+
+The properties are:
+
+- `NoDeadResume`: a root turn never fails on a thread Codex cannot resume.
+- `ResumeOnlyMaterialized`: only a thread with a rollout in the turn's home is
+  offered for resume, except one saved by an earlier release.
+- `NoKilledResume`: a conversation killed mid-write, by a force or by a Stop
+  while `turn/start` was pending, is never resumed (PRD, Provider execution
+  access).
+- `NoNeedlessForget`: after a root turn in a home finishes, or is stopped once
+  running, the next root turn in that home resumes its thread, whichever
+  provider it uses. Only a later killed conversation lifts this.
+- `NoSilentReset`: a root turn that starts a fresh thread after a root
+  conversation was lost reports it. Each loss is reported once.
+- `NeverResumes`: a witness, expected to be violated, that a real resume is
+  reachable.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `codex-thread-resumable` | Fixed; now passes | Before the fix (H1): the thread was saved as soon as `thread/start` answered, and reset only when the presentation version changed. A follow-up in another Codex home resumed it without its rollout, and a Stop between `thread/start` and `turn/start` pinned a thread that never got one. Every later root turn failed with "no rollout found", also after a restart. Regressions: `codex-root-thread.test.ts` drives the real app-server transport against an emulated app-server with Codex's rollout rules. |
+| `codex-thread-home-reverted` | violated: shows why the fix is needed | Without a recorded binding, a follow-up in another home resumes a thread with no rollout there. |
+| `codex-thread-commit-reverted` | violated: shows why the fix is needed | A Stop before `turn/start` leaves a saved thread with no rollout. |
+| `codex-thread-recovery-reverted` | violated: shows why the fix is needed | A thread saved by an earlier release, with no rollout in the turn's home, fails the turn. It is still offered for resume, so that existing conversations keep their thread. |
+| `codex-thread-force-reverted` | violated: shows why the fix is needed | A force that keeps the saved thread lets the next root turn resume the killed conversation. |
+| `codex-thread-late-commit-reverted` | violated: shows why the fix is needed | A `turn/start` answer that arrives after the force saves the forced thread again. |
+| `codex-thread-forget-unwritten-reverted` | violated: shows why the fix is needed | Found in review: a force during `thread/resume`, before `turn/start`, forgot a thread nothing wrote. Now kept. Regressions: the two "before its turn/start" cases in `codex-root-thread.test.ts`. |
+| `codex-thread-home-binding-reverted` | violated: shows why the fix is needed | #584: binding the thread to its provider definition dropped native history when a follow-up moved between API-key providers sharing Codex's default home. Regression: "keeps resuming across providers that share a Codex home". |
+| `codex-thread-stop-kill-reverted` | violated: shows why the fix is needed | Found in review: a Stop while `turn/start` was pending killed the app-server but kept the thread. Regression: "forgets, visibly, a root thread whose turn a Stop killed while turn/start was pending". |
+| `codex-thread-silent-reset-reverted` | violated: shows why the fix is needed | #584: without the notice, a root turn silently starts over after its native conversation was lost. Regressions: the reset assertions in `codex-root-thread.test.ts`. |
+| `codex-thread-resume-witness` | violated: witness | A real resume is reachable. |
+
+In review, three mutants of this model and `HarnessPrimeRoot` passed every
+property then shipped: `Commit` always clearing the saved thread, `Force`
+keeping it, and force close forgetting an idle Prime session. They now violate
+`NoNeedlessForget`, `NoKilledResume` and Prime's `NoNeedlessForget`.
+
+`ResumeOnlyMaterialized` exempts the earlier release's thread by design: its
+home is unknown, so the harness tries it once and binds it on success.
+`NoNeedlessForget` gives up continuity only when a turn runs in another home,
+where the thread cannot be resumed.
+
+### `HarnessPrimeRoot.tla`
+
+This model covers the harness host and Prime Agent's persistent root session:
+
+- **Host:** the per-thread session lock, capture and persist after a run,
+  graceful close, force close, a crash and one restart.
+- **Prime:** pinning, rotation, reload, the force-stop generation, and the
+  presentation instructions each session was built with.
+- **Turns:** two root turns and one invoked child, which only captures state.
+
+`prime-root-today` mirrors the code, and each `-reverted` check turns one fix
+off. Five constants hold the fixes:
+
+- `ForcePersists`: the host records the harness state as soon as a per-turn
+  force-stop fires, not when the host run ends up to ten seconds later.
+- `ForceShutdownForgets`: force shutdown forgets the root session while a root
+  conversation runs on it, as a per-turn force-stop does.
+- `ForgetOnlyRunning`: only when an unforced root turn is bound to that
+  session. A turn still acquiring its session wrote nothing, and a turn
+  already force-stopped dropped its session then.
+- `ForceClosePersists`: force close captures and persists that state, although
+  it skips close's final persist.
+- `SessionScopedInstructions`: each session reads its own presentation
+  instructions. Before, every session read the shared resource loader's cache,
+  which only a session's `reload()` refreshed.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `prime-root-serialized` | passes | Root turns stay serialized, and two root natives never share a session. |
+| `prime-root-memory` | passes | While the harness is live, it never pins a force-stopped root conversation. |
+| `prime-root-capture` | Fixed; now passes | Before the fix: a graceful close captured the state, a force-stop then fired, and the close persisted the stale capture. |
+| `prime-root-capture-reverted` | violated: shows why the fix is needed | Without recording at the force-stop, the close persists the stopped session. |
+| `prime-root-restart-close` | Fixed; now passes | Before the fix: a turn force-stopped after close had persisted was restored after the restart. |
+| `prime-root-restart-close-reverted` | violated: shows why the fix is needed | Same trace with the force-stop recorded only at the end of the host run. |
+| `prime-root-force-close` | Fixed; now passes | Before the fix (H2): quitting while a root turn ran ended in force close. Force shutdown kept the root session (Codex kept its thread), and nothing persisted, so the restart resumed the killed conversation. The check also holds `NoNeedlessForget`: an idle session, or one a turn is still acquiring, is kept. Regressions: `host-root-session-force.test.ts` (Codex through the real host, restarted) and the Prime force-shutdown test in `prime-agent.test.ts`. |
+| `prime-root-force-close-forget-reverted` | violated: shows why the fix is needed | Force close persists the killed conversation it did not forget. |
+| `prime-root-force-close-persist-reverted` | violated: shows why the fix is needed | The previously saved killed conversation survives. |
+| `prime-root-forget-running-reverted` | violated: shows why the fix is needed | Found in review: forgetting whenever a root turn is in flight forgets a session a turn was still acquiring. `NoNeedlessForget` now also covers an idle session. Regression: "keeps the root session when force shutdown ends a root turn still acquiring it". |
+| `prime-root-keep-witness` | violated: witness | An idle session survives a force close and the restart. |
+| `prime-root-crash` | Open, narrowed | A crash after a per-turn force-stop but before its state write lands restores the stopped conversation. The write now starts when the force fires. Before, it waited for the host run to end. Regression for the new timing: "records a force-stopped root turn's forgotten session before its host run ends". |
+| `prime-root-instructions` | Fixed; now passes | Before the fix (H3): a rotated root session was built from the loader's cache, which held the previous version's instructions, because `createAgentSessionFromServices` does not reload it (PPG-003). Regression: `prime-agent-native-instructions.test.ts` with the real Prime SDK 0.8.1 and no inference; it also covers invoked children, which the model leaves out. |
+| `prime-root-instructions-reverted` | violated: shows why the fix is needed | With the shared cache, a rotated root session runs with stale instructions. |
+| `prime-root-liveness` | passes | A force-stopped turn's host run always ends and frees the lock. |
+
+`Restart` after a close or force close waits for the writes they await. A
+crash may restart at any point.
+
+### `HarnessCodexAuth.tla`
+
+This model covers the per-`CODEX_HOME` `auth.json` refcount and its serialized
+write and remove queue in `codex-basic.ts`. It has three concurrent turns,
+roots and children, on one provider home. It includes the per-turn
+force-stop and a host that stops waiting before a turn's cleanup ends. It found
+no bug, and its checks guard the queue against regressions.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `codex-auth-safety` | passes | A running turn always finds its key file, the user count is exact, and no key file remains once every turn ends. |
+| `codex-auth-liveness` | passes | The key file is eventually removed for good. |
+
 ## Limits
 
 - **Bounds:** one provider plus one new connection, one renderer, one lease,
   and a single child at depth 1 with head revision at most 3. The lease model
   has one provider, at most two turns and two restarts, and one turn per
   thread, so it cannot show that a force-stop spares a sibling turn on the
-  same thread; the harness-host, Codex and Prime tests cover that.
+  same thread; the harness-host, Codex and Prime tests cover that. The
+  composer has two threads, two turns each, and two typed values; the
+  inspector has two nodes, three state revisions, and three editors; the
+  canvas has three locations, one draggable node, and six renders.
   `CatalogRefresh` has two providers, two queued refreshes per provider, and
   at most two lifecycle events. A bug that needs more actors is out of reach.
 - **Connection generation:** removing the generation check from `Publish`
   makes `catalog-stale-refresh-after-reconnect`, `catalog-old-account-repopulates`
   and `catalog-stale-adapter-capture` fail, so their passes are not vacuous.
   A logout whose signed-out publish fails advances nothing and supersedes
-  nothing. A cancelled reconnect whose fresh runtime fails to start swaps the
+  nothing; a later reconnect's cancel records the signed-out state. A cancelled reconnect whose fresh runtime fails to start swaps the
   adapter for the stub within one generation; a real result already in
   flight may still publish, which PROV-002 allows because the account and
   generation are unchanged. No check covers restoring through the recovery
   adapter: that needs an explicit refresh, a user action the model does not
   make fair. `CatalogRefresh` checks the generation once, at publish. The code checks twice: the catalog service before it publishes,
   and Rust inside the write transaction. The model's single check stands for
-  both. A lifecycle write whose response is lost is not modeled; a JS test
+  both. `CatalogRefresh` does not model a lifecycle write whose response is lost; a JS test
   covers the refresh that relearns the generation. The ad hoc
   `ProviderConnect` model, which covers a crash between the create's commit
   and its reply (F2), is not promoted; a JS test covers F2.
+  `ProviderLeaseLifecycle` models a reconnect whose answer is lost. It makes
+  each publish atomic, so a request whose answer was lost has already
+  committed or never will. A sign-out request sent before a reconnect that
+  reaches the app server only after the reconnect read its baseline breaks
+  that assumption: the reconnect's refused publish can then read one step
+  past its baseline and be adopted. That needs three faults and is not
+  modeled.
 - **Catalog abstractions:** `CatalogRefresh` has no harness. A family is
   resolvable when it is enabled and has a connected member with available
   models. That stands for "some harness can run it": the model leaves out
@@ -512,6 +1107,11 @@ again, but it prepares nothing until a provider has a route.
   - in the lease model, a user's Stop before the native turn starts;
   - store errors other than a refused drain in the provider service, and
     acknowledgement failures.
+- **Composer assumptions:** `threads.submitInteraction` reads the thread from
+  `viewState` behind a dynamic `import()`, assumed to resolve in the same
+  task; if it took a task, a thread switch could send one thread's text on
+  another's POST. The model always views the latest turn, so the `finally`
+  that reads the viewed turn's status is modeled for that case only.
 - **Candidate fixes are modeled, not designed.** A fix still needs a product
   decision wherever the PRD is silent. One example is what the default family
   should become when its managed family is tombstoned.

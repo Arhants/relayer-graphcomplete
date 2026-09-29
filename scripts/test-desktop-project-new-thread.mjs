@@ -221,7 +221,21 @@ async function run() {
     webContents.sendInputEvent({ type: "mouseMove", ...point });
     await waitFor(`project action ${projectId} to reveal`, () => evaluate(`(
       getComputedStyle(document.querySelector(${JSON.stringify(selector)})).opacity === '1'
-    )`));
+    )`)).catch(async (error) => {
+      try {
+        process.stderr.write(`Project hover failure: ${await evaluate(`JSON.stringify((() => {
+          const action = document.querySelector(${JSON.stringify(selector)});
+          const row = action?.closest('[data-project-row]');
+          const rect = action?.getBoundingClientRect();
+          return { point: ${JSON.stringify(point)}, rect: rect?.toJSON(), opacity: action ? getComputedStyle(action).opacity : null,
+            rowHover: row?.matches(':hover'), actionHover: action?.matches(':hover'),
+            hit: document.elementFromPoint(${point.x}, ${point.y})?.outerHTML,
+            viewport: [innerWidth, innerHeight], scroll: [scrollX, scrollY] };
+        })())`)}\n`);
+      } finally {
+        throw error;
+      }
+    });
     webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...point });
     webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...point });
   };
@@ -527,7 +541,11 @@ async function run() {
   window = undefined;
   services.splice(services.indexOf(product), 1);
   await product.close();
+  await desktopSettings.flush();
   desktopSettings = createSettingsStore(dataDirectory);
+  ipcMain.removeHandler("relayer:composer-drafts-read");
+  ipcMain.removeHandler("relayer:composer-drafts-write");
+  registerComposerDraftIpc({ ipcMain, settings: desktopSettings });
   await startProduct();
   if (productSession.origin === previousOrigin) {
     throw new Error("The restart scenario did not move to a new product origin.");
@@ -606,6 +624,10 @@ async function run() {
     throw new Error(`${error.message} ${JSON.stringify(draftState)}`);
   }
   await setValue("#threadPrompt", "");
+  await waitFor("clearing the overriding draft reveals its failed-send retry", () => evaluate(`(
+    document.querySelector('#threadPrompt')?.value === ${JSON.stringify(followupPrompt)}
+  )`));
+  await setValue("#threadPrompt", "");
   await clickProjectAction(project.id);
   await click(`[data-thread="${firstThread.id}"]`);
   await waitFor("the explicitly cleared saved-thread draft", () => evaluate(`(
@@ -627,6 +649,11 @@ async function run() {
     )`) && saved.composerDrafts?.pendingNewThread == null;
   });
 
+  // Acknowledge renderer writes before seeding the restart fixture through the same store.
+  await evaluate("window.relayerDesktop.drafts.read()");
+  window.destroy();
+  window = undefined;
+  await desktopSettings.flush();
   const folderDraft = {
     text: "Restore this exact folder-scoped draft.",
     scope: {
@@ -650,8 +677,6 @@ async function run() {
     automaticEligible: true,
   };
   automaticTutorialBegins = 0;
-  window.destroy();
-  window = undefined;
   await openWindow();
   await waitFor("the exact folder-scoped draft after restart", () => evaluate(`(
     document.querySelector('#newThreadPrompt')?.value === ${JSON.stringify(folderDraft.text)}

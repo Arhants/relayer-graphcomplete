@@ -1,0 +1,40 @@
+Starting isolated Electron first-message smoke test...
+Electron application ready.
+Error occurred in handler for 'relayer:layer-selections-read': Error: No handler registered for 'relayer:layer-selections-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:workspace-layout-read': Error: No handler registered for 'relayer:workspace-layout-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+[{"interactionGraph":{"complete":true,"enabled":true,"sources":[]},"id":1,"threadId":1,"sequence":1,"text":"Show the deterministic task system.","createdAt":"1790626856873","graphNodeId":21,"completionStatus":"running","stopRequested":false,"stopError":null,"harnessConfigurationName":"fixture-task-system","harnessConfigurationDigest":"sha256:2114259d87423fe6d011ce54aac60afa32a16e596a02461440cdf7785fd16a57","permissionProfileId":"auto","modelSelection":{"familyId":1,"providerId":"codex","modelId":"fixture-model"},"effectiveExecutionDigest":"sha256:431c40e553d107fafbdb394fc6b19584742b5aafb44ac45340af88054bfdea9c","effectivePermissionReceipt":{"authority":"bounded","bindingPresent":true,"disclosure":null,"label":"Approve for me","permissionProfileId":"auto","reviewer":"automatic","schemaVersion":1,"unconfinedHostAccess":false},"completionOutput":null,"completionError":null,"latestAttempt":{"id":1,"attemptNumber":1,"startedAt":"1790626857018","finishedAt":null,"modelSelection":{"familyId":1,"providerId":"codex","modelId":"fixture-model"},"familyRevision":1,"harnessConfigurationName":"fixture-task-system","harnessConfigurationRevision":1,"harnessConfigurationDigest":"sha256:2114259d87423fe6d011ce54aac60afa32a16e596a02461440cdf7785fd16a57","adapterId":"codex-subscription","adapterImplementationVersion":1,"accessContract":"managed-runtime@1","outcome":"running","failureCategory":null,"failureMessage":null,"effectBoundary":"unknown","attemptAdmissionId":"bc74bd29-17c8-4137-b501-67ffa365d8e6","admittedPlan":{"familyId":1,"familyRevision":1,"orchestrator":{"providerId":"codex","adapterId":"codex-subscription","accessContract":"managed-runtime@1","modelId":"fixture-model","adapterImplementationVersion":"1"},"roster":[{"providerId":"codex","adapterId":"codex-subscription","accessContract":"managed-runtime@1","modelId":"fixture-model","adapterImplementationVersion":"1"}],"harnessPolicyDigest":"sha256:1ff2d9ece673ede441473ee005b4e9aadf7ba1c04c812885626179ec42afced0","digest":"sha256:03868f85352782a7086346aab2357e4a16ab66d198f6030a2afd45b348eb593d"}},"projectionFresh":true,"contexts":[],"submittedInputs":[]}]
+Relayer
+＋
+New thread
+⌘N
+CHATS
+◌
+Show the deterministic task system.
+PROJECTS
+Settings
+Account
+←
+→
+Show the deterministic task system.
+No folder · Approve for me · Fixture Task System
+•••
+Share
+›_
+
+Show the deterministic task system.
+
+0
+Running
+✦
+Fixture models · Fixture model
+⌄
+↑
+Error: Timed out waiting for the deterministic graph to be accepted.
+    at waitFor (file:///Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/.relayer/pr560-drag-diagnostic.mjs:94:9)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processTimers (node:internal/timers:538:9)
+    at async run (file:///Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/.relayer/pr560-drag-diagnostic.mjs:423:20)

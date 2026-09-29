@@ -24,9 +24,10 @@ export function createProviderComposition({
   const modelCatalog = new ModelCatalogService({
     adapters: [],
     diagnostics,
-    // Each refresh carries the connection generation it started with (PROV-002).
+    // Each refresh carries the connection generation it started with (PROV-002). None runs
+    // while a reconnect is pending.
     connectionGenerations: {
-      current: (providerId) => providerDefinitions.connectionGeneration(providerId),
+      current: (providerId) => providerDefinitions.refreshGeneration(providerId),
       resync: (providerId) => providerDefinitions.resyncConnectionGeneration(providerId),
     },
     publishSnapshot: async (snapshot, options) => {
@@ -36,6 +37,11 @@ export function createProviderComposition({
           snapshot.models ?? [],
           "explicit-repair",
         );
+        // The readiness evaluation awaits, so a reconnect may have started, or the generation
+        // moved, since the catalog service checked. Recheck at the write, as a stale publish.
+        if (providerDefinitions.refreshGeneration(snapshot.providerId) !== options.connectionGeneration) {
+          throw Object.assign(new Error("provider_connection_superseded"), { code: "provider_connection_superseded" });
+        }
       }
       const published = await publishCatalog(snapshot, options);
       publishedModels.set(snapshot.providerId, snapshot.models ?? []);
@@ -88,6 +94,11 @@ export function createProviderComposition({
   return Object.freeze({
     modelCatalog,
     providerDefinitions,
+    // Refuses new provider access and lifecycle actions at once, before shutdown awaits other
+    // services; close() then tears the providers down.
+    beginShutdown() {
+      providerDefinitions.beginShutdown();
+    },
     async start() {
       await providerDefinitions.reconcileStartup();
       await providerDefinitions.activate();

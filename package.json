@@ -44,6 +44,7 @@
     "test:codex-secret-boundary": "RELAYER_RUN_CODEX_SECRET_BOUNDARY=1 vitest run packages/harness-host/test/codex-secret-provider-process.test.ts",
     "test:prime-managed-runtime": "node scripts/verify-prime-managed-runtime.mjs",
     "test:desktop:stop": "npm run build && electron scripts/test-desktop-stop.mjs",
+    "test:desktop:interaction-graph-layout": "node scripts/test-interaction-graph-layout.mjs",
     "test:desktop:first-message": "npm run build && electron scripts/test-desktop-first-message.mjs",
     "test:desktop:project-new-thread": "npm run build && node scripts/run-project-new-thread-test.mjs",
     "test:desktop:context-draft-warning": "npm run build && node scripts/run-context-draft-warning-test.mjs",
@@ -84,6 +85,8 @@
     "desktop:release:promote-stable": "node desktop/release/promote-stable.mjs",
     "test:eval-web": "node scripts/test-eval-web.mjs",
     "test:eval-compiled-runtime": "vitest run --config scripts/eval-compiled.vitest.config.mjs",
+    "evidence:public-share-embed": "RELAYER_CAPTURE_PUBLIC_SHARE_EMBED_EVIDENCE=1 electron scripts/capture-public-share-embed-evidence.mjs",
+    "review:public-share-embed": "node scripts/fixtures/public-share-embed.mjs",
     "test:desktop:narrow-sidebar": "npm run build && electron scripts/test-desktop-narrow-sidebar.mjs"
   },
   "devDependencies": {

@@ -1,0 +1,80 @@
+{
+  "passed": true,
+  "sourceDigest": "96530c5d31b0ca26d146a3ce7313246f4e57b5e8bee9384e3c99cc2a787f53f4",
+  "generationSourceDigest": "96530c5d31b0ca26d146a3ce7313246f4e57b5e8bee9384e3c99cc2a787f53f4",
+  "captureDriverSha256": "9fff6a4322f17a32cc4caa257636b90cce635b216332073328bbe0cd547860f3",
+  "mode": "production-browser-fallback",
+  "nativeKeyboardVerified": false,
+  "nativeDesktopAccountVerified": false,
+  "backendReopened": true,
+  "referenceToNewResponseRoot": true,
+  "reusedOccurrences": true,
+  "contextEdges": 2,
+  "expectedInteractionCards": 3,
+  "compiledControls": 4,
+  "temporalFeatures": {
+    "schemaRead": true,
+    "rootCurrentWrite": true,
+    "projectionUi": true,
+    "invokeResolution": true,
+    "providerRecursion": true
+  },
+  "nativeExecutionRows": 0,
+  "recursiveExecutionRowsApplicable": false,
+  "before": {
+    "interactions": 8,
+    "attempts": 3,
+    "executions": 0
+  },
+  "after": {
+    "interactions": 8,
+    "attempts": 3,
+    "executions": 0
+  },
+  "executionRequests": 0,
+  "screenshots": [
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live-repair/01-live-source-root.png",
+      "sha256": "80be3421d8cadbf21115180a2f8c5d298e1dca11b342abcd3c14f2b457eccb27"
+    },
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live-repair/02-live-reused-occurrence.png",
+      "sha256": "c7448a39ba641ec3cd5ae8de50f76493f5b63fdb9311d81e1a7799dbaf95bdec"
+    },
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live-repair/03-live-reference-destination.png",
+      "sha256": "ba043d854ca3d6628d27049779b116f558bc165af3e59d348e99f42d75ef3f73"
+    },
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live-repair/04-live-context-graph.png",
+      "sha256": "d4e8b4560b79d839c936212019f8585b0f87f01510d51ac7ebc4835a90967d87"
+    },
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live-repair/05-live-expansion-destination.png",
+      "sha256": "1b9bc429fd4daffd902555ba1e1f7e7098a0ff4e59ba05b49ccc0f8c497f1019"
+    },
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live-repair/06-live-back.png",
+      "sha256": "b5cbeb2880ef65388fdc2152b76447a52043dbb2c0c854f964ff370bd1ca4c0b"
+    },
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live-repair/07-live-reopened.png",
+      "sha256": "80be3421d8cadbf21115180a2f8c5d298e1dca11b342abcd3c14f2b457eccb27"
+    }
+  ],
+  "frames": 20,
+  "interactions": [
+    {
+      "id": 1,
+      "status": "accepted"
+    },
+    {
+      "id": 2,
+      "status": "accepted"
+    },
+    {
+      "id": 3,
+      "status": "accepted"
+    }
+  ]
+}

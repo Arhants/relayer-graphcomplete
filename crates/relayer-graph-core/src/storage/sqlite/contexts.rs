@@ -216,6 +216,8 @@ impl<'connection> ContextTable<'connection> {
             });
         }
         Ok(InteractionInput {
+            interaction_permissions: super::permissions::read(self.connection, scope.root_node_id)
+                .await?,
             interaction: interaction.into(),
             contexts,
             submitted_inputs: InputChildTable::new(&mut *self.connection)

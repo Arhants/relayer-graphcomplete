@@ -1,0 +1,300 @@
+{
+  "scenario": "canvas-drag-across-render",
+  "module": "CanvasGesture",
+  "summary": "A render while a node is dragged; the node keeps following the pointer and stays where it is dropped.",
+  "promises": [
+    "DragFollowsPointer",
+    "DropStays",
+    "FitCentersNode"
+  ],
+  "generatedBy": "models/tla/scenarios.json via `node scripts/models/check-tla.mjs --render`",
+  "steps": [
+    {
+      "action": null,
+      "state": {
+        "cache": {
+          "cam": 0,
+          "fitted": false,
+          "layout": 0,
+          "manual": false,
+          "pinned": false,
+          "unfitted": false,
+          "w": 4
+        },
+        "cam": 0,
+        "drag": {
+          "capGen": 0,
+          "gen": 0,
+          "moved": false,
+          "on": false
+        },
+        "dropped": 4,
+        "fitDue": false,
+        "fitted": true,
+        "gen": 1,
+        "layout": 1,
+        "manualCam": false,
+        "pan": {
+          "on": false,
+          "startCam": 0,
+          "startPtr": 0
+        },
+        "pinned": false,
+        "pressed": "none",
+        "ptr": 0,
+        "sel": false,
+        "unfitted": false,
+        "view": "home",
+        "w": 0
+      }
+    },
+    {
+      "action": [
+        "Press"
+      ],
+      "state": {
+        "cache": {
+          "cam": 0,
+          "fitted": false,
+          "layout": 0,
+          "manual": false,
+          "pinned": false,
+          "unfitted": false,
+          "w": 4
+        },
+        "cam": 0,
+        "drag": {
+          "capGen": 1,
+          "gen": 1,
+          "moved": false,
+          "on": true
+        },
+        "dropped": 4,
+        "fitDue": false,
+        "fitted": true,
+        "gen": 1,
+        "layout": 1,
+        "manualCam": false,
+        "pan": {
+          "on": false,
+          "startCam": 0,
+          "startPtr": 0
+        },
+        "pinned": false,
+        "pressed": "node",
+        "ptr": 0,
+        "sel": false,
+        "unfitted": false,
+        "view": "home",
+        "w": 0
+      }
+    },
+    {
+      "action": [
+        "Move",
+        1
+      ],
+      "state": {
+        "cache": {
+          "cam": 0,
+          "fitted": false,
+          "layout": 0,
+          "manual": false,
+          "pinned": false,
+          "unfitted": false,
+          "w": 4
+        },
+        "cam": 0,
+        "drag": {
+          "capGen": 1,
+          "gen": 1,
+          "moved": true,
+          "on": true
+        },
+        "dropped": 1,
+        "fitDue": false,
+        "fitted": false,
+        "gen": 1,
+        "layout": 1,
+        "manualCam": false,
+        "pan": {
+          "on": false,
+          "startCam": 0,
+          "startPtr": 0
+        },
+        "pinned": true,
+        "pressed": "node",
+        "ptr": 1,
+        "sel": false,
+        "unfitted": false,
+        "view": "home",
+        "w": 1
+      }
+    },
+    {
+      "action": [
+        "RenderSame"
+      ],
+      "state": {
+        "cache": {
+          "cam": 0,
+          "fitted": false,
+          "layout": 0,
+          "manual": false,
+          "pinned": false,
+          "unfitted": false,
+          "w": 4
+        },
+        "cam": 0,
+        "drag": {
+          "capGen": 2,
+          "gen": 2,
+          "moved": true,
+          "on": true
+        },
+        "dropped": 1,
+        "fitDue": false,
+        "fitted": false,
+        "gen": 2,
+        "layout": 1,
+        "manualCam": false,
+        "pan": {
+          "on": false,
+          "startCam": 0,
+          "startPtr": 0
+        },
+        "pinned": true,
+        "pressed": "node",
+        "ptr": 1,
+        "sel": false,
+        "unfitted": false,
+        "view": "home",
+        "w": 1
+      }
+    },
+    {
+      "action": [
+        "Move",
+        2
+      ],
+      "state": {
+        "cache": {
+          "cam": 0,
+          "fitted": false,
+          "layout": 0,
+          "manual": false,
+          "pinned": false,
+          "unfitted": false,
+          "w": 4
+        },
+        "cam": 0,
+        "drag": {
+          "capGen": 2,
+          "gen": 2,
+          "moved": true,
+          "on": true
+        },
+        "dropped": 2,
+        "fitDue": false,
+        "fitted": false,
+        "gen": 2,
+        "layout": 1,
+        "manualCam": false,
+        "pan": {
+          "on": false,
+          "startCam": 0,
+          "startPtr": 0
+        },
+        "pinned": true,
+        "pressed": "node",
+        "ptr": 2,
+        "sel": false,
+        "unfitted": false,
+        "view": "home",
+        "w": 2
+      }
+    },
+    {
+      "action": [
+        "Release"
+      ],
+      "state": {
+        "cache": {
+          "cam": 0,
+          "fitted": false,
+          "layout": 0,
+          "manual": false,
+          "pinned": false,
+          "unfitted": false,
+          "w": 4
+        },
+        "cam": 0,
+        "drag": {
+          "capGen": 0,
+          "gen": 0,
+          "moved": false,
+          "on": false
+        },
+        "dropped": 2,
+        "fitDue": false,
+        "fitted": false,
+        "gen": 2,
+        "layout": 1,
+        "manualCam": false,
+        "pan": {
+          "on": false,
+          "startCam": 0,
+          "startPtr": 0
+        },
+        "pinned": true,
+        "pressed": "none",
+        "ptr": 2,
+        "sel": false,
+        "unfitted": false,
+        "view": "home",
+        "w": 2
+      }
+    },
+    {
+      "action": [
+        "RenderSame"
+      ],
+      "state": {
+        "cache": {
+          "cam": 0,
+          "fitted": false,
+          "layout": 0,
+          "manual": false,
+          "pinned": false,
+          "unfitted": false,
+          "w": 4
+        },
+        "cam": 0,
+        "drag": {
+          "capGen": 0,
+          "gen": 0,
+          "moved": false,
+          "on": false
+        },
+        "dropped": 2,
+        "fitDue": false,
+        "fitted": false,
+        "gen": 3,
+        "layout": 1,
+        "manualCam": false,
+        "pan": {
+          "on": false,
+          "startCam": 0,
+          "startPtr": 0
+        },
+        "pinned": true,
+        "pressed": "none",
+        "ptr": 2,
+        "sel": false,
+        "unfitted": false,
+        "view": "home",
+        "w": 2
+      }
+    }
+  ]
+}

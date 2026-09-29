@@ -949,3 +949,6 @@ impl SearchIndexWrite for LadybugWrite {
 fn internal(error: anyhow::Error) -> GraphError {
     GraphError::Internal(format!("search index failed: {error:#}"))
 }
+
+#[cfg(test)]
+mod interaction_permissions_tests;

@@ -235,6 +235,13 @@ impl SqliteProductStore {
                 provider_id: selection.provider_id.clone(),
                 model_id: selection.model_id.clone(),
             };
+            super::conversation_compatibility::validate_on(
+                &mut tx,
+                thread_id.value(),
+                None,
+                &command,
+            )
+            .await?;
             super::catalog::validate_model_selection_on(&mut tx, &command).await?;
         } else if require_model_selection {
             return Err(StorageError::Catalog(

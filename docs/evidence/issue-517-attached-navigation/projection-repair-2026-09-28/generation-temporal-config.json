@@ -1,0 +1,11 @@
+[
+  {
+    "singleton": 1,
+    "config_version": 1,
+    "schema_read": 0,
+    "root_current_write": 0,
+    "projection_ui": 0,
+    "invoke_resolution": 0,
+    "provider_recursion": 0
+  }
+]

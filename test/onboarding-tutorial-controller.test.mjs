@@ -949,7 +949,7 @@ describe("onboarding tutorial controller", () => {
     expect(graph).toContain("if (navigated === true)");
     expect(graph).toContain('onInvokeAction: (action) => import("./threads.js")');
     expect(threads.indexOf("onboardingTutorialController()?.actionSucceeded({"))
-      .toBeLessThan(threads.indexOf("viewState.currentInteractionId = response.interaction.id"));
+      .toBeLessThan(threads.indexOf("trackPendingTurn(threadId, response.interaction.id, intent)"));
     expect(threads.indexOf('const thread = await request("/api/threads", {'))
       .toBeLessThan(threads.indexOf("onboardingTutorialController()?.threadCreated({"));
     expect(threads).toContain("return createdInteraction;");
@@ -981,7 +981,7 @@ describe("onboarding tutorial controller", () => {
     expect(main).toContain("PROJECT_COMPOSER_DESTINATION_SELECTOR");
     expect(graph).toContain(`onSelectTurn: (delta) => {
       projectComposerGate.invalidate();`);
-    expect(graph).toContain(`onSelectTurnById: (turnId) => {
+    expect(graph).toContain(`onSelectTurnById: async (turnId, options) => {
       projectComposerGate.invalidate();`);
     expect(threads.indexOf("const submission = projectComposerGate.begin();"))
       .toBeLessThan(threads.indexOf('creatingFirstThread = true;'));

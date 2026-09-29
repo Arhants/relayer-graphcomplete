@@ -6,6 +6,7 @@ mod environment;
 mod error;
 mod input_drafts;
 mod input_operator_sessions;
+mod interaction_graph;
 mod model_settings;
 mod projects;
 mod state;
