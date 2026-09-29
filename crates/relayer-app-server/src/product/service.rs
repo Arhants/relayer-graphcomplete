@@ -3324,6 +3324,7 @@ mod tests {
             family_policy: None,
             runtime_available: true,
             restore_prior_readiness: false,
+            runtime_recipe: None,
             unavailable_reason: None,
         });
         storage
@@ -4645,6 +4646,7 @@ mod tests {
                 }),
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4667,6 +4669,7 @@ mod tests {
                 }),
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4689,6 +4692,7 @@ mod tests {
                 }),
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
                 unavailable_reason: None,
             },
         ]
@@ -4706,6 +4710,7 @@ mod tests {
                 family_policy: None,
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4722,6 +4727,7 @@ mod tests {
                 family_policy: None,
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
                 unavailable_reason: None,
             },
         ]

@@ -1343,8 +1343,16 @@ export function createManagedRuntimeInstaller({
     return operation.promise.then((result) => publicInstallationDescriptor(result));
   }
 
+  // The exact identity of a recipe on this target: its id and the digest of its lock. It
+  // throws for a recipe this target has none of.
+  function recipeIdentity(recipeId) {
+    const recipe = validateResolvedRecipe(resolveRecipe(recipeId, target.key), recipeId, target.key);
+    return `${recipe.recipeId}#${recipe.recipeDigest}`;
+  }
+
   return Object.freeze({
     prepare,
+    recipeIdentity,
     validate: (recipeId) => validateInstalledRecipe(recipeId),
     installed: (runtimeOrRecipeId, minimumVersion) => minimumVersion === undefined
       ? installedRecipe(runtimeOrRecipeId)

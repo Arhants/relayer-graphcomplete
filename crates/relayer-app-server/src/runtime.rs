@@ -107,6 +107,10 @@ struct CatalogEntry {
 struct AppServerReadiness {
     /// The file-only startup validation of the local runtime passed. Never a probe.
     runtime_files_valid: bool,
+    /// The exact runtime recipe this release requires for the harness. A route last loaded
+    /// with another recipe starts pending and is due one evaluation, like a changed digest.
+    #[serde(default)]
+    runtime_recipe: Option<String>,
 }
 
 const fn catalog_entry_available() -> bool {
@@ -615,6 +619,10 @@ impl RuntimeClient {
                         readiness.runtime_files_valid
                     }),
                 restore_prior_readiness: entry.app_server_readiness.is_some(),
+                runtime_recipe: entry
+                    .app_server_readiness
+                    .as_ref()
+                    .and_then(|readiness| readiness.runtime_recipe.clone()),
                 unavailable_reason: entry.unavailable_reason.clone(),
             })
             .collect::<Vec<_>>();
@@ -629,6 +637,7 @@ impl RuntimeClient {
                 family_policy: None,
                 runtime_available: false,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
                 unavailable_reason: Some(entry.reason.clone()),
             }
         }));

@@ -274,6 +274,18 @@ async function writeFileAtomically(path, contents) {
   }
 }
 
+// The exact runtime recipe a coordinated harness requires, or nothing when it has none here.
+// The app server compares it with the recipe it last loaded, so an update that changed only
+// the recipe starts pending and is due one evaluation (PROV-009).
+function recipeIdentity(harnessRuntimeRecipe, configuration) {
+  try {
+    const recipe = harnessRuntimeRecipe(configuration);
+    return typeof recipe === "string" && recipe !== "" ? { runtimeRecipe: recipe } : {};
+  } catch {
+    return {};
+  }
+}
+
 export class GraphCompleteRuntimeService {
   constructor({
     userDataDirectory,
@@ -290,6 +302,7 @@ export class GraphCompleteRuntimeService {
     resolvePrimeRuntime,
     validateHarnessRuntime,
     onHarnessRuntimeValidationFailure = () => {},
+    harnessRuntimeRecipe = () => null,
     coordinateHarnessReadiness = false,
     harnessHostModuleUrl,
     candidateTrace,
@@ -319,6 +332,7 @@ export class GraphCompleteRuntimeService {
     this.resolvePrimeRuntime = resolvePrimeRuntime;
     this.validateHarnessRuntime = validateHarnessRuntime;
     this.onHarnessRuntimeValidationFailure = onHarnessRuntimeValidationFailure;
+    this.harnessRuntimeRecipe = harnessRuntimeRecipe;
     this.coordinateHarnessReadiness = coordinateHarnessReadiness;
     this.harnessHostModuleUrl = harnessHostModuleUrl;
     this.candidateTrace = candidateTrace;
@@ -433,7 +447,7 @@ export class GraphCompleteRuntimeService {
             code: "harness_readiness_pending",
             message: "This execution configuration is currently unavailable.",
           },
-          appServerReadiness: { runtimeFilesValid },
+          appServerReadiness: { runtimeFilesValid, ...recipeIdentity(this.harnessRuntimeRecipe, configuration) },
         };
       }));
       await this.#awaitStartupOperation(writeFileAtomically(catalogPath, `${JSON.stringify({

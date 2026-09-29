@@ -390,6 +390,18 @@ describe("managed runtime installer", () => {
     }
   });
 
+  it("names a recipe by its id and lock digest, and nothing for a recipe this target lacks", () => {
+    const { installer, recipe } = exactClaudeInstaller(join(tmpdir(), "relayer-recipe-identity"), "identity");
+    expect(installer.recipeIdentity("claude-fixture@0.3.250")).toBe(`claude-fixture@0.3.250#${recipe.recipeDigest}`);
+    const real = createExactManagedRuntimeInstaller({
+      root: join(tmpdir(), "relayer-recipe-identity-real"), platform: "win32", architecture: "x64",
+    });
+    expect(real.recipeIdentity("codex@0.147.0")).toMatch(/^codex@0\.147\.0#[a-f0-9]{64}$/);
+    expect(() => real.recipeIdentity("prime@0.8.1")).toThrow(expect.objectContaining({
+      code: "managed_runtime_unsupported_target",
+    }));
+  });
+
   it("keeps the local version probe when it activates a validated app-update generation", async () => {
     // R2: post-update activation at startup probes the new runtime's version locally (PRD).
     const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));

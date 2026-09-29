@@ -559,5 +559,7 @@ describe("injectable production provider composition", () => {
     expect(step).toContain("recipeForAdapter: (adapterId) => managedRuntimeRequirementForAdapter(adapterId).recipeId");
     expect(source).toContain("recipeInstalled: (recipeId) => managedRecipeInstalled(managedRuntimeResolver, recipeId)");
     expect(source).not.toMatch(/await\s+startPostUpgradeReadiness/);
+    // Startup names each coordinated harness's required recipe for the app server.
+    expect(source).toContain("harnessRuntimeRecipe: (configuration) => managedRuntimeInstaller.recipeIdentity(");
   });
 });

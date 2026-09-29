@@ -32,6 +32,12 @@
 (*     evaluateRecipeUpdate). A committed result clears the mark (CAT      *)
 (*     update_harness_runtime_availability). FALSE: the route stays        *)
 (*     pending until a Connect or Repair (issue #556).                     *)
+(*   RecipeChangeMarksDue: the app server records the runtime recipe each  *)
+(*     route last loaded (CAT runtime_recipe). An upgrade that changes the *)
+(*     recipe but not the digest does not restore an old ready and marks   *)
+(*     the route due, whether the staged runtime activated or not. FALSE:  *)
+(*     the old ready restores on the new recipe, or the route waits for    *)
+(*     Repair (PR #576 review).                                            *)
 (*                                                                         *)
 (* Abstractions: prepare and checker are one step (HR evaluate; the IDX    *)
 (* checkers accept any well-formed descriptor). installer.prepare          *)
@@ -50,11 +56,13 @@ CONSTANTS Providers, Evals, MaxRestarts, MaxTampers,
           UpgradeCanChangeDigest, UpgradeCanChangeRecipe,
           StartsPreRule,        \* an older build left the row ready (pre-0034)
           RepairRevalidates,    \* fix R1
-          UpgradeEvaluates      \* fix for #556
+          UpgradeEvaluates,     \* fix for #556
+          RecipeChangeMarksDue  \* fix for a recipe-only upgrade
 
 VARIABLES
   installed, recipeOK, files, execs,   \* managed runtime on disk
   digest,                              \* current configuration digest (1..2)
+  recipe,                              \* runtime recipe the release requires (1..2)
   rust,                                \* product_harnesses row for the harness
   due,                                 \* CAT readiness_update_due
   acc,                                 \* CAT accepted generation, 0 = none
@@ -71,9 +79,10 @@ VARIABLES
   blocked,        \* providers whose route Rust held unavailable
   latestAvail,    \* result of the evaluation with gen = hgen: 0 none, 1 no, 2 yes
   lostRepair,     \* a restart that kept digest and recipe dropped a clean ready
-  upgradePending  \* a changed digest has no committed evaluation yet
+  upgradePending, \* a changed digest or recipe has no committed evaluation yet
+  readyRecipe     \* the recipe of the evaluation that last made Rust ready
 
-vars == <<installed, recipeOK, files, execs, digest, rust, due, acc, gen, hgen,
+vars == <<installed, recipeOK, files, execs, digest, recipe, readyRecipe, rust, due, acc, gen, hgen,
           ev, chain, autoStarted, restarts, tampers, cleanReady, justRestarted,
           restartKept, badPublish, crossRestore, blocked, latestAvail, lostRepair,
           upgradePending>>
@@ -85,7 +94,8 @@ Validate == installed /\ recipeOK /\ files          \* INS validateInstalledReci
 Init ==
   /\ installed = TRUE /\ recipeOK = TRUE /\ files = TRUE /\ execs = TRUE
   /\ digest = 1
-  /\ rust = [ready |-> StartsPreRule, digest |-> 1, preRule |-> StartsPreRule]
+  /\ recipe = 1 /\ readyRecipe = 1
+  /\ rust = [ready |-> StartsPreRule, digest |-> 1, preRule |-> StartsPreRule, recipe |-> 1]
   /\ due = FALSE
   /\ acc = 0 /\ gen = 0 /\ hgen = 0
   /\ ev = [e \in Evals |-> Idle]
@@ -111,7 +121,7 @@ Begin(e, p) ==
 (* PC publishSnapshot for explicit-repair).                                *)
 Start(e, p) ==
   /\ Begin(e, p)
-  /\ UNCHANGED <<lostRepair, installed, recipeOK, files, execs, digest, rust, due, acc,
+  /\ UNCHANGED <<recipe, readyRecipe, lostRepair, installed, recipeOK, files, execs, digest, rust, due, acc,
                  chain, autoStarted, restarts, tampers, cleanReady, restartKept,
                  badPublish, crossRestore, blocked, upgradePending>>
 
@@ -122,7 +132,7 @@ AutoStart(e) ==
   /\ UpgradeEvaluates /\ due /\ ~autoStarted
   /\ Begin(e, Auto)
   /\ autoStarted' = TRUE
-  /\ UNCHANGED <<lostRepair, installed, recipeOK, files, execs, digest, rust, due, acc,
+  /\ UNCHANGED <<recipe, readyRecipe, lostRepair, installed, recipeOK, files, execs, digest, rust, due, acc,
                  chain, restarts, tampers, cleanReady, restartKept, badPublish,
                  crossRestore, blocked, upgradePending>>
 
@@ -143,7 +153,7 @@ PrepareReuse(e) ==
   /\ ev[e].pc = "prep" /\ Reuse
   /\ Finish(e, TRUE, files)
   /\ justRestarted' = FALSE
-  /\ UNCHANGED <<lostRepair, installed, recipeOK, files, execs, digest, rust, due, acc, gen,
+  /\ UNCHANGED <<recipe, readyRecipe, lostRepair, installed, recipeOK, files, execs, digest, rust, due, acc, gen,
                  hgen, autoStarted, restarts, tampers, cleanReady, restartKept,
                  crossRestore, blocked, upgradePending>>
 
@@ -152,14 +162,14 @@ PrepareInstall(e) ==
   /\ installed' = TRUE /\ recipeOK' = TRUE /\ files' = TRUE /\ execs' = TRUE
   /\ Finish(e, TRUE, TRUE)
   /\ justRestarted' = FALSE
-  /\ UNCHANGED <<lostRepair, digest, rust, due, acc, gen, hgen, autoStarted, restarts,
+  /\ UNCHANGED <<recipe, readyRecipe, lostRepair, digest, rust, due, acc, gen, hgen, autoStarted, restarts,
                  tampers, cleanReady, restartKept, crossRestore, blocked, upgradePending>>
 
 PrepareFail(e) ==   \* download, assembly or probe failure
   /\ ev[e].pc = "prep" /\ ~Reuse
   /\ Finish(e, FALSE, files)
   /\ justRestarted' = FALSE
-  /\ UNCHANGED <<lostRepair, installed, recipeOK, files, execs, digest, rust, due, acc, gen,
+  /\ UNCHANGED <<recipe, readyRecipe, lostRepair, installed, recipeOK, files, execs, digest, rust, due, acc, gen,
                  hgen, autoStarted, restarts, tampers, cleanReady, restartKept,
                  crossRestore, blocked, upgradePending>>
 
@@ -173,6 +183,7 @@ Publish ==
      /\ ev' = [ev EXCEPT ![e].pc = "done"]
      /\ IF ev[e].gen = hgen /\ ev[e].gen >= acc
           THEN /\ rust' = [rust EXCEPT !.ready = ev[e].avail]
+               /\ readyRecipe' = IF ev[e].avail THEN recipe ELSE readyRecipe
                /\ acc' = ev[e].gen
                /\ due' = FALSE
                /\ upgradePending' = FALSE
@@ -180,9 +191,9 @@ Publish ==
                /\ crossRestore' = (crossRestore
                     \/ (ev[e].avail /\ \E q \in blocked : q # ev[e].prov))
                /\ blocked' = IF ev[e].avail THEN {} ELSE Providers
-          ELSE UNCHANGED <<rust, acc, due, upgradePending, cleanReady, crossRestore, blocked>>
+          ELSE UNCHANGED <<readyRecipe, rust, acc, due, upgradePending, cleanReady, crossRestore, blocked>>
   /\ justRestarted' = FALSE
-  /\ UNCHANGED <<lostRepair, installed, recipeOK, files, execs, digest, gen, hgen,
+  /\ UNCHANGED <<recipe, lostRepair, installed, recipeOK, files, execs, digest, gen, hgen,
                  autoStarted, restarts, tampers, badPublish, latestAvail, restartKept>>
 
 (* External change to runtime files after a ready record: the private     *)
@@ -193,14 +204,14 @@ BreakFiles ==
   /\ tampers < MaxTampers /\ files
   /\ files' = FALSE /\ tampers' = tampers + 1 /\ cleanReady' = FALSE
   /\ justRestarted' = FALSE
-  /\ UNCHANGED <<lostRepair, installed, recipeOK, execs, digest, rust, due, acc, gen, hgen,
+  /\ UNCHANGED <<recipe, readyRecipe, lostRepair, installed, recipeOK, execs, digest, rust, due, acc, gen, hgen,
                  ev, chain, autoStarted, restarts, restartKept, badPublish, crossRestore,
                  blocked, latestAvail, upgradePending>>
 BreakExecs ==
   /\ tampers < MaxTampers /\ execs
   /\ execs' = FALSE /\ tampers' = tampers + 1 /\ cleanReady' = FALSE
   /\ justRestarted' = FALSE
-  /\ UNCHANGED <<lostRepair, installed, recipeOK, files, digest, rust, due, acc, gen, hgen,
+  /\ UNCHANGED <<recipe, readyRecipe, lostRepair, installed, recipeOK, files, digest, rust, due, acc, gen, hgen,
                  ev, chain, autoStarted, restarts, restartKept, badPublish, crossRestore,
                  blocked, latestAvail, upgradePending>>
 
@@ -209,26 +220,29 @@ BreakExecs ==
 (* digest and valid files, and marks a changed digest due. Migration 0034 *)
 (* clears a pre-rule ready row once. A fresh process: HR generations, CAT *)
 (* accepted generations and Desktop's autoStarted start empty.            *)
-Restart(newDigest, newRecipeOK) ==
+Restart(newDigest, newRecipe, newRecipeOK) ==
   /\ restarts < MaxRestarts
   /\ LET keep == rust.ready /\ ~rust.preRule /\ rust.digest = newDigest
                  /\ installed /\ newRecipeOK /\ files
-     IN /\ rust' = [ready |-> keep, digest |-> newDigest, preRule |-> FALSE]
+                 /\ (RecipeChangeMarksDue => rust.recipe = newRecipe)
+     IN /\ rust' = [ready |-> keep, digest |-> newDigest, preRule |-> FALSE, recipe |-> newRecipe]
         /\ blocked' = IF keep THEN {} ELSE Providers
         /\ cleanReady' = (cleanReady /\ keep)
         /\ lostRepair' = (lostRepair \/ (cleanReady /\ rust.ready /\ newDigest = digest
-                                           /\ newRecipeOK = recipeOK /\ ~keep))
-  /\ due' = (UpgradeEvaluates /\ (due \/ newDigest # digest))
-  /\ upgradePending' = (upgradePending \/ newDigest # digest)
-  /\ digest' = newDigest /\ recipeOK' = newRecipeOK
+                                           /\ newRecipe = recipe /\ newRecipeOK = recipeOK
+                                           /\ ~keep))
+  /\ due' = (UpgradeEvaluates /\ (due \/ newDigest # digest
+                                   \/ (RecipeChangeMarksDue /\ newRecipe # recipe)))
+  /\ upgradePending' = (upgradePending \/ newDigest # digest \/ newRecipe # recipe)
+  /\ digest' = newDigest /\ recipe' = newRecipe /\ recipeOK' = newRecipeOK
   /\ restarts' = restarts + 1
   /\ acc' = 0 /\ gen' = 0 /\ hgen' = 0
   /\ ev' = [e \in Evals |-> Idle] /\ chain' = <<>>
   /\ autoStarted' = FALSE
   /\ justRestarted' = TRUE
-  /\ restartKept' = (newDigest = digest /\ newRecipeOK = recipeOK)
+  /\ restartKept' = (newDigest = digest /\ newRecipe = recipe /\ newRecipeOK = recipeOK)
   /\ latestAvail' = 0
-  /\ UNCHANGED <<installed, files, execs, tampers, badPublish, crossRestore>>
+  /\ UNCHANGED <<readyRecipe, installed, files, execs, tampers, badPublish, crossRestore>>
 
 Next ==
   \/ \E e \in Evals, p \in Providers : Start(e, p)
@@ -236,9 +250,11 @@ Next ==
   \/ \E e \in Evals : PrepareReuse(e) \/ PrepareInstall(e) \/ PrepareFail(e)
   \/ Publish
   \/ BreakFiles \/ BreakExecs
-  \/ Restart(digest, recipeOK)
-  \/ (UpgradeCanChangeDigest /\ Restart(3 - digest, recipeOK))
-  \/ (UpgradeCanChangeRecipe /\ Restart(digest, FALSE))
+  \/ Restart(digest, recipe, recipeOK)
+  \/ (UpgradeCanChangeDigest /\ Restart(3 - digest, recipe, recipeOK))
+  \* An upgrade that requires the other recipe: its staged runtime activated (the
+  \* files are the new recipe's) or not (the old recipe stays; validation fails).
+  \/ (UpgradeCanChangeRecipe /\ \E activated \in BOOLEAN : Restart(digest, 3 - recipe, activated))
 
 Spec == Init /\ [][Next]_vars
 
@@ -253,7 +269,8 @@ FairSpec == Spec
 TypeOK ==
   /\ installed \in BOOLEAN /\ recipeOK \in BOOLEAN /\ files \in BOOLEAN
   /\ execs \in BOOLEAN /\ digest \in {1, 2} /\ due \in BOOLEAN
-  /\ rust \in [ready : BOOLEAN, digest : {1, 2}, preRule : BOOLEAN]
+  /\ recipe \in {1, 2} /\ readyRecipe \in {1, 2}
+  /\ rust \in [ready : BOOLEAN, digest : {1, 2}, preRule : BOOLEAN, recipe : {1, 2}]
   /\ \A e \in Evals : ev[e].pc \in {"idle", "prep", "queued", "done"}
   /\ blocked \subseteq Providers
 
@@ -270,6 +287,10 @@ RepairSurvivesRestart == ~lostRepair
 (* Cheap validation and root confinement: readiness is never published   *)
 (* for an installation that startup's validation would reject.            *)
 ReadyOnlyForValidatedRuntime == ~badPublish
+
+(* PROV-006 with PROV-009: a ready route was measured on the recipe the   *)
+(* release requires. A ready from the old recipe never restores.          *)
+ReadyOnlyForEvaluatedRecipe == rust.ready => readyRecipe = recipe
 
 (* PROV-005 at quiescence: Rust holds the latest evaluation's result.     *)
 Quiescent == chain = <<>> /\ \A e \in Evals : ev[e].pc # "prep"

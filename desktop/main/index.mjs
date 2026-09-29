@@ -247,6 +247,9 @@ if (primaryInstance) {
       await managedRuntimeResolver.validate(requirement.recipeId);
       return true;
     },
+    harnessRuntimeRecipe: (configuration) => managedRuntimeInstaller.recipeIdentity(
+      managedRuntimeRequirementForHarness(configuration.implementation).recipeId,
+    ),
     onHarnessRuntimeValidationFailure: async (configuration, error) => {
       await providerDiagnostics.write({
         level: "error",

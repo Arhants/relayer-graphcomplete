@@ -204,7 +204,8 @@
       "UpgradeCanChangeRecipe": "TRUE",
       "StartsPreRule": "FALSE",
       "RepairRevalidates": "TRUE",
-      "UpgradeEvaluates": "TRUE"
+      "UpgradeEvaluates": "TRUE",
+      "RecipeChangeMarksDue": "TRUE"
     }
   },
   "checks": [
@@ -2697,6 +2698,50 @@
         "violated": "UpgradeEvaluatedWithoutRepair"
       },
       "finding": "Without the automatic evaluation, a changed digest leaves both providers pending until someone presses Repair (#556, the behavior before the fix)."
+    },
+    {
+      "id": "recipe-change-evaluated",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "invariants": [
+        "TypeOK",
+        "ReadyOnlyForEvaluatedRecipe"
+      ],
+      "expect": "pass",
+      "finding": "A route restores ready only when an evaluation measured it on the recipe the release requires, so an upgrade that changes only the recipe starts pending (fixed, PR #576 review)."
+    },
+    {
+      "id": "recipe-change-evaluated-reverted",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "RecipeChangeMarksDue": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyOnlyForEvaluatedRecipe"
+      ],
+      "expect": {
+        "violated": "ReadyOnlyForEvaluatedRecipe"
+      },
+      "finding": "Without the recorded recipe, an upgrade whose staged runtime activated restores the ready measured on the old recipe, with the same digest, and Send uses a runtime no evaluation checked."
+    },
+    {
+      "id": "recipe-change-due-reverted",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "RecipeChangeMarksDue": "FALSE",
+        "UpgradeCanChangeDigest": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "UpgradeEvaluatedWithoutRepair"
+      ],
+      "expect": {
+        "violated": "UpgradeEvaluatedWithoutRepair"
+      },
+      "finding": "Without the recorded recipe, an upgrade that changes only the recipe, for example one whose activation failed, is never marked due and waits for Repair."
     },
     {
       "id": "repair-liveness",
