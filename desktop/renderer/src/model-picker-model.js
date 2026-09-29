@@ -1,5 +1,9 @@
 export const NO_MODELS_FOR_HARNESS = "No available models for this harness";
 
+// A refresh that finds no eligible models tombstones the provider's managed family. The
+// app server keeps it as the default and refuses Send with this code (PROV-008).
+export const MODEL_SETUP_RECOVERY_CODE = "provider_no_eligible_execution_models";
+
 const MODEL_SELECTION_CATALOG_ERRORS = new Set([
   "conversation_route_incompatible",
   "harness_unknown",
@@ -11,12 +15,75 @@ const MODEL_SELECTION_CATALOG_ERRORS = new Set([
   "model_hidden",
   "model_unavailable",
   "model_family_disabled",
+  "model_family_removed",
+  "model_family_unresolvable",
+  MODEL_SETUP_RECOVERY_CODE,
   "harness_model_incompatible",
   "model_not_in_family",
 ]);
 
 export function isModelSelectionCatalogError(error) {
   return MODEL_SELECTION_CATALOG_ERRORS.has(error?.code);
+}
+
+// A managed family a zero-eligible refresh keeps selected, as the default or a thread's last
+// selection, and the action that restores it (PROV-008). The server's reason follows the
+// provider: while it is connected, Refresh models can restore the family; once it disconnects,
+// only a reconnect in Settings can. Null for any other family.
+export function familyModelSetup(settings, familyId) {
+  if (familyId == null) return null;
+  const recovery = [settings?.defaultFamilyRecovery, ...(settings?.familiesNeedingModelSetup ?? [])]
+    .find((candidate) => candidate?.reason && String(candidate.familyId) === String(familyId));
+  if (!recovery) return null;
+  const provider = settings.providers?.find((item) => String(item.id) === String(recovery.providerId));
+  const providerLabel = provider?.label ?? recovery.providerId;
+  const identity = {
+    familyId: recovery.familyId,
+    familyName: recovery.familyName,
+    providerId: recovery.providerId,
+    providerLabel,
+  };
+  if (recovery.reason.code === MODEL_SETUP_RECOVERY_CODE) {
+    return {
+      ...identity,
+      action: "refresh",
+      label: "Needs model setup",
+      message: `${recovery.familyName} needs model setup. ${providerLabel} has no models eligible for agent execution.`,
+      actionLabel: "Refresh models",
+      actionName: `Refresh models for ${providerLabel}`,
+      busyName: `Refreshing models for ${providerLabel}`,
+    };
+  }
+  const detail = recovery.reason.message ? ` ${recovery.reason.message}` : "";
+  return {
+    ...identity,
+    action: "settings",
+    label: "Provider not connected",
+    message: `${providerLabel} is not connected, so ${recovery.familyName} cannot run.${detail}`,
+    actionLabel: "Open Settings",
+    actionName: `Reconnect ${providerLabel} in Settings`,
+  };
+}
+
+export function defaultFamilyModelSetup(settings) {
+  return familyModelSetup(settings, settings?.defaults?.familyId);
+}
+
+// An automatic caller's default selection. While the default family recovers, the refusal carries
+// its code; otherwise a missing selection fails with the caller's own message.
+export function requireDefaultModelSelection(selection, settings, missingMessage) {
+  if (selection) return selection;
+  throw defaultFamilyRecoveryError(settings) ?? new Error(missingMessage);
+}
+
+// The typed error an automatic caller, such as Eval, reports while the default family recovers.
+export function defaultFamilyRecoveryError(settings) {
+  const recovery = settings?.defaultFamilyRecovery;
+  const modelSetup = defaultFamilyModelSetup(settings);
+  if (!recovery || !modelSetup) return null;
+  const error = new Error(`The default model family is unavailable. ${modelSetup.message}`);
+  error.code = recovery.reason.code;
+  return error;
 }
 
 function harnessFor(settings, harnessId) {
@@ -97,7 +164,10 @@ export function availablePickerFamilies(settings, harnessId) {
     .filter((family) => family.availableMembers.length > 0);
 }
 
+// Automatic selection resolves the default family. While that family is in recovery it refuses,
+// rather than running another family the user did not choose (PROV-008).
 export function firstAvailableSelection(settings, harnessId) {
+  if (defaultFamilyModelSetup(settings)) return null;
   const families = availablePickerFamilies(settings, harnessId);
   const family = families.find((item) => String(item.id) === String(settings.defaults?.familyId))
     ?? families[0];

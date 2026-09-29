@@ -105,6 +105,17 @@ function secretAccess(overrides = {}): HarnessExecutionAccess {
   } as HarnessExecutionAccess;
 }
 
+/** A trace sink that records the visible native-session reset notices a turn emits. */
+function resetRecorder(): { readonly trace: HarnessRunContext["trace"]; resets(): string[] } {
+  const events: HarnessTraceEventInput[] = [];
+  return {
+    trace: { ...createNoopHarnessTraceSink(), emit: (event) => { events.push(event); } },
+    resets: () => events
+      .filter((event) => event.type === "warning" && typeof event.data.nativeSessionReset === "string")
+      .map((event) => event.data.nativeSessionReset as string),
+  };
+}
+
 function runContext(access: HarnessRunContext["access"]): HarnessRunContext {
   if (!access) throw new Error("test access is required");
   const inputGraph = { id: 4, kind: "user-interaction", icon: "user", title: "Question", detail: "Explain", state: "accepted" as const };
@@ -601,9 +612,12 @@ describe("ClaudeBasicHarness", () => {
       browserSdk: browserSdk(),
     });
 
-    await harness.complete(runContext(next));
+    const recorder = resetRecorder();
+    await harness.complete({ ...runContext(next), trace: recorder.trace });
 
     expect(call?.options.resume).toBeUndefined();
+    // The previous native conversation cannot be continued here, and the turn says so.
+    expect(recorder.resets()).toEqual(["provider_changed"]);
     expect(harness.state()).toEqual({
       claudeSessionLocationIdentity: expect.any(String),
       claudeSessionId: "replacement",

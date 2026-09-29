@@ -21,6 +21,7 @@ pub(crate) use catalog::ExecutionHarnessPolicy;
 pub(crate) use catalog::ExecutionModelPlan;
 pub(crate) use catalog::ExecutionModelRoute;
 pub(crate) use catalog::ExecutionModelSelection;
+pub(crate) use catalog::FamilyModelSetup;
 pub(crate) use catalog::FamilyPolicyReference;
 pub(crate) use catalog::HarnessModelCompatibility;
 pub(crate) use catalog::HarnessModelRule;

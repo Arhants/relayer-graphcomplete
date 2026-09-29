@@ -1251,6 +1251,7 @@ impl RuntimeClient {
                 "sessions/{thread_id}/execution-leases/{execution_lease_id}"
             ))?)
             .bearer_auth(&self.harness_control_token)
+            .timeout(CONTROL_REQUEST_TIMEOUT)
             .send()
             .await?;
         response_json(response, StatusCode::OK).await?;

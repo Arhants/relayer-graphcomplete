@@ -35,7 +35,7 @@ export function primeVisualFixtureFactory(context) {
       },
     },
     createHostRequestHandler: nativeKernel?.createHostRequestHandler ?? ((handler) => handler),
-    createAgentSessionServices: async () => ({}),
+    createAgentSessionServices: async () => ({ resourceLoader: { getAppendSystemPrompt: () => [] } }),
     createAgentSessionFromServices: async ({ hostRequestHandlers, sessionManager }) => {
       let process;
       const persistPrompt = (prompt) => {

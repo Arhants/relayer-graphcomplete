@@ -22,6 +22,8 @@ export interface CodexAppServerTurnOptions {
   readonly environment: Readonly<Record<string, string>>;
   readonly codexConfigOverrides?: readonly string[];
   readonly savedThreadId?: string;
+  /** Trusted legacy continuation cannot use the optional fresh-session fallback. */
+  readonly requireNativeContinuity?: boolean;
   readonly legacyHistoryAnchor?: { readonly interactionNodeId: number; readonly message: string };
   readonly threadParams: JsonObject;
   readonly turnParams: JsonObject;
@@ -36,6 +38,15 @@ export interface CodexAppServerTurnOptions {
   readonly spawnProcess?: CodexAppServerSpawn;
   readonly killProcessGroup?: typeof process.kill;
   readonly onThreadId: (threadId: string) => void | Promise<void>;
+  /**
+   * The saved thread has no rollout in this CODEX_HOME, so Codex cannot resume it. The turn
+   * starts a fresh thread instead; the caller should stop offering the saved one.
+   */
+  readonly onSavedThreadUnavailable?: (threadId: string) => void;
+  /** turn/start is about to be sent: from here on, this turn may write the thread's rollout. */
+  readonly onTurnStarting?: (threadId: string) => void;
+  /** A cancellation killed the app-server after turn/start was sent and before the turn attached. */
+  readonly onTurnStartAbandoned?: (threadId: string) => void;
   readonly onTurnId?: (threadId: string, turnId: string) => void | Promise<void>;
   readonly onNotification?: (method: string, params: unknown) => void;
   readonly onServerRequest?: (method: string, params: unknown) => void;
@@ -104,6 +115,20 @@ export async function runCodexAppServerTurn(options: CodexAppServerTurnOptions):
   }
 }
 
+/** A JSON-RPC error answer from the app-server to one client request. */
+class CodexRequestError extends Error {
+  constructor(readonly method: string, readonly serverMessage: string) {
+    super(`Codex ${method} failed: ${serverMessage}`);
+  }
+}
+
+/** Codex 0.147.0 answers thread/resume this way when the thread has no rollout in its CODEX_HOME. */
+function isMissingRolloutError(error: unknown): boolean {
+  return error instanceof CodexRequestError
+    && error.method === "thread/resume"
+    && error.serverMessage.startsWith("no rollout found for thread id ");
+}
+
 interface PendingRequest {
   readonly method: string;
   readonly resolve: (value: unknown) => void;
@@ -130,6 +155,8 @@ class CodexAppServerConnection {
   private nextId = 1;
   private activeTurn: ActiveTurn | undefined;
   private startingTurn = false;
+  /** The thread whose turn/start was sent and has not attached yet. */
+  private startingThreadId: string | undefined;
   private readonly deferredTurnMessages: DeferredTurnMessage[] = [];
   private lastTurnError: Error | undefined;
   private fatalError: Error | undefined;
@@ -171,6 +198,9 @@ class CodexAppServerConnection {
     const abort = () => {
       queueMicrotask(() => {
         if (this.activeTurn === undefined) {
+          if (this.startingThreadId !== undefined && this.fatalError === undefined && !this.closing) {
+            this.options.onTurnStartAbandoned?.(this.startingThreadId);
+          }
           this.forceClose(new NativeExecutionCancelled("Codex app-server was cancelled before turn attachment."));
         } else {
           void this.interrupt();
@@ -194,15 +224,30 @@ class CodexAppServerConnection {
 
   async run(): Promise<CodexAppServerTurnResult> {
     if (!this.started) throw new Error("Codex app-server connection is not initialized");
-    const threadResult = await this.request(
-      this.options.savedThreadId === undefined ? "thread/start" : "thread/resume",
-      this.options.savedThreadId === undefined
-        ? this.options.threadParams
-        : { threadId: this.options.savedThreadId, ...this.options.threadParams },
-    );
+    const savedThreadId = this.options.savedThreadId;
+    const requiresHistory = this.options.requireNativeContinuity === true || this.options.legacyHistoryAnchor !== undefined;
+    if (requiresHistory && savedThreadId === undefined) throw new Error("The saved native conversation is unavailable. Its history was preserved; no fresh turn was started.");
+    let resumed = savedThreadId !== undefined;
+    let threadResult: unknown;
+    if (savedThreadId === undefined) {
+      threadResult = await this.request("thread/start", this.options.threadParams);
+    } else {
+      try {
+        threadResult = await this.request("thread/resume", { threadId: savedThreadId, ...this.options.threadParams });
+      } catch (error) {
+        // A thread has a rollout only in the CODEX_HOME whose turn/start ran on it. Without
+        // one it can never be resumed here, so this turn starts a fresh thread: its prompt
+        // carries the whole graph context.
+        if (!isMissingRolloutError(error)) throw error;
+        if (requiresHistory) throw new Error("The saved native conversation is unavailable. Its history was preserved; no fresh turn was started.");
+        this.options.onSavedThreadUnavailable?.(savedThreadId);
+        resumed = false;
+        threadResult = await this.request("thread/start", this.options.threadParams);
+      }
+    }
     const thread = objectProperty(threadResult, "thread");
     const threadId = stringProperty(thread, "id");
-    if (threadId === undefined || (this.options.savedThreadId !== undefined && threadId !== this.options.savedThreadId)) {
+    if (threadId === undefined || (resumed && threadId !== savedThreadId)) {
       throw new Error("Codex app-server returned an invalid thread identity");
     }
     const anchor = this.options.legacyHistoryAnchor;
@@ -225,6 +270,8 @@ class CodexAppServerConnection {
     await abortableCallback(this.options.onThreadId(threadId), this.options.signal);
 
     this.startingTurn = true;
+    this.startingThreadId = threadId;
+    this.options.onTurnStarting?.(threadId);
     let turnResult: unknown;
     try {
       turnResult = await this.request("turn/start", {
@@ -234,16 +281,19 @@ class CodexAppServerConnection {
       });
     } catch (error) {
       this.startingTurn = false;
+      this.startingThreadId = undefined;
       throw error;
     }
     if (this.fatalError !== undefined) {
       this.startingTurn = false;
+      this.startingThreadId = undefined;
       throw this.fatalError;
     }
     const turn = objectProperty(turnResult, "turn");
     const turnId = stringProperty(turn, "id");
     if (turnId === undefined) {
       this.startingTurn = false;
+      this.startingThreadId = undefined;
       throw new Error("Codex app-server returned an invalid turn identity");
     }
     if (this.options.onTurnId !== undefined) {
@@ -255,6 +305,7 @@ class CodexAppServerConnection {
       this.activeTurn = { threadId, turnId, resolve, reject };
     });
     this.startingTurn = false;
+    this.startingThreadId = undefined;
     this.flushDeferredTurnMessages();
     return completion;
   }
@@ -357,7 +408,7 @@ class CodexAppServerConnection {
     this.pending.delete(message.id);
     if (message.error !== undefined) {
       const error = isRecord(message.error) ? message.error : {};
-      pending.reject(new Error(`Codex ${pending.method} failed: ${String(error.message ?? "unknown error")}`));
+      pending.reject(new CodexRequestError(pending.method, String(error.message ?? "unknown error")));
     } else {
       pending.resolve(message.result);
     }

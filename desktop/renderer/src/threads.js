@@ -50,8 +50,10 @@ import {
   closeNewThreadModelPicker,
   newThreadModelSelectionPayload,
   newThreadModelSelectionReady,
+  newThreadModelSetup,
   setNewThreadModelPickerDisabled,
 } from "./composer-model-picker.js";
+import { composerSendTitle } from "./model-picker.js";
 import { refreshModelFamilySettings } from "./model-family-settings.js";
 import {
   harnessUsesConfigurationModel,
@@ -304,6 +306,11 @@ export function updateCreateThreadAvailability() {
     || !$("#newThreadPrompt").value.trim()
     || !viewState.selectedPermissionProfileId
     || (productApiAvailable && !newThreadModelSelectionReady());
+  $("#createThread").title = composerSendTitle({
+    ready: !productApiAvailable || newThreadModelSelectionReady(),
+    modelSetup: productApiAvailable ? newThreadModelSetup() : null,
+    readyTitle: "Create thread and send",
+  });
 }
 
 function currentNavigationEntry() {

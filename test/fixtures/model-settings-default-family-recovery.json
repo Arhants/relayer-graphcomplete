@@ -1,0 +1,251 @@
+{
+  "defaultFamilyRecovery": {
+    "familyId": 1,
+    "familyName": "Codex defaults",
+    "providerId": "codex",
+    "reason": {
+      "code": "provider_no_eligible_execution_models",
+      "message": "This model family needs model setup. Its provider has no models eligible for agent execution. Refresh the provider's models."
+    }
+  },
+  "defaults": {
+    "familyId": 1,
+    "harnessId": "codex-basic",
+    "providerId": "codex"
+  },
+  "families": [
+    {
+      "enabled": true,
+      "id": 2,
+      "kind": "system",
+      "managedPolicy": {
+        "policyId": "codex-default-family",
+        "policyVersion": 1,
+        "providerId": "work"
+      },
+      "members": [
+        {
+          "modelId": "gpt-5.6-sol",
+          "position": 0,
+          "providerId": "work"
+        },
+        {
+          "modelId": "gpt-5.6-terra",
+          "position": 1,
+          "providerId": "work"
+        },
+        {
+          "modelId": "gpt-5.6-luna",
+          "position": 2,
+          "providerId": "work"
+        },
+        {
+          "modelId": "gpt-daybreak-blue-latest",
+          "position": 3,
+          "providerId": "work"
+        },
+        {
+          "modelId": "gpt-5.5",
+          "position": 4,
+          "providerId": "work"
+        }
+      ],
+      "name": "Work defaults",
+      "position": 0,
+      "revision": 1
+    },
+    {
+      "enabled": false,
+      "id": 3,
+      "kind": "custom",
+      "managedPolicy": null,
+      "members": [
+        {
+          "modelId": "gpt-5.6-sol",
+          "position": 0,
+          "providerId": "codex"
+        }
+      ],
+      "name": "hidden",
+      "position": 1,
+      "revision": 1
+    }
+  ],
+  "familiesNeedingModelSetup": [
+    {
+      "familyId": 1,
+      "familyName": "Codex defaults",
+      "providerId": "codex",
+      "reason": {
+        "code": "provider_no_eligible_execution_models",
+        "message": "This model family needs model setup. Its provider has no models eligible for agent execution. Refresh the provider's models."
+      }
+    }
+  ],
+  "harnesses": [
+    {
+      "available": true,
+      "compatibleProviderIds": [
+        "codex",
+        "work"
+      ],
+      "configurationRevision": 1,
+      "executionAccessContracts": [],
+      "familyPolicy": {
+        "id": "codex-default-family",
+        "version": 1
+      },
+      "id": "codex-basic",
+      "label": "Codex Basic",
+      "modelCompatibility": [
+        {
+          "providerId": "codex"
+        },
+        {
+          "providerId": "work"
+        }
+      ],
+      "modelRules": null,
+      "permissionAvailable": false,
+      "unavailableReason": null,
+      "usableFamilyIds": [
+        2
+      ],
+      "usableNow": true,
+      "usableProviderIds": [
+        "work"
+      ]
+    }
+  ],
+  "providers": [
+    {
+      "adapterId": "codex-subscription",
+      "connected": true,
+      "id": "codex",
+      "label": "Codex",
+      "models": [
+        {
+          "available": true,
+          "id": "gpt-5.6-sol",
+          "label": "gpt-5.6-sol",
+          "providerDefault": false,
+          "replacementModelId": null,
+          "unavailableReason": null,
+          "visible": true
+        },
+        {
+          "available": true,
+          "id": "gpt-5.6-terra",
+          "label": "gpt-5.6-terra",
+          "providerDefault": false,
+          "replacementModelId": null,
+          "unavailableReason": null,
+          "visible": true
+        },
+        {
+          "available": true,
+          "id": "gpt-5.6-luna",
+          "label": "gpt-5.6-luna",
+          "providerDefault": false,
+          "replacementModelId": null,
+          "unavailableReason": null,
+          "visible": true
+        },
+        {
+          "available": true,
+          "id": "gpt-daybreak-blue-latest",
+          "label": "gpt-daybreak-blue-latest",
+          "providerDefault": false,
+          "replacementModelId": null,
+          "unavailableReason": null,
+          "visible": true
+        },
+        {
+          "available": true,
+          "id": "gpt-5.5",
+          "label": "gpt-5.5",
+          "providerDefault": false,
+          "replacementModelId": null,
+          "unavailableReason": null,
+          "visible": true
+        },
+        {
+          "available": true,
+          "id": "gpt-5.4",
+          "label": "gpt-5.4",
+          "providerDefault": false,
+          "replacementModelId": null,
+          "unavailableReason": null,
+          "visible": true
+        }
+      ],
+      "unavailableReason": {
+        "code": "provider_no_eligible_execution_models",
+        "message": "This provider is connected but has no models eligible for agent execution. Refresh its catalog or update the provider connection."
+      }
+    },
+    {
+      "adapterId": "codex-subscription",
+      "connected": true,
+      "id": "work",
+      "label": "Work",
+      "models": [
+        {
+          "available": true,
+          "id": "gpt-5.6-sol",
+          "label": "gpt-5.6-sol",
+          "providerDefault": true,
+          "replacementModelId": null,
+          "unavailableReason": null,
+          "visible": true
+        },
+        {
+          "available": true,
+          "id": "gpt-5.6-terra",
+          "label": "gpt-5.6-terra",
+          "providerDefault": true,
+          "replacementModelId": null,
+          "unavailableReason": null,
+          "visible": true
+        },
+        {
+          "available": true,
+          "id": "gpt-5.6-luna",
+          "label": "gpt-5.6-luna",
+          "providerDefault": true,
+          "replacementModelId": null,
+          "unavailableReason": null,
+          "visible": true
+        },
+        {
+          "available": true,
+          "id": "gpt-daybreak-blue-latest",
+          "label": "gpt-daybreak-blue-latest",
+          "providerDefault": true,
+          "replacementModelId": null,
+          "unavailableReason": null,
+          "visible": true
+        },
+        {
+          "available": true,
+          "id": "gpt-5.5",
+          "label": "gpt-5.5",
+          "providerDefault": true,
+          "replacementModelId": null,
+          "unavailableReason": null,
+          "visible": true
+        },
+        {
+          "available": true,
+          "id": "gpt-5.4",
+          "label": "gpt-5.4",
+          "providerDefault": false,
+          "replacementModelId": null,
+          "unavailableReason": null,
+          "visible": true
+        }
+      ],
+      "unavailableReason": null
+    }
+  ]
+}

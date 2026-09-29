@@ -247,6 +247,7 @@ export class HarnessHost {
   private persistTail: Promise<void> = Promise.resolve();
   private initialized = false;
   private readonly pendingExecutionAccess = new Map<string, PendingExecutionAccess>();
+  private readonly ownerReleasesInProgress = new Set<string>();
   private readonly visualAssetAuthorities = new Map<number, { state: "active" | "paused" | "revoked"; generation: number; barrierId?: string; completionEpoch?: number }>();
   private closed = false;
   private closeAbandoned = false;
@@ -785,6 +786,13 @@ export class HarnessHost {
       forceTimer.unref?.();
     };
     controller.signal.addEventListener("abort", armForceStop, { once: true });
+    // A force-stopped root turn's harness forgets its native conversation in its own force
+    // listener. Record that at once: after the force (two minutes after the cancel), the host
+    // run may take ten more seconds to end, and a crash before then must not restore it.
+    const recordForcedState = () => queueMicrotask(() => {
+      void this.recordSessionState(threadId, session).catch(() => undefined);
+    });
+    forceController.signal.addEventListener("abort", recordForcedState, { once: true });
     const detachSignal = forwardAbort(input.signal, controller);
     const completeCallId = randomUUID();
     const approvals = session.approvals.beginCompletion({ interactionId, completeCallId });
@@ -828,6 +836,7 @@ export class HarnessHost {
       if (!nativeStarted && error !== null && typeof error === "object") executionNotStartedErrors.add(error);
     }
     controller.signal.removeEventListener("abort", armForceStop);
+    forceController.signal.removeEventListener("abort", recordForcedState);
     if (forceTimer !== undefined) clearTimeout(forceTimer);
     session.approvals.endCompletion(
       completeCallId,
@@ -844,9 +853,7 @@ export class HarnessHost {
     detachSignal();
     const errors: unknown[] = operationError === undefined ? [] : [operationError];
     try {
-      session.descriptor = { ...session.descriptor, state: captureHarnessState(session.harness) };
-      this.saved.set(threadId, persistedDescriptor(session.descriptor));
-      await this.persist();
+      await this.recordSessionState(threadId, session);
     } catch (error) {
       errors.push(error);
     }
@@ -982,6 +989,18 @@ export class HarnessHost {
    * an unknown lease.
    */
   async releaseProviderExecution(executionLeaseId: string): Promise<boolean> {
+    // An HTTP client may disconnect while the provider still releases or acknowledges.
+    // Reject retries until that work settles instead of accumulating server-side waiters.
+    if (this.ownerReleasesInProgress.has(executionLeaseId)) throw new ExecutionLeaseReleaseInProgress();
+    this.ownerReleasesInProgress.add(executionLeaseId);
+    try {
+      return await this.releaseProviderExecutionOnce(executionLeaseId);
+    } finally {
+      this.ownerReleasesInProgress.delete(executionLeaseId);
+    }
+  }
+
+  private async releaseProviderExecutionOnce(executionLeaseId: string): Promise<boolean> {
     const pending = this.pendingExecutionAccess.get(executionLeaseId);
     if (pending === undefined) {
       // The acknowledgement this lease would have carried must not be lost: a failure here is
@@ -1456,8 +1475,7 @@ export class HarnessHost {
         errors.push(error);
       }
       try {
-        session.descriptor = { ...session.descriptor, state: captureHarnessState(session.harness) };
-        this.saved.set(threadId, persistedDescriptor(session.descriptor));
+        this.captureSessionState(threadId, session);
       } catch (error) {
         errors.push(error);
       }
@@ -1512,13 +1530,26 @@ export class HarnessHost {
       reject = rejectPromise;
     });
     const errors: unknown[] = [];
-    for (const session of this.sessions.values()) {
+    for (const [threadId, session] of this.sessions) {
       session.approvals.close("Harness host force-closed before the approval was resolved.");
       for (const active of session.activeCompletions.values()) {
         active.controller.abort(new Error("Harness host force-closed"));
       }
       try { session.lifecycle.forceShutdown(); } catch (error) { errors.push(error); }
+      // A harness forgets a root conversation its force shutdown killed. Capture that now: the
+      // killed turn may never settle before the process exits. Recording is best effort: a
+      // failure keeps that thread's previous state and never fails the shutdown.
+      try {
+        this.captureSessionState(threadId, session);
+      } catch (error) {
+        console.warn(`Could not capture harness state for thread ${threadId} during force close`, errorMessage(error));
+      }
     }
+    // Force close skips close()'s final persist, so it writes the captured state itself.
+    const persisted = (this.initialized && this.sessions.size > 0 ? this.persist() : Promise.resolve())
+      .catch((error: unknown) => {
+        console.warn("Could not persist harness state during force close", errorMessage(error));
+      });
     for (const lifecycle of this.lateClosingHarnesses) {
       try { lifecycle.forceShutdown(); } catch (error) { errors.push(error); }
     }
@@ -1532,6 +1563,7 @@ export class HarnessHost {
       } catch (error) {
         if (!(error instanceof Error && error.message === "Harness host is closed")) errors.push(error);
       }
+      await persisted;
       await this.persistTail;
       try { await this.traceStore?.forceClose(); } catch (error) { errors.push(error); }
       if (errors.length > 0) throw new AggregateError(errors, "Harness host did not force-close cleanly");
@@ -1579,6 +1611,16 @@ export class HarnessHost {
       release();
       if (this.registrationTails.get(threadId) === tail) this.registrationTails.delete(threadId);
     }
+  }
+
+  private captureSessionState(threadId: number, session: LiveSession): void {
+    session.descriptor = { ...session.descriptor, state: captureHarnessState(session.harness) };
+    this.saved.set(threadId, persistedDescriptor(session.descriptor));
+  }
+
+  private async recordSessionState(threadId: number, session: LiveSession): Promise<void> {
+    this.captureSessionState(threadId, session);
+    await this.persist();
   }
 
   private persist(): Promise<void> {
@@ -1790,6 +1832,10 @@ export async function startHarnessHost(options: HarnessHostOptions): Promise<Run
 
 const executionNotStartedErrors = new WeakSet<object>();
 
+class ExecutionLeaseReleaseInProgress extends Error {
+  constructor() { super("execution_lease_release_in_progress"); }
+}
+
 class HarnessCancellationSettled extends Error {
   constructor(message: string) { super(message); }
 }
@@ -1944,6 +1990,9 @@ async function route(host: HarnessHost, options: HarnessHostOptions, request: In
     if (request.method === "GET" && url.pathname === "/health") return reply(response, 200, { ok: true });
     return reply(response, 404, { error: "not_found" });
   } catch (error) {
+    if (error instanceof ExecutionLeaseReleaseInProgress) {
+      return reply(response, 503, { error: error.message });
+    }
     if (error instanceof HarnessCancellationSettled) {
       return reply(response, 409, { error: error.message, cancellationSettled: true });
     }

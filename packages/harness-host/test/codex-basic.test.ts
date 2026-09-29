@@ -137,6 +137,7 @@ describe("CodexBasicHarness", () => {
     const harness = harnessFixture("auto", async (options) => {
       submitted.push(options);
       options.onThreadId("thread-1");
+      options.onTurnId?.("thread-1", "turn-1");
       return { threadId: "thread-1", turnId: "turn-1", status: "completed" };
     });
 
@@ -175,6 +176,8 @@ describe("CodexBasicHarness", () => {
         submitted.push(options);
         expect(options.savedThreadId).toBe("legacy-thread");
         options.onThreadId("legacy-thread");
+        options.onTurnStarting?.("legacy-thread");
+        options.onTurnId?.("legacy-thread", "turn-1");
         return { threadId: "legacy-thread", turnId: "turn-1", status: "completed" };
       },
     };
@@ -203,6 +206,7 @@ describe("CodexBasicHarness", () => {
       runAppServerTurn: async (options) => {
         submitted = options;
         options.onThreadId("replacement-thread");
+        options.onTurnId?.("replacement-thread", "turn-1");
         return { threadId: "replacement-thread", turnId: "turn-1", status: "completed" };
       },
     });
@@ -214,6 +218,7 @@ describe("CodexBasicHarness", () => {
       codexSessionIdentity: expect.any(String),
       codexThreadId: "replacement-thread",
       codexThreadPersonalPresentationVersionId: null,
+      codexThreadHome: expect.any(String),
     });
   });
 
@@ -333,6 +338,8 @@ describe("CodexBasicHarness", () => {
         submissions.push(options);
         const threadId = options.savedThreadId ?? `fresh-thread-${submissions.length}`;
         await options.onThreadId(threadId);
+        options.onTurnStarting?.(threadId);
+        await options.onTurnId?.(threadId, `turn-${submissions.length}`);
         if (submissions.length === 1) {
           // The first root turn is wedged until its process is killed.
           await new Promise<never>((_resolve, reject) => {
@@ -350,7 +357,7 @@ describe("CodexBasicHarness", () => {
     force.abort(new Error("force-stopped after two minutes"));
     await expect(stuck).rejects.toThrow("force-stopped after two minutes");
     // The killed process may have left the thread mid-write, so it is neither saved nor resumed.
-    expect(harness.state()).toEqual({});
+    expect(harness.state()).toEqual({ codexRootResetReason: "force_stopped" });
 
     await harness.complete({ ...runContext(2, "next-token"), forceSignal: new AbortController().signal });
     expect(submissions[1]?.savedThreadId).toBeUndefined();
@@ -358,6 +365,7 @@ describe("CodexBasicHarness", () => {
       codexSessionIdentity: expect.any(String),
       codexThreadId: "fresh-thread-2",
       codexThreadPersonalPresentationVersionId: null,
+      codexThreadHome: expect.any(String),
     });
   });
 
@@ -374,6 +382,8 @@ describe("CodexBasicHarness", () => {
         submissions.push(options);
         const threadId = options.savedThreadId ?? `fresh-thread-${submissions.length}`;
         await options.onThreadId(threadId);
+        options.onTurnStarting?.(threadId);
+        await options.onTurnId?.(threadId, `turn-${submissions.length}`);
         if (submissions.length === 1) {
           // The killed process takes longer than the host's wait to exit.
           await new Promise<void>((resolve) => options.forceSignal?.addEventListener("abort", () => resolve(), { once: true }));
@@ -390,6 +400,8 @@ describe("CodexBasicHarness", () => {
     force.abort(new Error("force-stopped after two minutes"));
     // The host has given up waiting, so the user's next root turn runs and stores its thread.
     await harness.complete({ ...runContext(2, "next-token"), forceSignal: new AbortController().signal });
+    // Quitting now kills no root turn: the stuck one was already force-stopped.
+    harness.forceShutdown();
     releaseKilledProcess();
     await expect(stuck).rejects.toThrow("killed app-server exited");
 
@@ -397,6 +409,7 @@ describe("CodexBasicHarness", () => {
       codexSessionIdentity: expect.any(String),
       codexThreadId: "fresh-thread-2",
       codexThreadPersonalPresentationVersionId: null,
+      codexThreadHome: expect.any(String),
     });
   });
 
@@ -405,8 +418,9 @@ describe("CodexBasicHarness", () => {
       codexPathOverride: "/managed/codex",
       runAppServerTurn: async (options) => {
         await new Promise<void>((resolve) => options.forceSignal?.addEventListener("abort", () => resolve(), { once: true }));
-        // A thread identity that arrives only after the kill must not be resumed.
+        // A turn accepted only after the kill must not have its thread resumed.
         await options.onThreadId("late-thread");
+        await options.onTurnId?.("late-thread", "late-turn");
         throw new Error("killed app-server exited");
       },
     });
@@ -443,11 +457,12 @@ describe("CodexBasicHarness", () => {
     })).toThrow("requires non-empty connection arguments");
   });
 
-  it("retains a provider thread ID when the first app-server turn fails", async () => {
+  it("retains a provider thread whose first turn was accepted when that turn then fails", async () => {
     let submitted: CodexAppServerTurnOptions | undefined;
     const harness = harnessFixture("auto", async (options) => {
       submitted = options;
       options.onThreadId("codex-thread-after-start");
+      options.onTurnId?.("codex-thread-after-start", "turn-1");
       throw new Error("turn failed");
     });
 
@@ -457,6 +472,7 @@ describe("CodexBasicHarness", () => {
       codexSessionIdentity: expect.any(String),
       codexThreadId: "codex-thread-after-start",
       codexThreadPersonalPresentationVersionId: null,
+      codexThreadHome: expect.any(String),
     });
     expect(submitted?.prompt).toContain("Relayer graph affordances:");
     expect(submitted?.prompt).toContain("Each layer should explain its scope as a coherent whole");
@@ -856,6 +872,7 @@ describe("CodexBasicHarness", () => {
     const harness = harnessFixture("auto", async (options) => {
       submissions.push(options);
       options.onThreadId(options.savedThreadId ?? "codex-thread-1");
+      options.onTurnId?.(options.savedThreadId ?? "codex-thread-1", `turn-${submissions.length}`);
       return { threadId: options.savedThreadId ?? "codex-thread-1", turnId: `turn-${submissions.length}`, status: "completed" };
     });
 
@@ -874,6 +891,7 @@ describe("CodexBasicHarness", () => {
       codexSessionIdentity: expect.any(String),
       codexThreadId: "codex-thread-1",
       codexThreadPersonalPresentationVersionId: null,
+      codexThreadHome: "codex-default-home",
     });
   });
 
@@ -971,6 +989,7 @@ describe("CodexBasicHarness", () => {
       codexSessionIdentity: expect.any(String),
       codexThreadId: "root-thread",
       codexThreadPersonalPresentationVersionId: null,
+      codexThreadHome: expect.any(String),
     });
   });
 

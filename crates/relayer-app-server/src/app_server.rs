@@ -459,6 +459,11 @@ pub(crate) async fn reconcile_terminal_execution_lease(
     runtime: &RuntimeClient,
     attempt_id: i64,
 ) -> bool {
+    // Keep the debt read, provider release, and acknowledgement in one flight.
+    // A competing caller leaves the debt unresolved for the existing retry worker.
+    let Some(_guard) = product.try_begin_execution_lease_reconciliation(attempt_id) else {
+        return false;
+    };
     let debt = match product.execution_lease_debt(attempt_id).await {
         Ok(Some(debt)) => debt,
         Ok(None) => return true,
