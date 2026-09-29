@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, shell } from "electron";
+import { createSharePreviewCapture } from "./services/share-preview-capture.mjs";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, safeStorage, shell } from "electron";
 import electronUpdater from "electron-updater";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -569,6 +570,8 @@ if (primaryInstance) {
       endpoint: resolveShareServiceEndpoint({ isPackaged: app.isPackaged, packagedRelease, metadata, environment: process.env }),
     });
     const shareCoordinator = createSharePublishCoordinator({
+      capturePreview: createSharePreviewCapture({BrowserWindow,session,rendererDirectory}),
+      getTheme: () => appearance,
       exportSnapshot: (threadId, title, options) => productServer.exportShareSnapshot(threadId, title, options),
       accountSession: () => accountService.shareSession(),
       sourceThreadIdentity: createShareSourceThreadIdentity({ settings }),

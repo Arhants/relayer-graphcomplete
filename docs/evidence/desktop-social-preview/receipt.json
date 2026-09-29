@@ -1,0 +1,29 @@
+{
+  "sourceFiles": {
+    "desktop/main/services/share-preview-capture.mjs": "eee5719adb1270c509fd5ed352d469c647ab01405d43692fbb953db8de256039",
+    "desktop/main/services/share-publish-coordinator.mjs": "5fa263d3fd590616b2a107e1172d07c801654b10f46e59917bdea7d5e1769835",
+    "desktop/main/services/share-publish-attempt-store.mjs": "55d555b3e1decc8c543356f66be0c4c1605c7f60dc593287fb84ecd93fb2f7ff",
+    "desktop/main/services/share-service-client.mjs": "f30067b00bdb02ac64fbcfc932bafe02428cefd38ef094baa9abf51f5748c501",
+    "desktop/main/index.mjs": "19429d92de2ec4b263cd0ade929b54a6fe54e600c4859955a0345fe9b7385d26",
+    "contracts/share-service-v1/contract.json": "44a068f6dc7c403d470546da6766560205b3a40abefeee7166583bba3d32cbe6",
+    "scripts/capture-share-preview-evidence.mjs": "7b168be90508fd03d0246cc8c838e623c1bed813aca8e143b9e36a0a1d71a261",
+    "test/fixtures/social-preview.jsonl": "ff4a4545de49ccc20562f2f763b6a120d87fa37f7703a994abeb71b219a405aa",
+    "desktop/shared/telemetry-module-inventory.mjs": "09890b05fba2e187fedd27dec21c5aea164e06d5b15f05f3dfc0fb267408073e"
+  },
+  "captures": [
+    {
+      "theme": "light",
+      "sha256": "afe0e5f4c2b4ea9261bb850fb19f434ed739cc33cd610cd37dd1a24db9d86c1f",
+      "bytes": 107453
+    },
+    {
+      "theme": "dark",
+      "sha256": "1279578b230f0769809dd409fec0d7e5ce68388c980f7298c2d5f5793203fa02",
+      "bytes": 96609
+    }
+  ],
+  "platform": "macOS ARM64",
+  "electron": "43.0.0",
+  "captureCancellation": "passed",
+  "windowAndServerCleanup": "passed"
+}
