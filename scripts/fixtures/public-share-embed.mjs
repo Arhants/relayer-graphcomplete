@@ -79,7 +79,7 @@ export async function startEmbedFixtureServer({ crossOrigin = false, editorialSn
       if (decoded.includes("\0") || !file.startsWith(`${rendererRoot}${sep}`)) throw new Error("Invalid asset path");
       const body = await readFile(file);
       servedFiles.add(relative(repositoryRoot, file));
-      const mime = file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : file.endsWith(".svg") ? "image/svg+xml" : "application/octet-stream";
+      const mime = file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : file.endsWith(".svg") ? "image/svg+xml" : file.endsWith(".woff2") ? "font/woff2" : "application/octet-stream";
       response.writeHead(200, { "Content-Type": mime });
       response.end(body);
     } catch {

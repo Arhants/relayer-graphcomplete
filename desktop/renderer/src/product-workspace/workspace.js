@@ -2736,6 +2736,9 @@ export function createProductWorkspace({
     }
   };
   graphDocument.addEventListener("pointerdown", blurGraphFromOutsidePointer, true);
+  // Web fonts change pill widths; re-measure the graph once they finish loading.
+  const remeasureAfterFonts = () => { if (!disposed) render(); };
+  graphDocument.fonts?.addEventListener?.("loadingdone", remeasureAfterFonts);
   graphStage.onkeydown = async (event) => {
     if (!capabilities.canNavigate) return;
     const delta = graphTurnNavigationDelta(event, graphDocument.activeElement === graphStage);
@@ -6205,6 +6208,7 @@ export function createProductWorkspace({
     automaticGraphFit.dispose();
     cancelInspectorFit();
     graphDocument.removeEventListener("pointerdown", blurGraphFromOutsidePointer, true);
+    graphDocument.fonts?.removeEventListener?.("loadingdone", remeasureAfterFonts);
     graphDocument.removeEventListener("pointerdown", closeTurnPopoverFromOutside, true);
     graphDocument.removeEventListener("pointerdown", closeSettingsMenuFromOutside, true);
     readingLayout.dispose();

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { buildDesign } from "./design/build.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const rendererRoot = join(repositoryRoot, "desktop/renderer");
@@ -11,7 +12,6 @@ const builder = "scripts/build-public-share-viewer-artifact.mjs@1";
 const browserResources = Object.freeze([
   "assets/relayer-logo.svg",
   "assets/relayer-share-og.svg",
-  "design/design.css",
   "styles.css",
   "vendor/lucide.min.js",
   "vendor/marked.umd.js",
@@ -83,7 +83,9 @@ async function main() {
   const prefix = `assets/${productCommit}`;
   const files = {};
 
-  for (const path of browserResources) {
+  // Shares always carry the committed default design, whatever a local build prepared.
+  const design = await buildDesign({ selection: "" });
+  for (const path of [...browserResources, ...design.files]) {
     await copyHashed(join(rendererRoot, path), join(output, prefix, path), `${prefix}/${path}`, files);
   }
   await copyHashed(

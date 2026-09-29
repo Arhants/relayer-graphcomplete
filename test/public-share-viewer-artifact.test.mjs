@@ -16,6 +16,9 @@ async function sourceFixture() {
   await cp(join(repositoryRoot, "scripts/build-public-share-viewer-artifact.mjs"), join(source, "scripts/build-public-share-viewer-artifact.mjs"));
   await cp(join(repositoryRoot, "desktop/renderer"), join(source, "desktop/renderer"), { recursive: true });
   await cp(join(repositoryRoot, "contracts"), join(source, "contracts"), { recursive: true });
+  // The builder regenerates the committed default design (tokens and fonts) itself.
+  await cp(join(repositoryRoot, "scripts/design"), join(source, "scripts/design"), { recursive: true });
+  await cp(join(repositoryRoot, "designs"), join(source, "designs"), { recursive: true });
   await execFileAsync("git", ["init", "--quiet"], { cwd: source });
   await execFileAsync("git", ["add", "."], { cwd: source });
   await execFileAsync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Fixture source"], { cwd: source });

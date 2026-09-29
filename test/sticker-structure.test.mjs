@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-import { designCss, resolveDesignPath } from "../scripts/design/build.mjs";
+import { designCss, loadDesignFonts, resolveDesignPath } from "../scripts/design/build.mjs";
+import { loadStructure } from "../scripts/design/validate.mjs";
 import { RELAYER_ICON_NAMES, relayerIconFamily } from "../desktop/renderer/src/product-workspace/icons.js";
 import { graphEdgeArc } from "../desktop/renderer/src/product-workspace/workspace.js";
 
@@ -29,11 +30,25 @@ describe("Sticker structure", () => {
   it("defines every custom property the renderer stylesheet reads", async () => {
     const styles = await read("desktop/renderer/styles.css");
     const config = JSON.parse(await readFile(await resolveDesignPath(""), "utf8"));
-    const defined = new Set([...`${styles}${designCss(config, "designs/test.json")}`.matchAll(/--([a-z0-9-]+)\s*:/g)].map((match) => match[1]));
+    const fonts = await loadDesignFonts(await loadStructure(config.structure));
+    const defined = new Set([...`${styles}${designCss(config, "designs/test.json", fonts)}`.matchAll(/--([a-z0-9-]+)\s*:/g)].map((match) => match[1]));
     const undefinedProperties = [...new Set([...styles.matchAll(/var\(--([a-z0-9-]+)/g)].map((match) => match[1]))]
       .filter((name) => !defined.has(name) && !RUNTIME_PROPERTIES.has(name));
     expect(undefinedProperties).toEqual([]);
     expect(styles.startsWith('@import url("./design/design.css");\n')).toBe(true);
+  });
+
+  it("bundles the structure's licensed fonts with verified bytes and same-origin @font-face rules", async () => {
+    const config = JSON.parse(await readFile(await resolveDesignPath(""), "utf8"));
+    const fonts = await loadDesignFonts(await loadStructure(config.structure));
+    expect(fonts.map(({ role, font }) => [role, font.family, font.license])).toEqual([
+      ["ui", "Figtree", "OFL-1.1"], ["display", "Bricolage Grotesque", "OFL-1.1"], ["mono", "DM Mono", "OFL-1.1"],
+    ]);
+    for (const { files } of fonts) expect(files.some((file) => file.path.endsWith("/OFL.txt"))).toBe(true);
+    const css = designCss(config, "designs/test.json", fonts);
+    expect(css).toContain('@font-face{font-family:"Figtree";src:url("./fonts/figtree/figtree-latin-wght-normal.woff2") format("woff2")');
+    expect(css).toContain('--font-mono:"DM Mono",ui-monospace');
+    expect(css).not.toMatch(/url\(["']?(https?:)?\/\//);
   });
 
   it("gives every allowlisted icon exactly one presentation family", () => {
