@@ -11,6 +11,8 @@ target/
 desktop/dist/
 desktop/eval-dist/
 desktop/renderer/vendor/
+designs/lab/*
+!designs/lab/.gitkeep
 docs/prd/comments.json
 docs/prd/annotations.json
 docs/prd/assets/evidence/ask-profile-approval/*

@@ -13,7 +13,7 @@
 // scene keeps its reading (F1 violet, F2 blue, F3 teal, F4 olive/mustard, F5 magenta, F6 indigo).
 // Usage: node families.mjs            search + print the rows to paste into tokens.mjs FAMILIES
 //        node families.mjs --verify   re-check tokens.mjs FAMILIES against every rule (exit 1 on a failure)
-import { contrast, hexToOklch, oklchToHex, maxChroma, labOf, dEab } from '../../research/tmp/color.mjs';
+import { contrast, hexToOklch, oklchToHex, maxChroma, labOf, dEab } from '../../../../../../scripts/design/color.mjs';
 import { TOKENS, FAMILIES } from './tokens.mjs';
 
 const THEMES = ['light', 'dark'];

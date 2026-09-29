@@ -7,7 +7,7 @@
 // page) and H's new tokens (running-text, running-soft-bg, running-ink).
 // Usage: node contrast.mjs            console table (exit 1 on any failure)
 //        node contrast.mjs --md       markdown tables (spec-gen2.md §4)
-import { contrast, apca, dE } from '../../research/tmp/color.mjs';
+import { contrast, apca, dE } from '../../../../../../scripts/design/color.mjs';
 import { TOKENS, FAMILIES } from './tokens.mjs';
 
 const md = process.argv.includes('--md');

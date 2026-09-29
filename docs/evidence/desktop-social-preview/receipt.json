@@ -4,11 +4,11 @@
     "desktop/main/services/share-publish-coordinator.mjs": "f722b04879f31c2ab210c6e1eb2a8bf686af37bea6689cff9f6c4d143728abed",
     "desktop/main/services/share-publish-attempt-store.mjs": "55d555b3e1decc8c543356f66be0c4c1605c7f60dc593287fb84ecd93fb2f7ff",
     "desktop/main/services/share-service-client.mjs": "f30067b00bdb02ac64fbcfc932bafe02428cefd38ef094baa9abf51f5748c501",
-    "desktop/main/index.mjs": "7a35ea15b7526585a7b7fed1de6bf76698691a368ae2114ae6cd6652bbac7dd8",
+    "desktop/main/index.mjs": "ad155c18e859879db460091b5ebefe3c32ef2a4daa21a04dd19f220677481141",
     "contracts/share-service-v1/contract.json": "7407c99d32fb04a62ab958257be5525dc3451adc9899d600e07de730dccc89ff",
     "scripts/capture-share-preview-evidence.mjs": "c940e761b28190c3d4bd07e874e50c552403bc3a6e118d8d9cbe947398b466b6",
     "test/fixtures/social-preview.jsonl": "ff4a4545de49ccc20562f2f763b6a120d87fa37f7703a994abeb71b219a405aa",
-    "desktop/shared/telemetry-module-inventory.mjs": "da94e52034d141df8ec96101be90e3ffcc49cfa801e32ee88b46280accb386e7"
+    "desktop/shared/telemetry-module-inventory.mjs": "df917ad24da468398ab5a587a3a64ce5f3a4ea33cd093a816e9315ebc37c37e9"
   },
   "renderer": {
     "algorithm": "sha256 of JSON path-to-sha256 map",

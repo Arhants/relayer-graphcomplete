@@ -857,8 +857,6 @@ describe.sequential("desktop direct Auth0 account authority", () => {
         setChannel: () => { order.push("updater"); return { channel: "preview" }; },
       },
       getWindow: () => null,
-      getAppearance: () => "dark",
-      setAppearance() {},
     });
     await expect(handlers.get("relayer:account-read")()).resolves.toEqual(signedIn);
     await expect(handlers.get("relayer:account-login")()).resolves.toEqual({ status: "signing-in", channel: "preview" });
