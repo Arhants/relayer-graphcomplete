@@ -102,3 +102,18 @@ without return context display recovery instructions instead of silently failing
 Dashboard-opened Settings links intentionally carry both browser capabilities
 for same-user navigation. They must be treated as authenticated dashboard links,
 not as Settings-only delegation links. Rust credentials remain server-side.
+
+## Simulated task users (issue #544, slice 2)
+
+A separate Eval actor drives the production live-task surface between settled
+responses. It reuses HumanTaskService admission and recording. It observes
+viewport screenshots and current enabled controls, not raw graph records, task
+files, or judge topology. A dedicated native Codex thread has no shell, search,
+filesystem tools, or MCP servers. This user interaction loop does not schedule
+GraphComplete agents or change provider-owned recursion.
+
+The actor capability projects only task display context, disables annotations,
+and rejects grading operations. Humans watch and grade through a separate
+read-only review capability. Actor satisfaction is distinct from human grades.
+Cancellation, deadlines, action limits and host interruption preserve evidence
+without implicit replay or inferred task success.

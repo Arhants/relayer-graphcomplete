@@ -2455,7 +2455,7 @@ export class EvalService {
     return { execution, name: definition.name, description: definition.description, humanBrief: definition.humanBrief || null, humanRubric: definition.humanRubric || null, plan, casePlanDigest: sha256(canonicalJson(definition.humanBrief ? { plan, humanBrief: definition.humanBrief, humanRubric: definition.humanRubric } : plan)) };
   }
 
-  async createHumanTaskThread(prepared, step) {
+  async createHumanTaskThread(prepared, step, { signal } = {}) {
     const item = prepared.plan[step];
     if (!item) throw new Error("Unknown case step.");
     // A session's first route owns every case thread, including persisted sessions
@@ -2467,6 +2467,7 @@ export class EvalService {
       execution: prepared.execution, title: `${prepared.name} · human · ${item.name}`,
       prompt: item.prompts[0], projectId: prepared.execution.projectId ?? null,
       permissionProfileId: item.permissionProfileId,
+      signal,
     });
     prepared.execution.pinnedModelResolution ??= copy(prepared.execution.modelResolution);
     return thread;
@@ -2593,7 +2594,7 @@ export class EvalService {
     }
   }
 
-  async #createProductThread({ execution, title, prompt, projectId = null, permissionProfileId = "auto" }) {
+  async #createProductThread({ execution, title, prompt, projectId = null, permissionProfileId = "auto", signal }) {
     let selectedModel = execution.pinnedModelResolution?.selectedModel;
     let productModelSelection = execution.pinnedModelResolution?.productModelSelection;
     const configurationOwned = execution.pinnedModelResolution === undefined && this.selectModel
@@ -2658,6 +2659,7 @@ export class EvalService {
     };
     const thread = await this.#productRequest("/api/threads", {
       method: "POST",
+      signal,
       body: {
         title,
         initialMessage: prompt,
@@ -3098,6 +3100,7 @@ export class EvalService {
   async #productRequest(path, options = {}) {
     const response = await fetch(new URL(path, this.productSession.origin), {
       method: options.method || "GET",
+      signal: options.signal,
       headers: {
         Accept: "application/json",
         Cookie: `${this.productSession.cookie.name}=${this.productSession.cookie.value}`,
