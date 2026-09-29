@@ -283,7 +283,7 @@ async function start() {
     annotationSnapshotLoader: (threadIds) => loadAnnotationSnapshots(productSession, threadIds),
   }).open();
   taskActors = new TaskActorService({ tasks: humanTasks,
-    resolveRuntime: () => providerSetup.resolveCodexJudgeRuntime(),
+    resolveRuntime: (config) => providerSetup.resolveCodexJudgeRuntime(config),
     openBrowser: async (sessionId, signal) => openTaskActorBrowser({ tasks: humanTasks, sessionId, productSession, signal, browser: await judgeBrowser.get() }),
   });
   dashboard = await createEvalDashboard({

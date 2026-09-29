@@ -27,7 +27,7 @@ async function setup({ managed = false, failing = false, credentialStore, now, a
         if (failing) throw new Error(`Provider echoed ${deps.secrets?.["api-key"]}`);
         return { provider: { id: definition.id, label: definition.label, status: "available" },
           systemFamily: { id: definition.id, label: definition.label, modelIds: ["gpt-test"] },
-          models: [{ id: "gpt-test", executionModel: "gpt-test", label: "Test", availability: "available", visible: true, description: "", unavailableReason: null, availabilityNotice: null, isDefault: true, replacementModelId: null, upgradeInfo: null, supportedEfforts: [], defaultEffort: null, inputModalities: ["text"], supportsPersonality: false, serviceTiers: [], defaultServiceTier: null }],
+          models: [{ id: "gpt-test", executionModel: "gpt-test", label: "Test", availability: "available", visible: true, description: "", unavailableReason: null, availabilityNotice: null, isDefault: true, replacementModelId: null, upgradeInfo: null, supportedEfforts: [{ id: "low", description: "Low" }], defaultEffort: null, inputModalities: ["text"], supportsPersonality: false, serviceTiers: [], defaultServiceTier: null }],
         };
       };
       return { providerId: definition.id, discover,
@@ -208,6 +208,17 @@ describe("Eval production provider setup", () => {
     await fixture.service.start();
     await expect(fixture.connect()).rejects.toThrow("Persistent Eval API credentials currently require macOS Keychain");
     expect(fixture.stored()).toEqual([]);
+  });
+
+  it("preflights the actor model and effort against the connected provider before resolving runtime", async () => {
+    const fixture = await setup({ managed: true });
+    await fixture.service.start(); await fixture.connect(); await fixture.service.completeConnection("chosen");
+    fixture.runtimeResolver.prepare.mockClear();
+    await expect(fixture.service.resolveCodexJudgeRuntime({ model: "missing", modelReasoningEffort: "low" })).rejects.toMatchObject({ code: "actor_model_unsupported" });
+    await expect(fixture.service.resolveCodexJudgeRuntime({ model: "gpt-test", modelReasoningEffort: "high" })).rejects.toMatchObject({ code: "actor_effort_unsupported" });
+    expect(await fixture.service.resolveCodexJudgeRuntime({ model: "gpt-test", modelReasoningEffort: "low" })).toMatchObject({ executable: "/managed/codex" });
+    expect(fixture.runtimeResolver.prepare).not.toHaveBeenCalled();
+    await expect(fixture.service.logout("chosen")).resolves.toBeDefined();
   });
 
   it("resolves judges through connected subscription authority without preparing runtimes on settings reads", async () => {

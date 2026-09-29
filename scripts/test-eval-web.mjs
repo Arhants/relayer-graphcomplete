@@ -196,7 +196,7 @@ try {
     try { await window.relayerEval.createHumanTask({ ...selection, mode: "simulated" }); return null; }
     catch (error) { return error.message; }
   }, hostTaskSelection);
-  assert.match(rejectedActor, /connected Codex subscription/i);
+  assert.match(rejectedActor, /Actor authentication is unavailable/i);
   assert.deepEqual(await rpc(host.url, "humanTasks"), tasksBeforeRejectedActor, "missing actor authentication must fail before creating or spending a candidate session");
   const hostTask = await rpc(host.url, "createHumanTask", [hostTaskSelection]);
   const hostTaskUrl = await rpc(host.url, "openHumanTask", [hostTask.id]);
@@ -487,7 +487,7 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     },
     createActor: async () => ({ close: async () => {}, decide: async (observation) => {
       snapshots.push(observation);
-      if (decision === 0) {
+      if (decision <= 1) {
         const active = tasks.get(tasks.list()[0].id);
         assert.equal(active.status, "active");
         const review = await openHumanReview({ executionId: active.id,
@@ -511,12 +511,20 @@ async function proveTaskActor({ browser, service, productSession, data }) {
           await until(async () => (await reviewer.locator("[data-grade-status]").textContent()).includes("Grade saved"), "active actor human grade saved");
           assert.equal(await reviewer.evaluate(async (threadId) => (await fetch(`/api/threads/${threadId}/interactions`, { method: "POST", body: "{}" })).status, active.currentThreadId), 403);
           assert.equal(tasks.get(active.id).status, "active");
+          if (decision === 1) {
+            const actionEvent = tasks.get(active.id).events.find(event => event.kind === "actor_action");
+            await reviewer.locator('#humanTaskGrading [name="eventId"]').selectOption(actionEvent.id);
+            await reviewer.locator('#humanTaskGrading form:not([data-session-grade]) [name="comment"]').fill("Unnecessary exploration: review this actor choice.");
+            await reviewer.getByRole("button", { name: "Save moment annotation", exact: true }).click();
+            await until(async () => (await reviewer.locator("[data-grade-status]").textContent()).includes("Moment annotation saved"), "actor action annotation saved");
+            assert.equal(tasks.get(active.id).annotations.at(-1).eventId, actionEvent.id);
+          }
         } finally { await reviewer.close(); await review.close(); }
       }
       if (process.env.RELAYER_EVAL_ACTOR_SCREENSHOT) await writeFile(process.env.RELAYER_EVAL_ACTOR_SCREENSHOT, Buffer.from(observation.screenshot, "base64"));
       assert.ok(Buffer.from(observation.screenshot, "base64").readUInt32BE(16) > 0);
       assert.ok(!JSON.stringify(observation.controls).includes("Review & grade"));
-      const action = { kind: "finish", ref: "", value: "", reason: "satisfied", satisfaction: 3, comment: "The follow-up is good enough." };
+      const action = { kind: "finish", ref: "", value: "", reason: "satisfied", satisfaction: 3, comment: "The follow-up is good enough.", endpointStatus: "incomplete", remainingWork: "Further choices remain." };
       const find = (predicate) => { const control = observation.controls.find(predicate); assert.ok(control, JSON.stringify(observation.controls)); return control.ref; };
       if (decision === 0) Object.assign(action, { kind: "click", ref: find((control) => control.kind === "node" && control.name.includes("Two-worker")) });
       if (decision === 1) Object.assign(action, { kind: "fill", ref: find((control) => control.role === "textarea"), value: "Explain how the workers coordinate." });
@@ -554,8 +562,8 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     const exported = await tasks.export(task.id);
     assert.equal(exported.bundle.session.events.filter((event) => event.kind === "actor_observation").length, 6);
     assert.equal(exported.bundle.session.satisfaction.value, 1);
-    assert.equal(await page.locator("#actorSettings [name=actorModel]").inputValue(), "gpt-6-luna");
-    assert.ok(snapshots.every((snapshot) => !JSON.stringify(snapshot).includes("Independent human feedback")));
+    assert.equal(await page.locator("#actorSettings [name=actorModel]").inputValue(), "gpt-5.6-luna");
+    assert.ok(snapshots.every((snapshot) => !JSON.stringify(snapshot).includes("Independent human feedback") && !JSON.stringify(snapshot).includes("Unnecessary exploration")));
   } finally { await actors.close(); await page.close(); }
   console.log("PASS task actor: dashboard configuration, production screenshots/node selection/composer/Send/invoke, three-completion admission, active read-only human grading isolated from actor, export (fixture inference)");
 }
@@ -749,7 +757,7 @@ async function proveTaskActorInputs({ browser, service, productSession, data }) 
   const actors = new TaskActorService({ tasks, resolveRuntime: async () => ({}),
     openBrowser: (sessionId, signal) => openTaskActorBrowser({ tasks, sessionId, productSession, browser, signal }),
     createActor: async () => ({ close: async () => {}, decide: async ({ controls }) => {
-      const action = { kind: "scroll", ref: "", value: "down", reason: "", satisfaction: null, comment: "" };
+      const action = { kind: "scroll", ref: "", value: "down", reason: "", satisfaction: null, comment: "", endpointStatus: "incomplete", remainingWork: "Further choices remain." };
       const note = controls.find((control) => control.name === "Review note" && control.role === "input");
       if (stage === 0 && note) { Object.assign(action, { kind: "fill", ref: note.ref, value: "A note entered through the graph" }); stage++; }
       else if (stage === 1) {

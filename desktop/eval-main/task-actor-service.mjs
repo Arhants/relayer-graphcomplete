@@ -1,6 +1,32 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { actorConfiguration, actorPrompt, createCodexTaskActor, validateActorAction } from "./task-actor.mjs";
 
+// Classification may inspect native errors, but evidence and UI use only these
+// closed categories and fixed messages; never copy provider text or error.name.
+function actorFailure(error, { cancelled = false, timedOut = false } = {}) {
+  const code = typeof error?.code === "string" ? error.code.toLowerCase() : "";
+  const status = error?.status ?? error?.statusCode;
+  const text = typeof error?.message === "string" ? error.message.toLowerCase() : "";
+  let category = "runtime_failure";
+  if (cancelled) category = "cancelled";
+  else if (timedOut || error?.name === "TimeoutError" || code === "etimedout" || /timed? ?out|timeout/.test(text)) category = "timeout";
+  else if (status === 429 || /rate[_ -]?limit|quota[_ -]?(?:exceeded|exhausted)/.test(`${code} ${text}`)) category = "rate_limit";
+  else if ([401, 403].includes(status) || /authentication|unauthorized|not[_ -]?logged[_ -]?in|invalid[_ -]?(?:api[_ -]?)?key|token.{0,30}expired/.test(`${code} ${text}`)) category = "authentication";
+  else if (code === "actor_effort_unsupported") category = "unsupported_effort";
+  else if (/model[_ -](?:not[_ -]found|unsupported)|unsupported[_ -]model/.test(code)
+    || /(?:model|reasoning effort).{0,120}(?:not supported|unsupported|not found|does not exist)/.test(text)) category = "unsupported_model";
+  const messages = {
+    cancelled: "Actor was cancelled. No action is replayed automatically.",
+    timeout: "Actor timed out. Review the saved trajectory before starting another task.",
+    rate_limit: "Actor provider reached a rate or usage limit. Wait or check account limits before starting another task.",
+    authentication: "Actor authentication is unavailable. Reconnect the Eval profile's Codex subscription in Settings.",
+    unsupported_model: "Choose a model available to the connected Codex subscription before starting another task.",
+    unsupported_effort: "Choose a reasoning effort supported by the actor model before starting another task.",
+    runtime_failure: "Actor runtime failed without claiming task success. No action is replayed automatically.",
+  };
+  return { category, message: messages[category] };
+}
+
 export class TaskActorService {
   constructor({ tasks, resolveRuntime, openBrowser, createActor = createCodexTaskActor, pollMs = 250 }) {
     Object.assign(this, { tasks, resolveRuntime, openBrowser, createActor, pollMs });
@@ -9,7 +35,12 @@ export class TaskActorService {
   async create(selection) {
     const config = actorConfiguration(selection.actor);
     // Authenticate before the opening candidate completion can spend inference.
-    const runtime = await this.resolveRuntime();
+    let runtime;
+    try { runtime = await this.resolveRuntime(config); }
+    catch (error) {
+      const safe = actorFailure(error);
+      throw Object.assign(new Error(safe.message), { code: safe.category });
+    }
     const task = await this.tasks.create({ ...selection, mode: "simulated", actor: config });
     const controller = new AbortController();
     const done = this.run(task.id, runtime, controller.signal).catch(async () => {
@@ -32,7 +63,7 @@ export class TaskActorService {
   async run(id, runtime, cancellation) {
     const task = this.tasks.get(id);
     const signal = AbortSignal.any([cancellation, AbortSignal.timeout(task.actor.timeoutMs)]);
-    const prompt = actorPrompt({ config: task.actor, request: task.prepared.plan[0].prompts[0], endpoint: task.endpoint });
+    const prompt = actorPrompt({ config: task.actor, request: task.prepared.plan[0].prompts[0], endpoint: task.endpoint, privateBrief: task.prepared.humanBrief });
     let actor;
     let browser;
     try {
@@ -65,7 +96,7 @@ export class TaskActorService {
         const intent = await this.tasks.actorEvent(id, "actor_action", { observationEventId: observed.id, action, usage });
         signal.throwIfAborted();
         if (action.kind === "finish") {
-          await this.tasks.actorEvent(id, "actor_satisfaction", { scale: "actor-1-4", value: action.satisfaction, comment: action.comment });
+          await this.tasks.actorEvent(id, "actor_satisfaction", { scale: "actor-1-4", value: action.satisfaction, comment: action.comment, endpointStatus: action.endpointStatus, remainingWork: action.remainingWork });
           await this.tasks.finish(id, { reason: current.completions >= current.maxCompletions ? "budget_exhausted" : action.reason }, { signal });
           return;
         }
@@ -80,7 +111,7 @@ export class TaskActorService {
       await this.tasks.actorEvent(id, "actor_limit", { reason: "action_limit" });
       await this.tasks.finish(id, { reason: "abandoned" }, { signal });
     } catch (error) {
-      if (this.tasks.get(id).status === "active") await this.tasks.actorEvent(id, "actor_error", { category: error.name, message: "Actor stopped without claiming task success. No action is replayed automatically." });
+      if (this.tasks.get(id).status === "active") await this.tasks.actorEvent(id, "actor_error", actorFailure(error, { cancelled: cancellation.aborted, timedOut: signal.aborted && !cancellation.aborted }));
       await this.tasks.interruptActor(id, cancellation.aborted ? "actor_cancelled" : signal.aborted ? "actor_timeout" : "actor_failed");
     } finally {
       try { await browser?.close(); } finally { await actor?.close(); }

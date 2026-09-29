@@ -5,12 +5,12 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { HumanTaskService } from "../desktop/eval-main/human-task-service.mjs";
 import { TaskActorService } from "../desktop/eval-main/task-actor-service.mjs";
-import { actorConfiguration, actorPrompt, createCodexTaskActor } from "../desktop/eval-main/task-actor.mjs";
+import { actorConfiguration, actorPrompt, createCodexTaskActor, validateActorAction } from "../desktop/eval-main/task-actor.mjs";
 import { createHumanTaskSurface } from "../desktop/eval-main/web-host.mjs";
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
-const action = (kind, extra = {}) => ({ kind, ref: "visible", value: "", reason: "", satisfaction: null, comment: "", ...extra });
+const action = (kind, extra = {}) => ({ kind, ref: "visible", value: "", reason: "", satisfaction: null, comment: "", endpointStatus: "incomplete", remainingWork: "Route undecided", ...extra });
 async function fixture({ decide, maxActions = 8, busy = false, failWrite = false, navigateOnly = false, retry = false, timeoutMs = 900000 } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "task-actor-test-"));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
@@ -59,9 +59,11 @@ it("adapts to successive rendered states through session admission, then preserv
   const f = await fixture(); await f.done;
   const task = f.tasks.get(f.id);
   expect(f.dispatches).toEqual(["/api/threads/1/interactions"]);
-  expect(task).toMatchObject({ mode: "simulated", status: "completed", completions: 2, satisfaction: null, actor: { model: "gpt-6-luna", modelReasoningEffort: "low" }, termination: { reason: "budget_exhausted", success: null } });
+  expect(task).toMatchObject({ mode: "simulated", status: "completed", completions: 2, satisfaction: null, actor: { model: "gpt-5.6-luna", modelReasoningEffort: "low" }, termination: { reason: "budget_exhausted", success: null } });
   expect(f.seen.map((v) => v.observation.text)).toEqual(["Where do you want to go?", "A trip plan based on your reply"]);
-  expect(JSON.stringify(f.seen)).not.toMatch(/PRIVATE BRIEF|SECRET RUBRIC|passed|frozen conversation/);
+  expect(f.seen[0].prompt).toContain("PRIVATE BRIEF");
+  expect(JSON.stringify(f.seen)).not.toMatch(/SECRET RUBRIC|frozen conversation/);
+  expect(JSON.stringify(f.seen.map(v => v.observation))).not.toContain("PRIVATE BRIEF");
   expect(task.events.find((v) => v.kind === "actor_satisfaction")).toMatchObject({ scale: "actor-1-4", value: 3 });
   const submission = task.events.findIndex((v) => v.kind === "submission" && !v.initial);
   expect(task.events[submission - 1].kind).toBe("actor_action");
@@ -123,7 +125,7 @@ it("pins the actor runtime with no filesystem, shell, network or MCP tools and k
   expect(options.env).not.toHaveProperty("OPENAI_API_KEY");
   expect(options.config.features).toMatchObject({ shell_tool: false, unified_exec: false, browser_use: false, computer_use: false, multi_agent: false });
   expect(options.config.mcp_servers).toEqual({});
-  expect(threadOptions).toMatchObject({ model: "gpt-6-luna", modelReasoningEffort: "low", networkAccessEnabled: false, webSearchMode: "disabled", additionalDirectories: [] });
+  expect(threadOptions).toMatchObject({ model: "gpt-5.6-luna", modelReasoningEffort: "low", networkAccessEnabled: false, webSearchMode: "disabled", additionalDirectories: [] });
 });
 
 it("ends bounded exploration without claiming endpoint success", async () => {
@@ -220,4 +222,21 @@ it("service close aborts a pending native decision and closes its browser withou
   expect(f.browser.close).toHaveBeenCalledOnce();
   expect(f.actors.running.size).toBe(0);
   expect(f.tasks.get(f.id)).toMatchObject({ status: "interrupted", termination: { reason: "actor_cancelled" } });
+});
+
+
+it("keeps satisfaction separate from unfinished work and rejects contradictory endpoint claims", async () => {
+  const f = await fixture({ navigateOnly: true, decide: () => action("finish", { reason: "satisfied", satisfaction: 3, endpointStatus: "incomplete", remainingWork: "The group has not agreed a route." }) });
+  await f.done;
+  const task = f.tasks.get(f.id);
+  expect(task.termination).toMatchObject({ reason: "satisfied", success: null, endpointAttainment: "not_claimed" });
+  expect(task.events.find(e => e.kind === "actor_satisfaction")).toMatchObject({ value: 3, endpointStatus: "incomplete", remainingWork: "The group has not agreed a route." });
+  const event = task.events.find(e => e.kind === "actor_action");
+  await f.tasks.annotate(f.id, { eventId: event.id, comment: "Stopped early: still no agreement." });
+  const reopened = await new HumanTaskService(f.options).open();
+  expect(reopened.get(f.id).annotations.at(-1)).toMatchObject({ eventId: event.id, comment: "Stopped early: still no agreement." });
+  expect(() => validateActorAction(action("finish", { reason: "endpoint_reached", satisfaction: 3, endpointStatus: "incomplete" }))).toThrow("invalid action");
+  expect(() => validateActorAction(action("finish", { reason: "endpoint_reached", satisfaction: 3, endpointStatus: "reached", remainingWork: "Pick route" }))).toThrow("invalid action");
+  expect(() => validateActorAction(action("finish", { reason: "satisfied", satisfaction: 3, endpointStatus: "reached", remainingWork: "Pick route" }))).toThrow("invalid action");
+  expect(validateActorAction(action("finish", { reason: "endpoint_reached", satisfaction: 3, endpointStatus: "reached", remainingWork: "" }))).toMatchObject({ endpointStatus: "reached" });
 });

@@ -29,7 +29,7 @@ export function initializeHumanTasks({ api, show, toast }) {
     root.querySelector("#humanTaskDetail").innerHTML = `
       <h2>${escape(task.prepared?.name || task.id)}</h2><p>${escape(task.status)} · ${task.completions}/${task.maxCompletions} completions · Step ${task.step + 1}/${plan.length}</p>
       ${simulated ? `<p>Simulated user · ${escape(task.actor.model)} · ${escape(task.actor.modelReasoningEffort)} reasoning · exploration ${escape(task.actor.exploration)} · meticulousness ${escape(task.actor.meticulousness)}</p>` : ""}
-      ${simulated ? `<p>Actor satisfaction: ${escape(actorRating?.value ?? "not recorded")} / 4 · ${escape(actorRating?.comment || "")}</p>` : ""}
+      ${simulated ? `<p>Actor satisfaction: ${escape(actorRating?.value ?? "not recorded")} / 4 · ${escape(actorRating?.comment || "")}</p><p>Actor-reported endpoint: ${escape(actorRating?.endpointStatus || "not assessed")}. Remaining work: ${escape(actorRating?.remainingWork || "not recorded")}</p>` : ""}
       <p><b>Endpoint:</b> ${escape(task.endpoint)}</p>
       <p>Objective success is assessed separately from human or actor satisfaction. ${task.firstVisibleGraph ? `First visible graph: ${Math.round(task.firstVisibleGraph.latencyMs)} ms (includes time before the workspace was opened).` : "First visible graph: not observed."}</p>
       ${task.prepared?.humanBrief ? `<details><summary>Private user brief · not sent to Relayer</summary><p style="white-space:pre-wrap">${escape(task.prepared.humanBrief)}</p><h3>What to grade</h3><p>${escape(task.prepared.humanRubric)}</p></details>` : ""}

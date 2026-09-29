@@ -250,7 +250,7 @@ export function createEvalProviderSetup({ userDataDirectory, productServer, prod
       selections.set(harnessId, selection);
       return selection;
     },
-    async resolveCodexJudgeRuntime() {
+    async resolveCodexJudgeRuntime(config) {
       const settings = await request("/api/model-settings");
       const connected = (await definitions.list()).filter((definition) => (
         definition.adapterId === "codex-subscription" && definition.lifecycleState === "active" && definition.connected
@@ -258,9 +258,23 @@ export function createEvalProviderSetup({ userDataDirectory, productServer, prod
       const definition = connected.find(({ id }) => id === settings.defaults?.providerId)
         ?? connected.find(({ id }) => id === "codex")
         ?? (connected.length === 1 ? connected[0] : null);
-      if (!definition) throw new Error("Choose a connected Codex subscription as the default provider before running a Codex judge.");
+      if (!definition) throw Object.assign(new Error("Choose a connected Codex subscription as the default provider before running a Codex judge."), { code: "actor_authentication_required" });
       const lease = await definitions.acquireExecution(definition.id);
       try {
+        if (config !== undefined) {
+          // Discovery is read-only native model/list, never runtime installation or
+          // inference. Hold this connection's lease through discovery and resolution.
+          const requested = typeof config === "string" ? { model: config } : config;
+          const snapshot = await composition.modelCatalog.refresh(definition.id, "pre-inference");
+          const model = snapshot?.provider?.status === "available" && snapshot.models?.find((candidate) => (
+            (candidate.id === requested?.model || candidate.executionModel === requested?.model)
+            && candidate.visible !== false && candidate.availability === "available"
+          ));
+          if (!model) throw Object.assign(new Error("The actor model is unavailable in this connection's discovered catalog."), { code: "actor_model_unsupported" });
+          if (requested.modelReasoningEffort !== undefined && !model.supportedEfforts?.some(({ id }) => id === requested.modelReasoningEffort)) {
+            throw Object.assign(new Error("The actor reasoning effort is unavailable for this model."), { code: "actor_effort_unsupported" });
+          }
+        }
         const access = await lease.runtime.executionAccess();
         if (access.kind !== "managed-runtime" || access.runtimeId !== "codex") {
           throw new Error("The selected provider has no managed Codex execution access.");
