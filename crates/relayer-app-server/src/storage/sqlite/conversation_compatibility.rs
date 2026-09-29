@@ -62,7 +62,7 @@ pub(super) async fn compatibility_on(
         provider_id: None,
         message: None,
     };
-    // A continuation conversation reads its earlier turns from the graph (ADR 0013), so no
+    // A continuation conversation reads its earlier turns from the graph (ADR 0014), so no
     // native route owns it. Its format is fixed at creation; a legacy thread never gets here.
     if conversation_format == "continuation-v1" {
         result.status = "portable";

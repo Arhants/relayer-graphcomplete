@@ -91,7 +91,7 @@ function harnessFor(settings, harnessId) {
 }
 
 // Only a legacy conversation is contained to its original route (#597). A portable
-// continuation conversation (ADR 0013) is offered every route an unrestricted one is. Any
+// continuation conversation (ADR 0014) is offered every route an unrestricted one is. Any
 // other or missing status is restricted, so an unknown state never widens routes.
 export function compatibilityRestrictsRoute(compatibility) {
   if (!compatibility) return false;

@@ -1220,7 +1220,7 @@ async fn validate_active_family_name_index(pool: &SqlitePool) -> Result<(), Stor
 
 /// The conversation-format column definition and immutability trigger from migration 0040,
 /// compared without whitespace or case. A later rebuild of `threads` must keep both: without
-/// them a legacy conversation could become a portable one (ADR 0013).
+/// them a legacy conversation could become a portable one (ADR 0014).
 const CONVERSATION_FORMAT_COLUMN: &str = "conversation_format TEXT NOT NULL DEFAULT 'legacy' CHECK (conversation_format = 'legacy' OR (conversation_format = 'continuation-v1' AND surface = 'conversation' AND conversation_import_id IS NULL))";
 const CONVERSATION_FORMAT_TRIGGER: &str = "CREATE TRIGGER thread_conversation_format_immutable BEFORE UPDATE OF conversation_format ON threads WHEN OLD.conversation_format IS NOT NEW.conversation_format BEGIN SELECT RAISE(ABORT, 'conversation_format_immutable'); END";
 

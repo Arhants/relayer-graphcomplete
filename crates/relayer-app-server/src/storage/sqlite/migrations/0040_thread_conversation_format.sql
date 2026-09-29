@@ -1,4 +1,4 @@
--- #584 / ADR 0013: each thread records how its conversation continues. Every existing
+-- #584 / ADR 0014: each thread records how its conversation continues. Every existing
 -- thread is legacy, whose earlier turns exist for the agent only in a native session.
 -- A continuation-v1 conversation reads earlier turns from the graph. Only ordinary,
 -- non-imported conversations can have that format, and it is fixed at creation.

@@ -1,4 +1,4 @@
-# ADR 0013: New conversations continue through the graph, not a provider session
+# ADR 0014: New conversations continue through the graph, not a provider session
 
 ## Status
 
