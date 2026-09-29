@@ -7,11 +7,15 @@ export function expectGraphPresentationGuidance(prompt: string): void {
   if (prompt.includes("Python capability reference")) {
     expect(prompt).not.toContain("JavaScript capability reference");
     expect(prompt).toContain("interaction.submitted_inputs");
+    expect(prompt).toContain("action_capability(key, action)");
   } else {
     expect(prompt).toContain("JavaScript capability reference");
     expect(prompt).not.toContain("Python capability reference");
     expect(prompt).toContain("input.submittedInputs");
+    expect(prompt).toContain("detailCapability.expand(key, action)");
   }
+  expect(prompt).toContain("Build and validate in small increments");
+  expect(prompt).toContain("not a required query flow or publication schedule");
   expect(prompt).toContain("does not await future answers");
   expect(prompt).toContain("border-collapse and cursor are unsupported");
   expect(prompt).toContain("register ALL actions");
