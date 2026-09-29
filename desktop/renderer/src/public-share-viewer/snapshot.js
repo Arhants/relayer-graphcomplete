@@ -1,4 +1,4 @@
-const EXPORT_VERSIONS = new Set([1, 2]);
+const EXPORT_VERSIONS = new Set([1, 2, 3]);
 const MAX_EXPORT_BYTES = 16 * 1024 * 1024;
 const MAX_JSONL_LINE_BYTES = 16 * 1024 * 1024;
 const MAX_TURNS = 10_000;
@@ -175,7 +175,7 @@ function validateHeader(header) {
     fail("header_required", "record[0].recordType", "The first JSONL record must be a header.");
   }
   if (!EXPORT_VERSIONS.has(header.exportVersion)) {
-    fail("unsupported_export_version", "header.exportVersion", "Only conversation export V1 and V2 are supported.");
+    fail("unsupported_export_version", "header.exportVersion", "Only conversation export V1, V2 and V3 are supported.");
   }
   requireString(own(header, "exportedAt", "header.exportedAt"), "header.exportedAt");
   validateProducer(own(header, "producer", "header.producer"));
@@ -318,6 +318,12 @@ function validateCompletion(completion, path) {
 
 function validateAction(action, path, { sourceLayerRequired = false } = {}) {
   const value = requireRecord(action, path);
+  if (value.convertedFromInvoke !== undefined && typeof value.convertedFromInvoke !== "boolean") {
+    fail("converted_invoke_shape", path, "Converted invoke provenance must be boolean.");
+  }
+  if (value.convertedFromInvoke === true && (value.kind !== "navigate" || value.relation !== "expand" || value.targetLayerId == null)) {
+    fail("converted_invoke_shape", path, "Converted invokes must be accepted expand navigation with a target.");
+  }
   if (own(value, "state", `${path}.state`) !== "accepted") {
     fail("action_state_invalid", `${path}.state`, "Public snapshots may contain accepted actions only.");
   }
@@ -356,7 +362,7 @@ function validateAction(action, path, { sourceLayerRequired = false } = {}) {
   return value;
 }
 
-function validateLayer(resolved, path, allDefinitions) {
+function validateLayer(resolved, path, allDefinitions, exportVersion) {
   const value = requireRecord(resolved, path);
   const layer = requireRecord(own(value, "layer", `${path}.layer`), `${path}.layer`);
   const layerId = requirePortableId(own(layer, "id", `${path}.layer.id`), "layer", `${path}.layer.id`);
@@ -416,10 +422,18 @@ function validateLayer(resolved, path, allDefinitions) {
   const seenActionIds = new Set();
   actions.forEach((action, index) => {
     const actionPath = `${path}.actions[${index}]`;
-    const item = validateAction(action, actionPath, { sourceLayerRequired: true });
+    const item = validateAction(action, actionPath, { sourceLayerRequired: !(exportVersion === 3 && action.kind === "navigate") });
     if (seenActionIds.has(item.id)) fail("duplicate_action_id", actionPath, "An action appears more than once in one layer.");
     seenActionIds.add(item.id);
     if (!memberNodeSet.has(item.sourceNodeId)) fail("action_source_outside_layer", `${actionPath}.sourceNodeId`, "An action source must be a member of its layer.");
+    // Completion-scoped node/layer keys can repeat in a V3 current closure.
+    // Compiled controls still resolve one exact node plus action client key.
+    if (exportVersion === 3 && item.clientKey != null) {
+      const key = JSON.stringify([item.sourceNodeId, item.clientKey]);
+      const existing = allDefinitions.actionClientKeys.get(key);
+      if (existing !== undefined && existing !== item.id) fail("duplicate_action_client_key", actionPath, "An action key must identify one action for its exact source node.");
+      allDefinitions.actionClientKeys.set(key, item.id);
+    }
     const previous = allDefinitions.actions.get(item.id);
     const fingerprint = stableJson(item);
     if (previous && previous !== fingerprint) fail("action_identity_conflict", `${actionPath}.id`, "A portable action ID has conflicting definitions.");
@@ -446,19 +460,19 @@ function validateLayer(resolved, path, allDefinitions) {
   return { layerId, value, actions };
 }
 
-function validateAcceptedView(view, path) {
+function validateAcceptedView(view, path, exportVersion) {
   const value = requireRecord(view, path);
   const interactionNodeId = requirePortableId(own(value, "interactionNodeId", `${path}.interactionNodeId`), "node", `${path}.interactionNodeId`);
   const rootLayerId = requirePortableId(own(value, "rootLayerId", `${path}.rootLayerId`), "layer", `${path}.rootLayerId`);
   const rootAction = validateAction(own(value, "rootAction", `${path}.rootAction`), `${path}.rootAction`);
-  if (rootAction.sourceNodeId !== interactionNodeId || rootAction.sourceLayerId != null || rootAction.kind !== "navigate" || rootAction.relation !== "expand" || rootAction.targetLayerId !== rootLayerId) {
+  if (rootAction.convertedFromInvoke === true || rootAction.sourceNodeId !== interactionNodeId || rootAction.sourceLayerId != null || rootAction.kind !== "navigate" || rootAction.relation !== "expand" || rootAction.targetLayerId !== rootLayerId) {
     fail("invalid_root_action", `${path}.rootAction`, "The root action must be an expand from the interaction node to rootLayerId.");
   }
   const layers = requireArray(own(value, "layers", `${path}.layers`), `${path}.layers`);
   if (!layers.length || layers.length > MAX_LAYERS_PER_TURN) fail("layer_count_out_of_bounds", `${path}.layers`, "An accepted view must contain one to 10,000 layers.");
-  const definitions = { nodes: new Map(), edges: new Map(), actions: new Map() };
+  const definitions = { nodes: new Map(), edges: new Map(), actions: new Map(), actionClientKeys: new Map() };
   const layerMap = new Map();
-  const validated = layers.map((resolved, index) => validateLayer(resolved, `${path}.layers[${index}]`, definitions));
+  const validated = layers.map((resolved, index) => validateLayer(resolved, `${path}.layers[${index}]`, definitions, exportVersion));
   validated.forEach(({ layerId, value }) => {
     if (layerMap.has(layerId)) fail("duplicate_layer_id", `${path}.layers`, `Layer ${layerId} appears more than once.`);
     layerMap.set(layerId, value);
@@ -475,12 +489,14 @@ function validateAcceptedView(view, path) {
     const resolved = layerMap.get(layerId);
     for (const action of resolved.actions) {
       if (action.id === rootAction.id) fail("root_action_repeated", `${path}.actions`, "The root action must not appear in a resolved layer.");
-      if (targetRelations.has(action.targetLayerId) && targetRelations.get(action.targetLayerId) !== action.relation) {
+      const rootBacklink = exportVersion === 3 && action.kind === "navigate"
+        && action.targetLayerId === rootLayerId && action.relation === "reference";
+      if (!rootBacklink && targetRelations.has(action.targetLayerId) && targetRelations.get(action.targetLayerId) !== action.relation) {
         fail("mixed_target_relations", `${path}.actions`, "A layer cannot be targeted as both expand and reference.");
       }
       if (action.kind !== "navigate") continue;
       if (!layerMap.has(action.targetLayerId)) fail("navigate_target_unresolved", `${path}.actions`, `Navigate target ${action.targetLayerId} is absent.`);
-      targetRelations.set(action.targetLayerId, action.relation);
+      if (!rootBacklink) targetRelations.set(action.targetLayerId, action.relation);
       pending.push(action.targetLayerId);
       if (action.relation === "expand") {
         const targets = expandEdges.get(layerId) ?? [];
@@ -595,7 +611,7 @@ function publicTurnRecord(turn) {
   };
 }
 
-function validateTurn(turn, path, manifestEntry) {
+function validateTurn(turn, path, manifestEntry, exportVersion) {
   const value = requireRecord(turn, path);
   if (value.recordType !== "turn") fail("record_type_invalid", `${path}.recordType`, "Every record after the header must be a turn.");
   const id = requirePortableId(own(value, "id", `${path}.id`), "turn", `${path}.id`);
@@ -610,16 +626,73 @@ function validateTurn(turn, path, manifestEntry) {
   if (!Object.prototype.hasOwnProperty.call(value, "acceptedView")) fail("field_missing", `${path}.acceptedView`, "Every V1 turn must declare acceptedView.");
   if (status === "accepted" && !value.acceptedView) fail("accepted_view_missing", `${path}.acceptedView`, "An accepted turn must include its immutable accepted view.");
   if (status !== "accepted" && value.acceptedView != null) fail("accepted_view_unexpected", `${path}.acceptedView`, "Only accepted turns may include an accepted view.");
-  if (value.contexts != null) requireArray(value.contexts, `${path}.contexts`);
+  if (value.contexts != null) {
+    requireArray(value.contexts, `${path}.contexts`).forEach((context, index) => {
+      const contextPath = `${path}.contexts[${index}]`;
+      requireRecord(context, contextPath);
+      requireRecord(context.source, `${contextPath}.source`);
+      requireRecord(context.target, `${contextPath}.target`);
+      requirePortableId(context.id, "action", `${contextPath}.id`);
+      requirePortableId(context.target.id, "node", `${contextPath}.target.id`);
+      requirePortableId(context.source.interactionNodeId, "node", `${contextPath}.source.interactionNodeId`);
+      requirePortableId(context.source.layerId, "layer", `${contextPath}.source.layerId`);
+      if (context.source.ownerTurnId != null) {
+        requirePortableId(context.source.ownerTurnId, "turn", `${contextPath}.source.ownerTurnId`);
+        if (exportVersion !== 3) fail("context_owner_invalid", contextPath, "Portable context ownership requires V3.");
+      }
+    });
+  }
   if (value.submittedInputs != null) requireArray(value.submittedInputs, `${path}.submittedInputs`);
   if (status === "accepted") {
-    const view = validateAcceptedView(value.acceptedView, `${path}.acceptedView`);
+    const view = validateAcceptedView(value.acceptedView, `${path}.acceptedView`, exportVersion);
     if (value.interactionNodeId != null && value.interactionNodeId !== view.interactionNodeId) {
       fail("interaction_node_mismatch", `${path}.interactionNodeId`, "Turn interactionNodeId must match acceptedView.interactionNodeId.");
     }
     value.interactionNodeId ??= view.interactionNodeId;
   }
   return value;
+}
+
+// Only portable, included provenance becomes navigator edges. Layer occurrence
+// and chronological order never establish ownership.
+function projectInteractionGraphs(interactions, turns, layersByTurn, exportVersion) {
+  const byId = new Map(interactions.map(interaction => [interaction.id, interaction]));
+  const owners = new Map();
+  for (const turn of turns) {
+    const sources = new Map();
+    let complete = true;
+    const group = (owner) => {
+      if (!sources.has(owner.id)) sources.set(owner.id, {
+        interactionId: owner.id, threadId: owner.threadId, graphNodeId: owner.graphNodeId,
+        text: owner.text, completionStatus: owner.completionStatus, layers: [], invocationActionId: null,
+      });
+      return sources.get(owner.id);
+    };
+    for (const context of turn.contexts ?? []) {
+      const ownerId = context.source.ownerTurnId;
+      if (ownerId == null) { complete = false; continue; }
+      const owner = byId.get(ownerId);
+      const layer = layersByTurn.get(ownerId)?.get(context.source.layerId);
+      if (exportVersion !== 3 || !owner || owner.sequence >= turn.sequence
+        || !layer?.nodes.some(node => node.id === context.target.id)
+        || (owners.has(context.source.layerId) && owners.get(context.source.layerId) !== ownerId)) {
+        fail("context_owner_invalid", `turn[${turn.sequence - 1}].contexts`, "Context ownership requires one earlier included accepted owner and its exact layer membership.");
+      }
+      owners.set(context.source.layerId, ownerId);
+      const source = group(owner);
+      let entry = source.layers.find(candidate => candidate.layerId === context.source.layerId);
+      if (!entry) { entry = { layerId: context.source.layerId, nodeIds: [] }; source.layers.push(entry); }
+      if (!entry.nodeIds.includes(context.target.id)) entry.nodeIds.push(context.target.id);
+    }
+    const origin = validateOrigin(turn.origin, `turn[${turn.sequence - 1}].origin`);
+    if (origin.kind === "action") {
+      const source = byId.get(origin.sourceTurnId);
+      // Accepted origins were checked against exact source actions above.
+      if (source) group(source).invocationActionId = origin.sourceActionId;
+      else complete = false;
+    }
+    if (byId.has(turn.id)) byId.get(turn.id).interactionGraph = { enabled: true, complete, sources: [...sources.values()] };
+  }
 }
 
 function publicState(snapshot) {
@@ -668,7 +741,7 @@ function publicState(snapshot) {
 }
 
 /**
- * Parse the Rust conversation-export V1/V2 JSONL contract and return the safe
+ * Parse the Rust conversation-export V1/V2/V3 JSONL contract and return the safe
  * read model consumed by the public viewer. Non-accepted turns remain in
  * `turns` for diagnostics but are never placed in `interactions`.
  */
@@ -681,7 +754,7 @@ export function parseConversationExportSnapshot(input) {
   }
   const contentRecords = [];
   let turnOffset = 1;
-  if (header.exportVersion === 2) {
+  if (header.exportVersion >= 2) {
     while (records[turnOffset]?.recordType === "visualAssetContent") {
       contentRecords.push(decodeAssetContent(records[turnOffset], `asset[${contentRecords.length}]`));
       turnOffset += 1;
@@ -690,7 +763,10 @@ export function parseConversationExportSnapshot(input) {
   if (records.length - turnOffset !== manifest.length) {
     fail("turn_count_mismatch", "records", "Turn records must match the header manifest exactly.");
   }
-  const turns = records.slice(turnOffset).map((turn, index) => validateTurn(turn, `turn[${index}]`, manifest[index]));
+  const turns = records.slice(turnOffset).map((turn, index) => validateTurn(turn, `turn[${index}]`, manifest[index], header.exportVersion));
+  if (header.exportVersion !== 3 && turns.some(turn => turn.acceptedView && [turn.acceptedView.rootAction, ...turn.acceptedView.layers.flatMap(layer => layer.actions)].some(action => action.convertedFromInvoke === true))) {
+    fail("converted_invoke_version", "turns", "Converted invoke provenance requires export V3.");
+  }
   const contentByDigest = new Map();
   for (const content of contentRecords) {
     if (contentByDigest.has(content.digestSha256)) fail("asset_digest_duplicate", "assets", "Visual asset digest appears more than once.");
@@ -704,18 +780,54 @@ export function parseConversationExportSnapshot(input) {
   const layerKeys = new Map(acceptedTurns.flatMap((turn) => turn.acceptedView.layers.map(({ layer }) => [
     layer.id, layer.clientKey,
   ])));
+  // Check both declared origins and included converted destinations. Reused source
+  // nodes may present the same action in several turns; do not infer its owner from
+  // the first occurrence or require an external result turn to be included.
+  const convertedTargets = new Map();
+  for (const turn of turns) {
+    const origin = validateOrigin(turn.origin, `turn[${turn.sequence - 1}].origin`);
+    const source = origin.kind === "action" ? acceptedById.get(origin.sourceTurnId) : null;
+    const action = source?.acceptedView.layers.flatMap(layer => layer.actions).find(candidate => candidate.id === origin.sourceActionId);
+    const priorConverted = convertedTargets.get(turn.acceptedView?.rootLayerId);
+    if (priorConverted && (origin.kind !== "action" || !priorConverted.has(origin.sourceActionId)
+      || source?.sequence >= turn.sequence || action?.convertedFromInvoke !== true
+      || action.targetLayerId !== turn.acceptedView.rootLayerId)) {
+      fail("invoke_origin_invalid", `turn[${turn.sequence - 1}].origin`, "Included converted results must retain their source action origin.");
+    }
+    if (action?.convertedFromInvoke === true && (source.sequence >= turn.sequence || turn.completion.status !== "accepted" || action.targetLayerId !== turn.acceptedView?.rootLayerId)) {
+      fail("invoke_origin_invalid", `turn[${turn.sequence - 1}].origin`, "Converted invoke origins require their exact accepted destination.");
+    }
+    for (const candidate of turn.acceptedView?.layers.flatMap(layer => layer.actions) ?? []) {
+      if (candidate.convertedFromInvoke !== true) continue;
+      if (!convertedTargets.has(candidate.targetLayerId)) convertedTargets.set(candidate.targetLayerId, new Set());
+      convertedTargets.get(candidate.targetLayerId).add(candidate.id);
+    }
+  }
+  // A converted action may be presented after its included result. Validate the
+  // complete inventory for both uniqueness and the declared action identity.
+  for (const turn of acceptedTurns) {
+    const actions = convertedTargets.get(turn.acceptedView.rootLayerId);
+    if (!actions) continue;
+    const origin = validateOrigin(turn.origin, `turn[${turn.sequence - 1}].origin`);
+    if (actions.size !== 1 || origin.kind !== "action" || !actions.has(origin.sourceActionId)) {
+      fail("invoke_origin_invalid", `turn[${turn.sequence - 1}].origin`, "An included converted result requires one unambiguous source action origin.");
+    }
+  }
   const invokeTargets = new Map();
+  const invokeDestinationTurns = new Map();
   for (const turn of acceptedTurns) {
     const origin = validateOrigin(turn.origin, `turn[${turn.sequence - 1}].origin`);
     if (origin.kind !== "action") continue;
     const source = acceptedById.get(origin.sourceTurnId);
     const action = source?.acceptedView.layers.flatMap((layer) => layer.actions)
       .find((candidate) => candidate.id === origin.sourceActionId);
-    if (!source || source.sequence >= turn.sequence || action?.kind !== "invoke"
+    if (!source || source.sequence >= turn.sequence || (action?.kind !== "invoke" && action?.convertedFromInvoke !== true)
+      || (action?.convertedFromInvoke === true && action.targetLayerId !== turn.acceptedView.rootLayerId)
       || invokeTargets.has(action.id)) {
       fail("invoke_origin_invalid", `turn[${turn.sequence - 1}].origin`, "Accepted invoke results require one earlier accepted source action.");
     }
     invokeTargets.set(action.id, turn.acceptedView.rootLayerId);
+    invokeDestinationTurns.set(action.id, turn.id);
   }
   const layersByTurn = new Map(acceptedTurns.map((turn) => [turn.id, new Map(
     turn.acceptedView.layers.map((resolved) => [
@@ -723,6 +835,7 @@ export function parseConversationExportSnapshot(input) {
     ]),
   )]));
   const interactions = acceptedTurns.map((turn) => interactionFromTurn(turn, threadId, layersByTurn.get(turn.id)));
+  projectInteractionGraphs(interactions, turns, layersByTurn, header.exportVersion);
   const projectName = conversation.projectName ?? null;
   const projectId = projectName ? "export:project" : null;
   const thread = {
@@ -750,6 +863,9 @@ export function parseConversationExportSnapshot(input) {
     state: null,
     layerFor(turnId, layerId) {
       return layersByTurn.get(String(turnId))?.get(String(layerId)) ?? null;
+    },
+    invokeDestinationTurnId(actionId) {
+      return invokeDestinationTurns.get(actionId) ?? null;
     },
     turnContainingLayer(layerId) {
       return interactions.find((interaction) => layersByTurn.get(String(interaction.id))?.has(String(layerId))) ?? null;

@@ -400,6 +400,7 @@ mod tests {
         target_layer_id: Option<&str>,
     ) -> ExportAction {
         ExportAction {
+            converted_from_invoke: false,
             id: id.into(),
             client_key: None,
             source_node_id: source_node_id.into(),
@@ -1146,6 +1147,7 @@ mod tests {
             id: id.into(),
             target: target.clone(),
             source: ExportContextSource {
+                owner_turn_id: None,
                 interaction_node_id: "node:interaction-1".into(),
                 layer_id: "layer:source".into(),
             },

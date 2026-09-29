@@ -69,32 +69,73 @@ pub(super) fn project_share_bindings(
         // All persisted packages were validated at acceptance. Validate again before
         // re-sealing any derived bytes so corrupt input cannot gain a valid digest.
         let derived = map_authored_detail_actions(package, |reference, kind| {
-            if reference.pointer("/sourceNode/clientKey").and_then(Value::as_str) != node.client_key.as_deref()
+            if reference
+                .pointer("/sourceNode/clientKey")
+                .and_then(Value::as_str)
+                != node.client_key.as_deref()
                 || node.client_key.is_none()
-            { return Err(invalid_binding()); }
-            let candidates = by_node.get(&node.id).into_iter().flatten().filter(|action| {
-                action.state == RecordState::Accepted
-                    && action.client_key.as_deref() == reference.get("clientKey").and_then(Value::as_str)
-                    && action.client_key.is_some()
-                    && action.source_layer_id.is_some()
-                    && action.source_layer_client_key.is_some()
-                    && action.source_layer_client_key.as_deref() == reference.pointer("/sourceLayer/clientKey").and_then(Value::as_str)
-            }).collect::<Vec<_>>();
-            let [action] = candidates.as_slice() else { return Err(invalid_binding()); };
+            {
+                return Err(invalid_binding());
+            }
+            let candidates = by_node
+                .get(&node.id)
+                .into_iter()
+                .flatten()
+                .filter(|action| {
+                    action.state == RecordState::Accepted
+                        && action.client_key.as_deref()
+                            == reference.get("clientKey").and_then(Value::as_str)
+                        && action.client_key.is_some()
+                        && match action.source_layer_id {
+                            Some(_) => {
+                                action.source_layer_client_key.is_some()
+                                    && action.source_layer_client_key.as_deref()
+                                        == reference
+                                            .pointer("/sourceLayer/clientKey")
+                                            .and_then(Value::as_str)
+                            }
+                            None => {
+                                action.kind == ActionKind::Navigate
+                                    && reference.get("sourceLayer").is_none()
+                            }
+                        }
+                })
+                .collect::<Vec<_>>();
+            let [action] = candidates.as_slice() else {
+                return Err(invalid_binding());
+            };
             let kind_matches = match kind {
-                "expand" => action.kind == ActionKind::Navigate && action.relation == Some(NavigateRelation::Expand),
-                "reference" => action.kind == ActionKind::Navigate && action.relation == Some(NavigateRelation::Reference),
-                "invoke" => action.kind == ActionKind::Invoke,
+                "expand" => {
+                    action.kind == ActionKind::Navigate
+                        && action.relation == Some(NavigateRelation::Expand)
+                }
+                "reference" => {
+                    action.kind == ActionKind::Navigate
+                        && action.relation == Some(NavigateRelation::Reference)
+                }
+                "invoke" => {
+                    action.kind == ActionKind::Invoke
+                        || (is_converted_invoke(action)
+                            && action.kind == ActionKind::Navigate
+                            && action.relation == Some(NavigateRelation::Expand)
+                            && action.target_layer_id.is_some())
+                }
                 "input" => action.kind == ActionKind::Input,
                 _ => false,
             };
-            if !kind_matches { return Err(invalid_binding()); }
-            Ok(json!({
+            if !kind_matches {
+                return Err(invalid_binding());
+            }
+            let mut binding = json!({
                 "clientKey": ids.action(action.id.value()),
-                "sourceNode": {"clientKey": ids.node(node.id.value())},
-                "sourceLayer": {"clientKey": ids.layer(action.source_layer_id.expect("validated source").value())}
-            }))
-        }).map_err(|error| ConversationExportBuildError::Invalid(error.to_string()))?;
+                "sourceNode": {"clientKey": ids.node(node.id.value())}
+            });
+            if let Some(source_layer) = action.source_layer_id {
+                binding["sourceLayer"] = json!({"clientKey": ids.layer(source_layer.value())});
+            }
+            Ok(binding)
+        })
+        .map_err(|error| ConversationExportBuildError::Invalid(error.to_string()))?;
         node.authored_detail = Some(derived);
     }
     Ok(())
@@ -206,6 +247,106 @@ mod tests {
                 .unwrap()["mounts"][0]["capability"]["action"]["clientKey"],
             "/Users/private/action"
         );
+    }
+
+    #[test]
+    fn converted_invoke_keeps_its_compiled_mount_with_public_aliases() {
+        for imported_marker in [false, true] {
+            let mut closure = fixture(0);
+            let action = &mut closure.layers[0].actions[0];
+            if imported_marker {
+                action.converted_from_invoke = true;
+            } else {
+                action.resolved_invoke_interaction_id = relayer_graph_core::NodeId::new(99);
+            }
+            let original = closure.layers[0].nodes[0].authored_detail.as_mut().unwrap();
+            original["mounts"][0]["capability"]["kind"] = json!("invoke");
+            seal(original);
+            let original = original.clone();
+            let mut ids = PortableIds::default();
+            project_share_bindings(std::slice::from_mut(&mut closure), &mut ids).unwrap();
+            let view = super::super::export_view(
+                &closure,
+                &mut ids,
+                &ProjectPathRedactor::for_share(None),
+            )
+            .unwrap();
+            let layer = &view.layers[0];
+            let package = layer.nodes[0]
+                .authored_detail
+                .as_ref()
+                .expect("converted invoke card survives");
+            assert_eq!(package["components"], original["components"]);
+            assert_eq!(package["mounts"][0]["capability"]["kind"], "invoke");
+            assert_eq!(
+                package["mounts"][0]["capability"]["action"],
+                json!({
+                    "clientKey":layer.actions[0].id,"sourceNode":{"clientKey":layer.nodes[0].id},"sourceLayer":{"clientKey":layer.layer.id}
+                })
+            );
+            assert!(layer.actions[0].converted_from_invoke);
+            assert_eq!(layer.actions[0].kind, ExportActionKind::Navigate);
+            assert_eq!(
+                layer.actions[0].relation,
+                Some(ExportNavigateRelation::Expand)
+            );
+            assert!(layer.actions[0].interaction_text.is_none());
+            assert!(
+                !serde_json::to_string(&view)
+                    .unwrap()
+                    .contains("/Users/private")
+            );
+            assert_ne!(package["integritySha256"], original["integritySha256"]);
+            map_authored_detail_actions(package, |reference, _| Ok(reference.clone())).unwrap();
+        }
+    }
+
+    #[test]
+    fn node_owned_reference_keeps_layerless_binding_and_valid_integrity() {
+        let mut closure = fixture(0);
+        closure.has_persistent_mutations = true;
+        let action = &mut closure.layers[0].actions[0];
+        action.relation = Some(NavigateRelation::Reference);
+        action.source_layer_id = None;
+        action.source_layer_client_key = None;
+        let original = closure.layers[0].nodes[0].authored_detail.as_mut().unwrap();
+        original["mounts"][0]["capability"]["kind"] = json!("reference");
+        original["mounts"][0]["capability"]["action"]
+            .as_object_mut()
+            .unwrap()
+            .remove("sourceLayer");
+        seal(original);
+        let original = original.clone();
+        let mut ids = PortableIds::default();
+        project_share_bindings(std::slice::from_mut(&mut closure), &mut ids).unwrap();
+        let view =
+            super::super::export_view(&closure, &mut ids, &ProjectPathRedactor::for_share(None))
+                .unwrap();
+        let layer = &view.layers[0];
+        let package = layer.nodes[0]
+            .authored_detail
+            .as_ref()
+            .expect("node-owned reference card survives");
+        assert_eq!(package["components"], original["components"]);
+        assert_eq!(package["mounts"][0]["capability"]["kind"], "reference");
+        assert_eq!(
+            package["mounts"][0]["capability"]["action"],
+            json!({
+                "clientKey":layer.actions[0].id,"sourceNode":{"clientKey":layer.nodes[0].id}
+            })
+        );
+        assert!(layer.actions[0].source_layer_id.is_none());
+        assert_eq!(
+            layer.actions[0].relation,
+            Some(ExportNavigateRelation::Reference)
+        );
+        assert!(
+            !serde_json::to_string(&view)
+                .unwrap()
+                .contains("/Users/private")
+        );
+        assert_ne!(package["integritySha256"], original["integritySha256"]);
+        map_authored_detail_actions(package, |reference, _| Ok(reference.clone())).unwrap();
     }
 
     #[test]

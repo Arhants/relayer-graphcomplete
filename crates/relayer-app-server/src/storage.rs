@@ -107,6 +107,7 @@ pub(crate) struct ConversationImportRecord {
 }
 
 pub(crate) struct ImportedTurnExportRecord {
+    pub(crate) export_version: u32,
     pub(crate) interaction_id: crate::product::InteractionId,
     pub(crate) source_turn_id: String,
     pub(crate) origin: ExportTurnOrigin,

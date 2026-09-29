@@ -296,6 +296,11 @@ function runtimeUpdated(harnessRuntimeUpdated, configuration) {
   }
 }
 
+// Desktop owns rollout policy; generic runtime callers retain explicit opt-in.
+export function createDesktopGraphRuntime(options) {
+  return new GraphCompleteRuntimeService({ ...options, interactionPermissions: true });
+}
+
 export class GraphCompleteRuntimeService {
   constructor({
     userDataDirectory,

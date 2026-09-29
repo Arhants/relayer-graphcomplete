@@ -1,0 +1,159 @@
+{
+  "sourceManifestSha256": "58ac99645747f9d0bb8c47a131f9d79291e74e07952217c28cbb4b4f5e73d419",
+  "fullCheck": {
+    "passed": true,
+    "vitestPassed": 3225,
+    "vitestSkipped": 3,
+    "filesPassed": 240,
+    "filesSkipped": 1,
+    "secretBoundaryPassed": 2,
+    "pythonPassed": 60,
+    "subsequentFixtureOnlyDelta": "Context driver requests focus after workspace loading; standalone rerun passed."
+  },
+  "buildPassed": true,
+  "nativeDefault": {
+    "typedPermissions": true,
+    "passed": true,
+    "nativeKeyboardVerified": true,
+    "ancillaryFailures": [],
+    "inferenceCalls": 0
+  },
+  "nativeOff": {
+    "typedPermissions": false,
+    "passed": true,
+    "nativeKeyboardVerified": true,
+    "ancillaryFailures": [],
+    "inferenceCalls": 0
+  },
+  "contextPassed": true,
+  "projectRestart": {
+    "passed": true,
+    "restartPersistence": true,
+    "layerSelectionRestartPersistence": true
+  },
+  "compiledEvalPassed": 4,
+  "primeVisualPassed": 2,
+  "publicCapturesPassed": 4,
+  "joinedServiceCommit": "fddecf52b03e542659cd74b887d1b77503de185c",
+  "livePublication": "not run",
+  "signedRelease": "not run",
+  "priorQualificationSourceCommit": "dbf704e55d5adc81e4145937cac7bc3fef943360",
+  "batchTimeoutFollowup": {
+    "checkpoint": "AN-004",
+    "red": "Authenticated two-root HTTP request timed out after 5.01 seconds before fix",
+    "green": "Same request completed; all missing-slot and mismatch assertions passed in 5.52 seconds",
+    "reviewer": "navigator_standards",
+    "runtimeSha256": "b30c737cd427f3028ce99f89cea5f262256922b7af18d3a8c61067628c353fde",
+    "reviewVerdict": "PASS, no unresolved findings",
+    "fullCheck": "passed: Rust, Clippy, crash reconciliation, 3225 Vitest, 2 secret-boundary, 60 Python, lints",
+    "build": "passed"
+  },
+  "convertedNavigationFollowup": {
+    "priorCommit": "5c4c48102b4b5edfc18ea0ac57f8c09a1badc749",
+    "checkpoints": [
+      "AN-003",
+      "AN-004"
+    ],
+    "publicViewerTestsPassed": 47,
+    "importedNavigationFocusedTestsPassed": 56,
+    "importedModes": [
+      "interactive",
+      "review with read-only cookie"
+    ],
+    "importedControls": [
+      "compiled invoke binding",
+      "ordinary action pill"
+    ],
+    "publicCaptureSelectedTurnAndPromptPassed": 4,
+    "fullCheck": "passed: Rust/Clippy/crash, 3226 Vitest, 2 secret-boundary, 60 Python and lints",
+    "build": "passed",
+    "nativeDefault": "passed: typed permissions, native keyboard, Product/Eval/reopened controls, zero ancillary failures, zero inference",
+    "compiledEvalPassed": 4,
+    "primeVisualPassed": 2,
+    "joinedCompanionService": "passed against fddecf52b03e542659cd74b887d1b77503de185c",
+    "finalPublicCaptureRerunPassed": 4,
+    "independentReview": {
+      "reviewer": "navigator_standards",
+      "manifestSha256": "22946def8ec75b681607f723b882c59f95dcfcd6b96c33010b2e3825878ee29f",
+      "files": 56,
+      "verdict": "PASS; no unresolved findings"
+    }
+  },
+  "publicNavigatorFollowup": {
+    "priorCommit": "1e28adf86c845959656d5320f95ebf5f327b5798",
+    "decision": "Public shares use interaction graph instead of turn dial",
+    "checkpoints": [
+      "AN-003",
+      "AN-004",
+      "AN-005",
+      "AN-006"
+    ],
+    "sourceFiles": 59,
+    "publicTestsPassed": 56,
+    "rustContractTestsPassed": 30,
+    "exporterTestsPassed": 35,
+    "nativeGraphThemeViewportChecksPassed": 4,
+    "legacyPublicCaptureChecksPassed": 3,
+    "assetPolicyRegression": "Owner-only V3 is selected before asset collection and rejects missing metadata; legacy fallback retained",
+    "fullCheck": "passed: Rust/Clippy/crash, 3235 Vitest, 2 secret-boundary, 60 Python and lints",
+    "build": "passed",
+    "finalJoinedRerun": "passed against service fddecf52b03e542659cd74b887d1b77503de185c",
+    "independentReview": {
+      "reviewer": "navigator_standards",
+      "manifestSha256": "9e3b71804646900ff22b69af4342f0b748bf77ef636cd63decd038ad85102477",
+      "files": 59,
+      "verdict": "PASS; no unresolved findings"
+    },
+    "compiledEvalPassed": 4,
+    "primeVisualPassed": 2
+  },
+  "evidenceScope": "Top-level pass fields retain historical rollout results. Named followups identify subsequent exact source and execution; prior native evidence is not recertified by source review.",
+  "reviewHardening": {
+    "sourceFiles": 61,
+    "sourceManifestSha256": "58ac99645747f9d0bb8c47a131f9d79291e74e07952217c28cbb4b4f5e73d419",
+    "checkpoints": [
+      "AN-001",
+      "AN-003",
+      "AN-004",
+      "IP-003"
+    ],
+    "focusedPublicTestsPassed": 58,
+    "builderRecaptureBothExportModesPassed": true,
+    "fullCheck": {
+      "passed": true,
+      "vitestPassed": 3237,
+      "vitestSkipped": 3,
+      "filesPassed": 240,
+      "filesSkipped": 1,
+      "secretBoundaryPassed": 2,
+      "pythonPassed": 60,
+      "rustClippyCrashAndLints": "passed"
+    },
+    "build": "passed",
+    "independentReviews": [
+      {
+        "reviewer": "portable_import",
+        "scope": "Asset revision pins, transactional reads, full retry, privacy/preflight, verification mapping",
+        "scopeDigest": "df84f4400337099cc7b0632a7f1ffae5c3f10b6292bb0ee057a278d5569fa832",
+        "verdict": "PASS; no unresolved findings"
+      },
+      {
+        "reviewer": "navigator_review",
+        "scope": "Provenance markers, migration, visibility, targeting, binding and cleanup; excludes own origin implementation",
+        "scopeDigest": "2ff0913f19131fe65ea4ccce0c729f3c3bddf3585e73c9dd9a2a212e7b00d30e",
+        "verdict": "PASS; no unresolved findings"
+      },
+      {
+        "reviewer": "navigator_standards",
+        "scope": "Independent reverse origins and cumulative mapping; asset implementation separately reviewed",
+        "manifestSha256": "58ac99645747f9d0bb8c47a131f9d79291e74e07952217c28cbb4b4f5e73d419",
+        "verdict": "PASS; no unresolved findings"
+      }
+    ],
+    "joinedProductEvalServiceTestsPassed": 3,
+    "joinedServiceCommit": "fddecf52b03e542659cd74b887d1b77503de185c",
+    "compiledEvalTestsPassed": 4,
+    "publicCapturesPassed": 4,
+    "inferenceCalls": 0
+  }
+}

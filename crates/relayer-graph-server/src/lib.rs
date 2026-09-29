@@ -265,6 +265,7 @@ pub fn router(state: ServerState) -> Router {
             "/api/control/conversation-import-stages/{import_id}/finalize",
             post(finalize_imported_conversation),
         )
+        .route("/api/control/accepted-closures", post(accepted_closures))
         .route(
             "/api/control/interactions/{id}/accepted-closure",
             get(accepted_closure),
@@ -894,6 +895,34 @@ async fn remove_imported_conversation(
     Ok(Json(json!({"removed": true})))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AcceptedClosuresRequest {
+    interaction_node_ids: Vec<NodeId>,
+}
+
+async fn accepted_closures(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Json(input): Json<AcceptedClosuresRequest>,
+) -> Result<Json<Value>, ApiError> {
+    require_bearer(&headers, &state.control_token)?;
+    // Matches the portable conversation's maximum turn count.
+    if input.interaction_node_ids.len() > 10_000 {
+        return Err(ApiError(
+            StatusCode::BAD_REQUEST,
+            json!({"error": {
+                "code": "too_many_interactions", "message": "At most 10000 interaction roots may be read together."
+            }}),
+        ));
+    }
+    let closures = state
+        .graph
+        .accepted_graph_closures(&input.interaction_node_ids)
+        .await?;
+    Ok(Json(json!({"closures": closures})))
+}
+
 async fn accepted_closure(
     State(state): State<ServerState>,
     headers: HeaderMap,
@@ -912,6 +941,7 @@ async fn accepted_closure(
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DetailAssetReadQuery {
+    expected_revision: Option<u64>,
     #[serde(default)]
     metadata_only: bool,
 }
@@ -927,7 +957,7 @@ async fn control_detail_asset(
     if query.metadata_only {
         let asset = state
             .graph
-            .accepted_detail_asset_metadata(node_id, &asset_id)
+            .accepted_detail_asset_metadata_at_revision(node_id, &asset_id, query.expected_revision)
             .await?;
         return Ok(Json(json!({
             "assetId":asset.asset_id,"digestSha256":asset.digest_sha256,
@@ -937,7 +967,7 @@ async fn control_detail_asset(
     }
     let asset = state
         .graph
-        .accepted_detail_asset(node_id, &asset_id)
+        .accepted_detail_asset_at_revision(node_id, &asset_id, query.expected_revision)
         .await?;
     Ok(Json(json!({
         "assetId": asset.asset_id,
@@ -1096,9 +1126,8 @@ async fn control_interaction_features(
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
     require_bearer(&headers, &state.control_token)?;
-    Ok(Json(
-        json!({"interactionGraph":state.graph.interaction_permissions_enabled().await?}),
-    ))
+    // Read-only provenance navigation is independent of attached-node mutation authority.
+    Ok(Json(json!({"interactionGraph": true})))
 }
 
 async fn control_temporal_features(
