@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { request } from "node:http";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -71,9 +72,19 @@ describe("desktop share preview capture", () => {
       }
       async loadURL(url) {
         const base = url.replace(/capture$/, "");
-        for (const path of ["styles.css", "design/design.css", "design/fonts/figtree/figtree-latin-wght-normal.woff2", "../package.json"]) {
+        for (const path of ["styles.css", "design/design.css", "design/fonts/figtree/figtree-latin-wght-normal.woff2"]) {
           const response = await fetch(base + path);
           served[path] = [response.status, response.headers.get("content-type")];
+        }
+        // Raw paths, so the server's own traversal guards see the dot segments (fetch would normalise them).
+        const { port, pathname } = new URL(base);
+        for (const path of ["design/../../package.json", "design/..%2f..%2fpackage.json"]) {
+          served[path] = await new Promise((resolve, reject) => {
+            request({ host: "127.0.0.1", port, path: pathname + path }, (response) => {
+              response.resume();
+              resolve([response.statusCode, response.headers["content-type"] ?? null]);
+            }).on("error", reject).end();
+          });
         }
       }
       isDestroyed() { return false; }
@@ -95,7 +106,8 @@ describe("desktop share preview capture", () => {
       "styles.css": [200, "text/css"],
       "design/design.css": [200, "text/css"],
       "design/fonts/figtree/figtree-latin-wght-normal.woff2": [200, "font/woff2"],
-      "../package.json": [404, null],
+      "design/../../package.json": [404, null],
+      "design/..%2f..%2fpackage.json": [404, null],
     });
   });
 

@@ -60,6 +60,9 @@ describe("Sticker structure", () => {
     }
     expect(svg).toContain(`font-family="Bricolage Grotesque,-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"`);
     expect([...svg.matchAll(/#[0-9A-Fa-f]{6}/g)].every(([colour]) => JSON.stringify(config.palette).includes(colour))).toBe(true);
+    const aliased = structuredClone(config);
+    aliased.palette.roles["accent-text"].dark = "var(--accent-solid)";
+    expect(shareImageSvg(aliased)).toContain(`fill="${roles["accent-solid"].dark}" font-family`);
   });
 
   it("gives every allowlisted icon exactly one presentation family", () => {

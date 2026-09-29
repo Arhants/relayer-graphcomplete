@@ -51,7 +51,12 @@ export function designCss(config, source, fonts = []) {
 
 // The share link preview (Open Graph) image in the design's dark roles and node families (PD-14).
 export function shareImageSvg(config, fonts = []) {
-  const role = (name) => config.palette.roles[name].dark;
+  // A standalone SVG has no custom properties, so follow var(--role) aliases to their colour.
+  const role = (name) => {
+    const value = config.palette.roles[name].dark;
+    const alias = /^var\(--([a-z0-9-]+)\)$/.exec(value);
+    return alias ? role(alias[1]) : value;
+  };
   const family = (id) => config.palette.families[id].dark;
   const fontFamily = (name) => {
     const font = fonts.find((candidate) => candidate.role === name)?.font;
