@@ -334,6 +334,7 @@ async function openThreadWindow(threadId) {
   window.setSize(1280, 820);
   // Real environment timers are eligible only in a visible, focused workspace.
   window.show();
+  app.focus({ steal: true });
   window.focus();
   await window.loadURL(`${productSession.origin}/?threadId=${encodeURIComponent(threadId)}`);
   await waitFor("production thread workspace", () => evaluate(`(() => (
@@ -716,6 +717,10 @@ async function run() {
   await waitFor("sidebar retry preserves the source draft", () => evaluate(`
     document.querySelector('#contextAnnotationEditor')?.value === ${JSON.stringify(EDITOR_VALUE)}
   `));
+  app.focus({ steal: true });
+  window.focus();
+  window.webContents.focus();
+  await waitFor("focused workspace for native keyboard input", () => evaluate("document.hasFocus()"));
   await evaluate("document.querySelector('#contextAnnotationEditor').focus()");
   window.webContents.sendInputEvent({ type: "keyDown", keyCode: "Tab" });
   window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab" });

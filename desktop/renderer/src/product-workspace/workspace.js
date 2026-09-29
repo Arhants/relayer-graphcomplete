@@ -4294,7 +4294,7 @@ export function createProductWorkspace({
       viewport.append(renderInteractionGraph(graphDocument, graph, interaction?.id, async (node) => {
         if (!await prepareNodeContextSelectionChange()) return;
         closeTurnPopover(); collapseContextPreviews();
-        if (onSelectTurnById) await onSelectTurnById(node.id, { responseRoot: true, threadId: node.threadId });
+        if (onSelectTurnById) await onSelectTurnById(node.id, { responseRoot: node.completionStatus === "accepted", threadId: node.threadId });
       }));
       $("#turnPopover").replaceChildren(title, viewport);
       if (focusedTurnId !== null) [...$("#turnPopover").querySelectorAll("[data-turn-id]")].find((row) => row.dataset.turnId === focusedTurnId)?.focus({ preventScroll: true });

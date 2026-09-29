@@ -41,14 +41,14 @@ reuse of a whole-runtime bundle as current binaries. No tests are cached.
 
 ## Actual results
 
-Final `npm run check` passed on the manifested source: Rust formatting, Clippy,
+Initial `npm run check` passed at `caf53d45`: Rust formatting, Clippy,
 workspace/default and crash-reconciliation suites; package builds and type checks;
 238 Vitest files passed and one skipped (3,171 tests passed, three skipped);
 both secret-boundary tests; all 60 Python tests; receipt/contract and PRD lints.
 The receipt lint reports upstream artifacts NO-GO; it does not qualify an upstream
 artifact or a desktop release. Earlier failed attempts remain recorded below.
 
-Completed observations:
+Initial observations at `caf53d45`:
 
 - `npm run build`: passed.
 - Real feature-route regression: reproduced `false` versus expected `true`
@@ -84,14 +84,16 @@ acceptance evidence.
 ## Independent source review
 
 `/root/navigator_review` (Spec/authority) and `/root/navigator_standards`
-(Standards/scope) each verified all 12 hashes in `source-manifest.json`, SHA-256
-`5fae12e3d1204c13930dad3ab9c88701802f3b0c8d15ad19e2fa4cc4a099326c`.
+(Standards/scope) each verified all 15 hashes in `source-manifest.json`, SHA-256
+`d1d5977f649176379efd71e23614f99becfa34b7a5120ca9b02bb8749918b81c`.
 Both passed with no unresolved source findings. Scope: authenticated feature
 advertisement, unchanged mutation authority and fallback, PRD/ADR meaning,
 route regression, imported-thread omission with a retained graph ID, and evidence-driver adaptations. The standalone Ask capture
 initially imported a helper missing from its authenticated bootstrap inventory;
 review caught it, and the helper now remains local to the authenticated script.
-The final reviewed snapshot includes that correction.
+The final reviewed snapshot includes that correction and the local non-accepted
+turn-selection repair below. Both reviewers checked membership discrimination,
+accepted-only response reset, provenance guards and hydration/history tests.
 
 These are static source assertions, not runtime or screenshot certification.
 The evolving evidence ledger is excluded. Changes to any manifested file
@@ -122,3 +124,57 @@ Additional retained observations:
   That isolated result does not erase the first aggregate failure.
 - A final-check attempt stopped at rustfmt's line wrapping in the new imported
   assertion. Formatting was applied before the final full run.
+
+
+## Merge-readiness review repair
+
+GitHub review found that enabling B3 hid the old arrows while non-accepted cards
+were disabled. Local failed, stopped, running and pending turns could not be
+reached by mouse or touch after selecting an accepted response.
+
+The graph now distinguishes actual turns from provenance-only sources by
+membership in the thread's turn collection. Local cards remain selectable;
+only accepted selection requests a response-root reset. Non-accepted source-only
+cards remain disabled, even when they share the current thread ID. PRD §7.2B and
+ADR 0011 clarify preserved local status navigation; mutation authority is unchanged.
+
+Changed seams map to AN-006: workspace DOM tests click each of the four local
+states and retain disabled-source, disclosure, keyboard and accepted-reset checks.
+Controller integration tests observe hydration and Back/Forward without a stale
+accepted response. The four workspace cases failed before the repair; the focused
+three-file portfolio then passed all 55 tests. No test or deadline was removed.
+
+Required final verification: full check and build, layout, native first-message
+in both modes, context lifecycle, project restart and approval. Final execution results are recorded below; source-review assertions above do
+not certify those runs.
+
+
+The final native reruns passed both first-message modes (inner success, keyboard,
+zero inference and no ancillary failures), project and layer-selection restart,
+approval, all 13 layout captures, and context lifecycle. Layout/default screenshots
+retain the prior appearance; the changed availability is exercised by the four
+real workspace DOM cases.
+
+Context initially timed out at native Tab, then the next attempt failed the
+existing focused-window startup assertion. The macOS runner now activates the
+application as well as the window, and verifies actual focus before its native Tab
+event. All original timing, keyboard and editor assertions remain. The repaired
+full journey reports zero paid inference calls. Both source reviewers renewed
+their assertions for this fixture update.
+
+A merge-readiness aggregate attempt passed 3,177 Vitest tests but failed one Eval
+startup because it could not resolve `@relayer/harness-host`. An overlapping
+`npm run build` cleared package outputs while that test loaded them. Build
+completed successfully; the final full check passed without an overlapping build.
+No assertion or timeout was relaxed. This failed attempt is retained separately
+from the final aggregate result.
+
+
+Final `npm run check` passed on manifest
+`d1d5977f649176379efd71e23614f99becfa34b7a5120ca9b02bb8749918b81c`:
+238 Vitest files passed and one skipped; 3,178 tests passed and three skipped;
+both secret-boundary tests; 60 Python tests; Rust formatting, Clippy, workspace
+and crash-reconciliation suites, builds, type checks, receipt and PRD lints.
+`npm run build` passed on the same source before that final check. The final
+native screenshot was inspected and matches the checked-in visual evidence.
+The source reviews and native results above apply to this manifested source.
