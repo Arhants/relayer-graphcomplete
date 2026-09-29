@@ -181,6 +181,7 @@ export const APPROVED_TELEMETRY_MODULES = Object.freeze({
     "crates/relayer-app-server/src/completion_broker.rs",
     "crates/relayer-app-server/src/conversation_export.rs",
     "crates/relayer-app-server/src/conversation_export_service.rs",
+    "crates/relayer-app-server/src/conversation_export_service/share_bindings.rs",
     "crates/relayer-app-server/src/conversation_import_service.rs",
     "crates/relayer-app-server/src/environment.rs",
     "crates/relayer-app-server/src/lib.rs",

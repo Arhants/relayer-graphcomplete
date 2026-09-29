@@ -551,8 +551,11 @@ state; finalization validates the exact object before publication. Concurrent
 retries of one owner-scoped attempt recover the same immutable result and charge
 the UTC-day quota once.
 
-Public graph records omit harness-authored layer, node, and action client keys;
-portable record IDs retain reference identity without exposing arbitrary key text.
+Public graph records replace harness-authored layer, node, and action keys with
+export-local ID aliases. Compiled detail bindings resolve against exact accepted
+action provenance before Rust derives and validates a public package with those
+aliases and a new integrity digest. Privacy filtering and asset collection consume
+that same derived package. Ordinary export and accepted storage are unchanged.
 Asset collection uses the same rich-detail privacy predicate as node export, so
 omitted detail cannot leave orphan content. The V2 reader permits the canonical
 base64 expansion of an 8 MiB decoded asset while the whole snapshot remains

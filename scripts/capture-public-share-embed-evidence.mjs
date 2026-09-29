@@ -239,13 +239,19 @@ async function main() {
     await run("new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>done(true))))");
     await check("narrowBackFitsVisibleCanvas",`(()=>{const stage=document.querySelector('#graphStage').getBoundingClientRect();return [...document.querySelectorAll('.graph-node')].every(n=>{const r=n.getBoundingClientRect();return r.left>=stage.left && r.right<=stage.right && r.top>=stage.top && r.bottom<=stage.bottom;});})()`);
     await run("document.querySelector('#fitGraph').focus()");
+    await check("keyboardTraversalStartsInsideFrame", "document.activeElement === document.querySelector('#fitGraph')");
+    if (!await window.webContents.mainFrame.executeJavaScript("document.activeElement === document.querySelector('iframe')")) {
+      throw new Error("Keyboard traversal must start inside the first iframe");
+    }
     let exited=false;
+    window.webContents.debugger.attach("1.3");
     for(let i=0;i<35;i++) {
-      window.webContents.sendInputEvent({type:"keyDown",keyCode:"Tab"});
-      window.webContents.sendInputEvent({type:"keyUp",keyCode:"Tab"});
+      await window.webContents.debugger.sendCommand("Input.dispatchKeyEvent", {type:"keyDown",key:"Tab",code:"Tab",windowsVirtualKeyCode:9});
+      await window.webContents.debugger.sendCommand("Input.dispatchKeyEvent", {type:"keyUp",key:"Tab",code:"Tab",windowsVirtualKeyCode:9});
       exited=await window.webContents.mainFrame.executeJavaScript("document.activeElement?.id==='after-first-graph'");
       if(exited) break;
     }
+    window.webContents.debugger.detach();
     if(!exited) throw new Error('Keyboard could not exit iframe');
     assertions.keyboardExitsToArticle=true;
     await capture("mobile-graph");

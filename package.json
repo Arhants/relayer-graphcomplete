@@ -57,6 +57,8 @@
     "evidence:prime-family:packaged": "node scripts/capture-packaged-prime-family-evidence.mjs",
     "evidence:ladybug-index-latency": "node scripts/capture-ladybug-index-latency.mjs",
     "evidence:human-eval-annotations": "npm run build && RELAYER_CAPTURE_HUMAN_ANNOTATION_EVIDENCE=1 electron scripts/capture-human-eval-annotation-evidence.mjs",
+    "evidence:share-action-details": "RELAYER_CAPTURE_SHARE_ACTION_DETAILS=1 electron scripts/capture-share-action-details-evidence.mjs",
+    "review:share-action-details": "node scripts/fixtures/share-action-details.mjs",
     "evidence:public-share-viewer": "RELAYER_CAPTURE_PUBLIC_SHARE_VIEWER_EVIDENCE=1 electron scripts/capture-public-share-viewer-evidence.mjs",
     "evidence:share-publish-restart": "node scripts/test-share-publish-restart.mjs",
     "prebuild:public-share-viewer-artifact": "npm run prepare:renderer",

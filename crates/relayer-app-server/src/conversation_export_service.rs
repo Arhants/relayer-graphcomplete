@@ -1,3 +1,5 @@
+mod share_bindings;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::OnceLock;
 
@@ -460,6 +462,7 @@ pub(crate) async fn build_share_conversation_export(
             })
         })
         .collect::<Result<Vec<_>, ConversationExportBuildError>>()?;
+    share_bindings::project_share_bindings(&mut closures, &mut ids)?;
     let (authored_detail_assets, visual_asset_contents) =
         collect_visual_assets(runtime, closures.iter(), &redactor).await?;
     let header = ConversationExportRecord::Header(Box::new(ConversationExportHeader {
@@ -1603,7 +1606,7 @@ fn export_layer(
                 .map(|id| ids.node(id.value())),
             id: ids.layer(resolved.layer.id.value()),
             client_key: if redactor.is_share() {
-                None
+                Some(ids.layer(resolved.layer.id.value()))
             } else {
                 redactor.optional(resolved.layer.client_key.as_deref())
             },
@@ -1660,7 +1663,7 @@ fn export_node(
     Ok(ExportNode {
         id: ids.node(node.id.value()),
         client_key: if redactor.is_share() {
-            None
+            Some(ids.node(node.id.value()))
         } else {
             redactor.optional(node.client_key.as_deref())
         },
@@ -1695,20 +1698,7 @@ fn authored_detail_omission(
     };
     if contains_private_path {
         Some(ExportAuthoredDetailOmission::PrivatePath)
-    } else if redactor.is_share()
-        && (redactor.contains_sensitive_json(authored_detail)
-            || authored_detail
-                .get("mounts")
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|mounts| {
-                    mounts
-                        .iter()
-                        .any(|mount| mount.pointer("/capability/action").is_some())
-                }))
-    {
-        // Capability action identities are author-chosen private client keys.
-        // The public records omit those keys, so the integrity-bound package
-        // cannot be kept with dangling mounts or rewritten in place.
+    } else if redactor.is_share() && redactor.contains_sensitive_json(authored_detail) {
         Some(ExportAuthoredDetailOmission::SensitiveData)
     } else {
         None
@@ -1787,7 +1777,7 @@ fn export_action(
     Ok(ExportAction {
         id: ids.action(action.id.value()),
         client_key: if redactor.is_share() {
-            None
+            Some(ids.action(action.id.value()))
         } else {
             redactor.optional(action.client_key.as_deref())
         },
@@ -3126,14 +3116,19 @@ mod tests {
             &ProjectPathRedactor::for_share(None),
         )
         .unwrap();
-        assert!(public.root_action.client_key.is_none());
-        assert!(public.layers[0].layer.client_key.is_none());
-        assert!(public.layers[0].nodes[0].client_key.is_none());
-        assert!(
-            !serde_json::to_string(&public)
-                .unwrap()
-                .contains("clientKey")
+        assert_eq!(
+            public.root_action.client_key.as_deref(),
+            Some(public.root_action.id.as_str())
         );
+        assert_eq!(
+            public.layers[0].layer.client_key.as_deref(),
+            Some(public.layers[0].layer.id.as_str())
+        );
+        assert_eq!(
+            public.layers[0].nodes[0].client_key.as_deref(),
+            Some(public.layers[0].nodes[0].id.as_str())
+        );
+        assert!(!serde_json::to_string(&public).unwrap().contains(key));
     }
     use crate::{
         conversation_export::{
@@ -3724,37 +3719,6 @@ mod tests {
             punctuation_redactor.text("a < /opt/secret-**project**@prod/file >"),
             "[project-path]"
         );
-    }
-
-    #[test]
-    fn share_omits_compiled_action_mounts_without_rewriting_private_identity() {
-        let detail = serde_json::json!({
-            "version": 1,
-            "components": [{"id":"summary","order":0,"html":"<button data-gc-capability=\"open\">Open</button>","css":""}],
-            "mounts": [{"id":"open","componentId":"summary","kind":"capability","host":"button",
-                "capability":{"kind":"expand","action":{"clientKey":"expand","sourceNode":{"clientKey":"node"},"sourceLayer":{"clientKey":"layer"}}}}],
-            "assets": [], "integritySha256": "a".repeat(64)
-        });
-        let node = authored_node(detail.clone());
-        let ordinary = export_node(
-            &node,
-            &mut PortableIds::default(),
-            &ProjectPathRedactor::new(None),
-        )
-        .unwrap();
-        assert_eq!(ordinary.authored_detail, Some(detail));
-        let public = export_node(
-            &node,
-            &mut PortableIds::default(),
-            &ProjectPathRedactor::for_share(None),
-        )
-        .unwrap();
-        assert!(public.authored_detail.is_none());
-        assert_eq!(
-            public.authored_detail_omitted,
-            Some(ExportAuthoredDetailOmission::SensitiveData)
-        );
-        assert_eq!(public.detail, "Portable fallback");
     }
 
     #[test]

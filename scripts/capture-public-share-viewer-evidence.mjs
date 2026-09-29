@@ -277,7 +277,7 @@ async function openViewer({ width, height, label, url }) {
     const node = document.querySelector('.graph-node');
     const banner = document.querySelector('.interaction-banner');
     return {
-      downloadCardInsideWorkspace: Boolean(layout && card && card.parentElement === layout),
+      downloadActionInsideHeader: Boolean(layout && card && card.parentElement === layout.querySelector(".thread-header")),
       environmentPanelAbsent: !document.querySelector('.environment-panel'),
       graphNodeRendered: Boolean(node && node.getBoundingClientRect().width > 0),
       interactionBannerRendered: Boolean(banner && banner.getBoundingClientRect().height > 0),
