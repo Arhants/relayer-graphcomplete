@@ -65,6 +65,35 @@ async fn batch_closures_require_control_authority_and_preserve_order_and_missing
         assert_eq!(body["closures"][1], body["closures"][2]);
         assert_eq!(body["closures"].as_array().unwrap().len(), 3);
     }
+    // Revision checks are authenticated and run before missing association reads.
+    for metadata_only in [false, true] {
+        let path = format!(
+            "/api/control/nodes/{}/detail-assets/removed?metadataOnly={metadata_only}&expectedRevision=1",
+            node.id
+        );
+        for token in ["wrong", "control"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::get(&path)
+                        .header("authorization", format!("Bearer {token}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            if token == "wrong" {
+                assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            } else {
+                assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+                let body: Value = serde_json::from_slice(
+                    &to_bytes(response.into_body(), usize::MAX).await.unwrap(),
+                )
+                .unwrap();
+                assert_eq!(body["error"]["code"], "asset_snapshot_changed");
+            }
+        }
+    }
     for ids in [json!([0]), json!([999999]), json!(vec![root.id; 10_001])] {
         let response = app
             .clone()

@@ -141,7 +141,48 @@ fn invocation_matches_snapshot(
     }
 }
 
+// A presentation may change after the coherent graph read. Discard all partial
+// output and retry the entire capture, never just the last asset or one root.
+async fn capture_snapshot_with_retry<T, F, Fut>(
+    mut capture: F,
+) -> Result<T, ConversationExportBuildError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, ConversationExportBuildError>>,
+{
+    for attempt in 0..3 {
+        let result = capture().await;
+        if attempt < 2
+            && matches!(&result, Err(ConversationExportBuildError::Runtime(RuntimeError::Remote { body, .. }))
+            if body.pointer("/error/code").and_then(serde_json::Value::as_str) == Some("asset_snapshot_changed"))
+        {
+            continue;
+        }
+        return result;
+    }
+    unreachable!("bounded snapshot attempts return")
+}
+
 pub(crate) async fn build_conversation_export(
+    product: &ProductService,
+    runtime: &RuntimeClient,
+    thread_id: ThreadId,
+    producer: ExportProducer,
+    exported_at: String,
+) -> Result<Vec<u8>, ConversationExportBuildError> {
+    capture_snapshot_with_retry(|| {
+        build_conversation_export_once(
+            product,
+            runtime,
+            thread_id,
+            producer.clone(),
+            exported_at.clone(),
+        )
+    })
+    .await
+}
+
+async fn build_conversation_export_once(
     product: &ProductService,
     runtime: &RuntimeClient,
     thread_id: ThreadId,
@@ -409,6 +450,27 @@ pub(crate) async fn build_conversation_export(
 /// selected, public metadata exceptions are applied at the header, and the
 /// completion receipt is reduced before bytes are serialized.
 pub(crate) async fn build_share_conversation_export(
+    product: &ProductService,
+    runtime: &RuntimeClient,
+    thread_id: ThreadId,
+    producer: ExportProducer,
+    exported_at: String,
+    share_title: &str,
+) -> Result<Vec<u8>, ConversationExportBuildError> {
+    capture_snapshot_with_retry(|| {
+        build_share_conversation_export_once(
+            product,
+            runtime,
+            thread_id,
+            producer.clone(),
+            exported_at.clone(),
+            share_title,
+        )
+    })
+    .await
+}
+
+async fn build_share_conversation_export_once(
     product: &ProductService,
     runtime: &RuntimeClient,
     thread_id: ThreadId,
@@ -778,6 +840,21 @@ async fn collect_visual_assets_for_snapshot<'a>(
         || closures
             .iter()
             .any(|closure| needs_current_snapshot(closure));
+    let mut revisions = HashMap::new();
+    for closure in &closures {
+        if let Some(pins) = &closure.detail_asset_revisions {
+            for (node, revision) in pins {
+                if revisions
+                    .insert(*node, *revision)
+                    .is_some_and(|prior| prior != *revision)
+                {
+                    return Err(ConversationExportBuildError::Invalid(
+                        "conflicting snapshot asset revisions".into(),
+                    ));
+                }
+            }
+        }
+    }
     let mut associations = HashMap::new();
     let mut visited_nodes = HashSet::new();
     let mut contents = BTreeMap::<String, ExportVisualAssetContent>::new();
@@ -817,8 +894,14 @@ async fn collect_visual_assets_for_snapshot<'a>(
                         "authored detail asset id is invalid".into(),
                     )
                 })?;
+            let expected_revision = revisions.get(&node.id).copied();
+            if expected_revision.is_none() && strict_snapshot {
+                return Err(ConversationExportBuildError::Invalid(
+                    "runtime lacks coherent asset revision pins".into(),
+                ));
+            }
             let value = match runtime
-                .get_detail_asset_metadata(node.id.value(), asset_id)
+                .read_detail_asset(node.id.value(), asset_id, true, expected_revision)
                 .await
             {
                 Ok(value) => value,
@@ -923,7 +1006,9 @@ async fn collect_visual_assets_for_snapshot<'a>(
                         });
                     }
                 }
-                let payload = runtime.get_detail_asset(node.id.value(), asset_id).await?;
+                let payload = runtime
+                    .read_detail_asset(node.id.value(), asset_id, false, expected_revision)
+                    .await?;
                 if payload
                     .get("digestSha256")
                     .and_then(serde_json::Value::as_str)
@@ -3373,6 +3458,8 @@ mod tests {
             Arc,
             atomic::{AtomicBool, AtomicUsize, Ordering},
         };
+        let changed = Arc::new(AtomicBool::new(false));
+        let changed_server = changed.clone();
         let requests = Arc::new(AtomicUsize::new(0));
         let counted = requests.clone();
         let denied = Arc::new(AtomicBool::new(false));
@@ -3385,18 +3472,23 @@ mod tests {
         let large_metadata = large.clone();
         let app = axum::Router::new().route("/api/control/interactions/9/layers/1/owner", axum::routing::get(|| async { axum::Json(json!({"layerId":1,"ownerInteractionNodeId":1})) })).route("/api/control/temporal-features", axum::routing::get(|| async { axum::Json(json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true})) })).route("/api/control/interaction-features", axum::routing::get(|| async { axum::Json(json!({"interactionGraph":false})) })).fallback(move |request: axum::extract::Request| {
             let counted = counted.clone();
+            let changed_server = changed_server.clone();
             let deny = deny.clone();
             let metadata_counted = metadata_counted.clone();
             let missing_metadata = missing_metadata.clone();
             let large_metadata = large_metadata.clone();
             async move {
+                assert!(request.uri().query().is_some_and(|query| query.contains("expectedRevision=")));
+                if changed_server.swap(false, Ordering::SeqCst) {
+                    return (axum::http::StatusCode::UNPROCESSABLE_ENTITY, axum::Json(json!({"error":{"code":"asset_snapshot_changed"}})));
+                }
                 if missing_metadata.load(Ordering::SeqCst) {
                     return (axum::http::StatusCode::NOT_FOUND, axum::Json(json!({"error":"missing"})));
                 }
                 if deny.load(Ordering::SeqCst) && request.uri().path().contains("/3/") {
                     return (axum::http::StatusCode::FORBIDDEN, axum::Json(json!({"error":"denied"})));
                 }
-                let metadata_only = request.uri().query() == Some("metadataOnly=true");
+                let metadata_only = request.uri().query().is_some_and(|query| query.split('&').any(|pair| pair == "metadataOnly=true"));
                 if !metadata_only { counted.fetch_add(1, Ordering::SeqCst); } else { metadata_counted.fetch_add(1, Ordering::SeqCst); }
                 let name = if request.uri().path().contains("/3/") { "   " } else { "a.png" };
                 let mut value = json!({"digestSha256":"ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb","mediaType":"image/png","byteLength":1,"provenance":{"source":"user","fileName":name}});
@@ -3427,7 +3519,7 @@ mod tests {
         .await
         .unwrap();
         let node = json!({"id":2,"kind":"concept","icon":"box","title":"Image","detail":"Fallback","state":"accepted","authoredDetail":{"version":1,"components":[],"mounts":[],"assets":[{"id":"image","digestSha256":"ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb","mediaType":"image/png","representation":"image"}],"integritySha256":"b".repeat(64)}});
-        let closure: relayer_graph_core::AcceptedGraphClosure = serde_json::from_value(json!({"nodeId":1,"interaction":{"id":1,"kind":"user-interaction","icon":"user","title":"Show","detail":"Show","state":"accepted"},"rootAction":{"id":1,"sourceNodeId":1,"kind":"navigate","relation":"expand","label":"Response","variant":"pill","targetLayerId":1,"state":"accepted"},"rootLayerId":1,"layers":[{"layer":{"id":1,"nodes":[2],"edges":[],"state":"accepted"},"nodes":[node],"edges":[],"actions":[]}]})).unwrap();
+        let closure: relayer_graph_core::AcceptedGraphClosure = serde_json::from_value(json!({"detailAssetRevisions":{"2":0,"3":0},"nodeId":1,"interaction":{"id":1,"kind":"user-interaction","icon":"user","title":"Show","detail":"Show","state":"accepted"},"rootAction":{"id":1,"sourceNodeId":1,"kind":"navigate","relation":"expand","label":"Response","variant":"pill","targetLayerId":1,"state":"accepted"},"rootLayerId":1,"layers":[{"layer":{"id":1,"nodes":[2],"edges":[],"state":"accepted"},"nodes":[node],"edges":[],"actions":[]}]})).unwrap();
         let mut other = closure.clone();
         other.layers[0].nodes[0].id = relayer_graph_core::NodeId::new(3).unwrap();
         other.layers[0].layer.nodes = vec![relayer_graph_core::NodeId::new(3).unwrap()];
@@ -3606,6 +3698,203 @@ mod tests {
             1,
             "reject the second 8 MiB asset from metadata before fetching its body"
         );
+        large.store(false, Ordering::SeqCst);
+        changed.store(true, Ordering::SeqCst);
+        let captures = AtomicUsize::new(0);
+        let retry_redactor = ProjectPathRedactor::new(None);
+        let retry = super::capture_snapshot_with_retry(|| {
+            captures.fetch_add(1, Ordering::SeqCst);
+            super::collect_visual_assets_for_snapshot(
+                &runtime,
+                closures.iter().flatten(),
+                &retry_redactor,
+                true,
+            )
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            captures.load(Ordering::SeqCst),
+            2,
+            "a stale read repeats the whole capture"
+        );
+        assert_eq!(retry.1.len(), 1);
+        captures.store(0, Ordering::SeqCst);
+        let exhausted = super::capture_snapshot_with_retry(|| {
+            captures.fetch_add(1, Ordering::SeqCst);
+            changed.store(true, Ordering::SeqCst);
+            super::collect_visual_assets_for_snapshot(
+                &runtime,
+                closures.iter().flatten(),
+                &retry_redactor,
+                true,
+            )
+        })
+        .await;
+        assert!(matches!(
+            exhausted,
+            Err(super::ConversationExportBuildError::Runtime(
+                crate::runtime::RuntimeError::Remote { status: 422, .. }
+            ))
+        ));
+        assert_eq!(
+            captures.load(Ordering::SeqCst),
+            3,
+            "continuous mutation stays bounded"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn export_builders_recapture_graph_after_asset_revision_conflict() {
+        use base64::Engine as _;
+        use serde_json::json;
+        use sha2::{Digest, Sha256};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("product.sqlite3");
+        let product = crate::product::ProductService::new(
+            crate::storage::SqliteProductStore::open(&database)
+                .await
+                .unwrap(),
+            true,
+        );
+        let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", database.display()))
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO threads(id,title,created_at,updated_at,harness_configuration_name,permission_profile_id) VALUES(1,'Snapshot','1','1','test','auto')").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO interactions(id,thread_id,sequence,text,created_at,graph_node_id,completion_status,harness_configuration_name,permission_profile_id) VALUES(1,1,1,'Show image','1',1,'accepted','test','auto')").execute(&pool).await.unwrap();
+        pool.close().await;
+        let interaction = json!({"id":1,"kind":"user-interaction","icon":"user","title":"Show image","detail":"Show image","state":"accepted"});
+        let mut snapshots = Vec::new();
+        let mut payloads = Vec::new();
+        for (revision, label) in ["before-race", "after-race"].into_iter().enumerate() {
+            let bytes = label.as_bytes();
+            let digest = format!("{:x}", Sha256::digest(bytes));
+            let mut package = json!({"version":1,"assets":[{"id":"image","digestSha256":digest,"mediaType":"image/png","representation":"image"}],
+                "components":[{"id":"main","order":0,"html":format!("<p>{label}</p><img data-asset-mount=\"image-mount\">"),"css":""}],
+                "mounts":[{"id":"image-mount","componentId":"main","kind":"asset","host":"img","assetId":"image"}]});
+            package["integritySha256"] = format!(
+                "{:x}",
+                Sha256::digest(serde_json::to_vec(&package).unwrap())
+            )
+            .into();
+            snapshots.push(json!({"nodeId":1,"hasPersistentMutations":true,"detailAssetRevisions":{"2":revision},"interaction":interaction,
+                "rootAction":{"id":1,"sourceNodeId":1,"kind":"navigate","relation":"expand","label":"Response","variant":"pill","targetLayerId":1,"state":"accepted"},"rootLayerId":1,
+                "layers":[{"layer":{"id":1,"nodes":[2],"edges":[],"state":"accepted"},"nodes":[{"id":2,"kind":"concept","icon":"image","title":label,"detail":label,"state":"accepted","authoredDetail":package}],"edges":[],"actions":[]}]}));
+            payloads.push(json!({"assetId":"image","digestSha256":digest,"mediaType":"image/png","byteLength":bytes.len(),"provenance":{"source":"user","fileName":"image.png"},"contentBase64":base64::engine::general_purpose::STANDARD.encode(bytes)}));
+        }
+        let phase = Arc::new(AtomicUsize::new(0));
+        let captures = Arc::new(AtomicUsize::new(0));
+        let handler_phase = phase.clone();
+        let handler_captures = captures.clone();
+        let app = axum::Router::new().fallback(move |request: axum::extract::Request| {
+            let phase = handler_phase.clone();
+            let captures = handler_captures.clone();
+            let snapshots = snapshots.clone();
+            let payloads = payloads.clone();
+            let interaction = interaction.clone();
+            async move {
+                assert_eq!(request.headers()["authorization"], "Bearer control");
+                let value = match request.uri().path() {
+                    "/api/control/temporal-features" => json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true}),
+                    "/api/control/interaction-features" => json!({"interactionGraph":false}),
+                    "/api/control/accepted-closures" => {
+                        captures.fetch_add(1, Ordering::SeqCst);
+                        json!({"closures":[snapshots[phase.load(Ordering::SeqCst)]]})
+                    }
+                    "/api/control/interactions/1/input" => {
+                        json!({"interaction":interaction,"contexts":[]})
+                    }
+                    "/api/control/interactions/1/context-actions" => json!({"actions":[]}),
+                    "/api/control/nodes/2/detail-assets/image" => {
+                        let query = request.uri().query().unwrap();
+                        if phase.swap(1, Ordering::SeqCst) == 0 {
+                            assert!(query.contains("expectedRevision=0"));
+                            return (
+                                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                                axum::Json(json!({"error":{"code":"asset_snapshot_changed"}})),
+                            );
+                        }
+                        assert!(
+                            query.contains("expectedRevision=1"),
+                            "retry reused the old graph snapshot"
+                        );
+                        let mut payload = payloads[1].clone();
+                        if query.contains("metadataOnly=true") {
+                            payload.as_object_mut().unwrap().remove("contentBase64");
+                        }
+                        payload
+                    }
+                    other => panic!("unexpected runtime route {other}"),
+                };
+                (axum::http::StatusCode::OK, axum::Json(value))
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let catalog = directory.path().join("catalog.json");
+        std::fs::write(&catalog, json!({"schemaVersion":1,"configurations":[{"configuration":{"schemaVersion":1,"name":"test","implementation":"test","implementationVersion":1,"permissionBindings":{"auto":{}},"settings":{}},"digest":"sha256:test"}]}).to_string()).unwrap();
+        let runtime = crate::runtime::RuntimeClient::open(
+            &format!("http://{address}/"),
+            "http://127.0.0.1:9/",
+            "control".into(),
+            "harness".into(),
+            &catalog,
+        )
+        .await
+        .unwrap();
+        for shared in [false, true] {
+            phase.store(0, Ordering::SeqCst);
+            captures.store(0, Ordering::SeqCst);
+            let producer = crate::conversation_export::ExportProducer {
+                desktop_version: "test".into(),
+                build_commit: "test".into(),
+                platform: "test".into(),
+                architecture: "test".into(),
+            };
+            let bytes = if shared {
+                super::build_share_conversation_export(
+                    &product,
+                    &runtime,
+                    ThreadId::from_database(1),
+                    producer,
+                    "2".into(),
+                    "Snapshot",
+                )
+                .await
+            } else {
+                super::build_conversation_export(
+                    &product,
+                    &runtime,
+                    ThreadId::from_database(1),
+                    producer,
+                    "2".into(),
+                )
+                .await
+            }
+            .unwrap();
+            assert_eq!(
+                captures.load(Ordering::SeqCst),
+                2,
+                "both builders must recapture every root"
+            );
+            let records = crate::conversation_export::decode_export_jsonl(&bytes).unwrap();
+            let text = String::from_utf8(bytes).unwrap();
+            assert!(text.contains("after-race"));
+            assert!(!text.contains("before-race"));
+            assert!(records.iter().any(|record| matches!(record, crate::conversation_export::ConversationExportRecord::VisualAssetContent(asset)
+                if asset.content_base64 == base64::engine::general_purpose::STANDARD.encode(b"after-race"))));
+            assert!(
+                !text.contains(&base64::engine::general_purpose::STANDARD.encode(b"before-race"))
+            );
+        }
         server.abort();
     }
 

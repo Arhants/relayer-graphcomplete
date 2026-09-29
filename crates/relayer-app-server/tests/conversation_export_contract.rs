@@ -1715,6 +1715,61 @@ fn v3_current_conversion_snapshot_preserves_exact_origin_and_version_boundary() 
         header.export_version = version;
         assert_rejected_with_parity(&older, "converted_invoke_version");
     }
+    let mut erased_origin = fixture.clone();
+    let ConversationExportRecord::Turn(result) = &mut erased_origin[2] else {
+        unreachable!()
+    };
+    result.origin = ExportTurnOrigin::User;
+    assert_rejected_with_parity(&erased_origin, "converted_invoke_origin_missing");
+
+    // A source-only export retains navigation to an external conversation's
+    // result without inventing an included turn or invocation origin.
+    let mut external_result = fixture.clone();
+    external_result.pop();
+    let ConversationExportRecord::Header(header) = &mut external_result[0] else {
+        unreachable!()
+    };
+    header.turns.pop();
+    validate_export_records(&external_result).unwrap();
+    validate_incrementally(&external_result).unwrap();
+
+    // The same source node/action can be presented by another accepted turn.
+    // Its declared source need not be the first presenting turn in the stream.
+    let mut reused = fixture.clone();
+    let ConversationExportRecord::Turn(mut presentation) = reused[1].clone() else {
+        unreachable!()
+    };
+    presentation.id = "turn:2".into();
+    presentation.sequence = 2;
+    presentation.interaction_node_id = Some("node:interaction3".into());
+    let view = presentation.accepted_view.as_mut().unwrap();
+    view.interaction_node_id = "node:interaction3".into();
+    view.root_layer_id = "layer:3".into();
+    view.root_action.id = "action:root3".into();
+    view.root_action.source_node_id = "node:interaction3".into();
+    view.root_action.target_layer_id = Some("layer:3".into());
+    view.layers[0].layer.id = "layer:3".into();
+    view.layers[0].layer.client_key = Some("reused-source".into());
+    let ConversationExportRecord::Turn(result) = &mut reused[2] else {
+        unreachable!()
+    };
+    result.id = "turn:3".into();
+    result.sequence = 3;
+    let ExportTurnOrigin::Action { source_turn_id, .. } = &mut result.origin else {
+        unreachable!()
+    };
+    *source_turn_id = "turn:2".into();
+    reused.insert(2, ConversationExportRecord::Turn(presentation));
+    let ConversationExportRecord::Header(header) = &mut reused[0] else {
+        unreachable!()
+    };
+    header.turns.push(ExportTurnManifestEntry {
+        id: "turn:3".into(),
+        sequence: 3,
+    });
+    validate_export_records(&reused).unwrap();
+    validate_incrementally(&reused).unwrap();
+
     let mut wrong_destination = fixture.clone();
     let ConversationExportRecord::Turn(result) = &mut wrong_destination[2] else {
         unreachable!()

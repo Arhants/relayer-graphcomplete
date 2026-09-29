@@ -941,6 +941,7 @@ async fn accepted_closure(
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DetailAssetReadQuery {
+    expected_revision: Option<u64>,
     #[serde(default)]
     metadata_only: bool,
 }
@@ -956,7 +957,7 @@ async fn control_detail_asset(
     if query.metadata_only {
         let asset = state
             .graph
-            .accepted_detail_asset_metadata(node_id, &asset_id)
+            .accepted_detail_asset_metadata_at_revision(node_id, &asset_id, query.expected_revision)
             .await?;
         return Ok(Json(json!({
             "assetId":asset.asset_id,"digestSha256":asset.digest_sha256,
@@ -966,7 +967,7 @@ async fn control_detail_asset(
     }
     let asset = state
         .graph
-        .accepted_detail_asset(node_id, &asset_id)
+        .accepted_detail_asset_at_revision(node_id, &asset_id, query.expected_revision)
         .await?;
     Ok(Json(json!({
         "assetId": asset.asset_id,

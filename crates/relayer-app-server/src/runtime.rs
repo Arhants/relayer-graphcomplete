@@ -1716,22 +1716,15 @@ impl RuntimeClient {
         node_id: i64,
         asset_id: &str,
     ) -> Result<Value, RuntimeError> {
-        self.read_detail_asset(node_id, asset_id, false).await
+        self.read_detail_asset(node_id, asset_id, false, None).await
     }
 
-    pub(crate) async fn get_detail_asset_metadata(
-        &self,
-        node_id: i64,
-        asset_id: &str,
-    ) -> Result<Value, RuntimeError> {
-        self.read_detail_asset(node_id, asset_id, true).await
-    }
-
-    async fn read_detail_asset(
+    pub(crate) async fn read_detail_asset(
         &self,
         node_id: i64,
         asset_id: &str,
         metadata_only: bool,
+        expected_revision: Option<u64>,
     ) -> Result<Value, RuntimeError> {
         // Append an opaque path segment rather than interpreting catalog IDs as paths.
         let mut url = self
@@ -1743,6 +1736,10 @@ impl RuntimeClient {
             .push(asset_id);
         if metadata_only {
             url.query_pairs_mut().append_pair("metadataOnly", "true");
+        }
+        if let Some(revision) = expected_revision {
+            url.query_pairs_mut()
+                .append_pair("expectedRevision", &revision.to_string());
         }
         self.control_get(url.as_str()).await
     }

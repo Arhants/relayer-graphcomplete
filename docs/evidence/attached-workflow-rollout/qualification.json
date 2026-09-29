@@ -1,5 +1,5 @@
 {
-  "sourceManifestSha256": "9e3b71804646900ff22b69af4342f0b748bf77ef636cd63decd038ad85102477",
+  "sourceManifestSha256": "58ac99645747f9d0bb8c47a131f9d79291e74e07952217c28cbb4b4f5e73d419",
   "fullCheck": {
     "passed": true,
     "vitestPassed": 3225,
@@ -106,5 +106,54 @@
     },
     "compiledEvalPassed": 4,
     "primeVisualPassed": 2
+  },
+  "evidenceScope": "Top-level pass fields retain historical rollout results. Named followups identify subsequent exact source and execution; prior native evidence is not recertified by source review.",
+  "reviewHardening": {
+    "sourceFiles": 61,
+    "sourceManifestSha256": "58ac99645747f9d0bb8c47a131f9d79291e74e07952217c28cbb4b4f5e73d419",
+    "checkpoints": [
+      "AN-001",
+      "AN-003",
+      "AN-004",
+      "IP-003"
+    ],
+    "focusedPublicTestsPassed": 58,
+    "builderRecaptureBothExportModesPassed": true,
+    "fullCheck": {
+      "passed": true,
+      "vitestPassed": 3237,
+      "vitestSkipped": 3,
+      "filesPassed": 240,
+      "filesSkipped": 1,
+      "secretBoundaryPassed": 2,
+      "pythonPassed": 60,
+      "rustClippyCrashAndLints": "passed"
+    },
+    "build": "passed",
+    "independentReviews": [
+      {
+        "reviewer": "portable_import",
+        "scope": "Asset revision pins, transactional reads, full retry, privacy/preflight, verification mapping",
+        "scopeDigest": "df84f4400337099cc7b0632a7f1ffae5c3f10b6292bb0ee057a278d5569fa832",
+        "verdict": "PASS; no unresolved findings"
+      },
+      {
+        "reviewer": "navigator_review",
+        "scope": "Provenance markers, migration, visibility, targeting, binding and cleanup; excludes own origin implementation",
+        "scopeDigest": "2ff0913f19131fe65ea4ccce0c729f3c3bddf3585e73c9dd9a2a212e7b00d30e",
+        "verdict": "PASS; no unresolved findings"
+      },
+      {
+        "reviewer": "navigator_standards",
+        "scope": "Independent reverse origins and cumulative mapping; asset implementation separately reviewed",
+        "manifestSha256": "58ac99645747f9d0bb8c47a131f9d79291e74e07952217c28cbb4b4f5e73d419",
+        "verdict": "PASS; no unresolved findings"
+      }
+    ],
+    "joinedProductEvalServiceTestsPassed": 3,
+    "joinedServiceCommit": "fddecf52b03e542659cd74b887d1b77503de185c",
+    "compiledEvalTestsPassed": 4,
+    "publicCapturesPassed": 4,
+    "inferenceCalls": 0
   }
 }

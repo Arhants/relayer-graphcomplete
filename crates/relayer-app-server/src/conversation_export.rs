@@ -627,6 +627,7 @@ pub struct ConversationExportValidator {
     next_turn: usize,
     prior_invokes: HashMap<String, HashMap<String, Option<String>>>,
     converted_origins: HashSet<String>,
+    converted_targets: HashMap<String, HashSet<String>>,
     accepted_occurrences: HashMap<String, HashMap<String, HashSet<String>>>,
     context_layer_owners: HashMap<String, String>,
     interaction_ids: HashSet<String>,
@@ -671,6 +672,7 @@ impl ConversationExportValidator {
             next_turn: 0,
             prior_invokes: HashMap::new(),
             converted_origins: HashSet::new(),
+            converted_targets: HashMap::new(),
             accepted_occurrences: HashMap::new(),
             context_layer_owners: HashMap::new(),
             interaction_ids: HashSet::new(),
@@ -772,6 +774,20 @@ impl ConversationExportValidator {
             self.policy,
             self.export_version,
         )?;
+        if let Some(view) = &turn.accepted_view
+            && let Some(actions) = self.converted_targets.get(&view.root_layer_id)
+            && !matches!(&turn.origin, ExportTurnOrigin::Action { source_turn_id, source_action_id }
+                if actions.contains(source_action_id)
+                    && self.prior_invokes.get(source_turn_id)
+                        .and_then(|prior| prior.get(source_action_id))
+                        .and_then(Option::as_ref) == Some(&view.root_layer_id))
+        {
+            return Err(ExportValidationError::new(
+                "converted_invoke_origin_missing",
+                format!("{path}.origin"),
+                "An included converted invoke result must retain its source action origin.",
+            ));
+        }
         if let ExportTurnOrigin::Action {
             source_turn_id,
             source_action_id,
@@ -969,6 +985,23 @@ impl ConversationExportValidator {
                     })
                     .collect(),
             );
+        }
+        // An action may occur in several accepted views when its source node is
+        // reused. Preserve that ambiguity instead of inventing a source turn from
+        // the first presenting occurrence; the declared origin must resolve above.
+        for action in turn
+            .accepted_view
+            .iter()
+            .flat_map(|view| &view.layers)
+            .flat_map(|layer| &layer.actions)
+            .filter(|action| action.converted_from_invoke)
+        {
+            if let Some(target) = &action.target_layer_id {
+                self.converted_targets
+                    .entry(target.clone())
+                    .or_default()
+                    .insert(action.id.clone());
+            }
         }
         self.prior_invokes.insert(
             turn.id.clone(),

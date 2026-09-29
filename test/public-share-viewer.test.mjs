@@ -862,6 +862,27 @@ describe("V3 current converted-invoke snapshots", () => {
     const records = convertedRecords(); records[0].exportVersion = version;
     expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "converted_invoke_version" }));
   });
+  it("retains the declared reused-source turn instead of choosing its first occurrence", () => {
+    const records = convertedRecords();
+    const reused = structuredClone(records[1]);
+    Object.assign(reused, { id: "turn:2", sequence: 2, interactionNodeId: "node:reused-interaction" });
+    Object.assign(reused.acceptedView, { interactionNodeId: "node:reused-interaction", rootLayerId: "layer:reused" });
+    Object.assign(reused.acceptedView.rootAction, { id: "action:reused-root", sourceNodeId: "node:reused-interaction", targetLayerId: "layer:reused" });
+    Object.assign(reused.acceptedView.layers[0].layer, { id: "layer:reused", clientKey: "reused-source" });
+    Object.assign(records[2], { id: "turn:3", sequence: 3 });
+    records[2].origin.source_turn_id = "turn:2";
+    records.splice(2, 0, reused);
+    records[0].turns.push({ id: "turn:3", sequence: 3 });
+    const snapshot = parsePublicSnapshot(recordsJsonl(records));
+    const invocation = interactionGraph(snapshot.interactions, "turn:3").edges.find(edge => edge.invocationActionId === "action:invoke");
+    expect(invocation.source).toBe("turn:2");
+    expect(invocation.target).toBe("turn:3");
+  });
+  it("rejects an included converted result with erased invocation lineage", () => {
+    const records = convertedRecords();
+    records[2].origin = { kind: "user" };
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+  });
   it("rejects a converted origin pointing to an unaccepted result", () => {
     const records = convertedRecords();
     records[2].completion = { ...records[2].completion, status: "failed" };

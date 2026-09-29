@@ -2233,6 +2233,7 @@ async fn imported_external_source_provenance_preserves_compiled_keys_without_res
     let path = temporary.path().join("graph.sqlite");
     let database = GraphDatabase::open(&path).await.unwrap();
     let mut input = imported_converted_invoke_conversation();
+    input.project_id = Some(project(1));
     let resolved = &mut input.turns[0].accepted_view.as_mut().unwrap().layers[0];
     resolved.actions[0].source_layer_id = Some("external-layer".into());
     let mut package = serde_json::json!({"version":1,"assets":[],
@@ -2272,16 +2273,128 @@ async fn imported_external_source_provenance_preserves_compiled_keys_without_res
         root.actions[0].source_layer_client_key.as_deref(),
         Some("original-outside-layer")
     );
-    let provenance = writer
-        .get_layer(root.actions[0].source_layer_id.unwrap())
+    let provenance = root.actions[0].source_layer_id.unwrap();
+    let native = database
+        .create_interaction(Some(project(1)), thread(9099), "Native after import")
         .await
         .unwrap();
-    assert!(provenance.nodes.is_empty());
-    assert!(provenance.actions.is_empty());
+    let native_writer = database.writer_for_subgraph(native.id).await.unwrap();
+    let answer = node(&native_writer, "answer").await;
+    let native_layer = single_node_layer(&native_writer, "response", &answer).await;
+    root_expand(&native_writer, &native, &native_layer).await;
+    let error = native_writer
+        .add_action(&ActionDraft {
+            client_key: "reject-provenance-target".into(),
+            source_node_id: answer.id,
+            source_layer_id: Some(native_layer.id),
+            kind: ActionKind::Navigate,
+            relation: Some(NavigateRelation::Reference),
+            label: "Invalid target".into(),
+            variant: ActionVariant::default(),
+            icon: None,
+            description: None,
+            target_layer_id: Some(provenance),
+            interaction_text: None,
+            input: None,
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        GraphError::Validation {
+            code: "unknown_target_layer",
+            ..
+        }
+    ));
+    assert!(matches!(
+        writer.get_layer(provenance).await,
+        Err(GraphError::NotFound(_))
+    ));
+    assert!(matches!(
+        native_writer.get_layer(provenance).await,
+        Err(GraphError::NotFound(_))
+    ));
+    assert!(matches!(
+        native_writer.get_layer_owner(provenance).await,
+        Err(GraphError::NotFound(_))
+    ));
+    native_writer.complete(native.id).await.unwrap();
+    assert_eq!(
+        database
+            .accepted_graph_closure(native.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .layers
+            .len(),
+        1
+    );
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(
+            SqliteConnectOptions::new()
+                .filename(&path)
+                .foreign_keys(true),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT import_id FROM imported_provenance_layers WHERE layer_id=?1"
+        )
+        .bind(provenance.value())
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        input.import_id
+    );
+    for statement in [
+        "UPDATE imported_provenance_layers SET import_id=import_id WHERE layer_id=?1",
+        "DELETE FROM imported_provenance_layers WHERE layer_id=?1",
+    ] {
+        let error = sqlx::query(statement)
+            .bind(provenance.value())
+            .execute(&pool)
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("immutable_imported_provenance_layer")
+        );
+    }
+    let error = sqlx::query("INSERT INTO actions(project_id,thread_id,source_node_id,source_layer_id,kind,relation,label,target_layer_id,state,owner_interaction_id,client_key) VALUES (1,9099,?1,?2,'navigate','reference','Forged target',?3,'draft',?4,'forged')")
+        .bind(answer.id.value()).bind(native_layer.id.value()).bind(provenance.value()).bind(native.id.value())
+        .execute(&pool).await.unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("imported_provenance_layer_is_not_target")
+    );
+    let error = sqlx::query("INSERT INTO layer_nodes(layer_id,node_id,position) VALUES (?1,?2,0)")
+        .bind(provenance.value())
+        .bind(root.nodes[0].id.value())
+        .execute(&pool)
+        .await
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("imported_provenance_layer_has_no_topology")
+    );
     database
         .remove_imported_conversation(&input.import_id)
         .await
         .unwrap();
+
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM imported_provenance_layers")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    pool.close().await;
 
     // A second compiled binding to the same action cannot relabel its provenance.
     package.as_object_mut().unwrap().remove("integritySha256");
@@ -8145,6 +8258,166 @@ async fn attached_navigation_concurrent_replacements_preserve_controls_and_reope
                 .has_persistent_mutations
         );
     }
+    // A second accepted replacement can reclaim the bytes named by a captured
+    // package. Both deferred reads must signal retry, never read the new asset
+    // under the old package pin or report a missing old asset.
+    let captured = reopened
+        .accepted_graph_closures(&[source.id, reuse.id])
+        .await
+        .unwrap();
+    let captured_revision = captured[0]
+        .as_ref()
+        .unwrap()
+        .detail_asset_revisions
+        .as_ref()
+        .unwrap()[&persistent.id];
+    let metadata = reopened
+        .accepted_detail_asset_metadata_at_revision(
+            persistent.id,
+            "diagram",
+            Some(captured_revision),
+        )
+        .await
+        .unwrap();
+    let (replacement, _) = reopened
+        .create_interaction_with_context(
+            Some(project(1)),
+            thread(6),
+            "Replace image",
+            &[InteractionContextDraft {
+                target: InteractionContextTarget {
+                    node_id: persistent.id,
+                    source_interaction_node_id: source.id,
+                    source_layer_id: source_layer.id,
+                },
+                annotations: vec!["Add image navigation".into()],
+            }],
+        )
+        .await
+        .unwrap();
+    let replacement_writer = reopened.writer_for_subgraph(replacement.id).await.unwrap();
+    let answer = node(&replacement_writer, "new-image-answer").await;
+    let response = single_node_layer(&replacement_writer, "new-image-layer", &answer).await;
+    root_expand(&replacement_writer, &replacement, &response).await;
+    replacement_writer
+        .add_action(&ActionDraft {
+            client_key: "new-image-link".into(),
+            source_node_id: persistent.id,
+            source_layer_id: Some(source_layer.id),
+            kind: ActionKind::Navigate,
+            relation: Some(NavigateRelation::Reference),
+            label: "New image".into(),
+            variant: ActionVariant::Pill,
+            icon: None,
+            description: None,
+            target_layer_id: Some(response.id),
+            interaction_text: None,
+            input: None,
+        })
+        .await
+        .unwrap();
+    let presentation = replacement_writer
+        .get_node_presentation(persistent.id)
+        .await
+        .unwrap();
+    let actions: Vec<GraphAction> =
+        serde_json::from_value(presentation["actions"].clone()).unwrap();
+    let mut replacement_package = presentation_with_actions(&persistent, &actions);
+    let bytes = b"replacement asset";
+    let digest = {
+        use sha2::{Digest, Sha256};
+        format!("{:x}", Sha256::digest(bytes))
+    };
+    let replacement_asset = PreparedDetailAsset {
+        asset_id: "diagram".into(),
+        digest_sha256: digest.clone(),
+        media_type: "image/png".into(),
+        byte_length: bytes.len(),
+        provenance_source: "user".into(),
+        provenance_file_name: "replacement.png".into(),
+        content: bytes.to_vec(),
+    };
+    replacement_package["assets"] = serde_json::json!([{"id":"diagram","digestSha256":digest,"mediaType":"image/png","representation":"image"}]);
+    replacement_package["mounts"].as_array_mut().unwrap().push(serde_json::json!({"id":"diagram-mount","componentId":"main","kind":"asset","host":"img","assetId":"diagram"}));
+    replacement_package["components"][0]["html"] = format!(
+        "{}<img data-asset-mount=\"diagram-mount\">",
+        replacement_package["components"][0]["html"]
+            .as_str()
+            .unwrap()
+    )
+    .into();
+    replacement_package
+        .as_object_mut()
+        .unwrap()
+        .remove("integritySha256");
+    {
+        use sha2::{Digest, Sha256};
+        replacement_package["integritySha256"] = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&replacement_package).unwrap())
+        )
+        .into();
+    }
+    replacement_writer
+        .stage_node_presentation(
+            persistent.id,
+            captured_revision,
+            &replacement_package,
+            &[replacement_asset],
+        )
+        .await
+        .unwrap();
+    replacement_writer.complete(replacement.id).await.unwrap();
+    for result in [
+        reopened
+            .accepted_detail_asset_metadata_at_revision(
+                persistent.id,
+                "diagram",
+                Some(captured_revision),
+            )
+            .await
+            .map(|_| ()),
+        reopened
+            .accepted_detail_asset_at_revision(persistent.id, "diagram", Some(captured_revision))
+            .await
+            .map(|_| ()),
+    ] {
+        assert!(
+            matches!(
+                result,
+                Err(GraphError::Validation {
+                    code: "asset_snapshot_changed",
+                    ..
+                })
+            ),
+            "{result:?}"
+        );
+    }
+    let fresh = reopened
+        .accepted_graph_closures(&[source.id, reuse.id])
+        .await
+        .unwrap();
+    let fresh_revision = fresh[0]
+        .as_ref()
+        .unwrap()
+        .detail_asset_revisions
+        .as_ref()
+        .unwrap()[&persistent.id];
+    let fresh_asset = reopened
+        .accepted_detail_asset_at_revision(persistent.id, "diagram", Some(fresh_revision))
+        .await
+        .unwrap();
+    assert_eq!(fresh_asset.content, bytes);
+    assert_ne!(fresh_asset.digest_sha256, metadata.digest_sha256);
+    assert_eq!(
+        fresh[1]
+            .as_ref()
+            .unwrap()
+            .detail_asset_revisions
+            .as_ref()
+            .unwrap()[&persistent.id],
+        fresh_revision
+    );
     let imported_fixture = sqlx::SqlitePool::connect(&format!("sqlite://{}", path.display()))
         .await
         .unwrap();

@@ -4,7 +4,7 @@ mod plan;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 
 use crate::{
     ActionKind, GraphAction, GraphDatabase, GraphError, GraphNode, NavigateRelation, NodeId,
@@ -50,6 +50,9 @@ pub struct CompletionOutput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AcceptedGraphClosure {
+    /// Revision pins read with graph content; absent only for older runtimes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail_asset_revisions: Option<BTreeMap<NodeId, u64>>,
     #[serde(default)]
     pub has_persistent_mutations: bool,
     pub node_id: NodeId,
@@ -444,7 +447,16 @@ pub(crate) async fn read_accepted_closure_on(
             &publication.layers,
         )
         .await?;
+    let mut detail_asset_revisions = BTreeMap::new();
+    for node in publication.layers.iter().flat_map(|layer| &layer.nodes) {
+        if node.authored_detail.is_some() && !detail_asset_revisions.contains_key(&node.id) {
+            let revision =
+                crate::storage::sqlite::attached_navigation::revision(transaction, node.id).await?;
+            detail_asset_revisions.insert(node.id, revision);
+        }
+    }
     Ok(Some(AcceptedGraphClosure {
+        detail_asset_revisions: Some(detail_asset_revisions),
         has_persistent_mutations,
         node_id: publication.node_id,
         interaction: publication.interaction,

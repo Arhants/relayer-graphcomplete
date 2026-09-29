@@ -861,7 +861,29 @@ impl GraphDatabase {
         node_id: NodeId,
         asset_id: &str,
     ) -> Result<AcceptedDetailAssetMetadata, GraphError> {
+        self.accepted_detail_asset_metadata_at_revision(node_id, asset_id, None)
+            .await
+    }
+
+    pub async fn accepted_detail_asset_metadata_at_revision(
+        &self,
+        node_id: NodeId,
+        asset_id: &str,
+        expected_revision: Option<u64>,
+    ) -> Result<AcceptedDetailAssetMetadata, GraphError> {
         let mut transaction = self.storage.begin_read().await?;
+        if let Some(expected) = expected_revision {
+            let actual =
+                crate::storage::sqlite::attached_navigation::revision(&mut transaction, node_id)
+                    .await?;
+            if expected != actual {
+                return Err(GraphError::validation(
+                    "asset_snapshot_changed",
+                    "expectedRevision",
+                    "Accepted node presentation changed during snapshot capture.",
+                ));
+            }
+        }
         let asset = AuthoredDetailAssetTable::new(&mut transaction)
             .read_metadata(node_id, asset_id)
             .await?;
@@ -874,7 +896,29 @@ impl GraphDatabase {
         node_id: NodeId,
         asset_id: &str,
     ) -> Result<AcceptedDetailAsset, GraphError> {
+        self.accepted_detail_asset_at_revision(node_id, asset_id, None)
+            .await
+    }
+
+    pub async fn accepted_detail_asset_at_revision(
+        &self,
+        node_id: NodeId,
+        asset_id: &str,
+        expected_revision: Option<u64>,
+    ) -> Result<AcceptedDetailAsset, GraphError> {
         let mut transaction = self.storage.begin_read().await?;
+        if let Some(expected) = expected_revision {
+            let actual =
+                crate::storage::sqlite::attached_navigation::revision(&mut transaction, node_id)
+                    .await?;
+            if expected != actual {
+                return Err(GraphError::validation(
+                    "asset_snapshot_changed",
+                    "expectedRevision",
+                    "Accepted node presentation changed during snapshot capture.",
+                ));
+            }
+        }
         let asset = AuthoredDetailAssetTable::new(&mut transaction)
             .read(node_id, asset_id)
             .await?;

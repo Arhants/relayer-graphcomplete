@@ -12,9 +12,9 @@ are superseded by positive V3 behavior and invalid-shape/authority rejection tes
 | --- | --- | --- |
 | Packaged and development Desktop prepare new native permissions by default; generic hosts retain opt-in | AN-001/008 | Desktop factory used by main; temporal-runtime spawn test observes process arguments; first-message default and explicit-off journeys |
 | Old frozen preparations, missing grants, terminal and read-only contexts cannot gain authority | IP-001/002, AN-001/008 | `typed_permission_storage_is_immutable_and_unknown_versions_fail_closed`, `required_attached_navigation_preserves_old_and_disabled_preparations`, `typed_imported_invoke_cannot_gain_authority_through_writable_occurrence` in full check |
-| Current roots never mix revisions during one export | AN-004 | Core multi-root read transaction concurrent-commit regression; authenticated batch route and runtime response identity/cardinality tests |
+| Current roots never mix revisions during one export | AN-004 | Core multi-root read transaction concurrent-commit regression; snapshot revision pins and atomic revision-checked asset metadata/body reads; real attached asset replacement, authenticated batch/asset routes, runtime response identity/cardinality and bounded whole-capture retry tests |
 | Converted and attached navigation, current rich details and pinned assets survive export/import/re-export | AN-003/004 | Real graph/Product/Eval attached-portability E2E; export-contract and core import tests; missing V3 asset test |
-| Imported provenance is inert; wrong conversion target/origin, root marker and execution remain denied | IP-003, AN-001/004 | Contract validators, import-owned conversion table, immutable imported actions and E2E send denial |
+| Imported provenance is inert; wrong conversion target/origin, root marker and execution remain denied | IP-003, AN-001/004 | Contract validators, import-owned conversion table, immutable imported actions and E2E send denial; durable provenance-only layer markers, migration backfill, native-after-import target rejection, reopen and cleanup |
 | Imported authored keys remain durable and collision-safe without changing package bytes | AN-003/004 | Import-owned key tables; real repeated-key E2E plus `imported_converted_invoke_reopens_as_inert_navigation_and_is_removable` (reopen, key projection, scope, immutability and cleanup) |
 | Public compiled controls retain exact aliases and integrity without private authored keys | AN-004 | Share binding projection tests, public snapshot parser and real compiled-control E2E |
 | Older formats and published shares remain readable; V3 never goes to an incompatible pinned viewer | AN-004 | V1/V2 contract suite, companion service reservation-version checks and paired artifact verifier |
@@ -308,3 +308,86 @@ passed 4/4 and Prime visual 2/2. Public graph and V1 native capture results abov
 the same final renderer source. Earlier native Desktop first-message and other unrelated
 heavies retain their previously recorded source snapshots. Exact pushed-head CI and the
 clean paired viewer artifact are recorded in the PR after committing.
+
+
+## Review hardening after public navigator
+
+Changed seams map to AN-001/003/004 and IP-003. Snapshot closures now pin each
+included authored node's presentation revision inside the coherent read transaction.
+Authenticated asset metadata and body reads compare that pin within the transaction
+that reads the asset. A concurrent replacement discards the partial export and retries
+its entire capture, at most three times. Continuous mutation fails explicitly; privacy
+omission, digest deduplication and metadata-based size preflight remain intact. These
+revision pins are internal transport metadata, never exported grants or JSONL fields.
+
+Imported external source-layer placeholders now carry durable import-owned markers.
+Normal layer reads, ownership and native navigation targeting exclude those records;
+compiled bindings retain their exact provenance keys. Migration 0029 backfills prior
+empty imported provenance records and prevents targets or topology being added to them.
+The real native-after-import regression failed before the repair, then passed after
+reopen; migration, binding and cleanup tests cover the separate storage boundaries.
+
+Focused asset tests observe real concurrent attached acceptance replacing an asset
+between closure/metadata capture and its body read, rejection of the stale pin, and
+fresh multi-root capture. Authenticated HTTP tests cover both metadata and body reads.
+The asset-loop scenario retains privacy/preflight/deduplication checks and bounded
+retry behavior. A separate builder regression exercises both ordinary and public-share
+export through the real Product store and authenticated runtime client: it changes the
+returned graph after a stale read, observes two closure captures, and verifies only the
+new presentation and asset bytes occur in the decoded export. During the edit loop, a draft duplicate asset case was replaced by the real
+replacement race; no committed test or distinct failure boundary was removed. The first new race fixture used an
+invalid null source-layer binding; its retained failure was repaired with the exact
+existing source-layer provenance, without changing production validation.
+
+Full-check, build, joined portability and independent final-source evidence for this
+follow-up are recorded below only after execution; prior passes above certify their
+own recorded snapshots.
+
+Reverse invocation validation now rejects an included accepted result whose converted
+source action is already present but whose action origin was erased. The same rule is
+applied by the Rust import contract and public parser. Repeated presenting occurrences
+of the same source action remain valid, and a source-only snapshot need not include an
+external result interaction. These checkpoints preserve exact lineage without guessing
+an owner from first occurrence or exporting unrelated conversation metadata.
+
+The builder regression initially omitted a required temporal-feature fixture field;
+the original failure is retained separately. The corrected scenario passed for both
+export builders. Reverse-origin fixture repair corrected an optional client-key type;
+no production rule or assertion was relaxed. These are test setup failures, distinct
+from the reproduced pre-fix native-target authority regression.
+
+Final source manifest: 61 files, SHA-256
+`58ac99645747f9d0bb8c47a131f9d79291e74e07952217c28cbb4b4f5e73d419`.
+Independent assertions for this exact source:
+
+- `/root/portable_import`: PASS, no unresolved findings for asset snapshot pins,
+  transactional metadata/body reads, whole-export retry, V1/V2/V3 compatibility,
+  privacy/preflight and checkpoint/test-subsumption mapping. Seven-file scope digest
+  `df84f4400337099cc7b0632a7f1ffae5c3f10b6292bb0ee057a278d5569fa832`.
+- `/root/navigator_review`: PASS, no unresolved findings for provenance-only marker
+  visibility, import/migration, native targeting, compiled binding projection and
+  cleanup. Nine-file recorded scope digest
+  `2ff0913f19131fe65ea4ccce0c729f3c3bddf3585e73c9dd9a2a212e7b00d30e`
+  also includes that reviewer's origin implementation; only the marker scope is
+  independently reviewed by this reviewer.
+- `/root/navigator_standards`: verified all 61 hashes; PASS, no unresolved findings
+  for the independently reviewed Rust/public reverse-origin validators and regressions,
+  reused source attribution, omitted external results, and cumulative checkpoint mapping.
+  Its own asset implementation is covered by the separate portable_import assertion.
+
+These source-review assertions do not substitute for test execution. Any source change
+invalidates the affected assertion. Public viewer focused tests passed 58/58; Rust
+contract tests passed 30/30 with a later focused reuse assertion pass. Full execution
+and artifact pairing are recorded after the final source run.
+
+Final execution on the 61-file source manifest passed: `npm run check` (3,237
+Vitest tests, three skipped; 240 files passed, one skipped; all Rust/Clippy/crash
+checks, two secret-boundary tests, 60 Python tests and lints) and `npm run build`.
+The joined Product/Eval/export/import/re-export/share-service journey and Prime visual
+suite passed three tests against service commit
+`fddecf52b03e542659cd74b887d1b77503de185c`. Compiled Eval passed four tests.
+The refreshed synthetic snapshot then passed four native public-viewer theme/viewport
+captures, including exact graph edges, selected result turn/prompt, assets, controls,
+stable URL and zero external requests/inference. Desktop-light and mobile-dark graph
+captures were visually inspected. Earlier unrelated Desktop heavy evidence retains
+its original source attribution above. No paid inference or deployment was performed.

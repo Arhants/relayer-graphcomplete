@@ -780,15 +780,27 @@ export function parseConversationExportSnapshot(input) {
   const layerKeys = new Map(acceptedTurns.flatMap((turn) => turn.acceptedView.layers.map(({ layer }) => [
     layer.id, layer.clientKey,
   ])));
-  // Converted provenance has an accepted destination even when the containing
-  // export also preserves failed or stopped ordinary interactions.
+  // Check both declared origins and included converted destinations. Reused source
+  // nodes may present the same action in several turns; do not infer its owner from
+  // the first occurrence or require an external result turn to be included.
+  const convertedTargets = new Map();
   for (const turn of turns) {
     const origin = validateOrigin(turn.origin, `turn[${turn.sequence - 1}].origin`);
-    if (origin.kind !== "action") continue;
-    const source = acceptedById.get(origin.sourceTurnId);
+    const source = origin.kind === "action" ? acceptedById.get(origin.sourceTurnId) : null;
     const action = source?.acceptedView.layers.flatMap(layer => layer.actions).find(candidate => candidate.id === origin.sourceActionId);
+    const priorConverted = convertedTargets.get(turn.acceptedView?.rootLayerId);
+    if (priorConverted && (origin.kind !== "action" || !priorConverted.has(origin.sourceActionId)
+      || source?.sequence >= turn.sequence || action?.convertedFromInvoke !== true
+      || action.targetLayerId !== turn.acceptedView.rootLayerId)) {
+      fail("invoke_origin_invalid", `turn[${turn.sequence - 1}].origin`, "Included converted results must retain their source action origin.");
+    }
     if (action?.convertedFromInvoke === true && (source.sequence >= turn.sequence || turn.completion.status !== "accepted" || action.targetLayerId !== turn.acceptedView?.rootLayerId)) {
       fail("invoke_origin_invalid", `turn[${turn.sequence - 1}].origin`, "Converted invoke origins require their exact accepted destination.");
+    }
+    for (const candidate of turn.acceptedView?.layers.flatMap(layer => layer.actions) ?? []) {
+      if (candidate.convertedFromInvoke !== true) continue;
+      if (!convertedTargets.has(candidate.targetLayerId)) convertedTargets.set(candidate.targetLayerId, new Set());
+      convertedTargets.get(candidate.targetLayerId).add(candidate.id);
     }
   }
   const invokeTargets = new Map();

@@ -600,6 +600,13 @@ impl crate::GraphDatabase {
             sqlx::query("INSERT INTO imported_layer_client_keys(layer_id,import_id,client_key) VALUES (?1,?2,?3)")
                 .bind(layer_id).bind(import_id).bind(key.as_deref().unwrap_or(&portable_id))
                 .execute(&mut *tx).await?;
+            sqlx::query(
+                "INSERT INTO imported_provenance_layers(layer_id,import_id) VALUES (?1,?2)",
+            )
+            .bind(layer_id)
+            .bind(import_id)
+            .execute(&mut *tx)
+            .await?;
             layer_ids.insert(portable_id, layer_id);
         }
 
