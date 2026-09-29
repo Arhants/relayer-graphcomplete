@@ -184,7 +184,7 @@ describe("conversation export to Eval end to end", () => {
       "accepted", "accepted", "failed", "running",
     ]);
     expect(turnRecords[0].acceptedView.layers.map((layer) => layer.layer.id)).toHaveLength(5);
-    expect(turnRecords[0].acceptedView.layers.flatMap((layer) => layer.actions).filter((action) => action.relation === "reference")).toHaveLength(5);
+    expect(turnRecords[0].acceptedView.layers.flatMap((layer) => layer.actions).filter((action) => action.relation === "reference")).toHaveLength(4);
     const exportedRoot = turnRecords[0].acceptedView.layers.find(
       (layer) => layer.layer.id === turnRecords[0].acceptedView.rootLayerId,
     );
@@ -408,7 +408,7 @@ describe("conversation export to Eval end to end", () => {
       const compareButton = card.querySelector("button");
       expect(compareButton?.disabled).toBe(false);
       compareButton.click();
-      await vi.waitFor(() => expect(publicWindow.document.querySelector('.graph-node[aria-label="Open Shared reference"]')).toBeTruthy());
+      await vi.waitFor(() => expect(publicWindow.document.querySelector('.graph-node[aria-label="Open Expanded detail"]')).toBeTruthy());
       expect(publicWindow.location.href).toBe(originalPublicUrl);
       viewer.dispose();
     } finally {
@@ -669,10 +669,10 @@ function complexConversationFactory(projectPath) {
       const nested = new LayerObject([nestedNode], [], centeredLayout(nestedNode), "nested-layer");
       const shared = new LayerObject([sharedNode], [], centeredLayout(sharedNode), "shared-layer");
       const cycle = new LayerObject([cycleNode], [], centeredLayout(cycleNode), "cycle-layer");
-      const compareAction = { kind: "navigate", relation: "reference", sourceLayer: root, label: "Compare tradeoffs", target: shared, clientKey: "/Users/synthetic/compare-private-key" };
+      const compareAction = { kind: "navigate", relation: "expand", sourceLayer: root, label: "Compare tradeoffs", target: expanded, clientKey: "/Users/synthetic/compare-private-key" };
       rootEvidenceNode.detailAuthoring.setComponent(
         "portable-visual",
-        html`<article class="share-card"><h2>Meet in the middle</h2><p>A styled card with a portable navigation button.</p><figure><img alt="Portable status illustration" asset=${assetRef(asset.id)}></figure><button gc=${detailCapability.reference("compare", compareAction)}>Compare tradeoffs</button></article>`,
+        html`<article class="share-card"><h2>Meet in the middle</h2><p>A styled card with a portable navigation button.</p><figure><img alt="Portable status illustration" asset=${assetRef(asset.id)}></figure><button gc=${detailCapability.expand("compare", compareAction)}>Compare tradeoffs</button></article>`,
         css`.share-card { padding: 1rem; border: 1px solid; border-radius: 1rem; display: grid; gap: 0.75rem; } .share-card img { width: 64px; height: 64px; } [data-relayer-theme="light"] .share-card { color: #201a16; background-color: #fffaf2; border-color: #a87b5d; } [data-relayer-theme="dark"] .share-card { color: #f7eee7; background-color: #1b1715; border-color: #a87b5d; } button { padding: 0.75rem; border: 1px solid; border-radius: 0.5rem; }`,
       );
       for (const node of [rootNode, rootEvidenceNode, expandedNode, nestedNode, sharedNode, cycleNode]) await graph.submitNode(node);

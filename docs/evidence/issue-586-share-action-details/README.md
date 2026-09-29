@@ -12,7 +12,7 @@ is used. Hosted upload, auth, publication, and replacement-share creation are se
 | SHR-UX-001 | Graph-core package derivation; Rust share projection | `cargo test -p relayer-app-server --lib share_bindings`; exact provenance, duplicate keys across turns, absent original layer, corrupt integrity, ambiguous or mismatched binding, original export unchanged |
 | SHR-UX-002 | Privacy predicate, node projection, asset collection | `cargo test -p relayer-app-server --lib conversation_export_service`; derived package privacy plus existing asset exclusion; joined V2 image and action case below |
 | SHR-UX-003 | Public source-layer alias projection; unchanged production action runtime | `npx vitest run test/public-share-viewer.test.mjs test/node-detail-runtime.test.mjs`; explicit legacy keys win, absent-source generated aliases resolve, input/invoke remain read-only |
-| SHR-UX-004 | Production exporter → public reader → production workspace | `npx vitest run test/conversation-export-eval-e2e.test.mjs`; actual frozen Rust bytes, image pin, authored card, embedded navigation and unchanged URL |
+| SHR-UX-004 | Production exporter → public reader → production workspace | `npx vitest run test/conversation-export-eval-e2e.test.mjs`; actual frozen Rust bytes, image pin, authored card, embedded expand navigation and unchanged URL |
 | Visual/human | Desktop/mobile and light/dark card and button | `npm run evidence:share-action-details`; human review through `npm run review:share-action-details` |
 
 Required heavy entry points: `npm run check`, `npm run build`,
@@ -40,7 +40,7 @@ npm run review:share-action-details
 
 The review command prints the exact loopback share URL. Select **Root evidence**.
 Confirm the styled “Meet in the middle” card and its image. Click **Compare
-tradeoffs** and confirm arrival at **Shared reference** without a URL change.
+tradeoffs** and confirm arrival at **Expanded detail** without a URL change.
 Check light/dark and a narrow viewport. The human gate remains pending until a
 person reviews this result; automated screenshots do not accept the product.
 
@@ -58,3 +58,26 @@ package.
 - The first joined fixture failed during authoring, before export; diagnosis retained in the PR work log.
 - Native acceleration: the first cache probe used CI-style platform/toolchain labels and was rejected. Verification with the local bundle's actual `darwin-arm64` and full Rust release identity succeeded; all hashes, lockfile, and source contract checks passed. The bundle producer was `92a89d6a`. Changed Rust inputs require fresh runtime compilation; no runtime artifact was reused as proof.
 - Final required-check results, source-bound review, and human gate status are recorded in the PR. This document alone makes no pass claim.
+
+## Merge-readiness follow-up
+
+The joined fixture now uses an embedded **expand** action, matching the original
+regression. Its target is the existing expansion layer; the separate reference
+cycle remains covered by the same scenario. The exact destination is **Expanded
+detail**. The earlier reference-only fixture remains historical evidence, not the
+final expand checkpoint.
+
+The embed runner previously sent Tab events without awaiting dispatch. A focus
+trace changed the result; the uninstrumented runner reproduced the failure.
+Awaited Chromium keyboard dispatch now uses the same path as its Escape checkpoint.
+The exit condition is unchanged: focus must reach the parent article link.
+No product focus behavior or assertion was weakened. The final embed manifest is
+saved with its captures in `embed/`; regenerate them with
+`npm run evidence:public-share-embed`.
+
+Final follow-up results: actual exporter/expand/navigation scenario passed;
+four authored-card visual cases passed; all 35 iframe checkpoints passed.
+The iframe exit check also failed as expected in a disposable negative run
+that prevented Tab's default action. That negative injection was removed.
+The runner asserts focus starts on Fit graph inside the first iframe before
+sending Tab. No fixed sleep or retry was added.

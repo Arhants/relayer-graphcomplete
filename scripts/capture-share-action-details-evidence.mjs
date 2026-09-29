@@ -60,7 +60,7 @@ try {
         const file = `${theme}-${name}.png`;
         await writeFile(resolve(actionEvidenceRoot, file), image);
         await window.webContents.executeJavaScript(`${cardHost}.querySelector('button').click()`);
-        await waitFor(window, "embedded button navigates to exact destination", `Boolean(document.querySelector('.graph-node[aria-label="Open Shared reference"]'))`);
+        await waitFor(window, "embedded button navigates to exact destination", `Boolean(document.querySelector('.graph-node[aria-label="Open Expanded detail"]'))`);
         if (await window.webContents.getURL() !== url) throw new Error("Navigation changed public URL");
         captures.push({ file, theme, width, height, sha256: sha256(image), geometry, embeddedNavigationPassed: true, unchangedUrl: true });
       } finally { window.destroy(); }

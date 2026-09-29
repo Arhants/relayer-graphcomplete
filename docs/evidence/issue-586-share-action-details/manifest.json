@@ -1,8 +1,8 @@
 {
-  "commit": "8580c476eee0a8a4fc5a165532f39a9723b4ae9f",
+  "commit": "a4953ceef41dfac72db25feb8263d51aaf046ba4",
   "dirty": true,
   "fixture": "docs/evidence/issue-586-share-action-details/synthetic-snapshot.jsonl",
-  "fixtureSha256": "ab50cb1a8218c2ac9772708c6fa3c9f2c78465b4bc9992e9a51f38840c06ca0b",
+  "fixtureSha256": "3bc741eee0150f5587c5f621ca076124a7be691d21b886501c653f77171de55b",
   "sourceFiles": {
     "crates/relayer-app-server/src/conversation_export_service.rs": "bb2b756b0dcac748f79ac55e4b2138abff5279b51bc839b03ccbe14e141d0a60",
     "crates/relayer-app-server/src/conversation_export_service/share_bindings.rs": "993fe50fea8b41306940dcfe0b475126d652b965549c5e6e8445fb399a03de32",
@@ -39,10 +39,10 @@
     "desktop/renderer/styles.css": "1a56e218ff65544737f21677353dd240834107c153c7478394ef9a7d94ad88e4",
     "desktop/renderer/vendor/lucide.min.js": "534813d1da2f4d4550383d5db0879aedb2f74c2d0b8951ade277e8bcaea6df52",
     "desktop/renderer/vendor/marked.umd.js": "2e20e86f0a13107ae9bf00675894bbb573716a8e5b4fde612eacaff1e404c128",
-    "scripts/capture-share-action-details-evidence.mjs": "f9ee67fc9ed1ff3451b364706a6f88a6a269348e280e49b49c8b83b01279b6b4",
+    "scripts/capture-share-action-details-evidence.mjs": "61557425cccdb18a33400b1cfff0f57bc02c536438b699457b2941ea6def0de6",
     "scripts/fixtures/public-share-embed.mjs": "8a4bc920a51088a2cd6683352e852dfb1b8086a002caa7a6898e1ff737c7e4f8",
     "scripts/fixtures/share-action-details.mjs": "9c189fe0ca12fea90e9f4dba14c19699844bdd13ffeae134da56b8cfabe39b56",
-    "test/conversation-export-eval-e2e.test.mjs": "c0210fc601e0d40f7b2f8d83f48a93ad67929ce5a113948bff8850beff59e96f"
+    "test/conversation-export-eval-e2e.test.mjs": "0768379dd11750a783b23d8e93f6311eacd57607f33e02d6c6b124fb5695e93f"
   },
   "captures": [
     {
