@@ -803,6 +803,16 @@ export function parseConversationExportSnapshot(input) {
       convertedTargets.get(candidate.targetLayerId).add(candidate.id);
     }
   }
+  // A converted action may be presented after its included result. Validate the
+  // complete inventory for both uniqueness and the declared action identity.
+  for (const turn of acceptedTurns) {
+    const actions = convertedTargets.get(turn.acceptedView.rootLayerId);
+    if (!actions) continue;
+    const origin = validateOrigin(turn.origin, `turn[${turn.sequence - 1}].origin`);
+    if (actions.size !== 1 || origin.kind !== "action" || !actions.has(origin.sourceActionId)) {
+      fail("invoke_origin_invalid", `turn[${turn.sequence - 1}].origin`, "An included converted result requires one unambiguous source action origin.");
+    }
+  }
   const invokeTargets = new Map();
   const invokeDestinationTurns = new Map();
   for (const turn of acceptedTurns) {

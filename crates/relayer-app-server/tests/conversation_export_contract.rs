@@ -1721,6 +1721,16 @@ fn v3_current_conversion_snapshot_preserves_exact_origin_and_version_boundary() 
     };
     result.origin = ExportTurnOrigin::User;
     assert_rejected_with_parity(&erased_origin, "converted_invoke_origin_missing");
+    // A source presented after the result must not bypass reverse lineage checks.
+    erased_origin.swap(1, 2);
+    for (index, record) in erased_origin.iter_mut().enumerate().skip(1) {
+        let ConversationExportRecord::Turn(turn) = record else {
+            unreachable!()
+        };
+        turn.id = format!("turn:{index}");
+        turn.sequence = index as u32;
+    }
+    assert_rejected_with_parity(&erased_origin, "converted_invoke_origin_missing");
 
     // A source-only export retains navigation to an external conversation's
     // result without inventing an included turn or invocation origin.
@@ -1769,6 +1779,44 @@ fn v3_current_conversion_snapshot_preserves_exact_origin_and_version_boundary() 
     });
     validate_export_records(&reused).unwrap();
     validate_incrementally(&reused).unwrap();
+
+    for later_occurrence in [false, true] {
+        let mut ambiguous = reused.clone();
+        let ConversationExportRecord::Turn(presentation) = &mut ambiguous[2] else {
+            unreachable!()
+        };
+        let actions = &mut presentation.accepted_view.as_mut().unwrap().layers[0].actions;
+        let mut other = actions[0].clone();
+        other.id = "action:other-conversion".into();
+        other.client_key = Some("other-conversion".into());
+        actions.push(other);
+        if later_occurrence {
+            ambiguous.swap(2, 3);
+            for (index, record) in ambiguous.iter_mut().enumerate().skip(2) {
+                let ConversationExportRecord::Turn(turn) = record else {
+                    unreachable!()
+                };
+                turn.id = format!("turn:{index}");
+                turn.sequence = index as u32;
+                if let ExportTurnOrigin::Action { source_turn_id, .. } = &mut turn.origin {
+                    *source_turn_id = "turn:1".into();
+                }
+            }
+        }
+        assert_rejected_with_parity(&ambiguous, "converted_invoke_origin_ambiguous");
+    }
+
+    // Multiple external targets do not establish an included result's lineage.
+    let ConversationExportRecord::Turn(source) = &mut external_result[1] else {
+        unreachable!()
+    };
+    let actions = &mut source.accepted_view.as_mut().unwrap().layers[0].actions;
+    let mut other = actions[0].clone();
+    other.id = "action:external-conversion".into();
+    other.client_key = Some("external-conversion".into());
+    actions.push(other);
+    validate_export_records(&external_result).unwrap();
+    validate_incrementally(&external_result).unwrap();
 
     let mut wrong_destination = fixture.clone();
     let ConversationExportRecord::Turn(result) = &mut wrong_destination[2] else {

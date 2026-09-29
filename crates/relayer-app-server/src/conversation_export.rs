@@ -628,6 +628,7 @@ pub struct ConversationExportValidator {
     prior_invokes: HashMap<String, HashMap<String, Option<String>>>,
     converted_origins: HashSet<String>,
     converted_targets: HashMap<String, HashSet<String>>,
+    accepted_root_origins: Vec<(String, Option<String>)>,
     accepted_occurrences: HashMap<String, HashMap<String, HashSet<String>>>,
     context_layer_owners: HashMap<String, String>,
     interaction_ids: HashSet<String>,
@@ -673,6 +674,7 @@ impl ConversationExportValidator {
             prior_invokes: HashMap::new(),
             converted_origins: HashSet::new(),
             converted_targets: HashMap::new(),
+            accepted_root_origins: Vec::new(),
             accepted_occurrences: HashMap::new(),
             context_layer_owners: HashMap::new(),
             interaction_ids: HashSet::new(),
@@ -973,6 +975,15 @@ impl ConversationExportValidator {
             );
         }
         if let Some(view) = &turn.accepted_view {
+            self.accepted_root_origins.push((
+                view.root_layer_id.clone(),
+                match &turn.origin {
+                    ExportTurnOrigin::Action {
+                        source_action_id, ..
+                    } => Some(source_action_id.clone()),
+                    ExportTurnOrigin::User => None,
+                },
+            ));
             self.accepted_occurrences.insert(
                 turn.id.clone(),
                 view.layers
@@ -1039,6 +1050,30 @@ impl ConversationExportValidator {
                     self.next_turn
                 ),
             ));
+        }
+        // A later presenting turn can expose a converted action, so validate
+        // uniqueness and lineage against the complete inventory, not only a prefix.
+        for (root, origin) in &self.accepted_root_origins {
+            let Some(actions) = self.converted_targets.get(root) else {
+                continue;
+            };
+            if actions.len() > 1 {
+                return Err(ExportValidationError::new(
+                    "converted_invoke_origin_ambiguous",
+                    "records",
+                    "An included accepted result cannot be the destination of distinct converted invokes.",
+                ));
+            }
+            if !origin
+                .as_ref()
+                .is_some_and(|action| actions.contains(action))
+            {
+                return Err(ExportValidationError::new(
+                    "converted_invoke_origin_missing",
+                    "records",
+                    "An included converted invoke result must retain its source action origin.",
+                ));
+            }
         }
         if let Some(unreachable) = self
             .visual_asset_contents

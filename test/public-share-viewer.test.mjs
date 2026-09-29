@@ -877,11 +877,32 @@ describe("V3 current converted-invoke snapshots", () => {
     const invocation = interactionGraph(snapshot.interactions, "turn:3").edges.find(edge => edge.invocationActionId === "action:invoke");
     expect(invocation.source).toBe("turn:2");
     expect(invocation.target).toBe("turn:3");
+    const other = structuredClone(reused.acceptedView.layers[0].actions.find(action => action.convertedFromInvoke));
+    Object.assign(other, { id: "action:other-conversion", clientKey: "other-conversion" });
+    reused.acceptedView.layers[0].actions.push(other);
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+    // A conflicting action discovered after the result is equally ambiguous.
+    [records[2], records[3]] = [records[3], records[2]];
+    Object.assign(records[2], { id: "turn:2", sequence: 2 });
+    records[2].origin.source_turn_id = "turn:1";
+    Object.assign(records[3], { id: "turn:3", sequence: 3 });
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+    // Omitting the result keeps the external navigation without inventing lineage.
+    records.splice(2, 1);
+    Object.assign(records[2], { id: "turn:2", sequence: 2 });
+    records[0].turns.pop();
+    expect(parsePublicSnapshot(recordsJsonl(records)).interactions).toHaveLength(2);
+
   });
   it("rejects an included converted result with erased invocation lineage", () => {
     const records = convertedRecords();
     records[2].origin = { kind: "user" };
     expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+    [records[1], records[2]] = [records[2], records[1]];
+    Object.assign(records[1], { id: "turn:1", sequence: 1 });
+    Object.assign(records[2], { id: "turn:2", sequence: 2 });
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+
   });
   it("rejects a converted origin pointing to an unaccepted result", () => {
     const records = convertedRecords();

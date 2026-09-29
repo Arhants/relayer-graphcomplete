@@ -391,3 +391,59 @@ captures, including exact graph edges, selected result turn/prompt, assets, cont
 stable URL and zero external requests/inference. Desktop-light and mobile-dark graph
 captures were visually inspected. Earlier unrelated Desktop heavy evidence retains
 its original source attribution above. No paid inference or deployment was performed.
+
+## Included converted-result uniqueness repair
+
+Review thread `PRRT_kwDOTyTfxM6nPfgX` identified that distinct converted action IDs
+could target one included accepted response while its origin selected only one of
+those actions. The Rust incremental validator now retains each accepted root's
+origin and checks the complete converted-action inventory in `finish()`. The public
+snapshot parser performs the equivalent whole-snapshot check. A later presenting
+record cannot bypass either uniqueness or reverse-origin validation. This repairs
+V3 lineage validation; it adds no graph execution or mutation authority.
+
+Changed executable seams and checkpoints:
+
+- Rust full and incremental export/import validation: the existing
+  `v3_current_conversion_snapshot_preserves_exact_origin_and_version_boundary`
+  scenario rejects distinct converted actions presented before or after the included
+  result. It also rejects erased lineage when the sole converted action is presented
+  later, preserves repeated occurrences of the same action, and allows omitted
+  external results without inventing lineage.
+- Public parsing and graph projection: the existing reused-source and erased-lineage
+  scenarios in `test/public-share-viewer.test.mjs` observe the same boundaries and
+  retain the declared source-to-result edge for valid reused actions.
+
+Both old production validators were observed accepting the distinct-action fixture:
+`/tmp/relayer-604-ambiguous-origin-red-rust2.log` and
+`/tmp/relayer-604-ambiguous-origin-red-js.log` retain the failing assertions. The first
+Rust test setup attempt used a string where an optional client key was required;
+that compile failure remains in `/tmp/relayer-604-ambiguous-origin-red-rust.log`.
+No product rule or assertion was relaxed to repair the fixture.
+
+Final focused execution passed: all 30 Rust contract tests in
+`/tmp/relayer-604-ambiguous-origin-final-rust.log`, and all 58 public-viewer tests in
+`/tmp/relayer-604-ambiguous-origin-final-js.log`. Four-file source scope digest:
+`714ef7863c6824e559a980bae31cf3f810629a5d607ef5c5703428a84b5392eb`.
+The updated 61-file manifest SHA-256 is
+`c9faae39d072ffbd1f349020c428cb641e106f29d78c7cd948b9fe34f47c1c5e`.
+Prior exact-source review assertions are superseded for these changed files.
+Independent review and required `npm run check` / `npm run build` are recorded by
+the coordinating agent after they complete. Earlier native and live evidence retains
+its original source attribution; this repair ran no inference or hosted publication.
+
+The first full check of this final provenance repair passed Rust and 3,236
+JavaScript tests but failed the provider-video capture because the `removed`
+variant PNG was only 4,717 bytes (required 15,000). The unchanged isolated
+provider evidence suite subsequently passed 5/5 in 90.89 seconds. Logs:
+`/tmp/relayer-604-final-origin-check.log` and
+`/tmp/relayer-604-provider-capture-recheck.log`. This failure remains recorded;
+the full retry and build results are reported separately.
+
+On the unchanged final source, the complete `npm run check` retry passed,
+followed by `npm run build` and the joined Product/Eval/export/import/re-export
+journey against exact companion service `fddecf52`. Logs:
+`/tmp/relayer-604-final-origin-check-retry.log`,
+`/tmp/relayer-604-final-origin-build.log`, and
+`/tmp/relayer-604-final-origin-joined.log`. Independent review remains bound to
+the four executable/test files recorded above; this paragraph changes evidence only.
