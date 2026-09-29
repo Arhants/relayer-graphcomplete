@@ -5,7 +5,7 @@ All V1 graph semantics, authority exclusions, validation rules, and bounds still
 The header declares `exportVersion: 2`. The stream contains one header, zero or more
 `visualAssetContent` records, then the ordered turn records. Content records cannot follow a turn.
 V1 remains header-and-turn only; V1 readers must reject this version. Current readers accept
-V1, V2 and V3. For graphs without attached mutations or converted invokes, the exporter uses V1 when no content records are needed and V2 otherwise. V3 current snapshots are defined in the [V3 section](conversation-export-v1.md#v3-current-accepted-snapshots).
+V1, V2 and V3. For graphs without attached mutations, converted invokes or portable attachment ownership, the exporter uses V1 when no content records are needed and V2 otherwise. V3 current snapshots are defined in the [V3 section](conversation-export-v1.md#v3-current-accepted-snapshots).
 
 Each content record contains `digestSha256`, `mediaType`, `byteLength`, and `contentBase64`.
 Content is globally unique by SHA-256 digest, nonempty, and at most 8 MiB decoded. The existing

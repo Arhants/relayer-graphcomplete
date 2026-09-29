@@ -138,3 +138,19 @@ present. It adds no response topology or authority. Conflicting provenance keys 
 V3 re-export retains the originally imported format even without native mutation records.
 V3 permits a Reference backlink to the response root; Expand cycles and mixed arrivals
 at nonroot layers remain invalid.
+
+
+### V3 portable attachment ownership
+
+An exported context source may include `ownerTurnId`, the export-local identity of an
+earlier included accepted turn that canonically owns its exact source layer. This is
+distinct from `interactionNodeId`, which records the presenting occurrence. The owner
+must include that layer and attached node in its accepted view. All declarations for
+one layer must agree. The field is V3-only; exporting ownership promotes the snapshot
+to V3. Omitted owners remain unknown, including outside-conversation and old-view cases.
+
+Public graph navigation uses this inert provenance to group attachment edges and uses
+validated action origins for invocation edges. Missing ownership never permits inference
+from chronology, layer containment, or node creation. V1/V2 still render graph cards
+and their provable invocation connections. Imports store and re-export remapped owner
+turn identities without consulting imported materialization ownership or granting authority.

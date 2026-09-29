@@ -200,6 +200,10 @@ pub struct ExportContextTargetSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportContextSource {
+    /// Exact immutable layer owner, only when its accepted turn is included.
+    /// Absence means unknown; the presenting interaction is not an owner hint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_turn_id: Option<String>,
     /// Authority-free diagnostic references to the accepted occurrence used
     /// when the input was prepared. Imported graph state uses fresh local IDs.
     pub interaction_node_id: String,
@@ -623,6 +627,8 @@ pub struct ConversationExportValidator {
     next_turn: usize,
     prior_invokes: HashMap<String, HashMap<String, Option<String>>>,
     converted_origins: HashSet<String>,
+    accepted_occurrences: HashMap<String, HashMap<String, HashSet<String>>>,
+    context_layer_owners: HashMap<String, String>,
     interaction_ids: HashSet<String>,
     root_action_ids: HashSet<String>,
     layers_by_id: HashMap<String, [u8; 32]>,
@@ -665,6 +671,8 @@ impl ConversationExportValidator {
             next_turn: 0,
             prior_invokes: HashMap::new(),
             converted_origins: HashSet::new(),
+            accepted_occurrences: HashMap::new(),
+            context_layer_owners: HashMap::new(),
             interaction_ids: HashSet::new(),
             root_action_ids: HashSet::new(),
             layers_by_id: HashMap::new(),
@@ -813,6 +821,38 @@ impl ConversationExportValidator {
             }
         }
         for context in &turn.contexts {
+            if let Some(owner) = &context.source.owner_turn_id {
+                if self.export_version != EXPORT_VERSION_V3 {
+                    return Err(ExportValidationError::new(
+                        "context_owner_version",
+                        &path,
+                        "Context layer ownership requires export V3.",
+                    ));
+                }
+                require_id(owner, "turn", format!("{path}.contexts.source.ownerTurnId"))?;
+                let members = self
+                    .accepted_occurrences
+                    .get(owner)
+                    .and_then(|layers| layers.get(&context.source.layer_id));
+                if !members.is_some_and(|nodes| nodes.contains(&context.target.id)) {
+                    return Err(ExportValidationError::new(
+                        "context_owner_invalid",
+                        &path,
+                        "Context ownership must identify an exact occurrence in an earlier included accepted turn.",
+                    ));
+                }
+                if self
+                    .context_layer_owners
+                    .insert(context.source.layer_id.clone(), owner.clone())
+                    .is_some_and(|prior| prior != *owner)
+                {
+                    return Err(ExportValidationError::new(
+                        "context_owner_conflict",
+                        &path,
+                        "A context layer has one immutable owner.",
+                    ));
+                }
+            }
             if self.context_actions_by_id.contains_key(&context.id) {
                 return Err(ExportValidationError::new(
                     "duplicate_context_action",
@@ -914,6 +954,20 @@ impl ConversationExportValidator {
                     .flat_map(|layer| &layer.actions)
                     .filter(|action| action.kind == ExportActionKind::Input)
                     .map(|action| action.id.clone()),
+            );
+        }
+        if let Some(view) = &turn.accepted_view {
+            self.accepted_occurrences.insert(
+                turn.id.clone(),
+                view.layers
+                    .iter()
+                    .map(|resolved| {
+                        (
+                            resolved.layer.id.clone(),
+                            resolved.layer.nodes.iter().cloned().collect(),
+                        )
+                    })
+                    .collect(),
             );
         }
         self.prior_invokes.insert(

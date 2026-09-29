@@ -1,5 +1,5 @@
 {
-  "sourceManifestSha256": "22946def8ec75b681607f723b882c59f95dcfcd6b96c33010b2e3825878ee29f",
+  "sourceManifestSha256": "9e3b71804646900ff22b69af4342f0b748bf77ef636cd63decd038ad85102477",
   "fullCheck": {
     "passed": true,
     "vitestPassed": 3225,
@@ -78,5 +78,33 @@
       "files": 56,
       "verdict": "PASS; no unresolved findings"
     }
+  },
+  "publicNavigatorFollowup": {
+    "priorCommit": "1e28adf86c845959656d5320f95ebf5f327b5798",
+    "decision": "Public shares use interaction graph instead of turn dial",
+    "checkpoints": [
+      "AN-003",
+      "AN-004",
+      "AN-005",
+      "AN-006"
+    ],
+    "sourceFiles": 59,
+    "publicTestsPassed": 56,
+    "rustContractTestsPassed": 30,
+    "exporterTestsPassed": 35,
+    "nativeGraphThemeViewportChecksPassed": 4,
+    "legacyPublicCaptureChecksPassed": 3,
+    "assetPolicyRegression": "Owner-only V3 is selected before asset collection and rejects missing metadata; legacy fallback retained",
+    "fullCheck": "passed: Rust/Clippy/crash, 3235 Vitest, 2 secret-boundary, 60 Python and lints",
+    "build": "passed",
+    "finalJoinedRerun": "passed against service fddecf52b03e542659cd74b887d1b77503de185c",
+    "independentReview": {
+      "reviewer": "navigator_standards",
+      "manifestSha256": "9e3b71804646900ff22b69af4342f0b748bf77ef636cd63decd038ad85102477",
+      "files": 59,
+      "verdict": "PASS; no unresolved findings"
+    },
+    "compiledEvalPassed": 4,
+    "primeVisualPassed": 2
   }
 }

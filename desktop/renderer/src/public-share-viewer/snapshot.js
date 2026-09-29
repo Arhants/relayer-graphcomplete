@@ -626,7 +626,22 @@ function validateTurn(turn, path, manifestEntry, exportVersion) {
   if (!Object.prototype.hasOwnProperty.call(value, "acceptedView")) fail("field_missing", `${path}.acceptedView`, "Every V1 turn must declare acceptedView.");
   if (status === "accepted" && !value.acceptedView) fail("accepted_view_missing", `${path}.acceptedView`, "An accepted turn must include its immutable accepted view.");
   if (status !== "accepted" && value.acceptedView != null) fail("accepted_view_unexpected", `${path}.acceptedView`, "Only accepted turns may include an accepted view.");
-  if (value.contexts != null) requireArray(value.contexts, `${path}.contexts`);
+  if (value.contexts != null) {
+    requireArray(value.contexts, `${path}.contexts`).forEach((context, index) => {
+      const contextPath = `${path}.contexts[${index}]`;
+      requireRecord(context, contextPath);
+      requireRecord(context.source, `${contextPath}.source`);
+      requireRecord(context.target, `${contextPath}.target`);
+      requirePortableId(context.id, "action", `${contextPath}.id`);
+      requirePortableId(context.target.id, "node", `${contextPath}.target.id`);
+      requirePortableId(context.source.interactionNodeId, "node", `${contextPath}.source.interactionNodeId`);
+      requirePortableId(context.source.layerId, "layer", `${contextPath}.source.layerId`);
+      if (context.source.ownerTurnId != null) {
+        requirePortableId(context.source.ownerTurnId, "turn", `${contextPath}.source.ownerTurnId`);
+        if (exportVersion !== 3) fail("context_owner_invalid", contextPath, "Portable context ownership requires V3.");
+      }
+    });
+  }
   if (value.submittedInputs != null) requireArray(value.submittedInputs, `${path}.submittedInputs`);
   if (status === "accepted") {
     const view = validateAcceptedView(value.acceptedView, `${path}.acceptedView`, exportVersion);
@@ -636,6 +651,48 @@ function validateTurn(turn, path, manifestEntry, exportVersion) {
     value.interactionNodeId ??= view.interactionNodeId;
   }
   return value;
+}
+
+// Only portable, included provenance becomes navigator edges. Layer occurrence
+// and chronological order never establish ownership.
+function projectInteractionGraphs(interactions, turns, layersByTurn, exportVersion) {
+  const byId = new Map(interactions.map(interaction => [interaction.id, interaction]));
+  const owners = new Map();
+  for (const turn of turns) {
+    const sources = new Map();
+    let complete = true;
+    const group = (owner) => {
+      if (!sources.has(owner.id)) sources.set(owner.id, {
+        interactionId: owner.id, threadId: owner.threadId, graphNodeId: owner.graphNodeId,
+        text: owner.text, completionStatus: owner.completionStatus, layers: [], invocationActionId: null,
+      });
+      return sources.get(owner.id);
+    };
+    for (const context of turn.contexts ?? []) {
+      const ownerId = context.source.ownerTurnId;
+      if (ownerId == null) { complete = false; continue; }
+      const owner = byId.get(ownerId);
+      const layer = layersByTurn.get(ownerId)?.get(context.source.layerId);
+      if (exportVersion !== 3 || !owner || owner.sequence >= turn.sequence
+        || !layer?.nodes.some(node => node.id === context.target.id)
+        || (owners.has(context.source.layerId) && owners.get(context.source.layerId) !== ownerId)) {
+        fail("context_owner_invalid", `turn[${turn.sequence - 1}].contexts`, "Context ownership requires one earlier included accepted owner and its exact layer membership.");
+      }
+      owners.set(context.source.layerId, ownerId);
+      const source = group(owner);
+      let entry = source.layers.find(candidate => candidate.layerId === context.source.layerId);
+      if (!entry) { entry = { layerId: context.source.layerId, nodeIds: [] }; source.layers.push(entry); }
+      if (!entry.nodeIds.includes(context.target.id)) entry.nodeIds.push(context.target.id);
+    }
+    const origin = validateOrigin(turn.origin, `turn[${turn.sequence - 1}].origin`);
+    if (origin.kind === "action") {
+      const source = byId.get(origin.sourceTurnId);
+      // Accepted origins were checked against exact source actions above.
+      if (source) group(source).invocationActionId = origin.sourceActionId;
+      else complete = false;
+    }
+    if (byId.has(turn.id)) byId.get(turn.id).interactionGraph = { enabled: true, complete, sources: [...sources.values()] };
+  }
 }
 
 function publicState(snapshot) {
@@ -756,6 +813,7 @@ export function parseConversationExportSnapshot(input) {
     ]),
   )]));
   const interactions = acceptedTurns.map((turn) => interactionFromTurn(turn, threadId, layersByTurn.get(turn.id)));
+  projectInteractionGraphs(interactions, turns, layersByTurn, header.exportVersion);
   const projectName = conversation.projectName ?? null;
   const projectId = projectName ? "export:project" : null;
   const thread = {

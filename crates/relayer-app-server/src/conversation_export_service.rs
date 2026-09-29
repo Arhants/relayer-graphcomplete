@@ -293,17 +293,42 @@ pub(crate) async fn build_conversation_export(
             })
         })
         .collect::<Result<Vec<_>, ConversationExportBuildError>>()?;
+    // Decide the complete V3 policy before assets are collected. Ownership-only
+    // V3 must fail closed on missing assets just like mutation-based V3.
+    let context_owners = collect_context_owners(
+        runtime,
+        detail
+            .interactions
+            .iter()
+            .zip(closures.iter())
+            .filter_map(|(interaction, closure)| {
+                closure.as_ref().map(|closure| (interaction, closure))
+            })
+            .collect(),
+        detail
+            .interactions
+            .iter()
+            .zip(context_inputs.iter())
+            .filter(|(interaction, _)| !imported_turns.contains_key(&interaction.id))
+            .filter_map(|(interaction, context)| {
+                context.as_ref().map(|context| (interaction, context))
+            })
+            .collect(),
+        &turn_sequences,
+    )
+    .await?;
+    let current_snapshot = imported_current_snapshot
+        || !context_owners.is_empty()
+        || closures.iter().flatten().any(needs_current_snapshot);
     let (authored_detail_assets, visual_asset_contents) = collect_visual_assets_for_snapshot(
         runtime,
         closures.iter().flatten(),
         &redactor,
-        imported_current_snapshot,
+        current_snapshot,
     )
     .await?;
     let header = ConversationExportRecord::Header(Box::new(ConversationExportHeader {
-        export_version: if imported_current_snapshot
-            || closures.iter().flatten().any(needs_current_snapshot)
-        {
+        export_version: if current_snapshot {
             EXPORT_VERSION_V3
         } else if visual_asset_contents.is_empty() {
             EXPORT_VERSION_V1
@@ -358,6 +383,7 @@ pub(crate) async fn build_conversation_export(
             &mut ids,
         )?)));
     }
+    enrich_context_owners(&mut records, &context_owners, &ids);
     validate_export_records(&records)?;
     let mut body = Vec::new();
     for record in &records {
@@ -521,10 +547,24 @@ pub(crate) async fn build_share_conversation_export(
         })
         .collect::<Result<Vec<_>, ConversationExportBuildError>>()?;
     share_bindings::project_share_bindings(&mut closures, &mut ids)?;
+    let context_owners = collect_context_owners(
+        runtime,
+        selected.iter().copied().zip(closures.iter()).collect(),
+        selected
+            .iter()
+            .copied()
+            .zip(context_inputs.iter())
+            .collect(),
+        &turn_sequences,
+    )
+    .await?;
+    let current_snapshot =
+        !context_owners.is_empty() || closures.iter().any(needs_current_snapshot);
     let (authored_detail_assets, visual_asset_contents) =
-        collect_visual_assets(runtime, closures.iter(), &redactor).await?;
+        collect_visual_assets_for_snapshot(runtime, closures.iter(), &redactor, current_snapshot)
+            .await?;
     let header = ConversationExportRecord::Header(Box::new(ConversationExportHeader {
-        export_version: if closures.iter().any(needs_current_snapshot) {
+        export_version: if current_snapshot {
             EXPORT_VERSION_V3
         } else if visual_asset_contents.is_empty() {
             EXPORT_VERSION_V1
@@ -583,6 +623,7 @@ pub(crate) async fn build_share_conversation_export(
             &mut ids,
         )?)));
     }
+    enrich_context_owners(&mut records, &context_owners, &ids);
     validate_export_records(&records)?;
 
     let mut body = Vec::new();
@@ -599,6 +640,82 @@ pub(crate) async fn build_share_conversation_export(
         body.push(b'\n');
     }
     Ok(body)
+}
+
+// Layer ownership is immutable and read separately from the coherent content
+// snapshot. Imported storage ownership is a materialization detail, so preserve
+// its validated portable provenance instead of consulting local imported owners.
+async fn collect_context_owners<'a>(
+    runtime: &RuntimeClient,
+    snapshots: Vec<(&'a Interaction, &'a AcceptedGraphClosure)>,
+    contexts: Vec<(&'a Interaction, &'a ContextInput)>,
+    sequences: &HashMap<InteractionId, i64>,
+) -> Result<HashMap<i64, String>, ConversationExportBuildError> {
+    let owners = snapshots
+        .into_iter()
+        .filter_map(|(interaction, closure)| {
+            Some((
+                interaction.graph_node_id?,
+                (turn_id(*sequences.get(&interaction.id)?), closure),
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut cached = HashMap::new();
+    let mut result = HashMap::new();
+    for (interaction, context) in contexts {
+        let ContextInput::Runtime(context) = context else {
+            continue;
+        };
+        let Some(viewer) = interaction.graph_node_id else {
+            continue;
+        };
+        for action in &context.actions {
+            let layer = action.target.source_layer_id.value();
+            let owner = match cached.get(&layer) {
+                Some(owner) => *owner,
+                None => {
+                    let receipt = runtime.get_layer_owner(viewer, layer).await?;
+                    if receipt.layer_id != layer {
+                        return Err(ConversationExportBuildError::Invalid(
+                            "context owner receipt layer mismatch".into(),
+                        ));
+                    }
+                    cached.insert(layer, receipt.owner_interaction_node_id);
+                    receipt.owner_interaction_node_id
+                }
+            };
+            if let Some((owner_turn, closure)) = owners.get(&owner)
+                && closure.layers.iter().any(|resolved| {
+                    resolved.layer.id == action.target.source_layer_id
+                        && resolved.layer.nodes.contains(&action.target.node_id)
+                })
+            {
+                result.insert(action.id.value(), owner_turn.clone());
+            }
+        }
+    }
+    Ok(result)
+}
+
+fn enrich_context_owners(
+    records: &mut [ConversationExportRecord],
+    owners: &HashMap<i64, String>,
+    ids: &PortableIds,
+) {
+    let portable = owners
+        .iter()
+        .filter_map(|(action, owner)| Some((ids.action.get(action)?.as_str(), owner)))
+        .collect::<HashMap<_, _>>();
+    for record in records {
+        let ConversationExportRecord::Turn(turn) = record else {
+            continue;
+        };
+        for context in &mut turn.contexts {
+            if let Some(owner) = portable.get(context.id.as_str()) {
+                context.source.owner_turn_id = Some((*owner).clone());
+            }
+        }
+    }
 }
 
 /// Only publish invoked work when its source ancestry is also in the accepted
@@ -629,6 +746,7 @@ fn share_accepted_interactions<'a>(
         .collect()
 }
 
+#[cfg(test)]
 async fn collect_visual_assets<'a>(
     runtime: &RuntimeClient,
     closures: impl IntoIterator<Item = &'a AcceptedGraphClosure>,
@@ -647,7 +765,7 @@ async fn collect_visual_assets_for_snapshot<'a>(
     runtime: &RuntimeClient,
     closures: impl IntoIterator<Item = &'a AcceptedGraphClosure>,
     redactor: &ProjectPathRedactor,
-    imported_current_snapshot: bool,
+    current_snapshot: bool,
 ) -> Result<
     (
         HashMap<i64, Vec<ExportVisualAssetAssociation>>,
@@ -656,7 +774,7 @@ async fn collect_visual_assets_for_snapshot<'a>(
     ConversationExportBuildError,
 > {
     let closures = closures.into_iter().collect::<Vec<_>>();
-    let strict_snapshot = imported_current_snapshot
+    let strict_snapshot = current_snapshot
         || closures
             .iter()
             .any(|closure| needs_current_snapshot(closure));
@@ -964,13 +1082,26 @@ fn export_turn(
     let accepted_view = closure
         .map(|closure| export_view_with_assets(closure, ids, redactor, authored_detail_assets))
         .transpose()?;
-    let contexts = export_contexts(
+    let mut contexts = export_contexts(
         interaction,
         context_input,
         imported.turn.map(|record| &record.turn.contexts),
         ids,
         redactor,
     )?;
+    if imported.turn.is_some() {
+        for context in &mut contexts {
+            if let Some(owner) = &context.source.owner_turn_id {
+                context.source.owner_turn_id = Some(turn_id(
+                    *imported.turn_sequences.get(owner.as_str()).ok_or_else(|| {
+                        ConversationExportBuildError::Invalid(
+                            "imported context owner is outside the snapshot".into(),
+                        )
+                    })?,
+                ));
+            }
+        }
+    }
     let submitted_inputs = export_submitted_inputs_with_root_sequence(
         interaction,
         submitted_evidence,
@@ -1259,6 +1390,7 @@ fn export_contexts(
                     state: ExportRecordState::Accepted,
                 },
                 source: ExportContextSource {
+                    owner_turn_id: None,
                     interaction_node_id: ids.node(action.target.source_interaction_node_id.value()),
                     layer_id: ids.layer(action.target.source_layer_id.value()),
                 },
@@ -1491,6 +1623,7 @@ pub(crate) fn portable_interaction_input_bytes(
                 state: ExportRecordState::Accepted,
             },
             source: ExportContextSource {
+                owner_turn_id: None,
                 interaction_node_id: format!("node:{}", context.target.source_interaction_node_id),
                 layer_id: format!("layer:{}", context.target.source_layer_id),
             },
@@ -3250,7 +3383,7 @@ mod tests {
         let missing_metadata = missing.clone();
         let large = Arc::new(AtomicBool::new(false));
         let large_metadata = large.clone();
-        let app = axum::Router::new().route("/api/control/temporal-features", axum::routing::get(|| async { axum::Json(json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true})) })).route("/api/control/interaction-features", axum::routing::get(|| async { axum::Json(json!({"interactionGraph":false})) })).fallback(move |request: axum::extract::Request| {
+        let app = axum::Router::new().route("/api/control/interactions/9/layers/1/owner", axum::routing::get(|| async { axum::Json(json!({"layerId":1,"ownerInteractionNodeId":1})) })).route("/api/control/temporal-features", axum::routing::get(|| async { axum::Json(json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true})) })).route("/api/control/interaction-features", axum::routing::get(|| async { axum::Json(json!({"interactionGraph":false})) })).fallback(move |request: axum::extract::Request| {
             let counted = counted.clone();
             let deny = deny.clone();
             let metadata_counted = metadata_counted.clone();
@@ -3363,7 +3496,68 @@ mod tests {
         );
         assert!(sensitive_node.authored_detail_assets.is_empty());
 
+        // Owner-only V3: no conversion or persistent mutation can independently
+        // enable strict asset reads. Resolve ownership through the real client.
+        let owner = Interaction {
+            stop_requested: false,
+            stop_error: None,
+            id: InteractionId::from_database(1),
+            thread_id: ThreadId::from_database(1),
+            sequence: 1,
+            text: "Source".into(),
+            created_at: "1".into(),
+            graph_node_id: Some(1),
+            completion_status: "accepted".into(),
+            harness_configuration_name: None,
+            harness_configuration_digest: None,
+            permission_profile_id: "auto".into(),
+            model_selection: None,
+            effective_execution_digest: None,
+            effective_permission_receipt: None,
+            completion_output: None,
+            completion_error: None,
+            latest_attempt: None,
+        };
+        let mut consumer = owner.clone();
+        consumer.id = InteractionId::from_database(2);
+        consumer.graph_node_id = Some(9);
+        consumer.sequence = 2;
+        let owner_closure = closures[0].as_ref().unwrap();
+        assert!(!super::needs_current_snapshot(owner_closure));
+        let context = ContextInput::Runtime(RuntimeContextInput {
+            input: InteractionInput {
+                interaction_permissions: None,
+                interaction: InteractionInputNode::from(owner_closure.interaction.clone()),
+                contexts: vec![],
+                submitted_inputs: vec![],
+            },
+            actions: vec![InteractionContextAction {
+                id: ActionId::new(90).unwrap(),
+                type_id: "interaction.context".into(),
+                source_node_id: NodeId::new(9).unwrap(),
+                target: InteractionContextTarget {
+                    node_id: NodeId::new(2).unwrap(),
+                    source_interaction_node_id: NodeId::new(99).unwrap(),
+                    source_layer_id: LayerId::new(1).unwrap(),
+                },
+                annotations: vec![],
+                state: RecordState::Accepted,
+            }],
+        });
+        let owners = super::collect_context_owners(
+            &runtime,
+            vec![(&owner, owner_closure)],
+            vec![(&consumer, &context)],
+            &std::collections::HashMap::from([(owner.id, 1), (consumer.id, 2)]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(owners.get(&90).map(String::as_str), Some("turn:1"));
         missing.store(true, Ordering::SeqCst);
+        assert!(matches!(super::collect_visual_assets_for_snapshot(
+            &runtime, [owner_closure], &ProjectPathRedactor::new(None), !owners.is_empty(),
+        ).await, Err(super::ConversationExportBuildError::Invalid(message))
+            if message == "snapshot visual asset metadata is unavailable"));
         let (legacy_associations, legacy_contents) = super::collect_visual_assets(
             &runtime,
             closures.iter().flatten(),

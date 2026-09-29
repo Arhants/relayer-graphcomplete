@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { createHash, webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 
+import { interactionGraph } from "../desktop/renderer/src/product-workspace/interaction-graph.js";
 import { createPublicViewerAdapter } from "../desktop/renderer/src/public-share-viewer/adapter.js";
 import { compiledNodeDetailCoversActions, resolveCompiledNodeDetailAction } from "../desktop/renderer/src/product-workspace/workspace.js";
 import {
@@ -480,7 +481,7 @@ describe("public share HTML boundary", () => {
     const styles = readFileSync(new URL("../desktop/renderer/src/public-share-viewer/viewer.css", import.meta.url), "utf8");
     expect(styles).toMatch(/\.public-share-shell \.interaction-banner\s*{[^}]*position: relative;[^}]*margin-left: 0;/s);
     expect(styles).toMatch(/\.public-share-shell \.turn-picker\s*{[^}]*position: static;/s);
-    expect(styles).toMatch(/\.public-share-shell \.turn-popover\s*{[^}]*right: 0;[^}]*left: 0;[^}]*width: auto;[^}]*52px \* 5/s);
+    expect(styles).toMatch(/\.public-share-shell \.turn-popover:not\(\.interaction-graph-popover\)\s*{[^}]*right: 0;[^}]*left: 0;[^}]*width: auto;[^}]*52px \* 5/s);
   });
 
   it("fits embed layout transitions while newer gestures, narrow viewports and disposal cancel pending work", async () => {
@@ -569,6 +570,10 @@ describe("public share HTML boundary", () => {
     try {
       fitPublicTurnPopover(host, windowRef);
       expect(host.querySelector(".turn-popover").style.maxHeight).toBe("210px");
+      host.querySelector(".turn-popover").classList.add("interaction-graph-popover");
+      host.querySelector(".turn-popover").style.maxHeight = "";
+      fitPublicTurnPopover(host, windowRef);
+      expect(host.querySelector(".turn-popover").style.maxHeight).toBe("");
     } finally {
       await windowRef.close();
     }
@@ -672,8 +677,8 @@ describe("public share HTML boundary", () => {
       expect(viewer).not.toBeNull();
       if (presentation === "embed") expect(windowRef.document.documentElement.dataset.theme).toBe("light");
       expect(viewer.adapter.selection.currentInteractionId).toBe("turn:1");
-      expect(windowRef.document.querySelector(".interaction-graph-stepper")).toBeNull();
-      expect(windowRef.document.querySelector(".interaction-graph-popover")).toBeNull();
+      expect(windowRef.document.querySelector(".interaction-graph-stepper")).toBeTruthy();
+      expect(windowRef.document.querySelector(".interaction-graph-popover")).toBeTruthy();
       expect(windowRef.document.querySelector("#publicViewerHost")?.classList.contains("hidden")).toBe(false);
       const downloadCard = windowRef.document.querySelector(".public-share-download-card");
       if (presentation === "standalone") {
@@ -702,6 +707,10 @@ describe("public share HTML boundary", () => {
       expect(viewer.adapter.selection.currentInteractionId).toBe("turn:1");
       await expect(viewer.adapter.onInvokeAction()).resolves.toBe(false);
       await expect(viewer.adapter.onSubmitInteraction()).resolves.toBe(false);
+      const navigator = windowRef.document.querySelector("#turnPickerButton");
+      expect(navigator.classList.contains("interaction-graph-trigger")).toBe(true);
+      expect(navigator.textContent).not.toMatch(/Turn \d+ of/);
+      expect(windowRef.document.querySelector("#turnPopover").classList.contains("hidden")).toBe(true);
       const invokeButton = windowRef.document.querySelector('[data-action-id="action:invoke"]');
       expect(invokeButton.disabled).toBe(false);
       invokeButton.click();
@@ -716,6 +725,12 @@ describe("public share HTML boundary", () => {
       await windowRef.happyDOM.waitUntilComplete();
       windowRef.document.querySelector('[data-action-id="action:reference"]').click();
       await vi.waitFor(() => expect(viewer.adapter.state.visibleLayer.layer.id).toBe("layer:related"));
+      windowRef.document.querySelector("#turnPickerButton").click();
+      expect(windowRef.document.querySelectorAll(".interaction-graph-node")).toHaveLength(2);
+      windowRef.document.querySelector('.interaction-graph-node[data-turn-id="turn:1"]').click();
+      await vi.waitFor(() => expect(viewer.adapter.state.visibleLayer.layer.id).toBe("layer:root"));
+      expect(windowRef.document.querySelector("#turnPopover").classList.contains("hidden")).toBe(true);
+
       expect(windowRef.location.href).toBe(originalUrl);
       viewer.adapter.selectTurnById("turn:2");
       viewer.adapter.selectTurnById("turn:1");
@@ -743,6 +758,69 @@ describe("public share HTML boundary", () => {
   });
 });
 
+
+describe("public interaction graph", () => {
+  function attachedRecords() {
+    const records = invokeFixtureRecords();
+    records[0].exportVersion = 3;
+    // A owns the layers; B also presents them. C attaches while viewing B.
+    const owner = records[1];
+    const presenter = records[2];
+    presenter.acceptedView.layers[0].actions.push(action("action:prior", "node:child", "layer:nested", "reference", "layer:child"));
+    presenter.acceptedView.layers.push(...structuredClone(owner.acceptedView.layers.slice(1)));
+    records[0].turns.push({ id: "turn:3", sequence: 3 });
+    const contexts = ["nested", "nested", "related"].map((name, index) => ({
+      id: `action:context${index}`, target: structuredClone(owner.acceptedView.layers.find(item => item.layer.id === `layer:${name}`).nodes[0]),
+      source: { interactionNodeId: "node:child-interaction", layerId: `layer:${name}`, ownerTurnId: "turn:1" }, annotations: [],
+    }));
+    records.push({ ...structuredClone(presenter), id: "turn:3", sequence: 3, text: "Attached follow-up",
+      interactionNodeId: "node:third-interaction", origin: { kind: "user" }, contexts,
+      acceptedView: { interactionNodeId: "node:third-interaction", rootLayerId: "layer:third",
+        rootAction: action("action:third-root", "node:third-interaction", "layer:third", "expand"),
+        layers: [layer("layer:third", "node:third")] },
+    });
+    return records;
+  }
+
+  it("groups attachments by exact exported owner, never by presenting occurrence or chronology", () => {
+    const snapshot = parsePublicSnapshot(recordsJsonl(attachedRecords()));
+    const graph = interactionGraph(snapshot.interactions, "turn:3");
+    expect(graph.incomplete).toBe(false);
+    expect(graph.contextCount).toBe(3);
+    expect(graph.edges).toEqual([
+      { source: "turn:1", target: "turn:2", layers: [], invocationActionId: "action:invoke" },
+      { source: "turn:1", target: "turn:3", layers: [
+        { layerId: "layer:nested", nodeIds: ["node:nested"] },
+        { layerId: "layer:related", nodeIds: ["node:related"] },
+      ], invocationActionId: null },
+    ]);
+  });
+
+  it.each([1, 2, 3])("keeps V%s graph cards and proven invocation edges when attachment ownership is unavailable", version => {
+    const records = attachedRecords(); records[0].exportVersion = version;
+    for (const context of records[3].contexts) {
+      delete context.source.ownerTurnId;
+      context.source.interactionNodeId = "node:outside";
+    }
+    const snapshot = parsePublicSnapshot(recordsJsonl(records));
+    const graph = interactionGraph(snapshot.interactions, "turn:3");
+    expect(graph.nodes.map(node => node.id)).toEqual(["turn:1", "turn:2", "turn:3"]);
+    expect(graph.incomplete).toBe(true);
+    expect(graph.edges).toHaveLength(1);
+    expect(graph.edges[0].invocationActionId).toBe("action:invoke");
+  });
+
+  it.each(["outside", "later", "membership", "conflict", "version"])("rejects %s portable owner claims", fault => {
+    const records = attachedRecords();
+    const context = records[3].contexts[0];
+    if (fault === "outside") context.source.ownerTurnId = "turn:99";
+    if (fault === "later") context.source.ownerTurnId = "turn:3";
+    if (fault === "membership") context.target.id = "node:third";
+    if (fault === "conflict") records[3].contexts[1].source.ownerTurnId = "turn:2";
+    if (fault === "version") records[0].exportVersion = 2;
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "context_owner_invalid" }));
+  });
+});
 
 describe("V3 current converted-invoke snapshots", () => {
   function convertedRecords() {

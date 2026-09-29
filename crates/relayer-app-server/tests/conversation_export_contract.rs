@@ -170,6 +170,7 @@ fn context(id: &str, annotations: &[&str]) -> ExportInteractionContext {
             state: ExportRecordState::Accepted,
         },
         source: ExportContextSource {
+            owner_turn_id: None,
             interaction_node_id: "node:source-interaction".into(),
             layer_id: "layer:source".into(),
         },
@@ -1888,4 +1889,107 @@ fn v3_root_reference_backlinks_preserve_nonroot_and_expand_cycle_guards() {
     ));
     view.layers.push(layer("layer:child", "node:child", vec![]));
     assert_rejected_with_parity(&fixture, "mixed_target_relations");
+}
+
+#[test]
+fn context_owner_requires_v3_exact_prior_accepted_occurrence() {
+    let mut fixture = two_turn_records();
+    if let ConversationExportRecord::Header(header) = &mut fixture[0] {
+        header.export_version = EXPORT_VERSION_V3;
+    }
+    if let ConversationExportRecord::Turn(turn) = &mut fixture[2] {
+        turn.interaction_node_id = Some("node:interaction-2".into());
+        let mut attachment = context("action:context-owner", &[]);
+        attachment.source.layer_id = "layer:1".into();
+        // Presenting occurrence deliberately differs from the immutable owner.
+        attachment.source.interaction_node_id = "node:another-presenter".into();
+        attachment.source.owner_turn_id = Some("turn:1".into());
+        turn.contexts.push(attachment);
+    }
+    validate_export_records(&fixture).unwrap();
+    let bytes = fixture
+        .iter()
+        .map(|record| serde_json::to_string(record).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(decode_export_jsonl(bytes.as_bytes()).unwrap(), fixture);
+    for version in [EXPORT_VERSION_V1, EXPORT_VERSION_V2] {
+        let mut older = fixture.clone();
+        if let ConversationExportRecord::Header(header) = &mut older[0] {
+            header.export_version = version;
+        }
+        assert_rejected_with_parity(&older, "context_owner_version");
+        if let ConversationExportRecord::Turn(turn) = &mut older[2] {
+            turn.contexts[0].source.owner_turn_id = None;
+        }
+        validate_export_records(&older).unwrap();
+    }
+    for mutation in ["omitted", "future", "layer", "node"] {
+        let mut invalid = fixture.clone();
+        if let ConversationExportRecord::Turn(turn) = &mut invalid[2] {
+            let context = &mut turn.contexts[0];
+            match mutation {
+                "omitted" => context.source.owner_turn_id = Some("turn:99".into()),
+                "future" => context.source.owner_turn_id = Some("turn:2".into()),
+                "layer" => context.source.layer_id = "layer:absent".into(),
+                "node" => context.target.id = "node:absent".into(),
+                _ => unreachable!(),
+            }
+        }
+        assert_rejected_with_parity(&invalid, "context_owner_invalid");
+    }
+}
+
+#[test]
+fn reused_layer_cannot_claim_two_portable_owners() {
+    let mut fixture = two_turn_records();
+    let ConversationExportRecord::Turn(first) = &fixture[1] else {
+        unreachable!()
+    };
+    let reused = first.accepted_view.as_ref().unwrap().layers[0].clone();
+    if let ConversationExportRecord::Header(header) = &mut fixture[0] {
+        header.export_version = EXPORT_VERSION_V3;
+        header.turns.push(ExportTurnManifestEntry {
+            id: "turn:3".into(),
+            sequence: 3,
+        });
+    }
+    if let ConversationExportRecord::Turn(second) = &mut fixture[2] {
+        second.interaction_node_id = Some("node:interaction-2".into());
+        let view = second.accepted_view.as_mut().unwrap();
+        view.layers[0].actions.push(action(
+            "action:reused-layer",
+            "node:1",
+            Some("layer:2"),
+            Some(ExportNavigateRelation::Reference),
+            Some("layer:1"),
+        ));
+        view.layers.push(reused);
+        let mut attachment = context("action:owner-first", &[]);
+        attachment.source.layer_id = "layer:1".into();
+        attachment.source.owner_turn_id = Some("turn:1".into());
+        second.contexts.push(attachment);
+    }
+    let mut attachment = context("action:owner-again", &[]);
+    attachment.source.layer_id = "layer:1".into();
+    attachment.source.owner_turn_id = Some("turn:1".into());
+    fixture.push(ConversationExportRecord::Turn(Box::new(
+        ConversationExportTurn {
+            id: "turn:3".into(),
+            sequence: 3,
+            created_at: "1769000003000".into(),
+            text: "Attached from reused layer".into(),
+            interaction_node_id: Some("node:interaction-3".into()),
+            origin: ExportTurnOrigin::User,
+            completion: receipt(ExportCompletionStatus::Failed),
+            contexts: vec![attachment],
+            submitted_inputs: vec![],
+            accepted_view: None,
+        },
+    )));
+    validate_export_records(&fixture).unwrap();
+    if let ConversationExportRecord::Turn(third) = &mut fixture[3] {
+        third.contexts[0].source.owner_turn_id = Some("turn:2".into());
+    }
+    assert_rejected_with_parity(&fixture, "context_owner_conflict");
 }

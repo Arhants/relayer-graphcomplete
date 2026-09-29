@@ -1147,6 +1147,7 @@ mod tests {
             id: id.into(),
             target: target.clone(),
             source: ExportContextSource {
+                owner_turn_id: None,
                 interaction_node_id: "node:interaction-1".into(),
                 layer_id: "layer:source".into(),
             },

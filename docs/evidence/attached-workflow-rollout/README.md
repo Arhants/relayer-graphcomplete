@@ -249,3 +249,62 @@ control presentations with real read-only credentials. The final public native r
 passed all four theme/viewport and exact-turn/prompt checks. The remaining earlier
 native off/context/project/approval/layout observations retain their recorded snapshot.
 No hosted deployment, paid inference, signed release or source merge was performed.
+
+
+## Public interaction-graph rollout
+
+Explicit user decision: public shares also replace the turn dial with the interaction
+and attachment graph. The earlier public turn-picker scope above is superseded.
+Changed seams map to AN-003/004/005/006: native export resolves exact immutable layer
+ownership; V3 context sources carry optional included `ownerTurnId`; validation and
+import/re-export preserve/remap inert provenance; the public read model groups owners,
+layers and targets with validated invocation origins; ProductWorkspace renders the
+navigator and same-card selection resets the response root. No outside conversation
+metadata or mutation authority is exported. Missing ownership remains incomplete.
+
+The smallest deterministic observations are Rust context-owner contract and exporter
+cases, the joined Product/Eval/service export/import/re-export test, and public parser/
+adapter/production-workspace tests. The decisive ownership case has A owning a layer,
+B presenting it, and C attaching from B: the only attachment edge is A to C. Coverage
+includes grouped/deduplicated contexts, old format partial graphs, out-of-inventory,
+later, conflicting and wrong-membership claims, and native/read-only control retention.
+No tests were removed; turn-picker assertions now assert graph rendering and equivalent
+navigation through graph cards. The legacy popover fitter is excluded from graph layout.
+
+Focused public tests passed 56 cases. The native attached-viewer runner passed all four
+light/dark desktop/mobile variants, verifying graph edges, card navigation, result turn/
+prompt, assets and controls, unchanged URL and zero external requests. The refreshed
+V1 public-viewer runner passed nested navigation, graph selection, reload and mobile pan
+with three captures. All are local zero-inference proof, not human acceptance.
+
+Retained failures: the first mobile graph capture clicked an off-screen trigger after
+reading details. Visual inspection caught the cropped popup; the strengthened runner
+now scrolls the trigger into view and checks all four viewport bounds before capture.
+The first updated V1 runner used a turn ID from another fixture; it was repaired to use
+its own declared synthetic IDs. Independent review also caught V3 promotion after legacy
+asset fallback; final proof must include owner-only V3 missing-asset rejection.
+
+![Public interaction graph, desktop](public-graph-light-desktop.png)
+![Public interaction graph, mobile](public-graph-dark-mobile.png)
+
+The V3 ordering fix now determines owner-derived snapshot policy before any asset
+collection. Its runtime-backed regression rejects missing asset metadata with ownership
+as the only V3 trigger, while retaining the legacy fallback assertion. Exporter tests
+passed 35/35 and the owner contract suite passed 30/30. The first full check caught an
+unused production wrapper now called only by tests; `#[cfg(test)]` fixes that boundary
+without suppressing warnings. The full-check rerun is tracked separately.
+
+Reviewer `/root/navigator_standards` verified all 59 file hashes in source manifest
+`9e3b71804646900ff22b69af4342f0b748bf77ef636cd63decd038ad85102477`.
+Reviewed cumulative scope: authority, ownership export/import/remapping, V3 asset policy,
+privacy, public graph projection, legacy incomplete graphs, root reset, capture checks,
+test subsumption and PRD/ADR mapping. Verdict: PASS; no unresolved findings.
+
+Final execution on the 59-file manifest passed: `npm run check` (3,235 Vitest passed,
+three skipped; all Rust/Clippy/crash suites, two secret-boundary tests, 60 Python tests,
+receipt and PRD lints), followed by `npm run build`. Final joined Product/Eval/V3/service
+portability rerun passed against `fddecf52b03e542659cd74b887d1b77503de185c`; compiled Eval
+passed 4/4 and Prime visual 2/2. Public graph and V1 native capture results above observe
+the same final renderer source. Earlier native Desktop first-message and other unrelated
+heavies retain their previously recorded source snapshots. Exact pushed-head CI and the
+clean paired viewer artifact are recorded in the PR after committing.

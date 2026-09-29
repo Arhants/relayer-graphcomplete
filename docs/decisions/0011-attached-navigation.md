@@ -79,3 +79,21 @@ controls may navigate; re-export preserves their provenance. V1/V2 remain suppor
 older readers reject V3. Public shares retain privacy filtering, sanitized public binding
 aliases and compiled-detail integrity. The hosted service and viewer must accept V3 before
 a desktop release publishes these snapshots; this source change does not authorize deployment.
+
+
+## Public interaction graph
+
+The public viewer uses the same interaction graph navigator instead of a turn dial.
+Only included accepted interactions become cards. Validated invocation origins establish
+invocation edges. V3 context sources may carry an inert `ownerTurnId` naming the exact
+included accepted layer owner. Export reads canonical ownership, never the presenting
+interaction or first layer occurrence. Owners outside the selected inventory or without
+an included layer/node occurrence are omitted. A snapshot containing ownership uses V3.
+Import and re-export preserve and remap this diagnostic field without granting authority.
+
+The viewer groups contexts by owner and source layer and deduplicates target nodes.
+Missing ownership in legacy/partial snapshots marks the graph incomplete without
+inventing edges or fetching unrelated conversations. Choosing the currently selected
+card also resets its response root. Public sharing remains read-only. Existing published
+shares retain their pinned viewer until a new share is published; this source change
+requires deployment of the new viewer before it affects hosted links.

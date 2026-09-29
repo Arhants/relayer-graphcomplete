@@ -1223,6 +1223,7 @@ mod tests {
                 state: ExportRecordState::Accepted,
             },
             source: ExportContextSource {
+                owner_turn_id: None,
                 interaction_node_id: "node:foreign-source".into(),
                 layer_id: "layer:foreign-source".into(),
             },

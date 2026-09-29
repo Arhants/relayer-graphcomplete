@@ -83,6 +83,7 @@ it("preserves accepted attached navigation, converted invokes, rich controls and
   const records = decode(bytes);
   expect(records[0].exportVersion).toBe(3);
   const turns = records.filter((record) => record.recordType === "turn");
+  expect(turns[2].contexts[0].source.ownerTurnId).toBe(turns[0].id);
   const content = records.filter((record) => record.recordType === "visualAssetContent");
   expect(content).toHaveLength(1);
   expect(Buffer.from(content[0].contentBase64, "base64").toString()).toBe(svg);
@@ -125,10 +126,20 @@ it("preserves accepted attached navigation, converted invokes, rich controls and
   expect(replay[0].exportVersion).toBe(3);
   const replayTurns = replay.filter((record) => record.recordType === "turn");
   expect(replayTurns[1].origin).toEqual(turns[1].origin);
+  expect(replayTurns.map((turn) => turn.contexts)).toEqual(turns.map((turn) => turn.contexts));
   expect(replayTurns.map((turn) => turn.acceptedView)).toEqual(turns.map((turn) => turn.acceptedView));
   expect(replay.filter((record) => record.recordType === "visualAssetContent")).toEqual(content);
 
   const external = structuredClone(records);
+  external[0].turns[0].id = "turn:original-owner";
+  for (const turn of external.filter((record) => record.recordType === "turn")) {
+    if (turn.id === turns[0].id) turn.id = "turn:original-owner";
+    if (turn.origin.source_turn_id === turns[0].id) turn.origin.source_turn_id = "turn:original-owner";
+    if (turn.origin.sourceTurnId === turns[0].id) turn.origin.sourceTurnId = "turn:original-owner";
+    for (const context of turn.contexts ?? []) {
+      if (context.source.ownerTurnId === turns[0].id) context.source.ownerTurnId = "turn:original-owner";
+    }
+  }
   for (const turn of external.filter((record) => record.recordType === "turn")) {
     for (const layer of turn.acceptedView.layers) for (const action of layer.actions) {
       if (action.convertedFromInvoke) action.sourceLayerId = "layer:999999";
@@ -163,6 +174,9 @@ it("preserves accepted attached navigation, converted invokes, rich controls and
     mounted.dispose();
   } finally { await externalWindow.close(); }
   const externalReplay = decode(await product.exportConversation(externalThread));
+  const externalReplayTurns = externalReplay.filter((record) => record.recordType === "turn");
+  expect(externalReplayTurns[2].contexts[0].source.ownerTurnId).toBe(externalReplayTurns[0].id);
+  expect(externalReplayTurns[0].id).not.toBe("turn:original-owner");
   expect(externalReplay.filter((record) => record.recordType === "turn").map((turn) => turn.acceptedView))
     .toEqual(external.filter((record) => record.recordType === "turn").map((turn) => turn.acceptedView));
   expect(externalReplay.filter((record) => record.recordType === "turn")[0].acceptedView.layers)
@@ -196,6 +210,8 @@ it("preserves accepted attached navigation, converted invokes, rich controls and
   expect(shareText).not.toContain(privateKey);
   expect(shareText).not.toContain(await realpath(projectPath));
   expect(shareText).not.toMatch(/resolvedInvokeInteractionId|interactionPermissions|harnessControlToken/);
+  const sharedTurns = decode(shareBytes).filter((record) => record.recordType === "turn");
+  expect(sharedTurns[2].contexts[0].source.ownerTurnId).toBe(sharedTurns[0].id);
   const snapshot = parseConversationExportV1(shareText);
   expect(snapshot.header.exportVersion).toBe(3);
   const publicRoot = snapshot.interactions[0].completionOutput.rootLayer;

@@ -38,8 +38,8 @@ try {
       });
       const openSource = async () => {
         await window.loadURL(url);
-        await wait(window, "turn picker", "Boolean(document.querySelector('#turnPickerButton:not(:disabled)'))");
-        await window.webContents.executeJavaScript("document.querySelector('#turnPickerButton').click()");
+        await wait(window, "interaction graph trigger", "Boolean(document.querySelector('#turnPickerButton:not(:disabled)'))");
+        await window.webContents.executeJavaScript("document.querySelector('#turnPickerButton').scrollIntoView({block: 'center'}); document.querySelector('#turnPickerButton').click()");
         await wait(window, "source turn", "Boolean(document.querySelector('[data-turn-id=\"turn:1\"]'))");
         await window.webContents.executeJavaScript("document.querySelector('[data-turn-id=\"turn:1\"]').click()");
         await wait(window, "source node", "Boolean(document.querySelector('.graph-node[aria-label=\"Open Source\"]'))");
@@ -57,16 +57,34 @@ try {
         window.showInactive();
         await window.webContents.executeJavaScript("new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))");
         const image = (await window.webContents.capturePage()).toPNG();
+        await window.webContents.executeJavaScript("document.querySelector('#turnPickerButton').scrollIntoView({block: 'center'}); document.querySelector('#turnPickerButton').click()");
+        await wait(window, "public interaction graph", "document.querySelectorAll('.interaction-graph-node').length === 3 && !document.querySelector('#turnPopover').classList.contains('hidden')");
+        const graphGeometry = await window.webContents.executeJavaScript(`(() => {
+          const r = document.querySelector('#turnPopover').getBoundingClientRect();
+          return { left:r.left, right:r.right, top:r.top, bottom:r.bottom, width:innerWidth, height:innerHeight,
+            contextEdges:document.querySelectorAll('.interaction-graph-surface .context-connection').length,
+            invocationEdges:document.querySelectorAll('.interaction-graph-surface .invoke-connection').length };
+        })()`);
+        if (graphGeometry.left < 0 || graphGeometry.top < 0 || graphGeometry.right > graphGeometry.width || graphGeometry.bottom > graphGeometry.height) throw new Error(`Navigator outside viewport: ${JSON.stringify(graphGeometry)}`);
+        if (graphGeometry.contextEdges !== 1 || graphGeometry.invocationEdges !== 1) throw new Error(`Missing portable relationships: ${JSON.stringify(graphGeometry)}`);
+        const graphFile = `public-graph-${theme}-${size}.png`;
+        await window.webContents.executeJavaScript("new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))");
+        const graphImage = (await window.webContents.capturePage()).toPNG();
+        await writeFile(resolve(output, graphFile), graphImage);
+        await window.webContents.executeJavaScript("const card = document.querySelector('.interaction-graph-node[data-turn-id=\"turn:3\"]'); card.scrollIntoView({block: 'nearest', inline: 'nearest'}); card.click()");
+        await wait(window, "graph card selects attached response", "document.querySelector('#interactionText')?.textContent === 'ATTACH' && document.querySelector('#turnPopover').classList.contains('hidden') && Boolean(document.querySelector('.graph-node[aria-label=\"Open Attached response\"]'))");
+        await openSource();
+
         await writeFile(resolve(output, file), image);
         for (const [label, destination, turn, prompt] of [["Invoked result", "Invoked response", 2, "INVOKE"], ["Attached response", "Attached response", 1, "SOURCE"]]) {
           await window.webContents.executeJavaScript(`[...${host}.querySelectorAll('button')].find(button => button.textContent === ${JSON.stringify(label)}).click()`);
           await wait(window, `${label} destination`, `Boolean(document.querySelector('.graph-node[aria-label=${JSON.stringify(`Open ${destination}`)}]'))`);
-          await wait(window, `${label} selected turn and prompt`, `document.querySelector('#turnPickerButton')?.textContent === ${JSON.stringify(`Turn ${turn} of 3`)} && document.querySelector('#interactionText')?.textContent === ${JSON.stringify(prompt)}`);
+          await wait(window, `${label} selected turn and prompt`, `document.querySelector('.interaction-graph-node[aria-current=\"true\"]')?.dataset.turnId === ${JSON.stringify(`turn:${turn}`)} && document.querySelector('#interactionText')?.textContent === ${JSON.stringify(prompt)}`);
           if (window.webContents.getURL() !== url) throw new Error("Public navigation changed URL");
           await openSource();
         }
         if (unexpected.length) throw new Error(`Unexpected network destinations: ${unexpected.length}`);
-        captures.push({ file, theme, size, geometry, sha256: createHash("sha256").update(image).digest("hex"), bothNavigationTargetsPassed: true, destinationTurnAndPromptPassed: true, externalNetworkRequests: 0 });
+        captures.push({ file, theme, size, geometry, graphFile, graphGeometry, graphSha256: createHash("sha256").update(graphImage).digest("hex"), sha256: createHash("sha256").update(image).digest("hex"), bothNavigationTargetsPassed: true, destinationTurnAndPromptPassed: true, externalNetworkRequests: 0 });
       } finally { window.destroy(); }
     }
   }

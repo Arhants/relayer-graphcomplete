@@ -55,9 +55,10 @@ export function createPublicViewerAdapter(snapshot) {
     state.actions = layer?.actions ? [...layer.actions] : [];
   }
 
-  function selectTurnById(interactionId) {
+  function selectTurnById(interactionId, { responseRoot = false } = {}) {
     const target = turns().find((interaction) => sameId(interaction.id, interactionId));
-    if (!target || sameId(target.id, selection.currentInteractionId)) return false;
+    if (!target || (sameId(target.id, selection.currentInteractionId) && !responseRoot)) return false;
+    if (responseRoot) selection.selectedNodeId = null;
     hydrate(target);
     return true;
   }
