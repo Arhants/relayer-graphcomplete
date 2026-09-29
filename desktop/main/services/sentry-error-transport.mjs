@@ -224,6 +224,7 @@ function isApprovedSentryEvent(event, projection) {
     && exception.value.length <= 256
     && exactKeys(exception.stacktrace, ["frames"])
     && Array.isArray(exception.stacktrace.frames)
+    && (!Object.hasOwn(event.tags, "attempt_reference") || diagnostics || exception.stacktrace.frames.length === 0)
     && exception.stacktrace.frames.length <= 32
     && exception.stacktrace.frames.every((frame) => validSentryFrame(frame, event.tags.component));
 }

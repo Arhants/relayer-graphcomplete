@@ -194,6 +194,11 @@ describe("Sentry error transport", () => {
       { http_status: 503 }, { network_code: null },
       { http_status: { toString: () => "503", secret: "private" } },
     ]) expect(state.options.beforeSend({ ...prepared, tags: { ...prepared.tags, ...tags } })).toBeNull();
+    for (const removedTags of [["http_status"], ["network_code"], ["http_status", "network_code"]]) {
+      const tags = { ...prepared.tags };
+      for (const key of removedTags) delete tags[key];
+      expect(state.options.beforeSend({ ...prepared, tags })).toBeNull();
+    }
     expect(state.options.beforeSend({ ...prepared, exception: { values: [{ ...prepared.exception.values[0],
       stacktrace: { frames: [{ filename: "/Users/private/file.mjs", lineno: 1, colno: 1, in_app: true }] },
     }] } })).toBeNull();
