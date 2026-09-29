@@ -284,7 +284,13 @@ try {
   assert.ok(selected.selectedNodeId);
   assert.notEqual(selected.selectedNodeId, initial.selectedNodeId);
   assert.equal(`node-${selected.selectedNodeId}`, nodeControl.elementRef);
-  const nextTurn = (await opened.session.state()).controls.find((control) => control.kind === "turn" && !control.disabled);
+  // Native threads use the production interaction graph (PRD 7.2B).
+  // Exercise its visible controls through the judge adapter, preserving the
+  // same turn-selection and history boundary formerly covered by the arrows.
+  const navigator = (await opened.session.state()).controls.find((control) => control.name.startsWith("Open interaction graph.") && !control.disabled);
+  assert.ok(navigator);
+  await opened.session.interact({ elementRef: navigator.elementRef, activate: true });
+  const nextTurn = (await opened.session.state()).controls.find((control) => control.name.startsWith("Follow up in the same thread:") && !control.disabled);
   assert.ok(nextTurn);
   await opened.session.interact({ elementRef: nextTurn.elementRef, activate: true });
   assert.notEqual((await opened.session.state()).turnId, initial.turnId);
