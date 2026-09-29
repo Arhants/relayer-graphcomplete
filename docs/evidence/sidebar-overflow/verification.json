@@ -1,0 +1,57 @@
+{
+  "sourceHead": "fd24be077444308698de35572128934f5d0200d4",
+  "changedSourceSha256": "f33a3730c8820d74033d9a38c45644f46dc8644fc80576e0429858bfeb778d4c",
+  "files": {
+    "desktop/renderer/styles.css": "0d05d1c62b6271ab4d7e82aa5ab7f5086849475a04332d9878898a2c7237c936",
+    "docs/evidence/sidebar-overflow/README.md": "b07040347cd1aa3078ea0c8ff59e22ebaf76959921712a68c63f236ad05f89e7",
+    "package.json": "ebc8575284fa2fc63e7d09636b849a353ba4d0546209aec543ac7bbc5cc01a6c",
+    "scripts/test-sidebar-overflow.mjs": "51e2dda90163f90173d1d8f4088b8bf815c22da4d7f416a4426efe6f90ac1111"
+  },
+  "review": {
+    "reviewer": "/root/sidebar_review",
+    "verdict": "No unresolved CSS/layout findings; non-certifying review without PR",
+    "digest": "f33a3730c8820d74033d9a38c45644f46dc8644fc80576e0429858bfeb778d4c"
+  },
+  "verification": {
+    "layout": "passed six viewport/mode scenarios plus Settings/Eval",
+    "focused": "19 passed",
+    "secondaryInitial": "failed to resolve unbuilt @relayer/eval-runner, 8 passed",
+    "secondaryAfterBuild": "11 passed",
+    "build": "passed",
+    "check": {
+      "result": "failed",
+      "vitest": {
+        "passed": 3160,
+        "failed": 11,
+        "skipped": 3,
+        "filesPassed": 231,
+        "filesFailed": 7,
+        "filesSkipped": 1
+      },
+      "failures": "10 test or Eval-wait timeouts and one graph-search wall-time budget rejection",
+      "passedEarlierStages": [
+        "cargo fmt",
+        "cargo clippy",
+        "cargo test workspace",
+        "crash-reconciliation Rust tests",
+        "build packages",
+        "TypeScript and workspace checks"
+      ],
+      "notReached": [
+        "Codex secret boundary dedicated run",
+        "Python unit tests",
+        "Ladybug receipt lint",
+        "PRD readability check"
+      ]
+    },
+    "nativeInitial": "timed out with hidden renderer and stalled requestAnimationFrame",
+    "nativeRetry": "failed at native-375-expanded-new-thread: window focus for native wheel; earlier native geometry/account/settings scenarios completed, full journey unverified",
+    "nativeRetryCompletedRecords": 57
+  },
+  "nativeCache": "No compatible verified local artifact found; source-built pinned Ladybug",
+  "historicalBug": {
+    "sections": "5c35fe2de, 2026-08-17",
+    "sidebarContent": "0f944318e, 2026-08-20",
+    "relatedOpenPR": 566
+  }
+}

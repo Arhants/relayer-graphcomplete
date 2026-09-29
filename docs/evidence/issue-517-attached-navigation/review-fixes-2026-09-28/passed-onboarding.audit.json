@@ -1,0 +1,20 @@
+{
+  "sidebarLayout": null,
+  "compactBackVisible": false,
+  "compactSelectVisible": false,
+  "compactSelectValue": "account",
+  "errorAssociationsValid": true,
+  "authErrorAnnounced": false,
+  "onboardingBusyLocksControls": false,
+  "customFamilyHasNoImplicitMembers": true,
+  "providerOptionsUseRovingRadio": true,
+  "onboardingHarnessChoiceIsExplicit": false,
+  "firstInvalidFocused": false,
+  "connectedProviderRetained": false,
+  "firstRunRecovery": {
+    "visible": false,
+    "label": "Refresh models",
+    "accessibleName": null
+  },
+  "harnessMarkup": "<article class=\"harness-configuration-card\" data-harness-configuration=\"codex-basic\">\n    <div class=\"provider-definition-heading\"><div><h3>Codex basic</h3></div><span class=\"default-badge\">Default harness</span></div>\n  </article>"
+}

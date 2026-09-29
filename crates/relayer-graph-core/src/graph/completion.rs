@@ -50,6 +50,8 @@ pub struct CompletionOutput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AcceptedGraphClosure {
+    #[serde(default)]
+    pub has_persistent_mutations: bool,
     pub node_id: NodeId,
     pub interaction: GraphNode,
     pub root_action: GraphAction,
@@ -385,7 +387,15 @@ pub(crate) async fn read_accepted_closure(
         Some(output.root_action),
     )
     .await?;
+    let has_persistent_mutations =
+        crate::storage::sqlite::attached_navigation::closure_has_mutations(
+            &mut transaction,
+            node_id,
+            &publication.layers,
+        )
+        .await?;
     let closure = AcceptedGraphClosure {
+        has_persistent_mutations,
         node_id: publication.node_id,
         interaction: publication.interaction,
         root_action: publication.root_action.ok_or_else(|| {
@@ -418,7 +428,15 @@ pub(crate) async fn read_accepted_closure_on(
         Some(output.root_action),
     )
     .await?;
+    let has_persistent_mutations =
+        crate::storage::sqlite::attached_navigation::closure_has_mutations(
+            transaction,
+            node_id,
+            &publication.layers,
+        )
+        .await?;
     Ok(Some(AcceptedGraphClosure {
+        has_persistent_mutations,
         node_id: publication.node_id,
         interaction: publication.interaction,
         root_action: publication.root_action.ok_or_else(|| {

@@ -295,6 +295,13 @@ describe("affected-module plan v1", { timeout: 30_000 }, () => {
     ]) expect(plan(...paths).chapters.packaging).toBe(true);
   });
 
+  test.each([
+    ["desktop/renderer/src/model-family-settings.js", "test/model-family-settings-refresh.test.mjs"],
+    ["desktop/eval-main/eval-service.mjs", "test/eval-service-human-model.test.mjs"],
+  ])("explicitly maps the regression portfolio for %s", (source, regression) => {
+    expect(plan(source).vitestFiles).toContain(regression);
+  });
+
   test("builds server binaries required by mapped Vitest integration tests", () => {
     const result = plan("desktop/renderer/src/product-workspace/workspace.js");
 

@@ -2187,6 +2187,52 @@ describe("HarnessHost", () => {
     }
   });
 
+  it("forgets a settled invoked completion once no late observer needs its answer", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-forget-invoked-"));
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const nodeId = new Headers(init?.headers).get("authorization")?.includes("running-token") ? 3 : 2;
+      return url.endsWith("/output")
+        ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+        : url.endsWith("/neighbors")
+          ? new Response(JSON.stringify({ nodes: [] }), { status: 200, headers: { "content-type": "application/json" } })
+          : graphReadResponse(url, nodeId, [], nodeId + 100);
+    }));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        implementations: { test: () => ({
+          supportsInvokedComplete: true,
+          // Child 2 ends at once; child 3 runs until the test ends.
+          complete(context) {
+            return context.inputGraph.id === 2 ? Promise.resolve() : new Promise<void>(() => undefined);
+          },
+          state: emptyState,
+        }) },
+      });
+      await host.initialize();
+      await host.createSession({ threadId: 1, permissionProfileId: "auto", configuration: completeEnabledConfiguration, workingDirectory: directory });
+      await host.startInvokedCompletion(1, invoked(graph(2, "ended-token")));
+      await host.startInvokedCompletion(1, invoked(graph(3, "running-token")));
+      await expect(host.observeInvokedCompletion(1, 2)).resolves.toEqual({ completionId: 2 });
+
+      // A late observer still gets the ended run's own answer for a while.
+      await vi.advanceTimersByTimeAsync(9 * 60_000);
+      await expect(host.observeInvokedCompletion(1, 2)).resolves.toEqual({ completionId: 2 });
+      // Then the host forgets it, as a restarted host would, and the product reads that as
+      // ended. A run that is still going is never forgotten.
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
+      await expect(host.observeInvokedCompletion(1, 2)).rejects.toThrow("Invoked completion is not registered");
+      const running = host.observeInvokedCompletion(1, 3, 1);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(running).resolves.toEqual({ completionId: 3, running: true });
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("keeps a cancelled turn's access until it settles when its harness cannot force-stop", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-no-force-stop-"));
@@ -2239,6 +2285,69 @@ describe("HarnessHost", () => {
     } finally {
       vi.useRealTimers();
       vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["release", "acknowledge"] as const)("rejects duplicate owner releases while %s remains pending after disconnect", async (phase) => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-release-disconnect-"));
+    let enter!: () => void;
+    let finish!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    const blocked = new Promise<void>((resolve) => { finish = resolve; });
+    const stall = async () => { enter(); await blocked; };
+    const release = vi.fn(phase === "release" ? stall : async () => {});
+    const acknowledge = vi.fn(phase === "acknowledge" ? stall : async () => {});
+    const running = await startHarnessHost({
+      stateFile: join(directory, "sessions.json"), controlToken: "control",
+      accessBroker: { async acquire() { return {
+        access: { kind: "secret", contract: "secret@1", providerId: "openai-work", adapterId: "openai-api",
+          adapterImplementationVersion: "7", endpoint: "https://api.openai.test", fields: { "api-key": "opaque" } },
+        release, acknowledge,
+      }; } },
+      implementations: { test: () => ({ async complete() {}, state: emptyState }) },
+    });
+    let firstRelease: Promise<boolean> | undefined;
+    const controller = new AbortController();
+    try {
+      await running.host.createSession({
+        threadId: 1, permissionProfileId: "auto", workingDirectory: directory,
+        configuration: { ...testConfiguration,
+          modelRules: { allow: [{ adapterId: "openai-api", modelIdExact: "gpt-5.2" }], deny: [] },
+          executionAccessContracts: ["secret@1"],
+        },
+      });
+      const admission = await running.host.admitProviderExecution(1,
+        { providerId: "openai-work", adapterId: "openai-api", modelId: "gpt-5.2" }, new AbortController().signal);
+      const observed = vi.spyOn(running.host, "releaseProviderExecution");
+      const url = `${running.url}/sessions/1/execution-leases/${admission.executionLeaseId}`;
+      const options = { method: "DELETE", headers: { authorization: "Bearer control" } };
+      const first = fetch(url, { ...options, signal: controller.signal }).catch(() => undefined);
+      await entered;
+      firstRelease = observed.mock.results[0]!.value as Promise<boolean>;
+      controller.abort();
+      await first;
+      // A disconnected owner must not accumulate waiters or repeat acknowledgements.
+      for (let retry = 0; retry < 3; retry += 1) {
+        const response = await fetch(url, { ...options, signal: AbortSignal.timeout(1_000) });
+        expect(response.status).toBe(503);
+        expect(await response.json()).toMatchObject({ error: "execution_lease_release_in_progress" });
+      }
+      const independent = await fetch(`${running.url}/sessions/1/execution-leases/unknown`, options);
+      expect(independent.status).toBe(200);
+      expect(await independent.json()).toEqual({ released: false });
+      finish();
+      await firstRelease;
+      expect(release).toHaveBeenCalledOnce();
+      expect(acknowledge).toHaveBeenCalledOnce();
+      const retry = await fetch(url, options);
+      expect(retry.status).toBe(200);
+      expect(await retry.json()).toEqual({ released: false });
+    } finally {
+      controller.abort();
+      finish();
+      await firstRelease?.catch(() => {});
+      await running.close();
       await rm(directory, { recursive: true, force: true });
     }
   });

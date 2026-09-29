@@ -45,6 +45,10 @@ export function isTerminalConnectionFailure(error) {
 // for the retry. Only `disconnected` means the login is genuinely still open.
 export const MAX_TRANSIENT_ACCOUNT_CHECKS = 3;
 
+// How long a cancel waits for its account check before treating the outcome as unknown. The
+// check holds the provider queue, so it must end even when the native check hangs.
+export const ACCOUNT_CHECK_TIMEOUT_MS = 10_000;
+
 // The app server owns each provider's connection generation (PROV-002). A new provider
 // starts here; reconnect completion, sign-out and removal advance it.
 export const FIRST_CONNECTION_GENERATION = 1;
@@ -85,6 +89,7 @@ export class ProviderDefinitionService {
     initialRuntimes = new Map(),
     retry = {},
     maxTransientAccountChecks = MAX_TRANSIENT_ACCOUNT_CHECKS,
+    accountCheckTimeoutMs = ACCOUNT_CHECK_TIMEOUT_MS,
     diagnostics = null,
     onRuntimeReady = () => {},
     onRuntimeRemoved = () => {},
@@ -105,6 +110,7 @@ export class ProviderDefinitionService {
     this.idGenerator = idGenerator;
     this.retry = retry;
     this.maxTransientAccountChecks = maxTransientAccountChecks;
+    this.accountCheckTimeoutMs = accountCheckTimeoutMs;
     this.diagnostics = diagnostics;
     this.onRuntimeReady = onRuntimeReady;
     this.onRuntimeRemoved = onRuntimeRemoved;
@@ -121,6 +127,18 @@ export class ProviderDefinitionService {
     // Generations learned after load. Kept apart from this.definitions, which queued
     // operations replace wholesale, so a resync outside the queue is never lost.
     this.connectionGenerations = new Map();
+    // Providers with a lifecycle write whose answer was lost. It may still commit on the app
+    // server, so an advance in their generation proves nothing about a later write. A later
+    // answered write that advances the generation clears it: every lost write carried an older
+    // or equal generation, which the app server now refuses.
+    this.unansweredLifecycleWrites = new Set();
+    // Reconnects past their first check that are not pending yet: they are preparing the runtime
+    // or starting the sign-in on it. Counted per provider.
+    this.reconnectPreparations = new Map();
+    // Providers signed out locally whose signed-out state the app server has not recorded. It
+    // may still read them connected, so new provider access is refused until it hears the
+    // account's state: a recorded sign-out, a completed reconnect, or a published catalog.
+    this.unrecordedSignOuts = new Set();
     this.queue = Promise.resolve();
     this.nextPreparationOrder = 1;
     this.lifecycleTasks = new Set();
@@ -142,6 +160,17 @@ export class ProviderDefinitionService {
     });
   }
 
+  /** Whether this provider's runtime could not be activated in this process. */
+  activationFailed(id) {
+    return this.statusOverrides.get(id)?.unavailableReason?.code === "provider_activation_failed";
+  }
+
+  async activeDefinitions() {
+    return (await this.#initialize())
+      .filter(({ lifecycleState }) => lifecycleState === "active")
+      .map(publicDefinition);
+  }
+
   async #initialize() {
     if (this.definitions === null) this.definitions = await this.definitionStore.load();
     return this.definitions;
@@ -158,6 +187,26 @@ export class ProviderDefinitionService {
       definition.connectionGeneration ?? FIRST_CONNECTION_GENERATION,
       this.connectionGenerations.get(id) ?? FIRST_CONNECTION_GENERATION,
     );
+  }
+
+  /**
+   * The connection generation a catalog refresh starting now carries, or null when it must not
+   * run. A pending reconnect owns the provider's next state: a refresh would discover through
+   * the runtime that reconnect is signing in, and an automatic result must not stand for the
+   * user's sign-in (PROV-002). The refresh skips, or drops a result it already has.
+   */
+  refreshGeneration(id) {
+    if (this.pendingConnections.has(id) || this.reconnectPreparations.has(id)) return null;
+    return this.connectionGeneration(id);
+  }
+
+  /**
+   * The app server accepted a catalog for this provider. A catalog that is not connected
+   * records the signed-out state, so provider access may resume. A connected one does not: its
+   * discovery may have read the account before a sign-out whose own publish failed.
+   */
+  catalogPublished(id, { connected } = {}) {
+    if (connected !== true) this.unrecordedSignOuts.delete(id);
   }
 
   /** Rereads a generation the app server refused as stale. Generations only increase. */
@@ -529,6 +578,8 @@ export class ProviderDefinitionService {
           login: Object.freeze({ ...(pending.login ?? {}) }),
         });
       }
+      // Set once the reconnect's publish is sent: only that write can commit the reconnect.
+      let publishing = false;
       try {
         const catalog = await this.#discover(pending.runtime, signal);
         if (catalog.provider?.status === "unavailable") throw new Error(catalog.provider.unavailableReason ?? "Provider is unavailable.");
@@ -541,12 +592,14 @@ export class ProviderDefinitionService {
           // The reconnect's catalog and the next connection generation commit together, so
           // every result still in flight from before it is inert (PROV-002). A reconnect a
           // later lifecycle action superseded is refused here and changes nothing.
+          publishing = true;
           await this.publishCatalog(catalog, {
             signal,
             connectionGeneration: pending.generation,
             connectionEvent: "reconnected",
           });
           this.#recordGeneration(connectionId, pending.generation + 1);
+          this.unansweredLifecycleWrites.delete(connectionId);
         } else {
           await this.#persistNewProvider(pending.candidate, catalog, signal);
         }
@@ -567,14 +620,62 @@ export class ProviderDefinitionService {
           try { await pending.runtime.close?.(); } catch { /* preserve the connection failure */ }
           throw new TerminalConnectionFailure(error);
         }
-        throw await settle(error);
+        // A publish with no answer may have committed before its response was lost, the
+        // reconnect's counterpart of F2. Cancelling would wipe the login the app server just
+        // recorded, so read the generation back first.
+        const unanswered = pending.reconnect === true && publishing && typeof error?.code !== "string";
+        const outcome = unanswered ? await this.#reconnectOutcome(connectionId, pending) : "refused";
+        if (unanswered) this.unansweredLifecycleWrites.add(connectionId);
+        if (outcome === "unknown") {
+          // The app server may have committed the login, so nothing is wiped: the reconnect's
+          // runtime stays the provider's own, and Settings follows the app server. The next
+          // refresh relearns the generation if it advanced, then publishes the account's state.
+          this.pendingConnections.delete(connectionId);
+          this.statusOverrides.delete(connectionId);
+          // This completion confirmed the account signed in before it published, so a login
+          // exists again: an unrecorded sign-out no longer fences provider access.
+          this.unrecordedSignOuts.delete(connectionId);
+          await this.#activateCommitted(pending.candidate, pending.runtime);
+          throw new TerminalConnectionFailure(error);
+        }
+        if (outcome !== "committed") throw await settle(error);
       }
       this.pendingConnections.delete(connectionId);
-      if (pending.reconnect === true) this.statusOverrides.delete(connectionId);
+      if (pending.reconnect === true) {
+        this.statusOverrides.delete(connectionId);
+        this.unrecordedSignOuts.delete(connectionId);
+      }
       // Only a committed connection registers its catalog adapter (PROV-002, PROV-007).
       await this.#activateCommitted(pending.candidate, pending.runtime);
       return Object.freeze({ status: "connected", providerDefinition: publicDefinition(pending.candidate) });
     });
+  }
+
+  // Whether a reconnect whose publish got no answer committed. The app server advances the
+  // generation by one when it commits the reconnect, and refuses it once anything else has
+  // advanced it. So the reconnect committed exactly when the generation now reads one past the
+  // baseline it started from, provided that baseline was read from the app server and no
+  // lifecycle write is unanswered: none before the reconnect whose request may still land,
+  // and no sign-out during it. completeConnection holds the provider queue, so nothing else
+  // here can advance it. A sign-out the app server answered makes the reconnect's refusal certain.
+  // A generation that did not move means the publish never committed. Any other advance, an
+  // unanswered sign-out, or a failed read is "unknown": the login may be committed and is kept.
+  // (In this process only a removal could advance the generation by more than one, and a
+  // removal leaves the provider inactive, which reads as refused; the exact check is defensive.)
+  async #reconnectOutcome(id, pending) {
+    if (pending.superseded) return "refused";
+    let stored;
+    try {
+      stored = (await this.definitionStore.load()).find((item) => item.id === id);
+    } catch {
+      return "unknown";
+    }
+    if (stored?.lifecycleState !== "active" || !Number.isSafeInteger(stored.connectionGeneration)
+      || stored.connectionGeneration <= pending.generation) return "refused";
+    this.#recordGeneration(id, stored.connectionGeneration);
+    if (!pending.baselineRead || pending.doubtful
+      || stored.connectionGeneration !== pending.generation + 1) return "unknown";
+    return "committed";
   }
 
   // Counts consecutive checks that could not reach a verdict. Returns whether
@@ -599,7 +700,74 @@ export class ProviderDefinitionService {
     const pending = this.pendingConnections.get(connectionId);
     if (!pending) return false;
     this.pendingConnections.delete(connectionId);
+    const signedOut = () => {
+      this.statusOverrides.set(connectionId, {
+        connected: false,
+        unavailableReason: {
+          code: "provider_logged_out",
+          message: "The provider is signed out.",
+        },
+      });
+    };
+    if (pending.reconnect === true && this.activeExecutions.has(connectionId)) {
+      // A runtime a lease holds is never closed or wiped under its turn (PROV-004). While a
+      // reconnect is pending acquireExecution refuses, and a reconnect never starts under a
+      // lease, so this only guards the invariant. The runtime stays the provider's own.
+      signedOut();
+      return true;
+    }
     if (pending.reconnect === true) {
+      // The cancel wipes the login, so it records signed out with the next generation, as
+      // sign-out does. That corrects an app server a failed sign-out publish left reading
+      // connected, and makes stale any refresh that resolved its generation before the
+      // reconnect and read the account mid-sign-in. It commits before the wipe, so the app
+      // server never reads connected over a home with no login.
+      const recorded = !this.closing && await this.#commitSignedOut(pending.candidate, {
+        onFailure: (error) => this.diagnostics?.write({
+          category: "provider_reconnect_cancel_sign_out_failed",
+          adapterId: pending.candidate.adapterId,
+          providerId: connectionId,
+          ...providerDiagnosticDetails(error),
+        }).catch(() => undefined),
+      });
+      // A sign-out the app server answered while this reconnect was pending already recorded
+      // signed out, and no refresh runs while it is pending. Nothing is unknown: the confirmed
+      // sign-out stands, so the reconnect's login is wiped even when this record fails.
+      // Keeping needs a login to keep. An account that reads signed out has none, for example
+      // after a sign-out whose publish failed: the cancel then tears down as usual, and new
+      // provider access stays refused until the app server hears the signed-out state. A check
+      // that cannot answer leaves the outcome unknown, which keeps any login.
+      let keepLogin = !recorded && !pending.superseded;
+      if (keepLogin && !this.closing) {
+        let account = null;
+        // Bounded: the check holds the provider queue. A timeout cannot answer, so it is unknown.
+        const signal = AbortSignal.timeout(this.accountCheckTimeoutMs);
+        const timedOut = new Promise((_, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+        timedOut.catch(() => undefined);
+        try {
+          account = await Promise.race([pending.runtime.credentials.account({ signal }), timedOut]);
+        } catch { /* unknown */ }
+        if (account?.status === "disconnected") {
+          keepLogin = false;
+          this.unrecordedSignOuts.add(connectionId);
+        } else if (account?.status === "connected") {
+          // A confirmed login ends any fence from an earlier unrecorded sign-out.
+          this.unrecordedSignOuts.delete(connectionId);
+        }
+      }
+      if (keepLogin) {
+        // The app server may still read connected, so wiping the login would leave it
+        // admitting turns with none. As for an unknown reconnect outcome, the login and the
+        // reconnect's runtime are kept, Settings follows the app server, and the next refresh
+        // settles the state. During shutdown, close() closes the runtime.
+        if (!this.closing) {
+          this.statusOverrides.delete(connectionId);
+          await this.#activateCommitted(pending.candidate, pending.runtime);
+        }
+        return true;
+      }
       if (this.runtimes.get(connectionId) === pending.runtime) this.runtimes.delete(connectionId);
       await Promise.allSettled([
         pending.runtime.close?.(),
@@ -612,25 +780,15 @@ export class ProviderDefinitionService {
       if (pending.createdRuntime !== true && !this.closing
         && this.definitions?.some((item) => item.id === connectionId && item.lifecycleState === "active")) {
         try {
-          const restored = await this.#runtimeFor(pending.candidate);
-          if (this.closing) {
-            // close() does not wait for this queue; it may already have cleared the runtimes.
-            if (this.runtimes.get(connectionId) === restored) this.runtimes.delete(connectionId);
-            await restored.close?.().catch(() => undefined);
-          }
+          // A runtime that finishes starting after close() began is closed again (#runtimeFor).
+          await this.#runtimeFor(pending.candidate);
         } catch (error) {
           // The recovery adapter now stands in, and the status says so.
-          await this.#markUnavailable(pending.candidate, error);
+          if (!this.closing) await this.#markUnavailable(pending.candidate, error);
           return true;
         }
       }
-      this.statusOverrides.set(connectionId, {
-        connected: false,
-        unavailableReason: {
-          code: "provider_logged_out",
-          message: "The provider is signed out.",
-        },
-      });
+      signedOut();
       return true;
     }
     this.runtimes.delete(connectionId);
@@ -676,6 +834,11 @@ export class ProviderDefinitionService {
       }
       const runtime = await this.#runtimeFor(definition);
       if (typeof runtime.credentials?.logout !== "function") throw new Error("Provider logout is unavailable.");
+      // A pending reconnect this sign-out may supersede. Only a sign-out the app server
+      // answered proves the reconnect can no longer commit; an unanswered one may or may not
+      // have advanced the generation (#reconnectOutcome).
+      const reconnecting = this.pendingConnections.get(id);
+      const pendingReconnect = reconnecting?.reconnect === true ? reconnecting : null;
       const account = await runtime.credentials.logout({ signal });
       this.statusOverrides.set(id, {
         connected: false,
@@ -690,27 +853,11 @@ export class ProviderDefinitionService {
         providerId: id,
         ...providerDiagnosticDetails(error),
       }).catch(() => undefined);
-      // The disconnected state and the next connection generation commit together, so every
-      // result still in flight from the signed-in account is inert (PROV-002).
-      const signOut = async () => {
-        const generation = this.connectionGeneration(id);
-        await this.publishCatalog(signedOutCatalog(definition), {
-          signal,
-          connectionGeneration: generation,
-          connectionEvent: "signed-out",
-        });
-        this.#recordGeneration(id, generation + 1);
-      };
-      try {
-        try {
-          await signOut();
-        } catch (error) {
-          // Sign-out is the user's latest action, so it retries once at the current generation.
-          if (!await this.#relearnAfterRefusal(id, error)) throw error;
-          await signOut();
-        }
-      } catch (error) {
-        await logoutFailed(error);
+      if (await this.#commitSignedOut(definition, { signal, onFailure: logoutFailed })) {
+        if (pendingReconnect) pendingReconnect.superseded = true;
+      } else {
+        this.unrecordedSignOuts.add(id);
+        if (pendingReconnect) pendingReconnect.doubtful = true;
       }
       // The follow-up refresh runs behind this queue, not inside it. Awaiting it here would
       // deadlock behind an explicit refresh that is waiting for this queue (CR-V7).
@@ -721,17 +868,70 @@ export class ProviderDefinitionService {
     });
   }
 
+  /**
+   * Commits the signed-out state with the next connection generation, so every result still in
+   * flight from the signed-in account is inert (PROV-002). A user action, so a refusal rereads
+   * the generation and retries once. Returns whether the app server answered; a failure is
+   * only reported, and the next refresh publishes the account's state.
+   */
+  async #commitSignedOut(definition, { signal, onFailure }) {
+    const signOut = async () => {
+      const generation = this.connectionGeneration(definition.id);
+      await this.publishCatalog(signedOutCatalog(definition), {
+        signal,
+        connectionGeneration: generation,
+        connectionEvent: "signed-out",
+      });
+      this.#recordGeneration(definition.id, generation + 1);
+    };
+    try {
+      try {
+        await signOut();
+      } catch (error) {
+        if (!await this.#relearnAfterRefusal(definition.id, error)) throw error;
+        await signOut();
+      }
+      this.unansweredLifecycleWrites.delete(definition.id);
+      this.unrecordedSignOuts.delete(definition.id);
+      return true;
+    } catch (error) {
+      if (typeof error?.code !== "string") this.unansweredLifecycleWrites.add(definition.id);
+      await onFailure(error);
+      return false;
+    }
+  }
+
   reconnect(id, options = {}) {
     if (this.closing) return Promise.reject(new Error("Provider setup is shutting down."));
     return this.#trackLifecycle(this.#reconnect(id, options));
   }
 
-  async #reconnect(id, { signal } = {}) {
+  async #reconnect(id, options = {}) {
+    let preparing = false;
+    try {
+      return await this.#reconnectPrepared(id, options, () => {
+        // From here the reconnect prepares the runtime and starts its sign-in on it, before it
+        // is pending. No refresh runs through that runtime meanwhile (refreshGeneration).
+        preparing = true;
+        this.reconnectPreparations.set(id, (this.reconnectPreparations.get(id) ?? 0) + 1);
+      });
+    } finally {
+      if (preparing) {
+        const remaining = (this.reconnectPreparations.get(id) ?? 1) - 1;
+        if (remaining > 0) this.reconnectPreparations.set(id, remaining);
+        else this.reconnectPreparations.delete(id);
+      }
+    }
+  }
+
+  async #reconnectPrepared(id, { signal } = {}, beginPreparation) {
     const preparedDefinition = await this.#serialized(async () => {
       await this.#initialize();
       signal?.throwIfAborted();
       if (this.closing) throw new Error("Provider setup is shutting down.");
-      return publicDefinition(this.#reconnectableDefinition(id));
+      const definition = publicDefinition(this.#reconnectableDefinition(id));
+      beginPreparation();
+      return definition;
     });
     await this.prepareRuntime(Object.freeze({
       harnessId: null,
@@ -766,7 +966,10 @@ export class ProviderDefinitionService {
       }
       // The generation this reconnect starts with, read from the app server; completing the
       // reconnect advances it.
-      try { await this.resyncConnectionGeneration(id); } catch { /* the known one stands */ }
+      // A reconnect whose publish later gets no answer can adopt its commit only from a baseline
+      // it read here (#reconnectOutcome).
+      let baselineRead = true;
+      try { await this.resyncConnectionGeneration(id); } catch { baselineRead = false; /* the known one stands */ }
       this.runtimes.set(id, runtime);
       this.pendingConnections.set(id, {
         candidate: definition,
@@ -775,6 +978,12 @@ export class ProviderDefinitionService {
         reconnect: true,
         createdRuntime,
         generation: this.connectionGeneration(id),
+        baselineRead,
+        // A sign-out the app server answered while this reconnect is pending: it refuses it.
+        superseded: false,
+        // A lifecycle write whose answer was lost, before or during this reconnect: it may
+        // still commit, so an advance does not prove this reconnect's publish committed.
+        doubtful: this.unansweredLifecycleWrites.has(id),
       });
       this.statusOverrides.set(id, {
         connected: false,
@@ -793,10 +1002,19 @@ export class ProviderDefinitionService {
   }
 
   async acquireExecution(id) {
+    if (this.closing) throw new Error("Provider setup is shutting down.");
     return this.#serialized(async () => {
       await this.#initialize();
+      // close() does not wait for this queue, so a lease requested before shutdown may run
+      // after it. It must not start a runtime nothing would close.
+      if (this.closing) throw new Error("Provider setup is shutting down.");
       const definition = this.definitions.find((item) => item.id === id);
       if (!definition || definition.lifecycleState !== "active") throw new Error("Provider is unavailable for new interactions.");
+      // A pending reconnect owns the runtime it is signing in, and settling that reconnect may
+      // close it and wipe the provider home. The turn is refused until it settles (PROV-004).
+      if (this.pendingConnections.has(id)) throw new Error("Provider sign-in is pending.");
+      // Signed out locally while the app server may still read it connected.
+      if (this.unrecordedSignOuts.has(id)) throw new Error("Provider is signed out.");
       const runtime = await this.#runtimeFor(definition);
       const count = (this.activeExecutions.get(id) ?? 0) + 1;
       this.activeExecutions.set(id, count);
@@ -835,12 +1053,21 @@ export class ProviderDefinitionService {
       ...await this.runtimeDependencies(definition),
       secrets,
     });
+    const discard = async () => {
+      try { await this.onRuntimeRemoved(definition); } catch { /* preserve the original failure */ }
+      try { await runtime.close?.(); } catch { /* preserve the original failure */ }
+    };
     try {
       await this.onRuntimeReady(definition, runtime);
     } catch (error) {
-      try { await this.onRuntimeRemoved(definition); } catch { /* preserve the registration failure */ }
-      try { await runtime.close?.(); } catch { /* preserve the registration failure */ }
+      await discard();
       throw error;
+    }
+    // close() does not wait for the provider queue, so it may already have closed and cleared
+    // the runtimes. A runtime registered now would outlive it.
+    if (this.closing) {
+      await discard();
+      throw new Error("Provider setup is shutting down.");
     }
     this.runtimes.set(definition.id, runtime);
     this.statusOverrides.delete(definition.id);
@@ -886,7 +1113,7 @@ export class ProviderDefinitionService {
         try {
           await this.#runtimeFor(definition);
         } catch (error) {
-          await this.#markUnavailable(definition, error);
+          if (!this.closing) await this.#markUnavailable(definition, error);
         }
       }
     });
@@ -1026,12 +1253,20 @@ export class ProviderDefinitionService {
     }).catch(() => undefined);
   }
 
+  /**
+   * Refuses new provider access, connects and reconnects from now on. Shutdown calls it before
+   * it awaits the app server, so no turn is admitted onto a runtime that close() then closes.
+   */
+  beginShutdown() {
+    this.closing = true;
+    for (const preparation of this.preparingConnections.values()) {
+      if (preparation.cancellable) preparation.cancelled = true;
+    }
+  }
+
   async close() {
     this.closePromise ??= (async () => {
-      this.closing = true;
-      for (const preparation of this.preparingConnections.values()) {
-        if (preparation.cancellable) preparation.cancelled = true;
-      }
+      this.beginShutdown();
       await Promise.allSettled([...this.lifecycleTasks]);
       const runtimes = new Set([
         ...this.runtimes.values(),

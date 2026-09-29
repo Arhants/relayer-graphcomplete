@@ -42,3 +42,9 @@ When submission identifies an intentionally abandoned orphan draft layer, the ow
 [ADR 0010](0010-typed-interaction-permissions.md) supersedes the retained-invoke
 representation for newly prepared interactions with typed permissions enabled.
 The default legacy path above remains unchanged during Slice 1.
+
+## Attached-navigation qualification successor
+
+[ADR 0011](0011-attached-navigation.md) enables narrowly authorized persistent additions
+and current presentation replacement behind the existing default-off gate. Its terminal
+acceptance and B3 projection refine the earlier slice boundary without enabling general edits.

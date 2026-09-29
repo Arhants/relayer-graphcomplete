@@ -60,3 +60,9 @@ model-authored root `navigate` action with `relation=expand`.
 [ADR 0010](0010-typed-interaction-permissions.md) derives exact-node `navigate.add`
 permissions from these immutable attachments. Slice 1 records and authorizes the
 description but keeps persistent attached-node edits disabled.
+
+## Attached-navigation qualification successor
+
+[ADR 0011](0011-attached-navigation.md) enables narrowly authorized persistent additions
+and current presentation replacement behind the existing default-off gate. Its terminal
+acceptance and B3 projection refine the earlier slice boundary without enabling general edits.

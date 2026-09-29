@@ -1,0 +1,24 @@
+   Compiling relayer-graph-core v0.0.0 (/Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/crates/relayer-graph-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.96s
+     Running tests/graph_database.rs (target/debug/deps/graph_database-ab81e4d74e1ef132)
+
+running 2 tests
+
+thread 'attached_navigation_review_identity_releases_only_terminal_unpublished_drafts' (194743481) panicked at crates/relayer-graph-core/tests/graph_database.rs:8606:23:
+called `Result::unwrap()` on an `Err` value: Validation { code: "action_identity_conflict", path: "clientKey", message: "This persistent node already has that action identity. Preserve it and use a new clientKey for the addition." }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test attached_navigation_review_identity_releases_only_terminal_unpublished_drafts ... FAILED
+
+thread 'attached_navigation_review_cycles_follow_exposed_and_prospective_actions' (194743480) panicked at crates/relayer-graph-core/tests/graph_database.rs:8562:42:
+called `Result::unwrap()` on an `Err` value: Validation { code: "expand_cycle", path: "navigate.add", message: "Attached navigation would create a node-owned expansion cycle. Use reference for cyclic context." }
+test attached_navigation_review_cycles_follow_exposed_and_prospective_actions ... FAILED
+
+failures:
+
+failures:
+    attached_navigation_review_cycles_follow_exposed_and_prospective_actions
+    attached_navigation_review_identity_releases_only_terminal_unpublished_drafts
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 100 filtered out; finished in 0.06s
+
+error: test failed, to rerun pass `-p relayer-graph-core --test graph_database`

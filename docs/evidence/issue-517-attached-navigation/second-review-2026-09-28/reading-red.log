@@ -1,0 +1,33 @@
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete
+
+ ❯ |isolated| test/workspace-reading-context.test.mjs (15 tests | 1 failed) 147ms
+     × cancels following when graph selection crosses threads before the POST returns 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |isolated| test/workspace-reading-context.test.mjs > follow-up reading context at the production thread controller > cancels following when graph selection crosses threads before the POST returns
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/workspace-reading-context.test.mjs:150:50
+    148|     post.resolve(pending);
+    149|     await sending;
+    150|     expect(controller.appState.pendingTurn.auto).toBe(false);
+       |                                                  ^
+    151|     ownerLoad.resolve({ thread: { id: 20 }, interactions: [other], act…
+    152|     await selecting;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 14 passed (15)
+   Start at  19:28:45
+   Duration  253ms (transform 100ms, setup 0ms, import 30ms, tests 147ms, environment 0ms)
+

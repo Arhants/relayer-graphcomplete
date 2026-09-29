@@ -60,7 +60,7 @@ privacy boundaries remain in force. See
 
 The handled-share record admits only a code-owned failure code and stage, the
 `SHR-` attempt reference shown to the user, optional snapshot bytes for the
-oversize code, and the existing main-owned release, environment, platform, and
+oversize code, the bounded diagnostics described below, and the existing main-owned release, environment, platform, and
 pseudonymous account fields. Electron main deduplicates one process lifetime by
 account, reference, stage, and code before the ordinary final validator, bounded
 queue, and transport. The persisted Electron-main attempt owner records the
@@ -68,6 +68,19 @@ same reference/stage/code key before reporting, so retry and process recovery do
 not readmit the same handled failure. If that key cannot be persisted, reporting
 is suppressed rather than admitting an event that restart could duplicate. Titles, project names, conversation content,
 credentials, raw errors, and request data remain forbidden.
+
+The approved share-diagnostics extension retains the first available approved app
+stack from the original exception or its causes, bounded to four inspected error
+objects and the existing 32-frame inventory limit. It additionally admits an
+optional integer HTTP status (100–599) and a network code from the fixed allowlist
+in `desktop/main/services/share-error-diagnostics.mjs`; unknown codes are omitted.
+TimeoutError maps to the code-owned `TIMEOUT` value. No raw error, cause message,
+host, URL, request/response body, header, or frame local is admitted. Diagnostic
+inspection cannot alter the product result. Sentry frames use oldest-to-newest
+order. Legacy records with no diagnostics remain accepted. Encrypted queue
+entries still require the existing same-account, release, and platform checks;
+this does not introduce cross-release replay. Deduplication still uses account/reference/stage/code, and the
+share attempt store never persists diagnostic stacks or raw exceptions.
 
 The accepted record contains only stable failure code or sanitized class, a
 code-owned message, approved frames, fixed component and operation identifiers,

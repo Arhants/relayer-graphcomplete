@@ -1,0 +1,24 @@
+[
+  {
+    "productInteractionId": 3,
+    "completionId": 31,
+    "status": "complete",
+    "format": "relayer-harness-trace-v1",
+    "sha256": "sha256:b832680b22d174b8c0fc9820fb4d4c3a50abc54966a604cf51c35f94ff182a6e",
+    "byteLength": 270406,
+    "eventCount": 200,
+    "coverage": {
+      "prompt": "full",
+      "messages": "full",
+      "reasoningSummaries": "full",
+      "modelCalls": "full",
+      "toolCalls": "full",
+      "usage": "full",
+      "childStreams": "none",
+      "nativeArtifacts": "none"
+    },
+    "coverageComplete": true,
+    "completionBrokerAvailable": true,
+    "ref": "traces/3/manifest.json"
+  }
+]

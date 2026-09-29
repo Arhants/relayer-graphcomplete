@@ -1,0 +1,402 @@
+import { app, BrowserWindow, ipcMain } from "electron";
+import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+
+import { RelayerGraphClient, NodeObject, LayerObject, LayerLayoutObject, NodePlacementObject, detailCapability, html } from "@relayer/graph-client";
+
+import { taskSystemFixtureFactory } from "@relayer/eval-runner";
+
+import { startModelCatalogRefreshServer } from "../desktop/main/models/model-catalog-refresh-server.mjs";
+import { GraphCompleteRuntimeService } from "../desktop/main/services/graphcomplete-runtime.mjs";
+import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
+import { createWindowFactory } from "../desktop/main/window.mjs";
+
+const repositoryRoot = resolve(import.meta.dirname, "..");
+const screenshotPath = process.env.RELAYER_FIRST_MESSAGE_SCREENSHOT
+  || join(repositoryRoot, ".relayer", "evidence", "first-message-enter-smoke.png");
+const evalScreenshotPath = process.env.RELAYER_NAVIGATION_EVAL_SCREENSHOT
+  || screenshotPath.replace(/\.png$/i, "-eval.png");
+const evalNarrowScreenshotPath = process.env.RELAYER_NAVIGATION_EVAL_NARROW_SCREENSHOT
+  || screenshotPath.replace(/\.png$/i, "-eval-narrow.png");
+const invokeEvidenceDirectory = process.env.RELAYER_INVOKE_EVIDENCE_DIR
+  || join(repositoryRoot, ".relayer", "evidence", "invoke-navigation");
+const dataDirectory = mkdtempSync(join(tmpdir(), "relayer-first-message-app-"));
+const services = [];
+const typedPermissions = process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1";
+function turnReady(position, total) {
+  if (!typedPermissions) return `document.querySelector("#turnPickerButton")?.textContent === "Turn ${position} of ${total}"`;
+  return `(() => { const cards=[...document.querySelectorAll("#turnPopover .interaction-graph-node")]; return document.querySelector("#turnPickerButton")?.classList.contains("interaction-graph-trigger") && cards.length===${total} && cards.findIndex(card=>card.getAttribute("aria-current")==="true")===${position-1}; })()`;
+}
+
+const ancillaryFailures = [];
+let window;
+let evalWindow;
+let exitCode = 1;
+let reviewContext = {
+  selectedExecutionId: "navigation-smoke",
+  harnessConfigurationName: "fixture-task-system",
+  readOnly: true,
+  cases: [],
+};
+
+app.setName("Relayer First Message Smoke");
+const electronProfileDirectory = join(dataDirectory, "electron-profile");
+mkdirSync(electronProfileDirectory, { recursive: true });
+app.setPath("userData", electronProfileDirectory);
+app.commandLine.appendSwitch("disable-gpu");
+// Keep the evidence process alive while both application services are reopened.
+app.on("window-all-closed", () => {});
+
+function registerTestIpc() {
+  // This isolated fixture has no pending network publication attempts.
+  ipcMain.handle("relayer:share-pending", () => null);
+  let composerDrafts = {};
+  ipcMain.handle("relayer:composer-drafts-read", () => composerDrafts);
+  ipcMain.handle("relayer:composer-drafts-write", (_event, value) => { composerDrafts = value; return value; });
+  ipcMain.handle("relayer:account-read", () => ({ status: "signed-in", channel: "stable", subject: "fixture|interaction-permissions" }));
+  ipcMain.handle("relayer:provider-status", () => ({ adapters: [], definitions: [], hasCompletedOnboarding: true }));
+  ipcMain.handle("relayer:tutorial-read", () => ({ status: "dismissed", automaticEligible: false }));
+  ipcMain.handle("relayer:appearance-read", () => ({ appearance: "dark" }));
+  ipcMain.handle("relayer:update-status", () => ({
+    phase: "development",
+    channel: "stable",
+    version: "test",
+    availableVersion: null,
+    percent: null,
+    error: null,
+  }));
+  ipcMain.handle("relayer-eval:review-context", () => reviewContext);
+}
+
+function unregisterTestIpc() {
+  for (const channel of [
+    "relayer:share-pending",
+    "relayer:account-read",
+    "relayer:provider-status",
+    "relayer:tutorial-read",
+    "relayer:composer-drafts-read",
+    "relayer:composer-drafts-write",
+    "relayer:appearance-read",
+    "relayer:update-status",
+    "relayer-eval:review-context",
+  ]) ipcMain.removeHandler(channel);
+}
+
+async function waitFor(label, check, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = await check();
+    if (value) return value;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+  }
+  throw new Error(`Timed out waiting for ${label}.`);
+}
+
+async function graphPresentation(webContents) {
+  return webContents.executeJavaScript(`(() => {
+    const stage = document.querySelector("#graphStage")?.getBoundingClientRect();
+    const inspector = document.querySelector("#inspector")?.getBoundingClientRect();
+    const nodes = [...document.querySelectorAll("[data-node]")].map((node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        id: node.dataset.node,
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+        worldX: Number(node.dataset.worldX),
+        worldY: Number(node.dataset.worldY),
+        canonicalWorldX: Number(node.dataset.canonicalWorldX),
+        canonicalWorldY: Number(node.dataset.canonicalWorldY),
+        layoutSource: node.dataset.layoutSource,
+      };
+    });
+    return {
+      innerWidth: window.innerWidth,
+      inspectorOpen: !document.querySelector("#inspector")?.classList.contains("hidden"),
+      inspector: inspector && { left: inspector.left, right: inspector.right, width: inspector.width },
+      stage: stage && { left: stage.left, right: stage.right, top: stage.top, bottom: stage.bottom, width: stage.width },
+      nodes,
+    };
+  })()`);
+}
+
+async function waitForPaint(webContents) {
+  await webContents.executeJavaScript(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+}
+
+function nodesAreContained(presentation) {
+  const { stage } = presentation;
+  return Boolean(stage) && presentation.nodes.length > 0 && presentation.nodes.every((node) => (
+    node.left >= stage.left - 1
+    && node.right <= stage.right + 1
+    && node.top >= stage.top - 1
+    && node.bottom <= stage.bottom + 1
+  ));
+}
+
+function nodeRectSignature(presentation) {
+  return presentation.nodes.map(({ id, left, right, top, bottom }) => [
+    id,
+    Math.round(left),
+    Math.round(right),
+    Math.round(top),
+    Math.round(bottom),
+  ]);
+}
+
+// Camera coordinates are local to the graph stage. Responsive layout may move
+// that stage on screen without changing its camera transform.
+function nodeCameraSignature(presentation) {
+  const { left: stageLeft, top: stageTop } = presentation.stage;
+  return presentation.nodes.map(({ id, left, right, top, bottom }) => [
+    id, Math.round(left - stageLeft), Math.round(right - stageLeft),
+    Math.round(top - stageTop), Math.round(bottom - stageTop),
+  ]);
+}
+
+function canonicalLayoutSignature(presentation) {
+  return [...presentation.nodes]
+    .sort((left, right) => String(left.id).localeCompare(String(right.id)))
+    .map(({ id, canonicalWorldX, canonicalWorldY, layoutSource }) => [
+      id,
+      canonicalWorldX,
+      canonicalWorldY,
+      layoutSource,
+    ]);
+}
+
+function requireAuthoredLayout(label, presentation) {
+  if (!presentation.nodes.length || presentation.nodes.some((node) => (
+    node.layoutSource !== "authored"
+    || !Number.isFinite(node.canonicalWorldX)
+    || !Number.isFinite(node.canonicalWorldY)
+  ))) {
+    throw new Error(`${label} did not expose a complete authored canonical layout.`);
+  }
+  return canonicalLayoutSignature(presentation);
+}
+
+async function waitForStableGraph(label, webContents) {
+  let previous = null;
+  let stableSamples = 0;
+  return waitFor(label, async () => {
+    const presentation = await graphPresentation(webContents);
+    const signature = JSON.stringify(nodeRectSignature(presentation));
+    stableSamples = signature === previous ? stableSamples + 1 : 0;
+    previous = signature;
+    return stableSamples >= 3 ? presentation : false;
+  }, 15_000);
+}
+
+async function productRequest(session, path, init = {}) {
+  const response = await fetch(new URL(path, session.origin), {
+    ...init,
+    headers: {
+      Accept: "application/json",
+      Cookie: `${session.cookie.name}=${session.cookie.value}`,
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...init.headers,
+    },
+  });
+  const value = await response.json();
+  if (!response.ok) throw new Error(JSON.stringify(value));
+  return value;
+}
+
+async function captureEvidence(webContents, name, { settle = true } = {}) {
+  const path = join(invokeEvidenceDirectory, `${name}.png`);
+  await mkdir(dirname(path), { recursive: true });
+  if (settle) {
+    await webContents.executeJavaScript(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  }
+  await writeFile(path, (await webContents.capturePage()).toPNG());
+  return path;
+}
+
+function pressEnter(webContents, modifiers = [], { insertText = false } = {}) {
+  webContents.sendInputEvent({ type: "keyDown", keyCode: "Enter", modifiers });
+  if (insertText) webContents.sendInputEvent({ type: "char", keyCode: "\r", modifiers });
+  webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter", modifiers });
+}
+
+const attachedResponseText = "Explain the attached results store.";
+let attachedFixtureRejectedOmission = false;
+let attachedFixtureFailure = null;
+function requiredNavigationFixtureFactory(configuration) {
+  const harness = taskSystemFixtureFactory(configuration);
+  const ordinaryComplete = harness.complete.bind(harness);
+  harness.complete = async (context) => {
+    if (context.inputGraph.detail !== attachedResponseText) return ordinaryComplete(context);
+    try {
+    const graph = new RelayerGraphClient(context.graph.acquireCapability());
+    const input = await graph.getInteractionInput();
+    if (input.interactionPermissions?.version !== "2" || !input.interactionPermissions.enabled || input.contexts.length !== 1) {
+      throw new Error("Required navigation fixture did not receive exact frozen V2 input.");
+    }
+    const source = input.contexts[0].targetNode;
+    const before = await graph.getNodePresentation(source.id);
+    if (before.actions.length !== 1 || before.actions[0].kind !== "navigate") throw new Error("Fixture expected one preserved resolved control.");
+    const answer = new NodeObject("info", "Attached response", "The results store retains completed work.", "concept", "attached-answer");
+    await graph.submitNode(answer);
+    const response = new LayerObject([answer], [], new LayerLayoutObject([new NodePlacementObject(answer, .5, .5)]), "attached-response");
+    await graph.submitLayer(response);
+    await graph.addAction(context.inputGraph.id, {kind:"navigate",relation:"expand",label:"Response",target:response,clientKey:"response"});
+    try {
+      await graph.submit(context.inputGraph.id);
+      throw new Error("Response-only completion unexpectedly accepted.");
+    } catch (error) {
+      if (error.code !== "attached_response_navigation_required") throw error;
+      attachedFixtureRejectedOmission = true;
+    }
+    const addition = {kind:"navigate",relation:"reference",label:"Open attached response",target:response,clientKey:"required-response"};
+    await graph.addAction(source.id, addition);
+    const old = before.actions[0];
+    const presentation = new NodeObject(source.icon, source.title, source.detail, before.node.kind, before.node.clientKey);
+    // Reconstruct exact binding provenance only; this layer is never submitted.
+    const sourceLayer = new LayerObject([presentation], [], new LayerLayoutObject([new NodePlacementObject(presentation, .5, .5)]), old.sourceLayerClientKey);
+    const preserved = {kind:"invoke",label:old.label,interactionText:"Propose the most useful next improvement to this task system.",clientKey:old.clientKey,sourceLayer};
+    presentation.detailAuthoring.setComponent("continuation", html`<p>Completed tasks remain in the results store.</p><button gc=${detailCapability.invoke("preserved", preserved)}>Plan the next improvement</button><button gc=${detailCapability.reference("required", addition)}>Open attached response</button>`);
+    await graph.replaceNodePresentation(source.id, before.revision, presentation);
+    await graph.submit(context.inputGraph.id);
+    } catch (error) { attachedFixtureFailure = `${error.stack ?? error} ${JSON.stringify(error.issues ?? [])}`; throw error; }
+  };
+  return harness;
+}
+
+async function activateRequiredResponse(contents, sourceInteractionId, nodeId, responseNodeId, responseLayerId, evidenceName) {
+  await waitFor("required response workspace initialization", () => contents.executeJavaScript(`document.querySelectorAll("#turnPopover .interaction-graph-node").length === 5 && document.querySelectorAll(".graph-node").length > 0`));
+  await contents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${sourceInteractionId}))`);
+  await waitFor("attached source node", () => contents.executeJavaScript(`Boolean(document.querySelector('[data-node="${nodeId}"]'))`));
+  await contents.executeJavaScript(`document.querySelector('[data-node="${nodeId}"]').click()`);
+  const buttonExpression = `[...document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelectorAll("button") || []].find(button => button.textContent === "Open attached response")`;
+  await waitFor("visible required response button", () => contents.executeJavaScript(`(() => { const button=${buttonExpression}; const rect=button?.getBoundingClientRect(); return Boolean(button && !button.disabled && rect.width>0 && rect.height>0 && getComputedStyle(button).visibility!=="hidden" && getComputedStyle(button).display!=="none"); })()`));
+  const capture = await captureEvidence(contents, evidenceName);
+  await contents.executeJavaScript(`(${buttonExpression}).click()`);
+  await waitFor("exact attached response destination", () => contents.executeJavaScript(`import("./src/state.js").then(({appState}) => String(appState.visibleLayer?.layer?.id) === "${responseLayerId}" && Boolean(document.querySelector('[data-node="${responseNodeId}"]')))`));
+  process.stdout.write(`RELAYER_REQUIRED_RESPONSE_CONTROL ${JSON.stringify({stage:evidenceName,sourceNodeId:nodeId,responseNodeId,responseLayerId,visible:true,navigated:true,capture})}\n`);
+  return capture;
+}
+
+async function run() {
+  process.stdout.write("Electron application ready.\n");
+  registerTestIpc();
+  const invokeGatePath = join(dataDirectory, "invoke-evidence-gate");
+  await writeFile(invokeGatePath, "hold");
+  process.env.RELAYER_FIXTURE_INVOKE_GATE_FILE = invokeGatePath;
+  const configurationPath = join(repositoryRoot, "harnesses", "fixture-task-system.yaml");
+  const runtimeOptions = {
+    userDataDirectory: dataDirectory,
+    interactionPermissions: process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1",
+    graphServerBinary: join(repositoryRoot, "target", "debug", "relayer-graph-server"),
+    configurationPaths: [configurationPath],
+    additionalImplementations: { "fixture.task-system": requiredNavigationFixtureFactory },
+    acquireProviderExecution: async (providerId) => ({
+      definition: { id: providerId, adapterId: "codex-subscription", accessContract: "managed-runtime@1" },
+      descriptor: { adapterId: "codex-subscription", accessContract: "managed-runtime@1", implementationVersion: "1" },
+      runtime: { executionAccess: async () => ({ kind: "managed-runtime", environment: {} }) },
+      async release() {},
+    }),
+  };
+  const runtime = new GraphCompleteRuntimeService(runtimeOptions);
+  services.push(runtime);
+  const runtimeSession = await runtime.start();
+  let product;
+  const catalogSnapshot = {
+    providerId: "codex",
+    label: "Codex",
+    connected: true,
+    models: [{
+      id: "fixture-model",
+      label: "Fixture model",
+      order: 0,
+      visible: true,
+      available: true,
+      providerDefault: true,
+      metadata: {},
+    }],
+    systemFamily: { key: "codex", name: "Codex", modelIds: ["fixture-model"] },
+  };
+  const modelCatalogRefreshServer = await startModelCatalogRefreshServer({
+    refresh: () => product.publishProviderCatalog(catalogSnapshot),
+  });
+  services.push(modelCatalogRefreshServer);
+  const productOptions = {
+    userDataDirectory: dataDirectory,
+    binaryPath: join(repositoryRoot, "target", "debug", "relayer-app-server"),
+    webDirectory: join(repositoryRoot, "desktop", "renderer"),
+    permissionCatalogPath: join(repositoryRoot, "permissions", "desktop.json"),
+    runtimeSession,
+    providerCatalogRefreshSession: modelCatalogRefreshServer.session,
+    defaultHarnessConfiguration: "fixture-task-system",
+    enableReadOnlySession: true,
+  };
+  product = new RelayerAppServerService(productOptions);
+  services.push(product);
+  const productSession = await product.start();
+  await product.publishProviderCatalog(catalogSnapshot);
+  const family = await productRequest(productSession, "/api/model-families", {
+    method: "POST",
+    body: JSON.stringify({ name: "Fixture models", enabled: true,
+      members: [{ providerId: "codex", modelId: "fixture-model" }] }),
+  });
+
+  const thread = await productRequest(productSession, "/api/threads", {method:"POST",body:JSON.stringify({title:"Eval capture comparison",initialMessage:"Show the deterministic task system.",modelSelection:{familyId:family.id,providerId:"codex",modelId:"fixture-model"}})});
+  const threadId=thread.id;
+  const accepted=await waitFor("minimal source acceptance",async()=>{const d=await productRequest(productSession,`/api/threads/${threadId}`);return d.interactions[0]?.completionStatus==="accepted"?d:false});
+  const source=accepted.interactions[0];
+  const action=source.completionOutput.rootLayer.actions.find(a=>a.kind==="invoke");
+  await writeFile(invokeGatePath,"release");
+  await productRequest(productSession,`/api/threads/${threadId}/interactions/${source.id}/actions/${action.id}/invoke`,{method:"POST"});
+  await waitFor("minimal resolved invoke",async()=>{const d=await productRequest(productSession,`/api/threads/${threadId}`);return d.interactions.length===2&&d.interactions.every(i=>i.completionStatus==="accepted")});
+  const created=await productRequest(productSession,`/api/threads/${threadId}/interactions`,{method:"POST",body:JSON.stringify({text:attachedResponseText,inputId:"capture-comparison",contexts:[{target:{nodeId:action.sourceNodeId,sourceInteractionNodeId:source.graphNodeId,sourceLayerId:source.completionOutput.rootLayer.layer.id},annotations:["Explain this attached source"]}]})});
+  const completed=await waitFor("minimal attached response",async()=>{const d=await productRequest(productSession,`/api/threads/${threadId}`);const i=d.interactions.find(i=>i.id===created.id);if(i?.completionStatus==="failed")throw new Error(attachedFixtureFailure);return i?.completionStatus==="accepted"?i:false});
+  reviewContext={...reviewContext,cases:[{executionId:"navigation-smoke",name:"Capture comparison",status:"passed",threadIds:[threadId],threads:[{id:threadId,name:"Capture comparison"}]}]};
+  evalWindow=new BrowserWindow({width:1480,height:920,show:false,backgroundColor:"#0b0c0d",webPreferences:{partition:"required-navigation-eval-probe",preload:join(repositoryRoot,"desktop","preload","eval-review.cjs"),additionalArguments:["--relayer-eval-execution=navigation-smoke"],contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  await evalWindow.webContents.session.cookies.set({url:productSession.origin,name:productSession.readOnlyCookie.name,value:productSession.readOnlyCookie.value,httpOnly:true,sameSite:"strict",secure:false});
+  const contents=evalWindow.webContents;contents.setBackgroundThrottling(false);
+  await evalWindow.loadURL(`${productSession.origin}/?threadId=${threadId}&review=1`);
+  await waitFor("minimal Eval ready",()=>contents.executeJavaScript(`document.querySelectorAll("#turnPopover .interaction-graph-node").length===3 && document.querySelectorAll(".graph-node").length>0`));
+  await contents.executeJavaScript(`import("./src/threads.js").then(({selectTurnById})=>selectTurnById(${source.id}))`);
+  await waitFor("source node",()=>contents.executeJavaScript(`Boolean(document.querySelector('[data-node="${action.sourceNodeId}"]'))`));
+  await contents.executeJavaScript(`document.querySelector('[data-node="${action.sourceNodeId}"]').click()`);
+  const buttonExpression=`[...document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelectorAll("button")||[]].find(b=>b.textContent==="Open attached response")`;
+  const measure=()=>contents.executeJavaScript(`import("./src/state.js").then(({appState,viewState})=>{const b=${buttonExpression};return {currentInteractionId:appState.currentInteractionId,viewInteractionId:viewState.currentInteractionId,visibleLayerId:appState.visibleLayer?.layer?.id,selectedNodeId:document.querySelector(".graph-node.selected")?.dataset.node,detailTitle:document.querySelector("#detailTitle")?.textContent,button:b?{text:b.textContent,disabled:b.disabled,rect:b.getBoundingClientRect().toJSON(),visibility:getComputedStyle(b).visibility,display:getComputedStyle(b).display}:null,viewport:{width:innerWidth,height:innerHeight},visibilityState:document.visibilityState}})`);
+  await waitFor("source button",async()=>{const m=await measure();return m.button&&!m.button.disabled&&m.button.rect.width>0});
+  const report={sourceNodeId:action.sourceNodeId,sourceLayerId:source.completionOutput.rootLayer.layer.id,responseLayerId:completed.completionOutput.rootLayer.layer.id,responseNodeId:completed.completionOutput.rootLayer.nodes[0].id,contentsId:contents.id,windowContentsId:evalWindow.webContents.id};
+  report.hiddenBefore=await measure();report.hiddenCapture=await captureEvidence(contents,"probe-hidden");report.hiddenAfter=await measure();
+  evalWindow.showInactive();
+  report.shownBefore=await measure();report.shownCapture=await captureEvidence(contents,"probe-shown");report.shownAfter=await measure();
+  await contents.executeJavaScript(`(${buttonExpression}).click()`);
+  await waitFor("actual response transition",async()=>{const m=await measure();return String(m.visibleLayerId)===String(report.responseLayerId)});
+  report.afterClick=await measure();
+  process.stdout.write(`RELAYER_EVAL_CAPTURE_COMPARISON ${JSON.stringify(report)}\n`);
+  exitCode=0;
+}
+async function shutdown() {
+  evalWindow?.destroy();
+  window?.destroy();
+  unregisterTestIpc();
+  for (const service of services.reverse()) {
+    try {
+      await service.close();
+    } catch (error) {
+      process.stderr.write(`${error.stack || error.message}\n`);
+      exitCode = 1;
+    }
+  }
+  await rm(dataDirectory, { recursive: true, force: true });
+  app.exit(exitCode);
+}
+
+process.stdout.write("Starting isolated Electron first-message smoke test...\n");
+void app.whenReady()
+  .then(run)
+  .catch((error) => {
+    exitCode = 1;
+    process.exitCode = 1;
+    process.stderr.write(`${error.stack || error.message}\n`);
+  })
+  .finally(shutdown);

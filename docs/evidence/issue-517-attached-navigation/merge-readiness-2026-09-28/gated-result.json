@@ -1,0 +1,116 @@
+{
+  "typedPermissions": true,
+  "requiredResponseJourney": {
+    "responseNodeId": 46,
+    "responseLayerId": 14,
+    "productCapture": ".relayer/evidence/pr560-final/gated/12-required-product-button.png",
+    "evalCapture": ".relayer/evidence/pr560-final/gated/13-required-eval-button.png",
+    "rejectedOmission": true,
+    "reopenedCapture": ".relayer/evidence/pr560-final/gated/14-required-reopened-button.png",
+    "reopenedNavigationPassed": true
+  },
+  "nativeKeyboardVerified": false,
+  "passed": true,
+  "typedPermissionJourneyPassed": true,
+  "ancillaryFailures": [],
+  "harness": "fixture-task-system",
+  "inferenceCalls": 0,
+  "shiftEnterValue": null,
+  "threadCount": 1,
+  "completionStatus": "accepted",
+  "renderedNodes": [
+    "Incoming queue",
+    "Two-worker pool",
+    "Results store"
+  ],
+  "screenshotPath": ".relayer/evidence/pr560-final/gated/first-message.png",
+  "evalScreenshotPath": ".relayer/evidence/pr560-final/gated/first-message-eval.png",
+  "evalNarrowScreenshotPath": ".relayer/evidence/pr560-final/gated/first-message-eval-narrow.png",
+  "productNavigationState": {
+    "rows": 4,
+    "scrollable": false,
+    "backEnabled": true,
+    "breadcrumbSegments": 2,
+    "selectedNodeId": "43",
+    "inspectorFit": {
+      "initialContained": true,
+      "restoredContained": true,
+      "openToOpenPreserved": true,
+      "closePreserved": true,
+      "dragSelectionSuppressed": true
+    }
+  },
+  "evalNavigationState": {
+    "rows": 4,
+    "scrollable": false,
+    "backEnabled": true,
+    "breadcrumbSegments": 2,
+    "readOnlyCopy": "Read-only evaluation result\n    \u2726Model\u2304\n    \n      \n        Model\n        Advanced\n      \n      \n      \n      \n    \n  \u2191",
+    "viewportWidth": 1480,
+    "inspectorFit": {
+      "desktopContained": true,
+      "narrowOverlayPreservedStage": true,
+      "narrowOverlayPreservedCamera": true,
+      "redockedContained": true
+    }
+  },
+  "layoutEvidence": {
+    "rootProductEvalParity": true,
+    "childProductEvalParity": true,
+    "narrowViewportPreservedCanonicalLayout": true,
+    "productRootLayout": [
+      [
+        "40",
+        223.8,
+        298,
+        "authored"
+      ],
+      [
+        "41",
+        480,
+        298,
+        "authored"
+      ],
+      [
+        "42",
+        736.1999999999999,
+        298,
+        "authored"
+      ]
+    ],
+    "productChildLayout": [
+      [
+        "42",
+        480,
+        440.8,
+        "authored"
+      ],
+      [
+        "43",
+        297,
+        298,
+        "authored"
+      ],
+      [
+        "44",
+        663,
+        298,
+        "authored"
+      ]
+    ]
+  },
+  "invokeResultInteractionId": 2,
+  "invokeEvidencePaths": {
+    "unresolved": ".relayer/evidence/pr560-final/gated/01-unresolved.png",
+    "runningDisabled": ".relayer/evidence/pr560-final/gated/02-running-disabled.png",
+    "resolved": ".relayer/evidence/pr560-final/gated/03-resolved.png",
+    "crossInteraction": ".relayer/evidence/pr560-final/gated/04-cross-interaction-destination.png",
+    "revisited": ".relayer/evidence/pr560-final/gated/05-revisited-source.png",
+    "graphClosed": ".relayer/evidence/pr560-final/gated/09-interaction-graph-closed.png",
+    "graphOpen": ".relayer/evidence/pr560-final/gated/10-interaction-graph-open.png",
+    "graphSelected": ".relayer/evidence/pr560-final/gated/11-interaction-graph-selected-root.png",
+    "evalCrossInteraction": ".relayer/evidence/pr560-final/gated/06-eval-cross-interaction-destination.png",
+    "reopenedSecondOccurrence": ".relayer/evidence/pr560-final/gated/07-reopened-second-occurrence.png",
+    "reopenedDestination": ".relayer/evidence/pr560-final/gated/08-reopened-destination.png"
+  }
+}

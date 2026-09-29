@@ -1,0 +1,192 @@
+// Operator-only live driver. Uses the declared recursive-live production bootstrap.
+// One final Codex Basic repair; no fixture harness, no semantic children.
+import { execFileSync } from "node:child_process";
+import { randomUUID, createHash } from "node:crypto";
+import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
+import { resolve, join } from "node:path";
+import { createManagedRuntimeInstaller } from "../../desktop/main/managed-runtimes/installer.mjs";
+import { createManagedRuntimeResolver } from "../../desktop/main/managed-runtimes/resolver.mjs";
+import { productionHarnessRuntimeDescriptor, productionProviderAdapterRegistry } from "../../desktop/main/providers/provider-adapter-registry.mjs";
+import { GraphCompleteRuntimeService, productTemporalFeatures } from "../../desktop/main/services/graphcomplete-runtime.mjs";
+import { createHarnessReadinessCoordinator } from "../../desktop/main/services/harness-readiness.mjs";
+import { RelayerAppServerService } from "../../desktop/main/services/relayer-app-server.mjs";
+import { managedRuntimeRequirementForHarness } from "../../desktop/shared/managed-runtime-requirements.mjs";
+import { productRequest, waitForSettledCompletionExecutionEvidence } from "../../scripts/recursive-live-run-transport.mjs";
+import { exportTraceEvidence } from "../../scripts/recursive-live-run-trace.mjs";
+const repositoryRoot = resolve(import.meta.dirname, "../..");
+const dataDirectory = join(repositoryRoot, ".relayer/attached-navigation-live");
+const outputDirectory = join(repositoryRoot, ".relayer/evidence/attached-navigation/live-repair");
+const modelId = "gpt-5.6-sol";
+const save = async (name, value) => writeFile(join(outputDirectory, name + ".json"), JSON.stringify(value, null, 2) + "\n");
+const runRepair = process.argv.includes("--run-one-repair");
+if (runRepair && process.env.RELAYER_ATTACHED_NAVIGATION_REPAIR !== "1") throw new Error("One repair call requires explicit opt-in after preflight review.");
+function codexVersion(executable) {
+  try {
+    return execFileSync(executable, ["--version"], { encoding: "utf8" }).trim();
+  } catch (error) {
+    throw new Error(`Could not read a version from ${executable}: ${error?.message ?? error}`);
+  }
+}
+
+// Standard managed Codex subscription lease; auth remains in its production home.
+let providerAcquisitions = 0;
+function providerExecution(profile) {
+  const definition = { id: profile.providerId, adapterId: profile.adapterId, accessContract: profile.contract };
+  return async () => {
+    providerAcquisitions += 1;
+    await save("provider-acquisitions", { providerAcquisitions, runRepair });
+    if (!runRepair || providerAcquisitions > 1) throw new Error("Provider acquisition exceeds authorized one-call budget");
+    return {
+    definition,
+    descriptor: { adapterId: definition.adapterId, accessContract: definition.accessContract,
+      implementationVersion: productionProviderAdapterRegistry.get(definition.adapterId).implementationVersion },
+    runtime: { async executionAccess() { return {
+      kind: "managed-runtime", runtimeId: "codex", version: codexVersion(profile.codexExecutable), executable: profile.codexExecutable,
+      environment: { CODEX_HOME: profile.codexHome, RELAYER_CODEX_BINARY: profile.codexExecutable,
+        ...(process.env.PATH ? { PATH: process.env.PATH } : {}), ...(process.env.HOME ? { HOME: process.env.HOME } : {}) },
+    }; } },
+    async release() {},
+  };
+  };
+}
+
+async function prepareRoute({ session, productServer, runtime, resolver, profile }) {
+  const { providerId, modelId } = profile;
+  const catalog = {
+    providerId,
+    label: providerId,
+    connected: true,
+    models: [{
+      id: modelId,
+      label: modelId,
+      order: 0,
+      visible: true,
+      available: true,
+      providerDefault: true,
+      metadata: {},
+    }],
+    systemFamily: { key: providerId, name: providerId, modelIds: [modelId] },
+  };
+  await productServer.publishProviderCatalog(catalog);
+  const readiness = createHarnessReadinessCoordinator({
+    configurations: runtime.session.configurations,
+    digestConfiguration: runtime.session.digestConfiguration,
+    runtimeRequirements: {},
+    prepareRecipe: async (recipeId) => productionHarnessRuntimeDescriptor(await resolver.prepare(recipeId)),
+    checkers: { [profile.implementation]: async () => ({ available: true }) },
+    publishAvailability: async (updates) => {
+      await productServer.publishHarnessReadiness(updates);
+      await runtime.recordHarnessReadiness(updates);
+    },
+  });
+  const { readyHarnessIds, routeResults } = await readiness.evaluate({
+    trigger: "connect",
+    providerDefinition: { id: providerId, adapterId: profile.adapterId, accessContract: profile.contract },
+    models: [{ id: modelId, visible: true, available: true }],
+  });
+  if (!readyHarnessIds.includes(profile.harness)) {
+    const reason = routeResults.find(({ harnessId }) => harnessId === profile.harness)?.unavailableReason;
+    throw new Error(`Harness ${profile.harness} is not ready for ${providerId}/${modelId}${reason ? `: ${reason.code}` : ""}.`);
+  }
+
+  const settings = await productRequest(session, "/api/model-settings");
+  const existing = settings.families.find(family => family.name === "Live run models"
+    && family.enabled && family.members.some(member => member.providerId === providerId && member.modelId === modelId));
+  const family = existing ?? await productRequest(session, "/api/model-families", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Live run models",
+      enabled: true,
+      members: [{ providerId, modelId }],
+    }),
+  });
+  await productRequest(session, "/api/model-selection/validate", {
+    method: "POST",
+    body: JSON.stringify({ harnessId: profile.harness, familyId: family.id, providerId, modelId }),
+  });
+  return family;
+}
+
+
+async function fileIdentity(path) {
+  const bytes = await readFile(path);
+  return { path, byteLength: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+}
+async function treeIdentity(directory) {
+  const entries = [];
+  async function visit(folder) {
+    for (const entry of (await readdir(folder, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = join(folder, entry.name);
+      if (entry.isDirectory()) await visit(path);
+      else entries.push(await fileIdentity(path));
+    }
+  }
+  await visit(directory);
+  return { directory, entries, sha256: createHash("sha256").update(JSON.stringify(entries)).digest("hex") };
+}
+await mkdir(outputDirectory,{recursive:true});
+const generationOutput=join(repositoryRoot,'.relayer/evidence/attached-navigation/live');
+const original=JSON.parse(await readFile(join(generationOutput,'operator-provenance.json'),'utf8'));
+const manifest=JSON.parse(await readFile('/tmp/attached-navigation-storage-source-manifest.json','utf8'));
+async function verifySource(){for(const file of manifest.files){if(createHash('sha256').update(await readFile(join(repositoryRoot,file.path))).digest('hex')!==file.sha256)throw new Error('Reviewed source changed: '+file.path);}}
+await verifySource();
+const database=join(dataDirectory,'product-data/product.sqlite3');
+const counts=()=>JSON.parse(execFileSync('/usr/bin/sqlite3',['-json',database,'SELECT (SELECT COUNT(*) FROM interaction_attempts) AS attempts,(SELECT COUNT(*) FROM completion_executions) AS executions'],{encoding:'utf8'}))[0];
+const before=counts();
+if(before.attempts!==2||before.executions!==0)throw new Error('Repair requires exactly two prior compatibility attempts and zero execution rows; no repeat allowed');
+const resolver=createManagedRuntimeResolver(createManagedRuntimeInstaller({root:join(dataDirectory,'managed-runtimes')}));
+const prepared=await resolver.prepare(managedRuntimeRequirementForHarness('codex.basic').recipeId);
+const profile={harness:'codex-basic',implementation:'codex.basic',providerId:'codex',modelId,adapterId:'codex-subscription',contract:'managed-runtime@1',codexExecutable:prepared.executable,codexHome:'/Users/vishaltandale/Library/Application Support/relayer/codex-home'};
+const temporalFeatures=productTemporalFeatures();
+if(['schemaRead','rootCurrentWrite','projectionUi','invokeResolution','providerRecursion'].some(key=>temporalFeatures[key]!==true))throw new Error('Actual Desktop temporal chain is not fully enabled');
+const identities={codex:await fileIdentity(profile.codexExecutable),graphServer:await fileIdentity(join(repositoryRoot,'target/debug/relayer-graph-server')),appServer:await fileIdentity(join(repositoryRoot,'target/debug/relayer-app-server')),harnessConfiguration:await fileIdentity(join(repositoryRoot,'harnesses/codex-basic.yaml')),graphClient:await treeIdentity(join(repositoryRoot,'packages/graph-client/dist')),harnessHost:await treeIdentity(join(repositoryRoot,'packages/harness-host/dist'))};
+if(identities.codex.sha256!==original.runtimeIdentities.codex.sha256)throw new Error('Managed Codex identity changed from approved runtime');
+const runtime=new GraphCompleteRuntimeService({userDataDirectory:dataDirectory,graphServerBinary:identities.graphServer.path,configurationPaths:[identities.harnessConfiguration.path],codexPathOverride:profile.codexExecutable,codexBasicClientModuleUrl:new URL('../../packages/graph-client/dist/index.js',import.meta.url).href,interactionPermissions:true,temporalFeatures,candidateTrace:{directory:join(dataDirectory,'candidate-trace-spool-repair'),policy:{mode:'required',requiredFeatures:{},includeNativeArtifacts:false,maxBytesPerTurn:10*1024*1024,maxEventsPerTurn:50000}},acquireProviderExecution:providerExecution(profile)});
+let productServer,session,activeInteraction,repairInteraction,traceExported=false;
+async function exportRepairTrace(){if(traceExported||!repairInteraction?.graphNodeId)return;const receipts=await exportTraceEvidence({runtime,interactions:[repairInteraction],directory:join(outputDirectory,'traces'),refPrefix:'traces',correlation:{runId:'attached-navigation-one-native-repair',harnessConfigurationName:profile.harness,model:modelId}});await save('trace-receipts',receipts);traceExported=true;}
+try{
+ productServer=new RelayerAppServerService({userDataDirectory:dataDirectory,binaryPath:identities.appServer.path,webDirectory:join(repositoryRoot,'desktop/renderer'),permissionCatalogPath:join(repositoryRoot,'permissions/desktop.json'),runtimeSession:await runtime.start(),defaultHarnessConfiguration:profile.harness,allowHarnessOverride:true});
+ session=await productServer.start();
+ const family=await prepareRoute({session,productServer,runtime,resolver,profile});
+ const modelSelection={familyId:family.id,providerId:profile.providerId,modelId};
+ const detail=await productRequest(session,'/api/threads/1');
+ if(detail.interactions.length!==2||detail.interactions.some(i=>i.completionStatus!=='accepted'||i.projectionFresh===false))throw new Error('Preflight requires exactly two fresh accepted source interactions');
+ const source=detail.interactions.find(i=>i.id===1),root=source.completionOutput.rootLayer,node=root.nodes.find(n=>n.title==='Launch decision');
+ const oldActions=root.actions.filter(a=>a.sourceNodeId===node.id);
+ if(oldActions.length!==3||oldActions.filter(a=>a.kind==='invoke').length!==1||!node.authoredDetail)throw new Error('Preflight missing preserved compiled node and three controls');
+ const childId=root.actions.find(a=>a.label==='Inspect baseline').targetLayerId;
+ const child=await productRequest(session,`/api/threads/1/interactions/1/layers/${childId}`);
+ if(!child.nodes.some(n=>n.id===node.id))throw new Error('Preflight reused occurrence missing');
+ const storedFeatures=JSON.parse(execFileSync('/usr/bin/sqlite3',['-json',join(dataDirectory,'graphcomplete-runtime/graph.sqlite3'),'SELECT * FROM temporal_feature_config'],{encoding:'utf8'}));
+ if(storedFeatures.length!==1||storedFeatures.some(row=>['schema_read','root_current_write','projection_ui','invoke_resolution','provider_recursion'].some(key=>row[key]!==1)))throw new Error('Persisted Desktop feature chain differs');
+ const provenance={sourceDigest:manifest.sourceDigest,previousGenerationSourceDigest:original.sourceDigest,temporalFeatures,storedFeatures,before,runtimeIdentities:identities,executable:profile.codexExecutable,driverSha256:createHash('sha256').update(await readFile(import.meta.filename)).digest('hex'),modelId,harness:profile.harness,providerId:profile.providerId,providerAcquisitions,maximumTotalRootCalls:3,maximumAdditionalRootCalls:1,noAutomaticRetry:true,nativeKeyboardVerified:false};
+ await save(runRepair?'operator-provenance':'preflight',provenance);
+ if(!runRepair){if(providerAcquisitions!==0||JSON.stringify(counts())!==JSON.stringify(before))throw new Error('Preflight changed execution counts');console.log('Desktop-config preflight passed with no inference; one repair call remains held for review.');}
+ else{
+  const prompt=`This is the single bounded native Desktop qualification repair. Use the normal graph client and finish with graph.submit(interactionNode) or its documented terminal equivalent. Do not delegate, call recursiveComplete, execute invoke controls, browse, use external services, or modify unrelated files. Do not retry by creating another interaction.
+The attached accepted Launch decision node id ${node.id}, clientKey ${node.clientKey}, occurs in source root ${root.layer.id} and child ${childId}. Its title and semantic detail must remain exactly unchanged. Its three accepted controls are ${oldActions.map(a=>a.label).join(', ')}. Read getNodePresentation for current revision and actual action identities/provenance.
+Create one independent response root with exactly two connected nodes titled Release summary and Next steps, summarizing this synthetic readiness walkthrough without external factual claims. Add exactly ONE node-owned Reference on the attached node, clientKey native-final-readiness-reference, label Final readiness, targeting this new response root. Omit sourceLayer on the new action and binding. Do not insert the attached node into the new response.
+Explicitly stage a full compiled Node Detail replacement through replaceNodePresentation. Preserve and expose all three existing controls with exact original identities, kinds, and source-layer provenance; add the fourth Final readiness control. Preserve the node's persistent clientKey and semantic text. Use a compact polished layout, and let normal terminal acceptance publish the new action and replacement atomically. Do not fabricate buttons or discard older controls. Read the shipped public type declarations where needed. This is one completion only.`;
+  await save('prompt',{text:prompt});await verifySource();
+  const created=await productRequest(session,'/api/threads/1/interactions',{method:'POST',body:JSON.stringify({text:prompt,inputId:randomUUID(),modelSelection,contexts:[{target:{nodeId:node.id,sourceInteractionNodeId:source.graphNodeId,sourceLayerId:childId},annotations:['Add one final readiness reference and preserve all existing compiled controls.']}]})});
+  activeInteraction=created.id;repairInteraction=created;
+  const deadline=Date.now()+15*60*1000;let priorStatus;
+  for(;;){const current=await productRequest(session,'/api/threads/1');repairInteraction=current.interactions.find(i=>i.id===created.id);if(repairInteraction.completionStatus!==priorStatus){priorStatus=repairInteraction.completionStatus;console.log(JSON.stringify({interactionId:created.id,status:priorStatus}));}
+   if(repairInteraction.latestAttempt?.finishedAt){if(repairInteraction.latestAttempt.outcome!=='accepted')throw new Error('Repair attempt ended '+repairInteraction.latestAttempt.outcome);if(repairInteraction.completionStatus==='accepted')break;}
+   if(Date.now()>deadline||repairInteraction.completionStatus==='waiting_for_approval')throw new Error('Repair requires attention; no retry');
+   if(counts().attempts>3||counts().executions>1)throw new Error('Repair exceeded three-total-attempt or one-native-execution bound');
+   await new Promise(r=>setTimeout(r,1000));}
+  activeInteraction=null;
+  // Export while the originating host and graph recorder are still alive, before semantic assertions.
+  await exportRepairTrace();
+  const executions=await waitForSettledCompletionExecutionEvidence(database,[repairInteraction.graphNodeId]);await save('execution-receipts',executions);
+  if(executions.length!==1||executions[0].completionId!==repairInteraction.graphNodeId||executions[0].phase!=='settled'||executions[0].settlement.completionStatus!=='accepted'||!executions[0].settlement.valid||executions[0].sourceCompletionId!==null||executions[0].attachment.provider!=='codex')throw new Error('Native repair execution receipt invalid');
+  const refreshed=await productRequest(session,'/api/threads/1'),sourceRoot=refreshed.interactions.find(i=>i.id===1).completionOutput.rootLayer,sourceChild=await productRequest(session,`/api/threads/1/interactions/1/layers/${childId}`),repairRoot=refreshed.interactions.find(i=>i.id===created.id).completionOutput.rootLayer;
+  for(const occurrence of [sourceRoot,sourceChild]){const n=occurrence.nodes.find(n=>n.id===node.id),actions=occurrence.actions.filter(a=>a.sourceNodeId===node.id);if(!n||n.title!==node.title||n.detail!==node.detail||!n.authoredDetail)throw new Error('Persistent semantics or replacement missing');if(actions.length!==4||oldActions.some(old=>!actions.some(a=>a.id===old.id&&a.kind===old.kind&&a.clientKey===old.clientKey&&a.sourceLayerId===old.sourceLayerId)))throw new Error('Old controls changed or missing');if(!actions.some(a=>a.label==='Final readiness'&&a.relation==='reference'&&a.targetLayerId===repairRoot.layer.id))throw new Error('New native reference missing');}
+  const attempts=JSON.parse(execFileSync('/usr/bin/sqlite3',['-json',database,'SELECT interaction_id AS interactionId,attempt_number AS attemptNumber,harness_configuration_name AS harness,provider_id AS providerId,adapter_id AS adapterId,model_id AS modelId,outcome,finished_at AS finishedAt FROM interaction_attempts ORDER BY id'],{encoding:'utf8'}));await save('attempt-receipts',attempts);
+  if(providerAcquisitions!==1||attempts.length!==3||attempts.some(a=>a.attemptNumber!==1||a.harness!==profile.harness||a.providerId!==profile.providerId||a.adapterId!==profile.adapterId||a.modelId!==modelId||a.outcome!=='accepted'||!a.finishedAt)||counts().executions!==1)throw new Error('Three-total-call/native receipt bound failed');
+  await save('accepted',{detail:refreshed,sourceChild});await save('result',{passed:true,sourceDigest:manifest.sourceDigest,threadId:1,sourceInteractionId:1,editedInteractionId:created.id,previousEditedInteractionId:2,persistentNodeId:node.id,sourceRootLayerId:root.layer.id,sourceChildLayerId:childId,repairRootLayerId:repairRoot.layer.id,totalAttempts:3,nativeExecutionRows:1,temporalFeatures,traceExported,nativeKeyboardVerified:false,visualInspectionPending:true});console.log('Single native repair accepted, exported, and verified; no fourth call.');
+ }
+}catch(error){if(session&&activeInteraction){await productRequest(session,`/api/threads/1/interactions/${activeInteraction}/stop`,{method:'POST'}).catch(()=>{});const current=await productRequest(session,'/api/threads/1').catch(()=>null);repairInteraction=current?.interactions.find(i=>i.id===activeInteraction)??repairInteraction;}
+ await exportRepairTrace().catch(async e=>save('trace-export-failure',{message:e.message}));await save('failure',{message:error.message,counts:counts(),at:new Date().toISOString()});throw error;
+}finally{await productServer?.close().catch(()=>{});await runtime.close().catch(()=>{});}

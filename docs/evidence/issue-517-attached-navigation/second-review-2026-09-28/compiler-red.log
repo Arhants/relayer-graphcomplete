@@ -1,0 +1,21 @@
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete
+
+ ❯ |isolated| packages/graph-client/test/detail.test.ts (55 tests | 1 failed) 73ms
+     × allows node-owned navigation only through replacement without seeding ordinary submission 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |isolated| packages/graph-client/test/detail.test.ts > typed Node Detail authoring compiler > allows node-owned navigation only through replacement without seeding ordinary submission
+AssertionError: expected function to throw an error, but it didn't
+ ❯ packages/graph-client/test/detail.test.ts:29:53
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 54 passed (55)
+   Start at  19:29:45
+   Duration  284ms (transform 90ms, setup 0ms, import 131ms, tests 73ms, environment 0ms)
+

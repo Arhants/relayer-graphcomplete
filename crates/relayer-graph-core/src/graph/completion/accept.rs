@@ -17,6 +17,7 @@ pub(crate) async fn finalize(
     scope: &InteractionScope,
     plan: &CompletionPlan,
 ) -> Result<(), GraphError> {
+    super::super::attached_navigation::publish(connection, scope).await?;
     if let Some(lease) = plan.lease {
         let typed = crate::storage::sqlite::permissions::read(connection, scope.root_node_id)
             .await?

@@ -1,0 +1,1 @@
+export default { test: { include: [".relayer/diagnostics/secret-isolation/probe.test.ts"], exclude: [], maxWorkers: 1, testTimeout: 20000 } };

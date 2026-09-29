@@ -1,0 +1,32 @@
+[
+  {
+    "interactionId": 1,
+    "attemptNumber": 1,
+    "harness": "codex-basic",
+    "providerId": "codex",
+    "adapterId": "codex-subscription",
+    "modelId": "gpt-5.6-sol",
+    "outcome": "accepted",
+    "finishedAt": "1790600933765"
+  },
+  {
+    "interactionId": 2,
+    "attemptNumber": 1,
+    "harness": "codex-basic",
+    "providerId": "codex",
+    "adapterId": "codex-subscription",
+    "modelId": "gpt-5.6-sol",
+    "outcome": "accepted",
+    "finishedAt": "1790601411345"
+  },
+  {
+    "interactionId": 3,
+    "attemptNumber": 1,
+    "harness": "codex-basic",
+    "providerId": "codex",
+    "adapterId": "codex-subscription",
+    "modelId": "gpt-5.6-sol",
+    "outcome": "accepted",
+    "finishedAt": "1790604278985"
+  }
+]

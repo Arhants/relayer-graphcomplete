@@ -1417,3 +1417,160 @@ async fn failed_rebuild_wakes_pending_submission_without_acceptance() {
             .is_none()
     );
 }
+
+#[tokio::test]
+async fn attached_navigation_publication_matches_rebuild_without_widening_thread_scope() {
+    use relayer_graph_core::{GraphWriter, InteractionContextDraft, InteractionContextTarget};
+    use std::sync::Arc;
+    async fn layer(
+        writer: &GraphWriter,
+        key: &str,
+    ) -> (
+        relayer_graph_core::GraphNode,
+        relayer_graph_core::GraphLayer,
+    ) {
+        let node = writer
+            .submit_node(&NodeDraft {
+                client_key: key.into(),
+                kind: "concept".into(),
+                icon: "box".into(),
+                title: key.into(),
+                detail: key.into(),
+            })
+            .await
+            .unwrap();
+        let layer = writer
+            .submit_layer(&LayerDraft {
+                client_key: format!("{key}-layer"),
+                nodes: vec![node.id],
+                edges: vec![],
+                layout: Some(LayerLayout::v1(vec![NodePlacement {
+                    node_id: node.id,
+                    x: 0.5,
+                    y: 0.5,
+                }])),
+                size_justification: None,
+                default_node_id: None,
+            })
+            .await
+            .unwrap();
+        (node, layer)
+    }
+    fn action(key: &str, source: NodeId, target: relayer_graph_core::LayerId) -> ActionDraft {
+        ActionDraft {
+            client_key: key.into(),
+            source_node_id: source,
+            source_layer_id: None,
+            kind: ActionKind::Navigate,
+            relation: Some(NavigateRelation::Expand),
+            label: key.into(),
+            variant: Default::default(),
+            icon: None,
+            description: None,
+            target_layer_id: Some(target),
+            interaction_text: None,
+            input: None,
+        }
+    }
+    let _guard = lifecycle_test_guard().await;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("graph.db");
+    let database = GraphDatabase::open(&path).await.unwrap();
+    let index = Arc::new(
+        LadybugSearchIndex::open_reconciled(&path, &database)
+            .await
+            .unwrap(),
+    );
+    let database = database.with_search_index(index.clone());
+    database
+        .set_interaction_permissions_enabled(true)
+        .await
+        .unwrap();
+    let source = database
+        .create_interaction(ProjectId::new(1), ThreadId::new(1).unwrap(), "Source")
+        .await
+        .unwrap();
+    let writer = database.writer_for_subgraph(source.id).await.unwrap();
+    let (node, root) = layer(&writer, "persistent").await;
+    writer
+        .add_action(&action("root", source.id, root.id))
+        .await
+        .unwrap();
+    writer.complete(source.id).await.unwrap();
+    let sibling = database
+        .create_interaction(
+            ProjectId::new(1),
+            ThreadId::new(1).unwrap(),
+            "Source only sibling",
+        )
+        .await
+        .unwrap();
+    let sibling_writer = database.writer_for_subgraph(sibling.id).await.unwrap();
+    let (_, sibling_layer) = layer(&sibling_writer, "private-sibling").await;
+    sibling_writer
+        .add_action(&action("root", sibling.id, sibling_layer.id))
+        .await
+        .unwrap();
+    sibling_writer.complete(sibling.id).await.unwrap();
+    let (edit, _) = database
+        .create_interaction_with_context(
+            ProjectId::new(1),
+            ThreadId::new(2).unwrap(),
+            "Extend",
+            &[InteractionContextDraft {
+                target: InteractionContextTarget {
+                    node_id: node.id,
+                    source_interaction_node_id: source.id,
+                    source_layer_id: root.id,
+                },
+                annotations: vec![],
+            }],
+        )
+        .await
+        .unwrap();
+    let edit_writer = database.writer_for_subgraph(edit.id).await.unwrap();
+    let (_, response) = layer(&edit_writer, "extension").await;
+    edit_writer
+        .add_action(&action("root", edit.id, response.id))
+        .await
+        .unwrap();
+    let added = edit_writer
+        .add_action(&action("attached", node.id, response.id))
+        .await
+        .unwrap();
+    edit_writer.complete(edit.id).await.unwrap();
+    let query = "MATCH (n:Content) RETURN n.id,n.title,n.published_targets ORDER BY n.id";
+    let action_query =
+        "MATCH (n:Content)-[a:EXPANDS]->(l:Layer) RETURN a.id,a.published_targets ORDER BY a.id";
+    let nodes_before = index.normalized_rows(query).await.unwrap();
+    let actions_before = index.normalized_rows(action_query).await.unwrap();
+    assert!(
+        serde_json::to_string(&actions_before)
+            .unwrap()
+            .contains(&format!("action:{}", added.id))
+    );
+    let sibling_row = nodes_before
+        .iter()
+        .find(|row| row.iter().any(|cell| cell["value"] == "private-sibling"))
+        .unwrap();
+    assert!(
+        !serde_json::to_string(sibling_row)
+            .unwrap()
+            .contains("thread:2")
+    );
+    drop(edit_writer);
+    drop(sibling_writer);
+    drop(writer);
+    drop(database);
+    drop(index);
+    let reopened = GraphDatabase::open(&path).await.unwrap();
+    let rebuilt = LadybugSearchIndex::open_reconciled(&path, &reopened)
+        .await
+        .unwrap();
+    rebuilt.wait_until_reconciled().await.unwrap();
+    assert_eq!(rebuilt.normalized_rows(query).await.unwrap(), nodes_before);
+    assert_eq!(
+        rebuilt.normalized_rows(action_query).await.unwrap(),
+        actions_before
+    );
+}

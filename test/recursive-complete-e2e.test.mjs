@@ -18,6 +18,13 @@ import {
   RECURSIVE_TEMPORAL_FEATURES,
 } from "../desktop/main/services/graphcomplete-runtime.mjs";
 import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
+import { interactionModelSelection } from "../desktop/renderer/src/model-picker.js";
+import {
+  composerDisabledForState,
+  composerStatusForThread,
+  latestHumanTurn,
+  productStopTarget,
+} from "../desktop/renderer/src/product-workspace/workspace.js";
 import {
   RECURSIVE_FIXTURE_CHILD_TASK as CHILD_TASK,
   recursiveCompleteFixtureFactory as recursiveFixtureFactory,
@@ -343,5 +350,60 @@ describe("recursive complete end to end", () => {
     const childMetadata = await graphMetadata(runtimeSession, observed.childCompletionId);
     expect(childMetadata.invocation.sourceInteractionNodeId).toBeTruthy();
     expect(proxy.requests.filter((request) => request.endsWith("/stop"))).toHaveLength(1);
+  }, 60_000);
+
+  it("lets the next human turn run while a launched child still runs, and refuses the product's Stop of that child", async () => {
+    const observed = { fireAndForget: true, childBlocks: true };
+    const { session, runtimeSession, selection } = await startRecursiveStack(observed);
+
+    const thread = await productRequest(session, "/api/threads", {
+      method: "POST",
+      body: JSON.stringify({
+        title: "Child outside the turn gate",
+        initialMessage: "Delegate the hard half",
+        harnessId: "fixture-recursive",
+        permissionProfileId: "auto",
+        modelSelection: selection,
+      }),
+    });
+    await waitForStatus(session, thread.id, 0, "accepted", observed);
+    const detail = await waitForStatus(session, thread.id, 1, "running", observed);
+    const child = detail.interactions[1];
+    expect(child.graphNodeId).toBe(observed.preparedChild);
+
+    // The renderer reads the real thread view: the child is marked, so the composer follows
+    // the accepted root, Stop has no target, and the next turn inherits the root's model.
+    const view = await productRequest(session, `/api/state?threadId=${thread.id}`);
+    expect(view.actionInvocations.find((invocation) => invocation.resultInteractionId === child.id))
+      .toMatchObject({ agentInvoked: true });
+    const viewedThread = { id: thread.id };
+    expect(composerStatusForThread(view, viewedThread)).toBe("accepted");
+    expect(composerDisabledForState(composerStatusForThread(view, viewedThread))).toBe(false);
+    expect(latestHumanTurn(view, viewedThread).id).toBe(detail.interactions[0].id);
+    expect(productStopTarget(view, viewedThread)).toBeNull();
+    // The next turn's model is inherited from this turn (selectionForNextInteraction's input).
+    expect(interactionModelSelection(latestHumanTurn(view, viewedThread))).toEqual(selection);
+
+    // Only its parent may stop an agent's child; the product refuses with a client error.
+    const stop = await fetch(new URL(`/api/threads/${thread.id}/interactions/${child.id}/stop`, session.origin), {
+      method: "POST",
+      headers: { Cookie: `${session.cookie.name}=${session.cookie.value}` },
+    });
+    expect(stop.status).toBeGreaterThanOrEqual(400);
+    expect(stop.status).toBeLessThan(500);
+
+    // The running child does not hold the thread: the next human turn runs to acceptance.
+    const next = await productRequest(session, `/api/threads/${thread.id}/interactions`, {
+      method: "POST",
+      body: JSON.stringify({ text: "Next question" }),
+    });
+    const after = await waitForStatus(session, thread.id, 2, "accepted", observed);
+    expect(after.interactions[2].id).toBe(next.id);
+    // The first child keeps its own current and is still running.
+    expect(after.interactions[1].completionStatus).toBe("running");
+    const current = await fetch(new URL(`api/control/interactions/${child.graphNodeId}/current`, `${runtimeSession.graphUrl}/`), {
+      headers: { authorization: `Bearer ${runtimeSession.graphControlToken}` },
+    }).then((response) => response.json());
+    expect(current.lifecycle).toBe("active");
   }, 60_000);
 });

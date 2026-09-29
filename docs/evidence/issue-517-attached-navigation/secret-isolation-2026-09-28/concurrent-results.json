@@ -1,0 +1,56 @@
+[
+  {
+    "run": 1,
+    "exit": 1,
+    "seconds": 1.39,
+    "providerPresenceFailure": true
+  },
+  {
+    "run": 2,
+    "exit": 1,
+    "seconds": 1.4,
+    "providerPresenceFailure": true
+  },
+  {
+    "run": 0,
+    "exit": 1,
+    "seconds": 1.4,
+    "providerPresenceFailure": true
+  },
+  {
+    "run": 3,
+    "exit": 1,
+    "seconds": 0.98,
+    "providerPresenceFailure": true
+  },
+  {
+    "run": 5,
+    "exit": 1,
+    "seconds": 1.0,
+    "providerPresenceFailure": true
+  },
+  {
+    "run": 4,
+    "exit": 1,
+    "seconds": 1.01,
+    "providerPresenceFailure": true
+  },
+  {
+    "run": 6,
+    "exit": 0,
+    "seconds": 0.86,
+    "providerPresenceFailure": false
+  },
+  {
+    "run": 8,
+    "exit": 1,
+    "seconds": 0.89,
+    "providerPresenceFailure": true
+  },
+  {
+    "run": 7,
+    "exit": 1,
+    "seconds": 0.94,
+    "providerPresenceFailure": true
+  }
+]

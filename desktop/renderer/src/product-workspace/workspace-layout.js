@@ -11,7 +11,7 @@ export function createWorkspaceLayout(root, owner) {
   const panel = find("#environmentPanel");
   const toggle = find("#environmentToggle");
   const document = layout.ownerDocument;
-  const bridge = owner?.relayerDesktop?.workspaceLayout ?? owner?.relayerEvalReview?.workspaceLayout;
+  const bridge = owner?.relayerDesktop?.workspaceLayout ?? owner?.relayerEvalReview?.workspaceLayout ?? owner?.relayerHumanTask?.workspaceLayout;
   let ratio = 0.5;
   let edited = false;
   let disposed = false;

@@ -233,6 +233,8 @@ impl InteractionExecutionService {
             }
         };
         let command = CompleteInteraction {
+            require_native_continuity: false,
+            native_history_anchor: None,
             project_id: thread.project_id.map(ProjectId::value),
             product_interaction_id: interaction.id.value(),
             thread_id: thread.id.value(),
@@ -423,7 +425,21 @@ impl InteractionExecutionService {
             stop_before_native_execution(execution, &thread, &interaction, prepared, attempt).await;
             return;
         }
+        let continuity = execution
+            .product
+            .conversation_compatibility(thread.id)
+            .await
+            .ok();
+        let require_native_continuity = execution_model_selection.is_some()
+            && invocation.is_none()
+            && continuity
+                .as_ref()
+                .is_none_or(|value| value.status != "unrestricted");
         let command = CompleteInteraction {
+            require_native_continuity,
+            native_history_anchor: continuity
+                .as_ref()
+                .and_then(|value| value.native_history_anchor.as_ref()),
             execution_lease_id: admission
                 .as_ref()
                 .map(|admission| admission.execution_lease_id.as_str()),

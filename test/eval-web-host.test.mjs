@@ -1,10 +1,11 @@
+import { runInNewContext } from "node:vm";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSettingsStore } from "../desktop/main/services/settings-store.mjs";
 import { readFile, access, mkdtemp, rm } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { createServer, request as httpRequest } from "node:http";
-import { createEvalDashboard, createReviewSurface, openHumanReview } from "../desktop/eval-main/web-host.mjs";
+import { createEvalDashboard, createReviewSurface, createSettingsSurface, createHumanTaskSurface, openHumanReview } from "../desktop/eval-main/web-host.mjs";
 
 const opened = [];
 afterEach(async () => { await Promise.all(opened.splice(0).map((surface) => surface.close())); });
@@ -12,6 +13,194 @@ const authorized = (surface, extra = {}) => ({ Authorization: `Bearer ${new URL(
 const context = { readOnly: true, executionId: "e1", cases: [{ executionId: "e1", threadIds: [7] }] };
 
 describe("Eval localhost authority", () => {
+  it("registers live graph annotations without widening product write authority", async () => {
+    const registered = [];
+    const forwarded = [];
+    const productSession = { origin: "http://product.invalid", cookie: { name: "control", value: "private" }, readOnlyCookie: { name: "read", value: "only" } };
+    const fetchImpl = async (url, options = {}) => {
+      forwarded.push({ path: url.pathname, method: options.method || "GET", cookie: options.headers?.Cookie });
+      const scoped = registered.some(({ token, threadIds }) => options.headers?.Cookie === `read=only; relayer_annotation=${token}` && threadIds.includes(7));
+      if (url.pathname === "/api/capabilities") return Response.json({ annotations: scoped });
+      if (url.pathname === "/api/state") return Response.json({ capabilities: { annotations: scoped }, threads: [{ id: 7, projectId: 1, active: true }], projects: [{ id: 1 }], interactions: [] });
+      return Response.json({ annotation: { id: 1 } }, { status: scoped ? 201 : 401, headers: { "Set-Cookie": "control=must-not-escape" } });
+    };
+    const tasks = {
+      get: () => ({ status: "active", currentThreadId: 7, threadIds: [7], prepared: { execution: { projectId: 1 } } }),
+      upstream: (path, options) => fetchImpl(new URL(path, productSession.origin), { ...options, headers: { Cookie: "read=only" } }),
+      write: () => { throw Object.assign(new Error("Write is outside this task session."), { status: 403 }); },
+    };
+    const surface = await createHumanTaskSurface({ tasks, sessionId: "task", productSession, fetchImpl,
+      registerAnnotations: async (_product, scope) => registered.push(scope),
+    });
+    opened.push(surface);
+    expect(registered).toHaveLength(1);
+    expect(registered[0].threadIds).toEqual([7]);
+    const request = (path, method = "GET") => fetch(surface.origin + path, {
+      method, headers: authorized(surface, { Cookie: "control=forged; relayer_annotation=forged" }),
+      ...(method === "POST" ? { body: JSON.stringify({ anchor: { kind: "thread" }, comment: "Useful" }) } : {}),
+    });
+    expect(await (await request("/api/capabilities")).json()).toEqual({ annotations: true });
+    expect((await (await request("/api/state?threadId=7")).json()).capabilities.annotations).toBe(true);
+    for (const suffix of ["", "/1/revisions", "/1/retract"]) {
+      const response = await request(`/api/threads/7/annotations${suffix}`, "POST");
+      expect(response.status).toBe(201);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    }
+    for (const path of ["/api/threads/8/annotations", "/api/threads/7/interactions", "/api/internal/annotation-sessions"]) {
+      expect((await request(path, "POST")).status).toBe(403);
+    }
+    expect(forwarded).toHaveLength(5);
+    expect(forwarded.every(({ cookie }) => cookie === `read=only; relayer_annotation=${registered[0].token}`)).toBe(true);
+  });
+
+  it("routes only model validation through the task's scoped write admission", async () => {
+    const calls = [];
+    const selection = { harnessId: "codex-basic", familyId: 1, providerId: "codex", modelId: "fixture" };
+    const surface = await createHumanTaskSurface({ sessionId: "owned", productSession: { origin: "http://product.invalid" }, tasks: {
+      get: () => ({ status: "active", currentThreadId: 7, threadIds: [7] }),
+      upstream: async () => Response.json({ error: "read-only authority" }, { status: 403 }),
+      write: async (...args) => { calls.push(args); return { status: 200, bytes: JSON.stringify(selection) }; },
+    } });
+    opened.push(surface);
+    const response = await fetch(surface.origin + "/api/model-selection/validate", { method: "POST", headers: authorized(surface), body: JSON.stringify(selection) });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(selection);
+    expect(calls).toEqual([["owned", "/api/model-selection/validate", "POST", selection]]);
+  });
+
+  it("allows human-session grading in read-only review without enabling product writes or judge grading", async () => {
+    const grades = [];
+    const productSession = { origin: "http://product.invalid", readOnlyCookie: { name: "read", value: "only" } };
+    const review = await createReviewSurface({ productSession, context, humanGrading: {
+      task: () => ({ status: "completed" }), grade: (input) => { grades.push(input); return { status: "completed" }; }, annotate: () => ({}),
+    } });
+    const judge = await createReviewSurface({ productSession, context }); opened.push(review, judge);
+    const post = (surface, path, headers = authorized(surface)) => fetch(surface.origin + path, { method: "POST", headers, body: JSON.stringify({ satisfaction: 3, comment: "Useful" }) });
+    expect((await post(review, "/eval-api/grade", {})).status).toBe(401);
+    expect((await post(review, "/eval-api/grade")).status).toBe(200);
+    expect(grades).toHaveLength(1);
+    expect((await post(judge, "/eval-api/grade")).status).toBe(404);
+    expect((await post(review, "/eval-api/finish")).status).toBe(404);
+    expect((await post(review, "/api/threads/7/interactions")).status).toBe(403);
+  });
+
+  it("binds workspace grading to its task and requires that surface capability", async () => {
+    const calls = [];
+    const surface = await createHumanTaskSurface({
+      sessionId: "owned", productSession: { origin: "http://product.invalid" },
+      tasks: { get: () => ({ currentThreadId: 7 }),
+        grade: (id, input) => { calls.push(["grade", id, input]); return { status: "active" }; },
+        finish: (id, input) => { calls.push(["finish", id, input]); return { status: "completed" }; },
+        annotate: (id, input) => { calls.push(["annotate", id, input]); return { status: "completed" }; } },
+    });
+    opened.push(surface);
+    const post = (path, input, headers = authorized(surface)) => fetch(surface.origin + path, {
+      method: "POST", headers, body: JSON.stringify(input),
+    });
+    expect((await post("/eval-api/finish", {}, {})).status).toBe(401);
+    expect((await post("/eval-api/grade", {}, {})).status).toBe(401);
+    const context = await fetch(surface.origin + "/eval-api/task", { headers: authorized(surface) }).then((response) => response.json());
+    expect(context.workspaceGrading).toBe(2);
+    const grade = { sessionId: "foreign", satisfaction: 3, reason: "satisfied" };
+    expect((await post("/eval-api/grade", grade)).status).toBe(200);
+    expect((await post("/eval-api/finish", grade)).status).toBe(200);
+    const annotation = { sessionId: "foreign", eventId: "e1", comment: "Useful" };
+    expect((await post("/eval-api/annotate", annotation)).status).toBe(200);
+    expect(calls).toEqual([["grade", "owned", grade], ["finish", "owned", grade], ["annotate", "owned", annotation]]);
+    expect((await post("/eval-api/finishHumanTask", [])).status).toBe(404);
+  });
+
+  it("keeps a copied settings URL usable in a fresh browser and restores older tab URLs", async () => {
+    const surface = await createSettingsSurface({
+      productSession: { origin: "http://product.invalid", cookie: { name: "control", value: "private" } },
+      providerSetup: { status: () => ({ definitions: [] }) },
+    });
+    opened.push(surface);
+    const bridge = await readFile("desktop/eval-renderer/web-bridge.js", "utf8");
+    const boot = (address, storage = new Map()) => {
+      let location = new URL(address);
+      const window = { fetch: (input, options) => fetch(new URL(input, location), options) };
+      runInNewContext(bridge, {
+        window, location, URL, URLSearchParams, Headers, Request, fetch: (...args) => window.fetch(...args),
+        sessionStorage: { setItem: (key, value) => storage.set(key, value), getItem: (key) => storage.get(key) },
+        history: { replaceState: (_state, _title, next) => { location = new URL(next, location); } },
+      });
+      return { window, storage, address: () => location.href };
+    };
+    const original = boot(surface.url);
+    expect(await original.window.relayerDesktop.providers.status()).toEqual({ definitions: [] });
+    const copied = boot(original.address());
+    await expect(copied.window.relayerDesktop.providers.status()).resolves.toEqual({ definitions: [] });
+    const dashboard = `http://127.0.0.1:12345/#${"d".repeat(64)}`;
+    const returnAddress = `${surface.url}&${new URLSearchParams({ returnTo: dashboard })}`;
+    const withReturn = boot(returnAddress);
+    expect(withReturn.window.relayerEvalSettings.returnTo).toBe(dashboard);
+    await expect(withReturn.window.relayerDesktop.providers.status()).resolves.toEqual({ definitions: [] });
+    expect(boot(withReturn.address()).window.relayerEvalSettings.returnTo).toBe(dashboard);
+    const restoredReturn = boot(surface.origin + "/?evalSettings=1", withReturn.storage);
+    expect(boot(restoredReturn.address()).window.relayerEvalSettings.returnTo).toBe(dashboard);
+    expect(boot(`${surface.url}&returnTo=https%3A%2F%2Fevil.example`).window.relayerEvalSettings.returnTo).toBeNull();
+    const rootAddress = new URL(surface.url); rootAddress.search = "";
+    const rootSettings = boot(rootAddress.href);
+    // The settings entry point must initialize its bridge without a query flag.
+    rootSettings.window.initializeRelayerEvalSettings();
+    await expect(rootSettings.window.relayerDesktop.providers.status()).resolves.toEqual({ definitions: [] });
+    const stripped = new URL(surface.url); stripped.hash = "";
+    const recovered = boot(stripped.href, original.storage);
+    await expect(boot(recovered.address()).window.relayerDesktop.providers.status()).resolves.toEqual({ definitions: [] });
+    // A bare URL does not acquire authority from the server or another browser.
+    await expect(boot(stripped.href).window.relayerDesktop.providers.status()).rejects.toThrow("authenticated URL");
+  });
+
+  it("opens separately scoped production settings only from an authenticated dashboard", async () => {
+    const seen = [];
+    let busy = false;
+    const settings = await createSettingsSurface({
+      productSession: { origin: "http://product.invalid", cookie: { name: "control", value: "private" } },
+      providerSetup: { status: () => ({ definitions: [] }), connect: (input) => ({ status: "pending", connectionId: input.connectionId }) },
+      isBusy: () => busy,
+      fetchImpl: async (url, options) => {
+        seen.push({ path: url.pathname, cookie: options.headers.Cookie, authorization: options.headers.Authorization, method: options.method, body: options.body?.toString() });
+        return Response.json({ ok: true }, { headers: { "Set-Cookie": "control=must-not-escape" } });
+      },
+    });
+    const dashboard = await createEvalDashboard({ service: {}, rendererDirectory: "desktop/eval-renderer", openSettings: () => settings.url });
+    opened.push(settings, dashboard);
+    const open = (headers) => fetch(dashboard.origin + "/eval-api/openSettings", { method: "POST", headers, body: "[]" });
+    expect((await open({})).status).toBe(401);
+    expect((await open(authorized(dashboard, { Origin: "https://foreign.test" }))).status).toBe(403);
+    expect(await (await open(authorized(dashboard))).json()).toBe(settings.url);
+    expect(new URL(settings.url).searchParams.get("evalSettings")).toBe("1");
+    expect((await fetch(settings.origin + "/eval-api/status", { method: "POST", headers: authorized(dashboard), body: "[]" })).status).toBe(401);
+    const request = (path, method = "GET", value) => fetch(settings.origin + path, {
+      method, headers: authorized(settings, { Cookie: "forged=secret", "Content-Type": "application/json" }),
+      ...(value === undefined ? {} : { body: JSON.stringify(value) }),
+    });
+    expect(await (await request("/eval-api/connect", "POST", [{ connectionId: "chosen" }])).json()).toEqual({ status: "pending", connectionId: "chosen" });
+    for (const [path, method] of [["/api/state", "GET"], ["/api/threads/7", "GET"], ["/api/threads/7/interactions", "POST"], ["/api/internal/annotation-sessions", "POST"], ["/eval-api/createRun", "POST"]]) {
+      expect((await request(path, method, method === "POST" ? {} : undefined)).status, path).toBe(403);
+    }
+    expect(seen).toEqual([]);
+    for (const [path, method, value] of [
+      ["/api/model-settings", "GET"],
+      ["/api/model-families", "POST", { name: "Chosen", enabled: true, members: [{ providerId: "chosen", modelId: "test-model" }] }],
+      ["/api/model-settings/defaults", "PUT", { harnessId: "codex-basic", familyId: 1, providerId: "chosen", modelId: "test-model" }],
+      ["/api/harness-configurations/codex-basic/model-rules", "PUT", { allow: ["test-*"], deny: [] }],
+    ]) {
+      const response = await request(path, method, value);
+      expect(response.status, path).toBe(200);
+      expect(response.headers.get("set-cookie")).toBeNull();
+      expect(seen.at(-1)).toMatchObject({ path, method, cookie: "control=private", authorization: undefined });
+      if (value) expect(JSON.parse(seen.at(-1).body)).toEqual(value);
+    }
+    busy = true;
+    expect((await request("/api/model-settings/defaults", "PUT", {})).status).toBe(409);
+    expect(seen).toHaveLength(4);
+    const review = await createReviewSurface({ context, productSession: { origin: "http://product.invalid", readOnlyCookie: { name: "read", value: "only" } }, fetchImpl: async () => { throw new Error("Settings writes reached review upstream"); } });
+    opened.push(review);
+    expect((await fetch(review.origin + "/api/model-settings/defaults", { method: "PUT", headers: authorized(review), body: "{}" })).status).toBe(403);
+    expect((await fetch(review.origin + "/eval-api/connect", { method: "POST", headers: authorized(review), body: "[]" })).status).toBe(404);
+  });
   it("authenticates dashboard operations and rejects foreign origins, hosts and encoded API paths", async () => {
     const surface = await createEvalDashboard({ service: { listRuns: () => [{ id: "run" }] }, rendererDirectory: "desktop/eval-renderer" });
     opened.push(surface);

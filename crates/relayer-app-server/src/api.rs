@@ -6,6 +6,7 @@ mod environment;
 mod error;
 mod input_drafts;
 mod input_operator_sessions;
+mod interaction_graph;
 mod model_settings;
 mod projects;
 mod state;
@@ -185,7 +186,8 @@ pub(crate) fn router(
         )
         .route(
             "/api/internal/harness-readiness",
-            axum::routing::put(model_settings::publish_harness_readiness),
+            get(model_settings::harness_readiness_state)
+                .put(model_settings::publish_harness_readiness),
         )
         .route(
             "/api/internal/provider-definitions",

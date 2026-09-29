@@ -114,3 +114,17 @@ it("restores durable desktop split through production settings IPC after a chang
     await expect(reopened.handlers.get("relayer:workspace-layout-set")(null, 1)).rejects.toThrow("Invalid workspace split ratio");
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+
+it("hydrates and saves the live human task split without activating review mode", async () => {
+  const owner = new Window({ url: "http://127.0.0.1:43123/?humanTask=1" });
+  const set = vi.fn(async () => {});
+  owner.relayerHumanTask = { workspaceLayout: { read: async () => 0.64, set } };
+  const workspace = mount(owner);
+  await drain();
+  expect(workspace.ratio()).toBe(64);
+  workspace.key("ArrowRight");
+  await drain();
+  expect(set).toHaveBeenCalledWith(0.66);
+  expect(owner.relayerEvalReview).toBeUndefined();
+});

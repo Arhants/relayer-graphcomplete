@@ -1,17 +1,33 @@
 use super::SqliteProductStore;
 use crate::{
-    product::{InteractionId, ThreadId},
+    product::{CatalogError, InteractionId, ThreadId},
     storage::StorageError,
 };
 
 impl SqliteProductStore {
-    /// Only a product-owned, live execution can acquire this durable request. Agent
-    /// executions retain their separate direct-parent broker authority.
+    /// Only a product-owned, live execution can acquire this durable request. A child an
+    /// agent launched is refused: its parent agent keeps the only authority to stop it,
+    /// through its broker. Every refusal is the caller's error, not the server's.
     pub(crate) async fn request_interaction_stop(
         &self,
         thread: ThreadId,
         interaction: InteractionId,
     ) -> Result<(), StorageError> {
+        let agent_child: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM interactions WHERE id=?1 AND thread_id=?2 AND (
+                EXISTS(SELECT 1 FROM completion_executions WHERE interaction_id=?1)
+                OR EXISTS(SELECT 1 FROM action_invocations WHERE result_interaction_id=?1 AND agent_invoked=1)))",
+        )
+        .bind(interaction.value())
+        .bind(thread.value())
+        .fetch_one(&self.pool)
+        .await?;
+        if agent_child {
+            return Err(StorageError::Catalog(CatalogError::invalid(
+                "agent_child_stop",
+                "Only the agent that launched this child can stop it.",
+            )));
+        }
         let changed = sqlx::query(
             "INSERT INTO interaction_stop_requests(interaction_id,error)
             SELECT id,NULL FROM interactions WHERE id=?1 AND thread_id=?2
@@ -31,9 +47,10 @@ impl SqliteProductStore {
             if terminal {
                 return Ok(());
             }
-            return Err(StorageError::CompletionExecutionConflict(
-                "This interaction has no active product run to stop.".into(),
-            ));
+            return Err(StorageError::Catalog(CatalogError::invalid(
+                "no_active_run",
+                "This interaction has no active product run to stop.",
+            )));
         }
         Ok(())
     }

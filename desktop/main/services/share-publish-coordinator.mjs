@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
+import { captureShareErrorDiagnostics } from "./share-error-diagnostics.mjs";
+
 const MAX_ATTEMPTS = 32;
 const MAXIMUM_PREFLIGHT_TITLE = "😀".repeat(120);
 const NON_REPORTED_CODES = new Set([
@@ -125,8 +127,10 @@ function closedFailure(error, reference) {
 function telemetryRecord(error, reference) {
   const code = failureCode(error);
   if (NON_REPORTED_CODES.has(code)) return null;
+  const diagnostics = captureShareErrorDiagnostics(error);
   if (code === "share_snapshot_too_large") {
     return {
+      ...diagnostics,
       code: "share.snapshot_too_large",
       failureStage: "export",
       attemptReferenceId: reference,
@@ -135,6 +139,7 @@ function telemetryRecord(error, reference) {
   }
   const stage = error?.failureStage === "upload" ? "upload" : error?.failureStage === "export" ? "export" : "service";
   return {
+    ...diagnostics,
     code: stage === "upload" ? "share.upload_failed" : stage === "export" ? "share.export_failed" : "share.service_failed",
     failureStage: stage,
     attemptReferenceId: reference,
