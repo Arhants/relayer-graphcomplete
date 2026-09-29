@@ -234,6 +234,9 @@ export class CodexBasicHarness implements Harness {
     if (resolved.experimentalAuthoringStrategy !== undefined && resolved.promptProfile === undefined) {
       throw new Error("experimentalAuthoringStrategy requires a layered-navigation promptProfile");
     }
+    if (resolved.experimentalAuthoringStrategy === "code-model-recursion-v1") {
+      throw new Error("code-model-recursion-v1 requires the prime.agent Python execution surface");
+    }
     if (resolved.experimentalAuthoringStrategy === "saved-module-v1"
       && dependencies.graphAuthoringLauncherPath !== undefined) {
       throw new Error("saved-module-v1 requires an unpinned launcher and cannot widen the trusted graph-authoring launcher contract");

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
   buildLayeredNavigationPrompt,
@@ -6,11 +7,14 @@ import {
 } from "../src/implementations/codex-basic.js";
 import {
   EXPERIMENTAL_AUTHORING_STRATEGIES,
+  PYTHON_CODE_MODEL_CALL_REFERENCE,
   javascriptExperimentalAuthoringGuidance,
   pythonExperimentalAuthoringGuidance,
 } from "../src/implementations/experimental-authoring-guidance.js";
 import type { GraphNode } from "@relayer/graph-client";
 import type { HarnessConfiguration } from "../src/types.js";
+
+const pythonExecutable = process.platform === "win32" ? "python" : "python3";
 
 const interaction = {
   id: 21,
@@ -65,7 +69,7 @@ describe("experimental authoring guidance", () => {
     expect(control).not.toContain("Experimental authoring strategy");
   });
 
-  it.each(EXPERIMENTAL_AUTHORING_STRATEGIES)(
+  it.each(EXPERIMENTAL_AUTHORING_STRATEGIES.filter((strategy) => strategy !== "code-model-recursion-v1"))(
     "delivers one bounded JavaScript treatment for %s",
     (strategy) => {
       const prompt = buildLayeredNavigationPrompt(
@@ -130,6 +134,25 @@ describe("experimental authoring guidance", () => {
     ).toThrow("cannot widen the trusted graph-authoring launcher contract");
   });
 
+  it("refuses the Prime-only code/model treatment in Codex before execution", () => {
+    expect(
+      () =>
+        new CodexBasicHarness({
+          threadId: 1,
+          permissionProfileId: "auto",
+          permissionBinding: configuration.permissionBindings.auto!,
+          workingDirectory: "/isolated/experiment",
+          configuration: {
+            ...configuration,
+            settings: {
+              ...configuration.settings,
+              experimentalAuthoringStrategy: "code-model-recursion-v1",
+            },
+          },
+        }),
+    ).toThrow("requires the prime.agent Python execution surface");
+  });
+
   it.each(EXPERIMENTAL_AUTHORING_STRATEGIES)(
     "keeps Prime guidance Python-specific for %s",
     (strategy) => {
@@ -162,5 +185,64 @@ describe("experimental authoring guidance", () => {
         "there is no required helper, child, node, call, or recursion count",
       );
     }
+  });
+
+  it("executes the frozen Python call reference and changes recursion from the returned value", () => {
+    const program = `
+import asyncio, json, sys, types
+calls = []
+async def host_request(kind, payload):
+    assert kind == "relayer.experimental.model.complete"
+    calls.append(payload["prompt"])
+    split = sys.argv[1] == "split" and "depth=0" in payload["prompt"]
+    return {"text": json.dumps({"split": split}), "usage": {"totalTokens": 1}}
+rlm = types.ModuleType("rlm")
+rlm.host_request = host_request
+sys.modules["rlm"] = rlm
+${PYTHON_CODE_MODEL_CALL_REFERENCE}
+async def walk(values, depth=0, call_id="root", parent_call_id=None):
+    response = await relayer_model_complete(
+        f"depth={depth};values={values}",
+        call_id=call_id,
+        parent_call_id=parent_call_id,
+        depth=depth,
+    )
+    decision = json.loads(response["text"])
+    if decision["split"] and depth < 2:
+        midpoint = len(values) // 2
+        return await walk(values[:midpoint], depth + 1, call_id + ".left", call_id) + await walk(values[midpoint:], depth + 1, call_id + ".right", call_id)
+    return [{"depth": depth, "values": values}]
+publications = []
+class Graph:
+    async def advance_current(self, layer):
+        publications.append({"kind": "current", "layer": layer})
+    async def submit(self, node_id):
+        publications.append({"kind": "accepted", "nodeId": node_id})
+async def main():
+    result = await walk([1, 2, 3, 4])
+    await Graph().advance_current({"leafCount": len(result), "findings": result})
+    await Graph().submit(21)
+    return result
+result = asyncio.run(main())
+print(json.dumps({"calls": calls, "result": result, "publications": publications}))
+`;
+    const run = (mode: "split" | "stop") => JSON.parse(execFileSync(pythonExecutable, ["-c", program, mode], {
+      encoding: "utf8",
+    })) as {
+      calls: string[];
+      result: { depth: number; values: number[] }[];
+      publications: { kind: string; layer?: { leafCount: number }; nodeId?: number }[];
+    };
+    const split = run("split");
+    const stop = run("stop");
+    expect(split.calls).toHaveLength(3);
+    expect(split.result.map(({ depth }) => depth)).toEqual([1, 1]);
+    expect(split.publications).toEqual([
+      { kind: "current", layer: { leafCount: 2, findings: split.result } },
+      { kind: "accepted", nodeId: 21 },
+    ]);
+    expect(stop.calls).toHaveLength(1);
+    expect(stop.result).toEqual([{ depth: 0, values: [1, 2, 3, 4] }]);
+    expect(stop.publications[0]?.layer?.leafCount).toBe(1);
   });
 });

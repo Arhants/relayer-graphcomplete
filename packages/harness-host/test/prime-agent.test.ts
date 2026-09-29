@@ -3280,7 +3280,7 @@ function expectGraphAuthoringRules(prompt: string): void {
 const pythonExecutable = process.platform === "win32" ? "python" : "python3";
 
 describe("Prime experimental authoring strategies", () => {
-  it.each(["function-increments-v1", "saved-module-v1", "decompose-publish-v1"] as const)(
+  it.each(["function-increments-v1", "saved-module-v1", "decompose-publish-v1", "code-model-recursion-v1"] as const)(
     "delivers Python-only %s guidance through the strict configuration parser",
     async (experimentalAuthoringStrategy) => {
       let prompt = "";
@@ -3299,6 +3299,10 @@ describe("Prime experimental authoring strategies", () => {
         expect(prompt).not.toContain("graph.mjs");
         expect(prompt).not.toContain("Recursive JavaScript");
         expect(prompt).toContain("await graph.submit(21)");
+        if (experimentalAuthoringStrategy === "code-model-recursion-v1") {
+          expect(prompt).toContain("relayer.experimental.model.complete");
+          expect(prompt).toContain("code must consume text, make a real branch decision");
+        }
       } finally {
         await harness.dispose();
       }
@@ -3310,6 +3314,231 @@ describe("Prime experimental authoring strategies", () => {
       ...configuration,
       settings: { ...configuration.settings, experimentalAuthoringStrategy: "unknown-v1" },
     })).rejects.toThrow("experimentalAuthoringStrategy must be one of");
+  });
+
+  it("binds the Prime-only model call to the active run and traces result-driven recursion", async () => {
+    type Handler = (
+      payload: Record<string, unknown>,
+      invocation: { runContext?: unknown; signal: AbortSignal; isCurrent(): boolean },
+    ) => Promise<Record<string, unknown>>;
+    let handlers: Record<string, Handler> = {};
+    const decisions: string[] = [];
+    const successfulResponses: Record<string, unknown>[] = [];
+    let releaseNoncooperative!: () => void;
+    const noncooperative = new Promise<void>((resolve) => { releaseNoncooperative = resolve; });
+    const completeSimple = vi.fn(async (
+      model: Record<string, unknown>,
+      context: { messages: { content: string }[]; tools?: unknown },
+      options: Record<string, unknown>,
+    ) => {
+      const prompt = context.messages[0]!.content;
+      if (prompt === "wait") await noncooperative;
+      const answer = prompt === "depth=0" ? "split" : "stop";
+      return {
+        role: "assistant",
+        content: [
+          { type: "text", text: answer.slice(0, 2) },
+          { type: "text", text: answer.slice(2) },
+        ],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        stopReason: prompt === "provider-error" ? "error" : "stop",
+        timestamp: Date.now(),
+        usage: {
+          input: 2,
+          output: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 3,
+          cost: { input: 0.001, output: 0.002, cacheRead: 0, cacheWrite: 0, total: 0.003 },
+        },
+      } as const;
+    });
+    const session = primeSession("/tmp/prime-code-model.jsonl", {
+      promptAndWait: vi.fn(async (_prompt: string, options: { runContext: unknown }) => {
+        const handler = handlers["relayer.experimental.model.complete"];
+        expect(handler).toBeTypeOf("function");
+        const active = { runContext: options.runContext, signal: new AbortController().signal, isCurrent: () => true };
+        const walk = async (depth: number, callId = "root", parentCallId: string | null = null): Promise<void> => {
+          const response = await handler!({ prompt: `depth=${depth}`, callId, parentCallId, depth }, active);
+          const decision = response.text;
+          expect(typeof decision).toBe("string");
+          decisions.push(decision as string);
+          successfulResponses.push(response);
+          if (decision === "split" && depth === 0) {
+            await walk(depth + 1, "root.left", callId);
+            await walk(depth + 1, "root.right", callId);
+          }
+        };
+        await walk(0);
+        await expect(handler!({ prompt: "stale", callId: "stale", parentCallId: null, depth: 0 }, { ...active, isCurrent: () => false }))
+          .rejects.toThrow("no longer active");
+        await expect(handler!({ prompt: "valid", callId: "valid", parentCallId: null, depth: 0, extra: true }, active))
+          .rejects.toThrow("unknown fields");
+        await expect(handler!({ prompt: "provider-error", callId: "error-call", parentCallId: null, depth: 0 }, active))
+          .rejects.toThrow("did not return text");
+        const request = new AbortController();
+        const cancelled = handler!({ prompt: "wait", callId: "cancelled", parentCallId: null, depth: 0 }, { ...active, signal: request.signal });
+        request.abort(new Error("request cancelled"));
+        releaseNoncooperative();
+        await expect(cancelled).rejects.toThrow("request cancelled");
+      }),
+    });
+    const trace = recordingTrace();
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7,
+      workingDirectory: "/tmp/project",
+      ...fullPermission,
+      configuration: {
+        ...configuration,
+        settings: {
+          ...configuration.settings,
+          promptProfile: "layered-navigation-v1",
+          experimentalAuthoringStrategy: "code-model-recursion-v1",
+        },
+      },
+    }, {
+      loadPiAi: async () => ({ completeSimple: completeSimple as never }),
+      loadModule: async () => ({
+        ...runScopeApi(),
+        SessionManager: { create: vi.fn(() => "new-session"), open: vi.fn() },
+        createHostRequestHandler: (handler: Handler) => handler,
+        createAgentSessionServices: vi.fn(async () => nativeServices({ modelRegistry: { find: vi.fn() } })),
+        createAgentSessionFromServices: vi.fn(async (options: { hostRequestHandlers: Record<string, Handler> }) => {
+          handlers = options.hostRequestHandlers;
+          return { session };
+        }),
+      }) as never,
+    });
+    try {
+      await harness.complete(runContext(52, "fixture", trace.sink));
+      expect(decisions).toEqual(["split", "stop", "stop"]);
+      expect(completeSimple).toHaveBeenCalledTimes(5);
+      const [calledModel, calledContext, calledOptions] = completeSimple.mock.calls[0]!;
+      expect(calledModel).toEqual(expect.objectContaining({
+        id: "gpt-test",
+        api: "openai-responses",
+        baseUrl: "https://api.openai.test/v1",
+      }));
+      expect(calledContext).toEqual(expect.objectContaining({
+        messages: [expect.objectContaining({ role: "user", content: "depth=0" })],
+      }));
+      expect(calledContext).not.toHaveProperty("tools");
+      expect(calledOptions).toEqual(expect.objectContaining({
+        apiKey: "test-secret",
+        disableEnvApiKey: true,
+        maxTokens: 1_024,
+        maxRetries: 0,
+      }));
+      expect(calledOptions.signal).toBeInstanceOf(AbortSignal);
+      const modelStarts = trace.events.filter(({ type }) => type === "model.call.started");
+      const modelCompletions = trace.events.filter(({ type }) => type === "model.call.completed");
+      expect(modelStarts).toHaveLength(5);
+      expect(modelCompletions).toHaveLength(5);
+      const sha256 = (value: string) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
+      const expectedCalls = [
+        { callIndex: 1, callId: "root", parentCallId: null, depth: 0, prompt: "depth=0", text: "split", status: "completed" },
+        { callIndex: 2, callId: "root.left", parentCallId: "root", depth: 1, prompt: "depth=1", text: "stop", status: "completed" },
+        { callIndex: 3, callId: "root.right", parentCallId: "root", depth: 1, prompt: "depth=1", text: "stop", status: "completed" },
+        { callIndex: 4, callId: "error-call", parentCallId: null, depth: 0, prompt: "provider-error", status: "failed" },
+        { callIndex: 5, callId: "cancelled", parentCallId: null, depth: 0, prompt: "wait", status: "cancelled" },
+      ] as const;
+      for (const expected of expectedCalls) {
+        const correlation = {
+          callIndex: expected.callIndex,
+          callId: expected.callId,
+          parentCallId: expected.parentCallId,
+          depth: expected.depth,
+          promptSha256: sha256(expected.prompt),
+        };
+        expect(modelStarts).toContainEqual(expect.objectContaining({
+          type: "model.call.started",
+          data: expect.objectContaining(correlation),
+        }));
+        expect(modelCompletions).toContainEqual(expect.objectContaining({
+          type: "model.call.completed",
+          data: expect.objectContaining({
+            ...correlation,
+            status: expected.status,
+            ...("text" in expected ? {
+              textSha256: sha256(expected.text),
+              usage: {
+                input: 2,
+                output: 1,
+                cacheRead: 0,
+                cacheWrite: 0,
+                totalTokens: 3,
+                cost: { input: 0.001, output: 0.002, cacheRead: 0, cacheWrite: 0, total: 0.003 },
+              },
+            } : {}),
+          }),
+        }));
+      }
+      expect(successfulResponses[0]).toEqual({
+        text: "split",
+        callIndex: 1,
+        promptSha256: sha256("depth=0"),
+        textSha256: sha256("split"),
+        usage: {
+          input: 2,
+          output: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 3,
+          cost: { input: 0.001, output: 0.002, cacheRead: 0, cacheWrite: 0, total: 0.003 },
+        },
+      });
+      expect(trace.events).toContainEqual(expect.objectContaining({
+        type: "model.call.completed",
+        data: expect.objectContaining({ status: "failed", callIndex: 4 }),
+      }));
+      expect(trace.events).toContainEqual(expect.objectContaining({
+        type: "model.call.completed",
+        data: expect.objectContaining({ status: "cancelled", callIndex: 5 }),
+      }));
+      expect(trace.events).toContainEqual(expect.objectContaining({
+        type: "model.call.completed",
+        data: expect.objectContaining({
+          callId: "root.left",
+          parentCallId: "root",
+          depth: 1,
+          promptSha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+          textSha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        }),
+      }));
+      const serializedModelTrace = JSON.stringify([...modelStarts, ...modelCompletions]);
+      for (const privateValue of ["test-secret", "depth=0", "depth=1", "provider-error", "wait", "split", "stop"]) {
+        expect(serializedModelTrace).not.toContain(privateValue);
+      }
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("does not register the model-call host request for the production control", async () => {
+    let handlerNames: string[] = [];
+    const session = primeSession("/tmp/prime-code-model-control.jsonl");
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7, workingDirectory: "/tmp/project", ...fullPermission, configuration,
+    }, {
+      loadPiAi: vi.fn(async () => { throw new Error("must not run"); }),
+      loadModule: async () => ({
+        ...runScopeApi(),
+        SessionManager: { create: vi.fn(() => "new-session"), open: vi.fn() },
+        createHostRequestHandler: (handler: unknown) => handler,
+        createAgentSessionServices: vi.fn(async () => nativeServices()),
+        createAgentSessionFromServices: vi.fn(async (options: { hostRequestHandlers: Record<string, unknown> }) => {
+          handlerNames = Object.keys(options.hostRequestHandlers);
+          return { session };
+        }),
+      }) as never,
+    });
+    try {
+      expect(handlerNames).not.toContain("relayer.experimental.model.complete");
+    } finally {
+      await harness.dispose();
+    }
   });
 });
 

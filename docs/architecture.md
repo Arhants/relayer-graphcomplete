@@ -661,14 +661,30 @@ The reference examples share source with deterministic tests that execute both
 native languages and compile owner-bound visual/question controls through the
 canonical compiler. They add no scheduler, authoring API, or authority.
 
-Named, unconfigured authoring-strategy treatments may vary only this delivered
-harness guidance for experiments. Absence of the setting is the production
-control. Codex admits a treatment only with a layered-navigation prompt profile;
+Named, unconfigured authoring-strategy treatments vary delivered harness
+guidance for experiments. Absence of the setting is the production control.
+Codex admits a guidance treatment only with a layered-navigation prompt profile;
 the saved-module treatment also requires an unpinned launcher. JavaScript or
-Python functions and saved modules remain same-completion
-authoring mechanics; Codex subagents and Prime RLM helpers remain provider-native
-helpers inside that completion; only an explicit `complete(inputGraph)` call is
-a semantic child. A saved-module treatment is refused when Codex uses the trusted
-pinned launcher, so an experiment cannot widen that launcher's zero-argument
-stdin authority. No treatment adds a scheduler, quota, graph operation, or
-automatic publication policy.
+Python functions and saved modules remain same-completion authoring mechanics;
+Codex subagents and Prime RLM helpers remain provider-native helpers inside that
+completion; only an explicit `complete(inputGraph)` call is a semantic child. A
+saved-module treatment is refused when Codex uses the trusted pinned launcher,
+so an experiment cannot widen that launcher's zero-argument stdin authority.
+
+The Prime-only `code-model-recursion-v1` treatment additionally exposes one
+run-scoped `relayer.experimental.model.complete` host request. Ordinary Python
+code supplies a bounded prompt and receives text plus usage from a no-tool,
+no-retry `pi-ai` call using the exact admitted orchestrator model and request
+access. Credentials remain host-only. Current-run and cancellation checks bind
+the request to its execution attachment, and sanitized start/completion events
+make each call observable. Safe caller IDs, parent IDs, depth, and prompt/output
+digests correlate the trace without retaining prompt or result text; the host
+also returns its call index and digests to the Python caller. Active-run and
+cancellation checks run both before and after provider dispatch. The returned
+value may drive local branching and recursion, but the call is neither a Prime
+RLM child nor a GraphComplete semantic child. It receives no graph capability
+and cannot publish by itself. Codex rejects this Prime-specific treatment before
+execution.
+
+No treatment adds a scheduler, quota, graph operation, or automatic publication
+policy.

@@ -175,6 +175,8 @@ export interface PrimeAgentDependencies {
     readonly workspaceRoot: string;
     readonly workspaceScopeDigest: string;
   }) => PrimeAgentKernelBoundaryFactory;
+  /** Deterministic test seam below the production one-shot adapter. */
+  readonly loadPiAi?: () => Promise<Pick<typeof import("@earendil-works/pi-ai"), "completeSimple">>;
 }
 
 async function validateManagedPrivateState(runtime: {
@@ -300,6 +302,10 @@ type PrimeAgentKernelBoundaryFactory = (
 interface PrimeAgentRunContext {
   readonly graph: HarnessRunContext["graph"];
   readonly completionBroker?: HarnessRunContext["completionBroker"];
+  readonly experimentalModelComplete?: (
+    request: PrimeExperimentalModelRequest,
+    requestSignal: AbortSignal,
+  ) => Promise<PrimeExperimentalModelCallResult>;
 }
 
 interface PrimeAgentRequestAccess {
@@ -328,6 +334,39 @@ interface PrimeAgentModel {
   readonly compat?: Readonly<Record<string, unknown>>;
 }
 
+interface PrimeExperimentalModelUsage {
+  readonly input: number;
+  readonly output: number;
+  readonly cacheRead: number;
+  readonly cacheWrite: number;
+  readonly totalTokens: number;
+  readonly cost: Readonly<{
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  }>;
+}
+
+interface PrimeExperimentalModelResult {
+  readonly text: string;
+  readonly usage: PrimeExperimentalModelUsage;
+}
+
+interface PrimeExperimentalModelRequest {
+  readonly prompt: string;
+  readonly callId: string;
+  readonly parentCallId: string | null;
+  readonly depth: number;
+}
+
+interface PrimeExperimentalModelCallResult extends PrimeExperimentalModelResult {
+  readonly callIndex: number;
+  readonly promptSha256: string;
+  readonly textSha256: string;
+}
+
 interface PrimeAdapterMapping {
   readonly api: string;
   readonly implementationVersion: string;
@@ -340,6 +379,8 @@ interface PrimeAgentExecutionScope {
   readonly routeByNativeModel: ReadonlyMap<string, HarnessAdmittedModelRoute>;
   readonly sensitiveValues: readonly string[];
   readonly presentationTraceValues: ReturnType<typeof personalPresentationTraceValues>;
+  readonly rootModel: PrimeAgentModel;
+  readonly rootAccess: PrimeAgentRequestAccess;
 }
 
 class PrimeAgentSessionLifecycle {
@@ -508,6 +549,7 @@ export class PrimeAgentHarness implements Harness {
     private readonly experimentalAuthoringStrategy: ExperimentalAuthoringStrategy | undefined,
     private readonly workspaceRoot: string,
     private readonly createKernelBoundary: PrimeAgentDependencies["createKernelBoundary"],
+    private readonly loadPiAi: NonNullable<PrimeAgentDependencies["loadPiAi"]>,
     private readonly createSession: (sessionManager: unknown, instructions: string) => Promise<PrimeAgentSessionHandle>,
     private readonly createSessionManager: () => unknown,
     private resumableSessionFile: string | undefined,
@@ -562,6 +604,32 @@ export class PrimeAgentHarness implements Harness {
       if (broker === undefined) throw new Error("relayer.complete.current requires an active completion broker");
       return Object.freeze({ url: broker.url, token: broker.token });
     });
+    const experimentalModelComplete = configuration.experimentalAuthoringStrategy === "code-model-recursion-v1"
+      ? primeAgent.createHostRequestHandler<PrimeAgentRunContext>(async (payload, invocation) => {
+          if (!invocation.isCurrent() || invocation.signal.aborted) {
+            throw new Error("The code/model composition run is no longer active");
+          }
+          const run = invocation.runContext;
+          if (run?.experimentalModelComplete === undefined) {
+            throw new Error("Code/model composition requires an active experimental Prime run");
+          }
+          const request = parseExperimentalModelRequest(payload);
+          const result = await run.experimentalModelComplete(request, invocation.signal);
+          if (!invocation.isCurrent() || invocation.signal.aborted) {
+            throw new Error("The code/model composition run is no longer active");
+          }
+          return {
+            text: result.text,
+            callIndex: result.callIndex,
+            promptSha256: result.promptSha256,
+            textSha256: result.textSha256,
+            usage: {
+              ...result.usage,
+              cost: { ...result.usage.cost },
+            },
+          };
+        })
+      : undefined;
     const savedSessionFile = context.savedState?.primeAgentSessionFile;
     const savedPresentationVersionId = context.savedState?.primeAgentSessionPersonalPresentationVersionId;
     const validSavedPresentationVersion = savedPresentationVersionId === undefined
@@ -613,6 +681,9 @@ export class PrimeAgentHarness implements Harness {
           "relayer.graph.current": graphCurrent,
           "relayer.graph.visual-authoring": visualAuthoring,
           "relayer.complete.current": completeCurrent,
+          ...(experimentalModelComplete === undefined
+            ? {}
+            : { "relayer.experimental.model.complete": experimentalModelComplete }),
         },
         telemetryDisabled: true,
         ...(configuration.thinkingLevel === undefined ? {} : { thinkingLevel: configuration.thinkingLevel }),
@@ -666,6 +737,7 @@ export class PrimeAgentHarness implements Harness {
       configuration.experimentalAuthoringStrategy,
       workspaceRoot,
       dependencies.createKernelBoundary,
+      dependencies.loadPiAi ?? (() => import("@earendil-works/pi-ai")),
       createSession,
       createSessionManager,
       restorableSessionFile,
@@ -804,9 +876,83 @@ export class PrimeAgentHarness implements Harness {
     signal?.throwIfAborted();
     this.throwIfShuttingDown();
     const execution = createPrimeAgentModelScope(context, this.primeAgent);
+    let experimentalCallIndex = 0;
+    const experimentalModelComplete = this.experimentalAuthoringStrategy === "code-model-recursion-v1"
+      ? async (
+          request: PrimeExperimentalModelRequest,
+          requestSignal: AbortSignal,
+        ): Promise<PrimeExperimentalModelCallResult> => {
+          const callSignal = signal === undefined
+            ? requestSignal
+            : AbortSignal.any([signal, requestSignal]);
+          callSignal.throwIfAborted();
+          const callIndex = ++experimentalCallIndex;
+          const promptSha256 = `sha256:${createHash("sha256").update(request.prompt).digest("hex")}`;
+          context.trace.emit({
+            type: "model.call.started",
+            data: {
+              provider: "prime-agent",
+              eventType: "experimental.code_model_call",
+              callIndex,
+              callId: request.callId,
+              parentCallId: request.parentCallId,
+              depth: request.depth,
+              promptSha256,
+              ...traceRoute(execution.orchestrator),
+            },
+          });
+          try {
+            const result = await completePrimeExperimentalModel({
+              model: execution.rootModel,
+              access: execution.rootAccess,
+              prompt: request.prompt,
+              signal: callSignal,
+            }, this.loadPiAi);
+            callSignal.throwIfAborted();
+            const textSha256 = `sha256:${createHash("sha256").update(result.text).digest("hex")}`;
+            context.trace.emit({
+              type: "model.call.completed",
+              data: {
+                provider: "prime-agent",
+                eventType: "experimental.code_model_call",
+                status: "completed",
+                callIndex,
+                callId: request.callId,
+                parentCallId: request.parentCallId,
+                depth: request.depth,
+                promptSha256,
+                textSha256,
+                usage: {
+                  ...result.usage,
+                  cost: { ...result.usage.cost },
+                },
+                ...traceRoute(execution.orchestrator),
+              },
+            });
+            return Object.freeze({ ...result, callIndex, promptSha256, textSha256 });
+          } catch (error) {
+            context.trace.emit({
+              type: "model.call.completed",
+              data: {
+                provider: "prime-agent",
+                eventType: "experimental.code_model_call",
+                status: callSignal.aborted ? "cancelled" : "failed",
+                callIndex,
+                callId: request.callId,
+                parentCallId: request.parentCallId,
+                depth: request.depth,
+                promptSha256,
+                ...traceRoute(execution.orchestrator),
+              },
+            });
+            throw error;
+          }
+        }
+      : undefined;
     const runContext: PrimeAgentRunContext = Object.freeze({
       graph: context.graph,
       ...(context.completionBroker === undefined ? {} : { completionBroker: context.completionBroker }),
+      ...(experimentalModelComplete === undefined ? {} : { experimentalModelComplete }),
     });
     const permissions = createPrimeAgentPermissionScopes({
       context,
@@ -1893,12 +2039,99 @@ function createPrimeAgentModelScope(context: HarnessRunContext, primeAgent: Prim
       access: requestAccessByNativeModel.get(nativeModelIdentity(model.provider, model.id))!,
     }))),
   });
+  const rootAccess = requestAccessByNativeModel.get(nativeModelIdentity(root.provider, root.id));
+  if (rootAccess === undefined) throw new Error("prime.agent orchestrator has no admitted request access");
   return Object.freeze({
     modelScope,
     orchestrator: plan.orchestrator,
     routeByNativeModel,
     sensitiveValues: Object.freeze([...sensitiveValues].filter((value) => value !== "")),
     presentationTraceValues,
+    rootModel: root,
+    rootAccess,
+  });
+}
+
+const MAX_EXPERIMENTAL_MODEL_PROMPT_LENGTH = 16_000;
+const EXPERIMENTAL_MODEL_CALL_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+
+function parseExperimentalModelRequest(payload: Record<string, unknown>): PrimeExperimentalModelRequest {
+  const {
+    type: _type,
+    cellSourceCode: _cellSourceCode,
+    prompt,
+    callId,
+    parentCallId,
+    depth,
+    ...unknown
+  } = payload;
+  if (Object.keys(unknown).length > 0) {
+    throw new Error(`Code/model composition request contains unknown fields: ${Object.keys(unknown).join(", ")}`);
+  }
+  if (typeof prompt !== "string" || prompt.trim() === "") {
+    throw new Error("Code/model composition prompt must be a non-empty string");
+  }
+  if (prompt.length > MAX_EXPERIMENTAL_MODEL_PROMPT_LENGTH) {
+    throw new Error(`Code/model composition prompt exceeds ${MAX_EXPERIMENTAL_MODEL_PROMPT_LENGTH} characters`);
+  }
+  if (typeof callId !== "string" || !EXPERIMENTAL_MODEL_CALL_ID.test(callId)) {
+    throw new Error("Code/model composition callId must be a safe identifier of 1 to 128 characters");
+  }
+  if (parentCallId !== null && (typeof parentCallId !== "string" || !EXPERIMENTAL_MODEL_CALL_ID.test(parentCallId))) {
+    throw new Error("Code/model composition parentCallId must be null or a safe identifier");
+  }
+  if (!Number.isSafeInteger(depth) || (depth as number) < 0 || (depth as number) > 16) {
+    throw new Error("Code/model composition depth must be an integer from 0 to 16");
+  }
+  return Object.freeze({ prompt, callId, parentCallId, depth: depth as number });
+}
+
+async function completePrimeExperimentalModel(input: {
+  readonly model: PrimeAgentModel;
+  readonly access: PrimeAgentRequestAccess;
+  readonly prompt: string;
+  readonly signal: AbortSignal;
+}, loadPiAi: NonNullable<PrimeAgentDependencies["loadPiAi"]>): Promise<PrimeExperimentalModelResult> {
+  const { completeSimple } = await loadPiAi();
+  const model = {
+    ...input.model,
+    input: [...input.model.input],
+    cost: { ...input.model.cost },
+    ...(input.model.compat === undefined ? {} : { compat: { ...input.model.compat } }),
+  } as Parameters<typeof completeSimple>[0];
+  const result = await completeSimple(
+    model,
+    {
+      systemPrompt: "You are a bounded model call inside an agent-authored Python function. Return only the concise value or format requested by the caller. You have no tools.",
+      messages: [{ role: "user", content: input.prompt, timestamp: Date.now() }],
+    },
+    {
+      apiKey: input.access.apiKey,
+      ...(input.access.headers === undefined ? {} : { headers: { ...input.access.headers } }),
+      disableEnvApiKey: true,
+      signal: input.signal,
+      maxTokens: 1_024,
+      maxRetries: 0,
+    },
+  );
+  const text = result.content
+    .filter((block): block is Extract<(typeof result.content)[number], { type: "text" }> => block.type === "text")
+    .map((block) => block.text)
+    .join("")
+    .trim();
+  if (result.stopReason === "error" || result.stopReason === "aborted" || text === "") {
+    throw new Error("Experimental Prime model call did not return text");
+  }
+  return Object.freeze({
+    text,
+    usage: Object.freeze({
+      input: result.usage.input,
+      output: result.usage.output,
+      cacheRead: result.usage.cacheRead,
+      cacheWrite: result.usage.cacheWrite,
+      totalTokens: result.usage.totalTokens,
+      cost: Object.freeze({ ...result.usage.cost }),
+    }),
   });
 }
 
