@@ -47,7 +47,9 @@ export function checkStructure(structure) {
     }
   }
   for (const pair of structure.pairs) if (!(pair.kind in structure.floors)) fail(`pair "${pair.what}" has unknown kind "${pair.kind}".`);
-  for (const pair of structure.distinct) if (typeof pair.floor !== "number") fail(`distinct pair "${pair.what}" needs a numeric floor.`);
+  const validFloor = (floor) => typeof floor === "number" && Number.isFinite(floor) && floor >= 0;
+  for (const [kind, floor] of Object.entries(structure.floors)) if (!validFloor(floor)) fail(`floor "${kind}" must be a finite number of at least 0.`);
+  for (const pair of structure.distinct) if (!validFloor(pair.floor)) fail(`distinct pair "${pair.what}" needs a finite floor of at least 0.`);
   return errors;
 }
 

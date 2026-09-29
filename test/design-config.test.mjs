@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
+import { contrast, dE } from "../scripts/design/color.mjs";
 import { importPalette } from "../scripts/design/import-palette.mjs";
 import { checkStructure, loadStructure, validate, validateDesign } from "../scripts/design/validate.mjs";
 
@@ -47,6 +48,24 @@ describe("design config validation", () => {
     ]);
   });
 
+  it("computes colour maths that match published reference values, independently of the prototype", () => {
+    // WCAG 2.2: black on white is 21:1, #777777 on white is 4.48:1; OKLab lightness spans 0 to 1 (dE x100).
+    expect(contrast("#000000", "#FFFFFF")).toBeCloseTo(21, 5);
+    expect(contrast("#777777", "#FFFFFF").toFixed(2)).toBe("4.48");
+    expect(contrast("#FFFFFF", "#FFFFFF")).toBe(1);
+    expect(dE("#000000", "#FFFFFF")).toBeCloseTo(100, 1);
+    expect(dE("#725345", "#725345")).toBe(0);
+  });
+
+  it("imports H through the real command line and keeps lab configs out of git", async () => {
+    const { stdout } = await run(process.execPath, [
+      "scripts/design/import-palette.mjs", "docs/design/visual-redesign/sources/gen2/H/tokens.mjs", "--structure", "sticker", "--name", "H · Sticker × Cocoa",
+    ]);
+    expect(JSON.parse(stdout)).toEqual(await readH());
+    await expect(run("git", ["check-ignore", "designs/lab/x.json"])).resolves.toBeTruthy();
+    await expect(run("git", ["ls-files", "--error-unmatch", "designs/lab/.gitkeep"])).resolves.toBeTruthy();
+  });
+
   it("keeps the committed H config in step with its prototype token source", async () => {
     const { TOKENS, FAMILIES } = await import(new URL("tokens.mjs", prototype).href);
     const imported = await importPalette({ tokens: TOKENS, families: FAMILIES, structure: await loadStructure("sticker"), name: "H · Sticker × Cocoa" });
@@ -84,11 +103,13 @@ describe("design config validation", () => {
       s.pairs[0].fg = "txet";
       s.pairs[1].kind = "huge";
       s.distinct[0].b = "scrim";
+      s.floors.text = null;
     });
     expect(checkStructure(broken).map((error) => error.message)).toEqual([
       'sticker: pair names unknown role "txet".',
       'sticker: pair names translucent role "scrim", which has no single contrast.',
       'sticker: pair "primary text" has unknown kind "huge".',
+      'sticker: floor "text" must be a finite number of at least 0.',
     ]);
     expect(validateDesign(h, broken).errors.every((error) => error.code === "structure.contract")).toBe(true);
   });
