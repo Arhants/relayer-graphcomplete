@@ -67,6 +67,7 @@ export const APPROVED_TELEMETRY_MODULES = Object.freeze({
     "desktop/renderer/theme-bootstrap.js",
   ]),
   "electron-main": Object.freeze([
+    "desktop/main/appearance.mjs",
     "desktop/main/credentials/codex-credential-adapter.mjs",
     "desktop/main/credentials/credential-adapter.mjs",
     "desktop/main/index.mjs",
