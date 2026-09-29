@@ -59,6 +59,46 @@ describe("desktop share preview capture", () => {
     expect(captureSession.clearStorageData).toHaveBeenCalledTimes(4);
   });
 
+  it("serves the generated design tokens and fonts the viewer stylesheet imports", async () => {
+    const served = {};
+    class BrowserWindow {
+      constructor() {
+        this.webContents = Object.assign(new EventEmitter(), {
+          setWindowOpenHandler: vi.fn(),
+          executeJavaScript: vi.fn(async () => {}),
+          capturePage: vi.fn(async () => ({ resize: () => ({ toPNG: () => Buffer.from("png") }) })),
+        });
+      }
+      async loadURL(url) {
+        const base = url.replace(/capture$/, "");
+        for (const path of ["styles.css", "design/design.css", "design/fonts/figtree/figtree-latin-wght-normal.woff2", "../package.json"]) {
+          const response = await fetch(base + path);
+          served[path] = [response.status, response.headers.get("content-type")];
+        }
+      }
+      isDestroyed() { return false; }
+      destroy() {}
+    }
+    const captureSession = Object.assign(new EventEmitter(), {
+      setPermissionRequestHandler: vi.fn(),
+      setPermissionCheckHandler: vi.fn(),
+      clearStorageData: vi.fn(async () => {}),
+      webRequest: { onBeforeRequest: vi.fn() },
+    });
+    const capture = createSharePreviewCapture({
+      BrowserWindow,
+      session: { fromPartition: () => captureSession },
+      rendererDirectory: new URL("../desktop/renderer", import.meta.url),
+    });
+    await capture({ snapshotBytes: new Uint8Array(), title: "Styled", theme: "dark" });
+    expect(served).toEqual({
+      "styles.css": [200, "text/css"],
+      "design/design.css": [200, "text/css"],
+      "design/fonts/figtree/figtree-latin-wght-normal.woff2": [200, "font/woff2"],
+      "../package.json": [404, null],
+    });
+  });
+
   it("tears down handlers after failures and aborts before running the next capture", async () => {
     const abort = new AbortController();
     const plans = ["load-failure", "abort", "success"];

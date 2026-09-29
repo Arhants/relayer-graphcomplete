@@ -40,7 +40,7 @@ export function createSharePreviewCapture({
           return;
         }
         if (
-          !/^(src\/|vendor\/|assets\/|styles\.css$)/.test(file) ||
+          !/^(src\/|vendor\/|assets\/|design\/|styles\.css$)/.test(file) ||
           file.includes("..") ||
           file.includes("%")
         ) {
