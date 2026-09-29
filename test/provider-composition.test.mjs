@@ -639,7 +639,7 @@ describe("injectable production provider composition", () => {
   it("starts the post-upgrade evaluation from desktop startup without awaiting it", async () => {
     const source = await readFile(new URL("../desktop/main/index.mjs", import.meta.url), "utf8");
     const start = source.indexOf("await providerComposition.start();");
-    const call = source.indexOf("startPostUpgradeReadiness({", start);
+    const call = source.indexOf("postUpgradeReadiness = createPostUpgradeReadiness({", start);
     const window = source.indexOf("mainWindow = await createWindow(", start);
     expect(start).toBeGreaterThan(0);
     expect(call).toBeGreaterThan(start);
@@ -647,20 +647,23 @@ describe("injectable production provider composition", () => {
     const step = source.slice(call, source.indexOf("});", call));
     expect(step).toContain("updatesDue: () => productServer.harnessReadinessUpdatesDue()");
     expect(step).toContain("recipeUpdates: activation.recipeUpdates");
-    expect(step).toContain("routes: () => providerComposition.readinessRoutes()");
-    expect(step).toContain("repairProviders: (recipeIds) => providerComposition.repairFailedActivations(recipeIds, {");
+    // The runner recovers through the composition itself, forwarding the stop signal.
+    expect(step).toContain("composition: providerComposition");
     expect(step).toContain("recipeForAdapter: (adapterId) => managedRuntimeRequirementForAdapter(adapterId).recipeId");
+    expect(source.slice(call, window)).toContain("postUpgradeReadiness.start();");
     expect(source).toContain("recipeInstalled: (recipeId) => managedRecipeInstalled(managedRuntimeResolver, recipeId)");
-    expect(source).not.toMatch(/await\s+startPostUpgradeReadiness/);
-    // PR #576 review: quitting stops it before the quit guard looks, and shutdown cancels and
-    // awaits it before the services it uses close.
-    expect(source).toContain("postUpgradeReadiness = startPostUpgradeReadiness({");
-    const confirm = source.slice(source.indexOf("const confirmQuit = "), source.indexOf("confirmManagedRuntimeQuit({", source.indexOf("const confirmQuit = ")));
-    expect(confirm).toContain("postUpgradeReadiness?.stop();");
+    expect(source).not.toMatch(/await\s+postUpgradeReadiness\.start\(\)/);
+    // PR #576/#607 review: the quit guard runs through the runner, which stops the evaluation
+    // first and restarts it if the quit is declined; shutdown stops, cancels and awaits it
+    // before the services it uses close.
+    const confirm = source.slice(source.indexOf("const confirmQuit = "), source.indexOf("\n", source.indexOf("const confirmQuit = ") + 80));
+    expect(source).toContain("postUpgradeReadiness.confirmQuit(() => confirmManagedQuit(options))");
+    expect(confirm).toContain("postUpgradeReadiness");
     const shutdown = source.slice(source.indexOf("async function shutdownServices()"), source.indexOf("if (productServer) await productServer.close();"));
-    expect(shutdown).toContain("postUpgradeReadiness?.stop();");
-    expect(shutdown).toContain("await managedRuntimeInstaller.cancelAll(");
-    expect(shutdown).toContain("await postUpgradeReadiness?.evaluation;");
+    expect(shutdown).toContain("await postUpgradeReadiness?.stopForShutdown(");
+    expect(shutdown).toContain("managedRuntimeInstaller.cancelAll(");
+    // Readiness checkers receive the stop, including the Prime kernel probe.
+    expect(source).toContain('"prime.agent": ({ runtime, signal }) => checkPrimeManagedRuntime({ runtime, signal })');
     // Startup names each coordinated harness's required recipe for the app server.
     expect(source).toContain("harnessRuntimeRecipe: (configuration) => managedRuntimeInstaller.recipeIdentity(");
     expect(source).toContain("harnessRuntimeUpdated: (configuration) => updatedRuntimeIds.has(");

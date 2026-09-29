@@ -4,6 +4,8 @@ The accepted behavior is PRD SOC-001 through SOC-003 and ADR 0012. The desktop c
 
 ## Deterministic checkpoints
 
+- `test/appearance.test.mjs`: production share callback resolves System and explicit appearance; `test/share-preview-capture.test.mjs`: setup failures retain export classification and session teardown.
+
 - `test/share-preview-publish.test.mjs`: theme freezes before export; retry/reopen reuses snapshot, PNG, descriptor and identity; changed lazy preview records fail before upload; account changes during capture block publication; separate PNG upload carries no bearer header.
 - Existing coordinator, attempt-store, client and IPC tests retain owner, restart, quota and old V1 compatibility coverage.
 - Private service PNG tests reject wrong dimensions, duplicate headers, invalid structure/CRC, APNG, oversize and trailing bytes before publication.

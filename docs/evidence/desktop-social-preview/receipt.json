@@ -4,7 +4,7 @@
     "desktop/main/services/share-publish-coordinator.mjs": "f722b04879f31c2ab210c6e1eb2a8bf686af37bea6689cff9f6c4d143728abed",
     "desktop/main/services/share-publish-attempt-store.mjs": "55d555b3e1decc8c543356f66be0c4c1605c7f60dc593287fb84ecd93fb2f7ff",
     "desktop/main/services/share-service-client.mjs": "f30067b00bdb02ac64fbcfc932bafe02428cefd38ef094baa9abf51f5748c501",
-    "desktop/main/index.mjs": "ad155c18e859879db460091b5ebefe3c32ef2a4daa21a04dd19f220677481141",
+    "desktop/main/index.mjs": "73208ca54341594ab274f54db13bb804c6150d7d7619195c4a223b447f2f0144",
     "contracts/share-service-v1/contract.json": "7407c99d32fb04a62ab958257be5525dc3451adc9899d600e07de730dccc89ff",
     "scripts/capture-share-preview-evidence.mjs": "c940e761b28190c3d4bd07e874e50c552403bc3a6e118d8d9cbe947398b466b6",
     "test/fixtures/social-preview.jsonl": "ff4a4545de49ccc20562f2f763b6a120d87fa37f7703a994abeb71b219a405aa",
@@ -12,7 +12,7 @@
   },
   "renderer": {
     "algorithm": "sha256 of JSON path-to-sha256 map",
-    "sha256": "4ff31b0dcc3050fd8122ed335020dff9ff40d4d25b1d9569fe0e228ee49143be",
+    "sha256": "01a6c7ec9e6c0cf7d7ab00a982584eaa3b64e7753297209b80d1f26431d6845e",
     "files": {
       "desktop/renderer/src/action-invocation-state.js": "890d8f69c6a8310a0221e1a6ce35c9a6fb0735b8826be009bd68ceb56c06d4ea",
       "desktop/renderer/src/annotation-api.js": "5277b019db186f77efd907bb4f14bd3fc190b0590e1ebac6bf7718008e3d18aa",
@@ -79,7 +79,7 @@
       "desktop/renderer/src/state.js": "b573f6681ffa7b6aa563f1867fc87c74f2feaf6ce89fc7a86e9737edae53f1a4",
       "desktop/renderer/src/thread-model.js": "6ecc188e2f85f1d507775cd5dc7cb077d1f85698cd5940c1b501e62bf71d45c1",
       "desktop/renderer/src/threads.js": "15f6a045661937831f065d1417a014d93c7eb16e2554512f25afbb333373954f",
-      "desktop/renderer/src/ui.js": "d7cd6e4a2c45d2d85e6068bc2e5d1a66c35b75b546ba432600c5008180b3cab1",
+      "desktop/renderer/src/ui.js": "cc097502fc2edf38832715c536e356665e4564336441c89a2b655a5af019d53b",
       "desktop/renderer/src/update-indicator-model.js": "5e66232b06328f3b92bbbbe93514c7f1895474873f34944e9ea7fbde76a3870d",
       "desktop/renderer/src/updates.js": "89f4e0af1841b61798ea49e5774880a183fadf4fbb017fa6a0ade56bb4efc3e3",
       "desktop/renderer/src/workspace-navigation.js": "5186d5092b95f62b77ff304642cbeff0f86a7034d47be002a3c5da01f49c1046",
@@ -87,14 +87,14 @@
       "desktop/renderer/vendor/marked.umd.js": "2e20e86f0a13107ae9bf00675894bbb573716a8e5b4fde612eacaff1e404c128",
       "desktop/renderer/assets/relayer-logo.svg": "79c1593b83dfc014f5e5bb91c6ff37d892a19ca8092236ae2a17707f5a13d020",
       "desktop/renderer/assets/relayer-share-og.svg": "92a9b06f3c70ec7959956614e8333f271eea7bf06a39bbe6798cedffe739e8ad",
-      "desktop/renderer/styles.css": "0d05d1c62b6271ab4d7e82aa5ab7f5086849475a04332d9878898a2c7237c936"
+      "desktop/renderer/styles.css": "0161ec6af71b667c220a58933a6f9b0c140e1bf88836579212fe3f229ad529c9"
     }
   },
   "captures": [
     {
       "theme": "light",
-      "sha256": "048ab1bc5de0cc63cd9b9493ed314a2984059d278b1f0db1bbc398960df36ac9",
-      "bytes": 100188
+      "sha256": "8d797d3a798f055ffa00336ba67bb01def0c5c514f46ebaca427db15c48986d4",
+      "bytes": 100196
     },
     {
       "theme": "dark",

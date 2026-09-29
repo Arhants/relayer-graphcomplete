@@ -326,9 +326,13 @@ describe("managed runtime installer", () => {
       }]);
       expect(staged.failures).toEqual([]);
       expect(staged.staged[0].installation).not.toBe(prepared.installation);
-      await expect(installer.activatePendingAppUpdate("0.2.26")).resolves.toMatchObject({
+      const activation = await installer.activatePendingAppUpdate("0.2.26");
+      expect(activation).toMatchObject({
         failures: [], activated: [{ installation: staged.staged[0].installation }],
       });
+      // PR #607 review: the same exact recipe under a new installation still replaced the
+      // runtime, so startup must not restore a ready measured on the broken one.
+      expect(runtimesChangedByActivation(activation)).toEqual(["claude"]);
       await expect(installer.validate("claude-fixture@0.3.250")).resolves.toMatchObject({
         installation: staged.staged[0].installation,
       });
