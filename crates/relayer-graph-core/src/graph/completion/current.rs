@@ -488,6 +488,8 @@ fn validate_terminal_reason(intent: &CurrentTransition) -> Result<(), GraphError
         "provider_start_failed",
         "provider_attachment_persist_failed",
         "graph_observation_failed",
+        "capability_activation_failed",
+        "preparation_failed",
         "execution",
     ];
     let valid = match intent {

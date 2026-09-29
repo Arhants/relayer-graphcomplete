@@ -1,0 +1,328 @@
+[
+  {
+    "name": "1100-expanded",
+    "content": {
+      "top": 78,
+      "bottom": 588,
+      "left": 9,
+      "right": 234,
+      "height": 510
+    },
+    "footer": {
+      "top": 588,
+      "bottom": 631,
+      "left": 9,
+      "right": 234,
+      "height": 43
+    },
+    "chats": {
+      "top": 171,
+      "bottom": 589,
+      "left": 9,
+      "right": 234,
+      "height": 418
+    },
+    "projects": {
+      "top": 626,
+      "bottom": 2674,
+      "left": 9,
+      "right": 234,
+      "height": 2048
+    },
+    "scrollHeight": 2596,
+    "clientHeight": 510,
+    "overflow": "auto",
+    "footerHit": true,
+    "pageWidth": 1100,
+    "width": 1100,
+    "reach": {
+      "markerCentered": true,
+      "height": 33,
+      "rect": {
+        "left": 27,
+        "right": 234,
+        "top": 555,
+        "bottom": 588
+      },
+      "hitTag": "<span>Can you explain the project thread 3</span>",
+      "visible": true,
+      "hit": true,
+      "scrollTop": 2086
+    },
+    "wheelScrollTop": 250
+  },
+  {
+    "name": "1100-collapsed",
+    "content": {
+      "top": 112,
+      "bottom": 551,
+      "left": 10,
+      "right": 47,
+      "height": 439
+    },
+    "footer": {
+      "top": 551,
+      "bottom": 631,
+      "left": 10,
+      "right": 47,
+      "height": 80
+    },
+    "chats": {
+      "top": 178,
+      "bottom": 596,
+      "left": 10,
+      "right": 47,
+      "height": 418
+    },
+    "projects": {
+      "top": 606,
+      "bottom": 1070,
+      "left": 10,
+      "right": 47,
+      "height": 464
+    },
+    "scrollHeight": 958,
+    "clientHeight": 439,
+    "overflow": "auto",
+    "footerHit": true,
+    "pageWidth": 1100,
+    "width": 1100,
+    "reach": {
+      "markerCentered": true,
+      "height": 35,
+      "rect": {
+        "left": 10,
+        "right": 47,
+        "top": 516,
+        "bottom": 551
+      },
+      "hitTag": "<i aria-hidden=\"true\"></i>",
+      "visible": true,
+      "hit": true,
+      "scrollTop": 519
+    },
+    "wheelScrollTop": 250
+  },
+  {
+    "name": "761-expanded",
+    "content": {
+      "top": 78,
+      "bottom": 554,
+      "left": 9,
+      "right": 200,
+      "height": 476
+    },
+    "footer": {
+      "top": 554,
+      "bottom": 631,
+      "left": 9,
+      "right": 200,
+      "height": 77
+    },
+    "chats": {
+      "top": 171,
+      "bottom": 589,
+      "left": 9,
+      "right": 200,
+      "height": 418
+    },
+    "projects": {
+      "top": 626,
+      "bottom": 2674,
+      "left": 9,
+      "right": 200,
+      "height": 2048
+    },
+    "scrollHeight": 2596,
+    "clientHeight": 476,
+    "overflow": "auto",
+    "footerHit": true,
+    "pageWidth": 761,
+    "width": 761,
+    "reach": {
+      "markerCentered": true,
+      "height": 33,
+      "rect": {
+        "left": 27,
+        "right": 200,
+        "top": 521,
+        "bottom": 554
+      },
+      "hitTag": "<span>Can you explain the project thread 3</span>",
+      "visible": true,
+      "hit": true,
+      "scrollTop": 2120
+    },
+    "wheelScrollTop": 250
+  },
+  {
+    "name": "761-collapsed",
+    "content": {
+      "top": 112,
+      "bottom": 551,
+      "left": 10,
+      "right": 47,
+      "height": 439
+    },
+    "footer": {
+      "top": 551,
+      "bottom": 631,
+      "left": 10,
+      "right": 47,
+      "height": 80
+    },
+    "chats": {
+      "top": 178,
+      "bottom": 596,
+      "left": 10,
+      "right": 47,
+      "height": 418
+    },
+    "projects": {
+      "top": 606,
+      "bottom": 1070,
+      "left": 10,
+      "right": 47,
+      "height": 464
+    },
+    "scrollHeight": 958,
+    "clientHeight": 439,
+    "overflow": "auto",
+    "footerHit": true,
+    "pageWidth": 761,
+    "width": 761,
+    "reach": {
+      "markerCentered": true,
+      "height": 35,
+      "rect": {
+        "left": 10,
+        "right": 47,
+        "top": 516,
+        "bottom": 551
+      },
+      "hitTag": "<i aria-hidden=\"true\"></i>",
+      "visible": true,
+      "hit": true,
+      "scrollTop": 519
+    },
+    "wheelScrollTop": 250
+  },
+  {
+    "name": "375-expanded",
+    "content": {
+      "top": 78,
+      "bottom": 554,
+      "left": 9,
+      "right": 200,
+      "height": 476
+    },
+    "footer": {
+      "top": 554,
+      "bottom": 631,
+      "left": 9,
+      "right": 200,
+      "height": 77
+    },
+    "chats": {
+      "top": 171,
+      "bottom": 589,
+      "left": 9,
+      "right": 200,
+      "height": 418
+    },
+    "projects": {
+      "top": 626,
+      "bottom": 2674,
+      "left": 9,
+      "right": 200,
+      "height": 2048
+    },
+    "scrollHeight": 2596,
+    "clientHeight": 476,
+    "overflow": "auto",
+    "footerHit": true,
+    "pageWidth": 375,
+    "width": 375,
+    "reach": {
+      "markerCentered": true,
+      "height": 33,
+      "rect": {
+        "left": 27,
+        "right": 200,
+        "top": 521,
+        "bottom": 554
+      },
+      "hitTag": "<span>Can you explain the project thread 3</span>",
+      "visible": true,
+      "hit": true,
+      "scrollTop": 2120
+    },
+    "wheelScrollTop": 250
+  },
+  {
+    "name": "375-collapsed",
+    "content": {
+      "top": 112,
+      "bottom": 551,
+      "left": 10,
+      "right": 47,
+      "height": 439
+    },
+    "footer": {
+      "top": 551,
+      "bottom": 631,
+      "left": 10,
+      "right": 47,
+      "height": 80
+    },
+    "chats": {
+      "top": 178,
+      "bottom": 596,
+      "left": 10,
+      "right": 47,
+      "height": 418
+    },
+    "projects": {
+      "top": 606,
+      "bottom": 1070,
+      "left": 10,
+      "right": 47,
+      "height": 464
+    },
+    "scrollHeight": 958,
+    "clientHeight": 439,
+    "overflow": "auto",
+    "footerHit": true,
+    "pageWidth": 375,
+    "width": 375,
+    "reach": {
+      "markerCentered": true,
+      "height": 35,
+      "rect": {
+        "left": 10,
+        "right": 47,
+        "top": 516,
+        "bottom": 551
+      },
+      "hitTag": "<i aria-hidden=\"true\"></i>",
+      "visible": true,
+      "hit": true,
+      "scrollTop": 519
+    },
+    "wheelScrollTop": 250
+  },
+  {
+    "name": "settings-and-eval",
+    "settings": {
+      "count": 7,
+      "bottom": 588,
+      "footerTop": 588,
+      "back": true
+    },
+    "evalState": {
+      "visible": true,
+      "name": "Named Eval destination 29",
+      "hit": true
+    }
+  }
+]
