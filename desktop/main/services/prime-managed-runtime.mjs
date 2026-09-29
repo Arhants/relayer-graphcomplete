@@ -140,7 +140,22 @@ export async function assemblePrimeManagedRuntime(context, {
   await installLauncher();
 }
 
-export async function checkPrimeManagedRuntime({ runtime, importPrimeAgent } = {}) {
+function abortable(promise, signal) {
+  if (!signal) return promise;
+  promise.catch(() => undefined);
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+    if (signal.aborted) return onAbort();
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => { signal.removeEventListener("abort", onAbort); resolve(value); },
+      (error) => { signal.removeEventListener("abort", onAbort); reject(error); },
+    );
+  });
+}
+
+export async function checkPrimeManagedRuntime({ runtime, importPrimeAgent, signal } = {}) {
+  signal?.throwIfAborted();
   const moduleUrl = typeof runtime?.moduleUrl === "string"
     ? runtime.moduleUrl
     : typeof runtime?.modulePath === "string" ? pathToFileURL(runtime.modulePath).href : null;
@@ -152,9 +167,13 @@ export async function checkPrimeManagedRuntime({ runtime, importPrimeAgent } = {
   if (prime.MANAGED_KERNEL_VERSION !== 1 || typeof prime.probeManagedKernel !== "function") {
     throw new Error("Managed Prime bridge is incompatible.");
   }
-  await prime.probeManagedKernel({
+  signal?.throwIfAborted();
+  const probe = prime.probeManagedKernel({
     pythonExecutable: runtime.executable,
     imports: PRIME_MANAGED_KERNEL_IMPORTS,
   });
+  // The bridge's probe takes no signal. A stop ends the wait, so shutdown never waits on
+  // the kernel; the probe still disposes its kernel when it settles.
+  await abortable(probe, signal);
   return { available: true };
 }
