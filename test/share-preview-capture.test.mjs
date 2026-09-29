@@ -104,6 +104,26 @@ describe("desktop share preview capture", () => {
     expect(windows.every((window) => window.destroyed)).toBe(true);
   });
 
+  it.each(["missing-renderer", "invalid-utf8"])("classifies %s setup failures as export failures", async (failure) => {
+    const BrowserWindow = vi.fn();
+    const captureSession = Object.assign(new EventEmitter(), {
+      setPermissionRequestHandler: vi.fn(),
+      setPermissionCheckHandler: vi.fn(),
+      clearStorageData: vi.fn(async () => {}),
+      webRequest: { onBeforeRequest: vi.fn() },
+    });
+    const capture = createSharePreviewCapture({
+      BrowserWindow,
+      session: { fromPartition: () => captureSession },
+      rendererDirectory: new URL(failure === "missing-renderer" ? "../missing-renderer" : "../desktop/renderer", import.meta.url),
+    });
+    await expect(capture({ snapshotBytes: new Uint8Array([255]), title: "Setup", theme: "light" })).rejects.toMatchObject({
+      code: "share_export_failed", failureStage: "export",
+    });
+    expect(BrowserWindow).not.toHaveBeenCalled();
+    expectSessionTeardown(captureSession);
+  });
+
   it("requires a successful storage clear before reusing the fixed partition", async () => {
     const windows = [];
     class BrowserWindow {
