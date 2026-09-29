@@ -129,6 +129,7 @@
         "test/first-message-composer-integration.test.mjs",
         "test/settings-navigation.test.mjs",
         "test/model-family-settings-refresh.test.mjs",
+        "test/share-error-diagnostics.test.mjs",
         "test/share-publish-attempt-store.test.mjs",
         "test/share-publish-coordinator.test.mjs",
         "test/share-publish-ipc.test.mjs",
