@@ -29,6 +29,11 @@ import type {
   JsonObject,
 } from "../types.js";
 import { PYTHON_AUTHORING_REFERENCE } from "./graph-authoring-reference.js";
+import {
+  EXPERIMENTAL_AUTHORING_STRATEGIES,
+  pythonExperimentalAuthoringGuidance,
+  type ExperimentalAuthoringStrategy,
+} from "./experimental-authoring-guidance.js";
 import { CURRENT_WORKSPACE_GUIDANCE, GRAPH_PRESENTATION_GUIDANCE } from "./graph-presentation-guidance.js";
 import {
   personalPresentationNativeInstructions,
@@ -211,6 +216,7 @@ interface PrimeAgentConfiguration {
   readonly rlmMaxDepth?: number;
   readonly prewarmIpythonKernel?: boolean;
   readonly promptProfile?: "layered-navigation-v1";
+  readonly experimentalAuthoringStrategy?: ExperimentalAuthoringStrategy;
 }
 
 type PrimeAgentPermission =
@@ -499,6 +505,7 @@ export class PrimeAgentHarness implements Harness {
     private readonly context: HarnessFactoryContext,
     private readonly primeAgent: PrimeAgentModule,
     private readonly permission: PrimeAgentPermission,
+    private readonly experimentalAuthoringStrategy: ExperimentalAuthoringStrategy | undefined,
     private readonly workspaceRoot: string,
     private readonly createKernelBoundary: PrimeAgentDependencies["createKernelBoundary"],
     private readonly createSession: (sessionManager: unknown, instructions: string) => Promise<PrimeAgentSessionHandle>,
@@ -656,6 +663,7 @@ export class PrimeAgentHarness implements Harness {
       context,
       primeAgent,
       permission,
+      configuration.experimentalAuthoringStrategy,
       workspaceRoot,
       dependencies.createKernelBoundary,
       createSession,
@@ -1102,6 +1110,10 @@ export class PrimeAgentHarness implements Harness {
 
   private prompt(context: HarnessRunContext, includePersonalPresentation = true): string {
     const interaction = context.inputGraph;
+    const experimentalGuidance = pythonExperimentalAuthoringGuidance(
+      this.experimentalAuthoringStrategy,
+      interaction.id,
+    );
     if (this.context.configuration.settings.promptProfile === "layered-navigation-v1") {
       return this.layeredNavigationPrompt(context, includePersonalPresentation);
     }
@@ -1110,7 +1122,7 @@ export class PrimeAgentHarness implements Harness {
 ${GRAPH_PRESENTATION_GUIDANCE}
 ${PRIME_VISUAL_GUIDANCE}
 ${PYTHON_AUTHORING_REFERENCE}
-${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}
+${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}${experimentalGuidance === "" ? "" : `\n${experimentalGuidance}`}
 
 Current interaction node: ${interaction.id}
 Normalized interaction input:
@@ -1147,12 +1159,16 @@ If a graph call fails, edit and rerun the same authoring code with the same clie
 
   private layeredNavigationPrompt(context: HarnessRunContext, includePersonalPresentation: boolean): string {
     const interaction = context.inputGraph;
+    const experimentalGuidance = pythonExperimentalAuthoringGuidance(
+      this.experimentalAuthoringStrategy,
+      interaction.id,
+    );
     return `Complete the current Relayer interaction by using Python in IPython to author a useful graph response. A flat answer is valid. Add navigation only when opening it would materially improve understanding or support; apply that same test again inside every layer you author.
 
 ${GRAPH_PRESENTATION_GUIDANCE}
 ${PRIME_VISUAL_GUIDANCE}
 ${PYTHON_AUTHORING_REFERENCE}
-${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}
+${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}${experimentalGuidance === "" ? "" : `\n${experimentalGuidance}`}
 
 Current interaction node: ${interaction.id}
 Normalized interaction input:
@@ -1588,7 +1604,7 @@ function parsePrimeAgentConfiguration(context: HarnessFactoryContext): PrimeAgen
   if (selected.implementation !== PRIME_AGENT_KEY) throw new Error(`prime.agent cannot run implementation ${selected.implementation}`);
   if (selected.implementationVersion !== 1) throw new Error(`Unsupported prime.agent implementation version: ${selected.implementationVersion}`);
   const settings = selected.settings;
-  const allowed = new Set(["thinkingLevel", "rlmMaxDepth", "prewarmIpythonKernel", "promptProfile", "personalPresentationVersion"]);
+  const allowed = new Set(["thinkingLevel", "rlmMaxDepth", "prewarmIpythonKernel", "promptProfile", "personalPresentationVersion", "experimentalAuthoringStrategy"]);
   const unknown = Object.keys(settings).filter((key) => !allowed.has(key));
   if (unknown.length > 0) throw new Error(`Unknown prime.agent configuration field: ${unknown.join(", ")}`);
   optionalEnum(settings.personalPresentationVersion, ["personal-presentation-v0", "personal-presentation-v1", "personal-presentation-v2", "personal-presentation-v3", "personal-presentation-v4"] as const, "personalPresentationVersion");
@@ -1596,11 +1612,13 @@ function parsePrimeAgentConfiguration(context: HarnessFactoryContext): PrimeAgen
   const rlmMaxDepth = optionalPositiveInteger(settings.rlmMaxDepth, "rlmMaxDepth");
   const prewarmIpythonKernel = optionalBoolean(settings.prewarmIpythonKernel, "prewarmIpythonKernel");
   const promptProfile = optionalEnum(settings.promptProfile, ["layered-navigation-v1"] as const, "promptProfile");
+  const experimentalAuthoringStrategy = optionalEnum(settings.experimentalAuthoringStrategy, EXPERIMENTAL_AUTHORING_STRATEGIES, "experimentalAuthoringStrategy");
   return {
     ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
     ...(rlmMaxDepth === undefined ? {} : { rlmMaxDepth }),
     ...(prewarmIpythonKernel === undefined ? {} : { prewarmIpythonKernel }),
     ...(promptProfile === undefined ? {} : { promptProfile }),
+    ...(experimentalAuthoringStrategy === undefined ? {} : { experimentalAuthoringStrategy }),
   };
 }
 

@@ -660,3 +660,15 @@ it does not promise delivery of future answers to an active completion.
 The reference examples share source with deterministic tests that execute both
 native languages and compile owner-bound visual/question controls through the
 canonical compiler. They add no scheduler, authoring API, or authority.
+
+Named, unconfigured authoring-strategy treatments may vary only this delivered
+harness guidance for experiments. Absence of the setting is the production
+control. Codex admits a treatment only with a layered-navigation prompt profile;
+the saved-module treatment also requires an unpinned launcher. JavaScript or
+Python functions and saved modules remain same-completion
+authoring mechanics; Codex subagents and Prime RLM helpers remain provider-native
+helpers inside that completion; only an explicit `complete(inputGraph)` call is
+a semantic child. A saved-module treatment is refused when Codex uses the trusted
+pinned launcher, so an experiment cannot widen that launcher's zero-argument
+stdin authority. No treatment adds a scheduler, quota, graph operation, or
+automatic publication policy.

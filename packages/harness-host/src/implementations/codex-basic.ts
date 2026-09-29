@@ -11,6 +11,11 @@ import {
 } from "../native-session-reset.js";
 import { redactTraceData } from "../trace.js";
 import { JS_AUTHORING_REFERENCE } from "./graph-authoring-reference.js";
+import {
+  EXPERIMENTAL_AUTHORING_STRATEGIES,
+  javascriptExperimentalAuthoringGuidance,
+  type ExperimentalAuthoringStrategy,
+} from "./experimental-authoring-guidance.js";
 import { CURRENT_WORKSPACE_GUIDANCE, GRAPH_PRESENTATION_GUIDANCE } from "./graph-presentation-guidance.js";
 import {
   personalPresentationNativeInstructions,
@@ -171,6 +176,7 @@ interface ResolvedCodexConfiguration {
   readonly settings: CodexBasicConfiguration;
   readonly permission: ResolvedCodexPermission;
   readonly promptProfile?: "layered-navigation-v1" | "layered-navigation-multi-agent-v1";
+  readonly experimentalAuthoringStrategy?: ExperimentalAuthoringStrategy;
 }
 
 interface ResolvedCodexPermission {
@@ -225,6 +231,13 @@ export class CodexBasicHarness implements Harness {
 
   constructor(private readonly context: HarnessFactoryContext, private readonly dependencies: CodexBasicDependencies = {}) {
     const resolved = parseCodexBasicConfiguration(context);
+    if (resolved.experimentalAuthoringStrategy !== undefined && resolved.promptProfile === undefined) {
+      throw new Error("experimentalAuthoringStrategy requires a layered-navigation promptProfile");
+    }
+    if (resolved.experimentalAuthoringStrategy === "saved-module-v1"
+      && dependencies.graphAuthoringLauncherPath !== undefined) {
+      throw new Error("saved-module-v1 requires an unpinned launcher and cannot widen the trusted graph-authoring launcher contract");
+    }
     this.resolved = resolved;
     this.clientModuleUrl = dependencies.clientModuleUrl ?? import.meta.resolve("@relayer/graph-client");
     this.completeModuleUrl = dependencies.completeModuleUrl ?? new URL("../../../../dist/index.js", import.meta.url).href;
@@ -793,6 +806,7 @@ If a graph call rejects an object or graph.submit reports a repairable issue, ed
       "Codex",
       includePersonalPresentation,
       this.context.configuration.graphCapabilityProfile?.search === "query-v1",
+      this.resolved.experimentalAuthoringStrategy,
     );
   }
 
@@ -825,6 +839,7 @@ export function buildLayeredNavigationPrompt(
   nativeAgentLabelOrGraphSearchEnabled: string | boolean = "Codex",
   explicitIncludePersonalPresentation = true,
   explicitGraphSearchEnabled = false,
+  experimentalAuthoringStrategy?: ExperimentalAuthoringStrategy,
 ): string {
   const completeModuleUrl = typeof completeModuleUrlOrIncludePersonalPresentation === "string"
     ? completeModuleUrlOrIncludePersonalPresentation
@@ -840,11 +855,18 @@ export function buildLayeredNavigationPrompt(
     : explicitGraphSearchEnabled;
   const context = "inputGraph" in input ? input as HarnessRunContext : undefined;
   const interactionNode = context ? context.inputGraph : input as GraphNode;
+  const experimentalGuidance = javascriptExperimentalAuthoringGuidance(
+    experimentalAuthoringStrategy,
+    interactionNode.id,
+  );
   const normalizedInput = context
     ? renderInteractionInput(context.interactionInput)
     : `Interaction:\n- id: ${interactionNode.id}\n- title: ${interactionNode.title}\n- detail: ${interactionNode.detail}`;
-  const authoringInstructions = graphAuthoringLauncherPath === undefined
-    ? `Run exactly node --input-type=module with no additional arguments and pass the program through standard input using a shell-native single-quoted here-document delimited by exactly RELAYER_GRAPH_PROGRAM; never place authored graph code in a --eval argument, and do not create a script in either the project checkout or a temporary directory. The quoted here-document must prevent the provider shell from expanding environment variables in the program. Import RelayerGraphClient, NodeObject, EdgeObject, and LayerObject from:\n${clientModuleUrl}\nThen use RelayerGraphClient.fromEnv(). Author in whatever order fits the task. Keep each object's generated clientKey stable when retrying the same rejected submit; create a new object only for a genuinely new graph record. Submit each referenced object before using it. The final graph call must be await graph.submit(${interactionNode.id}); call it only after the full response has been authored.`
+  const savedModulePath = `.relayer/authoring-experiments/${interactionNode.id}/graph.mjs`;
+  const authoringInstructions = experimentalAuthoringStrategy === "saved-module-v1"
+    ? `This unpinned experimental configuration may save its program at ${savedModulePath}. Execute exactly node --input-type=module < '${savedModulePath}' so the saved bytes still enter through standard input with no Node script argument. Import RelayerGraphClient, NodeObject, EdgeObject, and LayerObject from:\n${clientModuleUrl}\nThen use RelayerGraphClient.fromEnv(). Never place authored graph code in a --eval argument or a temporary directory.`
+    : graphAuthoringLauncherPath === undefined
+      ? `Run exactly node --input-type=module with no additional arguments and pass the program through standard input using a shell-native single-quoted here-document delimited by exactly RELAYER_GRAPH_PROGRAM; never place authored graph code in a --eval argument, and do not create a script in either the project checkout or a temporary directory. The quoted here-document must prevent the provider shell from expanding environment variables in the program. Import RelayerGraphClient, NodeObject, EdgeObject, and LayerObject from:\n${clientModuleUrl}\nThen use RelayerGraphClient.fromEnv(). Author in whatever order fits the task. Keep each object's generated clientKey stable when retrying the same rejected submit; create a new object only for a genuinely new graph record. Submit each referenced object before using it. The final graph call must be await graph.submit(${interactionNode.id}); call it only after the full response has been authored.`
     : `Run exactly ${graphAuthoringCommand(graphAuthoringLauncherPath)} with no arguments, including the displayed double quotes, and pass the program through standard input using a shell-native single-quoted here-document delimited by exactly RELAYER_GRAPH_PROGRAM; do not resolve the launcher or Node.js from PATH, never place authored graph code in a --eval argument, and do not create a script in either the project checkout or a temporary directory. Request Codex sandbox escalation for this exact launcher command; Relayer preauthorizes only this pinned internal launcher, which applies its own narrower graph sandbox. The quoted here-document must prevent the provider shell from expanding environment variables in the program. Import from:\n${clientModuleUrl}\n${pinnedExecutionClause(graphAuthoringLauncherPath)}`;
   const graphSearchGuidance = graphSearchEnabled ? `
 Graph search is available through the same executable JavaScript client as await graph.search(request, options). It is not a provider-native tool or MCP function. The public request accepts queryContractVersion, query, optional tagged parameters, optional budget, and an optional target: { scope: "thread" | "project", id: positiveInteger }. Omit target to search the current interaction's thread. Supply target only when the product or user has already provided the exact canonical ID, for example target: { scope: "project", id: knownProjectId }. Never invent, guess, or discover a target ID. The selector chooses a dataset; it is not authority, and Rust still intersects it with the completion-bound read permit. Never add raw permit, credential, token, database, candidate-source, or other authority fields. Search sees accepted published graph records only; it never exposes drafts and never falls back to SQLite when the Ladybug index is unavailable.
@@ -873,7 +895,7 @@ ${GRAPH_PRESENTATION_GUIDANCE}
 ${JS_AUTHORING_REFERENCE}
 ${CODEX_VISUAL_GUIDANCE}
 ${CODEX_ASSET_GUIDANCE}
-${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation && context !== undefined ? personalPresentationPrompt(context) : ""}
+${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation && context !== undefined ? personalPresentationPrompt(context) : ""}${experimentalGuidance === "" ? "" : `\n${experimentalGuidance}\n`}
 
 Current interaction node: ${interactionNode.id}
 Normalized interaction input:
@@ -1356,7 +1378,7 @@ function parseCodexBasicConfiguration(context: HarnessFactoryContext): ResolvedC
     throw new Error(`Unsupported codex.basic implementation version: ${selected.implementationVersion}`);
   }
   const configuration = selected.settings;
-  const allowed = new Set(["model", "modelReasoningEffort", "webSearchMode", "skipGitRepoCheck", "additionalDirectories", "promptProfile", "personalPresentationVersion", "rootSessionMode"]);
+  const allowed = new Set(["model", "modelReasoningEffort", "webSearchMode", "skipGitRepoCheck", "additionalDirectories", "promptProfile", "personalPresentationVersion", "rootSessionMode", "experimentalAuthoringStrategy"]);
   const unknown = Object.keys(configuration).filter((key) => !allowed.has(key));
   if (unknown.length > 0) throw new Error(`Unknown codex.basic configuration field: ${unknown.join(", ")}`);
 
@@ -1366,6 +1388,7 @@ function parseCodexBasicConfiguration(context: HarnessFactoryContext): ResolvedC
   const skipGitRepoCheck = optionalBoolean(configuration.skipGitRepoCheck, "skipGitRepoCheck");
   const additionalDirectories = optionalStringArray(configuration.additionalDirectories, "additionalDirectories");
   const promptProfile = optionalEnum(configuration.promptProfile, ["layered-navigation-v1", "layered-navigation-multi-agent-v1"] as const, "promptProfile");
+  const experimentalAuthoringStrategy = optionalEnum(configuration.experimentalAuthoringStrategy, EXPERIMENTAL_AUTHORING_STRATEGIES, "experimentalAuthoringStrategy");
   const rootSessionMode = optionalEnum(configuration.rootSessionMode, ["resume", "fresh"] as const, "rootSessionMode");
   optionalEnum(configuration.personalPresentationVersion, ["personal-presentation-v0", "personal-presentation-v1", "personal-presentation-v2", "personal-presentation-v3", "personal-presentation-v4"] as const, "personalPresentationVersion");
   const permission = parseCodexPermissionBinding(context.permissionProfileId, context.permissionBinding);
@@ -1381,6 +1404,7 @@ function parseCodexBasicConfiguration(context: HarnessFactoryContext): ResolvedC
     },
     permission,
     ...(promptProfile === undefined ? {} : { promptProfile }),
+    ...(experimentalAuthoringStrategy === undefined ? {} : { experimentalAuthoringStrategy }),
   };
 }
 

@@ -1862,6 +1862,62 @@ describe("CodexBasicHarness", () => {
   });
 });
 
+describe("Codex experimental authoring strategies", () => {
+  it.each(["function-increments-v1", "saved-module-v1", "decompose-publish-v1"] as const)(
+    "delivers %s through the strict parser and provider prompt",
+    async (experimentalAuthoringStrategy) => {
+      let prompt = "";
+      const base = context("auto");
+      const harness = new CodexBasicHarness({
+        ...base,
+        configuration: {
+          ...base.configuration,
+          settings: {
+            ...base.configuration.settings,
+            promptProfile: "layered-navigation-multi-agent-v1",
+            experimentalAuthoringStrategy,
+          },
+        },
+      }, {
+        codexPathOverride: "/managed/codex",
+        runAppServerTurn: async (options) => {
+          prompt = options.prompt;
+          options.onThreadId("codex-thread");
+          return { threadId: "codex-thread", turnId: "turn-1", status: "completed" };
+        },
+      });
+
+      await harness.complete(runContext(21, "token"));
+
+      expect(prompt).toContain("Experimental authoring strategy");
+      expect(prompt).toContain("await graph.submit(21)");
+      expect(prompt).not.toContain("graph_helpers.py");
+    },
+  );
+
+  it("rejects an unknown strategy before provider execution", () => {
+    const base = context("auto");
+    expect(() => new CodexBasicHarness({
+      ...base,
+      configuration: {
+        ...base.configuration,
+        settings: { ...base.configuration.settings, experimentalAuthoringStrategy: "unknown-v1" },
+      },
+    })).toThrow("experimentalAuthoringStrategy must be one of");
+  });
+
+  it("rejects a strategy without the layered experiment prompt", () => {
+    const base = context("auto");
+    expect(() => new CodexBasicHarness({
+      ...base,
+      configuration: {
+        ...base.configuration,
+        settings: { ...base.configuration.settings, experimentalAuthoringStrategy: "function-increments-v1" },
+      },
+    })).toThrow("requires a layered-navigation promptProfile");
+  });
+});
+
 function deferredTurn(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
   const promise = new Promise<void>((complete) => {

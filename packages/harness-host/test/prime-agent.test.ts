@@ -3279,6 +3279,40 @@ function expectGraphAuthoringRules(prompt: string): void {
 
 const pythonExecutable = process.platform === "win32" ? "python" : "python3";
 
+describe("Prime experimental authoring strategies", () => {
+  it.each(["function-increments-v1", "saved-module-v1", "decompose-publish-v1"] as const)(
+    "delivers Python-only %s guidance through the strict configuration parser",
+    async (experimentalAuthoringStrategy) => {
+      let prompt = "";
+      const session = primeSession(`/tmp/prime-${experimentalAuthoringStrategy}.jsonl`, {
+        agent: { state: { thinkingLevel: "off" } },
+        sessionManager: { appendThinkingLevelChange: vi.fn() },
+        promptAndWait: vi.fn(async (text: string) => { prompt = text; }),
+      });
+      const harness = await createHarness(session, {
+        ...configuration,
+        settings: { ...configuration.settings, promptProfile: "layered-navigation-v1", experimentalAuthoringStrategy },
+      });
+      try {
+        await harness.complete(runContext(21, "fixture"));
+        expect(prompt).toContain("Experimental authoring strategy");
+        expect(prompt).not.toContain("graph.mjs");
+        expect(prompt).not.toContain("Recursive JavaScript");
+        expect(prompt).toContain("await graph.submit(21)");
+      } finally {
+        await harness.dispose();
+      }
+    },
+  );
+
+  it("rejects an unknown strategy before provider execution", async () => {
+    await expect(createHarness(primeSession("/tmp/prime-unknown-strategy.jsonl"), {
+      ...configuration,
+      settings: { ...configuration.settings, experimentalAuthoringStrategy: "unknown-v1" },
+    })).rejects.toThrow("experimentalAuthoringStrategy must be one of");
+  });
+});
+
 describe("Prime graph client reference", () => {
   it("names only graph methods and keywords the Python client declares", () => {
     const declared = JSON.parse(execFileSync(pythonExecutable, ["-c", `
