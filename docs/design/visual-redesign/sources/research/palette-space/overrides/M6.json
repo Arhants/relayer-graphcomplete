@@ -1,0 +1,9 @@
+{
+ "_readme": "Overrides for M6 (Bone Umber). Run: node engine.mjs --overrides overrides/M6.json M6. Summary: tokens/M6.md",
+ "M6": {
+  "interaction": { "light": "#5F3D31", "dark": "#AB8775" },
+  "danger": { "swatch": "#D5305C" },
+  "warning": { "h": 85 },
+  "_why": "dark primary = exact source fawn #AB8775 (dark label 5.88) instead of umber lifted to a C0.12 rust that sat dE 2.3 from the rust signal; failure = saturated crimson (the derived dusty red sat dE 4.5 from the rust signal in light and 4.6 from the ring in dark); warning h85 moves approval text away from the fawn link in dark (4.9->6.6)"
+ }
+}

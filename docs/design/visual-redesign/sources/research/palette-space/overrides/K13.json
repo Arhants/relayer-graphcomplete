@@ -1,0 +1,6 @@
+{
+ "K13": {
+  "_why": "K13 tuning: the candidate says 'approval must move toward orange' (butter h96 sits on the amber band). The shared rule stopped at warning h75, only 21 deg from butter: light warning-solid was dE 4.6 from the mustard primary and warning-text dE 4.2 from the selection ring. h60 maximises the smaller of warning's distances to the interaction tokens and to the danger tokens across both themes (min 4.2 -> 7.0; h65 gives 6.2, h55 6.0)",
+  "warning": { "h": 60 }
+ }
+}

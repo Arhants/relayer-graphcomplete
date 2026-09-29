@@ -1379,7 +1379,7 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 <p>The current Settings sidebar contains:</p>
 <ul>
 <li><strong>Models and harnesses:</strong> default harness, default provider, system family, and custom model families.</li>
-<li><strong>Appearance:</strong> the local theme.</li>
+<li><strong>Appearance:</strong> the local theme: System, Light, or Dark. System follows the operating system and is the default. A saved Light or Dark choice is kept. An install with no saved choice uses System.</li>
 <li><strong>Codex:</strong> connection state and Disconnect.</li>
 <li><strong>Application updates:</strong> current version, channel, state, and Check for updates.</li>
 </ul>
@@ -1391,6 +1391,7 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 <li>Git defaults, worktree location, and Relayer-managed worktree limits;</li>
 <li>graph, store, and agent-trace diagnostics behind a developer disclosure.</li>
 </ul>
+<p>The visual design is fixed when the app is built. There is no design setting. Releases and the hosted share viewer use the default design. A published share keeps the design of the viewer artifact it pinned. ADR 0013 records the chosen design; it is not implemented yet.</p>
 <p>There is no <code>workspace graph build</code> setting in V1. Graph memory is built through Complete interactions, not through a required up-front workspace indexing operation.</p>
 <p>The worktree limit applies only to worktrees that Relayer creates and manages. User-created worktrees do not count. Relayer must not delete them.</p>
 <p>Section 17.3 records three open decisions. These decisions are the default limit, the limit scope, and the flow when the user reaches the limit.</p>
@@ -1433,6 +1434,13 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 <td>The same structural scenario asserts <code>collapseSidebar</code>; current visual evidence proves both expanded and collapsed states.</td>
 <td><code>SHL-001-E1</code> below</td>
 <td>Keyboard, accessibility, restart persistence, small-window layout, and populated project/thread lists remain broader desktop requirements.</td>
+</tr>
+<tr>
+<td>System appearance</td>
+<td><span class="delivery-status partial">Partial</span></td>
+<td><code>test/appearance.test.mjs</code> covers the no-saved-choice default, validated saving, the window color, and in-place operating-system changes. <code>test:desktop:visual-node-details</code> adds two System legs. Each operating-system change keeps the authored page, input, focus, and scroll.</td>
+<td>System-leg screenshots from local <code>test:desktop:visual-node-details</code> runs; not yet committed.</td>
+<td>A real macOS appearance change in the desktop app, restart persistence, and signed-build proof remain.</td>
 </tr>
 <tr>
 <td>Application updater</td>

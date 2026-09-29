@@ -63,6 +63,7 @@ import { createHarnessReadinessCoordinator } from "./services/harness-readiness.
 import { confirmManagedRuntimeQuit } from "./managed-runtimes/quit-guard.mjs";
 import { claimPrimaryDesktopInstance } from "./single-instance.mjs";
 import { createWindowFactory } from "./window.mjs";
+import { resolvedAppearance, startAppearance } from "./appearance.mjs";
 import {
   DESKTOP_UPDATE_BASE_URL,
   packagedDesktopReleaseMetadata,
@@ -184,7 +185,6 @@ let mainWindow;
 const primaryInstance = claimPrimaryDesktopInstance({ app, getWindow: () => mainWindow });
 
 if (primaryInstance) {
-  let appearance = "dark";
   const settings = createSettingsStore(userDataPath);
   const tutorial = createTutorialLifecycle({ settings });
   let authenticatedErrorReporting;
@@ -338,7 +338,7 @@ if (primaryInstance) {
   const createWindow = createWindowFactory({
     BrowserWindow,
     desktopDirectory,
-    getAppearance: () => appearance,
+    getAppearance: () => resolvedAppearance(nativeTheme),
     updater,
     openExternal: (url) => shell.openExternal(url, { activate: true }),
     issueErrorReporter,
@@ -408,8 +408,7 @@ if (primaryInstance) {
 
   app.whenReady().then(async () => {
     const saved = await settings.read();
-    appearance = saved.appearance === "light" ? "light" : "dark";
-    nativeTheme.themeSource = appearance;
+    startAppearance(nativeTheme, saved.appearance, () => mainWindow);
     const channel = resolveUpdateChannel(saved.updateChannel);
     const telemetryPackageMetadata = app.isPackaged
       ? metadata
@@ -606,8 +605,6 @@ if (primaryInstance) {
       tutorial,
       updater,
       getWindow: () => mainWindow,
-      getAppearance: () => appearance,
-      setAppearance: (value) => { appearance = value; },
       beforeUpdateInstall: async () => {
         if (!await confirmQuit()) return false;
         await settleShutdownForUpdateRestart();
