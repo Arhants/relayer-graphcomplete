@@ -513,8 +513,9 @@ loaded in `runtime_recipe`, and a changed recipe does not restore an old ready. 
 upgrade changes a coordinated route's digest or recipe, it marks the row
 `readiness_update_due`; that covers an update whose staged runtime activated and one
 whose activation failed. Startup also flags each runtime its own activation changed
-(`runtimeUpdated`): a new recipe, any other replacement such as a frozen schema-v1
-receipt an older Desktop staged, or a failed activation. That counts even before a
+(`runtimeUpdated`): a new recipe, any other replaced installation (a frozen schema-v1
+receipt an older Desktop staged, or the same recipe rebuilt because the active
+installation was unusable), or a failed activation. That counts even before a
 recipe was recorded, as on the first
 start after migration 0039. When the first recipe is recorded, a ready route whose files
 no longer validate counts too, because an update whose prefetch failed staged nothing to
@@ -533,9 +534,12 @@ recipe is installed and due. Recovery reinstalls the exact recipe if needed and 
 the catalog from its one discovery without evaluating, so the step then evaluates each due harness
 once for all its providers. The eval app runs the same step at its startup and waits for
 it. Quitting stops the step before the quit guard looks, so no preparation starts behind
-it; shutdown cancels any installer operation the step started and awaits it before the
-app server closes. A stopped evaluation publishes nothing, so its mark stays for the
-next start. The next committed result
+it; if the user keeps downloading, an unfinished step starts again. Shutdown cancels any
+installer operation the step started and awaits it before the app server closes. The
+stop reaches provider recovery and every readiness checker. The Prime check stops waiting
+for its kernel probe; the bridge's probe takes no signal and disposes its kernel when it
+settles. A stopped evaluation publishes nothing, not even one queued behind another
+publication, so its mark stays for the next start. The next committed result
 for the harness clears the mark, so it runs once per changed digest or recipe; a start
 before the commit tries again. Migration 0039 also marks every loaded route startup
 left in `harness_readiness_pending`. The evaluation runs once per process with the
