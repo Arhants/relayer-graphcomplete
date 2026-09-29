@@ -8470,7 +8470,7 @@ async fn seed_explicit_test_model_default(database: &Path, thread_id: i64) {
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE interactions SET completion_status='accepted',model_provider_id='codex',provider_model_id='test-model',model_family_id=?1 WHERE thread_id=?2")
+    sqlx::query("UPDATE interactions SET completion_status='accepted',harness_configuration_name='codex-basic',model_provider_id='codex',provider_model_id='test-model',model_family_id=?1 WHERE thread_id=?2")
         .bind(family_id)
         .bind(thread_id)
         .execute(&pool)
@@ -8487,7 +8487,7 @@ async fn seed_thread_with_current_test_model(database: &Path, thread_id: i64) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    sqlx::query("UPDATE interactions SET completion_status='accepted',model_provider_id='codex',provider_model_id='test-model',model_family_id=?1 WHERE thread_id=?2")
+    sqlx::query("UPDATE interactions SET completion_status='accepted',harness_configuration_name='codex-basic',model_provider_id='codex',provider_model_id='test-model',model_family_id=?1 WHERE thread_id=?2")
         .bind(family_id)
         .bind(thread_id)
         .execute(&pool)

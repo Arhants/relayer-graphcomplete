@@ -711,6 +711,7 @@ export async function refreshState(
     appState.pendingTurn = null;
   }
   appState.projects = nextProjects;
+  appState.conversationCompatibility = state.conversationCompatibility ?? null;
   appState.threads = nextThreads;
   appState.interactions = nextInteractions;
   appState.actionInvocations = nextActionInvocations;

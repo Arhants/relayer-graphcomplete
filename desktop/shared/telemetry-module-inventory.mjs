@@ -205,6 +205,7 @@ export const APPROVED_TELEMETRY_MODULES = Object.freeze({
     "crates/relayer-app-server/src/storage/sqlite/catalog.rs",
     "crates/relayer-app-server/src/storage/sqlite/completion_executions.rs",
     "crates/relayer-app-server/src/storage/sqlite/context_drafts.rs",
+    "crates/relayer-app-server/src/storage/sqlite/conversation_compatibility.rs",
     "crates/relayer-app-server/src/storage/sqlite/conversation_imports.rs",
     "crates/relayer-app-server/src/storage/sqlite/input_drafts.rs",
     "crates/relayer-app-server/src/storage/sqlite/interaction_contexts.rs",

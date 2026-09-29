@@ -176,7 +176,17 @@ pub(super) async fn product_state(
             .await?,
         );
     }
+    let compatibility = match product_state
+        .threads
+        .iter()
+        .find(|view| view.active)
+        .map(|view| view.thread.id)
+    {
+        Some(id) => Some(state.product.conversation_compatibility(id).await?),
+        None => None,
+    };
     let response = ProductStateResponse::from(product_state)
+        .with_conversation_compatibility(compatibility)
         .with_interactions(interactions)
         .with_current_projection(current_projection)
         .with_input_draft_revision(input_draft_revision)

@@ -22,6 +22,38 @@ const configuration: HarnessConfiguration = {
 const fullPermission = { permissionProfileId: "full", permissionBinding: {} } as const;
 
 describe("PrimeAgentHarness", () => {
+  it.each(["missing", "changed-presentation"])("refuses legacy continuation without executing or replacing Prime history when %s", async (reason) => {
+    const session = primeSession("/tmp/legacy-prime-session.jsonl");
+    const create = vi.fn(() => "fresh-session");
+    const open = vi.fn(() => "saved-session");
+    const createSession = vi.fn(async () => ({ session }));
+    const harness = await PrimeAgentHarness.create({
+      threadId: 7, workingDirectory: "/tmp/project", ...fullPermission, configuration,
+      ...(reason === "changed-presentation" ? { savedState: {
+        primeAgentSessionFile: session.sessionFile,
+        primeAgentSessionPersonalPresentationVersionId: 17,
+      } } : {}),
+    }, { loadModule: async () => ({
+      ...runScopeApi(), SessionManager: { create, open },
+      createHostRequestHandler: (handler: unknown) => handler,
+      createAgentSessionServices: vi.fn(async () => ({ modelRegistry: { find: vi.fn() } })),
+      createAgentSessionFromServices: createSession,
+    }) as never });
+    const saved = harness.state();
+    create.mockClear(); open.mockClear(); createSession.mockClear();
+    try {
+      await expect(harness.complete({ ...runContext(31, "fixture"), requireNativeContinuity: true }))
+        .rejects.toThrow("native history is unavailable or incompatible");
+      expect(session.promptAndWait).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+      expect(open).not.toHaveBeenCalled();
+      expect(createSession).not.toHaveBeenCalled();
+      expect(harness.state()).toEqual(saved);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
   it("uses only explicit managed Prime profile and session paths in the production factory", async () => {
     const root = await mkdtemp(join(tmpdir(), "relayer-prime-managed-factory-"));
     const runtime = managedRuntimePaths(root);
@@ -67,7 +99,7 @@ describe("PrimeAgentHarness", () => {
       await writeFile(join(outside, "outside.jsonl"), "outside session", { mode: 0o600 });
       await symlink(join(outside, "outside.jsonl"), savedSession);
 
-      await PrimeAgentHarness.create({
+      await expect(PrimeAgentHarness.create({
         threadId: 7,
         workingDirectory: "/tmp/project",
         ...fullPermission,
@@ -85,10 +117,10 @@ describe("PrimeAgentHarness", () => {
           createAgentSessionFromServices: vi.fn(async () => ({ session: primeSession(join(sessions, "fresh.jsonl")) })),
         }) as never,
         resolvePrimeRuntime: async () => runtime,
-      });
+      })).rejects.toThrow("saved state was preserved");
 
       expect(open).not.toHaveBeenCalled();
-      expect(create).toHaveBeenCalledWith("/tmp/project", sessions);
+      expect(create).not.toHaveBeenCalled();
 
       await rm(sessions, { recursive: true, force: true });
       const outsideSessions = join(outside, "sessions");
@@ -115,7 +147,7 @@ describe("PrimeAgentHarness", () => {
         resolvePrimeRuntime: async () => runtime,
       })).rejects.toThrow(/session state is not an owned directory/i);
       expect(open).not.toHaveBeenCalled();
-      expect(create).toHaveBeenCalledOnce();
+      expect(create).not.toHaveBeenCalled();
     } finally {
       await rm(root, { recursive: true, force: true });
       await rm(outside, { recursive: true, force: true });
@@ -2221,7 +2253,7 @@ describe("PrimeAgentHarness", () => {
     };
     const create = vi.fn(() => "fresh-session");
     const open = vi.fn(() => "legacy-session");
-    const harness = await PrimeAgentHarness.create({
+    await expect(PrimeAgentHarness.create({
       threadId: 7, workingDirectory: "/tmp/project", ...fullPermission, configuration,
       savedState: { primeAgentSessionFile: "/tmp/legacy.jsonl" },
     }, { loadModule: async () => ({
@@ -2229,13 +2261,12 @@ describe("PrimeAgentHarness", () => {
       createHostRequestHandler: (handler: unknown) => handler,
       createAgentSessionServices: vi.fn(async () => nativeServices({ modelRegistry: { find: vi.fn() } })),
       createAgentSessionFromServices: vi.fn(async () => ({ session })),
-    }) as never });
+    }) as never })).rejects.toThrow("saved state was preserved");
 
-    await harness.complete(runContext(11, "token"));
 
     expect(open).not.toHaveBeenCalled();
-    expect(create).toHaveBeenCalledWith("/tmp/project");
-    expect(session.promptAndWait).toHaveBeenCalledOnce();
+    expect(create).not.toHaveBeenCalled();
+    expect(session.promptAndWait).not.toHaveBeenCalled();
   });
 
   it("delivers the same ordered normalized context to Prime and its native children", async () => {

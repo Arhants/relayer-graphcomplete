@@ -5,6 +5,7 @@ export const NO_MODELS_FOR_HARNESS = "No available models for this harness";
 export const MODEL_SETUP_RECOVERY_CODE = "provider_no_eligible_execution_models";
 
 const MODEL_SELECTION_CATALOG_ERRORS = new Set([
+  "conversation_route_incompatible",
   "harness_unknown",
   "harness_not_product_visible",
   "harness_unavailable",
@@ -90,6 +91,7 @@ function harnessFor(settings, harnessId) {
 }
 
 export function harnessUsesConfigurationModel(settings, harnessId) {
+  if (settings.conversationCompatibility && settings.conversationCompatibility.status !== "unrestricted") return false;
   const harness = harnessFor(settings, harnessId);
   return Boolean(
     harness
@@ -134,11 +136,14 @@ function harnessSupportsModel(harness, provider, modelId) {
 }
 
 export function availableFamilyMembers(settings, family, harnessId) {
+  const compatibility = settings.conversationCompatibility;
+  if (compatibility?.status === "blocked" || (compatibility?.status === "compatible" && compatibility.harnessId !== harnessId)) return [];
   const harness = harnessFor(settings, harnessId);
   if (!harness || harness.available === false) return [];
   return [...(family.members ?? [])]
     .sort((left, right) => left.position - right.position)
     .filter((member) => {
+      if (compatibility?.status === "compatible" && member.providerId !== compatibility.providerId) return false;
       const provider = settings.providers.find((item) => item.id === member.providerId);
       if (!harnessSupportsModel(harness, provider, member.modelId)) return false;
       const model = providerModel(settings, member.providerId, member.modelId);

@@ -168,6 +168,34 @@ describe("CodexBasicHarness", () => {
     expect(submitted[2]?.threadParams.developerInstructions).toBeNull();
   });
 
+  it("preserves legacy native continuity across model changes and reopen, and rejects changed storage before execution", async () => {
+    const submitted: CodexAppServerTurnOptions[] = [];
+    const dependencies: CodexBasicDependencies = {
+      codexPathOverride: "/managed/codex",
+      runAppServerTurn: async (options) => {
+        submitted.push(options);
+        expect(options.savedThreadId).toBe("legacy-thread");
+        options.onThreadId("legacy-thread");
+        options.onTurnStarting?.("legacy-thread");
+        options.onTurnId?.("legacy-thread", "turn-1");
+        return { threadId: "legacy-thread", turnId: "turn-1", status: "completed" };
+      },
+    };
+    const harness = new CodexBasicHarness({ ...context("auto"), savedState: { codexThreadId: "legacy-thread" } }, dependencies);
+    const access = { kind: "managed-runtime" as const, contract: "managed-runtime@1" as const, runtimeId: "codex" as const, version: "0.147.0", adapterImplementationVersion: "1", providerId: "codex", adapterId: "codex-subscription", executable: "/managed/codex", environment: { CODEX_HOME: "/isolated/original" } };
+    const execution = { ...runContext(1, "token"), requireNativeContinuity: true, access, model: { providerId: "codex", adapterId: "codex-subscription", modelId: "gpt-test" } };
+    await harness.complete(execution);
+    const saved = harness.state();
+    const reopened = new CodexBasicHarness({ ...context("auto"), savedState: saved }, dependencies);
+    await reopened.complete({ ...execution, model: { ...execution.model, modelId: "gpt-other" } });
+    await expect(reopened.complete({ ...execution, access: { ...access, environment: { CODEX_HOME: "/isolated/foreign" } } })).rejects.toThrow("native session location changed");
+    expect(submitted).toHaveLength(2);
+    expect(reopened.state()).toEqual(saved);
+    const missing = new CodexBasicHarness(context("auto"), dependencies);
+    await expect(missing.complete(execution)).rejects.toThrow("native history is unavailable");
+    expect(submitted).toHaveLength(2);
+  });
+
   it("rotates a legacy saved Codex thread whose presentation version is unknown", async () => {
     let submitted: CodexAppServerTurnOptions | undefined;
     const harness = new CodexBasicHarness({
@@ -187,6 +215,7 @@ describe("CodexBasicHarness", () => {
 
     expect(submitted?.savedThreadId).toBeUndefined();
     expect(harness.state()).toEqual({
+      codexSessionIdentity: expect.any(String),
       codexThreadId: "replacement-thread",
       codexThreadPersonalPresentationVersionId: null,
       codexThreadHome: expect.any(String),
@@ -333,6 +362,7 @@ describe("CodexBasicHarness", () => {
     await harness.complete({ ...runContext(2, "next-token"), forceSignal: new AbortController().signal });
     expect(submissions[1]?.savedThreadId).toBeUndefined();
     expect(harness.state()).toEqual({
+      codexSessionIdentity: expect.any(String),
       codexThreadId: "fresh-thread-2",
       codexThreadPersonalPresentationVersionId: null,
       codexThreadHome: expect.any(String),
@@ -376,6 +406,7 @@ describe("CodexBasicHarness", () => {
     await expect(stuck).rejects.toThrow("killed app-server exited");
 
     expect(harness.state()).toEqual({
+      codexSessionIdentity: expect.any(String),
       codexThreadId: "fresh-thread-2",
       codexThreadPersonalPresentationVersionId: null,
       codexThreadHome: expect.any(String),
@@ -438,6 +469,7 @@ describe("CodexBasicHarness", () => {
     await expect(harness.complete(runContext(1, "token"))).rejects.toThrow("turn failed");
 
     expect(harness.state()).toEqual({
+      codexSessionIdentity: expect.any(String),
       codexThreadId: "codex-thread-after-start",
       codexThreadPersonalPresentationVersionId: null,
       codexThreadHome: expect.any(String),
@@ -887,6 +919,7 @@ describe("CodexBasicHarness", () => {
       ["gpt-second", "gpt-second"],
     ]);
     expect(harness.state()).toEqual({
+      codexSessionIdentity: expect.any(String),
       codexThreadId: "codex-thread-1",
       codexThreadPersonalPresentationVersionId: null,
       codexThreadHome: "codex-default-home",
@@ -984,6 +1017,7 @@ describe("CodexBasicHarness", () => {
     await harness.complete(runContext(1, "root-token"));
     expect(submissions[2]?.savedThreadId).toBe("root-thread");
     expect(harness.state()).toEqual({
+      codexSessionIdentity: expect.any(String),
       codexThreadId: "root-thread",
       codexThreadPersonalPresentationVersionId: null,
       codexThreadHome: expect.any(String),

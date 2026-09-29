@@ -1,7 +1,7 @@
 import { RELAYER_ICON_NAMES, type GraphCapability, type GraphNode } from "@relayer/graph-client";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, rename, rm, unlink, writeFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
 import { INTERACTION_INPUT_GUIDANCE, renderInteractionInput } from "../interaction-input.js";
 import {
@@ -206,6 +206,7 @@ export class CodexBasicHarness implements Harness {
   private readonly completeModuleUrl: string;
   private readonly resolved: ResolvedCodexConfiguration;
   private codexThreadId: string | undefined;
+  private codexSessionIdentity: string | undefined;
   private codexThreadPersonalPresentationVersionId: number | null | undefined;
   /**
    * The Codex home holding the thread's rollout. Undefined only for a thread saved by an earlier
@@ -235,11 +236,14 @@ export class CodexBasicHarness implements Harness {
       || (typeof savedPresentationVersionId === "number"
         && Number.isSafeInteger(savedPresentationVersionId)
         && savedPresentationVersionId > 0);
+    if (typeof codexThreadId === "string" && !validSavedPresentationVersion) throw new Error("Legacy native history has an invalid presentation pin; its saved state was preserved.");
     const validSavedHome = savedHome === undefined || (typeof savedHome === "string" && savedHome !== "");
+    if (typeof codexThreadId === "string" && !validSavedHome) throw new Error("Legacy native history has an invalid storage identity; its saved state was preserved.");
     if (resolved.settings.rootSessionMode === "fresh") return;
     this.pendingRootReset = parseNativeSessionResetReason(context.savedState?.codexRootResetReason);
     if (typeof codexThreadId === "string" && validSavedPresentationVersion && validSavedHome) {
       this.codexThreadId = codexThreadId;
+      if (typeof context.savedState?.codexSessionIdentity === "string") this.codexSessionIdentity = context.savedState.codexSessionIdentity;
       this.codexThreadPersonalPresentationVersionId = savedPresentationVersionId;
       this.codexThreadHome = savedHome;
     } else if (typeof codexThreadId === "string") {
@@ -280,8 +284,13 @@ export class CodexBasicHarness implements Harness {
   ): Promise<void> {
     const personalPresentationVersionId = context.personalPresentation?.attachment.versionInteractionNodeId ?? null;
     const persistentRootSession = kind === "root" && this.resolved.settings.rootSessionMode !== "fresh";
+    if (kind === "root" && context.requireNativeContinuity && (!persistentRootSession || this.codexThreadId === undefined)) {
+      throw new Error("This conversation's native history is unavailable. Continuing with a fresh session would lose context; its saved history was preserved.");
+    }
     if (persistentRootSession && this.codexThreadId !== undefined
-      && this.codexThreadPersonalPresentationVersionId !== personalPresentationVersionId) {
+      && this.codexThreadPersonalPresentationVersionId !== personalPresentationVersionId
+      && !(context.requireNativeContinuity && this.codexThreadPersonalPresentationVersionId === undefined)) {
+      if (context.requireNativeContinuity) throw new Error("This conversation's native history cannot be reused with the changed presentation settings. Its history was preserved.");
       this.forgetRootThread("presentation_changed");
     }
     this.selectedModel(context);
@@ -293,12 +302,23 @@ export class CodexBasicHarness implements Harness {
     // A turn force-stopped while resolving its runtime no longer holds access: write nothing.
     context.forceSignal?.throwIfAborted();
     const environment = this.graphEnvironment(capability, context.completionBroker, context.access, resolvedRuntime.environment);
+    const sessionIdentity = createHash("sha256").update(JSON.stringify({
+      providerId: context.access?.providerId ?? null,
+      adapterId: context.access?.adapterId ?? null,
+      kind: context.access?.kind ?? null,
+      endpoint: context.access?.kind === "secret" ? context.access.endpoint : null,
+      home: resolve(environment.CODEX_HOME || join(environment.HOME || process.env.HOME || this.context.workingDirectory, ".codex")),
+    })).digest("hex");
+    if (context.requireNativeContinuity && persistentRootSession && this.codexThreadId !== undefined && this.codexSessionIdentity !== undefined && this.codexSessionIdentity !== sessionIdentity) {
+      throw new Error("This conversation's provider or native session location changed. Its original history was preserved; this route cannot continue it.");
+    }
     const codexHome = codexHomeOf(environment);
     // A thread resumes only in the Codex home holding its rollout. Providers that share a home,
     // such as API-key providers in Codex's default home, keep resuming it. This decides only
     // resumption for the provider the product selected, never which providers it may select.
     if (persistentRootSession && this.codexThreadId !== undefined
       && this.codexThreadHome !== undefined && this.codexThreadHome !== codexHome) {
+      if (context.requireNativeContinuity) throw new Error("This conversation's native session location changed. Its saved history was preserved.");
       this.forgetRootThread("home_changed");
     }
     let authHome: string | undefined;
@@ -322,6 +342,7 @@ export class CodexBasicHarness implements Harness {
         persistentRootSession,
         personalPresentationVersionId,
         codexHome,
+        sessionIdentity,
       });
     } finally {
       if (authHome !== undefined) {
@@ -343,6 +364,7 @@ export class CodexBasicHarness implements Harness {
       readonly persistentRootSession: boolean;
       readonly personalPresentationVersionId: number | null;
       readonly codexHome: string;
+      readonly sessionIdentity: string;
     },
   ): Promise<void> {
     const { persistentRootSession } = rootThread;
@@ -384,10 +406,13 @@ export class CodexBasicHarness implements Harness {
       await run({
         environment,
         codexPathOverride: executable,
+        requireNativeContinuity: persistentRootSession && context.requireNativeContinuity === true,
         ...this.codexConfigOverrides(context.access),
         ...(persistentRootSession && this.codexThreadId !== undefined
           ? { savedThreadId: this.codexThreadId }
           : {}),
+        ...(persistentRootSession && context.requireNativeContinuity && this.codexSessionIdentity === undefined
+          ? { legacyHistoryAnchor: context.nativeHistoryAnchor ?? { interactionNodeId: -1, message: "" } } : {}),
         threadParams: this.threadParams(model, context, context.access),
         turnParams: this.turnParams(sandboxPolicy, model),
         prompt,
@@ -402,10 +427,13 @@ export class CodexBasicHarness implements Harness {
         ...(this.dependencies.spawnProcess === undefined ? {} : { spawnProcess: this.dependencies.spawnProcess }),
         // A thread gets its rollout only once turn/start is accepted. Until then, a stopped
         // turn leaves nothing that Codex could resume, so the thread is not kept.
-        onThreadId: () => undefined,
+        onThreadId: (threadId) => {
+          if (context.requireNativeContinuity && persistentRootSession && this.codexThreadId !== threadId) throw new Error("Native resume returned a different conversation. The original history was preserved.");
+        },
         onTurnStarting: () => { conversationStarted = true; },
         onSavedThreadUnavailable: (threadId) => {
           if (!persistentRootSession || this.codexThreadId !== threadId) return;
+          if (context.requireNativeContinuity) throw new Error("The saved native conversation is unavailable. Its original history was preserved; no fresh turn was started.");
           this.forgetRootThread("no_rollout");
           reportNativeSessionReset(context, "Codex", this.context.threadId, "no_rollout");
           this.pendingRootReset = undefined;
@@ -420,6 +448,7 @@ export class CodexBasicHarness implements Harness {
             this.codexThreadId = threadId;
             this.codexThreadPersonalPresentationVersionId = rootThread.personalPresentationVersionId;
             this.codexThreadHome = rootThread.codexHome;
+            this.codexSessionIdentity = rootThread.sessionIdentity;
             this.pendingRootReset = undefined;
           }
           attach(Object.freeze({
@@ -457,13 +486,13 @@ export class CodexBasicHarness implements Harness {
   state(): HarnessSessionState {
     const reset = this.pendingRootReset === undefined ? {} : { codexRootResetReason: this.pendingRootReset };
     return this.codexThreadId === undefined
-      || this.codexThreadPersonalPresentationVersionId === undefined
       ? reset
       : {
           codexThreadId: this.codexThreadId,
-          codexThreadPersonalPresentationVersionId: this.codexThreadPersonalPresentationVersionId,
+          ...(this.codexSessionIdentity === undefined ? {} : { codexSessionIdentity: this.codexSessionIdentity }),
           ...(this.codexThreadHome === undefined ? {} : { codexThreadHome: this.codexThreadHome }),
           ...reset,
+          ...(this.codexThreadPersonalPresentationVersionId === undefined ? {} : { codexThreadPersonalPresentationVersionId: this.codexThreadPersonalPresentationVersionId }),
         };
   }
 
@@ -477,6 +506,7 @@ export class CodexBasicHarness implements Harness {
   }
 
   private forgetRootThread(reason: NativeSessionResetReason): void {
+    this.codexSessionIdentity = undefined;
     this.codexThreadId = undefined;
     this.codexThreadPersonalPresentationVersionId = undefined;
     this.codexThreadHome = undefined;

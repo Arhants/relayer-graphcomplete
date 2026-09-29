@@ -157,6 +157,8 @@ pub(crate) struct InvokedCompletionAdmission<'a> {
 }
 
 pub(crate) struct CompleteInteraction<'a> {
+    pub(crate) require_native_continuity: bool,
+    pub(crate) native_history_anchor: Option<&'a Value>,
     pub(crate) project_id: Option<i64>,
     pub(crate) product_interaction_id: i64,
     pub(crate) thread_id: i64,
@@ -928,7 +930,7 @@ impl RuntimeClient {
             let mut complete_body = serde_json::json!({
                 "interactionId": command.interaction_id,
                 "graph": graph,
-                "traceContext": { "productInteractionId": command.product_interaction_id },
+                "traceContext": { "productInteractionId": command.product_interaction_id, "requireNativeContinuity": command.require_native_continuity, "nativeHistoryAnchor": command.native_history_anchor },
             });
             if let Some(version_id) = prepared.personal_presentation_version_id {
                 complete_body["traceContext"]["personalPresentationVersionId"] =
@@ -3518,6 +3520,8 @@ mod tests {
             reviewer: "automatic".into(),
         };
         let command = CompleteInteraction {
+            require_native_continuity: false,
+            native_history_anchor: None,
             project_id: None,
             product_interaction_id: 1,
             thread_id: 1,
@@ -3564,6 +3568,8 @@ mod tests {
             },
         }];
         let identified = CompleteInteraction {
+            require_native_continuity: false,
+            native_history_anchor: None,
             project_id: None,
             product_interaction_id: 99,
             thread_id: 1,
@@ -3705,6 +3711,8 @@ mod tests {
             root_layer_id: 37,
         };
         let command = CompleteInteraction {
+            require_native_continuity: false,
+            native_history_anchor: None,
             project_id: None,
             product_interaction_id: 77,
             thread_id: 1,
@@ -4071,6 +4079,8 @@ mod tests {
             reviewer: "automatic".into(),
         };
         let command = CompleteInteraction {
+            require_native_continuity: false,
+            native_history_anchor: None,
             project_id: None,
             product_interaction_id: 1,
             thread_id: 1,
@@ -4212,6 +4222,8 @@ mod tests {
 
         let result = runtime
             .complete(CompleteInteraction {
+                require_native_continuity: false,
+                native_history_anchor: None,
                 project_id: None,
                 product_interaction_id: 1,
                 thread_id: 1,
@@ -4373,6 +4385,8 @@ mod tests {
         };
         let completed = runtime
             .complete(CompleteInteraction {
+                require_native_continuity: false,
+                native_history_anchor: None,
                 project_id: None,
                 product_interaction_id: 1,
                 thread_id: 1,

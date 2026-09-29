@@ -290,18 +290,29 @@ describe("default family that needs model setup (PROV-008)", () => {
     picker.dispose();
   });
 
-  it("selects the restored family's first model when a refresh ends a thread's recovery", () => {
-    // The thread's last model is not in the restored roster.
+  it.each([false, true])("restores a thread's model roster after refresh (legacy=%s)", async (legacy) => {
+    const compatibility = legacy
+      ? { status: "compatible", providerId: "codex", harnessId: "codex-basic" }
+      : { status: "unrestricted" };
+    // The thread's last model is not in the restored roster. Exercise the actual refresh
+    // callback and context update together so legacy filtering cannot bypass PROV-008.
     const selection = { harnessId: "codex-basic", familyId: 1, providerId: "codex", modelId: "gpt-5.6-terra" };
-    const { picker } = mountPicker(recovering(), {
+    const onRefreshModels = vi.fn(async () => {
+      picker.setContext({ settings: { ...restored(), conversationCompatibility: compatibility } });
+    });
+    const { root, picker } = mountPicker({ ...recovering(), conversationCompatibility: compatibility }, {
       mode: "ongoing",
       pinnedHarnessId: "codex-basic",
       selection,
-      onRefreshModels: async () => {},
+      onRefreshModels,
     });
-    expect(picker.modelSetup()).toMatchObject({ familyId: 1 });
-    // The settings reload after the refresh keeps the thread's selection (no replaceSelection).
-    picker.setContext({ settings: restored() });
+    expect(picker.modelSetup()).toMatchObject({ familyId: 1, providerId: "codex" });
+    expect(picker.isReady()).toBe(false);
+    picker.open();
+    const refresh = root.querySelector("[data-model-picker-refresh]");
+    expect(refresh.getAttribute("aria-label")).toBe("Refresh models for Codex");
+    refresh.click();
+    await vi.waitFor(() => expect(onRefreshModels).toHaveBeenCalledExactlyOnceWith("codex"));
     expect(picker.isReady()).toBe(true);
     expect(picker.getSelection()).toEqual({
       harnessId: "codex-basic",
@@ -309,6 +320,32 @@ describe("default family that needs model setup (PROV-008)", () => {
       providerId: "codex",
       modelId: "gpt-5.6-sol",
     });
+    if (legacy) {
+      const notice = root.querySelector("[data-model-picker-error]");
+      expect(notice.textContent).toBe("Only models from the original provider are available.");
+      expect(notice.classList.contains("model-picker-warning")).toBe(true);
+      expect(notice.getAttribute("role")).toBe("status");
+    }
+    picker.dispose();
+  });
+
+  it.each([
+    { status: "compatible", providerId: "work", harnessId: "codex-basic" },
+    { status: "compatible", providerId: "codex", harnessId: "prime-agent-basic" },
+    { status: "blocked", message: "History ownership cannot be verified." },
+  ])("does not offer family recovery outside the verified route: %j", (conversationCompatibility) => {
+    const onRefreshModels = vi.fn();
+    const { root, picker } = mountPicker({ ...recovering(), conversationCompatibility }, {
+      mode: "ongoing",
+      pinnedHarnessId: "codex-basic",
+      selection: { harnessId: "codex-basic", familyId: 1, providerId: "codex", modelId: "gpt-5.6-terra" },
+      onRefreshModels,
+    });
+    picker.open();
+    expect(picker.modelSetup()).toBeNull();
+    expect(picker.isReady()).toBe(false);
+    expect(root.querySelector("[data-model-picker-refresh]")).toBeNull();
+    expect(onRefreshModels).not.toHaveBeenCalled();
     picker.dispose();
   });
 

@@ -300,6 +300,13 @@ impl SqliteProductStore {
                 provider_id: selection.provider_id.clone(),
                 model_id: selection.model_id.clone(),
             };
+            super::conversation_compatibility::validate_on(
+                &mut transaction,
+                thread_id.value(),
+                None,
+                &command,
+            )
+            .await?;
             catalog::validate_model_selection_on(&mut transaction, &command).await?;
         } else if require_model_selection {
             return Err(StorageError::Catalog(
@@ -662,6 +669,13 @@ impl SqliteProductStore {
             provider_id: model_selection.provider_id.clone(),
             model_id: model_selection.model_id.clone(),
         };
+        super::conversation_compatibility::validate_on(
+            &mut transaction,
+            thread_id,
+            Some(interaction_id.value()),
+            &command,
+        )
+        .await?;
         catalog::validate_model_selection_on(&mut transaction, &command).await?;
         let result = sqlx::query(
             "UPDATE interactions SET text=?1,model_provider_id=?2,provider_model_id=?3,model_family_id=?4,completion_status='submitted',harness_configuration_name=?5,harness_configuration_digest=NULL,effective_execution_digest=NULL,effective_permission_receipt_json=NULL,completion_output_json=NULL,completion_error=NULL,input_identity=?6,input_digest=?7 WHERE id=?8 AND completion_status='not_started' AND NOT EXISTS(SELECT 1 FROM interactions later WHERE later.thread_id=interactions.thread_id AND later.sequence>interactions.sequence)",
@@ -1424,7 +1438,7 @@ mod tests {
     }
 
     async fn mark_interaction_accepted(store: &SqliteProductStore, id: InteractionId) {
-        sqlx::query("UPDATE interactions SET completion_status='accepted' WHERE id=?1")
+        sqlx::query("UPDATE interactions SET completion_status='accepted',harness_configuration_name='codex-basic' WHERE id=?1")
             .bind(id.value())
             .execute(&store.pool)
             .await

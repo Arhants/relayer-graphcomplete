@@ -131,6 +131,8 @@ async fn reconcile_interrupted_interaction(
         };
         let prepared = runtime
             .prepare(&crate::runtime::CompleteInteraction {
+                require_native_continuity: false,
+                native_history_anchor: None,
                 project_id: thread.project_id.map(ProjectId::value),
                 product_interaction_id: interaction.id.value(),
                 thread_id: thread.id.value(),

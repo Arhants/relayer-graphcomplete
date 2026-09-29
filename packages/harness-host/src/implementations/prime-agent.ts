@@ -471,6 +471,7 @@ export class PrimeAgentHarness implements Harness {
   private forceShutdownStarted = false;
   private gracefullyDisposed = false;
   private gracefulDisposePromise: Promise<void> | undefined;
+  private rootHistoryAvailable = false;
   private readonly invokedSessions = new Set<PrimeAgentSessionLifecycle>();
   private readonly pendingInvokedSessions = new Set<Promise<PrimeAgentSessionLifecycle>>();
   private sessionHandle: PrimeAgentSessionHandle | undefined;
@@ -507,6 +508,7 @@ export class PrimeAgentHarness implements Harness {
     sessionHandle?: PrimeAgentSessionHandle,
   ) {
     this.sessionHandle = sessionHandle;
+    this.rootHistoryAvailable = resumableSessionFile !== undefined;
     this.sessionPersonalPresentationVersionId = savedPresentationVersionId;
   }
 
@@ -636,6 +638,7 @@ export class PrimeAgentHarness implements Harness {
     const restorableSessionFile = parsedSavedPresentationVersionId !== undefined
       ? confinedSavedSessionFile
       : undefined;
+    if (typeof savedSessionFile === "string" && restorableSessionFile === undefined) throw new Error("Legacy native history cannot be safely restored; its saved state was preserved.");
     const createSessionManager = () => managedSessionDir === undefined
       ? primeAgent.SessionManager.create(workspaceRoot)
       : primeAgent.SessionManager.create(workspaceRoot, managedSessionDir);
@@ -741,6 +744,7 @@ export class PrimeAgentHarness implements Harness {
       signal.throwIfAborted();
     }
     await this.executeOn(session, context, signal);
+    this.rootHistoryAvailable = true;
   }
 
   private async executeInvoked(
@@ -971,6 +975,9 @@ export class PrimeAgentHarness implements Harness {
   private sessionFor(context: HarnessRunContext): PrimeAgentSession | Promise<PrimeAgentSession> {
     this.throwIfShuttingDown();
     const versionId = context.personalPresentation?.attachment.versionInteractionNodeId ?? null;
+    if (context.requireNativeContinuity && (!this.rootHistoryAvailable || (this.sessionPersonalPresentationVersionId !== undefined && this.sessionPersonalPresentationVersionId !== versionId))) {
+      throw new Error("This conversation's native history is unavailable or incompatible. Its saved history was preserved; a fresh session was not started.");
+    }
     const instructions = personalPresentationNativeInstructions(context);
     if (this.sessionHandle !== undefined
       && this.sessionPersonalPresentationVersionId === versionId) {
@@ -985,6 +992,7 @@ export class PrimeAgentHarness implements Harness {
       }
       return this.reloadPresentationInstructions(this.sessionHandle, versionId, instructions);
     }
+    if (context.requireNativeContinuity && this.resumableSessionFile === undefined) throw new Error("This conversation has no resumable native history. Its saved history was preserved.");
     return this.rotateSession(context, versionId);
   }
 

@@ -1262,6 +1262,8 @@ export class HarnessHost {
       onNativeStarted?.();
       const native = session.harness.complete({
         origin,
+        requireNativeContinuity: traceContext?.requireNativeContinuity === true,
+        ...(traceContext?.nativeHistoryAnchor === undefined ? {} : { nativeHistoryAnchor: traceContext.nativeHistoryAnchor }),
         inputGraph: interaction,
         interactionInput,
         ...(personalPresentation === undefined ? {} : { personalPresentation }),
@@ -3112,7 +3114,9 @@ function isNativeExecutionHandle(value: Promise<void> | NativeExecutionHandle): 
 function readTraceContext(value: unknown): HarnessCompletionTraceContext | undefined {
   if (!isRecord(value) || value.traceContext === undefined) return undefined;
   if (!isRecord(value.traceContext)) throw new Error("Harness completion contains an invalid trace context");
-  const { productInteractionId, personalPresentationVersionId, personalPresentationVersionKey } = value.traceContext;
+  const { productInteractionId, personalPresentationVersionId, personalPresentationVersionKey, requireNativeContinuity, nativeHistoryAnchor } = value.traceContext;
+  if (nativeHistoryAnchor != null && (!isRecord(nativeHistoryAnchor) || !Number.isSafeInteger(nativeHistoryAnchor.interactionNodeId) || Number(nativeHistoryAnchor.interactionNodeId) < 1 || typeof nativeHistoryAnchor.message !== "string")) throw new Error("Invalid native history anchor");
+  if (requireNativeContinuity !== undefined && typeof requireNativeContinuity !== "boolean") throw new Error("Invalid native continuity requirement");
   if (typeof productInteractionId !== "number" || !Number.isSafeInteger(productInteractionId) || productInteractionId < 1) {
     throw new Error("Harness completion trace context requires a positive product interaction id");
   }
@@ -3130,6 +3134,8 @@ function readTraceContext(value: unknown): HarnessCompletionTraceContext | undef
   }
   return {
     productInteractionId,
+    ...(requireNativeContinuity === undefined ? {} : { requireNativeContinuity }),
+    ...(nativeHistoryAnchor == null ? {} : { nativeHistoryAnchor: nativeHistoryAnchor as { interactionNodeId: number; message: string } }),
     ...(personalPresentationVersionId === undefined ? {} : { personalPresentationVersionId }),
     ...(personalPresentationVersionKey === undefined ? {} : { personalPresentationVersionKey }),
   };
