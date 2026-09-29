@@ -66,6 +66,8 @@ try {
       && manifest.assertions.themes[key].every(item => item.screenshot?.tileCount >= 1 && item.disabled === true && item.cssPreserved && item.valuePreserved))
     && manifest?.assertions?.themes?.product?.length === 3
     && manifest.assertions.themes.product.every(item => item.disabled === false && item.valuePreserved && item.focusPreserved && item.sameInput && item.screenshotPaths?.length > 0)
+    && manifest?.assertions?.themes?.productSystem?.map(item => item.theme).join() === "dark,light"
+    && manifest.assertions.themes.productSystem.every(item => item.preference === "system" && item.beforeTheme !== item.theme && item.disabled === false && item.valuePreserved && item.focusPreserved && item.sameInput && item.screenshotPaths?.length > 0)
     && manifest?.assertions?.visualAsset?.renderedAsset?.naturalWidth > 0
     && manifest?.assertions?.visualAssetReopened?.naturalWidth > 0
     && manifest?.assertions?.visualAssetExportImport?.portabilityPending === false
