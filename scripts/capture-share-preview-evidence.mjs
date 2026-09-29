@@ -18,6 +18,7 @@ async function main() {
     const dir = resolve(root, ".relayer/evidence/desktop-social-preview");
     await mkdir(dir, { recursive: true });
     const receipts = [];
+    const captureSession = session.fromPartition("share-preview-capture");
     for (const theme of ["light", "dark"]) {
       const bytes = await capture({
         snapshotBytes,
@@ -35,6 +36,15 @@ async function main() {
         sha256: createHash("sha256").update(bytes).digest("hex"),
         bytes: bytes.length,
       });
+      if (theme === "light") {
+        await captureSession.cookies.set({
+          url: "http://127.0.0.1",
+          name: "capture-residue-probe",
+          value: "must-not-survive",
+        });
+      } else if ((await captureSession.cookies.get({ name: "capture-residue-probe" })).length) {
+        throw new Error("Capture session storage survived reuse");
+      }
     }
     if (receipts[0].sha256 === receipts[1].sha256)
       throw new Error("Theme did not affect capture");
