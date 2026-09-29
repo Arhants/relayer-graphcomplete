@@ -10,7 +10,7 @@ import { RelayerGraphClient, NodeObject, LayerObject, LayerLayoutObject, NodePla
 import { taskSystemFixtureFactory } from "@relayer/eval-runner";
 
 import { startModelCatalogRefreshServer } from "../desktop/main/models/model-catalog-refresh-server.mjs";
-import { GraphCompleteRuntimeService } from "../desktop/main/services/graphcomplete-runtime.mjs";
+import { GraphCompleteRuntimeService, createDesktopGraphRuntime } from "../desktop/main/services/graphcomplete-runtime.mjs";
 import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 import { createWindowFactory } from "../desktop/main/window.mjs";
 
@@ -25,7 +25,8 @@ const invokeEvidenceDirectory = process.env.RELAYER_INVOKE_EVIDENCE_DIR
   || join(repositoryRoot, ".relayer", "evidence", "invoke-navigation");
 const dataDirectory = mkdtempSync(join(tmpdir(), "relayer-first-message-app-"));
 const services = [];
-const typedPermissions = process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1";
+const typedPermissions = process.env.RELAYER_TEST_INTERACTION_PERMISSIONS !== "0";
+const createRuntime = typedPermissions ? createDesktopGraphRuntime : (options) => new GraphCompleteRuntimeService(options);
 
 const ancillaryFailures = [];
 let window;
@@ -286,7 +287,6 @@ async function run() {
   const configurationPath = join(repositoryRoot, "harnesses", "fixture-task-system.yaml");
   const runtimeOptions = {
     userDataDirectory: dataDirectory,
-    interactionPermissions: process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1",
     graphServerBinary: join(repositoryRoot, "target", "debug", "relayer-graph-server"),
     configurationPaths: [configurationPath],
     additionalImplementations: { "fixture.task-system": requiredNavigationFixtureFactory },
@@ -297,7 +297,7 @@ async function run() {
       async release() {},
     }),
   };
-  const runtime = new GraphCompleteRuntimeService(runtimeOptions);
+  const runtime = createRuntime(runtimeOptions);
   services.push(runtime);
   const runtimeSession = await runtime.start();
   let product;
@@ -510,7 +510,7 @@ async function run() {
   ));
   const invokedRootLayerId = invokedResult?.completionOutput?.rootLayer?.layer?.id;
   if (
-    canonicalInvoke?.kind !== (process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1" ? "navigate" : "invoke")
+    canonicalInvoke?.kind !== (typedPermissions ? "navigate" : "invoke")
     || canonicalInvoke.targetLayerId == null
     || String(canonicalInvoke.targetLayerId) !== String(invokedRootLayerId)
   ) {
@@ -864,7 +864,7 @@ async function run() {
     window.destroy();
     await product.close();
     await runtime.close();
-    const reopenedRuntime = new GraphCompleteRuntimeService(runtimeOptions);
+    const reopenedRuntime = createRuntime(runtimeOptions);
     services.push(reopenedRuntime);
     const reopenedSession = await reopenedRuntime.start();
     const reopenedProduct = new RelayerAppServerService({ ...productOptions, runtimeSession: reopenedSession });

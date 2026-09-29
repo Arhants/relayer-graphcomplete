@@ -1,0 +1,117 @@
+{
+  "snapshotSha256": "4a09b288821664610cdc4e76751c27e4ccaa771a92ed28b64f86f7405713266f",
+  "captures": [
+    {
+      "file": "public-light-desktop.png",
+      "theme": "light",
+      "size": "desktop",
+      "geometry": {
+        "buttons": [
+          {
+            "text": "Invoked result",
+            "left": 752,
+            "right": 850.9921875,
+            "top": 848.796875,
+            "bottom": 870.296875
+          },
+          {
+            "text": "Attached response",
+            "left": 850.9921875,
+            "right": 978.15625,
+            "top": 848.796875,
+            "bottom": 870.296875
+          }
+        ],
+        "viewportWidth": 1440,
+        "viewportHeight": 1000
+      },
+      "sha256": "90532bb4fe1d8267c7f1b1b5d125ab007ef9f00f630541e1de97f6c221420c4d",
+      "bothNavigationTargetsPassed": true,
+      "externalNetworkRequests": 0
+    },
+    {
+      "file": "public-light-mobile.png",
+      "theme": "light",
+      "size": "mobile",
+      "geometry": {
+        "buttons": [
+          {
+            "text": "Invoked result",
+            "left": 44,
+            "right": 142.9921875,
+            "top": 761.296875,
+            "bottom": 782.796875
+          },
+          {
+            "text": "Attached response",
+            "left": 142.9921875,
+            "right": 270.15625,
+            "top": 761.296875,
+            "bottom": 782.796875
+          }
+        ],
+        "viewportWidth": 375,
+        "viewportHeight": 812
+      },
+      "sha256": "b7f54bb02ec14663bc818a29039ad2ae7c16c126668d629d0e82957dbe2f6a45",
+      "bothNavigationTargetsPassed": true,
+      "externalNetworkRequests": 0
+    },
+    {
+      "file": "public-dark-desktop.png",
+      "theme": "dark",
+      "size": "desktop",
+      "geometry": {
+        "buttons": [
+          {
+            "text": "Invoked result",
+            "left": 752,
+            "right": 850.9921875,
+            "top": 848.796875,
+            "bottom": 870.296875
+          },
+          {
+            "text": "Attached response",
+            "left": 850.9921875,
+            "right": 978.15625,
+            "top": 848.796875,
+            "bottom": 870.296875
+          }
+        ],
+        "viewportWidth": 1440,
+        "viewportHeight": 1000
+      },
+      "sha256": "8a2131eed74f75112ffe98f0758934994d19399b45f92345ea9c3a22752e84b9",
+      "bothNavigationTargetsPassed": true,
+      "externalNetworkRequests": 0
+    },
+    {
+      "file": "public-dark-mobile.png",
+      "theme": "dark",
+      "size": "mobile",
+      "geometry": {
+        "buttons": [
+          {
+            "text": "Invoked result",
+            "left": 44,
+            "right": 142.9921875,
+            "top": 761.296875,
+            "bottom": 782.796875
+          },
+          {
+            "text": "Attached response",
+            "left": 142.9921875,
+            "right": 270.15625,
+            "top": 761.296875,
+            "bottom": 782.796875
+          }
+        ],
+        "viewportWidth": 375,
+        "viewportHeight": 812
+      },
+      "sha256": "c9b6d81d2a7eaaa444ceb84a6901322c0dff38784c0121c4afebc53473ebff69",
+      "bothNavigationTargetsPassed": true,
+      "externalNetworkRequests": 0
+    }
+  ]
+}

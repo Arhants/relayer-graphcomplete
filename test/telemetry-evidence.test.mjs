@@ -28,7 +28,7 @@ describe("deterministic telemetry evidence portfolio", () => {
         network: "loopback-only",
       });
       expect(artifact.checkpoints.positive).toHaveLength(10);
-      expect(artifact.checkpoints.privacy).toHaveLength(171);
+      expect(artifact.checkpoints.privacy).toHaveLength(176);
       expect(artifact.checkpoints.privacy.every((item) => item.rejected)).toBe(true);
       expect(artifact.checkpoints.adapterPrivacy).toHaveLength(99);
       expect(artifact.checkpoints.adapterPrivacy.every((item) => item.crossed === false)).toBe(true);
@@ -71,6 +71,7 @@ describe("deterministic telemetry evidence portfolio", () => {
     expect(invocations[1][1]).toContain("test/desktop-renderer-error-reporting.test.mjs");
     expect(invocations[1][1]).toContain("test/desktop-telemetry-release-artifacts.test.mjs");
     expect(invocations[1][1]).toContain("test/signed-native-cache.test.mjs");
+    expect(invocations[1][1]).toContain("test/share-error-diagnostics.test.mjs");
     expect(result).toMatchObject({
       status: "pass",
       fidelity: "deterministic-adapters-and-shared-rust-seam",

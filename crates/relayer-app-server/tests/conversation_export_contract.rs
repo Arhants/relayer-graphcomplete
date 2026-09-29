@@ -10,6 +10,7 @@ fn action(
     target_layer_id: Option<&str>,
 ) -> ExportAction {
     ExportAction {
+        converted_from_invoke: false,
         id: id.into(),
         client_key: None,
         source_node_id: source_node_id.into(),
@@ -29,6 +30,7 @@ fn action(
 
 fn invoke(id: &str, source_node_id: &str, source_layer_id: &str) -> ExportAction {
     ExportAction {
+        converted_from_invoke: false,
         id: id.into(),
         client_key: None,
         source_node_id: source_node_id.into(),
@@ -48,6 +50,7 @@ fn invoke(id: &str, source_node_id: &str, source_layer_id: &str) -> ExportAction
 
 fn input(id: &str, source_node_id: &str, source_layer_id: &str) -> ExportAction {
     ExportAction {
+        converted_from_invoke: false,
         id: id.into(),
         client_key: None,
         source_node_id: source_node_id.into(),
@@ -1669,6 +1672,220 @@ fn visual_content_requires_v2_while_v1_turn_streams_remain_supported() {
     let ConversationExportRecord::Header(header) = &mut fixture[0] else {
         unreachable!()
     };
-    header.export_version = 3;
+    header.export_version = 4;
     assert_rejected_with_parity(&fixture, "unsupported_export_version");
+}
+
+fn converted_snapshot_records() -> Vec<ConversationExportRecord> {
+    let mut fixture = two_turn_records();
+    let ConversationExportRecord::Header(header) = &mut fixture[0] else {
+        unreachable!()
+    };
+    header.export_version = EXPORT_VERSION_V3;
+    let destination = layer("layer:2", "node:2", vec![]);
+    let ConversationExportRecord::Turn(source) = &mut fixture[1] else {
+        unreachable!()
+    };
+    let view = source.accepted_view.as_mut().unwrap();
+    let converted = &mut view.layers[0].actions[0];
+    converted.kind = ExportActionKind::Navigate;
+    converted.relation = Some(ExportNavigateRelation::Expand);
+    converted.target_layer_id = Some("layer:2".into());
+    converted.interaction_text = None;
+    converted.converted_from_invoke = true;
+    view.layers.push(destination.clone());
+    let ConversationExportRecord::Turn(result) = &mut fixture[2] else {
+        unreachable!()
+    };
+    result.accepted_view.as_mut().unwrap().layers = vec![destination];
+    fixture
+}
+
+#[test]
+fn v3_current_conversion_snapshot_preserves_exact_origin_and_version_boundary() {
+    let fixture = converted_snapshot_records();
+    validate_export_records(&fixture).unwrap();
+    validate_incrementally(&fixture).unwrap();
+    for version in [EXPORT_VERSION_V1, EXPORT_VERSION_V2] {
+        let mut older = fixture.clone();
+        let ConversationExportRecord::Header(header) = &mut older[0] else {
+            unreachable!()
+        };
+        header.export_version = version;
+        assert_rejected_with_parity(&older, "converted_invoke_version");
+    }
+    let mut wrong_destination = fixture.clone();
+    let ConversationExportRecord::Turn(result) = &mut wrong_destination[2] else {
+        unreachable!()
+    };
+    result.accepted_view.as_mut().unwrap().root_layer_id = "layer:wrong".into();
+    assert_rejected_with_parity(&wrong_destination, "action_origin_unresolved");
+    let mut wrong_shape = fixture;
+    let ConversationExportRecord::Turn(source) = &mut wrong_shape[1] else {
+        unreachable!()
+    };
+    source.accepted_view.as_mut().unwrap().layers[0].actions[0].relation =
+        Some(ExportNavigateRelation::Reference);
+    assert_rejected_with_parity(&wrong_shape, "converted_invoke_shape");
+}
+
+#[test]
+fn v3_preserves_v2_visual_content_records() {
+    let mut fixture = records_with_visual_assets(SAFE_SVG, &["asset-a"]);
+    let ConversationExportRecord::Header(header) = &mut fixture[0] else {
+        unreachable!()
+    };
+    header.export_version = EXPORT_VERSION_V3;
+    validate_export_records(&fixture).unwrap();
+    validate_incrementally(&fixture).unwrap();
+}
+
+#[test]
+fn v3_node_owned_navigation_keeps_membership_and_legacy_provenance_boundaries() {
+    let mut fixture = converted_snapshot_records();
+    let ConversationExportRecord::Turn(source) = &mut fixture[1] else {
+        unreachable!()
+    };
+    source.accepted_view.as_mut().unwrap().layers[0].actions[0].source_layer_id = None;
+    validate_export_records(&fixture).unwrap();
+    validate_incrementally(&fixture).unwrap();
+    let mut wrong_source = fixture.clone();
+    let ConversationExportRecord::Turn(source) = &mut wrong_source[1] else {
+        unreachable!()
+    };
+    source.accepted_view.as_mut().unwrap().layers[0].actions[0].source_node_id =
+        "node:absent".into();
+    assert_rejected_with_parity(&wrong_source, "action_source_outside_layer");
+    for version in [EXPORT_VERSION_V1, EXPORT_VERSION_V2, EXPORT_VERSION_V3] {
+        let mut native_navigation = fixture.clone();
+        let ConversationExportRecord::Header(header) = &mut native_navigation[0] else {
+            unreachable!()
+        };
+        header.export_version = version;
+        let ConversationExportRecord::Turn(source) = &mut native_navigation[1] else {
+            unreachable!()
+        };
+        source.accepted_view.as_mut().unwrap().layers[0].actions[0].converted_from_invoke = false;
+        let ConversationExportRecord::Turn(result) = &mut native_navigation[2] else {
+            unreachable!()
+        };
+        result.origin = ExportTurnOrigin::User;
+        if version == EXPORT_VERSION_V3 {
+            validate_export_records(&native_navigation).unwrap();
+        } else {
+            assert_rejected_with_parity(&native_navigation, "action_source_layer_missing");
+        }
+    }
+    let mut root_conversion = fixture;
+    let ConversationExportRecord::Turn(source) = &mut root_conversion[1] else {
+        unreachable!()
+    };
+    source
+        .accepted_view
+        .as_mut()
+        .unwrap()
+        .root_action
+        .converted_from_invoke = true;
+    assert_rejected_with_parity(&root_conversion, "invalid_root_action");
+    for version in [EXPORT_VERSION_V1, EXPORT_VERSION_V2, EXPORT_VERSION_V3] {
+        let mut ordinary = records();
+        let ConversationExportRecord::Header(header) = &mut ordinary[0] else {
+            unreachable!()
+        };
+        header.export_version = version;
+        let ConversationExportRecord::Turn(source) = &mut ordinary[1] else {
+            unreachable!()
+        };
+        source.accepted_view.as_mut().unwrap().layers[0].actions[0].source_layer_id = None;
+        assert_rejected_with_parity(&ordinary, "action_source_layer_missing");
+    }
+}
+
+#[test]
+fn v3_current_closure_preserves_completion_scoped_authored_keys() {
+    let mut fixture = converted_snapshot_records();
+    for record in &mut fixture[1..] {
+        let ConversationExportRecord::Turn(turn) = record else {
+            unreachable!()
+        };
+        for resolved in &mut turn.accepted_view.as_mut().unwrap().layers {
+            resolved.layer.client_key = Some("answer-layer".into());
+            resolved.nodes[0].client_key = Some("answer-node".into());
+            if resolved.layer.id == "layer:2" {
+                let mut follow_up = invoke("action:second-follow-up", "node:2", "layer:2");
+                follow_up.client_key = Some("follow-up".into());
+                resolved.actions.push(follow_up);
+            } else {
+                resolved.actions[0].client_key = Some("follow-up".into());
+            }
+        }
+    }
+    validate_export_records(&fixture).unwrap();
+    validate_incrementally(&fixture).unwrap();
+    let mut ambiguous = fixture;
+    let ConversationExportRecord::Turn(turn) = &mut ambiguous[1] else {
+        unreachable!()
+    };
+    let layer = &mut turn.accepted_view.as_mut().unwrap().layers[0];
+    let mut collision = layer.actions[0].clone();
+    collision.id = "action:ambiguous".into();
+    layer.actions.push(collision);
+    assert_rejected_with_parity(&ambiguous, "duplicate_action_client_key");
+}
+
+#[test]
+fn v3_root_reference_backlinks_preserve_nonroot_and_expand_cycle_guards() {
+    let mut fixture = records();
+    fixture.truncate(2);
+    let ConversationExportRecord::Header(header) = &mut fixture[0] else {
+        unreachable!()
+    };
+    header.export_version = EXPORT_VERSION_V3;
+    header.turns.truncate(1);
+    let ConversationExportRecord::Turn(turn) = &mut fixture[1] else {
+        unreachable!()
+    };
+    turn.accepted_view.as_mut().unwrap().layers[0]
+        .actions
+        .push(action(
+            "action:back",
+            "node:1",
+            Some("layer:1"),
+            Some(ExportNavigateRelation::Reference),
+            Some("layer:1"),
+        ));
+    validate_export_records(&fixture).unwrap();
+    validate_incrementally(&fixture).unwrap();
+    for version in [EXPORT_VERSION_V1, EXPORT_VERSION_V2] {
+        let mut older = fixture.clone();
+        let ConversationExportRecord::Header(header) = &mut older[0] else {
+            unreachable!()
+        };
+        header.export_version = version;
+        assert_rejected_with_parity(&older, "mixed_target_relations");
+    }
+    let mut cycle = fixture.clone();
+    let ConversationExportRecord::Turn(turn) = &mut cycle[1] else {
+        unreachable!()
+    };
+    turn.accepted_view.as_mut().unwrap().layers[0]
+        .actions
+        .last_mut()
+        .unwrap()
+        .relation = Some(ExportNavigateRelation::Expand);
+    assert_rejected_with_parity(&cycle, "expand_cycle");
+    let ConversationExportRecord::Turn(turn) = &mut fixture[1] else {
+        unreachable!()
+    };
+    let view = turn.accepted_view.as_mut().unwrap();
+    view.layers[0].actions.last_mut().unwrap().target_layer_id = Some("layer:child".into());
+    view.layers[0].actions.push(action(
+        "action:child",
+        "node:1",
+        Some("layer:1"),
+        Some(ExportNavigateRelation::Expand),
+        Some("layer:child"),
+    ));
+    view.layers.push(layer("layer:child", "node:child", vec![]));
+    assert_rejected_with_parity(&fixture, "mixed_target_relations");
 }

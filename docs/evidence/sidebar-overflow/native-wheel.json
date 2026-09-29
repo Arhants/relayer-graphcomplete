@@ -1,0 +1,557 @@
+{
+  "stage": "downward-wheel",
+  "scopeMenu": {
+    "rect": {
+      "left": 218,
+      "right": 367,
+      "top": 44,
+      "bottom": 568,
+      "width": 149,
+      "height": 524
+    },
+    "workspace": {
+      "left": 210,
+      "right": 375,
+      "top": 0,
+      "bottom": 640
+    },
+    "viewport": {
+      "width": 375,
+      "height": 640
+    },
+    "overflowY": "auto",
+    "scrollTop": 0,
+    "scrollHeight": 2452,
+    "clientHeight": 522,
+    "scrollWidth": 147,
+    "clientWidth": 147,
+    "textWidths": [
+      {
+        "tag": "BUTTON",
+        "text": "No folderStart without a project folder",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "No folder",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "Start without a project folder",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Project \"quoted\" & names/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/Project \"quoted\" & names",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Project \"quoted\" & names",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/Project \"quoted\" & names",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Project 01 with a deliberately long spaced title for menu wrapping/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-01-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Project 01 with a deliberately long spaced title for menu wrapping",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-01-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Project 02 with a deliberately long spaced title for menu wrapping/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-02-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Project 02 with a deliberately long spaced title for menu wrapping",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-02-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Project 03 with a deliberately long spaced title for menu wrapping/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-03-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Project 03 with a deliberately long spaced title for menu wrapping",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-03-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Project 04 with a deliberately long spaced title for menu wrapping/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-04-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Project 04 with a deliberately long spaced title for menu wrapping",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-04-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Project 05 with a deliberately long spaced title for menu wrapping/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-05-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Project 05 with a deliberately long spaced title for menu wrapping",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-05-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Project 06 with a deliberately long spaced title for menu wrapping/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-06-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Project 06 with a deliberately long spaced title for menu wrapping",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-06-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Project 07 with a deliberately long spaced title for menu wrapping/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-07-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Project 07 with a deliberately long spaced title for menu wrapping",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-07-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Project 08 with a deliberately long spaced title for menu wrapping/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-08-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Project 08 with a deliberately long spaced title for menu wrapping",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-08-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Project 09 with a deliberately long spaced title for menu wrapping/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-09-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Project 09 with a deliberately long spaced title for menu wrapping",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-09-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Project 10 with a deliberately long spaced title for menu wrapping/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-10-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Project 10 with a deliberately long spaced title for menu wrapping",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-10-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Project 11 with a deliberately long spaced title for menu wrapping/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-11-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Project 11 with a deliberately long spaced title for menu wrapping",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-11-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Project 12 with a deliberately long spaced title for menu wrapping/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-12-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Project 12 with a deliberately long spaced title for menu wrapping",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-stop-LxrXli/scope-long-unbroken-12-deepdeepdeepdeepdeepdeepdeepdeep",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Open another folder…Create a local project when you send",
+        "scrollWidth": 135,
+        "clientWidth": 135
+      },
+      {
+        "tag": "SPAN",
+        "text": "Open another folder…",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      },
+      {
+        "tag": "SMALL",
+        "text": "Create a local project when you send",
+        "scrollWidth": 119,
+        "clientWidth": 119
+      }
+    ],
+    "projectIds": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13"
+    ],
+    "options": [
+      {
+        "scope": "standalone",
+        "project": null,
+        "left": 225,
+        "right": 360,
+        "top": 51,
+        "bottom": 114.25,
+        "width": 135,
+        "height": 63.25
+      },
+      {
+        "scope": "project",
+        "project": "1",
+        "left": 225,
+        "right": 360,
+        "top": 114.25,
+        "bottom": 236.375,
+        "width": 135,
+        "height": 122.125
+      },
+      {
+        "scope": "project",
+        "project": "2",
+        "left": 225,
+        "right": 360,
+        "top": 236.375,
+        "bottom": 417.75,
+        "width": 135,
+        "height": 181.375
+      },
+      {
+        "scope": "project",
+        "project": "3",
+        "left": 225,
+        "right": 360,
+        "top": 417.75,
+        "bottom": 599.125,
+        "width": 135,
+        "height": 181.375
+      },
+      {
+        "scope": "project",
+        "project": "4",
+        "left": 225,
+        "right": 360,
+        "top": 599.125,
+        "bottom": 780.5,
+        "width": 135,
+        "height": 181.375
+      },
+      {
+        "scope": "project",
+        "project": "5",
+        "left": 225,
+        "right": 360,
+        "top": 780.5,
+        "bottom": 961.875,
+        "width": 135,
+        "height": 181.375
+      },
+      {
+        "scope": "project",
+        "project": "6",
+        "left": 225,
+        "right": 360,
+        "top": 961.875,
+        "bottom": 1143.25,
+        "width": 135,
+        "height": 181.375
+      },
+      {
+        "scope": "project",
+        "project": "7",
+        "left": 225,
+        "right": 360,
+        "top": 1143.25,
+        "bottom": 1324.625,
+        "width": 135,
+        "height": 181.375
+      },
+      {
+        "scope": "project",
+        "project": "8",
+        "left": 225,
+        "right": 360,
+        "top": 1324.625,
+        "bottom": 1506,
+        "width": 135,
+        "height": 181.375
+      },
+      {
+        "scope": "project",
+        "project": "9",
+        "left": 225,
+        "right": 360,
+        "top": 1506,
+        "bottom": 1687.375,
+        "width": 135,
+        "height": 181.375
+      },
+      {
+        "scope": "project",
+        "project": "10",
+        "left": 225,
+        "right": 360,
+        "top": 1687.375,
+        "bottom": 1868.75,
+        "width": 135,
+        "height": 181.375
+      },
+      {
+        "scope": "project",
+        "project": "11",
+        "left": 225,
+        "right": 360,
+        "top": 1868.75,
+        "bottom": 2050.125,
+        "width": 135,
+        "height": 181.375
+      },
+      {
+        "scope": "project",
+        "project": "12",
+        "left": 225,
+        "right": 360,
+        "top": 2050.125,
+        "bottom": 2231.5,
+        "width": 135,
+        "height": 181.375
+      },
+      {
+        "scope": "project",
+        "project": "13",
+        "left": 225,
+        "right": 360,
+        "top": 2231.5,
+        "bottom": 2412.875,
+        "width": 135,
+        "height": 181.375
+      },
+      {
+        "scope": "folder",
+        "project": null,
+        "left": 225,
+        "right": 360,
+        "top": 2412.875,
+        "bottom": 2491.125,
+        "width": 135,
+        "height": 78.25
+      }
+    ]
+  },
+  "wheelHit": {
+    "x": 293,
+    "y": 306,
+    "hit": "BUTTON",
+    "hitId": null,
+    "insideMenu": true
+  },
+  "hiddenHit": {
+    "point": {
+      "x": 293,
+      "y": 306
+    },
+    "hit": "BUTTON",
+    "hitId": null,
+    "insideMenu": true,
+    "menu": {
+      "x": 218,
+      "y": 44,
+      "width": 149,
+      "height": 524,
+      "top": 44,
+      "right": 367,
+      "bottom": 568,
+      "left": 218
+    },
+    "scrollTop": 0
+  },
+  "focusAtWheel": {
+    "window": true,
+    "webContents": true
+  },
+  "hiddenReceipt": {
+    "isTrusted": true,
+    "deltaX": 0,
+    "deltaY": 900,
+    "clientX": 293,
+    "clientY": 306,
+    "target": "BUTTON",
+    "targetId": null,
+    "hit": "BUTTON",
+    "hitId": null,
+    "insideMenu": true,
+    "scrollTop": 0
+  },
+  "hiddenReceiptWaitError": null,
+  "hiddenAfter": {
+    "scrollTop": 0,
+    "overflowY": "hidden"
+  },
+  "wheelReach": {
+    "scrollTop": 1930,
+    "scrollHeight": 2452,
+    "clientHeight": 522,
+    "rect": {
+      "left": 225,
+      "right": 360,
+      "top": 301.5,
+      "bottom": 482.875
+    },
+    "wheelReceipts": [
+      {
+        "isTrusted": true,
+        "deltaX": 0,
+        "deltaY": 900,
+        "clientX": 293,
+        "clientY": 306,
+        "target": "BUTTON",
+        "targetId": null,
+        "hit": "BUTTON",
+        "hitId": null,
+        "insideMenu": true,
+        "scrollTop": 0
+      },
+      {
+        "isTrusted": true,
+        "deltaX": 0,
+        "deltaY": 2452,
+        "clientX": 293,
+        "clientY": 306,
+        "target": "BUTTON",
+        "targetId": null,
+        "hit": "BUTTON",
+        "hitId": null,
+        "insideMenu": true,
+        "scrollTop": 1930
+      }
+    ],
+    "scrollWaitError": null
+  }
+}

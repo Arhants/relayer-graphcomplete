@@ -1,7 +1,7 @@
 {
   "contractVersion": 1,
   "snapshot": {
-    "exportVersions": [1, 2],
+    "exportVersions": [1, 2, 3],
     "mediaType": "application/x-ndjson",
     "maxBytes": 16777216,
     "maxLineBytes": 16777216,
@@ -94,7 +94,7 @@
   },
   "compatibility": {
     "httpContractVersions": [1],
-    "snapshotExportVersions": [1, 2],
+    "snapshotExportVersions": [1, 2, 3],
     "viewerArtifactVersions": [1],
     "publishedSharesPinViewerArtifact": true,
     "publishedSnapshotBytesAreImmutable": true

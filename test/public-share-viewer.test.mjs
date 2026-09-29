@@ -5,7 +5,7 @@ import { createHash, webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { createPublicViewerAdapter } from "../desktop/renderer/src/public-share-viewer/adapter.js";
-import { compiledNodeDetailCoversActions } from "../desktop/renderer/src/product-workspace/workspace.js";
+import { compiledNodeDetailCoversActions, resolveCompiledNodeDetailAction } from "../desktop/renderer/src/product-workspace/workspace.js";
 import {
   bootPublicViewer,
   fitPublicTurnPopover,
@@ -373,6 +373,24 @@ describe("public share V1 reader", () => {
     expect(compiledNodeDetailCoversActions(detail, stripped.actions, stripped.nodes[0])).toBe(false);
   });
 
+  it("resolves generated aliases for absent provenance layers and preserves explicit legacy keys", () => {
+    const records = fixtureJsonl().trimEnd().split("\n").map(JSON.parse);
+    const root = records[1].acceptedView.layers[0];
+    root.nodes[0].clientKey = root.nodes[0].id;
+    root.actions[0].clientKey = root.actions[0].id;
+    root.actions[0].sourceLayerId = "layer:earlier-source";
+    const detail = { mounts: [{ kind: "capability", capability: { kind: "expand", action: {
+      clientKey: root.actions[0].id, sourceNode: { clientKey: root.nodes[0].id }, sourceLayer: { clientKey: "layer:earlier-source" },
+    } } }] };
+    const projected = parsePublicSnapshot(recordsJsonl(records)).interactions[0].completionOutput.rootLayer;
+    expect(compiledNodeDetailCoversActions(detail, projected.actions, projected.nodes[0])).toBe(true);
+    root.actions[0].sourceLayerId = root.layer.id;
+    root.layer.clientKey = "legacy-private-key";
+    detail.mounts[0].capability.action.sourceLayer.clientKey = "legacy-private-key";
+    const legacy = parsePublicSnapshot(recordsJsonl(records)).interactions[0].completionOutput.rootLayer;
+    expect(compiledNodeDetailCoversActions(detail, legacy.actions, legacy.nodes[0])).toBe(true);
+  });
+
   it("preserves reused action provenance while requiring its node in the displayed layer", () => {
     const records = fixtureJsonl().trim().split("\n").map((line) => JSON.parse(line));
     const reused = records[1].acceptedView.layers[0].actions[0];
@@ -448,7 +466,7 @@ describe("public share HTML boundary", () => {
     expect(html).not.toContain("public-share-footer");
     expect(html).toContain('class="public-share-download-card"');
     expect(html).not.toContain("Also for Windows");
-    expect(html).toContain("Explore this thread, then build your own.");
+    expect(html).toContain(">Get Relayer</a>");
   });
 
   it("lets the production workspace own the complete browser viewport", () => {
@@ -456,7 +474,6 @@ describe("public share HTML boundary", () => {
     expect(styles).toMatch(/\.public-share-main\s*{[^}]*height: 100vh;/s);
     expect(styles).toMatch(/\.public-share-workspace-host\s*{[^}]*height: 100%;[^}]*border: 0;[^}]*border-radius: 0;/s);
     expect(styles).toMatch(/\.public-share-shell \.thread-header\s*{[^}]*border-radius: 12px;/s);
-    expect(styles).toMatch(/@media \(min-width: 1101px\)[\s\S]*\.public-share-download-card\s*{[^}]*grid-row: 1 \/ 3;/s);
   });
 
   it("aligns the turn picker to the interaction card with five visible rows", () => {
@@ -660,9 +677,8 @@ describe("public share HTML boundary", () => {
       expect(windowRef.document.querySelector("#publicViewerHost")?.classList.contains("hidden")).toBe(false);
       const downloadCard = windowRef.document.querySelector(".public-share-download-card");
       if (presentation === "standalone") {
-        expect(downloadCard?.parentElement?.classList.contains("workspace-layout")).toBe(true);
-        expect(downloadCard?.textContent).toContain("Relayer for Mac");
-        expect(downloadCard?.textContent).toContain("Download");
+        expect(downloadCard?.parentElement?.classList.contains("thread-header")).toBe(true);
+        expect(downloadCard?.textContent).toContain("Get Relayer");
         expect(windowRef.document.querySelector(".public-share-embed-branding")).toBeNull();
       } else {
         expect(downloadCard).toBeNull();
@@ -725,4 +741,105 @@ describe("public share HTML boundary", () => {
       await windowRef.close();
     }
   });
+});
+
+
+describe("V3 current converted-invoke snapshots", () => {
+  function convertedRecords() {
+    const records = invokeFixtureRecords();
+    records[0].exportVersion = 3;
+    const source = records[1].acceptedView;
+    const converted = source.layers[0].actions.find(action => action.kind === "invoke");
+    Object.assign(converted, { kind: "navigate", relation: "expand", targetLayerId: "layer:child", convertedFromInvoke: true });
+    delete converted.interactionText;
+    source.layers.push(structuredClone(records[2].acceptedView.layers[0]));
+    return records;
+  }
+  it("preserves current navigation and validates its exact accepted origin", async () => {
+    const records = convertedRecords();
+    const snapshot = parsePublicSnapshot(recordsJsonl(records));
+    const adapter = createPublicViewerAdapter(snapshot);
+    const converted = adapter.state.actions.find(action => action.convertedFromInvoke);
+    expect(converted.kind).toBe("navigate");
+    await expect(adapter.navigateLayer(converted.targetLayerId, { action: converted, sourceNode: adapter.state.nodes[0] })).resolves.toBe(true);
+    expect(adapter.state.visibleLayer.layer.id).toBe("layer:child");
+    records[2].acceptedView.rootLayerId = "layer:root";
+    records[2].acceptedView.rootAction.targetLayerId = "layer:root";
+    records[2].acceptedView.layers = structuredClone(records[1].acceptedView.layers);
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+  });
+  it.each([1, 2])("rejects conversion provenance in V%s", version => {
+    const records = convertedRecords(); records[0].exportVersion = version;
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "converted_invoke_version" }));
+  });
+  it("rejects a converted origin pointing to an unaccepted result", () => {
+    const records = convertedRecords();
+    records[2].completion = { ...records[2].completion, status: "failed" };
+    records[2].acceptedView = null;
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+  });
+  it("rejects a forged conversion shape", () => {
+    const records = convertedRecords();
+    records[1].acceptedView.layers[0].actions.find(action => action.convertedFromInvoke).relation = "reference";
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "converted_invoke_shape" }));
+  });
+  it("permits node-owned V3 navigation but rejects missing source membership and root conversion", () => {
+    const records = convertedRecords();
+    const converted = records[1].acceptedView.layers[0].actions.find(action => action.convertedFromInvoke);
+    delete converted.sourceLayerId;
+    expect(parsePublicSnapshot(recordsJsonl(records)).header.exportVersion).toBe(3);
+    converted.sourceNodeId = "node:absent";
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "action_source_outside_layer" }));
+    converted.sourceNodeId = "node:root";
+    records[1].acceptedView.rootAction.convertedFromInvoke = true;
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invalid_root_action" }));
+  });
+  it("keeps repeated native completion keys unambiguous by exact source node", () => {
+    const records = convertedRecords();
+    for (const turn of records.slice(1)) {
+      for (const resolved of turn.acceptedView.layers) {
+        resolved.layer.clientKey = "answer-layer";
+        resolved.nodes[0].clientKey = "answer-node";
+        if (resolved.layer.id === "layer:child") {
+          resolved.actions.push({ id: "action:second-follow-up", sourceNodeId: "node:child", sourceLayerId: "layer:child", clientKey: "follow-up", kind: "invoke", interactionText: "Next", label: "Next", variant: "pill", state: "accepted" });
+        } else if (resolved.layer.id === "layer:root") {
+          resolved.actions.find(action => action.convertedFromInvoke).clientKey = "follow-up";
+        }
+      }
+    }
+    const snapshot = parsePublicSnapshot(recordsJsonl(records));
+    const root = snapshot.layerFor("turn:1", "layer:root");
+    const child = snapshot.layerFor("turn:1", "layer:child");
+    const reference = { clientKey: "follow-up", sourceNode: { clientKey: "answer-node" }, sourceLayer: { clientKey: "answer-layer" } };
+    const actions = [...root.actions, ...child.actions];
+    expect(resolveCompiledNodeDetailAction(actions, reference, root.nodes[0]).id).toBe("action:invoke");
+    expect(resolveCompiledNodeDetailAction(actions, reference, child.nodes[0]).id).toBe("action:second-follow-up");
+    const collision = structuredClone(records[1].acceptedView.layers[0].actions.find(action => action.convertedFromInvoke));
+    collision.id = "action:ambiguous";
+    records[1].acceptedView.layers[0].actions.push(collision);
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "duplicate_action_client_key" }));
+  });
+  it("retains V2 visual assets in V3", () => {
+    const records = assetFixtureJsonl().jsonl.trimEnd().split("\n").map(JSON.parse);
+    records[0].exportVersion = 3;
+    expect(parsePublicSnapshot(recordsJsonl(records)).assetContents).toHaveLength(1);
+  });
+});
+
+it("V3 root reference backlinks preserve nonroot mixed-arrival and expansion-cycle guards", () => {
+  const records = fixtureJsonl().trimEnd().split("\n").map(JSON.parse);
+  records[0].exportVersion = 3;
+  const layers = records[1].acceptedView.layers;
+  layers[2].actions.push(action("action:back", "node:related", "layer:root", "reference", "layer:related"));
+  expect(() => parsePublicSnapshot(recordsJsonl(records))).not.toThrow();
+  for (const version of [1, 2]) {
+    const older = structuredClone(records);
+    older[0].exportVersion = version;
+    expect(() => parsePublicSnapshot(recordsJsonl(older))).toThrow(expect.objectContaining({ code: "mixed_target_relations" }));
+  }
+  const cycle = structuredClone(records);
+  cycle[1].acceptedView.layers[0].actions.push(action("action:cycle-root", "node:root", "layer:root", "expand", "layer:root"));
+  expect(() => parsePublicSnapshot(recordsJsonl(cycle))).toThrow(expect.objectContaining({ code: "expand_cycle" }));
+  layers[2].actions.at(-1).targetLayerId = "layer:nested";
+  expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "mixed_target_relations" }));
 });

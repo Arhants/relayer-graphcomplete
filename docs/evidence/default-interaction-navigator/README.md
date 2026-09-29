@@ -1,5 +1,9 @@
 # Default interaction navigator
 
+Historical navigator-only qualification through `cc2c49f8`. The expanded PR #604
+rollout and portability evidence is in [the attached-workflow ledger](../attached-workflow-rollout/README.md).
+The default-off and no-control-change statements below describe that earlier scope.
+
 The user requested a PR enabling the interaction navigator in packaged Desktop.
 The rollout changes read-only discovery, not the default-off permission gate.
 PRD §7.2B and ADR 0011 record that distinction.

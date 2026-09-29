@@ -1,0 +1,40 @@
+{
+  "sourceManifestSha256": "a9cebb9972d6e712e4563839c35b1e5a1d53476792be18c3d6d4092f30b46c9d",
+  "fullCheck": {
+    "passed": true,
+    "vitestPassed": 3225,
+    "vitestSkipped": 3,
+    "filesPassed": 240,
+    "filesSkipped": 1,
+    "secretBoundaryPassed": 2,
+    "pythonPassed": 60,
+    "subsequentFixtureOnlyDelta": "Context driver requests focus after workspace loading; standalone rerun passed."
+  },
+  "buildPassed": true,
+  "nativeDefault": {
+    "typedPermissions": true,
+    "passed": true,
+    "nativeKeyboardVerified": true,
+    "ancillaryFailures": [],
+    "inferenceCalls": 0
+  },
+  "nativeOff": {
+    "typedPermissions": false,
+    "passed": true,
+    "nativeKeyboardVerified": true,
+    "ancillaryFailures": [],
+    "inferenceCalls": 0
+  },
+  "contextPassed": true,
+  "projectRestart": {
+    "passed": true,
+    "restartPersistence": true,
+    "layerSelectionRestartPersistence": true
+  },
+  "compiledEvalPassed": 4,
+  "primeVisualPassed": 2,
+  "publicCapturesPassed": 4,
+  "joinedServiceCommit": "fddecf52b03e542659cd74b887d1b77503de185c",
+  "livePublication": "not run",
+  "signedRelease": "not run"
+}

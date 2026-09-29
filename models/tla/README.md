@@ -95,6 +95,9 @@ replays against the real app-server code:
 - **Product:** the real SQLite product store.
 - **Harness:** a fake whose start is refused, or runs while acknowledging
   another identity (a lost acknowledgement).
+- **Graph faults:** a layer in front of the graph server can fail the next
+  capability activation with a 503, or garble control preparations, so a
+  replay or a direct test reaches those failures on the real server.
 - **Launch steps:** each step calls the function `complete_prepared_child`
   calls for it (reserve, claim, activate, start).
 - **Cleanup:** the start-failure cleanup is the real background task. The fake
@@ -285,7 +288,8 @@ This model covers one recursive child from `complete()` to settlement:
 | --- | --- | --- |
 | `completion-safety-holds` | passes | There is at most one launch per reservation. Stop reports what the graph holds. Terminal states are absorbing. |
 | `completion-observe-timeout` | Fixed; now passes | Before the fix: `observe_invoked_completion` had a 5 s control timeout, but the harness answers only when the run ends. A child still running after 5 s was failed with `provider_exited_without_return`, and its capability was revoked while the provider kept running. A live Prime delegation run hit this at about 5.1 s. The observation is now a long poll that the exit observer repeats on a timeout. `provider_end_waits_through_observation_timeouts` proves the repeat with a 100 ms poll against a run that is still going. |
-| `completion-activation-failure` | Confirmed | A lost or failed activation settles the execution row only. The graph current stays active, the product status is never finalized, and a broker retry gets 200 with no launch. Restart skips settled rows. |
+| `completion-activation-failure` | Fixed; now passes | Before the fix: a failed activation settled the execution row only and restored the child to `submitted`. The graph current stayed active, a broker retry got 200 with no launch, and restart skipped the settled row. Now the launch owns the child from its claim on: any activation failure, retryable or not, starts the launch-failure cleanup (`LaunchFailure::ActivationFailed`). It fails the current with `capability_activation_failed`, a canonical reason, and settles both product rows with it, without cancelling. A retry reports the failed child. Scenario: `completion-activation-failure`. Regression test: `a_failed_activation_fails_the_child_in_both_stores_and_an_exact_retry_reports_it`. |
+| `completion-activation-failure-reverted` | violated: shows why the fix is needed | Without the fix, a failed activation settles the execution row while the current stays active. |
 | `completion-clean-exit` | Fixed; now passes | Before the fix: for an invoked child, the harness resolves a clean native end without checking for Return (`host.ts`). The exit observer failed only on an error, so the child stayed active until its parent stopped it or the app restarted. With child admission, its attempt and leases were then held that whole time. The exit observer now fails an active child once its provider run ends, however it ended: a run that ends without Return is a failure. Scenario: `completion-admitted-exits-without-return`. |
 | `completion-clean-exit-reverted` | violated: shows why the fix is needed | Without the clean-exit check, a child whose provider exits cleanly without Return never settles. |
 | `completion-start-failure-reason` | Fixed; now passes | Before the fix: start-failure cleanup retried `fail_graph_completion("provider_start_failed")` every 250 ms, and the graph rejected that reason forever. `provider_start_failed`, `provider_attachment_persist_failed` and `graph_observation_failed` are now canonical failure reasons in `validate_terminal_reason`, so the graph and product rows share one reason. Scenario: `completion-start-failure`. `app_server_failure_reasons_are_canonical` in graph-core covers all three reasons. |
@@ -299,7 +303,7 @@ The candidate fixes are:
 
 1. Long-poll or re-poll the observation instead of timing out.
 2. Fail the child when a clean exit leaves its current active.
-3. Fail both stores when activation fails.
+3. Fail both stores when activation fails. Landed.
 4. Use valid failure reasons. Landed.
 5. Let cleanup settle a current another actor already terminated, with that
    current's own outcome. Landed.
@@ -309,6 +313,40 @@ A landed fix is on in `completion-today` as well.
 The committed scenarios do not step `HostAccessRelease`, since the adapter
 has no such step. In their traces the access stays held until
 `LeaseReconcile`, which the model also allows.
+
+### `CompletionLaunchWindows.tla`
+
+This model covers the launch windows `CompletionCurrent` abstracts, for one
+child from the parent's `prepareComplete` to settlement:
+
+- the broker's product preparation and binding, and a preparation that ends
+  ambiguously;
+- the execution row before `launching`, and capability activation;
+- the thread's one active human turn: the user's next message
+  (`UserSends`), which the gate admits only while no human turn runs;
+- the product's Stop of the child, and a user's re-invoke of the delegate
+  action, which resumed the child on the product path before the decision;
+- a crash, and startup reconciliation of each window.
+
+There is one parent, one child, two broker calls and at most two restarts.
+Admission, start, attach and the observers are one step each. Each cleanup
+is one atomic step: the activation cleanup fails the graph current first, and
+the refused-launch cleanup fails the product row first. Startup graph and
+store errors, the background retry after them, and a crash inside a cleanup
+are not modeled; Rust tests cover them. `launch-today` mirrors the
+code, with every fix on; each `-reverted` check turns one fix off.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `launch-safety` | passes | A settled execution row has a terminal current and product row. Startup leaves no interrupted child active. Whenever no human turn runs, the user's next message is admitted (`SendNeverWaitsOnChild`, which reads `ENABLED UserSends`, so the child's state is checked against the gate itself). Two human turns never run at once (`OneHumanTurn`). The product neither stops nor runs an agent's child (`ProductLeavesChildAlone`). |
+| `launch-liveness` | passes | Without a restart, every child the parent launched ends in the graph, and its product row ends once its parent is done. |
+| `launch-restart-liveness` | passes | Across two restarts, every child the product recorded ends in both stores. |
+| `launch-activation-reverted`, `launch-activation-liveness-reverted` | Fixed; the reverted checks show the old traces | A failed or lost activation restored the child to `submitted` and settled only the execution row. An exact retry got 200 and launched nothing, product Stop answered 500, and the next human turn got 422. Now the activation failure fails both stores (`ActivationFailsGraph`). Regression test: `a_failed_activation_fails_the_child_in_both_stores_and_an_exact_retry_reports_it`. |
+| `launch-restart-reverted` | Fixed; the reverted check shows the old trace | A restart after the child row existed but before `launching` re-bound the child and left its current active. A second restart then quarantined it as a provenance mismatch, because the expected occurrence was read only while the parent was accepted or running. Startup now reads the child's own occurrence whatever its parent's status, and fails the child in both stores with `application_restart`; a reserved row settles (`StartupFailsUnlaunched`). Startup also marks results an older build left unmarked when only an agent could have created them, and retries a child it kept after a transient graph failure in the background. A deterministic startup failure still fails the child's graph current when its node carries the child's own occurrence, and an unbound child is located without revalidating its model. None of this is modeled: the model has no startup errors or schema versions. Regression tests: `a_restart_before_launch_fails_the_bound_child_in_both_stores`, `a_restart_fails_a_bound_child_whose_parent_already_failed`, `a_restart_fails_an_unbound_child_whose_parent_already_failed`, `a_restart_fails_a_stuck_child_an_older_build_left_unmarked`, `a_restart_that_cannot_reach_the_graph_fails_the_child_once_it_can`, `a_deterministic_startup_failure_fails_the_child_in_both_stores`, `a_restart_fails_an_unbound_child_whose_model_no_longer_validates`, `a_restart_finishes_the_graph_half_of_a_refused_child`. |
+| `launch-refused-prepare-reverted`, `launch-child-row-reverted` | Fixed; the reverted checks show the old traces | An ambiguous preparation left the claimed child `submitted` and unbound, and the broker answered 422 "already in progress". Once the parent stopped, nothing recovered it, even across restarts. The refused-launch cleanup now fails it in both stores with `preparation_failed` and binds it to the parent's graph interaction (`RefusedLaunchFailsChild`). It fails the product row first, so a later launch cannot reserve or claim the child; `RefusedCleanup` is one atomic step, so the model does not show that ordering. Only the launch that claimed the child's preparation starts the cleanup, so a concurrent duplicate's refusal cannot end a child the claiming launch still runs. Regression tests: `an_ambiguous_preparation_fails_the_claimed_child_in_both_stores`, `a_duplicate_launchs_refusal_leaves_the_claiming_launch_its_child`. |
+| `launch-child-gate-reverted` | Decision; the reverted check shows the old trace | A child still running after its parent was accepted refused the thread's next human turn with 422. By product decision, only human root turns hold the thread (`ChildrenOutsideRootGate`, the gate's guard on `UserSends`). With it off, `SendNeverWaitsOnChild` fails as soon as the parent is accepted while the child is still pending; `OneHumanTurn` holds either way. Regression tests: `only_human_turns_hold_the_thread`, `a_running_child_does_not_hold_the_next_human_turn_and_product_stop_refuses_it`, the renderer tests that feed agent children to `composerStatusForThread` and `productStopTarget`, and the recursive end-to-end test "lets the next human turn run while a launched child still runs". |
+| `launch-product-child-reverted` | Decision; the reverted check shows the old trace | The product's Stop of a child answered 500 or recorded a Stop nothing acted on, and a user's invoke of the delegate action ran the child on the product path, where neither the user nor the parent could stop it. Now the product refuses both (`ProductLeavesChildren`, the guard on `UserStopsChild` and `UserReinvokes`). Regression tests: `only_human_turns_hold_the_thread` (Stop with and without an execution row) and `a_users_invoke_does_not_run_an_agents_child`. |
+| `launch-graph-orphan` | Known open | A crash after the parent's `prepareComplete` but before the broker's first product write leaves a graph-only child. No product row names it, so startup cannot fail it, and its current stays active. |
 
 ### `ExecutionLeases.tla`
 
@@ -731,6 +769,69 @@ counter with each process, and the desktop quits when the app server stops.
 If the app server alone restarted, its restored row would stay the record.
 It would accept the coordinator's next generation, and the coordinator's
 counter only grows.
+
+### `ReadinessRepair.tla`
+
+This model covers readiness across Repair, restart and upgrade for two
+providers that share one harness. ChatGPT and OpenRouter both run through
+`codex-basic`. It adds three things to `HarnessReadiness`:
+
+- **Two runtime predicates:** `files` is what startup's cheap validation
+  checks, and `execs` is what the version probe checks. External damage
+  can break either one.
+- **Upgrades:** a restart may change the configuration digest, or require
+  the other runtime recipe. Its staged runtime then either activated or not.
+- **The automatic evaluation:** the app server's upgrade mark, Desktop's one
+  background evaluation, and the commit that clears the mark.
+
+`readiness-repair-today` mirrors the code, and each `-reverted` check turns
+one fix off. Three constants hold the fixes:
+
+- `RepairRevalidates` (R1): Repair, app-update staging and post-update
+  activation reuse an installation only when it passes startup's full
+  validation, then the probe. Otherwise they reinstall.
+- `UpgradeEvaluates` (#556): an upgrade that changes the digest marks the
+  route due in the app server. After startup, Desktop runs one background
+  evaluation through the `recipe-update` trigger. The next committed result
+  clears the mark.
+- `RecipeChangeMarksDue` (PR #576 review): the app server records the recipe
+  each route last loaded. An upgrade that changes only the recipe does not
+  restore the old ready and marks the route due, whether the staged runtime
+  activated or not.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `repair-validated` | Fixed; now passes | Before the fix (R1): reuse checked only that the entrypoints were regular files and that the probe passed, and `stat` follows symlinks. Startup also checks the ownership marker, the owned private state and entrypoint confinement. So Repair published ready for an installation the next start rejected. Regressions: the installer tests "repairs an installation startup rejects because …", "stages a fresh app-update generation when the active one is unusable because …" and "does not activate a pending generation startup would reject because …" fail on the old code. |
+| `repair-validated-reverted` | Confirmed | With the probe alone, a Repair after the layout broke publishes ready for an installation startup rejects. |
+| `repair-survives-restart` | Fixed; now passes | A route an evaluation made ready survives a restart that changes nothing. |
+| `repair-survives-restart-reverted` | Confirmed | Before the fix, the next unchanged restart withdrew the ready that Repair had published, so Repair never stuck. |
+| `repair-records` | passes | With both fixes, startup restores only from the app server's record (PROV-006), and the latest evaluation wins (PROV-005). A route marked due is never ready, across two restarts. Leaving the mark set after a publish breaks this check. |
+| `repair-records-prerule` | passes | The same holds from a row an older build left ready. |
+| `upgrade-evaluated` | Fixed; now passes | Before the fix (#556): a changed digest left both providers pending until someone pressed Repair. Now each changed digest gets one committed evaluation without a Repair, even across a restart before the commit. The model assumes a connected provider publishes a route; without one, the mark waits. Regressions: `an_upgraded_digest_is_due_one_automatic_evaluation`, `one_post_upgrade_evaluation_restores_both_providers_sharing_a_route`, the migration test `the_update_migration_marks_routes_an_earlier_upgrade_left_pending`, and the provider-composition test "evaluates an upgraded shared route once after startup". |
+| `upgrade-evaluated-reverted` | Confirmed | Without the automatic evaluation, the upgraded route stays pending while nobody presses Repair. |
+| `recipe-change-evaluated` | Fixed; now passes | A route restores ready only when an evaluation measured it on the recipe the release requires. Regressions: `a_changed_runtime_recipe_starts_pending_and_is_due_once` and the desktop-shell test "hands startup readiness to the app server record instead of the previous catalog file" fail on the old code. |
+| `recipe-change-evaluated-reverted` | Confirmed | Before the fix, an upgrade whose staged runtime activated, with the same digest, restored the ready measured on the old recipe. |
+| `recipe-change-due-reverted` | Confirmed | Before the fix, an upgrade that changed only the recipe was never marked due. When its activation failed, the route waited for Repair. |
+| `repair-liveness` | passes | Every started evaluation, automatic or not, settles. |
+| `shared-route-witness` | Witness, expected violation | Readiness is per harness, so an evaluation not started for a provider makes that provider's shared route ready too. This is why one Repair restored both providers in #556. |
+
+Desktop also passes the recipes this start activated; the recorded recipe
+covers that trigger, so the model leaves it out. The model starts with a
+recorded recipe. In the code, a row migration 0039 left without one counts a
+change only when this start's own update activated a new recipe or failed
+to, or when the route was ready and its files no longer validate;
+`the_first_recorded_recipe_marks_only_a_runtime_this_update_changed`
+covers that. Migration 0039 also marks every loaded route startup left pending.
+The model starts after that migration, so it does not cover the backfill.
+The automatic evaluation skips a harness whose runtime was never
+installed; the model has one harness whose runtime starts installed.
+The model's providers always have a route. In the code, a managed provider
+whose activation failed on a broken runtime has none, so the step first
+recovers it as Repair does, then evaluates each due harness once;
+composition tests cover that.
+In the code it runs once per process with the models published so far. A mark stays set
+when its evaluation found no provider with a route. The next start looks
+again, but it prepares nothing until a provider has a route.
 
 ### `ProviderLeaseLifecycle.tla`
 

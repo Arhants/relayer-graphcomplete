@@ -847,6 +847,15 @@ impl GraphDatabase {
         crate::graph::completion::read_accepted_closure(self, node_id).await
     }
 
+    /// Read ordered accepted closures from one coherent SQLite snapshot.
+    /// An existing interaction without an accepted response occupies a `None` slot.
+    pub async fn accepted_graph_closures(
+        &self,
+        node_ids: &[NodeId],
+    ) -> Result<Vec<Option<AcceptedGraphClosure>>, GraphError> {
+        crate::graph::completion::read_accepted_closures(self, node_ids).await
+    }
+
     pub async fn accepted_detail_asset_metadata(
         &self,
         node_id: NodeId,

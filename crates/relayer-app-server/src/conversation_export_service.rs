@@ -1,3 +1,5 @@
+mod share_bindings;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::OnceLock;
 
@@ -11,13 +13,13 @@ use relayer_graph_core::{
 use crate::{
     conversation_export::{
         ConversationExportHeader, ConversationExportRecord, ConversationExportTurn,
-        EXPORT_VERSION_V1, EXPORT_VERSION_V2, ExportAcceptedView, ExportAction, ExportActionKind,
-        ExportActionVariant, ExportAdmittedExecutionModelPlan, ExportAdmittedExecutionModelRoute,
-        ExportAttemptOutcome, ExportAuthoredDetailOmission, ExportCompletionReceipt,
-        ExportCompletionStatus, ExportContextSource, ExportContextTargetSnapshot,
-        ExportConversation, ExportEdge, ExportInputActionSnapshot, ExportInputControl,
-        ExportInputOption, ExportInputSource, ExportInteractionContext, ExportLayer,
-        ExportLayerLayout, ExportModelSelection, ExportNavigateRelation, ExportNode,
+        EXPORT_VERSION_V1, EXPORT_VERSION_V2, EXPORT_VERSION_V3, ExportAcceptedView, ExportAction,
+        ExportActionKind, ExportActionVariant, ExportAdmittedExecutionModelPlan,
+        ExportAdmittedExecutionModelRoute, ExportAttemptOutcome, ExportAuthoredDetailOmission,
+        ExportCompletionReceipt, ExportCompletionStatus, ExportContextSource,
+        ExportContextTargetSnapshot, ExportConversation, ExportEdge, ExportInputActionSnapshot,
+        ExportInputControl, ExportInputOption, ExportInputSource, ExportInteractionContext,
+        ExportLayer, ExportLayerLayout, ExportModelSelection, ExportNavigateRelation, ExportNode,
         ExportNodePlacement, ExportPermissionReceipt, ExportProducer, ExportRecordState,
         ExportResolvedLayer, ExportSubmittedInput, ExportSubmittedInputValue,
         ExportTurnManifestEntry, ExportTurnOrigin, ExportVisualAssetAssociation,
@@ -55,23 +57,88 @@ pub(crate) enum ConversationExportBuildError {
     ShareSnapshotTooLarge { bytes: usize },
 }
 
-fn require_portable_invoke_shape(
-    closure: &AcceptedGraphClosure,
-) -> Result<(), ConversationExportBuildError> {
-    if closure.has_persistent_mutations {
+fn is_converted_invoke(action: &GraphAction) -> bool {
+    action.resolved_invoke_interaction_id.is_some() || action.converted_from_invoke
+}
+
+fn needs_current_snapshot(closure: &AcceptedGraphClosure) -> bool {
+    closure.has_persistent_mutations
+        || std::iter::once(&closure.root_action)
+            .chain(closure.layers.iter().flat_map(|layer| &layer.actions))
+            .any(is_converted_invoke)
+        || closure
+            .layers
+            .iter()
+            .flat_map(|layer| &layer.actions)
+            .any(|action| action.kind == ActionKind::Navigate && action.source_layer_id.is_none())
+}
+
+// All accepted roots share one graph read transaction. No per-root fallback may
+// mix presentations from different accepted revisions of a persistent node.
+async fn snapshot_closures(
+    runtime: &RuntimeClient,
+    interactions: &[&Interaction],
+) -> Result<Vec<Option<AcceptedGraphClosure>>, ConversationExportBuildError> {
+    let root_ids = interactions
+        .iter()
+        .filter(|i| i.completion_status == "accepted")
+        .map(|i| {
+            i.graph_node_id.ok_or_else(|| {
+                ConversationExportBuildError::Invalid(format!(
+                    "accepted interaction {} has no graph node",
+                    i.id
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if root_ids.is_empty() {
+        return Ok(vec![None; interactions.len()]);
+    }
+    let closures = runtime.accepted_graph_closures(&root_ids).await?;
+    if closures.len() != root_ids.len() {
         return Err(ConversationExportBuildError::Invalid(
-            "Export is not yet available for conversations containing attached-node navigation changes.".into(),
+            "accepted snapshot root count mismatch".into(),
         ));
     }
-    if std::iter::once(&closure.root_action)
-        .chain(closure.layers.iter().flat_map(|layer| &layer.actions))
-        .any(|action| action.resolved_invoke_interaction_id.is_some())
-    {
-        return Err(ConversationExportBuildError::Invalid(
-            "Typed invoke resolution portability requires Slice 2.".into(),
-        ));
+    for (id, closure) in root_ids.iter().zip(&closures) {
+        if closure.as_ref().map(|c| c.node_id.value()) != Some(*id) {
+            return Err(ConversationExportBuildError::Invalid(
+                "accepted snapshot root identity mismatch".into(),
+            ));
+        }
     }
-    Ok(())
+    let mut accepted = closures.into_iter();
+    Ok(interactions
+        .iter()
+        .map(|i| {
+            if i.completion_status == "accepted" {
+                accepted.next().expect("validated accepted snapshot count")
+            } else {
+                None
+            }
+        })
+        .collect())
+}
+
+fn invocation_matches_snapshot(
+    action: &GraphAction,
+    result: &Interaction,
+    closure: Option<&AcceptedGraphClosure>,
+) -> bool {
+    if is_converted_invoke(action) {
+        action.kind == ActionKind::Navigate
+            && action.relation == Some(NavigateRelation::Expand)
+            && action.interaction_text.is_none()
+            && closure.is_some_and(|c| {
+                action.target_layer_id == Some(c.root_layer_id)
+                    && (action.converted_from_invoke
+                        || action.resolved_invoke_interaction_id.map(|id| id.value())
+                            == result.graph_node_id)
+            })
+    } else {
+        action.kind == ActionKind::Invoke
+            && action.interaction_text.as_deref() == Some(result.text.as_str())
+    }
 }
 
 pub(crate) async fn build_conversation_export(
@@ -84,6 +151,11 @@ pub(crate) async fn build_conversation_export(
     let detail = product.get_thread(thread_id).await?;
     let export_invocations = product.action_invocations_for_export(thread_id).await?;
     let imported_turns = product.imported_turn_export_records(thread_id).await?;
+    // Import provenance survives even when this closure has no conversion or
+    // layerless action: V3 can also carry completion-scoped repeated keys.
+    let imported_current_snapshot = imported_turns
+        .iter()
+        .any(|turn| turn.export_version == EXPORT_VERSION_V3);
     let project_path = detail.project.as_ref().map(|project| project.path.as_str());
     let redactor = ProjectPathRedactor::new(project_path);
     let project_name = detail
@@ -142,31 +214,12 @@ pub(crate) async fn build_conversation_export(
         .map(|record| (record.interaction_id, record))
         .collect::<HashMap<_, _>>();
     let mut ids = PortableIds::default();
-    let mut closures = Vec::with_capacity(detail.interactions.len());
+    let closures =
+        snapshot_closures(runtime, &detail.interactions.iter().collect::<Vec<_>>()).await?;
     let mut context_inputs = Vec::with_capacity(detail.interactions.len());
     let mut submitted_evidence = Vec::with_capacity(detail.interactions.len());
     let mut settled_attempt_outcomes = Vec::with_capacity(detail.interactions.len());
     for interaction in &detail.interactions {
-        let closure = if interaction.completion_status == "accepted" {
-            let node_id = interaction.graph_node_id.ok_or_else(|| {
-                ConversationExportBuildError::Invalid(format!(
-                    "accepted interaction {} has no graph node",
-                    interaction.id
-                ))
-            })?;
-            let closure = runtime.accepted_graph_closure(node_id).await?;
-            if closure.node_id.value() != node_id {
-                return Err(ConversationExportBuildError::Invalid(format!(
-                    "accepted graph closure root {} does not match interaction graph node {node_id}",
-                    closure.node_id
-                )));
-            }
-            require_portable_invoke_shape(&closure)?;
-            Some(closure)
-        } else {
-            None
-        };
-        closures.push(closure);
         let durable_input = product.interaction_input(interaction.id).await?;
         let context_input = match interaction.graph_node_id {
             Some(node_id) => Some(ContextInput::Runtime(RuntimeContextInput {
@@ -218,10 +271,11 @@ pub(crate) async fn build_conversation_export(
                     invocation.action_id
                 ))
             })?;
-        if action.kind != ActionKind::Invoke
-            || action.interaction_text.as_deref()
-                != Some(detail.interactions[result_index].text.as_str())
-        {
+        if !invocation_matches_snapshot(
+            action,
+            &detail.interactions[result_index],
+            closures[result_index].as_ref(),
+        ) {
             return Err(ConversationExportBuildError::Invalid(format!(
                 "action invocation {} does not match its accepted invoke action",
                 invocation.action_id
@@ -239,10 +293,19 @@ pub(crate) async fn build_conversation_export(
             })
         })
         .collect::<Result<Vec<_>, ConversationExportBuildError>>()?;
-    let (authored_detail_assets, visual_asset_contents) =
-        collect_visual_assets(runtime, closures.iter().flatten(), &redactor).await?;
+    let (authored_detail_assets, visual_asset_contents) = collect_visual_assets_for_snapshot(
+        runtime,
+        closures.iter().flatten(),
+        &redactor,
+        imported_current_snapshot,
+    )
+    .await?;
     let header = ConversationExportRecord::Header(Box::new(ConversationExportHeader {
-        export_version: if visual_asset_contents.is_empty() {
+        export_version: if imported_current_snapshot
+            || closures.iter().flatten().any(needs_current_snapshot)
+        {
+            EXPORT_VERSION_V3
+        } else if visual_asset_contents.is_empty() {
             EXPORT_VERSION_V1
         } else {
             EXPORT_VERSION_V2
@@ -373,7 +436,11 @@ pub(crate) async fn build_share_conversation_export(
         HashMap::new();
 
     let mut ids = PortableIds::default();
-    let mut closures = Vec::with_capacity(selected.len());
+    let mut closures = snapshot_closures(runtime, &selected)
+        .await?
+        .into_iter()
+        .map(|closure| closure.expect("selected accepted snapshot"))
+        .collect::<Vec<_>>();
     let mut context_inputs = Vec::with_capacity(selected.len());
     let mut submitted_evidence = Vec::with_capacity(selected.len());
     let mut settled_attempt_outcomes = Vec::with_capacity(selected.len());
@@ -384,15 +451,6 @@ pub(crate) async fn build_share_conversation_export(
                 interaction.id
             ))
         })?;
-        let closure = runtime.accepted_graph_closure(node_id).await?;
-        if closure.node_id.value() != node_id {
-            return Err(ConversationExportBuildError::Invalid(format!(
-                "accepted graph closure root {} does not match interaction graph node {node_id}",
-                closure.node_id
-            )));
-        }
-        require_portable_invoke_shape(&closure)?;
-        closures.push(closure);
         let durable_input = product.interaction_input(interaction.id).await?;
         context_inputs.push(ContextInput::Runtime(RuntimeContextInput {
             input: runtime.interaction_input(node_id).await?,
@@ -439,9 +497,11 @@ pub(crate) async fn build_share_conversation_export(
                     invocation.action_id
                 ))
             })?;
-        if action.kind != ActionKind::Invoke
-            || action.interaction_text.as_deref() != Some(selected[result_index].text.as_str())
-        {
+        if !invocation_matches_snapshot(
+            action,
+            selected[result_index],
+            Some(&closures[result_index]),
+        ) {
             return Err(ConversationExportBuildError::Invalid(format!(
                 "action invocation {} does not match its accepted invoke action",
                 invocation.action_id
@@ -460,10 +520,13 @@ pub(crate) async fn build_share_conversation_export(
             })
         })
         .collect::<Result<Vec<_>, ConversationExportBuildError>>()?;
+    share_bindings::project_share_bindings(&mut closures, &mut ids)?;
     let (authored_detail_assets, visual_asset_contents) =
         collect_visual_assets(runtime, closures.iter(), &redactor).await?;
     let header = ConversationExportRecord::Header(Box::new(ConversationExportHeader {
-        export_version: if visual_asset_contents.is_empty() {
+        export_version: if closures.iter().any(needs_current_snapshot) {
+            EXPORT_VERSION_V3
+        } else if visual_asset_contents.is_empty() {
             EXPORT_VERSION_V1
         } else {
             EXPORT_VERSION_V2
@@ -577,6 +640,26 @@ async fn collect_visual_assets<'a>(
     ),
     ConversationExportBuildError,
 > {
+    collect_visual_assets_for_snapshot(runtime, closures, redactor, false).await
+}
+
+async fn collect_visual_assets_for_snapshot<'a>(
+    runtime: &RuntimeClient,
+    closures: impl IntoIterator<Item = &'a AcceptedGraphClosure>,
+    redactor: &ProjectPathRedactor,
+    imported_current_snapshot: bool,
+) -> Result<
+    (
+        HashMap<i64, Vec<ExportVisualAssetAssociation>>,
+        Vec<ExportVisualAssetContent>,
+    ),
+    ConversationExportBuildError,
+> {
+    let closures = closures.into_iter().collect::<Vec<_>>();
+    let strict_snapshot = imported_current_snapshot
+        || closures
+            .iter()
+            .any(|closure| needs_current_snapshot(closure));
     let mut associations = HashMap::new();
     let mut visited_nodes = HashSet::new();
     let mut contents = BTreeMap::<String, ExportVisualAssetContent>::new();
@@ -622,9 +705,14 @@ async fn collect_visual_assets<'a>(
             {
                 Ok(value) => value,
                 Err(RuntimeError::Remote { status: 404, .. }) => {
-                    if redactor.is_share() {
+                    if redactor.is_share() || strict_snapshot {
                         return Err(ConversationExportBuildError::Invalid(
-                            "public visual asset metadata is unavailable".into(),
+                            if redactor.is_share() {
+                                "public visual asset metadata is unavailable"
+                            } else {
+                                "snapshot visual asset metadata is unavailable"
+                            }
+                            .into(),
                         ));
                     }
                     legacy_metadata_only = true;
@@ -1530,6 +1618,12 @@ fn seed_imported_action_ids(
                 )));
             }
             ids.bind_action(action.id.value(), imported_action.id.clone())?;
+            if let (Some(materialized), Some(portable)) =
+                (action.source_layer_id, &imported_action.source_layer_id)
+            {
+                // Inert source provenance may live outside the response closure.
+                ids.bind_layer(materialized.value(), portable.clone())?;
+            }
         }
     }
     Ok(())
@@ -1603,7 +1697,7 @@ fn export_layer(
                 .map(|id| ids.node(id.value())),
             id: ids.layer(resolved.layer.id.value()),
             client_key: if redactor.is_share() {
-                None
+                Some(ids.layer(resolved.layer.id.value()))
             } else {
                 redactor.optional(resolved.layer.client_key.as_deref())
             },
@@ -1660,7 +1754,7 @@ fn export_node(
     Ok(ExportNode {
         id: ids.node(node.id.value()),
         client_key: if redactor.is_share() {
-            None
+            Some(ids.node(node.id.value()))
         } else {
             redactor.optional(node.client_key.as_deref())
         },
@@ -1695,20 +1789,7 @@ fn authored_detail_omission(
     };
     if contains_private_path {
         Some(ExportAuthoredDetailOmission::PrivatePath)
-    } else if redactor.is_share()
-        && (redactor.contains_sensitive_json(authored_detail)
-            || authored_detail
-                .get("mounts")
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|mounts| {
-                    mounts
-                        .iter()
-                        .any(|mount| mount.pointer("/capability/action").is_some())
-                }))
-    {
-        // Capability action identities are author-chosen private client keys.
-        // The public records omit those keys, so the integrity-bound package
-        // cannot be kept with dangling mounts or rewritten in place.
+    } else if redactor.is_share() && redactor.contains_sensitive_json(authored_detail) {
         Some(ExportAuthoredDetailOmission::SensitiveData)
     } else {
         None
@@ -1751,12 +1832,6 @@ fn export_action(
     ids: &mut PortableIds,
     redactor: &ProjectPathRedactor,
 ) -> Result<ExportAction, ConversationExportBuildError> {
-    if action.resolved_invoke_interaction_id.is_some() {
-        return Err(ConversationExportBuildError::Invalid(
-            "Typed invoke resolution portability requires Slice 2.".into(),
-        ));
-    }
-
     ensure_accepted(action.state, "action", action.id.value())?;
     let kind = match action.kind {
         ActionKind::Navigate => ExportActionKind::Navigate,
@@ -1785,9 +1860,10 @@ fn export_action(
         }
     };
     Ok(ExportAction {
+        converted_from_invoke: is_converted_invoke(action),
         id: ids.action(action.id.value()),
         client_key: if redactor.is_share() {
-            None
+            Some(ids.action(action.id.value()))
         } else {
             redactor.optional(action.client_key.as_deref())
         },
@@ -3126,14 +3202,19 @@ mod tests {
             &ProjectPathRedactor::for_share(None),
         )
         .unwrap();
-        assert!(public.root_action.client_key.is_none());
-        assert!(public.layers[0].layer.client_key.is_none());
-        assert!(public.layers[0].nodes[0].client_key.is_none());
-        assert!(
-            !serde_json::to_string(&public)
-                .unwrap()
-                .contains("clientKey")
+        assert_eq!(
+            public.root_action.client_key.as_deref(),
+            Some(public.root_action.id.as_str())
         );
+        assert_eq!(
+            public.layers[0].layer.client_key.as_deref(),
+            Some(public.layers[0].layer.id.as_str())
+        );
+        assert_eq!(
+            public.layers[0].nodes[0].client_key.as_deref(),
+            Some(public.layers[0].nodes[0].id.as_str())
+        );
+        assert!(!serde_json::to_string(&public).unwrap().contains(key));
     }
     use crate::{
         conversation_export::{
@@ -3297,6 +3378,18 @@ mod tests {
         ).await, Err(super::ConversationExportBuildError::Invalid(message))
             if message == "public visual asset metadata is unavailable"));
 
+        assert!(matches!(super::collect_visual_assets_for_snapshot(
+            &runtime, closures.iter().flatten(), &ProjectPathRedactor::new(None), true,
+        ).await, Err(super::ConversationExportBuildError::Invalid(message))
+            if message == "snapshot visual asset metadata is unavailable"));
+
+        let mut current_snapshot = closures[0].as_ref().unwrap().clone();
+        current_snapshot.has_persistent_mutations = true;
+        assert!(matches!(super::collect_visual_assets(
+            &runtime, [&current_snapshot], &ProjectPathRedactor::new(None),
+        ).await, Err(super::ConversationExportBuildError::Invalid(message))
+            if message == "snapshot visual asset metadata is unavailable"));
+
         missing.store(false, Ordering::SeqCst);
         large.store(true, Ordering::SeqCst);
         requests.store(0, Ordering::SeqCst);
@@ -3323,20 +3416,15 @@ mod tests {
     }
 
     #[test]
-    fn portable_export_rejects_persistent_mutation_closures() {
+    fn persistent_mutation_closures_require_current_snapshot_format() {
         let mut closure: relayer_graph_core::AcceptedGraphClosure = serde_json::from_value(serde_json::json!({
             "nodeId":1,"interaction":{"id":1,"kind":"user-interaction","icon":"user","title":"Question","detail":"Question","state":"accepted"},
             "rootAction":{"id":1,"sourceNodeId":1,"kind":"navigate","relation":"expand","label":"Response","variant":"pill","targetLayerId":1,"state":"accepted"},
             "rootLayerId":1,"layers":[]
         })).unwrap();
-        super::require_portable_invoke_shape(&closure).unwrap();
+        assert!(!super::needs_current_snapshot(&closure));
         closure.has_persistent_mutations = true;
-        let error = super::require_portable_invoke_shape(&closure).unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("attached-node navigation changes")
-        );
+        assert!(super::needs_current_snapshot(&closure));
     }
 
     #[test]
@@ -3727,37 +3815,6 @@ mod tests {
     }
 
     #[test]
-    fn share_omits_compiled_action_mounts_without_rewriting_private_identity() {
-        let detail = serde_json::json!({
-            "version": 1,
-            "components": [{"id":"summary","order":0,"html":"<button data-gc-capability=\"open\">Open</button>","css":""}],
-            "mounts": [{"id":"open","componentId":"summary","kind":"capability","host":"button",
-                "capability":{"kind":"expand","action":{"clientKey":"expand","sourceNode":{"clientKey":"node"},"sourceLayer":{"clientKey":"layer"}}}}],
-            "assets": [], "integritySha256": "a".repeat(64)
-        });
-        let node = authored_node(detail.clone());
-        let ordinary = export_node(
-            &node,
-            &mut PortableIds::default(),
-            &ProjectPathRedactor::new(None),
-        )
-        .unwrap();
-        assert_eq!(ordinary.authored_detail, Some(detail));
-        let public = export_node(
-            &node,
-            &mut PortableIds::default(),
-            &ProjectPathRedactor::for_share(None),
-        )
-        .unwrap();
-        assert!(public.authored_detail.is_none());
-        assert_eq!(
-            public.authored_detail_omitted,
-            Some(ExportAuthoredDetailOmission::SensitiveData)
-        );
-        assert_eq!(public.detail, "Portable fallback");
-    }
-
-    #[test]
     fn share_authored_detail_omits_sensitive_fragmented_rich_detail() {
         let package = serde_json::json!({
             "version": 1,
@@ -3843,6 +3900,7 @@ mod tests {
             result_interaction_id: InteractionId::from_database(result),
             result_completion_status: "accepted".into(),
             created_at: "2026-01-01T00:00:00Z".into(),
+            agent_invoked: false,
         };
         let mut interactions = vec![
             interaction(1, "accepted"),
@@ -4476,6 +4534,7 @@ mod tests {
     #[test]
     fn resolved_invoke_exports_its_authored_shape() {
         let action = GraphAction {
+            converted_from_invoke: false,
             resolved_invoke_interaction_id: None,
             id: ActionId::new(1).unwrap(),
             client_key: Some("continue".into()),
@@ -4505,19 +4564,24 @@ mod tests {
             kind: ActionKind::Navigate,
             relation: Some(relayer_graph_core::NavigateRelation::Expand),
             interaction_text: None,
+            converted_from_invoke: false,
             resolved_invoke_interaction_id: Some(NodeId::new(5).unwrap()),
             ..action.clone()
         };
-        assert!(
-            export_action(
-                &converted,
-                &mut PortableIds::default(),
-                &ProjectPathRedactor::new(None)
-            )
-            .unwrap_err()
-            .to_string()
-            .contains("Slice 2")
+        let portable = export_action(
+            &converted,
+            &mut PortableIds::default(),
+            &ProjectPathRedactor::new(None),
+        )
+        .unwrap();
+        assert!(portable.converted_from_invoke);
+        assert_eq!(portable.kind, super::ExportActionKind::Navigate);
+        assert_eq!(
+            portable.relation,
+            Some(super::ExportNavigateRelation::Expand)
         );
+        assert!(portable.target_layer_id.is_some());
+        assert!(portable.interaction_text.is_none());
         assert!(exported.target_layer_id.is_none());
         assert_eq!(
             exported.interaction_text.as_deref(),
@@ -4528,6 +4592,7 @@ mod tests {
     #[test]
     fn unanswered_input_action_exports_its_authored_payload() {
         let action = GraphAction {
+            converted_from_invoke: false,
             resolved_invoke_interaction_id: None,
             id: ActionId::new(1).unwrap(),
             client_key: Some("choose".into()),
@@ -4589,6 +4654,7 @@ mod tests {
         assert_eq!(authored_key.len(), 128);
         assert_eq!(authored_key_with_internal_space.len(), 128);
         let action = GraphAction {
+            converted_from_invoke: false,
             resolved_invoke_interaction_id: None,
             id: ActionId::new(1).unwrap(),
             client_key: Some("choose".into()),
@@ -4673,6 +4739,7 @@ mod tests {
             result_interaction_id: result_id,
             created_at: "2".into(),
             result_completion_status: "failed".into(),
+            agent_invoked: false,
         };
         let turn_sequences = [(source_id, 1), (result_id, 2)].into_iter().collect();
         let mut ids = PortableIds::default();

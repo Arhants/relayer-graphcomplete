@@ -599,6 +599,7 @@ fn import_turn(turn: ConversationExportTurn) -> ImportedTurn {
 fn import_action(action: ExportAction) -> ImportedAction {
     let input = action.input.map(import_input_action);
     ImportedAction {
+        converted_from_invoke: action.converted_from_invoke,
         id: action.id,
         client_key: action.client_key,
         source_node_id: action.source_node_id,

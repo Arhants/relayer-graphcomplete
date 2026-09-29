@@ -400,6 +400,7 @@ mod tests {
         target_layer_id: Option<&str>,
     ) -> ExportAction {
         ExportAction {
+            converted_from_invoke: false,
             id: id.into(),
             client_key: None,
             source_node_id: source_node_id.into(),

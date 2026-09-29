@@ -346,6 +346,9 @@ async function openThreadWindow(threadId) {
       && document.querySelectorAll('.graph-node').length === 3
       && !document.querySelector('#threadPrompt')?.disabled
   ))()`));
+  app.focus({ steal: true });
+  window.focus();
+  window.webContents.focus();
   await waitFor("focused workspace for environment timers", () => evaluate(
     "document.visibilityState !== 'hidden' && document.hasFocus()",
   ));

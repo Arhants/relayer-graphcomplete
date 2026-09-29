@@ -265,6 +265,7 @@ pub fn router(state: ServerState) -> Router {
             "/api/control/conversation-import-stages/{import_id}/finalize",
             post(finalize_imported_conversation),
         )
+        .route("/api/control/accepted-closures", post(accepted_closures))
         .route(
             "/api/control/interactions/{id}/accepted-closure",
             get(accepted_closure),
@@ -892,6 +893,34 @@ async fn remove_imported_conversation(
         .remove_imported_conversation(&input.import_id)
         .await?;
     Ok(Json(json!({"removed": true})))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AcceptedClosuresRequest {
+    interaction_node_ids: Vec<NodeId>,
+}
+
+async fn accepted_closures(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Json(input): Json<AcceptedClosuresRequest>,
+) -> Result<Json<Value>, ApiError> {
+    require_bearer(&headers, &state.control_token)?;
+    // Matches the portable conversation's maximum turn count.
+    if input.interaction_node_ids.len() > 10_000 {
+        return Err(ApiError(
+            StatusCode::BAD_REQUEST,
+            json!({"error": {
+                "code": "too_many_interactions", "message": "At most 10000 interaction roots may be read together."
+            }}),
+        ));
+    }
+    let closures = state
+        .graph
+        .accepted_graph_closures(&input.interaction_node_ids)
+        .await?;
+    Ok(Json(json!({"closures": closures})))
 }
 
 async fn accepted_closure(
