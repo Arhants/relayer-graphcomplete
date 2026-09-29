@@ -92,12 +92,12 @@ function exactUploadPolicy(value) {
   return value;
 }
 
-function appendUpload(form, policy, bytes) {
+function appendUpload(form, policy, bytes, preview=false) {
   for (const [name, value] of Object.entries(policy.fields)) {
     if (typeof value !== "string") throw new ShareServiceClientError("share_upload_failed", { failureStage: "upload" });
     form.append(name, value);
   }
-  form.append("file", new Blob([bytes], { type: "application/x-ndjson" }), "snapshot.jsonl");
+  form.append("file", new Blob([bytes], { type: preview ? "image/png" : "application/x-ndjson" }), preview ? "preview.png" : "snapshot.jsonl");
 }
 
 export function createShareServiceClient({
@@ -140,10 +140,10 @@ export function createShareServiceClient({
     return payload;
   }
 
-  async function upload(policy, bytes, signal) {
+  async function upload(policy, bytes, signal, preview=false) {
     const exact = exactUploadPolicy(policy);
     const form = new FormData();
-    appendUpload(form, exact, bytes);
+    appendUpload(form, exact, bytes,preview);
     const uploadSignal = boundedSignal(signal, uploadTimeoutMs);
     let response;
     try {
@@ -161,7 +161,7 @@ export function createShareServiceClient({
     }
   }
 
-  async function publish({ authorization, assertAuthority = async () => {}, attempt, snapshotBytes, signal } = {}) {
+  async function publish({ authorization, assertAuthority = async () => {}, attempt, snapshotBytes, previewBytes, signal } = {}) {
     exactBearer(authorization);
     if (typeof assertAuthority !== "function") throw new TypeError("Share authority assertion is required.");
     if (!attempt || typeof attempt !== "object") throw new TypeError("Share attempt metadata is required.");
@@ -183,6 +183,7 @@ export function createShareServiceClient({
       await assertAuthority();
       if (reservation.status === "reserved") {
         await upload(reservation.upload, bytes, signal);
+        if(attempt.preview){await assertAuthority();if(!previewBytes||new Uint8Array(previewBytes).byteLength!==attempt.preview.byteLength)throw new ShareServiceClientError("share_upload_failed",{failureStage:"upload"});await upload(reservation.previewUpload,new Uint8Array(previewBytes),signal,true);}
         const currentAuthority = await assertAuthority();
         authorization = currentAuthority?.authorization ?? authorization;
         return await request(`/shares/${encodeURIComponent(reservation.shareId)}/finalize`, {

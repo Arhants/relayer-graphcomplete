@@ -6,7 +6,7 @@ const VERSION = 1;
 const MAX_ATTEMPTS_PER_OWNER = 32;
 const MAX_ATTEMPTS_GLOBAL = 64;
 const MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024;
-const MAX_RECORD_BYTES = 24 * 1024 * 1024;
+const MAX_RECORD_BYTES = 30 * 1024 * 1024;
 const RECORD_NAME = /^[a-f0-9]{64}\.json$/u;
 const FAILURE_CODES = new Set([
   "share_cancelled",
@@ -55,7 +55,7 @@ function validateRecord(value) {
   if (!exactKeys(value, [
     "reference", "attemptId", "ownerKey", "threadId", "sourceThreadId", "title",
     "snapshotBytes", "createdAt", "lastFailure", "reportedFailures", "publishedUrl",
-  ])
+  ], ["preview","previewBytes"])
     || typeof value.reference !== "string" || !/^SHR-[A-Z0-9]{8,32}$/u.test(value.reference)
     || typeof value.attemptId !== "string" || !/^[a-f0-9]{32}$/u.test(value.attemptId)
     || typeof value.ownerKey !== "string" || value.ownerKey.length === 0 || value.ownerKey.length > 512
@@ -71,6 +71,8 @@ function validateRecord(value) {
     throw new TypeError("Share publish attempt record is invalid.");
   }
   const published = validPublishedUrl(value.publishedUrl);
+  if(value.preview !== undefined){const p=value.preview;const bytes=value.previewBytes;if(!p||!["light","dark"].includes(p.theme)||!Number.isSafeInteger(p.byteLength)||p.byteLength<1||p.byteLength>4*1024*1024||!/^([a-f0-9]{64})$/.test(p.sha256)||(!Array.isArray(bytes)&&!(bytes instanceof Uint8Array))||(published ? bytes.length!==0 : bytes.length!==p.byteLength)||(!published&&createHash("sha256").update(Uint8Array.from(bytes)).digest("hex")!==p.sha256))throw new TypeError("Invalid frozen share preview");}
+  else if(value.previewBytes!==undefined)throw new TypeError("Orphan preview bytes");
   const durableExportFailure = !published
     && value.snapshotBytes.length === 0
     && value.lastFailure !== null
@@ -95,7 +97,7 @@ function filename(reference) {
 function encodeRecord(input) {
   const value = validateRecord(input);
   return {
-    version: VERSION,
+    version: value.preview ? 2 : VERSION,
     reference: value.reference,
     attemptId: value.attemptId,
     ownerKey: value.ownerKey,
@@ -103,6 +105,7 @@ function encodeRecord(input) {
     sourceThreadId: value.sourceThreadId,
     title: value.title,
     snapshot: Buffer.from(value.snapshotBytes).toString("base64"),
+    ...(value.preview ? {preview:value.preview,previewPng:Buffer.from(value.previewBytes).toString("base64")} : {}),
     createdAt: value.createdAt,
     lastFailure: value.lastFailure,
     reportedFailures: [...new Set(value.reportedFailures)],
@@ -114,18 +117,21 @@ function decodeRecord(envelope) {
   if (!exactKeys(envelope, [
     "version", "reference", "attemptId", "ownerKey", "threadId", "sourceThreadId",
     "title", "snapshot", "createdAt", "lastFailure", "reportedFailures", "publishedUrl",
-  ]) || envelope.version !== VERSION || typeof envelope.snapshot !== "string"
+  ], ["preview","previewPng"]) || ![VERSION,2].includes(envelope.version) || typeof envelope.snapshot !== "string"
     || envelope.snapshot.length > Math.ceil(MAX_SNAPSHOT_BYTES / 3) * 4
     || envelope.snapshot.length % 4 !== 0) {
     throw new TypeError("Share publish attempt envelope is invalid.");
   }
+  if((envelope.version===2)!==Boolean(envelope.preview)||(!envelope.preview&&envelope.previewPng!==undefined))throw new TypeError("Invalid preview version");
   const snapshotBytes = new Uint8Array(Buffer.from(envelope.snapshot, "base64"));
   // Canonical round-trip validation also checks alphabet and padding without a
   // grouped-repeat regexp that can exhaust V8's stack on supported snapshots.
   if (Buffer.from(snapshotBytes).toString("base64") !== envelope.snapshot) {
     throw new TypeError("Share publish attempt envelope is invalid.");
   }
+  if(envelope.preview && (typeof envelope.previewPng!=="string"||envelope.previewPng.length>Math.ceil(4*1024*1024/3)*4||Buffer.from(envelope.previewPng,"base64").toString("base64")!==envelope.previewPng))throw new TypeError("Invalid preview envelope");
   return validateRecord({
+    ...(envelope.preview ? {preview:envelope.preview,previewBytes:new Uint8Array(Buffer.from(envelope.previewPng,"base64"))} : {}),
     reference: envelope.reference,
     attemptId: envelope.attemptId,
     ownerKey: envelope.ownerKey,

@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { Window } from "happy-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { savedAppearance, startAppearance } from "../desktop/main/appearance.mjs";
+import { savedAppearance, startAppearance, resolvedAppearance } from "../desktop/main/appearance.mjs";
 import { registerAppearanceIpc } from "../desktop/main/ipc/register-ipc.mjs";
 
 // Electron's nativeTheme: an explicit source wins; "system" reports the OS.
@@ -36,6 +36,20 @@ function fakeMatchMedia(light) {
 }
 
 describe("desktop appearance preference", () => {
+  it("wires share capture to the current resolved desktop theme", async () => {
+    const source = await readFile(new URL("../desktop/main/index.mjs", import.meta.url), "utf8");
+    const callback = source.match(/getTheme:\s*(.+),/)[1];
+    const nativeTheme = fakeNativeTheme();
+    // Exercise the callback supplied by the production composition root, not a
+    // separately injected theme function that could hide a stale binding.
+    const getTheme = new Function("resolvedAppearance", "nativeTheme", `return (${callback});`)(resolvedAppearance, nativeTheme);
+    expect(getTheme()).toBe("dark");
+    nativeTheme.setOperatingSystemDark(false);
+    expect(getTheme()).toBe("light");
+    nativeTheme.themeSource = "dark";
+    expect(getTheme()).toBe("dark");
+  });
+
   it("uses System for installs without a saved choice and keeps a saved one", () => {
     expect([undefined, null, "", "blue"].map(savedAppearance)).toEqual(["system", "system", "system", "system"]);
     expect(["system", "light", "dark"].map(savedAppearance)).toEqual(["system", "light", "dark"]);
