@@ -1,25 +1,25 @@
 {
   "sourceFiles": {
-    "desktop/main/services/share-preview-capture.mjs": "eee5719adb1270c509fd5ed352d469c647ab01405d43692fbb953db8de256039",
+    "desktop/main/services/share-preview-capture.mjs": "beb779e2fc9fccc5b0fb60c20443453dc1f7b16553fc541b20c9802f217aa098",
     "desktop/main/services/share-publish-coordinator.mjs": "f722b04879f31c2ab210c6e1eb2a8bf686af37bea6689cff9f6c4d143728abed",
     "desktop/main/services/share-publish-attempt-store.mjs": "55d555b3e1decc8c543356f66be0c4c1605c7f60dc593287fb84ecd93fb2f7ff",
     "desktop/main/services/share-service-client.mjs": "f30067b00bdb02ac64fbcfc932bafe02428cefd38ef094baa9abf51f5748c501",
-    "desktop/main/index.mjs": "6df3d02fd03227d095da13b51417605ec29fd4f11bc7e820b3e486d181437f52",
-    "contracts/share-service-v1/contract.json": "44a068f6dc7c403d470546da6766560205b3a40abefeee7166583bba3d32cbe6",
-    "scripts/capture-share-preview-evidence.mjs": "7b168be90508fd03d0246cc8c838e623c1bed813aca8e143b9e36a0a1d71a261",
+    "desktop/main/index.mjs": "7a35ea15b7526585a7b7fed1de6bf76698691a368ae2114ae6cd6652bbac7dd8",
+    "contracts/share-service-v1/contract.json": "7407c99d32fb04a62ab958257be5525dc3451adc9899d600e07de730dccc89ff",
+    "scripts/capture-share-preview-evidence.mjs": "f236df557ffc50bcf8365e3211e86433988fa1b0da9263cd83f1eba68832fc96",
     "test/fixtures/social-preview.jsonl": "ff4a4545de49ccc20562f2f763b6a120d87fa37f7703a994abeb71b219a405aa",
     "desktop/shared/telemetry-module-inventory.mjs": "da94e52034d141df8ec96101be90e3ffcc49cfa801e32ee88b46280accb386e7"
   },
   "captures": [
     {
       "theme": "light",
-      "sha256": "7a7e52a458d6f25ad260fffbc980705b2ee698e0ef3ccb4874224aa4f7ba9902",
-      "bytes": 100321
+      "sha256": "8d797d3a798f055ffa00336ba67bb01def0c5c514f46ebaca427db15c48986d4",
+      "bytes": 100196
     },
     {
       "theme": "dark",
-      "sha256": "8fdbe978a77584649963cfc9125261ba2afbe4ace8c60fa5debc59b2c3780aee",
-      "bytes": 88680
+      "sha256": "8dadd7c0871c63091f5ea38b7d405b51f9ef8cf42ccdb7c6e1d8aa3a685a9d0a",
+      "bytes": 88553
     }
   ],
   "platform": "macOS ARM64",
