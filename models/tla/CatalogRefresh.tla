@@ -42,6 +42,11 @@
 (*     is pending (F4, L1). Landed.                                       *)
 (*   AdapterAfterCommit: connect registers the catalog adapter only after *)
 (*     the definition commits (PROV-007). Landed.                         *)
+(*   RefreshSkipsPendingReconnect: a refresh resolves no generation while *)
+(*     a reconnect is pending (PDS refreshGeneration), so it neither runs *)
+(*     nor publishes until the reconnect settles (PROV-002). Landed.      *)
+(*   CancelSignsOut: a cancelled or failed reconnect commits its signed-  *)
+(*     out state with the next generation, as logout does. Landed.        *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets
 
@@ -58,7 +63,9 @@ CONSTANTS MaxQ,        \* entries per provider queue
           DefaultProviderPairsFamily, \* fix: a provider choice moves the family
           ConnectionGeneration,       \* fix: results carry their generation
           ReconnectKeepsAdapter,      \* fix: a cancelled reconnect keeps an adapter
-          AdapterAfterCommit          \* fix: connect registers after its commit
+          AdapterAfterCommit,         \* fix: connect registers after its commit
+          RefreshSkipsPendingReconnect, \* fix: no refresh during a pending reconnect
+          CancelSignsOut               \* fix: a settled reconnect commits signed-out
 
 Provs == {"P", "Q"}
 Fams == {"mP", "mQ", "C"}
@@ -319,11 +326,12 @@ SkipAborted(p) ==
 SkipGone(p) ==
   /\ ConnectionGeneration
   /\ q[p] /= << >> /\ Head(q[p]).pc = "queued" /\ ~Head(q[p]).ab
-  /\ (adapter[p] = "none" \/ life[p] /= "active")
+  /\ (adapter[p] = "none" \/ life[p] /= "active" \/ (RefreshSkipsPendingReconnect /\ pending[p]))
   /\ Dequeue(p, q[p])
   /\ UNCHANGED <<life, acct, elig, adapter, hasRt, pending, pendNew, pendGen, gen,
                  events, flips, closed, rustVars, flagVars>>
-Runnable(p) == ~ConnectionGeneration \/ (adapter[p] /= "none" /\ life[p] = "active")
+Runnable(p) == ~ConnectionGeneration
+               \/ (adapter[p] /= "none" /\ life[p] = "active" /\ ~(RefreshSkipsPendingReconnect /\ pending[p]))
 
 \* Discovery through a captured real adapter reads the current upstream
 \* (MSA:39-79). A runtime closed since capture only fails (DiscoverFail).
@@ -406,7 +414,9 @@ Publish(p) ==
   /\ q[p] /= << >>
   /\ LET e == Head(q[p]) IN
      /\ e.pc = "pub"
-     /\ IF e.ab \/ (ConnectionGeneration /\ e.g /= gen[p])
+     \* MCS drops a result whose generation changed, or resolves none while a
+     \* reconnect is pending, before it publishes.
+     /\ IF e.ab \/ (ConnectionGeneration /\ e.g /= gen[p]) \/ (RefreshSkipsPendingReconnect /\ pending[p])
         THEN UNCHANGED <<rustVars, flagVars>>
         ELSE RustPublish(p, e.res, e, TRUE)
   /\ Dequeue(p, q[p])
@@ -489,23 +499,34 @@ ReconnectComplete(p) ==
 \* recovery adapter, and one that reused the live runtime registers a
 \* fresh runtime in its place.
 \* ok: the fresh runtime started. If it could not, the recovery adapter
-\* stands in, as after a failed startup activation.
+\* stands in, as after a failed startup activation. With CancelSignsOut the
+\* cancel first commits signed-out with the next generation, as logout does,
+\* so every result in flight is superseded. Its wipe of the provider home
+\* signs the account out. This model does not fail that publish; the lease
+\* model does.
 ReconnectCancel(p, ok) ==
   /\ PdsFree /\ pending[p]
   /\ ReconnectKeepsAdapter \/ ok
   /\ pending' = [pending EXCEPT ![p] = FALSE]
-  /\ IF ReconnectKeepsAdapter
-     THEN IF pendNew[p]
-          THEN /\ hasRt' = [hasRt EXCEPT ![p] = FALSE]
-               /\ UNCHANGED <<adapter, q>>
-          ELSE /\ adapter' = [adapter EXCEPT ![p] = IF ok THEN "real" ELSE "stub"]
-               /\ hasRt' = [hasRt EXCEPT ![p] = ok]
-               /\ q' = [q EXCEPT ![p] = MarkDead(MarkOld(@))]
-     ELSE /\ adapter' = [adapter EXCEPT ![p] = "none"]
-          /\ hasRt' = [hasRt EXCEPT ![p] = FALSE]
-          /\ q' = [q EXCEPT ![p] = MarkDead(MarkOld(@))]
-  /\ UNCHANGED <<life, acct, elig, pendNew, pendGen, gen, pdsHold, events, flips,
-                 closed, rustVars, flagVars>>
+  /\ LET signs == CancelSignsOut /\ ~closed /\ life[p] = "active"
+         q0 == IF signs THEN MarkStale(q[p]) ELSE q[p]
+     IN /\ IF ReconnectKeepsAdapter
+           THEN IF pendNew[p]
+                THEN /\ hasRt' = [hasRt EXCEPT ![p] = FALSE]
+                     /\ q' = [q EXCEPT ![p] = q0]
+                     /\ UNCHANGED adapter
+                ELSE /\ adapter' = [adapter EXCEPT ![p] = IF ok THEN "real" ELSE "stub"]
+                     /\ hasRt' = [hasRt EXCEPT ![p] = ok]
+                     /\ q' = [q EXCEPT ![p] = MarkDead(MarkOld(q0))]
+           ELSE /\ adapter' = [adapter EXCEPT ![p] = "none"]
+                /\ hasRt' = [hasRt EXCEPT ![p] = FALSE]
+                /\ q' = [q EXCEPT ![p] = MarkDead(MarkOld(q0))]
+        /\ IF signs
+           THEN /\ gen' = [gen EXCEPT ![p] = @ + 1]
+                /\ acct' = [acct EXCEPT ![p] = "disc"]
+                /\ RustPublish(p, "disc", NoMark, FALSE)
+           ELSE UNCHANGED <<gen, acct, rustVars, flagVars>>
+  /\ UNCHANGED <<life, elig, pendNew, pendGen, pdsHold, events, flips, closed>>
 
 \* remove (PDS:891-931) with guard_provider_removal (CAT:2656-2706) and
 \* tombstone_managed_provider_families (CAT:185-188). No running turns in
@@ -719,9 +740,11 @@ OnlyOwnFamily ==
             /\ cEn' = cEn]_vars
 
 \* DRAFT (tombstoned default) liveness: it restores once its provider
-\* is healthy and its refresh machinery is registered.
+\* is healthy and its refresh machinery is registered. A provider whose
+\* reconnect is still pending has not settled: no refresh runs for it.
 Healthy(ad) == /\ life["P"] = "active" /\ acct["P"] = "conn" /\ elig["P"]
                /\ ~closed /\ adapter["P"] \in ad
+               /\ ~(RefreshSkipsPendingReconnect /\ pending["P"])
 TombP == defFam = "mP" /\ fam["mP"] = "tomb"
 DefaultRestores ==
   (TombP /\ Healthy({"real"})) ~> (~TombP \/ ~Healthy({"real"}))
