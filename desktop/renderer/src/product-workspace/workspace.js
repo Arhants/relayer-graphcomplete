@@ -195,8 +195,8 @@ export function observeAutomaticGraphFitOnResize({
 }
 
 const GRAPH_NODE_HALF_WIDTH = 82;
-const GRAPH_NODE_TOP = 28;
-const GRAPH_NODE_BOTTOM = 72;
+// Sticker pills are anchored at their centre; 18 is half the 36px pill.
+const GRAPH_NODE_HALF_HEIGHT = 18;
 const GRAPH_FIT_PADDING = 48;
 // Sticker pills stay readable without looking oversized when a layer has few nodes (H geometry fitCap).
 const GRAPH_FIT_MAX_ZOOM = 1.25;
@@ -296,8 +296,8 @@ export function approvalHistoryRenderTransition({
 export function graphNodeLayoutBounds(width, height) {
   return {
     halfWidth: Math.max(GRAPH_NODE_HALF_WIDTH, width / 2),
-    top: GRAPH_NODE_TOP,
-    bottom: Math.max(GRAPH_NODE_BOTTOM, height - 23),
+    top: Math.max(GRAPH_NODE_HALF_HEIGHT, height / 2),
+    bottom: Math.max(GRAPH_NODE_HALF_HEIGHT, height / 2),
   };
 }
 

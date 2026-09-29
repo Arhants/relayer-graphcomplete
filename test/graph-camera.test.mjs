@@ -127,24 +127,30 @@ describe("product workspace graph camera", () => {
 
     expect(camera.zoom).toBeGreaterThanOrEqual(GRAPH_MIN_ZOOM);
     expect(camera.zoom).toBeLessThanOrEqual(GRAPH_MAX_ZOOM);
-    expect(graphScreenPoint({ x: 200, y: 122 }, camera)).toEqual({ x: 300, y: 200 });
-    expect(graphScreenPoint({ x: -82, y: -28 }, camera).x).toBeGreaterThanOrEqual(40);
-    expect(graphScreenPoint({ x: 482, y: 272 }, camera).x).toBeLessThanOrEqual(560);
+    expect(graphScreenPoint({ x: 200, y: 100 }, camera)).toEqual({ x: 300, y: 200 });
+    expect(graphScreenPoint({ x: -82, y: -18 }, camera).x).toBeGreaterThanOrEqual(40);
+    expect(graphScreenPoint({ x: 482, y: 218 }, camera).x).toBeLessThanOrEqual(560);
 
     const recentered = recenterGraphCamera(nodes, bounds, 1.4);
     expect(recentered.zoom).toBe(1.4);
-    expect(graphScreenPoint({ x: 200, y: 122 }, recentered)).toEqual({ x: 300, y: 200 });
+    expect(graphScreenPoint({ x: 200, y: 100 }, recentered)).toEqual({ x: 300, y: 200 });
   });
 
-  it("includes the rendered height of wrapped AI-authored node titles when fitting", () => {
-    const layoutBounds = graphNodeLayoutBounds(164, 260);
+  it("includes the rendered size of a centred node pill when fitting", () => {
+    expect(graphNodeLayoutBounds(0, 0)).toEqual({ halfWidth: 82, top: 18, bottom: 18 });
+    const layoutBounds = graphNodeLayoutBounds(248, 260);
     const nodes = [{ x: 0, y: 0, layoutBounds }];
     const bounds = { width: 600, height: 400 };
     const camera = fitGraphCamera(nodes, bounds, 40);
 
-    expect(layoutBounds).toEqual({ halfWidth: 82, top: 28, bottom: 237 });
+    expect(layoutBounds).toEqual({ halfWidth: 124, top: 130, bottom: 130 });
     expect(graphScreenPoint({ x: 0, y: -layoutBounds.top }, camera).y).toBeGreaterThanOrEqual(40);
     expect(graphScreenPoint({ x: 0, y: layoutBounds.bottom }, camera).y).toBeLessThanOrEqual(360);
+  });
+
+  it("caps the fit zoom so a layer with few nodes is not oversized", () => {
+    const nodes = [{ x: 0, y: 0, layoutBounds: graphNodeLayoutBounds(120, 36) }];
+    expect(fitGraphCamera(nodes, { width: 1200, height: 800 }).zoom).toBe(1.25);
   });
 
   it("uses turn and layer identity to decide when a graph needs its initial fit", () => {
