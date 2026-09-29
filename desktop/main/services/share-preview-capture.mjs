@@ -163,13 +163,6 @@ export function createSharePreviewCapture({
           }, 15000);
         }),
       ]);
-    } catch (error) {
-      signal?.throwIfAborted();
-      throw Object.assign(new Error("Share preview capture failed"), {
-        code: "share_export_failed",
-        failureStage: "export",
-        cause: error,
-      });
     } finally {
       clearTimeout(deadline);
       signal?.removeEventListener("abort", abort);
@@ -183,7 +176,19 @@ export function createSharePreviewCapture({
     }
   };
   return function capture(input) {
-    const pending = previousCapture.then(() => runCapture(input));
+    // Normalize the entire lifecycle, including cleanup failures from finally.
+    const pending = previousCapture.then(async () => {
+      const bytes = await runCapture(input);
+      input.signal?.throwIfAborted();
+      return bytes;
+    }).catch((error) => {
+      input.signal?.throwIfAborted();
+      throw Object.assign(new Error("Share preview capture failed"), {
+        code: "share_export_failed",
+        failureStage: "export",
+        cause: error,
+      });
+    });
     previousCapture = pending.catch(() => {});
     return pending;
   };

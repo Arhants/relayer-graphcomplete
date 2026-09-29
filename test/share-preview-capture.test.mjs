@@ -124,7 +124,8 @@ describe("desktop share preview capture", () => {
     expectSessionTeardown(captureSession);
   });
 
-  it("requires a successful storage clear before reusing the fixed partition", async () => {
+  it.each(["clear-failure", "abort-during-clear"])("closes %s before reusing the fixed partition", async (failure) => {
+    const abort = new AbortController();
     const windows = [];
     class BrowserWindow {
       constructor() {
@@ -145,7 +146,10 @@ describe("desktop share preview capture", () => {
       setPermissionCheckHandler: vi.fn(),
       clearStorageData: vi.fn()
         .mockResolvedValueOnce()
-        .mockRejectedValueOnce(new Error("clear failed"))
+        .mockImplementationOnce(async () => {
+          if (failure === "abort-during-clear") abort.abort();
+          else throw new Error("clear failed");
+        })
         .mockResolvedValue(undefined),
       webRequest: { onBeforeRequest: vi.fn() },
     });
@@ -156,7 +160,11 @@ describe("desktop share preview capture", () => {
     });
     const input = { snapshotBytes: new Uint8Array(), title: "Cleanup", theme: "light" };
 
-    await expect(capture(input)).rejects.toThrow("clear failed");
+    await expect(capture({ ...input, signal: abort.signal })).rejects.toMatchObject(
+      failure === "abort-during-clear" ? { name: "AbortError" } : {
+        code: "share_export_failed", failureStage: "export", cause: { message: "clear failed" },
+      },
+    );
     await expect(capture(input)).resolves.toEqual(new Uint8Array(Buffer.from("png")));
     expect(captureSession.clearStorageData).toHaveBeenCalledTimes(4);
     expect(windows).toHaveLength(2);
