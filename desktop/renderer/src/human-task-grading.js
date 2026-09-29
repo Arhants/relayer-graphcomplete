@@ -1,4 +1,8 @@
 // Eval-only controls; feedback stays in evidence and never enters the model prompt.
+const reviewMoment = (event) => event.kind === "presentation" || event.kind === "actor_action";
+const momentLabel = (event) => event.kind === "actor_action"
+  ? `${event.sequence}. Actor ${event.action.kind} · ${event.action.comment || event.action.reason || event.action.value || ""} · ${event.at}`
+  : `${event.sequence}. Graph ${event.snapshot?.layerId ?? ""}${event.snapshot?.selectedNodeId ? ` · node ${event.snapshot.selectedNodeId}` : ""} · ${event.at}`;
 export function initializeHumanTaskGrading(bridge) {
   const panel = document.createElement("details");
   panel.id = "humanTaskGrading";
@@ -58,9 +62,9 @@ export function initializeHumanTaskGrading(bridge) {
         });
       };
       const annotation = document.createElement("form");
-      annotation.innerHTML = `<p>Choose the recorded graph moment for your comment. Refresh session status to load recent moments.</p><label>Graph moment<select name="eventId" required></select></label><label>Moment feedback<textarea name="comment" required maxlength="8000" rows="3"></textarea></label><button type="submit">Save moment annotation</button>`;
-      for (const event of task.events.filter((event) => event.kind === "presentation")) {
-        annotation.elements.eventId.add(new Option(`${event.sequence}. Graph ${event.snapshot?.layerId ?? ""}${event.snapshot?.selectedNodeId ? ` · node ${event.snapshot.selectedNodeId}` : ""} · ${event.at}`, event.id));
+      annotation.innerHTML = `<p>Choose a graph moment or actor action. For actor feedback, note whether it was too articulate, invented a preference, stopped early, or explored unnecessarily. Refresh to load recent moments.</p><label>Graph moment<select name="eventId" required></select></label><label>Moment feedback<textarea name="comment" required maxlength="8000" rows="3"></textarea></label><button type="submit">Save moment annotation</button>`;
+      for (const event of task.events.filter(reviewMoment)) {
+        annotation.elements.eventId.add(new Option(momentLabel(event), event.id));
       }
       annotation.elements.eventId.selectedIndex = annotation.elements.eventId.options.length - 1;
       annotation.onsubmit = (event) => {
@@ -99,7 +103,7 @@ export function initializeHumanTaskGrading(bridge) {
       if (task.status === "active" && moments) {
         const selected = moments.value;
         moments.replaceChildren();
-        for (const event of task.events.filter((item) => item.kind === "presentation")) moments.add(new Option(`${event.sequence}. Graph ${event.snapshot?.layerId ?? ""}${event.snapshot?.selectedNodeId ? ` · node ${event.snapshot.selectedNodeId}` : ""} · ${event.at}`, event.id));
+        for (const event of task.events.filter(reviewMoment)) moments.add(new Option(momentLabel(event), event.id));
         if ([...moments.options].some((option) => option.value === selected)) moments.value = selected;
         else moments.selectedIndex = moments.options.length - 1;
       }

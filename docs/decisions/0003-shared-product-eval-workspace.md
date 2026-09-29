@@ -117,3 +117,14 @@ and rejects grading operations. Humans watch and grade through a separate
 read-only review capability. Actor satisfaction is distinct from human grades.
 Cancellation, deadlines, action limits and host interruption preserve evidence
 without implicit replay or inferred task success.
+
+### Live actor calibration follow-up
+
+After the first live run, the user approved using the existing private user brief
+for actor consistency. Only the actor receives that brief; the candidate still
+receives ordinary task prompts and user actions. Rubrics and human feedback
+remain unavailable to the actor. Version 2 favors short immediate replies,
+consistent preferences and explicit uncertainty. It records endpoint status and
+remaining work independently of satisfaction. Action-specific human annotations
+support manual tuning, not automatic policy changes. The actor default is
+GPT-5.6 Luna, with model/effort catalog preflight before candidate inference.

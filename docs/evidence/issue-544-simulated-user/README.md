@@ -1,5 +1,9 @@
 # Issue 544 — simulated task user
 
+This report records the original slice-2 snapshot. The subsequent user-approved
+calibration changes and their verification are in [actor v2](actor-v2.md).
+The original review digest below does not certify those later source changes.
+
 Product authority: PRD §13.2.3 and ADR 0003. This is slice 2: an actor
 operating the production task workspace between settled responses. In-turn
 input simulation, independent observers, private taste profiles, and human
