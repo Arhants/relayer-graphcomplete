@@ -1,0 +1,72 @@
+Starting isolated Electron first-message smoke test...
+Electron application ready.
+Error occurred in handler for 'relayer:layer-selections-read': Error: No handler registered for 'relayer:layer-selections-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-read': Error: No handler registered for 'relayer:layer-selections-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+RELAYER_FIRST_MESSAGE_SMOKE {"typedPermissions":false,"nativeKeyboardVerified":false,"passed":true,"typedPermissionJourneyPassed":false,"ancillaryFailures":[],"harness":"fixture-task-system","inferenceCalls":0,"shiftEnterValue":null,"threadCount":1,"completionStatus":"accepted","renderedNodes":["Incoming queue","Two-worker pool","Results store"],"screenshotPath":"/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/projection-heavy/default.png","evalScreenshotPath":"/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/projection-heavy/default-eval.png","evalNarrowScreenshotPath":"/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/projection-heavy/default-eval-narrow.png","productNavigationState":{"rows":4,"scrollable":true,"backEnabled":true,"breadcrumbSegments":2,"selectedNodeId":"43","inspectorFit":{"initialContained":true,"restoredContained":true,"openToOpenPreserved":true,"closePreserved":true,"dragSelectionSuppressed":true}},"evalNavigationState":{"rows":4,"scrollable":true,"backEnabled":true,"breadcrumbSegments":2,"readOnlyCopy":"Read-only evaluation result\n    ✦Model⌄\n    \n      \n        Model\n        Advanced\n      \n      \n      \n      \n    \n  ↑","viewportWidth":1480,"inspectorFit":{"desktopContained":true,"narrowOverlayPreservedStage":true,"narrowOverlayPreservedCamera":true,"redockedContained":true}},"layoutEvidence":{"rootProductEvalParity":true,"childProductEvalParity":true,"narrowViewportPreservedCanonicalLayout":true,"productRootLayout":[["40",223.8,298,"authored"],["41",480,298,"authored"],["42",736.1999999999999,298,"authored"]],"productChildLayout":[["43",297,298,"authored"],["44",663,298,"authored"]]},"invokeResultInteractionId":2,"invokeEvidencePaths":{"unresolved":"/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/projection-heavy/default/01-unresolved.png","runningDisabled":"/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/projection-heavy/default/02-running-disabled.png","resolved":"/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/projection-heavy/default/03-resolved.png","crossInteraction":"/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/projection-heavy/default/04-cross-interaction-destination.png","revisited":"/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/projection-heavy/default/05-revisited-source.png","evalCrossInteraction":"/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/projection-heavy/default/06-eval-cross-interaction-destination.png"}}

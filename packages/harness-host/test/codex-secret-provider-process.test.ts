@@ -120,7 +120,7 @@ describe("Codex secret-provider process boundary", () => {
           executable: codexBinary,
           environment: { RELAYER_CODEX_BINARY: codexBinary },
         },
-        // The provider's private home, as a new conversation gets it (PRD AGT-011).
+        // The provider's private home, as a new conversation gets it (PRD AGT-013).
         environment: { CODEX_HOME: codexHome },
       },
       graph: {
@@ -161,7 +161,7 @@ describe("Codex secret-provider process boundary", () => {
       expect(shellOutput).toContain("RELAYER_NODE_ID_PRESENT");
       expect(shellOutput).not.toContain(SYNTHETIC_API_KEY);
       await expect(completion).resolves.toBeUndefined();
-      // The bearer above came from the environment alone: the home holds no auth.json (AGT-015).
+      // The bearer above came from the environment alone: the home holds no auth.json (AGT-017).
       await expect(readFile(join(codexHome, "auth.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
       expect(await readdir(codexHome)).not.toContain("auth.json");
     } finally {
@@ -451,7 +451,7 @@ function environmentProbeCommand(): string {
   if (process.platform === "win32") {
     return "cmd.exe /d /s /c \"if defined OPENAI_API_KEY (echo OPENAI_API_KEY_PRESENT) else (echo OPENAI_API_KEY_ABSENT) & if defined OPENAI_BASE_URL (echo OPENAI_BASE_URL_PRESENT) else (echo OPENAI_BASE_URL_ABSENT) & if defined RELAYER_GRAPH_URL (echo RELAYER_GRAPH_URL_PRESENT) else (echo RELAYER_GRAPH_URL_ABSENT) & if defined RELAYER_GRAPH_TOKEN (echo RELAYER_GRAPH_TOKEN_PRESENT) else (echo RELAYER_GRAPH_TOKEN_ABSENT) & if defined RELAYER_NODE_ID (echo RELAYER_NODE_ID_PRESENT) else (echo RELAYER_NODE_ID_ABSENT)\"";
   }
-  return "if env | grep -q ^OPENAI_API_KEY=; then echo OPENAI_API_KEY_PRESENT; else echo OPENAI_API_KEY_ABSENT; fi; if env | grep -q ^OPENAI_BASE_URL=; then echo OPENAI_BASE_URL_PRESENT; else echo OPENAI_BASE_URL_ABSENT; fi; if env | grep -q ^RELAYER_GRAPH_URL=; then echo RELAYER_GRAPH_URL_PRESENT; else echo RELAYER_GRAPH_URL_ABSENT; fi; if env | grep -q ^RELAYER_GRAPH_TOKEN=; then echo RELAYER_GRAPH_TOKEN_PRESENT; else echo RELAYER_GRAPH_TOKEN_ABSENT; fi; if env | grep -q ^RELAYER_NODE_ID=; then echo RELAYER_NODE_ID_PRESENT; else echo RELAYER_NODE_ID_ABSENT; fi";
+  return "if printenv OPENAI_API_KEY >/dev/null; then echo OPENAI_API_KEY_PRESENT; else echo OPENAI_API_KEY_ABSENT; fi; if printenv OPENAI_BASE_URL >/dev/null; then echo OPENAI_BASE_URL_PRESENT; else echo OPENAI_BASE_URL_ABSENT; fi; if printenv RELAYER_GRAPH_URL >/dev/null; then echo RELAYER_GRAPH_URL_PRESENT; else echo RELAYER_GRAPH_URL_ABSENT; fi; if printenv RELAYER_GRAPH_TOKEN >/dev/null; then echo RELAYER_GRAPH_TOKEN_PRESENT; else echo RELAYER_GRAPH_TOKEN_ABSENT; fi; if printenv RELAYER_NODE_ID >/dev/null; then echo RELAYER_NODE_ID_PRESENT; else echo RELAYER_NODE_ID_ABSENT; fi";
 }
 
 function respondWithFinalMessage(response: import("node:http").ServerResponse): void {

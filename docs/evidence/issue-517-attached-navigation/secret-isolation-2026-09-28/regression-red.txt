@@ -1,0 +1,108 @@
+
+> relayer-graphcomplete@0.0.0 test:codex-secret-boundary
+> RELAYER_RUN_CODEX_SECRET_BOUNDARY=1 vitest run packages/harness-host/test/codex-secret-provider-process.test.ts
+
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete
+
+ ❯ |isolated| packages/harness-host/test/codex-secret-provider-process.test.ts (2 tests | 1 failed) 1842ms
+     × authenticates the selected Responses endpoint while excluding provider secrets from model-requested shell tools 951ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |isolated| packages/harness-host/test/codex-secret-provider-process.test.ts > Codex secret-provider process boundary > authenticates the selected Responses endpoint while excluding provider secrets from model-requested shell tools
+AssertionError: expected 'Chunk ID: 8d2129\nWall time: 0.0000 s…' to contain 'OPENAI_API_KEY_ABSENT'
+
+- Expected
++ Received
+
+- OPENAI_API_KEY_ABSENT
++ Chunk ID: 8d2129
++ Wall time: 0.0000 seconds
++ Process exited with code 0
++ Original token count: 32
++ Output:
++ OPENAI_API_KEY_PRESENT
++ OPENAI_BASE_URL_PRESENT
++ RELAYER_GRAPH_URL_PRESENT
++ RELAYER_GRAPH_TOKEN_PRESENT
++ RELAYER_NODE_ID_PRESENT
++
+
+ ❯ packages/harness-host/test/codex-secret-provider-process.test.ts:139:27
+    137|         )),
+    138|       ]);
+    139|       expect(shellOutput).toContain("OPENAI_API_KEY_ABSENT");
+       |                           ^
+    140|       expect(shellOutput).toContain("OPENAI_BASE_URL_ABSENT");
+    141|       expect(shellOutput).toContain("RELAYER_GRAPH_URL_PRESENT");
+ ❯ packages/harness-host/test/codex-secret-provider-process.test.ts:30:23
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |isolated| packages/harness-host/test/codex-secret-provider-process.test.ts > Codex secret-provider process boundary > authenticates the selected Responses endpoint while excluding provider secrets from model-requested shell tools
+AssertionError: expected 'Chunk ID: 76d06b\nWall time: 0.0000 s…' to contain 'OPENAI_API_KEY_ABSENT'
+
+- Expected
++ Received
+
+- OPENAI_API_KEY_ABSENT
++ Chunk ID: 76d06b
++ Wall time: 0.0000 seconds
++ Process exited with code 0
++ Original token count: 32
++ Output:
++ OPENAI_API_KEY_PRESENT
++ OPENAI_BASE_URL_PRESENT
++ RELAYER_GRAPH_URL_PRESENT
++ RELAYER_GRAPH_TOKEN_PRESENT
++ RELAYER_NODE_ID_PRESENT
++
+
+ ❯ packages/harness-host/test/codex-secret-provider-process.test.ts:139:27
+    137|         )),
+    138|       ]);
+    139|       expect(shellOutput).toContain("OPENAI_API_KEY_ABSENT");
+       |                           ^
+    140|       expect(shellOutput).toContain("OPENAI_BASE_URL_ABSENT");
+    141|       expect(shellOutput).toContain("RELAYER_GRAPH_URL_PRESENT");
+ ❯ packages/harness-host/test/codex-secret-provider-process.test.ts:30:23
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |isolated| packages/harness-host/test/codex-secret-provider-process.test.ts > Codex secret-provider process boundary > authenticates the selected Responses endpoint while excluding provider secrets from model-requested shell tools
+AssertionError: expected 'Chunk ID: b1d13e\nWall time: 0.0000 s…' to contain 'OPENAI_API_KEY_ABSENT'
+
+- Expected
++ Received
+
+- OPENAI_API_KEY_ABSENT
++ Chunk ID: b1d13e
++ Wall time: 0.0000 seconds
++ Process exited with code 0
++ Original token count: 32
++ Output:
++ OPENAI_API_KEY_PRESENT
++ OPENAI_BASE_URL_PRESENT
++ RELAYER_GRAPH_URL_PRESENT
++ RELAYER_GRAPH_TOKEN_PRESENT
++ RELAYER_NODE_ID_PRESENT
++
+
+ ❯ packages/harness-host/test/codex-secret-provider-process.test.ts:139:27
+    137|         )),
+    138|       ]);
+    139|       expect(shellOutput).toContain("OPENAI_API_KEY_ABSENT");
+       |                           ^
+    140|       expect(shellOutput).toContain("OPENAI_BASE_URL_ABSENT");
+    141|       expect(shellOutput).toContain("RELAYER_GRAPH_URL_PRESENT");
+ ❯ packages/harness-host/test/codex-secret-provider-process.test.ts:30:23
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  08:47:33
+   Duration  2.27s (transform 151ms, setup 0ms, import 257ms, tests 1.84s, environment 0ms)
+

@@ -1,4 +1,4 @@
-// PRD AGT-011 to AGT-015: an API-key provider keeps a new conversation's native state in its own
+// PRD AGT-013 to AGT-017: an API-key provider keeps a new conversation's native state in its own
 // private home. A conversation saved before these homes keeps the home it already used (#584).
 //
 // Each case runs the production chain: provider runtime dependencies, the adapter registry, the
@@ -90,7 +90,7 @@ describe("API-key provider native homes", () => {
     // The native credential store still resolves through the real user home.
     expect(env.HOME).toBe(userHome);
     expect(env.OPENAI_API_KEY).toBe("sk-provider-secret");
-    // Codex authenticates from the environment: nothing is written into the home (AGT-015).
+    // Codex authenticates from the environment: nothing is written into the home (AGT-017).
     await expect(readdir(home)).resolves.toEqual([]);
     await expectUserHomesUntouched();
   });
@@ -170,8 +170,10 @@ describe("API-key provider native homes", () => {
     await first.close();
     expect(await persistedStates()).toEqual({
       1: { codexProviderHome: "isolated" },
-      2: expect.objectContaining({ codexProviderHome: "legacy-shared", codexThreadId: "legacy-thread" }),
+      2: expect.objectContaining({ codexThreadId: "legacy-thread" }),
     });
+    // The legacy conversation's state gains no marker: a missing one is what keeps it legacy.
+    expect((await persistedStates())[2]).not.toHaveProperty("codexProviderHome");
 
     const restarted = await startHost(provider);
     await restarted.createSession(newConversation);

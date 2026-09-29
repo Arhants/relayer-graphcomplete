@@ -306,6 +306,7 @@ const MODEL_FAMILY_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("policy_version", "INTEGER", false, 0),
     ("lifecycle_state", "TEXT", true, 0),
     ("removed_at", "TEXT", false, 0),
+    ("tombstone_cause", "TEXT", false, 0),
 ];
 const MODEL_FAMILY_MEMBER_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("family_id", "INTEGER", true, 1),

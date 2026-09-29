@@ -1,0 +1,13 @@
+
+> relayer-graphcomplete@0.0.0 test:codex-secret-boundary
+> RELAYER_RUN_CODEX_SECRET_BOUNDARY=1 vitest run packages/harness-host/test/codex-secret-provider-process.test.ts
+
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  08:47:58
+   Duration  2.32s (transform 138ms, setup 0ms, import 229ms, tests 2.01s, environment 0ms)
+

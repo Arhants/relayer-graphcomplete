@@ -428,6 +428,19 @@ pub(crate) struct ModelSettingsDefaults {
     pub(crate) modified: bool,
 }
 
+/// A provider's managed family while that provider reports no eligible execution models
+/// (PROV-008). The family is tombstoned, so it is not in `families`, but it can still be the
+/// default or a thread's last selection. Send is refused with `reason` until a refresh restores
+/// it or its successor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FamilyModelSetup {
+    pub(crate) family_id: ModelFamilyId,
+    pub(crate) family_name: String,
+    pub(crate) provider_id: ProviderId,
+    pub(crate) reason: UnavailableReason,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ModelSettings {
@@ -435,6 +448,8 @@ pub(crate) struct ModelSettings {
     pub(crate) harnesses: Vec<ProductHarness>,
     pub(crate) providers: Vec<Provider>,
     pub(crate) families: Vec<ModelFamily>,
+    pub(crate) default_family_recovery: Option<FamilyModelSetup>,
+    pub(crate) families_needing_model_setup: Vec<FamilyModelSetup>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

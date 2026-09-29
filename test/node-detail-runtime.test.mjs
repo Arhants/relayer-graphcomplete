@@ -1001,6 +1001,7 @@ describe("compiled Node Detail product runtime", () => {
     };
     let thread = { id: 3, rootInteractionId: 5, title: "Thread", harnessId: "fixture" };
     const state = {
+      conversationCompatibility: { threadId: 3, status: "unrestricted", harnessId: "fixture" },
       status: "accepted",
       currentInteractionId: 5,
       interactions: [{ id: 5, threadId: 3, sequence: 1, text: "Question", graphNodeId: 50, completionStatus: "accepted", completionOutput: { rootLayer: layer } }],

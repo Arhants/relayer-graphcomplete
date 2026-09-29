@@ -61,6 +61,25 @@ describe("NodeInspector traces replay against the Product workspace inspector", 
 describe("A request waiting for a resolving draft", () => {
   const quietModel = { slots: {} };
 
+  it("lets Close supersede a sidebar change and restores the saved draft on reopening", async () => {
+    const trace = traces.find((candidate) => candidate.scenario === "inspector-close-during-flush");
+    world = await new NodeInspectorWorld().ready();
+    for (let index = 1; index <= 4; index += 1) {
+      await world.apply(trace.steps[index].action, trace.steps[index - 1].state, trace.steps[index].state);
+    }
+    const text = world.window.document.querySelector('#contextAnnotationEditor').value;
+    const sidebarChange = world.workspace.prepareSelectionChange();
+    await world.apply(["Close"], quietModel, quietModel);
+    await world.apply(["SaveReturns", 1, "ok"], quietModel, quietModel);
+    expect(await sidebarChange).toBe(false);
+    expect(world.selection.currentThreadId).toBe(3);
+    expect(world.observe().open).toBe(false);
+    await world.apply(["Click", "n1"], quietModel, quietModel);
+    const editor = world.window.document.querySelector('#contextAnnotationEditor');
+    expect(editor.value).toBe(text);
+    expect(editor.disabled).toBe(false);
+  });
+
   it("is void once the user switches to another thread", async () => {
     // The trace's first steps annotate n1 and start discarding its draft.
     const trace = traces.find((candidate) => candidate.scenario === "inspector-view-change-during-discard");

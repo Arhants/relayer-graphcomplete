@@ -47,3 +47,9 @@ attachment is no longer conceptually read-only authority, but Slice 1 does not y
 enable the new persistent edits. Temporal acceptance retains its atomic Return
 boundary. Search publication carries each changed closure's own scope so conversion
 cannot grant source-thread records to the result thread.
+
+## Attached-navigation qualification successor
+
+[ADR 0011](0011-attached-navigation.md) enables narrowly authorized persistent additions
+and current presentation replacement behind the existing default-off gate. Its terminal
+acceptance and B3 projection refine the earlier slice boundary without enabling general edits.

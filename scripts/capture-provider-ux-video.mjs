@@ -1012,6 +1012,7 @@ function productState(scene) {
   };
   const acceptedSelection = { familyId: 11, providerId: "codex", modelId: "gpt-5.6-sol" };
   return {
+    conversationCompatibility: recovery ? { threadId: 1, harnessId: "codex-basic", status: retryAccepted || sidebarGraph ? "compatible" : "unrestricted", providerId: retryAccepted || sidebarGraph ? "codex" : null } : null,
     projects: [],
     threads: recovery ? [{
       id: 1,

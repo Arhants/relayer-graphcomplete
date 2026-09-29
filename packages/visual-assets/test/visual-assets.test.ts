@@ -964,6 +964,28 @@ describe("visual_assets deterministic library interface", () => {
         createMemoryVisualAssetsLibrary({ initialAssets: [initialAsset] }),
         storagePath,
       );
+      const content = { ...package_,
+        components: [{ id: "main", order: 0, html: '<img data-asset-mount="image"><button data-gc-mount="open">Open</button>', css: "" }],
+        mounts: [
+          { id: "image", componentId: "main", kind: "asset", host: "img", assetId: "asset-a" },
+          { id: "open", componentId: "main", kind: "capability", host: "button", capability: {
+            kind: "reference", action: { clientKey: "new", sourceNode: { clientKey: "persistent" } },
+          } },
+        ],
+      };
+      const seal = (value: typeof content) => {
+        const { integritySha256: _old, ...body } = value;
+        const canonical = (item: unknown): unknown => Array.isArray(item) ? item.map(canonical)
+          : item !== null && typeof item === "object" ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, canonical(child)])) : item;
+        return { ...body, integritySha256: createHash("sha256").update(JSON.stringify(canonical(body))).digest("hex") };
+      };
+      const navigation = seal(content);
+      await first.accept({ package: navigation, scope: { kind: "library" } });
+      for (const kind of ["invoke", "input"]) {
+        const invalid = structuredClone(content);
+        invalid.mounts[1]!.capability!.kind = kind;
+        expect(() => first.accept({ package: seal(invalid), scope: { kind: "library" } })).toThrowError(expect.objectContaining({ code: "detail_package_invalid" }));
+      }
       await first.accept({ package: package_, scope: { kind: "library" } });
       await first.accept({ package: package_, scope: { kind: "library" } });
 
@@ -971,6 +993,8 @@ describe("visual_assets deterministic library interface", () => {
         createMemoryVisualAssetsLibrary(),
         storagePath,
       );
+      const restoredNavigation = await reopened.read({ package: navigation, scope: { kind: "library" } });
+      expect((await reopened.resolve({ detail: restoredNavigation, scope: { kind: "library" } })).package).toEqual(navigation);
       const persisted = await reopened.read({ package: package_, scope: { kind: "library" } });
       const resolved = await reopened.resolve({ detail: persisted, scope: { kind: "library" } });
 

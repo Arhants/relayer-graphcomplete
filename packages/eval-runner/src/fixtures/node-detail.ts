@@ -89,7 +89,7 @@ export function gradeNodeDetailExecution(input: {
       const capability = mount.capability;
       if (capability.kind === "link") return mount.host === "a" && capability.href === "https://example.com/relayer-node-detail";
       return capability.action.sourceNode.clientKey === node?.clientKey
-        && capability.action.sourceLayer.clientKey === output.rootLayer.layer.clientKey
+        && capability.action.sourceLayer?.clientKey === output.rootLayer.layer.clientKey
         && output.rootLayer.actions.some((action) => action.state === "accepted"
           && action.sourceNodeId === node?.id && action.sourceLayerId === output.rootLayer.layer.id
           && action.clientKey === capability.action.clientKey

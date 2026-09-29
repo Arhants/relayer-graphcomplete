@@ -1,0 +1,86 @@
+{
+  "base": "8221978e50e5bf9093b27d9a96c3f26c4e25f7a8",
+  "files": [
+    {
+      "path": "crates/relayer-app-server/src/runtime.rs",
+      "sha256": "c496f87bd04b0304a29c45fd5d6f33d76d2c21dab4d7c62fed1ebe736a4499d9"
+    },
+    {
+      "path": "crates/relayer-app-server/tests/product_persistence_flow.rs",
+      "sha256": "54614d10ada27ea0bc652d19b66a8cc0dcce56f6ee088440bcedfcdf185e4b51"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/attached_navigation.rs",
+      "sha256": "5a38a6ee0322cceb8f519ab69a75e40e31c375bd340dc55e27ef1b8048fcf432"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite/attached_navigation.rs",
+      "sha256": "61d302ee0c72080f95fb6251202b25ab63d87eb6d62c55e8f968bcca792212cc"
+    },
+    {
+      "path": "crates/relayer-graph-core/tests/graph_database.rs",
+      "sha256": "607488263be9ef7bee9663d4295296aa00fefbc93a722b0dad0d77564c099e97"
+    },
+    {
+      "path": "crates/relayer-graph-server/src/lib.rs",
+      "sha256": "b9644f66c789a45535f0c24382ac9d622582b858e94056474915e45e64f7319f"
+    },
+    {
+      "path": "desktop/main/managed-runtimes/recipes.mjs",
+      "sha256": "064fbe03bf7b062bcac0a74dd379fca020e67b6e5a83b1230d7e2a4aff640a54"
+    },
+    {
+      "path": "desktop/main/services/prime-agent-runtime.mjs",
+      "sha256": "2ddb2d38d44abb1133085fce9e8f78fc7dfa61f9b7493de9ab4bd7a1661f5749"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/prime-agent.ts",
+      "sha256": "34cf7834c6aea214cded7df02ad1460f7353c79c1f1255a78650ce89b2f246b9"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/prime-visual-authoring.ts",
+      "sha256": "0518f7440bf19ace4f931ac46a8c94111250eaa554fe4aba564368cba3ed189e"
+    },
+    {
+      "path": "packages/harness-host/test/prime-agent.test.ts",
+      "sha256": "437f39673dacf4949e4e310981b5fd9f654084cb908a564bb8d7c043a81b39ee"
+    },
+    {
+      "path": "packages/harness-host/test/prime-visual-authoring.test.ts",
+      "sha256": "d8c9925e9e982fda44d8b21990c6aad140a461165315ef74c351a42c400ca082"
+    },
+    {
+      "path": "packages/visual-assets/src/index.ts",
+      "sha256": "d952692526425b74d8701f58078d9d0499c08500466bba0a0146d64b52dd3c14"
+    },
+    {
+      "path": "packages/visual-assets/test/visual-assets.test.ts",
+      "sha256": "eb272bf6eb9a58fb2905064df6591da72a622e2cb3de5f5963d66639b9a16d49"
+    },
+    {
+      "path": "python/relayer-graph/src/relayer_graph/__init__.py",
+      "sha256": "78550df0b4265b1c51c724ede2ede5dfbf5f52c70431fc1a8b3cdea1c5658b61"
+    },
+    {
+      "path": "python/relayer-graph/src/relayer_graph/actions.py",
+      "sha256": "d6faa5d733e56c4c8f4318fdc9fa6a522d6f7376472b81bd0fabb6bb2ec42bb2"
+    },
+    {
+      "path": "python/relayer-graph/src/relayer_graph/authoring.py",
+      "sha256": "74ab7dee57792bf8d5c2a5d4677b7d276cd9b80d63365d7a3b3aa2d9ab3ee4b0"
+    },
+    {
+      "path": "python/relayer-graph/src/relayer_graph/session.py",
+      "sha256": "12d8997099a6c6e25980ed671238f3162c0fb022f50d40a85aa1c74d0741edc6"
+    },
+    {
+      "path": "python/relayer-graph/tests/test_visual_authoring.py",
+      "sha256": "8411946f21844d958616fd2633a7c9c342bb3af2d80c6b36d0e9631888a097ea"
+    },
+    {
+      "path": "vendor/prime-agent/manifest.json",
+      "sha256": "e6adfa66a218c1510d45b4209e2bf202afa0cd66de0b7f6629ff524d03514bfa"
+    }
+  ],
+  "digest": "81350981da0ce91744e48f4e315ed48e08742e05c65cbc57d26417a8351b74e1"
+}

@@ -1594,3 +1594,84 @@ describe("workspace navigation integration", () => {
     }
   });
 });
+
+it("interaction graph selection reloads the current response root and retains Back to the descendant", async()=>{
+ const root=rootLayer(101,11);root.layer.defaultNodeId=11;
+ const child=rootLayer(102,12);const action={id:501,kind:"navigate",relation:"expand",sourceNodeId:11,targetLayerId:102};root.actions=[action];const turn=interaction(1,10,root);
+ const state=productState([{id:10,title:"Thread"}],[turn]);
+ requestImplementation=vi.fn(async(path)=>{
+  if(path.startsWith("/api/state?threadId=10"))return state;
+  if(path==="/api/threads/10/interactions/1/layers/102")return child;
+  if(path==="/api/threads/10")return {thread:state.threads[0],interactions:[turn],actionInvocations:[]};
+  throw new Error(`Unexpected request: ${path}`);
+ });
+ const controller=await loadModules();
+ try {
+  await controller.loadThread(10);await controller.navigateLayer(102,{action,sourceNode:root.nodes[0]});
+  expect(controller.appState.visibleLayer.layer.id).toBe(102);
+  controller.selectTurnById(1,{responseRoot:true});
+  expect(controller.appState.visibleLayer.layer.id).toBe(101);
+  expect(controller.getNavigationHistory().canGoBack).toBe(true);
+  await controller.navigateHistory(-1);
+  expect(controller.appState.visibleLayer.layer.id).toBe(102);
+ }finally{controller.cancelNavigationHistory();}
+});
+
+it("interaction graph cross-chat selection commits only a loaded response and preserves Back", async () => {
+  const source = interaction(1, 10, rootLayer(101, 11));
+  const target = interaction(2, 20, rootLayer(201, 21));
+  const threads = [{ id: 10, title: "Source" }, { id: 20, title: "Owner" }];
+  let fail = true;
+  requestImplementation = vi.fn(async (path) => {
+    if (path.startsWith("/api/state?threadId=10")) return productState(threads, [source]);
+    if (path.startsWith("/api/state?threadId=20")) return productState(threads, [target]);
+    if (path === "/api/threads/20") {
+      if (fail) throw new Error("owner unavailable");
+      return { thread: threads[1], interactions: [target], actionInvocations: [] };
+    }
+    if (path === "/api/threads/10") return { thread: threads[0], interactions: [source], actionInvocations: [] };
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  const controller = await loadModules();
+  try {
+    await controller.loadThread(10);
+    const url = location.href;
+    await expect(controller.selectTurnById(2, { responseRoot: true, threadId: 20 })).rejects.toThrow("owner unavailable");
+    expect(controller.viewState.currentThreadId).toBe(10);
+    expect(controller.viewState.currentInteractionId).toBe(1);
+    expect(controller.appState.visibleLayer.layer.id).toBe(101);
+    expect(location.href).toBe(url);
+    fail = false;
+    target.completionStatus = "running";
+    const acceptedOutput = target.completionOutput;
+    target.completionOutput = null;
+    await expect(controller.selectTurnById(2, { responseRoot: true, threadId: 20 })).resolves.toBe(false);
+    expect(controller.viewState.currentThreadId).toBe(10);
+    expect(controller.appState.visibleLayer.layer.id).toBe(101);
+    expect(location.href).toBe(url);
+    target.completionStatus = "accepted";
+    target.completionOutput = acceptedOutput;
+    await controller.selectTurnById(2, { responseRoot: true, threadId: 20 });
+    expect(controller.viewState.currentThreadId).toBe(20);
+    expect(controller.appState.visibleLayer.layer.id).toBe(201);
+    await controller.navigateHistory(-1);
+    expect(controller.viewState.currentThreadId).toBe(10);
+    expect(controller.appState.visibleLayer.layer.id).toBe(101);
+  } finally { controller.cancelNavigationHistory(); }
+});
+
+it("keeps the workspace when a graph origin has current state but no response", async () => {
+  const current = rootLayer(101, 11);
+  const source = { ...interaction(1, 10, current), graphNodeId: 901, completionStatus: "running", completionOutput: null };
+  const state = productState([{ id: 10 }], [source]);
+  requestImplementation = vi.fn(async () => state);
+  const controller = await loadModules();
+  try {
+    await controller.loadThread(10);
+    controller.appState.visibleLayer = current;
+    controller.appState.currentProjections.set("901", { completionId: 901, headRevision: 1, lifecycle: "active", currentLayerId: 101 });
+    controller.selectTurnById(1, { responseRoot: true });
+    expect(controller.appState.visibleLayer).toEqual(current);
+    expect(controller.getNavigationHistory().canGoBack).toBe(false);
+  } finally { controller.cancelNavigationHistory(); }
+});

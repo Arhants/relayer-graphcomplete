@@ -655,6 +655,8 @@ describe("public share HTML boundary", () => {
       expect(viewer).not.toBeNull();
       if (presentation === "embed") expect(windowRef.document.documentElement.dataset.theme).toBe("light");
       expect(viewer.adapter.selection.currentInteractionId).toBe("turn:1");
+      expect(windowRef.document.querySelector(".interaction-graph-stepper")).toBeNull();
+      expect(windowRef.document.querySelector(".interaction-graph-popover")).toBeNull();
       expect(windowRef.document.querySelector("#publicViewerHost")?.classList.contains("hidden")).toBe(false);
       const downloadCard = windowRef.document.querySelector(".public-share-download-card");
       if (presentation === "standalone") {

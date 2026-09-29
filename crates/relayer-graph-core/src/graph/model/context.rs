@@ -53,6 +53,8 @@ pub struct InteractionContextAction {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InteractionInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interaction_permissions: Option<crate::InteractionPermissions>,
     pub interaction: InteractionInputNode,
     pub contexts: Vec<InteractionContext>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

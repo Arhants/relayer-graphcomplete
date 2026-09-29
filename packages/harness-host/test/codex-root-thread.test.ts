@@ -85,6 +85,66 @@ describe("Codex persistent root thread", () => {
     expect(restarted.state()).toEqual(pinned("legacy-thread", DEFAULT_HOME, "legacy-shared"));
   });
 
+  it("resumes a legacy API-key conversation in the shared default home when #597 requires continuity", async () => {
+    const codex = new EmulatedCodex();
+    // An earlier release ran the conversation's first turn: no home marker, Codex's default home.
+    const earlier = codex.harness({ savedState: {} });
+    await earlier.complete(rootTurn(1, "openai-work"));
+    // Saved before the continuity identity existed, so the accepted-history anchor verifies it.
+    const { codexSessionIdentity: _identity, ...saved } = earlier.state();
+    expect(saved).not.toHaveProperty("codexProviderHome");
+
+    const reopened = codex.harness({ savedState: saved });
+    const trace = recordingTrace();
+    await reopened.complete({
+      ...rootTurn(2, "openai-work", trace.sink),
+      requireNativeContinuity: true,
+      nativeHistoryAnchor: { interactionNodeId: 1, message: "Q" },
+    });
+    // The next required turn is verified by the identity the resumed turn recorded.
+    const restarted = codex.harness({ savedState: reopened.state() });
+    await restarted.complete({ ...rootTurn(3, "openai-work"), requireNativeContinuity: true });
+
+    expect(codex.threadRequests).toEqual([
+      `${DEFAULT_HOME} thread/start -> thread-1`,
+      `${DEFAULT_HOME} thread/resume thread-1`,
+      `${DEFAULT_HOME} thread/resume thread-1`,
+    ]);
+    expect(trace.resets()).toEqual([]);
+    expect(restarted.state()).toEqual(pinned("thread-1", DEFAULT_HOME, "legacy-shared"));
+  });
+
+  it("resumes a new API-key conversation in the provider's private home when #597 requires continuity", async () => {
+    const codex = new EmulatedCodex();
+    const harness = codex.harness();
+    await harness.complete(rootTurn(1, "openai-work"));
+    const restarted = codex.harness({ savedState: harness.state() });
+    await restarted.complete({ ...rootTurn(2, "openai-work"), requireNativeContinuity: true });
+
+    expect(codex.threadRequests).toEqual([
+      `${providerHome("openai-work")} thread/start -> thread-1`,
+      `${providerHome("openai-work")} thread/resume thread-1`,
+    ]);
+    expect(restarted.state()).toEqual(pinned("thread-1", providerHome("openai-work")));
+  });
+
+  it.each(["home", "missing-rollout"])("required continuity refuses %s reset before losing the saved pointer or starting a turn", async (reason) => {
+    const codex = new EmulatedCodex();
+    const harness = codex.harness();
+    await harness.complete(rootTurn(1, "codex"));
+    const saved = harness.state();
+    if (reason === "missing-rollout") codex.rollouts.clear();
+    const trace = recordingTrace();
+    await expect(harness.complete({
+      ...rootTurn(2, reason === "home" ? "openai-work" : "codex", trace.sink),
+      requireNativeContinuity: true,
+    })).rejects.toThrow(/history was preserved/);
+    expect(harness.state()).toEqual(saved);
+    expect(codex.turnStarts).toBe(1);
+    expect(codex.threadRequests.filter(request => request.includes("thread/start"))).toHaveLength(1);
+    expect(trace.resets()).toEqual([]);
+  });
+
   it("does not pin a root thread whose turn was stopped before turn/start", async () => {
     const codex = new EmulatedCodex();
     const stop = new AbortController();
@@ -175,7 +235,6 @@ describe("Codex persistent root thread", () => {
     const harness = codex.harness({ savedState: { codexThreadId: "legacy-thread", codexThreadPersonalPresentationVersionId: null } });
 
     expect(harness.state()).toEqual({
-      codexProviderHome: "legacy-shared",
       codexThreadId: "legacy-thread",
       codexThreadPersonalPresentationVersionId: null,
     });
@@ -239,7 +298,9 @@ function pinned(
   codexProviderHome: "isolated" | "legacy-shared" = "isolated",
 ): HarnessSessionState {
   return {
-    codexProviderHome,
+    // A legacy conversation keeps its saved state as written: no marker means legacy-shared.
+    ...(codexProviderHome === "isolated" ? { codexProviderHome } : {}),
+    codexSessionIdentity: expect.any(String),
     codexThreadId: threadId,
     codexThreadPersonalPresentationVersionId: null,
     // Without CODEX_HOME, Codex's default home is recorded by a stable name.
@@ -310,6 +371,8 @@ function rootTurn(
 /** Codex app-server processes sharing on-disk rollouts, keyed by CODEX_HOME. */
 class EmulatedCodex {
   readonly rollouts = new Map<string, string>();
+  /** Each thread's user messages, which thread/resume returns as its turns. */
+  readonly history = new Map<string, string[]>();
   readonly threadRequests: string[] = [];
   readonly interrupts: string[] = [];
   turnStarts = 0;
@@ -369,13 +432,17 @@ class EmulatedCodex {
         return;
       }
       this.threadRequests.push(`${home} thread/resume ${params.threadId}`);
-      server.respond(id, { thread: { id: params.threadId } });
+      const turns = (this.history.get(params.threadId) ?? []).map((text) => ({
+        items: [{ type: "userMessage", content: [{ type: "text", text }] }],
+      }));
+      server.respond(id, { thread: { id: params.threadId, turns } });
     }
     if (method === "turn/start") {
       this.turnStarts += 1;
       if (this.hangTurnStart) return;
       // turn/start materializes the rollout in this home.
       if (!this.rollouts.has(params.threadId)) this.rollouts.set(params.threadId, home);
+      this.history.set(params.threadId, [...(this.history.get(params.threadId) ?? []), params.input[0].text]);
       const turnId = `turn-${++this.nextTurn}`;
       server.respond(id, { turn: { id: turnId, status: "inProgress" } });
       if (!this.hangTurns) {

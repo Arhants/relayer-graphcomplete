@@ -1,9 +1,11 @@
+import { interactionGraph, renderInteractionGraph } from "./interaction-graph.js";
 import { createWorkspaceLayout } from "./workspace-layout.js";
 import { preferredLayerNode, rememberedLayerSelection, rememberLayerSelection } from "./layer-selection.js";
 import { escapeHtml, toast } from "../ui.js";
 import { actionCanRetry, actionWasInvoked, actionReviewKind } from "../action-invocation-state.js";
 import { setControlActivationCompletion } from "../control-activation.js";
 import {
+  composerSendTitle,
   createModelPicker,
   selectionForNextInteraction,
 } from "../model-picker.js";
@@ -1437,15 +1439,17 @@ export async function navigateWorkspaceAction({
 
 
 export function resolveCompiledNodeDetailAction(actions, reference, node) {
-  if (!reference?.clientKey
-    || reference.sourceNode?.clientKey !== node?.clientKey
-    || !reference.sourceLayer?.clientKey) return undefined;
+  const matches = (ref, id, clientKey) => ref != null
+    && (ref.id != null || ref.clientKey != null)
+    && (ref.id == null || String(ref.id) === String(id))
+    && (ref.clientKey == null || ref.clientKey === clientKey);
+  if (!reference?.clientKey || !matches(reference.sourceNode, node?.id, node?.clientKey)) return undefined;
   return (actions || []).find((action) => (
     action.clientKey === reference.clientKey
-    && action.sourceNodeId != null
-    && String(action.sourceNodeId) === String(node.id)
-    && action.sourceLayerId != null
-    && action.sourceLayerClientKey === reference.sourceLayer.clientKey
+    && action.sourceNodeId != null && String(action.sourceNodeId) === String(node.id)
+    && (reference.sourceLayer == null
+      ? action.sourceLayerId == null
+      : matches(reference.sourceLayer, action.sourceLayerId, action.sourceLayerClientKey))
   ));
 }
 
@@ -1627,6 +1631,7 @@ export function createProductWorkspace({
   onSubmitInteraction = async () => {},
   onStopInteraction = async () => {},
   onOpenSettings = () => {},
+  onRefreshModels = null,
   onNavigateLayer = async () => {},
   onNavigateResolvedInvoke = async () => {},
   onInvokeAction = async () => {},
@@ -2645,11 +2650,27 @@ export function createProductWorkspace({
     $("#turnPopover").classList.add("hidden");
     $("#turnPickerButton").setAttribute("aria-expanded", "false");
   };
+  const fitInteractionGraphPopover = () => {
+    const popover = $("#turnPopover");
+    if (!turnPopoverOpen || !popover.classList.contains("interaction-graph-popover")) return;
+    const banner = $("#interactionBanner").getBoundingClientRect();
+    const picker = $("#turnPicker").getBoundingClientRect();
+    popover.style.setProperty("--interaction-graph-available-width", `${Math.max(0, picker.right - banner.left - 1)}px`);
+    const available = graphDocument.documentElement.clientHeight - popover.getBoundingClientRect().top - 12;
+    popover.style.setProperty("--interaction-graph-available-height", `${Math.max(0, available)}px`);
+  };
+  // The banner changes size when the sidebar toggles or its text wraps.
+  const interactionBannerObserver = graphDocument.defaultView.ResizeObserver
+    ? new graphDocument.defaultView.ResizeObserver(fitInteractionGraphPopover)
+    : null;
+  interactionBannerObserver?.observe($("#interactionBanner"));
+  graphDocument.defaultView.addEventListener("resize", fitInteractionGraphPopover);
   const openTurnPopover = () => {
     if ($("#turnPickerButton").disabled) return;
     turnPopoverOpen = true;
     $("#turnPopover").classList.remove("hidden");
     $("#turnPickerButton").setAttribute("aria-expanded", "true");
+    fitInteractionGraphPopover();
     const current = $("#turnPopover [aria-current='true']");
     current?.scrollIntoView?.({ block: "nearest" });
     current?.focus?.({ preventScroll: true });
@@ -3623,9 +3644,11 @@ export function createProductWorkspace({
       Boolean(contextEditor),
       inputAttachments,
     ));
-    send.title = modelPicker?.isReady()
-      ? "Send"
-      : "Choose an available model in Settings before sending";
+    send.title = composerSendTitle({
+      ready: modelPicker?.isReady() ?? false,
+      modelSetup: modelPicker?.modelSetup() ?? null,
+      readyTitle: "Send",
+    });
   };
   const releaseSendAttempt = () => {
     sendAttempt = null;
@@ -4086,6 +4109,7 @@ export function createProductWorkspace({
       settings: getState().modelSettings,
       onSelectionChange: syncComposer,
       onOpenSettings,
+      onRefreshModels,
     });
   }
   prompt.oninput = () => {
@@ -4253,6 +4277,33 @@ export function createProductWorkspace({
     $("#previousTurn").disabled = turnIndex <= 0;
     $("#nextTurn").disabled = turnIndex < 0 || turnIndex >= turns.length - 1;
     const pickerButton = $("#turnPickerButton");
+    const graph = interactionGraph(turns, interaction?.id);
+    $("#turnPicker .turn-stepper").classList.toggle("interaction-graph-stepper", graph !== null);
+    $("#previousTurn").classList.toggle("hidden", graph !== null);
+    $("#nextTurn").classList.toggle("hidden", graph !== null);
+    pickerButton.classList.toggle("interaction-graph-trigger", graph !== null);
+    $("#turnPopover").classList.toggle("interaction-graph-popover", graph !== null);
+    if (graph) {
+      $("#turnPicker .turn-stepper").setAttribute("aria-label", "Interaction navigation");
+      pickerButton.disabled = !turns.length;
+      pickerButton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12M6 6v12m0-6h12"/><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/></svg><b>${graph.contextCount}</b>`;
+      pickerButton.setAttribute("aria-label", `Open interaction graph. ${graph.contextCount} attached context nodes`);
+      const title = graphDocument.createElement("div"); title.className = "interaction-graph-heading";
+      title.textContent = graph.incomplete ? "Interaction graph · Some connections unavailable" : "Interaction graph";
+      const viewport = graphDocument.createElement("div"); viewport.className = "interaction-graph-viewport";
+      viewport.append(renderInteractionGraph(graphDocument, graph, interaction?.id, async (node) => {
+        if (!await prepareNodeContextSelectionChange()) return;
+        closeTurnPopover(); collapseContextPreviews();
+        if (onSelectTurnById) await onSelectTurnById(node.id, { responseRoot: true, threadId: node.threadId });
+      }));
+      $("#turnPopover").replaceChildren(title, viewport);
+      if (focusedTurnId !== null) [...$("#turnPopover").querySelectorAll("[data-turn-id]")].find((row) => row.dataset.turnId === focusedTurnId)?.focus({ preventScroll: true });
+      $("#turnPopover").classList.toggle("hidden", !turnPopoverOpen);
+      pickerButton.setAttribute("aria-expanded", String(turnPopoverOpen));
+      fitInteractionGraphPopover();
+      return;
+    }
+    $("#turnPicker .turn-stepper").setAttribute("aria-label", "Turn navigation");
     pickerButton.disabled = turnIndex < 0 || !turns.length;
     pickerButton.textContent = `Turn ${turnIndex < 0 ? 0 : turnIndex + 1} of ${turns.length}`;
     pickerButton.setAttribute(
@@ -4702,7 +4753,7 @@ export function createProductWorkspace({
     if (modelPicker) {
       const replaceSelection = inheritanceKey !== pickerInheritanceKey;
       modelPicker.setContext({
-        settings: state.modelSettings,
+        settings: { ...state.modelSettings, conversationCompatibility: state.conversationCompatibility?.threadId === Number(thread.id) ? state.conversationCompatibility : { status: "blocked", message: "Checking conversation compatibility…" } },
         pinnedHarnessId: harnessId,
         selection: replaceSelection
           ? selectionForNextInteraction(state.modelSettings, harnessId, latestInteraction)
@@ -6099,6 +6150,8 @@ export function createProductWorkspace({
     contextDraftLoadRetryAttempts.clear();
     inputDraftLoadRetries?.dispose();
     graphDocument.defaultView.removeEventListener("resize", repositionContextDraftSendWarning);
+    graphDocument.defaultView.removeEventListener("resize", fitInteractionGraphPopover);
+    interactionBannerObserver?.disconnect();
     automaticGraphFit.dispose();
     cancelInspectorFit();
     graphDocument.removeEventListener("pointerdown", blurGraphFromOutsidePointer, true);

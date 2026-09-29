@@ -643,6 +643,12 @@ async function run() {
   await waitFor("sidebar thread change waits for draft persistence", () => heldSidebarSave);
   await click("#closeInspector");
   releaseSidebarSave();
+  await waitFor("the latest Close cancels sidebar navigation after saving", () => evaluate(`
+    new URL(location.href).searchParams.get('threadId') === ${JSON.stringify(String(thread.id))}
+      && document.querySelector('#inspector')?.classList.contains('hidden')
+      && !document.querySelector('#contextAnnotationEditor')
+  `));
+  await clickNode("Incoming queue");
   await waitFor("cancelled sidebar change restores dock controls", () => evaluate(`(() => {
     const editor = document.querySelector('#contextAnnotationEditor');
     return new URL(location.href).searchParams.get('threadId') === ${JSON.stringify(String(thread.id))}
@@ -867,6 +873,14 @@ async function run() {
     throw new Error(`Selection or turn navigation escaped a pending confirm: ${JSON.stringify(selectionDuringConfirm)}`);
   }
   rejectConfirmRequest();
+  await waitFor("the latest turn request proceeds after confirmation settles", () => evaluate(`
+    document.querySelector('#turnPickerButton')?.textContent === 'Turn 2 of 2'
+  `));
+  await click("#previousTurn");
+  await waitFor("the failed confirmation source turn is restored", () => evaluate(`
+    document.querySelector('#turnPickerButton')?.textContent === 'Turn 1 of 2'
+  `));
+  await clickNode("Incoming queue");
   await waitFor("inline Node Details confirmation failure", () => evaluate(`(() => {
     const error = document.querySelector('#nodeContextDock [role="alert"]');
     const editor = document.querySelector('#contextAnnotationEditor');

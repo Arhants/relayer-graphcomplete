@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "format": "relayer-harness-trace-v1",
+  "traceId": "8da312d2-a0d2-4c5b-bdde-1481c6c3f42e",
+  "createdAt": "2026-09-28T13:08:54.675Z",
+  "completedAt": "2026-09-28T13:16:51.321Z",
+  "status": "complete",
+  "terminalReason": null,
+  "implementation": "codex.basic",
+  "configurationName": "codex-basic",
+  "threadId": 1,
+  "interactionNodeId": 25,
+  "productInteractionId": 2,
+  "personalPresentationVersionId": 15,
+  "personalPresentationVersionKey": "personal-presentation-v4",
+  "declaredCoverage": {
+    "prompt": "full",
+    "messages": "full",
+    "reasoningSummaries": "full",
+    "modelCalls": "full",
+    "toolCalls": "full",
+    "usage": "full",
+    "childStreams": "none",
+    "nativeArtifacts": "none"
+  },
+  "achievedCoverage": {
+    "prompt": "full",
+    "messages": "full",
+    "reasoningSummaries": "full",
+    "modelCalls": "full",
+    "toolCalls": "full",
+    "usage": "full",
+    "childStreams": "none",
+    "nativeArtifacts": "none"
+  },
+  "policy": {
+    "mode": "required",
+    "requiredFeatures": {},
+    "includeNativeArtifacts": false,
+    "maxBytesPerTurn": 10485760,
+    "maxEventsPerTurn": 50000
+  },
+  "redactionPolicyVersion": 1,
+  "redactionCount": 148,
+  "truncation": null,
+  "artifacts": {
+    "events": {
+      "ref": "events.jsonl",
+      "sha256": "sha256:b5e36813dd8bf3bc8d0292709869e63d03ed5191903ada193eb840fcdce42e0f",
+      "byteLength": 763800,
+      "eventCount": 633
+    },
+    "attachments": []
+  }
+}

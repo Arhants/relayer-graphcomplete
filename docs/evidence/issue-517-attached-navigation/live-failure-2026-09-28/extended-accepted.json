@@ -1,0 +1,588 @@
+{
+  "thread": {
+    "id": 1,
+    "title": "Attached navigation live walkthrough",
+    "projectId": null,
+    "rootInteractionId": 1,
+    "harnessConfigurationName": "codex-basic",
+    "harnessId": "codex-basic",
+    "permissionProfileId": "auto",
+    "createdAt": "1790600508622",
+    "updatedAt": "1790600934304",
+    "imported": false
+  },
+  "interactions": [
+    {
+      "interactionGraph": {
+        "complete": true,
+        "enabled": true,
+        "sources": []
+      },
+      "id": 1,
+      "threadId": 1,
+      "sequence": 1,
+      "text": "Create a small, polished graph for a synthetic release-readiness walkthrough. Use your normal graph client and finish with graph.submit(interactionNode), the documented terminal authoring submission; do not call recursiveComplete. Do not delegate, invoke controls, browse, use any external service, or modify any files outside your normal graph-authoring workspace.\nThe response root has exactly two connected nodes: \"Launch decision\" (clientKey launch-decision) and \"Evidence shelf\" (clientKey evidence-shelf). Launch decision's semantic detail is exactly \"Release when error rate stays below 1% and rollback is ready.\" Its compiled Node Detail presents this concise decision in a clean layout and exposes one real invoke control labeled \"Draft rollout recommendation\". The invoke instruction asks for a rollout recommendation; author the control without invoking it.\nEvidence shelf has a real Expand control labeled \"Inspect baseline\" to a child layer with the SAME Launch decision node identity reused alongside one connected node titled \"Traffic baseline\". Do not clone Launch decision. The original invoke must remain usable in both occurrences. Give every node/layer/action a stable clientKey. Compile Node Details using supported graph-client APIs, use clear typography and restrained color, and set Launch decision as the default node of both layers. This is a synthetic fixture with no real customer data; do not invent external facts.",
+      "createdAt": "1790600508622",
+      "graphNodeId": 21,
+      "completionStatus": "accepted",
+      "stopRequested": false,
+      "stopError": null,
+      "harnessConfigurationName": "codex-basic",
+      "harnessConfigurationDigest": "sha256:057ab71df2cbb62e6f5e9f312cf5d3804dfa6e6e2088098dc5bb2fb7b3c193dd",
+      "permissionProfileId": "auto",
+      "modelSelection": {
+        "familyId": 2,
+        "providerId": "codex",
+        "modelId": "gpt-5.6-sol"
+      },
+      "effectiveExecutionDigest": "sha256:e615dabfa91e11d6a7c7b6bdbd2082b37d2710027cc05075e5926ec11effbb99",
+      "effectivePermissionReceipt": {
+        "authority": "bounded",
+        "bindingPresent": true,
+        "disclosure": null,
+        "label": "Approve for me",
+        "permissionProfileId": "auto",
+        "reviewer": "automatic",
+        "schemaVersion": 1,
+        "unconfinedHostAccess": false
+      },
+      "completionOutput": {
+        "nodeId": 21,
+        "rootAction": {
+          "clientKey": "release-readiness-response",
+          "description": null,
+          "icon": null,
+          "id": 8,
+          "interactionText": null,
+          "kind": "navigate",
+          "label": "Open release readiness",
+          "relation": "expand",
+          "sourceLayerId": null,
+          "sourceNodeId": 21,
+          "state": "accepted",
+          "targetLayerId": 7,
+          "variant": "pill"
+        },
+        "rootLayer": {
+          "actions": [
+            {
+              "clientKey": "draft-rollout-recommendation",
+              "description": null,
+              "icon": "pencil-line",
+              "id": 6,
+              "interactionText": "Draft a rollout recommendation for this release-readiness walkthrough.",
+              "kind": "invoke",
+              "label": "Draft rollout recommendation",
+              "relation": null,
+              "sourceLayerClientKey": "release-readiness-root",
+              "sourceLayerId": 7,
+              "sourceNodeId": 22,
+              "state": "accepted",
+              "targetLayerId": null,
+              "variant": "wide"
+            },
+            {
+              "clientKey": "inspect-baseline",
+              "description": null,
+              "icon": "bar-chart-3",
+              "id": 7,
+              "interactionText": null,
+              "kind": "navigate",
+              "label": "Inspect baseline",
+              "relation": "expand",
+              "sourceLayerClientKey": "release-readiness-root",
+              "sourceLayerId": 7,
+              "sourceNodeId": 23,
+              "state": "accepted",
+              "targetLayerId": 6,
+              "variant": "wide"
+            }
+          ],
+          "edges": [
+            {
+              "endpoints": [
+                22,
+                23
+              ],
+              "id": 11,
+              "state": "accepted"
+            }
+          ],
+          "layer": {
+            "clientKey": "release-readiness-root",
+            "defaultNodeId": 22,
+            "edges": [
+              11
+            ],
+            "id": 7,
+            "layout": {
+              "placements": [
+                {
+                  "nodeId": 22,
+                  "x": 0.3,
+                  "y": 0.5
+                },
+                {
+                  "nodeId": 23,
+                  "x": 0.72,
+                  "y": 0.5
+                }
+              ],
+              "version": 1
+            },
+            "nodes": [
+              22,
+              23
+            ],
+            "state": "accepted"
+          },
+          "nodes": [
+            {
+              "authoredDetail": {
+                "assets": [],
+                "components": [
+                  {
+                    "css": ".card{display:grid;gap:1rem;padding:1.4rem;border:1px solid;border-radius:1rem;max-width:42rem;box-sizing:border-box}.eyebrow{font-size:0.75rem;font-weight:700;letter-spacing:0.08rem;text-transform:uppercase}h2{margin:0;font-size:1.45rem;line-height:1.2}p{margin:0;line-height:1.6}.primary{width:100%;padding:0.8rem 1rem;border:1px solid;border-radius:0.65rem;font:inherit;font-weight:700}.primary:hover{opacity:0.88}.primary:focus-visible{outline:3px solid;outline-offset:2px}.gate-row{display:grid;grid-template-columns:1fr auto 1fr;gap:0.65rem;align-items:center}.gate{display:grid;gap:0.2rem;padding:0.8rem;border:1px solid;border-radius:0.75rem;text-align:center}.join{font-size:0.78rem;font-weight:700;text-transform:uppercase}dl{display:grid;gap:0.65rem;margin:0}dl div{display:grid;grid-template-columns:1fr 1.2fr;gap:0.8rem;padding:0.75rem;border:1px solid;border-radius:0.7rem}dt{font-weight:700}dd{margin:0}[data-relayer-theme=\"light\"] .card{color:#17202a;background-color:#fbfcfe;border-color:#d9e0e7;box-shadow:0 8px 24px rgba(25,38,52,0.08)}[data-relayer-theme=\"light\"] .eyebrow{color:#52606d}[data-relayer-theme=\"light\"] .gate{background-color:#f2f7f5;border-color:#b8d4c6}[data-relayer-theme=\"light\"] dl div{background-color:#f5f7f9;border-color:#d5dde4}[data-relayer-theme=\"light\"] .primary{color:#ffffff;background-color:#245f70;border-color:#245f70}[data-relayer-theme=\"light\"] .primary:focus-visible{outline-color:#0b6bcb}[data-relayer-theme=\"dark\"] .card{color:#edf3f5;background-color:#141a1d;border-color:#344248;box-shadow:0 8px 24px rgba(0,0,0,0.28)}[data-relayer-theme=\"dark\"] .eyebrow{color:#a9b7bd}[data-relayer-theme=\"dark\"] .gate{background-color:#192622;border-color:#3e6b5d}[data-relayer-theme=\"dark\"] dl div{background-color:#1d2529;border-color:#3d4b51}[data-relayer-theme=\"dark\"] .primary{color:#10202b;background-color:#9fd3d6;border-color:#9fd3d6}[data-relayer-theme=\"dark\"] .primary:focus-visible{outline-color:#76bfff}",
+                    "html": "<main class=\"card\"><div class=\"eyebrow\">Synthetic release gate</div><h2>Launch decision</h2><p>Release when error rate stays below <strong>1%</strong> and rollback is ready.</p><div aria-label=\"Release criteria\" class=\"gate-row\"><span class=\"gate\"><b>&lt; 1%</b><small>Error rate</small></span><span class=\"join\">and</span><span class=\"gate\"><b>Ready</b><small>Rollback</small></span></div><button class=\"primary\" data-gc-mount=\"m_c4b3bc8f2ad930ae\">Draft rollout recommendation</button></main>",
+                    "id": "main",
+                    "order": 0
+                  }
+                ],
+                "integritySha256": "417d3e1764bb85363d72d20bcba2a7b2052b18cbda3adc0d12fd082bd29d8c2b",
+                "mounts": [
+                  {
+                    "capability": {
+                      "action": {
+                        "clientKey": "draft-rollout-recommendation",
+                        "sourceLayer": {
+                          "clientKey": "release-readiness-root"
+                        },
+                        "sourceNode": {
+                          "clientKey": "launch-decision"
+                        }
+                      },
+                      "kind": "invoke"
+                    },
+                    "componentId": "main",
+                    "host": "button",
+                    "id": "m_c4b3bc8f2ad930ae",
+                    "kind": "capability"
+                  }
+                ],
+                "version": 1
+              },
+              "clientKey": "launch-decision",
+              "detail": "Release when error rate stays below 1% and rollback is ready.",
+              "icon": "info",
+              "id": 22,
+              "kind": "check-circle",
+              "leasedActionId": null,
+              "state": "accepted",
+              "title": "Launch decision"
+            },
+            {
+              "authoredDetail": {
+                "assets": [],
+                "components": [
+                  {
+                    "css": ".card{display:grid;gap:1rem;padding:1.4rem;border:1px solid;border-radius:1rem;max-width:42rem;box-sizing:border-box}.eyebrow{font-size:0.75rem;font-weight:700;letter-spacing:0.08rem;text-transform:uppercase}h2{margin:0;font-size:1.45rem;line-height:1.2}p{margin:0;line-height:1.6}.primary{width:100%;padding:0.8rem 1rem;border:1px solid;border-radius:0.65rem;font:inherit;font-weight:700}.primary:hover{opacity:0.88}.primary:focus-visible{outline:3px solid;outline-offset:2px}.gate-row{display:grid;grid-template-columns:1fr auto 1fr;gap:0.65rem;align-items:center}.gate{display:grid;gap:0.2rem;padding:0.8rem;border:1px solid;border-radius:0.75rem;text-align:center}.join{font-size:0.78rem;font-weight:700;text-transform:uppercase}dl{display:grid;gap:0.65rem;margin:0}dl div{display:grid;grid-template-columns:1fr 1.2fr;gap:0.8rem;padding:0.75rem;border:1px solid;border-radius:0.7rem}dt{font-weight:700}dd{margin:0}[data-relayer-theme=\"light\"] .card{color:#17202a;background-color:#fbfcfe;border-color:#d9e0e7;box-shadow:0 8px 24px rgba(25,38,52,0.08)}[data-relayer-theme=\"light\"] .eyebrow{color:#52606d}[data-relayer-theme=\"light\"] .gate{background-color:#f2f7f5;border-color:#b8d4c6}[data-relayer-theme=\"light\"] dl div{background-color:#f5f7f9;border-color:#d5dde4}[data-relayer-theme=\"light\"] .primary{color:#ffffff;background-color:#245f70;border-color:#245f70}[data-relayer-theme=\"light\"] .primary:focus-visible{outline-color:#0b6bcb}[data-relayer-theme=\"dark\"] .card{color:#edf3f5;background-color:#141a1d;border-color:#344248;box-shadow:0 8px 24px rgba(0,0,0,0.28)}[data-relayer-theme=\"dark\"] .eyebrow{color:#a9b7bd}[data-relayer-theme=\"dark\"] .gate{background-color:#192622;border-color:#3e6b5d}[data-relayer-theme=\"dark\"] dl div{background-color:#1d2529;border-color:#3d4b51}[data-relayer-theme=\"dark\"] .primary{color:#10202b;background-color:#9fd3d6;border-color:#9fd3d6}[data-relayer-theme=\"dark\"] .primary:focus-visible{outline-color:#76bfff}",
+                    "html": "<main class=\"card\"><div class=\"eyebrow\">Supporting view</div><h2>Evidence shelf</h2><p>Open the compact synthetic baseline to inspect how the decision gate is framed. No customer data is used.</p><button class=\"primary\" data-gc-mount=\"m_4cf106b4a7bb4584\">Inspect baseline</button></main>",
+                    "id": "main",
+                    "order": 0
+                  }
+                ],
+                "integritySha256": "16188a1633a2bce22479800182e4d1ee4c58717a5b2945d524e19e4d83c60506",
+                "mounts": [
+                  {
+                    "capability": {
+                      "action": {
+                        "clientKey": "inspect-baseline",
+                        "sourceLayer": {
+                          "clientKey": "release-readiness-root"
+                        },
+                        "sourceNode": {
+                          "clientKey": "evidence-shelf"
+                        }
+                      },
+                      "kind": "expand"
+                    },
+                    "componentId": "main",
+                    "host": "button",
+                    "id": "m_4cf106b4a7bb4584",
+                    "kind": "capability"
+                  }
+                ],
+                "version": 1
+              },
+              "clientKey": "evidence-shelf",
+              "detail": "Open the synthetic baseline used to rehearse the release gate.",
+              "icon": "info",
+              "id": 23,
+              "kind": "archive",
+              "leasedActionId": null,
+              "state": "accepted",
+              "title": "Evidence shelf"
+            }
+          ]
+        }
+      },
+      "completionError": null,
+      "latestAttempt": {
+        "id": 1,
+        "attemptNumber": 1,
+        "startedAt": "1790600508666",
+        "finishedAt": "1790600933765",
+        "modelSelection": {
+          "familyId": 2,
+          "providerId": "codex",
+          "modelId": "gpt-5.6-sol"
+        },
+        "familyRevision": 1,
+        "harnessConfigurationName": "codex-basic",
+        "harnessConfigurationRevision": 8,
+        "harnessConfigurationDigest": "sha256:057ab71df2cbb62e6f5e9f312cf5d3804dfa6e6e2088098dc5bb2fb7b3c193dd",
+        "adapterId": "codex-subscription",
+        "adapterImplementationVersion": 1,
+        "accessContract": "managed-runtime@1",
+        "outcome": "accepted",
+        "failureCategory": null,
+        "failureMessage": null,
+        "effectBoundary": "graph_write",
+        "attemptAdmissionId": "c75b5845-509e-4bd4-96d3-0f0aa0a3a447",
+        "admittedPlan": {
+          "familyId": 2,
+          "familyRevision": 1,
+          "orchestrator": {
+            "providerId": "codex",
+            "adapterId": "codex-subscription",
+            "accessContract": "managed-runtime@1",
+            "modelId": "gpt-5.6-sol",
+            "adapterImplementationVersion": "1"
+          },
+          "roster": [
+            {
+              "providerId": "codex",
+              "adapterId": "codex-subscription",
+              "accessContract": "managed-runtime@1",
+              "modelId": "gpt-5.6-sol",
+              "adapterImplementationVersion": "1"
+            }
+          ],
+          "harnessPolicyDigest": "sha256:aba1251e5605034fa01d6f46ef7aea51891ff7d76e2b9850ce983d1acb5c0b11",
+          "digest": "sha256:07e3532bbb3623a0f5d6b2143e151ec96358549c74d5587ce3a352fbd4ebd7d0"
+        }
+      },
+      "projectionFresh": true,
+      "contexts": [],
+      "submittedInputs": []
+    },
+    {
+      "interactionGraph": {
+        "complete": true,
+        "enabled": true,
+        "sources": [
+          {
+            "completionStatus": "accepted",
+            "graphNodeId": 21,
+            "interactionId": 1,
+            "invocationActionId": null,
+            "layers": [
+              {
+                "layerId": 6,
+                "nodeIds": [
+                  22
+                ]
+              }
+            ],
+            "text": "Create a small, polished graph for a synthetic release-readiness walkthrough. Use your normal graph client and finish with graph.submit(interactionNode), the documented terminal authoring submission; do not call recursiveComplete. Do not delegate, invoke controls, browse, use any external service, or modify any files outside your normal graph-authoring workspace.\nThe response root has exactly two connected nodes: \"Launch decision\" (clientKey launch-decision) and \"Evidence shelf\" (clientKey evidence-shelf). Launch decision's semantic detail is exactly \"Release when error rate stays below 1% and rollback is ready.\" Its compiled Node Detail presents this concise decision in a clean layout and exposes one real invoke control labeled \"Draft rollout recommendation\". The invoke instruction asks for a rollout recommendation; author the control without invoking it.\nEvidence shelf has a real Expand control labeled \"Inspect baseline\" to a child layer with the SAME Launch decision node identity reused alongside one connected node titled \"Traffic baseline\". Do not clone Launch decision. The original invoke must remain usable in both occurrences. Give every node/layer/action a stable clientKey. Compile Node Details using supported graph-client APIs, use clear typography and restrained color, and set Launch decision as the default node of both layers. This is a synthetic fixture with no real customer data; do not invent external facts.",
+            "threadId": 1
+          }
+        ]
+      },
+      "id": 2,
+      "threadId": 1,
+      "sequence": 2,
+      "text": "Extend the attached persistent Launch decision node for a synthetic release-readiness walkthrough. Use the normal graph client and finish with graph.submit(interactionNode), the documented terminal authoring submission. Do not call recursiveComplete, delegate, execute invoke controls, browse, or call any external service.\nCreate an independent response root with three connected nodes titled \"Prepare\", \"Measure\", and \"Decide\". Include a short expansion checklist layer with two connected nodes titled \"Check error rate\" and \"Confirm rollback\". Make a normal Expand from Measure to that checklist.\nAdd TWO node-owned navigate actions to the exact attached Launch decision node id 22: a Reference labeled \"Release readiness\" targeting THIS interaction's new response ROOT, and an Expand labeled \"Readiness checklist\" targeting the new checklist layer. The attached node must not be inserted into the new response or checklist. Omit sourceLayerId on these new node-owned actions. Both new actions and their targets must be accepted atomically with this interaction.\nExplicitly replace the attached node's full compiled HTML Node Detail using getNodePresentation and replaceNodePresentation with its current optimistic revision. Preserve its persistent identity, title, and semantic detail EXACTLY; do not submit/update the existing node. Preserve and expose the original \"Draft rollout recommendation\" invoke action with the exact original binding, and expose both new navigate controls. Read the actual accepted action identities/provenance before compiling. The persistent node's clientKey is launch-decision; it appears in source root layer 7 and attached child layer 6. An existing action's sourceLayer binding is its original canonical provenance, not the attached occurrence. Build the compiler's binding objects from these stable identities without submitting synthetic existing builders/layers. For newly added navigation, a binding without sourceLayer is supported. Use supported graph-client declarations to confirm exact APIs.\nUse a coherent compact layout: decision summary, readiness status text, then all three clearly labeled controls. Do not discard old controls or synthesize inert HTML buttons. This request explicitly includes the full presentation replacement, so do not use the unresolved rich-detail/no-replacement path.",
+      "createdAt": "1790600934304",
+      "graphNodeId": 25,
+      "completionStatus": "accepted",
+      "stopRequested": false,
+      "stopError": null,
+      "harnessConfigurationName": "codex-basic",
+      "harnessConfigurationDigest": "sha256:057ab71df2cbb62e6f5e9f312cf5d3804dfa6e6e2088098dc5bb2fb7b3c193dd",
+      "permissionProfileId": "auto",
+      "modelSelection": {
+        "familyId": 2,
+        "providerId": "codex",
+        "modelId": "gpt-5.6-sol"
+      },
+      "effectiveExecutionDigest": "sha256:e615dabfa91e11d6a7c7b6bdbd2082b37d2710027cc05075e5926ec11effbb99",
+      "effectivePermissionReceipt": {
+        "authority": "bounded",
+        "bindingPresent": true,
+        "disclosure": null,
+        "label": "Approve for me",
+        "permissionProfileId": "auto",
+        "reviewer": "automatic",
+        "schemaVersion": 1,
+        "unconfinedHostAccess": false
+      },
+      "completionOutput": {
+        "nodeId": 25,
+        "rootAction": {
+          "clientKey": "readiness-walkthrough-response",
+          "description": null,
+          "icon": null,
+          "id": 13,
+          "interactionText": null,
+          "kind": "navigate",
+          "label": "Open release readiness walkthrough",
+          "relation": "expand",
+          "sourceLayerId": null,
+          "sourceNodeId": 25,
+          "state": "accepted",
+          "targetLayerId": 9,
+          "variant": "pill"
+        },
+        "rootLayer": {
+          "actions": [
+            {
+              "clientKey": "measure-readiness-checklist",
+              "description": null,
+              "icon": "list-checks",
+              "id": 10,
+              "interactionText": null,
+              "kind": "navigate",
+              "label": "Open readiness checklist",
+              "relation": "expand",
+              "sourceLayerClientKey": "readiness-walkthrough-root",
+              "sourceLayerId": 9,
+              "sourceNodeId": 27,
+              "state": "accepted",
+              "targetLayerId": 8,
+              "variant": "wide"
+            }
+          ],
+          "edges": [
+            {
+              "endpoints": [
+                26,
+                27
+              ],
+              "id": 13,
+              "state": "accepted"
+            },
+            {
+              "endpoints": [
+                27,
+                28
+              ],
+              "id": 14,
+              "state": "accepted"
+            }
+          ],
+          "layer": {
+            "clientKey": "readiness-walkthrough-root",
+            "defaultNodeId": 27,
+            "edges": [
+              13,
+              14
+            ],
+            "id": 9,
+            "layout": {
+              "placements": [
+                {
+                  "nodeId": 26,
+                  "x": 0.16,
+                  "y": 0.5
+                },
+                {
+                  "nodeId": 27,
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "nodeId": 28,
+                  "x": 0.84,
+                  "y": 0.5
+                }
+              ],
+              "version": 1
+            },
+            "nodes": [
+              26,
+              27,
+              28
+            ],
+            "state": "accepted"
+          },
+          "nodes": [
+            {
+              "authoredDetail": {
+                "assets": [],
+                "components": [
+                  {
+                    "css": ".card{display:grid;gap:0.9rem;padding:1.25rem;border:1px solid;border-radius:0.9rem;max-width:40rem;box-sizing:border-box}.eyebrow{font-size:0.74rem;font-weight:700;letter-spacing:0.08rem;text-transform:uppercase}h2{margin:0;font-size:1.35rem;line-height:1.2}p{margin:0;line-height:1.55}.step{display:grid;grid-template-columns:auto 1fr;gap:0.8rem;align-items:center;padding:0.75rem;border:1px solid;border-radius:0.7rem}.badge{display:grid;place-items:center;width:2rem;height:2rem;border-radius:1rem;font-weight:800}.control{width:100%;padding:0.78rem 1rem;border:1px solid;border-radius:0.65rem;font:inherit;font-weight:700}.control:hover{opacity:0.88}.control:focus-visible{outline:3px solid;outline-offset:2px}[data-relayer-theme=\"light\"] .card{color:#172126;background-color:#fbfcfd;border-color:#d6dee2;box-shadow:0 8px 22px rgba(25,38,45,0.08)}[data-relayer-theme=\"light\"] .eyebrow{color:#586970}[data-relayer-theme=\"light\"] .step{background-color:#f3f7f6;border-color:#c9d9d4}[data-relayer-theme=\"light\"] .badge{color:#ffffff;background-color:#236454}[data-relayer-theme=\"light\"] .control{color:#ffffff;background-color:#245f70;border-color:#245f70}[data-relayer-theme=\"light\"] .control:focus-visible{outline-color:#0b6bcb}[data-relayer-theme=\"dark\"] .card{color:#edf3f4;background-color:#141a1d;border-color:#364449;box-shadow:0 8px 22px rgba(0,0,0,0.28)}[data-relayer-theme=\"dark\"] .eyebrow{color:#a8b8bd}[data-relayer-theme=\"dark\"] .step{background-color:#1a2523;border-color:#3c5d54}[data-relayer-theme=\"dark\"] .badge{color:#102019;background-color:#93d5bd}[data-relayer-theme=\"dark\"] .control{color:#102029;background-color:#9fd3d6;border-color:#9fd3d6}[data-relayer-theme=\"dark\"] .control:focus-visible{outline-color:#76bfff}",
+                    "html": "<main class=\"card\"><div class=\"eyebrow\">Release readiness</div><h2>Prepare</h2><p>Set the decision boundary before rollout begins.</p><div class=\"step\"><span class=\"badge\">1</span><span>Confirm the error-rate threshold and make rollback actionable.</span></div></main>",
+                    "id": "main",
+                    "order": 0
+                  }
+                ],
+                "integritySha256": "eabf35db4967c3d8da7752ef04cc1e5e5a57cd3a9f27d6074325046cf837d1c6",
+                "mounts": [],
+                "version": 1
+              },
+              "clientKey": "readiness-prepare",
+              "detail": "Confirm the release gate and make the recovery path actionable before rollout.",
+              "icon": "clipboard-check",
+              "id": 26,
+              "kind": "concept",
+              "leasedActionId": null,
+              "state": "accepted",
+              "title": "Prepare"
+            },
+            {
+              "authoredDetail": {
+                "assets": [],
+                "components": [
+                  {
+                    "css": ".card{display:grid;gap:0.9rem;padding:1.25rem;border:1px solid;border-radius:0.9rem;max-width:40rem;box-sizing:border-box}.eyebrow{font-size:0.74rem;font-weight:700;letter-spacing:0.08rem;text-transform:uppercase}h2{margin:0;font-size:1.35rem;line-height:1.2}p{margin:0;line-height:1.55}.step{display:grid;grid-template-columns:auto 1fr;gap:0.8rem;align-items:center;padding:0.75rem;border:1px solid;border-radius:0.7rem}.badge{display:grid;place-items:center;width:2rem;height:2rem;border-radius:1rem;font-weight:800}.control{width:100%;padding:0.78rem 1rem;border:1px solid;border-radius:0.65rem;font:inherit;font-weight:700}.control:hover{opacity:0.88}.control:focus-visible{outline:3px solid;outline-offset:2px}[data-relayer-theme=\"light\"] .card{color:#172126;background-color:#fbfcfd;border-color:#d6dee2;box-shadow:0 8px 22px rgba(25,38,45,0.08)}[data-relayer-theme=\"light\"] .eyebrow{color:#586970}[data-relayer-theme=\"light\"] .step{background-color:#f3f7f6;border-color:#c9d9d4}[data-relayer-theme=\"light\"] .badge{color:#ffffff;background-color:#236454}[data-relayer-theme=\"light\"] .control{color:#ffffff;background-color:#245f70;border-color:#245f70}[data-relayer-theme=\"light\"] .control:focus-visible{outline-color:#0b6bcb}[data-relayer-theme=\"dark\"] .card{color:#edf3f4;background-color:#141a1d;border-color:#364449;box-shadow:0 8px 22px rgba(0,0,0,0.28)}[data-relayer-theme=\"dark\"] .eyebrow{color:#a8b8bd}[data-relayer-theme=\"dark\"] .step{background-color:#1a2523;border-color:#3c5d54}[data-relayer-theme=\"dark\"] .badge{color:#102019;background-color:#93d5bd}[data-relayer-theme=\"dark\"] .control{color:#102029;background-color:#9fd3d6;border-color:#9fd3d6}[data-relayer-theme=\"dark\"] .control:focus-visible{outline-color:#76bfff}",
+                    "html": "<main class=\"card\"><div class=\"eyebrow\">Release readiness</div><h2>Measure</h2><p>Use the focused checks to determine whether the gate is satisfied.</p><div class=\"step\"><span class=\"badge\">2</span><span>Validate both the signal and the recovery path.</span></div><button class=\"control\" data-gc-mount=\"m_6213cf85ddae5bc8\">Open readiness checklist</button></main>",
+                    "id": "main",
+                    "order": 0
+                  }
+                ],
+                "integritySha256": "c0eda4117f9f3048d8a97e35555a42412958989f4d4058bbb2b591a975cc2f71",
+                "mounts": [
+                  {
+                    "capability": {
+                      "action": {
+                        "clientKey": "measure-readiness-checklist",
+                        "sourceLayer": {
+                          "clientKey": "readiness-walkthrough-root"
+                        },
+                        "sourceNode": {
+                          "clientKey": "readiness-measure"
+                        }
+                      },
+                      "kind": "expand"
+                    },
+                    "componentId": "main",
+                    "host": "button",
+                    "id": "m_6213cf85ddae5bc8",
+                    "kind": "capability"
+                  }
+                ],
+                "version": 1
+              },
+              "clientKey": "readiness-measure",
+              "detail": "Observe the synthetic error-rate gate and open the focused readiness checklist.",
+              "icon": "bar-chart-3",
+              "id": 27,
+              "kind": "concept",
+              "leasedActionId": null,
+              "state": "accepted",
+              "title": "Measure"
+            },
+            {
+              "authoredDetail": {
+                "assets": [],
+                "components": [
+                  {
+                    "css": ".card{display:grid;gap:0.9rem;padding:1.25rem;border:1px solid;border-radius:0.9rem;max-width:40rem;box-sizing:border-box}.eyebrow{font-size:0.74rem;font-weight:700;letter-spacing:0.08rem;text-transform:uppercase}h2{margin:0;font-size:1.35rem;line-height:1.2}p{margin:0;line-height:1.55}.step{display:grid;grid-template-columns:auto 1fr;gap:0.8rem;align-items:center;padding:0.75rem;border:1px solid;border-radius:0.7rem}.badge{display:grid;place-items:center;width:2rem;height:2rem;border-radius:1rem;font-weight:800}.control{width:100%;padding:0.78rem 1rem;border:1px solid;border-radius:0.65rem;font:inherit;font-weight:700}.control:hover{opacity:0.88}.control:focus-visible{outline:3px solid;outline-offset:2px}[data-relayer-theme=\"light\"] .card{color:#172126;background-color:#fbfcfd;border-color:#d6dee2;box-shadow:0 8px 22px rgba(25,38,45,0.08)}[data-relayer-theme=\"light\"] .eyebrow{color:#586970}[data-relayer-theme=\"light\"] .step{background-color:#f3f7f6;border-color:#c9d9d4}[data-relayer-theme=\"light\"] .badge{color:#ffffff;background-color:#236454}[data-relayer-theme=\"light\"] .control{color:#ffffff;background-color:#245f70;border-color:#245f70}[data-relayer-theme=\"light\"] .control:focus-visible{outline-color:#0b6bcb}[data-relayer-theme=\"dark\"] .card{color:#edf3f4;background-color:#141a1d;border-color:#364449;box-shadow:0 8px 22px rgba(0,0,0,0.28)}[data-relayer-theme=\"dark\"] .eyebrow{color:#a8b8bd}[data-relayer-theme=\"dark\"] .step{background-color:#1a2523;border-color:#3c5d54}[data-relayer-theme=\"dark\"] .badge{color:#102019;background-color:#93d5bd}[data-relayer-theme=\"dark\"] .control{color:#102029;background-color:#9fd3d6;border-color:#9fd3d6}[data-relayer-theme=\"dark\"] .control:focus-visible{outline-color:#76bfff}",
+                    "html": "<main class=\"card\"><div class=\"eyebrow\">Release readiness</div><h2>Decide</h2><p>Release only when the threshold holds and rollback is ready.</p><div class=\"step\"><span class=\"badge\">3</span><span>Make the launch call from the two explicit checks.</span></div></main>",
+                    "id": "main",
+                    "order": 0
+                  }
+                ],
+                "integritySha256": "41cd945e34116ab9b1cdcaa581913693e36715f461fb7d9e677f5001e76d72d8",
+                "mounts": [],
+                "version": 1
+              },
+              "clientKey": "readiness-decide",
+              "detail": "Release only after the error-rate and rollback checks both support the decision.",
+              "icon": "check-circle",
+              "id": 28,
+              "kind": "concept",
+              "leasedActionId": null,
+              "state": "accepted",
+              "title": "Decide"
+            }
+          ]
+        }
+      },
+      "completionError": null,
+      "latestAttempt": {
+        "id": 2,
+        "attemptNumber": 1,
+        "startedAt": "1790600934483",
+        "finishedAt": "1790601411345",
+        "modelSelection": {
+          "familyId": 2,
+          "providerId": "codex",
+          "modelId": "gpt-5.6-sol"
+        },
+        "familyRevision": 1,
+        "harnessConfigurationName": "codex-basic",
+        "harnessConfigurationRevision": 8,
+        "harnessConfigurationDigest": "sha256:057ab71df2cbb62e6f5e9f312cf5d3804dfa6e6e2088098dc5bb2fb7b3c193dd",
+        "adapterId": "codex-subscription",
+        "adapterImplementationVersion": 1,
+        "accessContract": "managed-runtime@1",
+        "outcome": "accepted",
+        "failureCategory": null,
+        "failureMessage": null,
+        "effectBoundary": "graph_write",
+        "attemptAdmissionId": "bc2b6e20-edf1-4ccc-b4e3-44dca787cb44",
+        "admittedPlan": {
+          "familyId": 2,
+          "familyRevision": 1,
+          "orchestrator": {
+            "providerId": "codex",
+            "adapterId": "codex-subscription",
+            "accessContract": "managed-runtime@1",
+            "modelId": "gpt-5.6-sol",
+            "adapterImplementationVersion": "1"
+          },
+          "roster": [
+            {
+              "providerId": "codex",
+              "adapterId": "codex-subscription",
+              "accessContract": "managed-runtime@1",
+              "modelId": "gpt-5.6-sol",
+              "adapterImplementationVersion": "1"
+            }
+          ],
+          "harnessPolicyDigest": "sha256:aba1251e5605034fa01d6f46ef7aea51891ff7d76e2b9850ce983d1acb5c0b11",
+          "digest": "sha256:07e3532bbb3623a0f5d6b2143e151ec96358549c74d5587ce3a352fbd4ebd7d0"
+        }
+      },
+      "projectionFresh": true,
+      "contexts": [
+        {
+          "id": 9,
+          "type": "interaction.context",
+          "target": {
+            "nodeId": 22,
+            "sourceInteractionNodeId": 21,
+            "sourceLayerId": 6
+          },
+          "targetNode": {
+            "id": 22,
+            "kind": "check-circle",
+            "icon": "info",
+            "title": "Launch decision",
+            "detail": "Release when error rate stays below 1% and rollback is ready.",
+            "state": "accepted"
+          },
+          "annotations": [
+            "Add readiness navigation and replace the full presentation while preserving the original invoke."
+          ]
+        }
+      ],
+      "submittedInputs": []
+    }
+  ],
+  "actionInvocations": [],
+  "approvals": []
+}

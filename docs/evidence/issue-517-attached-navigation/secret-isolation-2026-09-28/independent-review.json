@@ -1,0 +1,25 @@
+{
+  "sourceDigest": "63992a635b50ef6b2368e50ca4d0c283d13f862dec7df8e2542990fb72901447",
+  "reviewCoordinator": "01a0d9c7-e4af-7112-a0f6-92226b2a4201",
+  "sourceHashesVerified": 91,
+  "scope": "Five-path isolation delta versus 0efa065fdf8df65b48597c210d2e6a9508c734dad7814e03bac6fdfb8627f83a; prior scoped findings remain resolved",
+  "reviews": [
+    {
+      "reviewer": "parent independent Spec/authority reviewer",
+      "verdict": "PASS",
+      "method": "Source and RED/GREEN/original-trigger/46-unit evidence inspected; tests not rerun",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "parent independent Standards reviewer",
+      "verdict": "PASS",
+      "method": "Static source review",
+      "unresolvedFindings": []
+    }
+  ],
+  "limitations": [
+    "Native boundary proved on tested macOS runtime only",
+    "Rich-detail without replacement policy remains unresolved",
+    "Non-certifying until pinned to PR/source"
+  ]
+}

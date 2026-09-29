@@ -1,6 +1,6 @@
 import { RELAYER_ICON_NAMES, type GraphCapability, type GraphNode } from "@relayer/graph-client";
 import { createHash } from "node:crypto";
-import { isAbsolute } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
 import { INTERACTION_INPUT_GUIDANCE, renderInteractionInput } from "../interaction-input.js";
 import {
@@ -39,6 +39,8 @@ import type {
   JsonObject,
   JsonValue,
 } from "../types.js";
+
+const ATTACHED_NAVIGATION_GUIDANCE = "Gated attached navigation: the server may authorize new navigate actions on the exact native accepted nodes attached to this input. This does not authorize invoke/input additions, title/detail edits, topology edits, or changes to other nodes. Use a stable clientKey and omit sourceLayer for a new node-owned action; target an accepted visible layer or a layer you authored in this interaction. A denied write is not permission to copy or broaden the attachment. These additions become visible only after terminal graph.submit, never after Advance. For an enabled frozen version-2 description, every distinct attached native node must receive a NEW navigate action targeting this interaction's exact response root, exposed by a usable button. Repeated occurrences of one persistent node need one addition; background attachments count too. Missing links reject terminal submission with node IDs for repair. For rich details, read the current presentation and preserve existing controls while binding the new action in a full replacement. Version-1 descriptions grant ability only; absent or disabled descriptions impose no such obligation. Advance does not enforce this terminal requirement. The server's frozen grant is authoritative; do not infer grants from mere mention, reuse, or imported/shared context. Keep the ordinary response root as well; its response action does not substitute for the required link on each attached source.";
 
 export const CODEX_BASIC_KEY = "codex.basic";
 
@@ -136,6 +138,7 @@ export class CodexBasicHarness implements Harness {
   private readonly completeModuleUrl: string;
   private readonly resolved: ResolvedCodexConfiguration;
   private codexThreadId: string | undefined;
+  private codexSessionIdentity: string | undefined;
   private codexThreadPersonalPresentationVersionId: number | null | undefined;
   /**
    * The Codex home holding the thread's rollout. Undefined only for a thread saved by an earlier
@@ -174,11 +177,14 @@ export class CodexBasicHarness implements Harness {
       || (typeof savedPresentationVersionId === "number"
         && Number.isSafeInteger(savedPresentationVersionId)
         && savedPresentationVersionId > 0);
+    if (typeof codexThreadId === "string" && !validSavedPresentationVersion) throw new Error("Legacy native history has an invalid presentation pin; its saved state was preserved.");
     const validSavedHome = savedHome === undefined || (typeof savedHome === "string" && savedHome !== "");
+    if (typeof codexThreadId === "string" && !validSavedHome) throw new Error("Legacy native history has an invalid storage identity; its saved state was preserved.");
     if (resolved.settings.rootSessionMode === "fresh") return;
     this.pendingRootReset = parseNativeSessionResetReason(context.savedState?.codexRootResetReason);
     if (typeof codexThreadId === "string" && validSavedPresentationVersion && validSavedHome) {
       this.codexThreadId = codexThreadId;
+      if (typeof context.savedState?.codexSessionIdentity === "string") this.codexSessionIdentity = context.savedState.codexSessionIdentity;
       this.codexThreadPersonalPresentationVersionId = savedPresentationVersionId;
       this.codexThreadHome = savedHome;
     } else if (typeof codexThreadId === "string") {
@@ -219,8 +225,13 @@ export class CodexBasicHarness implements Harness {
   ): Promise<void> {
     const personalPresentationVersionId = context.personalPresentation?.attachment.versionInteractionNodeId ?? null;
     const persistentRootSession = kind === "root" && this.resolved.settings.rootSessionMode !== "fresh";
+    if (kind === "root" && context.requireNativeContinuity && (!persistentRootSession || this.codexThreadId === undefined)) {
+      throw new Error("This conversation's native history is unavailable. Continuing with a fresh session would lose context; its saved history was preserved.");
+    }
     if (persistentRootSession && this.codexThreadId !== undefined
-      && this.codexThreadPersonalPresentationVersionId !== personalPresentationVersionId) {
+      && this.codexThreadPersonalPresentationVersionId !== personalPresentationVersionId
+      && !(context.requireNativeContinuity && this.codexThreadPersonalPresentationVersionId === undefined)) {
+      if (context.requireNativeContinuity) throw new Error("This conversation's native history cannot be reused with the changed presentation settings. Its history was preserved.");
       this.forgetRootThread("presentation_changed");
     }
     this.selectedModel(context);
@@ -233,6 +244,16 @@ export class CodexBasicHarness implements Harness {
     // thread, which the next turn may still resume.
     context.forceSignal?.throwIfAborted();
     const environment = this.graphEnvironment(capability, context.completionBroker, context.access, resolvedRuntime.environment);
+    const sessionIdentity = createHash("sha256").update(JSON.stringify({
+      providerId: context.access?.providerId ?? null,
+      adapterId: context.access?.adapterId ?? null,
+      kind: context.access?.kind ?? null,
+      endpoint: context.access?.kind === "secret" ? context.access.endpoint : null,
+      home: resolve(environment.CODEX_HOME || join(environment.HOME || process.env.HOME || this.context.workingDirectory, ".codex")),
+    })).digest("hex");
+    if (context.requireNativeContinuity && persistentRootSession && this.codexThreadId !== undefined && this.codexSessionIdentity !== undefined && this.codexSessionIdentity !== sessionIdentity) {
+      throw new Error("This conversation's provider or native session location changed. Its original history was preserved; this route cannot continue it.");
+    }
     // The effective home is the provider's private one for a new API-key conversation and
     // Codex's default home for a legacy one (codexProviderHome), so each keeps its own threads.
     const codexHome = codexHomeOf(environment);
@@ -241,12 +262,14 @@ export class CodexBasicHarness implements Harness {
     // decides only resumption for the provider the product selected, never which it may select.
     if (persistentRootSession && this.codexThreadId !== undefined
       && this.codexThreadHome !== undefined && this.codexThreadHome !== codexHome) {
+      if (context.requireNativeContinuity) throw new Error("This conversation's native session location changed. Its saved history was preserved.");
       this.forgetRootThread("home_changed");
     }
     await this.runCodexTurn(context, attach, signal, environment, resolvedRuntime.executable, {
       persistentRootSession,
       personalPresentationVersionId,
       codexHome,
+      sessionIdentity,
     });
   }
 
@@ -260,6 +283,7 @@ export class CodexBasicHarness implements Harness {
       readonly persistentRootSession: boolean;
       readonly personalPresentationVersionId: number | null;
       readonly codexHome: string;
+      readonly sessionIdentity: string;
     },
   ): Promise<void> {
     const { persistentRootSession } = rootThread;
@@ -301,10 +325,13 @@ export class CodexBasicHarness implements Harness {
       await run({
         environment,
         codexPathOverride: executable,
+        requireNativeContinuity: persistentRootSession && context.requireNativeContinuity === true,
         ...this.codexConfigOverrides(context.access),
         ...(persistentRootSession && this.codexThreadId !== undefined
           ? { savedThreadId: this.codexThreadId }
           : {}),
+        ...(persistentRootSession && context.requireNativeContinuity && this.codexSessionIdentity === undefined
+          ? { legacyHistoryAnchor: context.nativeHistoryAnchor ?? { interactionNodeId: -1, message: "" } } : {}),
         threadParams: this.threadParams(model, context, context.access),
         turnParams: this.turnParams(sandboxPolicy, model),
         prompt,
@@ -319,10 +346,13 @@ export class CodexBasicHarness implements Harness {
         ...(this.dependencies.spawnProcess === undefined ? {} : { spawnProcess: this.dependencies.spawnProcess }),
         // A thread gets its rollout only once turn/start is accepted. Until then, a stopped
         // turn leaves nothing that Codex could resume, so the thread is not kept.
-        onThreadId: () => undefined,
+        onThreadId: (threadId) => {
+          if (context.requireNativeContinuity && persistentRootSession && this.codexThreadId !== threadId) throw new Error("Native resume returned a different conversation. The original history was preserved.");
+        },
         onTurnStarting: () => { conversationStarted = true; },
         onSavedThreadUnavailable: (threadId) => {
           if (!persistentRootSession || this.codexThreadId !== threadId) return;
+          if (context.requireNativeContinuity) throw new Error("The saved native conversation is unavailable. Its original history was preserved; no fresh turn was started.");
           this.forgetRootThread("no_rollout");
           reportNativeSessionReset(context, "Codex", this.context.threadId, "no_rollout");
           this.pendingRootReset = undefined;
@@ -337,6 +367,7 @@ export class CodexBasicHarness implements Harness {
             this.codexThreadId = threadId;
             this.codexThreadPersonalPresentationVersionId = rootThread.personalPresentationVersionId;
             this.codexThreadHome = rootThread.codexHome;
+            this.codexSessionIdentity = rootThread.sessionIdentity;
             this.pendingRootReset = undefined;
           }
           attach(Object.freeze({
@@ -372,17 +403,19 @@ export class CodexBasicHarness implements Harness {
   }
 
   state(): HarnessSessionState {
-    const home = { codexProviderHome: this.providerHome };
+    // A legacy conversation's saved state stays exactly as an earlier release wrote it: a missing
+    // marker already means legacy-shared, so only a new conversation records one.
+    const home = this.providerHome === "isolated" ? { codexProviderHome: "isolated" } : {};
     const reset = this.pendingRootReset === undefined ? {} : { codexRootResetReason: this.pendingRootReset };
     return this.codexThreadId === undefined
-      || this.codexThreadPersonalPresentationVersionId === undefined
       ? { ...home, ...reset }
       : {
           ...home,
           codexThreadId: this.codexThreadId,
-          codexThreadPersonalPresentationVersionId: this.codexThreadPersonalPresentationVersionId,
+          ...(this.codexSessionIdentity === undefined ? {} : { codexSessionIdentity: this.codexSessionIdentity }),
           ...(this.codexThreadHome === undefined ? {} : { codexThreadHome: this.codexThreadHome }),
           ...reset,
+          ...(this.codexThreadPersonalPresentationVersionId === undefined ? {} : { codexThreadPersonalPresentationVersionId: this.codexThreadPersonalPresentationVersionId }),
         };
   }
 
@@ -396,6 +429,7 @@ export class CodexBasicHarness implements Harness {
   }
 
   private forgetRootThread(reason: NativeSessionResetReason): void {
+    this.codexSessionIdentity = undefined;
     this.codexThreadId = undefined;
     this.codexThreadPersonalPresentationVersionId = undefined;
     this.codexThreadHome = undefined;
@@ -636,6 +670,10 @@ ${renderInteractionInput(context.interactionInput)}
 
 ${INTERACTION_INPUT_GUIDANCE} In JavaScript, call graph.getInteractionInput() to re-read it.
 
+${ATTACHED_NAVIGATION_GUIDANCE}
+For a full Node Detail replacement accompanying an authorized addition, first call await graph.getNodePresentation(nodeId) to read the current node, revision, and actions. Author a complete compiled NodeObject presentation with the persistent node's existing clientKey, preserving every existing action binding and adding usable controls for the new actions. Call await graph.replaceNodePresentation(nodeId, revision, presentationBuilder); this stages presentation only, not the builder's title/detail. Retain original action clientKey, kind, and sourceLayer provenance when rebuilding controls; new actions with omitted provenance must omit it in their bindings too. On stale_presentation_revision, reread and repair the full presentation against the current actions. Do not synthesize supplemental controls. If retained rich HTML cannot expose a new action, provide an explicit full replacement before submitting.
+
+
 Use executable JavaScript and the Relayer graph client. Do not return a JSON graph in chat. Run exactly ${launcher}${launcherArgumentsClause}, including the displayed double quotes, and pass the program through standard input using a shell-native single-quoted here-document delimited by exactly RELAYER_GRAPH_PROGRAM;${launcherClause} never place authored graph code in a --eval argument, and do not create a script in either the project checkout or a temporary directory. ${this.dependencies.graphAuthoringLauncherPath ? "Request Codex sandbox escalation for this exact launcher command; Relayer preauthorizes only this pinned internal launcher, which applies its own narrower graph sandbox." : ""} The quoted here-document must prevent the provider shell from expanding environment variables in the program. Import from:
 ${this.clientModuleUrl}
 ${pinnedExecutionClause}
@@ -774,6 +812,10 @@ ${normalizedInput}
 
 ${INTERACTION_INPUT_GUIDANCE} In JavaScript, call graph.getInteractionInput() to re-read it.
 
+${ATTACHED_NAVIGATION_GUIDANCE}
+For a full Node Detail replacement accompanying an authorized addition, first call await graph.getNodePresentation(nodeId) to read the current node, revision, and actions. Author a complete compiled NodeObject presentation with the persistent node's existing clientKey, preserving every existing action binding and adding usable controls for the new actions. Call await graph.replaceNodePresentation(nodeId, revision, presentationBuilder); this stages presentation only, not the builder's title/detail. Retain original action clientKey, kind, and sourceLayer provenance when rebuilding controls; new actions with omitted provenance must omit it in their bindings too. On stale_presentation_revision, reread and repair the full presentation against the current actions. Do not synthesize supplemental controls. If retained rich HTML cannot expose a new action, provide an explicit full replacement before submitting.
+
+
 Use executable JavaScript and the Relayer graph client. Do not return a JSON graph in chat. ${authoringInstructions}
 
 The module exports RelayerGraphClient, NodeObject, EdgeObject, NodePlacementObject, LayerLayoutObject, LayerObject, and the Node Detail helpers html, css, and detailCapability. Use RelayerGraphClient.fromEnv(). Give every persisted node, edge, layer, and action an explicit descriptive clientKey that is unique within this interaction and stable across edits and reruns. For example, use new NodeObject("info", "Summary", "...", "concept", "summary-node"), new EdgeObject([summaryNode, detailNode], "summary-detail-edge"), and new LayerObject(nodes, edges, layout, "response-layer"). Never rely on the constructors' generated client keys in an authored program. Author in whatever order fits the task, while submitting each referenced object before using it. The final graph call must be await graph.submit(${interactionNode.id}); call it only after the full response has been authored.
@@ -812,7 +854,7 @@ The graph service enforces exact provenance, target visibility, layer size, expa
 }
 
 function currentWorkspaceMechanicsJs(): string {
-  return `Read current with let current = await graph.getCurrent(). The first current layer may contain visible accepted nodes; when no prior current exists, it needs no new draft carrier. When a prior current exists, every later current layer and the root of your final graph.submit must retain a navigation path back to that prior current. Reuse an existing valid path when one already exists; otherwise, after submitting the new layer and before publishing it, add a reference navigate action from one of its draft nodes created for this interaction to current.currentLayerId. Reused accepted nodes cannot take new actions. Give each distinct logical advanceCurrent transition its own stable operation key. Save that transition's exact layer, expected headRevision, and operation key together. After submitting the complete closure and registering all its actions, publish it with await graph.advanceCurrent(layer, expectedHeadRevision, operationKey). An exact retry reuses all three unchanged. After a successful nonterminal advanceCurrent, refresh with current = await graph.getCurrent() before building the next logical transition, so its revision and backreference use the new current. Use a different stable key for that next transition. A successful terminal graph.submit ends graph access: do not call getCurrent or perform any further graph reads or writes afterward.`;
+  return `Read current with let current = await graph.getCurrent(). The first current layer may contain visible accepted nodes; when no prior current exists, it needs no new draft carrier. When a prior current exists, every later current layer and the root of your final graph.submit must retain a navigation path back to that prior current. Reuse an existing valid path when one already exists; otherwise, after submitting the new layer and before publishing it, add a reference navigate action from one of its draft nodes created for this interaction to current.currentLayerId. Reuse alone grants no action authority; the exact frozen attached-node navigation exception is described above. Give each distinct logical advanceCurrent transition its own stable operation key. Save that transition's exact layer, expected headRevision, and operation key together. After submitting the complete closure and registering all its actions, publish it with await graph.advanceCurrent(layer, expectedHeadRevision, operationKey). An exact retry reuses all three unchanged. After a successful nonterminal advanceCurrent, refresh with current = await graph.getCurrent() before building the next logical transition, so its revision and backreference use the new current. Use a different stable key for that next transition. A successful terminal graph.submit ends graph access: do not call getCurrent or perform any further graph reads or writes afterward.`;
 }
 
 function semanticCompletionGuidanceJs(
