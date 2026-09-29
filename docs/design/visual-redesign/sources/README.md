@@ -6,7 +6,7 @@ These are design tools, not product code. `design-config-plan.md` §3 and §4 (P
 
 | Path | What it is |
 |---|---|
-| `research/tmp/color.mjs` | Colour maths: WCAG contrast, OKLCH conversion, OKLab ΔE, colour-blind (CVD) simulation. |
+| `../../../../scripts/design/color.mjs` (moved in A2) | Colour maths: WCAG contrast, OKLCH conversion, OKLab ΔE, colour-blind (CVD) simulation. |
 | `research/palette-space/engine.mjs`, `engine.md` | The palette engine. It turns a ground/ink/accent triple into light and dark role tokens, six family colours and a chart series, with floor checks. |
 | `research/palette-space/candidates.json`, `judge-scores.json` | The 29 palettes' source colours, role mapping and judge scores. |
 | `research/palette-space/tokens/`, `overrides/` | The engine output for every palette (`<id>.json` + `<id>.md`), and the per-palette tuning overrides. |
