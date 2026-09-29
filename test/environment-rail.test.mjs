@@ -424,9 +424,12 @@ describe("desktop environment rail", () => {
     expect(viewedInteractionStatus(running, "running", "active")).toBe("running");
     const root = { ...running, threadId: 10, sequence: 1 };
     const child = { id: 9, threadId: 10, sequence: 2, completionStatus: "running" };
-    const state = { interactions: [root, child], actionInvocations: [{ resultInteractionId: "9" }] };
+    const state = { interactions: [root, child], actionInvocations: [{ resultInteractionId: "9", agentInvoked: true }] };
     expect(productStopTarget(state, { id: 10 })).toBe(root);
     expect(productStopTarget({ ...state, interactions: [{ ...root, completionStatus: "accepted" }, child] }, { id: 10 })).toBeNull();
+    // A user's own invoke action is a human turn, so the product can stop it.
+    const userAction = { ...state, actionInvocations: [{ resultInteractionId: "9", agentInvoked: false }] };
+    expect(productStopTarget({ ...userAction, interactions: [{ ...root, completionStatus: "accepted" }, child] }, { id: 10 })).toBe(child);
     const stopping = { ...running, stopRequested: true };
     expect(viewedInteractionStatus(stopping, "running", "stopped")).toBe("stopping");
     expect(interactionStatusRenderKey(stopping, "running", "stopped"))

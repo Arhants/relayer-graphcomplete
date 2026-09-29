@@ -832,6 +832,44 @@ impl RuntimeClient {
         })
     }
 
+    /// The graph interaction an invoke occurrence leased, found without the live harness
+    /// catalog. The graph keys a leased interaction by its occurrence, so this recovers the
+    /// existing node and creates nothing new; no capability is minted.
+    pub(crate) async fn locate_invoked_interaction(
+        &self,
+        project_id: Option<i64>,
+        thread_id: i64,
+        text: &str,
+        invocation: PreparedInvocation,
+    ) -> Result<i64, RuntimeError> {
+        let body = serde_json::json!({
+            "projectId": project_id,
+            "threadId": thread_id,
+            "text": text,
+            "invocation": {
+                "sourceInteractionNodeId": invocation.source_interaction_node_id,
+                "sourceActionId": invocation.source_action_id,
+            },
+            "mintCapability": false,
+        });
+        let interaction: CreateInteractionResponse = self
+            .post_idempotent(
+                self.graph_url.join("api/control/interactions")?,
+                &body,
+                &self.graph_control_token,
+                StatusCode::OK,
+                "graph interaction lookup",
+            )
+            .await?;
+        if !interaction.graph_token.is_empty() {
+            self.revoke_capability(&interaction.graph_token).await?;
+            return Err(RuntimeError::Protocol(
+                "graph server minted a capability for an interaction lookup".into(),
+            ));
+        }
+        Ok(interaction.node.id)
+    }
+
     pub(crate) async fn activate_prepared(
         &self,
         prepared: &PreparedInteraction,
