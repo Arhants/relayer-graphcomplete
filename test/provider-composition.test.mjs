@@ -543,6 +543,90 @@ describe("injectable production provider composition", () => {
     await composition.close();
   });
 
+  // PR #576 review: two managed providers on one harness whose activation failed on the same
+  // broken runtime are both recovered, but the harness still gets one evaluation.
+  it("recovers every failed managed provider of a due harness with one evaluation", async () => {
+    let runtimeHealthy = false;
+    const prepareRuntime = vi.fn(async () => { runtimeHealthy = true; });
+    const model = (id) => ({
+      id, executionModel: id, label: id, description: "", visible: true, availability: "available",
+      unavailableReason: null, availabilityNotice: null, isDefault: true, replacementModelId: null,
+      upgradeInfo: null, supportedEfforts: [], defaultEffort: null, inputModalities: ["text"],
+      supportsPersonality: false, serviceTiers: [], defaultServiceTier: null,
+    });
+    const create = vi.fn(({ definition }) => {
+      if (!runtimeHealthy) throw new Error("managed runtime installation is invalid");
+      return {
+        providerId: definition.id,
+        discover: async () => ({
+          provider: { id: definition.id, label: definition.label, status: "available" },
+          models: [model(`work-${definition.id}`)],
+          systemFamily: { id: definition.id, label: definition.label, modelIds: [`work-${definition.id}`] },
+        }),
+        close: vi.fn(async () => {}),
+      };
+    });
+    const configurations = new Map([["codex-basic", {
+      schemaVersion: 1, name: "codex-basic", implementation: "codex.basic", implementationVersion: 1,
+      permissionBindings: { auto: {} },
+      modelRules: { allow: [{ adapterId: "codex-subscription", modelIdRegex: "^work-" }], deny: [] },
+      executionAccessContracts: ["managed-runtime@1"], settings: {},
+    }]]);
+    const due = new Set(["codex-basic"]);
+    const publishAvailability = vi.fn(async (updates) => {
+      for (const { harnessId } of updates) due.delete(harnessId);
+    });
+    const prepareRecipe = vi.fn(async (recipeId) => ({ recipeId }));
+    const readiness = createHarnessReadinessCoordinator({
+      configurations,
+      digestConfiguration: ({ name }) => `sha256:${name}-upgraded`,
+      runtimeRequirements: { "codex.basic": { runtimeId: "codex", recipeId: "codex@0.147.0" } },
+      prepareRecipe,
+      checkers: { "codex.basic": async () => ({ available: runtimeHealthy }) },
+      publishAvailability,
+      recipeInstalled: async () => true,
+    });
+    const published = [];
+    const definition = (id) => ({
+      id, adapterId: "codex-subscription", label: id, endpoint: null,
+      accessContract: "managed-runtime@1", credentialReference: null, lifecycleState: "active",
+    });
+    const composition = createProviderComposition({
+      registry: createProviderAdapterRegistry([{
+        adapterId: "codex-subscription", implementationVersion: "1", label: "ChatGPT",
+        accessContract: "managed-runtime@1", defaultEndpoint: null,
+        connection: { mode: "managed-login", fields: [] }, create,
+      }]),
+      definitionStore: { async load() { return [definition("work"), definition("personal")]; } },
+      credentialStore: { async listReferences() { return []; } },
+      prepareRuntime,
+      evaluateReadiness: (request) => readiness.evaluate(request),
+      publishCatalog: async (snapshot) => { published.push(snapshot); },
+      modelCatalogOptions: { backgroundIntervalMs: 60_000 },
+    });
+
+    await composition.start();
+    const onError = vi.fn();
+    await startPostUpgradeReadiness({
+      readiness,
+      updatesDue: async () => [...due],
+      routes: () => composition.readinessRoutes(),
+      repairProviders: (recipeIds) => composition.repairFailedActivations(recipeIds, {
+        recipeForAdapter: () => "codex@0.147.0",
+      }),
+      onError,
+    }).evaluation;
+    expect(onError).not.toHaveBeenCalled();
+    expect(publishAvailability).toHaveBeenCalledOnce();
+    expect(prepareRecipe).toHaveBeenCalledOnce();
+    expect(due.size).toBe(0);
+    for (const id of ["work", "personal"]) {
+      expect(published.filter((snapshot) => snapshot.providerId === id).at(-1))
+        .toMatchObject({ connected: true, models: [{ id: `work-${id}` }] });
+    }
+    await composition.close();
+  });
+
   it("starts the post-upgrade evaluation from desktop startup without awaiting it", async () => {
     const source = await readFile(new URL("../desktop/main/index.mjs", import.meta.url), "utf8");
     const start = source.indexOf("await providerComposition.start();");

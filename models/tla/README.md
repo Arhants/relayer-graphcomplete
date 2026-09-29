@@ -819,14 +819,16 @@ Desktop also passes the recipes this start activated; the recorded recipe
 covers that trigger, so the model leaves it out. The model starts with a
 recorded recipe. In the code, a row migration 0039 left without one counts a
 change only when this start's own update activated a new recipe or failed
-to; `the_first_recorded_recipe_marks_only_a_runtime_this_update_changed`
+to, or when the route was ready and its files no longer validate;
+`the_first_recorded_recipe_marks_only_a_runtime_this_update_changed`
 covers that. Migration 0039 also marks every loaded route startup left pending.
 The model starts after that migration, so it does not cover the backfill.
 The automatic evaluation skips a harness whose runtime was never
 installed; the model has one harness whose runtime starts installed.
 The model's providers always have a route. In the code, a managed provider
 whose activation failed on a broken runtime has none, so the step first
-repairs it as Repair does; composition tests cover that.
+recovers it as Repair does, then evaluates each due harness once;
+composition tests cover that.
 In the code it runs once per process with the models published so far. A mark stays set
 when its evaluation found no provider with a route. The next start looks
 again, but it prepares nothing until a provider has a route.

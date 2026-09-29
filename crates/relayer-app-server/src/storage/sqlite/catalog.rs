@@ -414,14 +414,28 @@ impl SqliteProductStore {
             // An update changed the runtime recipe of a route loaded before with a recorded
             // recipe. A ready measured on the old recipe does not restore.
             // This start's update changing the runtime counts even before a recipe was
-            // recorded, as on the first start after migration 0039.
+            // recorded, as on the first start after migration 0039. So does a ready route
+            // whose files no longer validate when its first recipe is recorded: an update
+            // whose prefetch failed stages nothing for startup to report.
+            let prior_recipe = prior_runtime
+                .get(&harness.id)
+                .map(|(_, _, prior)| prior.as_str());
             let recipe_changed = harness.restore_prior_readiness
                 && (harness.runtime_updated
-                    || harness.runtime_recipe.as_ref().is_some_and(|recipe| {
-                        prior_runtime
-                            .get(&harness.id)
-                            .is_some_and(|(_, _, prior)| !prior.is_empty() && prior != recipe)
-                    }));
+                    || harness
+                        .runtime_recipe
+                        .as_ref()
+                        .is_some_and(|recipe| match prior_recipe {
+                            Some("") => {
+                                !harness.runtime_available
+                                    && prior_ready.contains(&(
+                                        harness.id.clone(),
+                                        harness.configuration_digest.clone(),
+                                    ))
+                            }
+                            Some(prior) => prior != recipe,
+                            None => false,
+                        }));
             if harness.restore_prior_readiness
                 && harness.runtime_available
                 && (recipe_changed
@@ -4074,6 +4088,35 @@ mod provider_definition_tests {
             "an activated update withholds the old ready"
         );
         assert_eq!(updates_due(&store).await, ["codex-basic"]);
+
+        // PR #576 review: an update whose prefetch failed stages nothing, so startup reports
+        // no runtime change. A ready route whose files no longer validate against the new
+        // recipe is still due once when its first recipe is recorded.
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        coordinated_catalog_with_recipe(&catalog, "sha256:d1", true, Some("codex@2#b"));
+        assert_eq!(start_app_server(&store, &catalog).await, (true, None));
+        unrecord().await;
+        coordinated_catalog_with_recipe(&catalog, "sha256:d1", false, Some("codex@3#c"));
+        assert_eq!(start_app_server(&store, &catalog).await, pending);
+        assert_eq!(
+            updates_due(&store).await,
+            ["codex-basic"],
+            "a ready route an unstaged update invalidated is due"
+        );
+
+        // A route that was not ready, with no recorded recipe, is not marked by recording one,
+        // even when its files do not validate (for example a runtime never installed).
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 2, false)])
+            .await
+            .unwrap();
+        unrecord().await;
+        coordinated_catalog_with_recipe(&catalog, "sha256:d1", false, Some("codex@3#c"));
+        assert_eq!(start_app_server(&store, &catalog).await, pending);
+        assert!(updates_due(&store).await.is_empty());
     }
 
     /// #556: users an earlier upgrade already left pending are not waiting for a digest

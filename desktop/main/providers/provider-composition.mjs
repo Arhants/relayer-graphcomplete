@@ -104,10 +104,11 @@ export function createProviderComposition({
       await providerDefinitions.activate();
       await modelCatalog.startup();
     },
-    // After an upgrade: repairs, as Repair does, each managed provider whose activation
+    // After an upgrade: recovers, as Repair does, each managed provider whose activation
     // failed and whose runtime recipe is one of recipeIds (installed, and due for an
-    // evaluation). Its explicit refresh reinstalls the runtime, activates the provider,
-    // publishes its catalog and evaluates its routes. One provider's failure spares the rest.
+    // evaluation). Recovery reinstalls the exact recipe when needed, activates the provider
+    // and publishes its catalog. It evaluates no readiness: the post-upgrade step then
+    // evaluates each due harness once for all its providers. One failure spares the rest.
     async repairFailedActivations(recipeIds, { recipeForAdapter }) {
       const recipes = new Set(recipeIds);
       const failed = (await providerDefinitions.activeDefinitions()).filter((definition) => {
@@ -115,7 +116,16 @@ export function createProviderComposition({
         if (!providerDefinitions.activationFailed(definition.id)) return false;
         try { return recipes.has(recipeForAdapter(definition.adapterId)); } catch { return false; }
       });
-      return Promise.allSettled(failed.map(({ id }) => modelCatalog.explicitRefresh(id)));
+      const results = [];
+      for (const { id } of failed) {
+        try {
+          await providerDefinitions.recoverUnavailable(id);
+          results.push({ status: "fulfilled", value: await modelCatalog.providerChanged(id) });
+        } catch (reason) {
+          results.push({ status: "rejected", reason });
+        }
+      }
+      return results;
     },
     // Every active provider with its last published models, for an evaluation that is not
     // tied to one provider (the recipe-update trigger).

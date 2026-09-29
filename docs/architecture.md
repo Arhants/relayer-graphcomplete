@@ -501,7 +501,9 @@ upgrade changes a coordinated route's digest or recipe, it marks the row
 `readiness_update_due`; that covers an update whose staged runtime activated and one
 whose activation failed. Startup also flags each runtime its own activation changed
 (`runtimeUpdated`), which counts even before a recipe was recorded, as on the first
-start after migration 0039; the eval app records recipes too. After provider startup, Electron reads the marks and starts
+start after migration 0039. When the first recipe is recorded, a ready route whose files
+no longer validate counts too, because an update whose prefetch failed staged nothing to
+report. The eval app records recipes too. After provider startup, Electron reads the marks and starts
 one background evaluation through the `recipe-update` trigger. A runtime recipe newly
 activated by the update also starts it for the harnesses that use it. The evaluation covers every active provider with a published
 route through those harnesses, so ChatGPT and OpenRouter share one result for
@@ -511,9 +513,11 @@ not wait for it. Like Repair, it probes the runtime and may install the exact re
 again, but it skips a harness whose runtime was never installed on this machine; that
 route waits for Connect or Repair, so an upgrade never installs Prime by itself. A
 managed provider whose activation failed on a broken runtime publishes no models and so
-has no route; the step first repairs it through its explicit refresh, as Repair does,
-when its recipe is installed and due. That refresh evaluates its routes, so the step does
-not evaluate a harness the repair already published again. The next committed result
+has no route; the step first recovers each such provider, as Repair does, when its
+recipe is installed and due. Recovery reinstalls the exact recipe if needed and publishes
+the provider's catalog without evaluating, so the step then evaluates each due harness
+once for all its providers. The eval app runs the same step at its startup and waits for
+it. The next committed result
 for the harness clears the mark, so it runs once per changed digest or recipe; a start
 before the commit tries again. Migration 0039 also marks every loaded route startup
 left in `harness_readiness_pending`. The evaluation runs once per process with the

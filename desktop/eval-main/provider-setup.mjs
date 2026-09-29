@@ -1,11 +1,11 @@
 import { join } from "node:path";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { createManagedRuntimeInstaller } from "../main/managed-runtimes/installer.mjs";
-import { createManagedRuntimeResolver } from "../main/managed-runtimes/resolver.mjs";
+import { createManagedRuntimeResolver, managedRecipeInstalled } from "../main/managed-runtimes/resolver.mjs";
 import { createProviderComposition } from "../main/providers/provider-composition.mjs";
 import { productionProviderAdapterRegistry, productionHarnessRuntimeDescriptor, productionProviderRuntimeDependencies } from "../main/providers/provider-adapter-registry.mjs";
 import { createProviderRuntimeStateRemover } from "../main/providers/provider-runtime-state.mjs";
-import { createHarnessReadinessCoordinator } from "../main/services/harness-readiness.mjs";
+import { createHarnessReadinessCoordinator, startPostUpgradeReadiness } from "../main/services/harness-readiness.mjs";
 import { assemblePrimeManagedRuntime, checkPrimeManagedRuntime, createPrimeReviewedTreeCopier } from "../main/services/prime-managed-runtime.mjs";
 import { PRIME_AGENT_ASSET_SHA256, selectPrimeAgentDependencyClosureSha256 } from "../main/services/prime-agent-runtime.mjs";
 import { HARNESS_MANAGED_RUNTIME_REQUIREMENTS, managedRuntimeRequirementForAdapter } from "../shared/managed-runtime-requirements.mjs";
@@ -66,6 +66,7 @@ export function createEvalProviderSetup({ userDataDirectory, productServer, prod
     publishAvailability: async (updates) => {
       await productServer.publishHarnessReadiness(updates);
     },
+    recipeInstalled: (recipeId) => managedRecipeInstalled(getResolver(), recipeId),
   });
   const composition = createComposition({ registry,
     definitionStore: productServer.providerDefinitionStore(), credentialStore,
@@ -187,6 +188,18 @@ export function createEvalProviderSetup({ userDataDirectory, productServer, prod
         }
       }
       await composition.start();
+      // The same one post-upgrade evaluation as Desktop, for routes the app server marked
+      // due (a changed digest or runtime recipe). Eval waits for it, so its default
+      // selections below see the result; a failure leaves the routes pending.
+      await startPostUpgradeReadiness({
+        readiness,
+        updatesDue: () => productServer.harnessReadinessUpdatesDue(),
+        routes: () => composition.readinessRoutes(),
+        repairProviders: (recipeIds) => composition.repairFailedActivations(recipeIds, {
+          recipeForAdapter: (adapterId) => managedRuntimeRequirementForAdapter(adapterId).recipeId,
+        }),
+        onError: (error) => console.error("Eval post-upgrade harness readiness evaluation failed:", error),
+      }).evaluation;
       if (profile) {
         if (!(await definitions.list()).some(({ id }) => id === "eval-openrouter")) {
           await definitions.connect({ connectionId: "eval-openrouter", harnessId: "prime-agent-basic",
