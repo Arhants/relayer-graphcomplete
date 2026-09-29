@@ -29,7 +29,7 @@ Focused tests passed. Final `npm run check` passed: native formatting/clippy,
 workspace and crash-recovery tests, package/type checks, 3,234 JavaScript tests
 (three skipped), two secret-boundary tests, 60 Python tests, receipt lint and PRD
 readability. All nine `npm run test:eval-web` chapters passed, including active
-actor-action feedback isolation. Final `npm run build` passed. The authorized v2 live rerun is active; no result is claimed yet. No live
+actor-action feedback isolation. Final `npm run build` passed. The authorized v2 live rerun ended at its 15-minute actor deadline; see the recorded outcome below. No live
 improvement is claimed until its actual trajectory is inspected. Catalog
 availability is a preflight check, not a guarantee against a later provider
 rejection or account change. Runtime failures retain safe diagnostics.
@@ -57,3 +57,42 @@ Reviewed privacy, preflight authority, finish consistency, action annotation,
 safe diagnostics, and CI selection. Independently ran 38 actor/provider/error
 tests and 82 planner tests, all passing. Source changes invalidate this review.
 Behavioral realism and live outcome remain outside deterministic certification.
+
+## Live v2 outcome
+
+[Recorded trajectory](actor-v2-live-summary.json), session
+`human-d54b531e-98ce-418b-bbfe-84ee1af18656`, uses prompt `task-actor-v2`,
+GPT-5.6 Luna/low as actor and GPT-5.6 Sol as candidate. Catalog preflight passed.
+It admitted three response turns and performed eleven actor actions. The actor
+hit its 15-minute wall-clock deadline without a finish action or satisfaction
+rating. All three candidate responses were accepted; the last finished about
+2.2 seconds after actor interruption. The actor did not review that final result.
+No task-success claim, automatic resumption, or additional paid rerun was made.
+
+Engineering observations (not a human grade or independent judge result):
+
+- The actor supplied the actual September dates, arrival/departure differences,
+  shared weekend, mobility needs, pace and tastes from the private brief.
+- It inspected the three-base route and accessibility evidence, then requested
+  cost estimates and accessible city transport before agreement. It did not
+  repeat the baseline's premature endpoint claim during the observed trajectory.
+- Low-effort realism remains incomplete: the constraint message was long and
+  polished. It also inferred an approximate euro budget rather than preserving
+  the exact dollar cap in its follow-up. These need further manual calibration.
+- Recorded first-visible-graph time was 250.4 seconds, with the observer attached
+  after submission and usefulness unassessed. This is not a calibrated latency
+  benchmark. Long candidate waits consumed most of the wall-clock deadline.
+
+![Last actor observation, before submitting the final refinement](actor-v2-last-observation.png)
+
+## Hosted CI qualification
+
+Local required gates passed on the reviewed executable source. Hosted CI for
+head `e5ab29cd`, synthetic merge `8eb23427` against main `77aa24de`, failed the
+new main-side `test/design-config.test.mjs`: expected 282 rows, received 172.
+That test and its prototype checker are byte-identical on main and the merge;
+no actor-change file overlaps them. Main CI passed and four read-only local
+runs produced 282 rows. Immediate process exit after console output is the likely
+truncation cause; exact Linux reproduction remains unverified. The separate
+freshness-refresh failure involved publication for another PR. Neither failure
+is treated as a successful hosted check, and no unchanged CI rerun was issued.
