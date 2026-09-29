@@ -45,6 +45,10 @@ export function isTerminalConnectionFailure(error) {
 // for the retry. Only `disconnected` means the login is genuinely still open.
 export const MAX_TRANSIENT_ACCOUNT_CHECKS = 3;
 
+// How long a cancel waits for its account check before treating the outcome as unknown. The
+// check holds the provider queue, so it must end even when the native check hangs.
+export const ACCOUNT_CHECK_TIMEOUT_MS = 10_000;
+
 // The app server owns each provider's connection generation (PROV-002). A new provider
 // starts here; reconnect completion, sign-out and removal advance it.
 export const FIRST_CONNECTION_GENERATION = 1;
@@ -85,6 +89,7 @@ export class ProviderDefinitionService {
     initialRuntimes = new Map(),
     retry = {},
     maxTransientAccountChecks = MAX_TRANSIENT_ACCOUNT_CHECKS,
+    accountCheckTimeoutMs = ACCOUNT_CHECK_TIMEOUT_MS,
     diagnostics = null,
     onRuntimeReady = () => {},
     onRuntimeRemoved = () => {},
@@ -105,6 +110,7 @@ export class ProviderDefinitionService {
     this.idGenerator = idGenerator;
     this.retry = retry;
     this.maxTransientAccountChecks = maxTransientAccountChecks;
+    this.accountCheckTimeoutMs = accountCheckTimeoutMs;
     this.diagnostics = diagnostics;
     this.onRuntimeReady = onRuntimeReady;
     this.onRuntimeRemoved = onRuntimeRemoved;
@@ -615,6 +621,9 @@ export class ProviderDefinitionService {
           // refresh relearns the generation if it advanced, then publishes the account's state.
           this.pendingConnections.delete(connectionId);
           this.statusOverrides.delete(connectionId);
+          // This completion confirmed the account signed in before it published, so a login
+          // exists again: an unrecorded sign-out no longer fences provider access.
+          this.unrecordedSignOuts.delete(connectionId);
           await this.#activateCommitted(pending.candidate, pending.runtime);
           throw new TerminalConnectionFailure(error);
         }
@@ -720,10 +729,21 @@ export class ProviderDefinitionService {
       let keepLogin = !recorded && !pending.superseded;
       if (keepLogin && !this.closing) {
         let account = null;
-        try { account = await pending.runtime.credentials.account(); } catch { /* unknown */ }
+        // Bounded: the check holds the provider queue. A timeout cannot answer, so it is unknown.
+        const signal = AbortSignal.timeout(this.accountCheckTimeoutMs);
+        const timedOut = new Promise((_, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+        timedOut.catch(() => undefined);
+        try {
+          account = await Promise.race([pending.runtime.credentials.account({ signal }), timedOut]);
+        } catch { /* unknown */ }
         if (account?.status === "disconnected") {
           keepLogin = false;
           this.unrecordedSignOuts.add(connectionId);
+        } else if (account?.status === "connected") {
+          // A confirmed login ends any fence from an earlier unrecorded sign-out.
+          this.unrecordedSignOuts.delete(connectionId);
         }
       }
       if (keepLogin) {

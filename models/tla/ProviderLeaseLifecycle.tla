@@ -26,6 +26,7 @@ CONSTANTS MaxRt,          \* runtime objects that may be created
           MaxGen,         \* bound on the app server's connection generation
           SignOutPublishCanFail,    \* fault: sign-out's publish fails and is only logged
           CancelPublishCanFail,     \* fault: a settling reconnect's signed-out publish fails
+          AccountCheckCanFail,      \* fault: the cancel's account check errs or times out
           ReconnectAnswerCanBeLost, \* fault: a reconnect's publish gets no answer, whether or
                                     \* not it committed, and reading the generation (at the
                                     \* reconnect's start or back after the publish) may fail
@@ -335,13 +336,19 @@ CancelEffect(g0, j0, r0, u0) ==
              \* With SignOutBlocksAdmission the cancel keeps only a login the account
              \* check confirms; with none, the sign-out stays unrecorded and admission
              \* stays refused.
-             /\ LET noLogin == SignOutBlocksAdmission /\ ~auth /\ ~closing
+             \* The account check is bounded; one that errs or times out cannot answer, so
+             \* the outcome is unknown and any login is kept.
+             /\ \E answered \in IF AccountCheckCanFail THEN BOOLEAN ELSE {TRUE} :
+                LET noLogin == SignOutBlocksAdmission /\ answered /\ ~auth /\ ~closing
                 IN /\ IF CancelSignsOut /\ CancelKeepsUnrecordedLogin
                          /\ ~(SupersededCancelWipes /\ pend.superseded) /\ ~noLogin
                       THEN Keep ELSE Wipe
-                   /\ unrecorded' = (unrecorded \/ (CancelSignsOut /\ CancelKeepsUnrecordedLogin
-                                                     /\ ~(SupersededCancelWipes /\ pend.superseded)
-                                                     /\ noLogin))
+                   /\ LET kept == CancelSignsOut /\ CancelKeepsUnrecordedLogin
+                                /\ ~(SupersededCancelWipes /\ pend.superseded)
+                      IN unrecorded' = IF kept /\ noLogin THEN TRUE
+                                       \* A check that answered signed in confirms the login.
+                                       ELSE IF kept /\ answered /\ auth /\ ~closing THEN FALSE
+                                       ELSE unrecorded
 
 \* The user cancels, the window is destroyed (BRW-005), or the poll gives up.
 Cancel ==
@@ -388,15 +395,17 @@ CompleteNoAnswer ==
          \* The reconnect's own publish went unanswered (PDS unansweredLifecycleWrites).
          settle == /\ CancelEffect(g2, jsGen, r2, TRUE) /\ UNCHANGED badAdopt
                    /\ wipedCommit' = (wipedCommit \/ committed)
-         keep(j, adopted) == /\ KeepReconnect /\ gen' = g2 /\ ready' = r2 /\ jsGen' = j
+         keep(j) == /\ KeepReconnect /\ gen' = g2 /\ ready' = r2 /\ jsGen' = j
                     /\ uncertain' = TRUE
-                    /\ unrecorded' = (unrecorded /\ ~adopted)
+                    \* This completion confirmed the account signed in (auth), so the login
+                    \* exists again and an unrecorded sign-out no longer fences admission.
+                    /\ unrecorded' = FALSE
      IN IF ~LostReconnectAdopted \/ (AdoptChecksBaseline /\ pend.superseded)
         THEN settle
-        ELSE \/ keep(jsGen, FALSE) /\ UNCHANGED <<badAdopt, wipedCommit>>   \* the read fails
+        ELSE \/ keep(jsGen) /\ UNCHANGED <<badAdopt, wipedCommit>>   \* the read fails
              \/ IF g2 <= pend.g
                 THEN settle
-                ELSE /\ keep(g2, adopt) /\ UNCHANGED wipedCommit
+                ELSE /\ keep(g2) /\ UNCHANGED wipedCommit
                      /\ badAdopt' = (badAdopt \/ (adopt /\ ~committed))
   /\ UNCHANGED <<life, turn, leaseRt, closing, closed, rq, late>>
   /\ UNCHANGED <<nrecon, overlapReadyNoLogin>>

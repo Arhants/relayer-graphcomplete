@@ -794,10 +794,14 @@ generation, reads the account, then publishes.
 - `SignOutBlocksAdmission`: a sign-out the app server has not recorded, from
   a failed sign-out publish or a cancel with no login to keep, refuses new
   provider access. The block ends when a signed-out state is recorded, a
-  reconnect completes, or a refresh publishes a catalog that is not
-  connected. A connected catalog does not end it: its discovery may predate
-  the sign-out. The cancel keeps a login only when the account does not read
-  signed out.
+  refresh publishes a catalog that is not connected, or the service confirms
+  a sign-in: a completed reconnect, including one whose outcome is unknown,
+  or a cancel whose account check reads connected. A connected catalog does
+  not end it: its discovery may predate the sign-out. The cancel keeps a
+  login only when the account does not read signed out. Its account check is
+  bounded, and one that errs or times out (`AccountCheckCanFail`) leaves the
+  outcome unknown. The block is process-local and not modeled across a
+  restart; the startup refresh reads the account and records its state.
 - `AdoptTracksLostWrites`: a lifecycle write whose answer was lost, even one
   sent before the reconnect started, may still commit. While one is
   outstanding, an advance in the generation proves nothing, so the reconnect

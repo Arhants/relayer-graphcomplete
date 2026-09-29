@@ -183,6 +183,7 @@
       "MaxGen": "4",
       "SignOutPublishCanFail": "TRUE",
       "CancelPublishCanFail": "TRUE",
+      "AccountCheckCanFail": "TRUE",
       "ReconnectAnswerCanBeLost": "TRUE",
       "LeaseWaitsForReconnect": "TRUE",
       "CancelSparesLease": "TRUE",

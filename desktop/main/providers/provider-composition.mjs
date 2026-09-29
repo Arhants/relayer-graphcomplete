@@ -15,6 +15,7 @@ export function createProviderComposition({
   prepareRuntime = async () => null,
   evaluateReadiness = async () => null,
   removeRuntimeState = async () => false,
+  accountCheckTimeoutMs,
   diagnostics = null,
   modelCatalogOptions = {},
 }) {
@@ -57,6 +58,7 @@ export function createProviderComposition({
     prepareRuntime,
     evaluateReadiness,
     removeRuntimeState,
+    accountCheckTimeoutMs,
     publishCatalog: (snapshot, options) => publishCatalog(toProductCatalogSnapshot(snapshot), options),
     onRuntimeReady: (definition, runtime) => {
       modelCatalog.unregister(definition.id);

@@ -795,7 +795,7 @@ interface CompletionTerminalError extends Error {
 <li>A cancelled or failed reconnect leaves the provider refreshable. It keeps a live catalog, or its recovery path if the provider could not be activated.</li>
 <li>A cancelled or failed reconnect records the signed-out state with the next generation, as sign-out does. Every result still in flight becomes inert.</li>
 <li>If that record fails, the reconnect keeps its sign-in, as an unknown outcome does. The next refresh settles the provider's state.</li>
-<li>A cancel keeps only a sign-in that exists. When the account reads signed out, there is nothing to keep.</li>
+<li>A cancel keeps only a sign-in that exists. When the account reads signed out, there is nothing to keep. A check that cannot answer in time leaves the outcome unknown.</li>
 <li>A sign-out the app server confirmed during the reconnect is the exception. That sign-out stands, and the reconnect's sign-in is removed.</li>
 <li>Recovery never uses the runtime a pending reconnect is signing in. Until that reconnect settles, recovery reports the provider unavailable.</li>
 <li>No catalog refresh starts or publishes while a reconnect is pending. That includes preparing its runtime and starting its sign-in.</li>
@@ -843,7 +843,8 @@ interface CompletionTerminalError extends Error {
 <ul>
 <li><strong>PROV-004:</strong> Provider access is never released while the native turn that uses it still runs, unless that turn is force-stopped. Remove, sign-out, and reconnect therefore never run under live native work that was not force-stopped.</li>
 <li>A turn cannot take provider access while that provider's reconnect is pending, or once Relayer has begun to quit. Quitting closes provider access before it waits for other services.</li>
-<li>After a sign-out the app server did not record, a turn cannot take provider access. This lasts until the app server records the signed-out state or a reconnect completes.</li>
+<li>After a sign-out the app server did not record, a turn cannot take provider access. This lasts until the app server records the signed-out state, or Relayer confirms a sign-in again.</li>
+<li>This block lasts while Relayer runs. After a restart, the startup refresh reads the account and records its state.</li>
 <li>When Relayer gives up on a running turn, it cancels the turn. The access is released once the native turn settles, or within ten seconds of a force-stop.</li>
 <li>A turn cannot start on an admission whose release has already begun.</li>
 <li><strong>PROV-003:</strong> Removing a provider finishes without a restart once nothing is actually running on it. This holds after an application restart and when Relayer could not record a turn's outcome.</li>

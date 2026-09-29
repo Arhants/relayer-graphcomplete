@@ -170,6 +170,8 @@ function managedWorld({ activationFails = false } = {}) {
     holdNextDependencies: null,
     // Holds the next login() after it starts, as a browser sign-in flow being set up.
     holdNextLogin: null,
+    // The account check hangs until its signal aborts, as a stuck `auth status` child does.
+    accountHangs: false,
     catalogUnavailable: false,
     // Holds the next discovery before it reads the account, so the read can land mid-sign-in.
     gateNextDiscover: null,
@@ -204,7 +206,14 @@ function managedWorld({ activationFails = false } = {}) {
           }
           return { authUrl: "https://login.example.test/work" };
         }),
-        account: vi.fn(async () => ({ status: world.account })),
+        account: vi.fn(async ({ signal } = {}) => {
+          if (world.accountHangs) {
+            await new Promise((resolve, reject) => {
+              signal?.addEventListener("abort", () => reject(signal.reason ?? new Error("aborted")), { once: true });
+            });
+          }
+          return { status: world.account };
+        }),
         logout: vi.fn(async () => { world.account = "disconnected"; return { status: "disconnected" }; }),
       },
       catalog: {
@@ -255,7 +264,7 @@ function managedWorld({ activationFails = false } = {}) {
 
 function compose({
   registry, server, credentials = credentialFile(), prepareRuntime, evaluateReadiness, diagnostics = null,
-  removeRuntimeState, runtimeDependencies,
+  removeRuntimeState, runtimeDependencies, accountCheckTimeoutMs,
 }) {
   return createProviderComposition({
     registry,
@@ -268,6 +277,7 @@ function compose({
     evaluateReadiness,
     removeRuntimeState,
     runtimeDependencies,
+    accountCheckTimeoutMs,
     diagnostics,
     modelCatalogOptions: { backgroundIntervalMs: 60_000 },
   });
@@ -1080,6 +1090,93 @@ describe("PROV-004: provider lifecycle never runs under a turn's provider access
 
   // A sign-out whose publish failed alone also blocks admission: the app server still reads the
   // provider connected, but the login is gone.
+  // The cancel's account check had no signal or time limit. A check that hung held the
+  // provider queue, and every later lifecycle action and lease waited behind it.
+  it("bounds the cancel's account check, and keeps the login when it times out", async () => {
+    const world = managedWorld();
+    const server = productServer([managedDefinition]);
+    const composition = compose({
+      registry: world.registry, server, removeRuntimeState: world.removeRuntimeState, accountCheckTimeoutMs: 50,
+    });
+    const service = composition.providerDefinitions;
+    try {
+      await composition.start();
+      await service.logout(managedDefinition.id);
+      const pending = await service.reconnect(managedDefinition.id);
+      world.account = "connected";
+      world.accountHangs = true;
+      server.publishFails = true;
+      const cancelled = service.cancelConnection(pending.connectionId);
+      const outcome = await Promise.race([
+        cancelled.then(() => "settled"),
+        new Promise((resolve) => { setTimeout(() => resolve("stuck"), 2_000).unref?.(); }),
+      ]);
+      world.accountHangs = false;
+      server.publishFails = false;
+      expect(outcome).toBe("settled");
+      // A check that times out cannot answer, so the outcome is unknown and the login stays.
+      expect(world.homeWipes).toBe(0);
+      expect(world.account).toBe("connected");
+    } finally {
+      world.accountHangs = false;
+      await composition.close();
+    }
+  });
+
+  // A failed sign-out fenced admission. A reconnect then committed, but its answer and the
+  // generation read-back were both lost, so it kept its confirmed login as an unknown outcome.
+  // The fence stayed, and every lease was refused although the account was signed in.
+  it("lifts the admission fence when a reconnect with an unknown outcome keeps a confirmed login", async () => {
+    const world = managedWorld();
+    const server = productServer([managedDefinition]);
+    const composition = compose({ registry: world.registry, server, removeRuntimeState: world.removeRuntimeState });
+    const service = composition.providerDefinitions;
+    try {
+      await composition.start();
+      server.publishFails = true;
+      await service.logout(managedDefinition.id);
+      await vi.waitFor(() => expect(server.failedPublishes).toBe(2), { timeout: 5_000 });
+      server.publishFails = false;
+      await expect(service.acquireExecution(managedDefinition.id)).rejects.toThrow("Provider is signed out.");
+
+      const pending = await service.reconnect(managedDefinition.id);
+      world.account = "connected";
+      server.loseNextResponse = "reconnected";
+      server.loadFails = true;
+      await expect(service.completeConnection(pending.connectionId))
+        .rejects.toMatchObject({ name: "TerminalConnectionFailure" });
+      server.loadFails = false;
+      const lease = await service.acquireExecution(managedDefinition.id);
+      await lease.release();
+    } finally {
+      await composition.close();
+    }
+  });
+
+  // The same fence after a cancel that kept a login its account check confirmed: the browser
+  // sign-in had finished, but the cancel could not record signed out.
+  it("lifts the admission fence when a cancel keeps a login its account check confirmed", async () => {
+    const world = managedWorld();
+    const server = productServer([managedDefinition]);
+    const composition = compose({ registry: world.registry, server, removeRuntimeState: world.removeRuntimeState });
+    const service = composition.providerDefinitions;
+    try {
+      await composition.start();
+      server.publishFails = true;
+      await service.logout(managedDefinition.id);
+      await vi.waitFor(() => expect(server.failedPublishes).toBe(2), { timeout: 5_000 });
+      const pending = await service.reconnect(managedDefinition.id);
+      world.account = "connected";
+      await service.cancelConnection(pending.connectionId);
+      server.publishFails = false;
+      expect(world.homeWipes).toBe(0);
+      const lease = await service.acquireExecution(managedDefinition.id);
+      await lease.release();
+    } finally {
+      await composition.close();
+    }
+  });
+
   it("refuses provider access after a sign-out the app server did not record", async () => {
     const world = managedWorld();
     const server = productServer([managedDefinition]);
