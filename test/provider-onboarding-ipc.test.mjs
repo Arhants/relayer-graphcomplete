@@ -60,8 +60,6 @@ function fixture(validateProviderOnboarding, savedSettings = { appearance: "dark
     updater: { status: () => ({ phase: "idle" }), check: vi.fn(), download: vi.fn(), install: vi.fn(), setChannel: vi.fn() },
     presentWindow,
     getWindow: overrides.getWindow ?? (() => null),
-    getAppearance: () => "dark",
-    setAppearance: vi.fn(),
   });
   return {
     complete: handlers.get("relayer:provider-onboarding-complete"),

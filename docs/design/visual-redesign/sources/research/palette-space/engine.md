@@ -6,7 +6,7 @@ A–D. It reuses the Gen-1 code rather than re-deriving it:
 
 | Layer | Source it reproduces |
 |---|---|
-| Colour maths (contrast, OKLCH, gamut, CVD simulation, ΔE) | `../tmp/color.mjs`, imported as is |
+| Colour maths (contrast, OKLCH, gamut, CVD simulation, ΔE) | `scripts/design/color.mjs` (moved from `../tmp/` in A2), imported as is |
 | Neutral and accent ramps, status colours, the contrast "fix loop" | report 08's engine (`../tmp/engine.mjs`), same constants |
 | Thin-stroke margin, selection ring, neutral Stop, focus = text, poster-canvas labels, diff tokens | brief 12 §2.5, §3.2, §6 |
 | Family colours F1–F6 | `../tmp/final-brief-cat.mjs`: same bands, pools, seed, restarts and scoring, plus the brief §3.3 rules |

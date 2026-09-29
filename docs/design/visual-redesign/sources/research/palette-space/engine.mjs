@@ -7,7 +7,7 @@
 //   ../tmp/final-brief-cat.mjs                family (F1-F6) search: same bands, pools, seed, restarts and metric
 //   addendum 13 §B                            agent authoring guidance palette (page, card, text, link, focus, series)
 //
-// Colour maths comes only from ../tmp/color.mjs. No dependencies, no network, deterministic (seeded search).
+// Colour maths comes only from scripts/design/color.mjs. No dependencies, no network, deterministic (seeded search).
 //
 // Usage:
 //   node engine.mjs                 all candidates -> tokens/<id>.json (+ tokens/_summary.json)
@@ -19,7 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { contrast, apca, hexToOklch, oklchToHex, maxChroma, labOf, dEab, clamp } from "../tmp/color.mjs";
+import { contrast, apca, hexToOklch, oklchToHex, maxChroma, labOf, dEab, clamp } from "../../../../../../scripts/design/color.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const ENGINE_VERSION = "palette-space/engine.mjs v1";
