@@ -37,7 +37,7 @@ describe("public share viewer artifact", () => {
       version: 1,
       contractVersion: 1,
       builder: "scripts/build-public-share-viewer-artifact.mjs@1",
-      snapshotVersions: [1, 2],
+      snapshotVersions: [1, 2, 3],
       sourceDirty: false,
     });
     expect(manifest.productCommit).toMatch(/^[a-f0-9]{40}$/u);

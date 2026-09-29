@@ -31,6 +31,6 @@ pub use graph::{
     SearchIndexWrite, SearchTarget, SkippedSubmittedInput, SubmittedInput, SubmittedInputDraft,
     SubmittedInputValue, TemporalFeatureConfig, ThreadId, current_transition_request_digest,
     interaction_input_authority_digest, interaction_input_digest,
-    interaction_input_semantic_digest, is_supported_icon, normalize_icon_name, publication_targets,
-    resolve_icon_name,
+    interaction_input_semantic_digest, is_supported_icon, map_authored_detail_actions,
+    normalize_icon_name, publication_targets, resolve_icon_name,
 };

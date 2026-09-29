@@ -1,0 +1,11 @@
+{
+ "K8": {
+  "_why": "K8: the engine's interaction-ramp chroma floor (C >= 0.12) turned low-chroma cocoa (C 0.047) into rust and terracotta, and its status chroma (keyed off cocoa) made danger a muddy h25 brick between cocoa and pink: the dark failed outline sat dE 3.9 / CVD 1.9 from the selection ring and the failed badge dE 4.5 from the alt solid. (1) dark primary = cocoa at its own hue and chroma, lifted +0.034 L to #7C5C4E (3.03 on surface, white label 6.00), replacing rust #9C4C22. (2) danger = gene B's own recipe, h36 C 0.16: exact coral #FE8160 in dark, brick at L 0.50 in light. (3) one milk-cocoa #9F7E6F (cocoa lifted to L 0.62, source chroma) for the dark selection ring (5.16 on the canvas, Lc 37) and the alt solid in both themes (ink labels 4.69 light / 5.16 dark), replacing caramel #C37F60 and terracotta #C06C44 / #B8653E. (4) links (accent-text) at source chroma: light = exact cocoa #725345 (5.33 min, APCA 67) replacing rust #8B4421 (dE 9.8 from danger text); dark = latte #ECC8B8 (cocoa at L 0.86; 8.85 min, APCA 73) replacing peach #F0A989, which sat dE 2.8 / CVD 0.7 from the coral danger text (Gen-1 B's own worst is 5.3 / 4.7)",
+  "interaction": { "light": "#725345", "dark": "#7C5C4E" },
+  "danger": { "swatch": "#FE8160", "L": { "light": 0.5, "dark": 0.74 } },
+  "tokens": {
+   "light": { "accent-solid-alt": "#9F7E6F", "accent-solid-alt-label": "#191B19", "accent-text": "#725345" },
+   "dark": { "selection-ring": "#9F7E6F", "accent-solid-alt": "#9F7E6F", "accent-solid-alt-label": "#0F100F", "accent-text": "#ECC8B8" }
+  }
+ }
+}

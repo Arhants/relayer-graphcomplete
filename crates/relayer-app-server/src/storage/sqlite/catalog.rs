@@ -93,7 +93,8 @@ impl SqliteProductStore {
                 }
             };
             let result = sqlx::query(
-                "UPDATE product_harnesses SET available=?1,unavailable_reason_code=?2,unavailable_reason_message=?3 WHERE configuration_name=?4 AND product_visible=1 AND runtime_configuration_digest=?5",
+                // A committed result is the evaluation an upgrade was waiting for.
+                "UPDATE product_harnesses SET available=?1,unavailable_reason_code=?2,unavailable_reason_message=?3,readiness_update_due=0 WHERE configuration_name=?4 AND product_visible=1 AND runtime_configuration_digest=?5",
             )
             .bind(update.available)
             .bind(reason.map(|value| value.code.as_str()))
@@ -114,6 +115,16 @@ impl SqliteProductStore {
             accepted_generations.insert(update.harness_id.clone(), update.generation);
         }
         Ok(())
+    }
+
+    /// Coordinated routes an upgrade left pending, still waiting for their one automatic
+    /// readiness evaluation.
+    pub(crate) async fn harness_readiness_updates_due(&self) -> Result<Vec<String>, StorageError> {
+        Ok(sqlx::query_scalar(
+            "SELECT configuration_name FROM product_harnesses WHERE readiness_update_due=1 AND product_visible=1 ORDER BY configuration_name",
+        )
+        .fetch_all(&self.pool)
+        .await?)
     }
 
     pub(crate) async fn update_harness_model_rules(
@@ -354,6 +365,17 @@ impl SqliteProductStore {
         .await?
         .into_iter()
         .collect();
+        // The runtime digest and recipe each route was last loaded with ('' for a recipe
+        // never recorded), and whether it still waits for its post-upgrade evaluation.
+        let prior_runtime: HashMap<String, (String, bool, String)> =
+            sqlx::query_as::<_, (String, String, bool, String)>(
+                "SELECT configuration_name,runtime_configuration_digest,readiness_update_due,runtime_recipe FROM product_harnesses WHERE product_visible=1",
+            )
+            .fetch_all(&mut *transaction)
+            .await?
+            .into_iter()
+            .map(|(name, digest, due, recipe)| (name, (digest, due, recipe)))
+            .collect();
         sqlx::query(
             "UPDATE product_harnesses SET available=0,unavailable_reason_code='harness_unavailable',unavailable_reason_message='The harness runtime is unavailable.',runtime_configuration_digest='sha256:not-loaded'",
         )
@@ -378,6 +400,8 @@ impl SqliteProductStore {
                 family_policy: None,
                 runtime_available: false,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: Some(UnavailableReason {
                     code: "harness_unavailable".into(),
                     message: "The harness runtime is unavailable.".into(),
@@ -387,13 +411,40 @@ impl SqliteProductStore {
         harnesses.sort_by(|left, right| left.id.cmp(&right.id));
         harnesses.dedup_by(|left, right| left.id == right.id);
         for mut harness in harnesses {
+            // An update changed the runtime recipe of a route loaded before with a recorded
+            // recipe. A ready measured on the old recipe does not restore.
+            // This start's update changing the runtime counts even before a recipe was
+            // recorded, as on the first start after migration 0039. So does a ready route
+            // whose files no longer validate when its first recipe is recorded: an update
+            // whose prefetch failed stages nothing for startup to report.
+            let prior_recipe = prior_runtime
+                .get(&harness.id)
+                .map(|(_, _, prior)| prior.as_str());
+            let recipe_changed = harness.restore_prior_readiness
+                && (harness.runtime_updated
+                    || harness
+                        .runtime_recipe
+                        .as_ref()
+                        .is_some_and(|recipe| match prior_recipe {
+                            Some("") => {
+                                !harness.runtime_available
+                                    && prior_ready.contains(&(
+                                        harness.id.clone(),
+                                        harness.configuration_digest.clone(),
+                                    ))
+                            }
+                            Some(prior) => prior != recipe,
+                            None => false,
+                        }));
             if harness.restore_prior_readiness
                 && harness.runtime_available
-                && !prior_ready
-                    .contains(&(harness.id.clone(), harness.configuration_digest.clone()))
+                && (recipe_changed
+                    || !prior_ready
+                        .contains(&(harness.id.clone(), harness.configuration_digest.clone())))
             {
                 // Valid runtime files alone never make a route ready: a new or changed
-                // digest, or a route last recorded unavailable, waits for an evaluation.
+                // digest or recipe, or a route last recorded unavailable, waits for an
+                // evaluation.
                 harness.runtime_available = false;
                 harness.unavailable_reason = Some(UnavailableReason {
                     code: "harness_readiness_pending".into(),
@@ -405,6 +456,22 @@ impl SqliteProductStore {
                 harness.model_rules.is_some() || !harness.model_compatibility.is_empty();
             let available = runtime_present
                 && (!model_selecting || !harness.execution_access_contracts.is_empty());
+            // An upgrade changed the digest or the runtime recipe of a coordinated route this
+            // app server had loaded before. It is due one automatic evaluation, and only a
+            // committed readiness result clears the mark. A harness this start does not
+            // coordinate keeps a mark only while its route is unavailable, so a marked route
+            // is never ready.
+            let readiness_update_due =
+                prior_runtime
+                    .get(&harness.id)
+                    .is_some_and(|(digest, due, _)| match harness.restore_prior_readiness {
+                        true => {
+                            *due || recipe_changed
+                                || (loaded_runtime_digest(digest)
+                                    && *digest != harness.configuration_digest)
+                        }
+                        false => *due && !available,
+                    });
             let existing_overlay: Option<(bool, String, i64)> = sqlx::query_as(
                 "SELECT model_rules_modified,runtime_configuration_digest,configuration_revision FROM product_harnesses WHERE configuration_name=?1",
             )
@@ -452,6 +519,20 @@ impl SqliteProductStore {
             .bind(harness.family_policy.as_ref().map(|policy| policy.version))
             .bind(harness.configuration_revision)
             .bind(&harness.configuration_digest)
+            .execute(&mut *transaction)
+            .await?;
+            // A coordinated start records the recipe it loaded; others keep the last one.
+            sqlx::query(
+                "UPDATE product_harnesses SET readiness_update_due=?2,runtime_recipe=COALESCE(?3,runtime_recipe) WHERE configuration_name=?1",
+            )
+            .bind(&harness.id)
+            .bind(readiness_update_due)
+            .bind(
+                harness
+                    .runtime_recipe
+                    .as_deref()
+                    .filter(|_| harness.restore_prior_readiness),
+            )
             .execute(&mut *transaction)
             .await?;
             let model_rules_modified: bool = sqlx::query_scalar(
@@ -1266,6 +1347,12 @@ impl SqliteProductStore {
             Err(error) => Err(error),
         }
     }
+}
+
+/// A runtime digest a previous startup actually loaded, not a placeholder for an absent,
+/// unloaded, or never-recorded configuration.
+fn loaded_runtime_digest(digest: &str) -> bool {
+    digest.starts_with("sha256:") && digest != "sha256:not-loaded" && digest != "sha256:unavailable"
 }
 
 async fn project_harness_usability_on(
@@ -3148,6 +3235,8 @@ mod provider_definition_tests {
             family_policy: None,
             runtime_available: true,
             restore_prior_readiness: false,
+            runtime_recipe: None,
+            runtime_updated: false,
             unavailable_reason: None,
         }
     }
@@ -3573,6 +3662,35 @@ mod provider_definition_tests {
     /// server owns (`desktop/main/services/graphcomplete-runtime.mjs`; the desktop-shell
     /// test "hands startup readiness to the app server record" asserts the same shape).
     fn coordinated_catalog(path: &std::path::Path, digest: &str, files_valid: bool) {
+        coordinated_catalog_with_recipe(path, digest, files_valid, None);
+    }
+
+    /// The same shape, naming the runtime recipe the release requires for the harness.
+    fn coordinated_catalog_with_recipe(
+        path: &std::path::Path,
+        digest: &str,
+        files_valid: bool,
+        recipe: Option<&str>,
+    ) {
+        coordinated_catalog_with_update(path, digest, files_valid, recipe, false);
+    }
+
+    /// The same shape, also saying whether this start's update changed the harness's
+    /// runtime: it activated a new recipe for it, or failed to.
+    fn coordinated_catalog_with_update(
+        path: &std::path::Path,
+        digest: &str,
+        files_valid: bool,
+        recipe: Option<&str>,
+        runtime_updated: bool,
+    ) {
+        let mut readiness = serde_json::json!({ "runtimeFilesValid": files_valid });
+        if let Some(recipe) = recipe {
+            readiness["runtimeRecipe"] = serde_json::json!(recipe);
+        }
+        if runtime_updated {
+            readiness["runtimeUpdated"] = serde_json::json!(true);
+        }
         std::fs::write(
             path,
             serde_json::json!({
@@ -3589,7 +3707,7 @@ mod provider_definition_tests {
                         "code": "harness_readiness_pending",
                         "message": "This execution configuration is currently unavailable."
                     },
-                    "appServerReadiness": { "runtimeFilesValid": files_valid }
+                    "appServerReadiness": readiness
                 }],
                 "unavailableConfigurations": []
             })
@@ -3791,6 +3909,466 @@ mod provider_definition_tests {
             (false, pending),
             "a changed digest starts pending"
         );
+    }
+
+    async fn updates_due(store: &SqliteProductStore) -> Vec<String> {
+        store.harness_readiness_updates_due().await.unwrap()
+    }
+
+    /// #556: an upgrade that changes a coordinated route's digest leaves it pending (PROV-006)
+    /// and marks it due for one automatic evaluation. The mark survives restarts until a
+    /// readiness result commits, whatever that result is, so it runs once per changed digest.
+    #[tokio::test]
+    async fn an_upgraded_digest_is_due_one_automatic_evaluation() {
+        let directory = readiness_root("update-due");
+        let root = directory.path();
+        let catalog = root.join("harness-configurations.json");
+        let store = SqliteProductStore::open(root.join("product.sqlite3"))
+            .await
+            .unwrap();
+        let pending = (false, Some("harness_readiness_pending".to_owned()));
+
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        assert_eq!(start_app_server(&store, &catalog).await, pending);
+        assert!(
+            updates_due(&store).await.is_empty(),
+            "a first install waits for Connect, not for an automatic evaluation"
+        );
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        assert_eq!(start_app_server(&store, &catalog).await, (true, None));
+        assert!(
+            updates_due(&store).await.is_empty(),
+            "an unchanged digest is not due"
+        );
+
+        coordinated_catalog(&catalog, "sha256:d2", true);
+        assert_eq!(start_app_server(&store, &catalog).await, pending);
+        assert_eq!(
+            updates_due(&store).await,
+            ["codex-basic"],
+            "the upgrade is due"
+        );
+        assert_eq!(start_app_server(&store, &catalog).await, pending);
+        assert_eq!(
+            updates_due(&store).await,
+            ["codex-basic"],
+            "a restart before the evaluation commits keeps it due"
+        );
+
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d2", 1, true)])
+            .await
+            .unwrap();
+        assert!(
+            updates_due(&store).await.is_empty(),
+            "the evaluation clears the mark"
+        );
+        assert_eq!(start_app_server(&store, &catalog).await, (true, None));
+        assert!(
+            updates_due(&store).await.is_empty(),
+            "it does not run on every start"
+        );
+
+        coordinated_catalog(&catalog, "sha256:d3", true);
+        start_app_server(&store, &catalog).await;
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d3", 1, false)])
+            .await
+            .unwrap();
+        assert!(!start_app_server(&store, &catalog).await.0);
+        assert!(
+            updates_due(&store).await.is_empty(),
+            "a failed evaluation is still the one evaluation; Repair remains the way back"
+        );
+    }
+
+    /// PR #576 review: an update can change the runtime recipe without changing the harness
+    /// digest, both when its staged runtime activates and when activation fails. The route
+    /// must not restore a ready that was measured on the old recipe. Like a changed digest,
+    /// it starts pending and stays due for one evaluation, across restarts, until a result
+    /// commits; an unchanged recipe restores as before.
+    #[tokio::test]
+    async fn a_changed_runtime_recipe_starts_pending_and_is_due_once() {
+        let directory = readiness_root("recipe-due");
+        let root = directory.path();
+        let catalog = root.join("harness-configurations.json");
+        let store = SqliteProductStore::open(root.join("product.sqlite3"))
+            .await
+            .unwrap();
+        let pending = (false, Some("harness_readiness_pending".to_owned()));
+
+        coordinated_catalog_with_recipe(&catalog, "sha256:d1", true, Some("codex@1#a"));
+        start_app_server(&store, &catalog).await;
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        assert_eq!(start_app_server(&store, &catalog).await, (true, None));
+        assert!(
+            updates_due(&store).await.is_empty(),
+            "an unchanged recipe is not due"
+        );
+
+        // The update activated its new recipe: files validate, the digest is unchanged.
+        coordinated_catalog_with_recipe(&catalog, "sha256:d1", true, Some("codex@2#b"));
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            pending,
+            "a ready measured on the old recipe does not restore"
+        );
+        assert_eq!(updates_due(&store).await, ["codex-basic"]);
+        assert_eq!(start_app_server(&store, &catalog).await, pending);
+        assert_eq!(
+            updates_due(&store).await,
+            ["codex-basic"],
+            "a restart before the evaluation keeps it due"
+        );
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        assert!(updates_due(&store).await.is_empty());
+        assert_eq!(start_app_server(&store, &catalog).await, (true, None));
+        assert!(
+            updates_due(&store).await.is_empty(),
+            "once per recipe change"
+        );
+
+        // The update's activation failed: the old runtime stays, so files do not validate.
+        coordinated_catalog_with_recipe(&catalog, "sha256:d1", false, Some("codex@3#c"));
+        assert_eq!(start_app_server(&store, &catalog).await, pending);
+        assert_eq!(
+            updates_due(&store).await,
+            ["codex-basic"],
+            "the evaluation that reinstalls the exact recipe is due"
+        );
+    }
+
+    /// The first start after migration 0039 has no recorded recipe to compare. An unrecorded
+    /// recipe alone changes nothing, but this start's own update activating a new recipe,
+    /// or failing to, still withholds the old ready and marks the route due.
+    #[tokio::test]
+    async fn the_first_recorded_recipe_marks_only_a_runtime_this_update_changed() {
+        let directory = readiness_root("recipe-first");
+        let root = directory.path();
+        let catalog = root.join("harness-configurations.json");
+        let store = SqliteProductStore::open(root.join("product.sqlite3"))
+            .await
+            .unwrap();
+        let pending = (false, Some("harness_readiness_pending".to_owned()));
+        let unrecord = || async {
+            sqlx::query("UPDATE product_harnesses SET runtime_recipe='' WHERE configuration_name='codex-basic'")
+                .execute(&store.pool)
+                .await
+                .unwrap();
+        };
+
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        start_app_server(&store, &catalog).await;
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        coordinated_catalog_with_recipe(&catalog, "sha256:d1", true, Some("codex@1#a"));
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (true, None),
+            "recording the first recipe keeps a ready route"
+        );
+        assert!(updates_due(&store).await.is_empty());
+
+        unrecord().await;
+        coordinated_catalog_with_update(&catalog, "sha256:d1", true, Some("codex@2#b"), true);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            pending,
+            "an activated update withholds the old ready"
+        );
+        assert_eq!(updates_due(&store).await, ["codex-basic"]);
+
+        // PR #576 review: an update whose prefetch failed stages nothing, so startup reports
+        // no runtime change. A ready route whose files no longer validate against the new
+        // recipe is still due once when its first recipe is recorded.
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        coordinated_catalog_with_recipe(&catalog, "sha256:d1", true, Some("codex@2#b"));
+        assert_eq!(start_app_server(&store, &catalog).await, (true, None));
+        unrecord().await;
+        coordinated_catalog_with_recipe(&catalog, "sha256:d1", false, Some("codex@3#c"));
+        assert_eq!(start_app_server(&store, &catalog).await, pending);
+        assert_eq!(
+            updates_due(&store).await,
+            ["codex-basic"],
+            "a ready route an unstaged update invalidated is due"
+        );
+
+        // A route that was not ready, with no recorded recipe, is not marked by recording one,
+        // even when its files do not validate (for example a runtime never installed).
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 2, false)])
+            .await
+            .unwrap();
+        unrecord().await;
+        coordinated_catalog_with_recipe(&catalog, "sha256:d1", false, Some("codex@3#c"));
+        assert_eq!(start_app_server(&store, &catalog).await, pending);
+        assert!(updates_due(&store).await.is_empty());
+    }
+
+    /// #556: users an earlier upgrade already left pending are not waiting for a digest
+    /// change. Migration 0039 marks their pending routes due once, and nothing else.
+    #[tokio::test]
+    async fn the_update_migration_marks_routes_an_earlier_upgrade_left_pending() {
+        let directory = readiness_root("backfill");
+        let root = directory.path();
+        let catalog = root.join("harness-configurations.json");
+        let database = root.join("product.sqlite3");
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                sqlx::sqlite::SqliteConnectOptions::new()
+                    .filename(&database)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        let before_mark = sqlx::migrate::Migrator {
+            migrations: std::borrow::Cow::Owned(
+                super::super::migrations::MIGRATOR
+                    .iter()
+                    .filter(|migration| migration.version < 39)
+                    .cloned()
+                    .collect(),
+            ),
+            ..sqlx::migrate::Migrator::DEFAULT
+        };
+        before_mark.run(&pool).await.unwrap();
+        for (name, available, reason, digest) in [
+            (
+                "codex-basic",
+                0,
+                Some("harness_readiness_pending"),
+                "sha256:d1",
+            ),
+            (
+                "claude-basic",
+                0,
+                Some("harness_readiness_pending"),
+                "sha256:not-loaded",
+            ),
+            (
+                "codex-alternate",
+                0,
+                Some("runtime_probe_failed"),
+                "sha256:d1",
+            ),
+            ("prime-ready", 1, None, "sha256:d1"),
+        ] {
+            sqlx::query("INSERT INTO product_harnesses(configuration_name,label,product_visible,available,unavailable_reason_code,unavailable_reason_message,configuration_revision,configuration_digest,model_rules_present,execution_access_contracts_json,runtime_configuration_revision,runtime_configuration_digest) VALUES (?1,?1,1,?2,?3,?4,1,?5,0,'[]',1,?5) ON CONFLICT(configuration_name) DO UPDATE SET available=excluded.available,unavailable_reason_code=excluded.unavailable_reason_code,unavailable_reason_message=excluded.unavailable_reason_message,runtime_configuration_digest=excluded.runtime_configuration_digest")
+                .bind(name)
+                .bind(available)
+                .bind(reason)
+                .bind(reason.map(|_| "This execution configuration is currently unavailable."))
+                .bind(digest)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        pool.close().await;
+
+        let store = SqliteProductStore::open(&database).await.unwrap();
+        assert_eq!(updates_due(&store).await, ["codex-basic"]);
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (false, Some("harness_readiness_pending".to_owned()))
+        );
+        assert_eq!(
+            updates_due(&store).await,
+            ["codex-basic"],
+            "the mark waits for its evaluation"
+        );
+        store.pool.close().await;
+    }
+
+    /// A start that does not coordinate a marked harness keeps the mark only while the route
+    /// is unavailable, so a marked route is never ready.
+    #[tokio::test]
+    async fn an_uncoordinated_start_keeps_the_mark_only_on_an_unavailable_route() {
+        let directory = readiness_root("uncoordinated");
+        let store = SqliteProductStore::open(directory.path().join("product.sqlite3"))
+            .await
+            .unwrap();
+        let harness = |runtime_available: bool| RuntimeProductHarness {
+            id: "codex-basic".into(),
+            configuration_digest: "sha256:d1".into(),
+            model_compatibility: Vec::new(),
+            configuration_revision: 1,
+            model_rules: None,
+            execution_access_contracts: Vec::new(),
+            family_policy: None,
+            runtime_available,
+            restore_prior_readiness: false,
+            runtime_recipe: None,
+            runtime_updated: false,
+            unavailable_reason: (!runtime_available).then(|| UnavailableReason {
+                code: "harness_unavailable".into(),
+                message: "The harness runtime is unavailable.".into(),
+            }),
+        };
+        store
+            .initialize_model_catalog("codex-basic", &[harness(false)])
+            .await
+            .unwrap();
+        sqlx::query("UPDATE product_harnesses SET readiness_update_due=1 WHERE configuration_name='codex-basic'")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        store
+            .initialize_model_catalog("codex-basic", &[harness(false)])
+            .await
+            .unwrap();
+        assert_eq!(updates_due(&store).await, ["codex-basic"]);
+        store
+            .initialize_model_catalog("codex-basic", &[harness(true)])
+            .await
+            .unwrap();
+        assert!(updates_due(&store).await.is_empty());
+    }
+
+    /// #556: ChatGPT and OpenRouter share codex-basic. After an upgrade changes its digest,
+    /// the one automatic evaluation's result makes both providers' routes ready again,
+    /// without a Repair of either.
+    #[tokio::test]
+    async fn one_post_upgrade_evaluation_restores_both_providers_sharing_a_route() {
+        let directory = readiness_root("shared-route");
+        let store = SqliteProductStore::open(directory.path().join("product.sqlite3"))
+            .await
+            .unwrap();
+        let codex_basic = |digest: &str| RuntimeProductHarness {
+            id: "codex-basic".into(),
+            configuration_digest: digest.into(),
+            model_compatibility: Vec::new(),
+            configuration_revision: 1,
+            model_rules: Some(HarnessModelRules {
+                allow: ["codex-subscription", "openrouter"]
+                    .into_iter()
+                    .map(|adapter_id| HarnessModelRule {
+                        adapter_id: adapter_id.into(),
+                        model_id_exact: None,
+                        model_id_regex: Some("^work-".into()),
+                    })
+                    .collect(),
+                deny: Vec::new(),
+            }),
+            execution_access_contracts: vec!["managed-runtime@1".into(), "secret@1".into()],
+            family_policy: None,
+            runtime_available: true,
+            restore_prior_readiness: true,
+            runtime_recipe: None,
+            runtime_updated: false,
+            unavailable_reason: None,
+        };
+        store
+            .initialize_model_catalog("codex-basic", &[codex_basic("sha256:d1")])
+            .await
+            .unwrap();
+        for (id, adapter_id, access_contract) in [
+            ("chatgpt", "codex-subscription", "managed-runtime@1"),
+            ("openrouter", "openrouter", "secret@1"),
+        ] {
+            let definition = ProviderDefinition {
+                id: ProviderId::parse(id).unwrap(),
+                adapter_id: adapter_id.into(),
+                label: id.into(),
+                endpoint: None,
+                access_contract: access_contract.into(),
+                credential_reference: None,
+                lifecycle_state: "active".into(),
+                removed_at: None,
+                connection_generation: 1,
+            };
+            let snapshot = ProviderCatalogSnapshot {
+                provider_id: definition.id.clone(),
+                label: definition.label.clone(),
+                connected: true,
+                unavailable_reason: None,
+                models: vec![crate::product::CatalogModelSnapshot {
+                    id: format!("work-{id}"),
+                    label: "Work".into(),
+                    order: 0,
+                    visible: true,
+                    available: true,
+                    unavailable_reason: None,
+                    provider_default: true,
+                    replacement_model_id: None,
+                    metadata: serde_json::json!({}),
+                }],
+                system_family: None,
+            };
+            store
+                .create_provider_with_catalog(&definition, &snapshot, None, "1")
+                .await
+                .unwrap();
+        }
+        async fn provider_reasons(store: &SqliteProductStore) -> Vec<(String, Option<String>)> {
+            store
+                .load_model_settings()
+                .await
+                .unwrap()
+                .providers
+                .into_iter()
+                .filter(|provider| ["chatgpt", "openrouter"].contains(&provider.id.as_str()))
+                .map(|provider| {
+                    (
+                        provider.id.as_str().to_owned(),
+                        provider.unavailable_reason.map(|reason| reason.code),
+                    )
+                })
+                .collect()
+        }
+        let ready = vec![
+            ("chatgpt".to_owned(), None),
+            ("openrouter".to_owned(), None),
+        ];
+        let no_route = Some("provider_no_available_execution_configurations".to_owned());
+        let blocked = vec![
+            ("chatgpt".to_owned(), no_route.clone()),
+            ("openrouter".to_owned(), no_route),
+        ];
+        let update = |digest: &str| HarnessRuntimeAvailabilityUpdate {
+            harness_id: "codex-basic".into(),
+            configuration_digest: digest.into(),
+            generation: 1,
+            available: true,
+            unavailable_reason: None,
+        };
+        store
+            .update_harness_runtime_availability(&[update("sha256:d1")])
+            .await
+            .unwrap();
+        assert_eq!(provider_reasons(&store).await, ready);
+
+        // The upgrade: a new process loads codex-basic with a new digest.
+        store
+            .initialize_model_catalog("codex-basic", &[codex_basic("sha256:d2")])
+            .await
+            .unwrap();
+        assert_eq!(provider_reasons(&store).await, blocked, "#556 as reported");
+        assert_eq!(updates_due(&store).await, ["codex-basic"]);
+
+        // Desktop's one automatic recipe-update evaluation publishes one result.
+        store
+            .update_harness_runtime_availability(&[update("sha256:d2")])
+            .await
+            .unwrap();
+        assert_eq!(provider_reasons(&store).await, ready);
+        assert!(updates_due(&store).await.is_empty());
     }
 
     /// PROV-005, finding R3: within one app-server process, a readiness result from an
@@ -4557,6 +5135,8 @@ mod provider_definition_tests {
             family_policy: None,
             runtime_available: true,
             restore_prior_readiness: false,
+            runtime_recipe: None,
+            runtime_updated: false,
             unavailable_reason: None,
         };
         store
@@ -4624,6 +5204,8 @@ mod provider_definition_tests {
                 &[RuntimeProductHarness {
                     runtime_available: false,
                     restore_prior_readiness: false,
+                    runtime_recipe: None,
+                    runtime_updated: false,
                     unavailable_reason: Some(UnavailableReason {
                         code: "prime_agent_boundary_unsupported".into(),
                         message: "Choose another available harness on this device.".into(),
@@ -4872,6 +5454,8 @@ mod provider_definition_tests {
                         family_policy: None,
                         runtime_available: true,
                         restore_prior_readiness: false,
+                        runtime_recipe: None,
+                        runtime_updated: false,
                         unavailable_reason: None,
                     },
                     RuntimeProductHarness {
@@ -4887,6 +5471,8 @@ mod provider_definition_tests {
                         }),
                         runtime_available: true,
                         restore_prior_readiness: false,
+                        runtime_recipe: None,
+                        runtime_updated: false,
                         unavailable_reason: None,
                     },
                 ],
@@ -5075,6 +5661,8 @@ mod provider_definition_tests {
                     family_policy: None,
                     runtime_available: true,
                     restore_prior_readiness: false,
+                    runtime_recipe: None,
+                    runtime_updated: false,
                     unavailable_reason: None,
                 }],
             )
@@ -5128,6 +5716,8 @@ mod provider_definition_tests {
                         family_policy: None,
                         runtime_available: true,
                         restore_prior_readiness: false,
+                        runtime_recipe: None,
+                        runtime_updated: false,
                         unavailable_reason: None,
                     },
                     RuntimeProductHarness {
@@ -5140,6 +5730,8 @@ mod provider_definition_tests {
                         family_policy: None,
                         runtime_available: true,
                         restore_prior_readiness: false,
+                        runtime_recipe: None,
+                        runtime_updated: false,
                         unavailable_reason: None,
                     },
                     RuntimeProductHarness {
@@ -5159,6 +5751,8 @@ mod provider_definition_tests {
                         family_policy: None,
                         runtime_available: true,
                         restore_prior_readiness: false,
+                        runtime_recipe: None,
+                        runtime_updated: false,
                         unavailable_reason: None,
                     },
                 ],

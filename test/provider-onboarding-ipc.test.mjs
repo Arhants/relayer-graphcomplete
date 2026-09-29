@@ -359,4 +359,20 @@ describe("provider onboarding IPC hard gate", () => {
     });
     fetch.mockRestore();
   });
+
+  it("reads the routes an upgrade left due for their automatic readiness evaluation (#556)", async () => {
+    const service = new RelayerAppServerService({
+      userDataDirectory: "/tmp/unused", binaryPath: "/tmp/unused", webDirectory: "/tmp/unused",
+      permissionCatalogPath: "/tmp/unused",
+    });
+    service.start = async () => ({ origin: "http://127.0.0.1:43123", cookie: { name: "relayer_control", value: "token" } });
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({
+      updateDue: ["codex-basic"],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    await expect(service.harnessReadinessUpdatesDue()).resolves.toEqual(["codex-basic"]);
+    expect(fetch).toHaveBeenCalledWith(new URL("http://127.0.0.1:43123/api/internal/harness-readiness"), {
+      headers: { Authorization: "Bearer token" }, signal: undefined,
+    });
+    fetch.mockRestore();
+  });
 });

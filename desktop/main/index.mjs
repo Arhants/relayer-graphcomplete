@@ -36,7 +36,7 @@ import { RelayerAppServerService } from "./services/relayer-app-server.mjs";
 import { installElectronMainErrorAdapter } from "./services/electron-main-error-adapter.mjs";
 import { createCanaryEvidenceLog } from "./services/canary-evidence-log.mjs";
 import { settleShutdownWithin } from "./services/update-restart.mjs";
-import { GraphCompleteRuntimeService, productTemporalFeatures } from "./services/graphcomplete-runtime.mjs";
+import { createDesktopGraphRuntime, productTemporalFeatures } from "./services/graphcomplete-runtime.mjs";
 import {
   inspectPrimeAgentRuntime,
   PRIME_AGENT_ASSET_SHA256,
@@ -57,9 +57,9 @@ import {
   GRAPHCOMPLETE_LOGIN_URL,
 } from "./services/desktop-account-service.mjs";
 import { createDesktopUpdater, resolveUpdateChannel } from "./services/updater.mjs";
-import { createManagedRuntimeInstaller } from "./managed-runtimes/installer.mjs";
-import { createManagedRuntimeResolver } from "./managed-runtimes/resolver.mjs";
-import { createHarnessReadinessCoordinator } from "./services/harness-readiness.mjs";
+import { createManagedRuntimeInstaller, runtimesChangedByActivation } from "./managed-runtimes/installer.mjs";
+import { createManagedRuntimeResolver, managedRecipeInstalled } from "./managed-runtimes/resolver.mjs";
+import { createHarnessReadinessCoordinator, startPostUpgradeReadiness } from "./services/harness-readiness.mjs";
 import { confirmManagedRuntimeQuit } from "./managed-runtimes/quit-guard.mjs";
 import { claimPrimaryDesktopInstance } from "./single-instance.mjs";
 import { createWindowFactory } from "./window.mjs";
@@ -73,6 +73,7 @@ import {
   activeProviderRuntimeRequirements,
   HARNESS_MANAGED_RUNTIME_REQUIREMENTS,
   compatibleHarnessImplementationForAdapter,
+  managedRuntimeRequirementForAdapter,
   managedRuntimeRequirementForHarness,
   parseUpdateRuntimeRequirements,
 } from "../shared/managed-runtime-requirements.mjs";
@@ -119,6 +120,8 @@ const managedRuntimeInstaller = createManagedRuntimeInstaller({
   },
 });
 const managedRuntimeResolver = createManagedRuntimeResolver(managedRuntimeInstaller);
+// Runtime ids this start's app update changed; filled before the graph runtime starts.
+const updatedRuntimeIds = new Set();
 const legacyCodexHome = resolveLegacyCodexHome(userDataPath, process.env);
 const updateBaseUrl = packagedRelease?.updateBaseUrl || (
   app.isPackaged ? null : process.env.RELAYER_DESKTOP_UPDATE_BASE_URL || DESKTOP_UPDATE_BASE_URL
@@ -200,9 +203,8 @@ if (primaryInstance) {
     fatalShutdownRequested = true;
     app.quit();
   };
-  const graphRuntime = new GraphCompleteRuntimeService({
+  const graphRuntime = createDesktopGraphRuntime({
     userDataDirectory: userDataPath,
-    interactionPermissions: !app.isPackaged && process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1",
     graphServerBinary: relayerGraphServerBinary,
     configurationPaths: [...new Set([
       defaultHarnessConfiguration,
@@ -246,6 +248,12 @@ if (primaryInstance) {
       await managedRuntimeResolver.validate(requirement.recipeId);
       return true;
     },
+    harnessRuntimeRecipe: (configuration) => managedRuntimeInstaller.recipeIdentity(
+      managedRuntimeRequirementForHarness(configuration.implementation).recipeId,
+    ),
+    harnessRuntimeUpdated: (configuration) => updatedRuntimeIds.has(
+      managedRuntimeRequirementForHarness(configuration.implementation).runtimeId,
+    ),
     onHarnessRuntimeValidationFailure: async (configuration, error) => {
       await providerDiagnostics.write({
         level: "error",
@@ -347,14 +355,21 @@ if (primaryInstance) {
   let shutdownPromise;
   let shutdownComplete = false;
   let quitFlowPromise;
+  // The background post-upgrade readiness evaluation (#556), fenced for shutdown.
+  let postUpgradeReadiness = null;
 
-  const confirmQuit = ({ fatal = false } = {}) => confirmManagedRuntimeQuit({
-    installer: managedRuntimeInstaller,
-    dialog,
-    parent: mainWindow,
-    fatal,
-    ...(fatal ? { reason: new Error("Relayer is closing after a fatal service failure.") } : {}),
-  });
+  // Quitting first stops the post-upgrade evaluation, so no preparation starts behind the
+  // quit guard's check; one already running is an installer operation the guard sees.
+  const confirmQuit = ({ fatal = false } = {}) => {
+    postUpgradeReadiness?.stop();
+    return confirmManagedRuntimeQuit({
+      installer: managedRuntimeInstaller,
+      dialog,
+      parent: mainWindow,
+      fatal,
+      ...(fatal ? { reason: new Error("Relayer is closing after a fatal service failure.") } : {}),
+    });
+  };
 
   const UPDATE_RESTART_SHUTDOWN_BUDGET_MS = 10_000;
 
@@ -377,6 +392,11 @@ if (primaryInstance) {
       // awaits the app server; the provider teardown below would close it underneath (PROV-004).
       providerComposition?.beginShutdown();
       updater.stopPolling();
+      // No post-upgrade preparation outlives shutdown: stop the step, cancel any installer
+      // operation it started, and let it settle before the services it uses close.
+      postUpgradeReadiness?.stop();
+      await managedRuntimeInstaller.cancelAll(new DOMException("Relayer is shutting down.", "AbortError"));
+      await postUpgradeReadiness?.evaluation;
       try {
         electronMainErrorAdapter?.close();
       } catch (error) {
@@ -429,6 +449,9 @@ if (primaryInstance) {
     if (channel === "preview") updater.setChannel("preview");
     void accountService.start().catch((error) => console.error("Optional desktop account initialization failed:", error));
     const activation = await managedRuntimeInstaller.activatePendingAppUpdate(desktopVersion);
+    // Runtimes this update changed: a new recipe activated, or activation failed. Startup
+    // tells the app server, which withholds their old ready and marks them due.
+    for (const runtimeId of runtimesChangedByActivation(activation)) updatedRuntimeIds.add(runtimeId);
     if (activation.failures.length) {
       console.error("Managed runtime update activation failed:", new AggregateError(
         activation.failures.map(({ error }) => error),
@@ -507,6 +530,7 @@ if (primaryInstance) {
       },
       // The app server's record is the only readiness record (PROV-006).
       publishAvailability: (updates) => productServer.publishHarnessReadiness(updates),
+      recipeInstalled: (recipeId) => managedRecipeInstalled(managedRuntimeResolver, recipeId),
       diagnostics: providerDiagnostics,
     });
     const publishCatalog = (snapshot, { signal, connectionGeneration, connectionEvent } = {}) => (
@@ -560,6 +584,19 @@ if (primaryInstance) {
     });
     ({ modelCatalog, providerDefinitions: providerSetup } = providerComposition);
     await providerComposition.start();
+    // #556: an upgrade that changed a route's configuration digest, or activated a new
+    // runtime recipe, gets one readiness evaluation through the recipe-update trigger. It
+    // runs in the background, so startup's cheap path never waits for it.
+    postUpgradeReadiness = startPostUpgradeReadiness({
+      readiness,
+      updatesDue: () => productServer.harnessReadinessUpdatesDue(),
+      recipeUpdates: activation.recipeUpdates,
+      routes: () => providerComposition.readinessRoutes(),
+      repairProviders: (recipeIds) => providerComposition.repairFailedActivations(recipeIds, {
+        recipeForAdapter: (adapterId) => managedRuntimeRequirementForAdapter(adapterId).recipeId,
+      }),
+      onError: (error) => console.error("Post-upgrade harness readiness evaluation failed:", error),
+    });
     const conversationExporter = createConversationExportService({
       dialog,
       getWindow: () => mainWindow,

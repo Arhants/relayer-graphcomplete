@@ -5,17 +5,18 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   GraphCompleteRuntimeService,
+  createDesktopGraphRuntime,
   RECURSIVE_TEMPORAL_FEATURES,
   productTemporalFeatures,
 } from "../desktop/main/services/graphcomplete-runtime.mjs";
 
 const runtimeDirectories = [];
 
-function spawnedGraphArguments(temporalFeatures, runtimeOptions = {}) {
+function spawnedGraphArguments(temporalFeatures, runtimeOptions = {}, createRuntime = (options) => new GraphCompleteRuntimeService(options)) {
   const spawned = [];
   const userDataDirectory = mkdtempSync(join(tmpdir(), "relayer-temporal-features-"));
   runtimeDirectories.push(userDataDirectory);
-  const service = new GraphCompleteRuntimeService({
+  const service = createRuntime({
     userDataDirectory,
     graphServerBinary: "/tmp/relayer-graph-server",
     configurationPaths: [],
@@ -68,6 +69,12 @@ describe("product recursion enable path", () => {
       await expect(service.start()).rejects.toThrow("startup is not exercised");
       expect(spawned[0].includes("--interaction-permissions")).toBe(enabled);
     }
+  });
+
+  it("Desktop startup enables attached-node policy at the real process boundary", async () => {
+    const { service, spawned } = spawnedGraphArguments({}, {}, createDesktopGraphRuntime);
+    await expect(service.start()).rejects.toThrow("startup is not exercised");
+    expect(spawned[0]).toContain("--interaction-permissions");
   });
 
   it("passes the enabled chain to the graph server it starts", async () => {

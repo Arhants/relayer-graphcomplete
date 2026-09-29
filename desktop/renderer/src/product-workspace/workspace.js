@@ -15,6 +15,7 @@ import {
   responseNodesForThread,
   workspaceBreadcrumbItems,
   workspaceModeCapabilities,
+  humanTurns,
   workspaceTurns,
 } from "./model.js";
 import { createRelayerIcon } from "./icons.js";
@@ -441,11 +442,10 @@ export function graphTurnNavigationDelta(event, graphFocused) {
   return null;
 }
 
-export { workspaceTurns } from "./model.js";
+export { humanTurns, workspaceTurns } from "./model.js";
 
 export function productStopTarget(state, thread) {
-  const childIds = new Set((state.actionInvocations || []).map((item) => String(item.resultInteractionId)));
-  return workspaceTurns(state, thread).findLast((turn) => !childIds.has(String(turn.id)) && ["submitted", "running", "waiting_for_approval"].includes(turn.completionStatus)) || null;
+  return humanTurns(state, thread).findLast((turn) => ["submitted", "running", "waiting_for_approval"].includes(turn.completionStatus)) || null;
 }
 
 export function turnStatusPresentation(status) {
@@ -1366,7 +1366,12 @@ export function applyComposerCapabilities({ composer, prompt, send, readOnlyMess
 }
 
 export function composerStatusForThread(state, thread) {
-  return workspaceTurns(state, thread).at(-1)?.completionStatus || state.status || "idle";
+  return humanTurns(state, thread).at(-1)?.completionStatus || state.status || "idle";
+}
+
+/** The latest human turn, which the composer follows up, retries, and inherits a model from. */
+export function latestHumanTurn(state, thread) {
+  return humanTurns(state, thread).at(-1);
 }
 
 export function composerFocusRestoration(
@@ -1403,13 +1408,22 @@ export function actionPresentation(action) {
   };
 }
 
+function usesResolvedInvokeDestination(action, imported) {
+  // Imported conversions retain binding history, but no native invoke receipt.
+  // Their accepted target is ordinary read-only layer navigation. Public shares
+  // use their own validated turn mapping and still take the resolved callback.
+  const importedConversion = imported && action?.convertedFromInvoke === true
+    && !(Number.isSafeInteger(action.resolvedInvokeInteractionId) && action.resolvedInvokeInteractionId > 0);
+  return action != null && isResolvedInvokeAction(action) && !importedConversion;
+}
+
 export function actionActivationPresentation(
   action,
-  { invoked = false, retryable = false, canInvokeMutatingActions = false } = {},
+  { invoked = false, retryable = false, canInvokeMutatingActions = false, imported = false } = {},
 ) {
   const layerNavigation = action?.kind === "navigate" && action.targetLayerId != null;
   const resolvedInvoke = (action?.kind === "invoke" && action.targetLayerId != null)
-    || (action != null && isResolvedInvokeAction(action));
+    || usesResolvedInvokeDestination(action, imported);
   const navigational = layerNavigation || resolvedInvoke;
   const retryableInvoke = action?.kind === "invoke" && !navigational && retryable;
   return Object.freeze({
@@ -3742,8 +3756,7 @@ export function createProductWorkspace({
     // While another thread is shown, the send's thread's newest scope
     // decides: newer text there supersedes the stranded text, and an empty
     // one carries it forward when the thread is shown again.
-    const newestTurn = shown ? null : (getState().interactions || [])
-      .filter((turn) => String(turn.threadId) === String(submission.threadId)).at(-1);
+    const newestTurn = shown ? null : humanTurns(getState(), { id: submission.threadId }).at(-1);
     const newestScopeKey = newestTurn ? composerDraftScopeKey(submission.threadId, newestTurn.id) : null;
     if (!shown && (!newestScopeKey || newestScopeKey === submission.scopeKey
       || !(threadFollowupDraft(newestScopeKey) ?? composerDraftScopeState.drafts.get(newestScopeKey)?.promptValue))) {
@@ -4294,7 +4307,7 @@ export function createProductWorkspace({
       viewport.append(renderInteractionGraph(graphDocument, graph, interaction?.id, async (node) => {
         if (!await prepareNodeContextSelectionChange()) return;
         closeTurnPopover(); collapseContextPreviews();
-        if (onSelectTurnById) await onSelectTurnById(node.id, { responseRoot: true, threadId: node.threadId });
+        if (onSelectTurnById) await onSelectTurnById(node.id, { responseRoot: node.completionStatus === "accepted", threadId: node.threadId });
       }));
       $("#turnPopover").replaceChildren(title, viewport);
       if (focusedTurnId !== null) [...$("#turnPopover").querySelectorAll("[data-turn-id]")].find((row) => row.dataset.turnId === focusedTurnId)?.focus({ preventScroll: true });
@@ -4599,7 +4612,8 @@ export function createProductWorkspace({
     renderTurnNavigation(state, thread, interaction);
     renderHistoricalContexts(state, interaction);
     renderHistoricalInputs(interaction);
-    const turns = (state.interactions || []).filter((item) => String(item.threadId) === String(thread.id));
+    // A child an agent launched is not a human turn: the composer's scopes follow human turns.
+    const turns = humanTurns(state, thread);
     const latestInteraction = turns.at(-1);
     if (inputDraftController && latestInteraction) {
       const statusKey = `${latestInteraction.id}:${latestInteraction.completionStatus || ""}`;
@@ -5860,6 +5874,7 @@ export function createProductWorkspace({
             invoked,
             retryable: actionCanRetry(state.actionInvocations, action.id),
             canInvokeMutatingActions: capabilities.canInvokeMutatingActions,
+            imported: getThread()?.imported,
           }).disabled,
         };
       } else if (action.kind === "input") {
@@ -5909,7 +5924,7 @@ export function createProductWorkspace({
       capabilityState: authoredCapabilityState,
       onNavigate: async (action) => {
         if (!await prepareNodeContextSelectionChange()) return;
-        if (isResolvedInvokeAction(action)) {
+        if (usesResolvedInvokeDestination(action, getThread()?.imported)) {
           await onNavigateResolvedInvoke(action, { beforeCommit: collapseContextPreviews });
           return;
         }
@@ -5929,6 +5944,7 @@ export function createProductWorkspace({
           ),
           retryable: actionCanRetry(state.actionInvocations, action.id),
           canInvokeMutatingActions: capabilities.canInvokeMutatingActions,
+          imported: getThread()?.imported,
         });
         if (activation.navigational) {
           if (!await prepareNodeContextSelectionChange()) return;
@@ -6092,6 +6108,7 @@ export function createProductWorkspace({
           invoked,
           retryable,
           canInvokeMutatingActions: capabilities.canInvokeMutatingActions,
+          imported: getThread()?.imported,
         });
         button.querySelector(".action-label").textContent = activation.label;
         button.disabled = activation.disabled;

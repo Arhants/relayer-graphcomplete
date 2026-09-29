@@ -1,3 +1,4 @@
+import { interactionPositionCondition as turnReady } from "./interaction-navigator-driver.mjs";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -9,7 +10,7 @@ import { RelayerGraphClient, NodeObject, LayerObject, LayerLayoutObject, NodePla
 import { taskSystemFixtureFactory } from "@relayer/eval-runner";
 
 import { startModelCatalogRefreshServer } from "../desktop/main/models/model-catalog-refresh-server.mjs";
-import { GraphCompleteRuntimeService } from "../desktop/main/services/graphcomplete-runtime.mjs";
+import { GraphCompleteRuntimeService, createDesktopGraphRuntime } from "../desktop/main/services/graphcomplete-runtime.mjs";
 import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 import { createWindowFactory } from "../desktop/main/window.mjs";
 
@@ -24,11 +25,8 @@ const invokeEvidenceDirectory = process.env.RELAYER_INVOKE_EVIDENCE_DIR
   || join(repositoryRoot, ".relayer", "evidence", "invoke-navigation");
 const dataDirectory = mkdtempSync(join(tmpdir(), "relayer-first-message-app-"));
 const services = [];
-const typedPermissions = process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1";
-function turnReady(position, total) {
-  if (!typedPermissions) return `document.querySelector("#turnPickerButton")?.textContent === "Turn ${position} of ${total}"`;
-  return `(() => { const cards=[...document.querySelectorAll("#turnPopover .interaction-graph-node")]; return document.querySelector("#turnPickerButton")?.classList.contains("interaction-graph-trigger") && cards.length===${total} && cards.findIndex(card=>card.getAttribute("aria-current")==="true")===${position-1}; })()`;
-}
+const typedPermissions = process.env.RELAYER_TEST_INTERACTION_PERMISSIONS !== "0";
+const createRuntime = typedPermissions ? createDesktopGraphRuntime : (options) => new GraphCompleteRuntimeService(options);
 
 const ancillaryFailures = [];
 let window;
@@ -289,7 +287,6 @@ async function run() {
   const configurationPath = join(repositoryRoot, "harnesses", "fixture-task-system.yaml");
   const runtimeOptions = {
     userDataDirectory: dataDirectory,
-    interactionPermissions: process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1",
     graphServerBinary: join(repositoryRoot, "target", "debug", "relayer-graph-server"),
     configurationPaths: [configurationPath],
     additionalImplementations: { "fixture.task-system": requiredNavigationFixtureFactory },
@@ -300,7 +297,7 @@ async function run() {
       async release() {},
     }),
   };
-  const runtime = new GraphCompleteRuntimeService(runtimeOptions);
+  const runtime = createRuntime(runtimeOptions);
   services.push(runtime);
   const runtimeSession = await runtime.start();
   let product;
@@ -513,7 +510,7 @@ async function run() {
   ));
   const invokedRootLayerId = invokedResult?.completionOutput?.rootLayer?.layer?.id;
   if (
-    canonicalInvoke?.kind !== (process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1" ? "navigate" : "invoke")
+    canonicalInvoke?.kind !== (typedPermissions ? "navigate" : "invoke")
     || canonicalInvoke.targetLayerId == null
     || String(canonicalInvoke.targetLayerId) !== String(invokedRootLayerId)
   ) {
@@ -653,7 +650,7 @@ async function run() {
     return presentation.inspectorOpen && nodesAreContained(presentation) ? presentation : false;
   });
   const productChildLayout = requireAuthoredLayout("Product child", restoredInspectorFit);
-  if (typedPermissions) invokeEvidencePaths.graphClosed = await captureEvidence(webContents, "09-interaction-graph-closed");
+  invokeEvidencePaths.graphClosed = await captureEvidence(webContents, "09-interaction-graph-closed");
   await webContents.executeJavaScript(`document.querySelector("#turnPickerButton")?.click()`);
   const productNavigationState = await waitFor("the scrolling turn picker", () => webContents.executeJavaScript(`(() => {
     const popover = document.querySelector("#turnPopover");
@@ -667,14 +664,12 @@ async function run() {
       selectedNodeId: document.querySelector(".graph-node.selected")?.dataset.node || null,
     };
   })()`));
-  if (typedPermissions) {
-    invokeEvidencePaths.graphOpen = await captureEvidence(webContents, "10-interaction-graph-open");
-    await webContents.executeJavaScript(`document.querySelector('.interaction-graph-node[aria-current="true"]')?.click()`);
-    await waitFor("B3 current selection to return to the response root", () => webContents.executeJavaScript(`Boolean(document.querySelector('[data-node="${latestRoot.nodes[0].id}"]')) && document.querySelector("#turnPopover")?.classList.contains("hidden") && document.querySelector("#workspaceBreadcrumb")?.classList.contains("hidden")`));
-    invokeEvidencePaths.graphSelected = await captureEvidence(webContents, "11-interaction-graph-selected-root");
-    await webContents.executeJavaScript(`document.querySelector("#historyBack")?.click()`);
-    await waitFor("Back from B3 root to the prior descendant", () => webContents.executeJavaScript(`document.querySelectorAll("#workspaceBreadcrumb .breadcrumb-segment").length === 2`));
-  }
+  invokeEvidencePaths.graphOpen = await captureEvidence(webContents, "10-interaction-graph-open");
+  await webContents.executeJavaScript(`document.querySelector('.interaction-graph-node[aria-current="true"]')?.click()`);
+  await waitFor("B3 current selection to return to the response root", () => webContents.executeJavaScript(`Boolean(document.querySelector('[data-node="${latestRoot.nodes[0].id}"]')) && document.querySelector("#turnPopover")?.classList.contains("hidden") && document.querySelector("#workspaceBreadcrumb")?.classList.contains("hidden")`));
+  invokeEvidencePaths.graphSelected = await captureEvidence(webContents, "11-interaction-graph-selected-root");
+  await webContents.executeJavaScript(`document.querySelector("#historyBack")?.click()`);
+  await waitFor("Back from B3 root to the prior descendant", () => webContents.executeJavaScript(`document.querySelectorAll("#workspaceBreadcrumb .breadcrumb-segment").length === 2`));
   productNavigationState.inspectorFit = {
     initialContained: nodesAreContained(productInspectorFit),
     restoredContained: nodesAreContained(restoredInspectorFit),
@@ -869,7 +864,7 @@ async function run() {
     window.destroy();
     await product.close();
     await runtime.close();
-    const reopenedRuntime = new GraphCompleteRuntimeService(runtimeOptions);
+    const reopenedRuntime = createRuntime(runtimeOptions);
     services.push(reopenedRuntime);
     const reopenedSession = await reopenedRuntime.start();
     const reopenedProduct = new RelayerAppServerService({ ...productOptions, runtimeSession: reopenedSession });

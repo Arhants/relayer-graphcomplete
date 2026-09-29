@@ -1201,4 +1201,43 @@ mod tests {
         assert_eq!(legacy, "Legacy");
         assert_eq!(children, 0);
     }
+    #[tokio::test]
+    async fn provenance_layer_migration_marks_existing_source_only_import_placeholders() {
+        use std::borrow::Cow;
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        Migrator {
+            migrations: Cow::Owned(
+                MIGRATOR
+                    .iter()
+                    .filter(|migration| migration.version <= 28)
+                    .cloned()
+                    .collect(),
+            ),
+            ..Migrator::DEFAULT
+        }
+        .run(&pool)
+        .await
+        .unwrap();
+        sqlx::raw_sql("INSERT INTO graph_imports(import_id,source_sha256,thread_id,created_at) VALUES ('legacy','sha256:test',1,'1');
+            INSERT INTO nodes(id,thread_id,kind,icon,title,detail,state,owner_interaction_id,client_key) VALUES (1,1,'user-interaction','user','Root','Root','accepted',NULL,NULL),(2,1,'concept','box','Node','Node','accepted',1,'node:2');
+            INSERT INTO layers(id,thread_id,state,owner_interaction_id,client_key) VALUES (1,1,'accepted',1,'external'),(2,1,'accepted',1,'response');
+            INSERT INTO imported_layer_client_keys(layer_id,import_id,client_key) VALUES (1,'legacy','authored-original'),(2,'legacy','response');
+            INSERT INTO layer_nodes(layer_id,node_id,position) VALUES (2,2,0);
+            INSERT INTO actions(thread_id,source_node_id,source_layer_id,kind,relation,label,target_layer_id,state,owner_interaction_id,client_key) VALUES (1,2,1,'navigate','reference','Open',2,'accepted',1,'open'),(1,2,2,'navigate','reference','Pre-fix invalid target',1,'accepted',1,'bad-target');")
+            .execute(&pool).await.unwrap();
+        MIGRATOR.run(&pool).await.unwrap();
+        let markers =
+            sqlx::query_scalar::<_, i64>("SELECT layer_id FROM imported_provenance_layers")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(markers, [1]);
+        let key = sqlx::query_scalar::<_, String>(
+            "SELECT client_key FROM imported_layer_client_keys WHERE layer_id=1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(key, "authored-original");
+    }
 }

@@ -140,6 +140,33 @@ fn default_kind() -> String {
     "concept".into()
 }
 
+/// Derive a new integrity-checked package without mutating accepted content.
+/// The caller owns reference resolution and authority; this function preserves
+/// the package schema and changes only graph-action references and the digest.
+pub fn map_authored_detail_actions(
+    value: &Value,
+    mut map: impl FnMut(&Value, &str) -> Result<Value, GraphError>,
+) -> Result<Value, GraphError> {
+    validate_authored_detail(value)?;
+    let mut derived = value.clone();
+    for mount in derived["mounts"].as_array_mut().expect("validated mounts") {
+        if let Some(capability) = mount.get_mut("capability")
+            && let Some(reference) = capability.get("action")
+        {
+            capability["action"] = map(
+                reference,
+                capability["kind"].as_str().expect("validated kind"),
+            )?;
+        }
+    }
+    let content = derived.as_object_mut().expect("validated package");
+    content.remove("integritySha256");
+    let digest = format!("{:x}", Sha256::digest(canonical_json(&derived).as_bytes()));
+    derived["integritySha256"] = Value::String(digest);
+    validate_authored_detail(&derived)?;
+    Ok(derived)
+}
+
 pub(crate) fn validate_authored_detail(value: &Value) -> Result<(), GraphError> {
     let object = value.as_object().ok_or_else(|| {
         GraphError::validation(

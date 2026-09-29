@@ -4,7 +4,7 @@ mod plan;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 
 use crate::{
     ActionKind, GraphAction, GraphDatabase, GraphError, GraphNode, NavigateRelation, NodeId,
@@ -50,6 +50,9 @@ pub struct CompletionOutput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AcceptedGraphClosure {
+    /// Revision pins read with graph content; absent only for older runtimes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail_asset_revisions: Option<BTreeMap<NodeId, u64>>,
     #[serde(default)]
     pub has_persistent_mutations: bool,
     pub node_id: NodeId,
@@ -373,39 +376,48 @@ pub(crate) async fn read_accepted_closure(
     database: &GraphDatabase,
     node_id: NodeId,
 ) -> Result<Option<AcceptedGraphClosure>, GraphError> {
-    let mut transaction = database.storage.begin_read().await?;
-    let scope = crate::storage::sqlite::nodes::NodeTable::new(&mut transaction)
-        .interaction_scope(node_id)
-        .await?;
-    let Some(output) = read_output_on(&mut transaction, &scope).await? else {
-        return Ok(None);
-    };
-    let publication = read_accepted_publication_on(
-        &mut transaction,
-        &scope,
-        output.root_layer.layer.id,
-        Some(output.root_action),
+    Ok(read_accepted_closures(database, &[node_id])
+        .await?
+        .remove(0))
+}
+
+pub(crate) async fn read_accepted_closures(
+    database: &GraphDatabase,
+    node_ids: &[NodeId],
+) -> Result<Vec<Option<AcceptedGraphClosure>>, GraphError> {
+    read_accepted_closures_between(
+        database,
+        node_ids,
+        #[cfg(test)]
+        None,
     )
-    .await?;
-    let has_persistent_mutations =
-        crate::storage::sqlite::attached_navigation::closure_has_mutations(
-            &mut transaction,
-            node_id,
-            &publication.layers,
-        )
-        .await?;
-    let closure = AcceptedGraphClosure {
-        has_persistent_mutations,
-        node_id: publication.node_id,
-        interaction: publication.interaction,
-        root_action: publication.root_action.ok_or_else(|| {
-            GraphError::Internal("terminal publication has no root action".into())
-        })?,
-        root_layer_id: publication.root_layer_id,
-        layers: publication.layers,
-    };
+    .await
+}
+
+#[cfg(test)]
+type SnapshotReadHook<'a> =
+    &'a mut dyn FnMut(usize) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>;
+
+// Tests can commit a concurrent write between roots in this production read loop.
+async fn read_accepted_closures_between(
+    database: &GraphDatabase,
+    node_ids: &[NodeId],
+    #[cfg(test)] mut between: Option<SnapshotReadHook<'_>>,
+) -> Result<Vec<Option<AcceptedGraphClosure>>, GraphError> {
+    let mut transaction = database.storage.begin_read().await?;
+    let mut closures = Vec::with_capacity(node_ids.len());
+    for &node_id in node_ids {
+        let scope = NodeTable::new(&mut transaction)
+            .interaction_scope(node_id)
+            .await?;
+        closures.push(read_accepted_closure_on(&mut transaction, &scope, node_id).await?);
+        #[cfg(test)]
+        if let Some(hook) = between.as_mut() {
+            hook(closures.len() - 1).await;
+        }
+    }
     transaction.commit().await?;
-    Ok(Some(closure))
+    Ok(closures)
 }
 
 pub(crate) async fn read_accepted_closure_on(
@@ -435,7 +447,16 @@ pub(crate) async fn read_accepted_closure_on(
             &publication.layers,
         )
         .await?;
+    let mut detail_asset_revisions = BTreeMap::new();
+    for node in publication.layers.iter().flat_map(|layer| &layer.nodes) {
+        if node.authored_detail.is_some() && !detail_asset_revisions.contains_key(&node.id) {
+            let revision =
+                crate::storage::sqlite::attached_navigation::revision(transaction, node.id).await?;
+            detail_asset_revisions.insert(node.id, revision);
+        }
+    }
     Ok(Some(AcceptedGraphClosure {
+        detail_asset_revisions: Some(detail_asset_revisions),
         has_persistent_mutations,
         node_id: publication.node_id,
         interaction: publication.interaction,
@@ -502,4 +523,91 @@ pub(crate) async fn read_accepted_publication_on(
         root_layer_id,
         layers,
     })
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+    use crate::{ActionDraft, LayerDraft, NodeDraft, ThreadId};
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn accepted_closures_keep_one_snapshot_across_a_committed_write() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = GraphDatabase::open(directory.path().join("snapshot.sqlite3"))
+            .await
+            .unwrap();
+        let mut roots = Vec::new();
+        let mut nodes = Vec::new();
+        for id in 1..=2 {
+            let root = database
+                .create_interaction(None, ThreadId::new(id).unwrap(), "Root")
+                .await
+                .unwrap();
+            let writer = database.writer_for_subgraph(root.id).await.unwrap();
+            let node = writer
+                .submit_node(&NodeDraft {
+                    client_key: "node".into(),
+                    kind: "concept".into(),
+                    icon: "box".into(),
+                    title: "Node".into(),
+                    detail: "before".into(),
+                })
+                .await
+                .unwrap();
+            let layer: LayerDraft = serde_json::from_value(json!({"clientKey":"layer","nodes":[node.id],"edges":[],"layout":{"version":1,"placements":[{"nodeId":node.id,"x":0.5,"y":0.5}]}})).unwrap();
+            let layer = writer.submit_layer(&layer).await.unwrap();
+            let action: ActionDraft = serde_json::from_value(json!({"clientKey":"response","sourceNodeId":root.id,"kind":"navigate","relation":"expand","label":"Response","variant":"pill","targetLayerId":layer.id})).unwrap();
+            writer.add_action(&action).await.unwrap();
+            writer.complete(root.id).await.unwrap();
+            roots.push(root.id);
+            nodes.push(node.id);
+        }
+        let pending = database
+            .create_interaction(None, ThreadId::new(3).unwrap(), "Pending")
+            .await
+            .unwrap();
+        let requested = [roots[0], roots[1], pending.id, roots[0]];
+        let mut between = |index| -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + '_>> {
+            let database = &database;
+            let nodes = &nodes;
+            Box::pin(async move {
+                if index == 0 {
+                    let mut write = database.storage.begin_write().await.unwrap();
+                    sqlx::query("UPDATE nodes SET detail='after' WHERE id IN (?1,?2)")
+                        .bind(nodes[0].value())
+                        .bind(nodes[1].value())
+                        .execute(&mut *write)
+                        .await
+                        .unwrap();
+                    write.commit().await.unwrap();
+                }
+            })
+        };
+        let closures = read_accepted_closures_between(&database, &requested, Some(&mut between))
+            .await
+            .unwrap();
+        assert!(closures[2].is_none());
+        for (position, node) in [(0, nodes[0]), (1, nodes[1]), (3, nodes[0])] {
+            let closure = closures[position].as_ref().unwrap();
+            assert_eq!(closure.node_id, requested[position]);
+            assert_eq!(closure.layers.len(), 1);
+            assert_eq!(closure.layers[0].nodes.len(), 1);
+            assert_eq!(closure.layers[0].nodes[0].id, node);
+            assert_eq!(closure.layers[0].nodes[0].detail, "before");
+        }
+        let fresh = database.accepted_graph_closures(&roots).await.unwrap();
+        assert!(
+            fresh
+                .iter()
+                .all(|closure| closure.as_ref().unwrap().layers[0].nodes[0].detail == "after")
+        );
+        assert!(
+            database
+                .accepted_graph_closures(&[])
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
 }

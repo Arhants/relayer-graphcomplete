@@ -1192,6 +1192,7 @@ fn imported_conversation() -> ImportedConversation {
             accepted_view: Some(ImportedAcceptedView {
                 interaction_node_id: "interaction-1".into(),
                 root_action: ImportedAction {
+                    converted_from_invoke: false,
                     id: "action-1".into(),
                     client_key: None,
                     source_node_id: "interaction-1".into(),
