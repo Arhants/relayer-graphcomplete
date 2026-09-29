@@ -3,6 +3,8 @@ import { onboardingTutorialController } from "./onboarding-tutorial.js";
 import { $, $$, escapeHtml, escapeHtmlAttribute } from "./ui.js";
 import { evalSidebarHeading } from "./navigation-model.js";
 import { persistPendingNewThreadDraft } from "./composer-drafts.js";
+import { request } from "./api.js";
+import { createLucideIcon } from "./product-workspace/icons.js";
 
 const settingsTabs = {
   account: "Account",
@@ -68,8 +70,54 @@ export async function returnFromSettings(refreshThread) {
   return destination;
 }
 
+// A thread's live state (PRD §8.1): a symbol only while it runs, stops, waits for approval or has failed.
+export const THREAD_ACTIVITY = Object.freeze({
+  running: Object.freeze({ label: "Running", icon: "LoaderCircle", live: true }),
+  stopping: Object.freeze({ label: "Stopping…", icon: "Square", live: true }),
+  needs_approval: Object.freeze({ label: "Needs approval", icon: "Hand", live: true }),
+  failed: Object.freeze({ label: "Failed", icon: "OctagonX", live: false }),
+});
+const THREAD_ACTIVITY_POLL_MS = 2000;
+let threadActivityTimer = null;
+
 function threadEntry(thread) {
-  return `<button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}" data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(thread.title)}" title="${escapeHtmlAttribute(thread.title)}"><span class="entry-icon" aria-hidden="true">◌</span><span>${escapeHtml(thread.title)}</span></button>`;
+  const activity = THREAD_ACTIVITY[thread.activity];
+  const name = activity ? `${thread.title}, ${activity.label}` : thread.title;
+  const tooltip = activity ? `${thread.title} · ${activity.label}` : thread.title;
+  return `<button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}"${activity ? ` data-activity="${escapeHtmlAttribute(thread.activity)}"` : ""} data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(name)}" title="${escapeHtmlAttribute(tooltip)}"><span class="entry-icon thread-activity" aria-hidden="true">${activity ? "" : "◌"}</span><span>${escapeHtml(thread.title)}</span></button>`;
+}
+
+function renderThreadActivity() {
+  $$("[data-thread][data-activity]").forEach((entry) => {
+    const activity = THREAD_ACTIVITY[entry.dataset.activity];
+    entry.querySelector(".thread-activity")?.replaceChildren(createLucideIcon(activity.icon));
+  });
+  const live = appState.threads.some((thread) => THREAD_ACTIVITY[thread.activity]?.live);
+  if (live && threadActivityTimer === null) {
+    threadActivityTimer = setTimeout(refreshThreadActivity, THREAD_ACTIVITY_POLL_MS);
+  } else if (!live && threadActivityTimer !== null) {
+    clearTimeout(threadActivityTimer);
+    threadActivityTimer = null;
+  }
+}
+
+// Background threads keep changing state; refresh only their activity while any is live.
+async function refreshThreadActivity() {
+  threadActivityTimer = null;
+  try {
+    const threads = await request("/api/threads");
+    const activityById = new Map((Array.isArray(threads) ? threads : threads?.threads ?? []).map((thread) => [String(thread.id), thread.activity]));
+    let changed = false;
+    appState.threads = appState.threads.map((thread) => {
+      if (!activityById.has(String(thread.id)) || activityById.get(String(thread.id)) === thread.activity) return thread;
+      changed = true;
+      return { ...thread, activity: activityById.get(String(thread.id)) };
+    });
+    if (changed) renderSidebar();
+    else renderThreadActivity();
+  } catch {
+    threadActivityTimer = setTimeout(refreshThreadActivity, THREAD_ACTIVITY_POLL_MS * 2);
+  }
 }
 
 export function renderSidebar() {
@@ -103,6 +151,7 @@ export function renderSidebar() {
     const projectNameAttribute = escapeHtmlAttribute(project.name);
     return `<div><div class="project-row" data-project-row="${projectId}"><button class="project-button" type="button" aria-label="${projectNameAttribute}" title="${projectNameAttribute}"><i aria-hidden="true"></i><span>${projectName}</span></button><button class="project-new-thread" type="button" data-project-new-thread="${projectId}" aria-label="New thread in ${projectNameAttribute}" title="New thread in ${projectNameAttribute}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.69 4.05 19.95 9.31M4 20l3.75-.75L19.2 7.8a1.75 1.75 0 0 0 0-2.48l-.52-.52a1.75 1.75 0 0 0-2.48 0L4.75 16.25 4 20Z"/><path d="M13 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-7"/></svg></button></div><div class="project-threads">${threads.map(threadEntry).join("")}</div></div>`;
   }).join("");
+  renderThreadActivity();
 }
 
 export function selectScope(scope, { userInitiated = false } = {}) {

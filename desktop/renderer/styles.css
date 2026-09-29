@@ -407,3 +407,11 @@ html[data-theme] .send-button.stop-button{box-shadow:none;border-color:var(--bor
 html[data-theme] .share-dialog-card button.primary{background:var(--accent-solid-alt);color:var(--accent-solid-alt-text)}
 html[data-theme] .annotation-submit:hover:not(:disabled){background:var(--accent-solid-alt);color:var(--accent-solid-alt-text)}
 h1,h2,.node-heading h2{font-family:var(--font-display);letter-spacing:-.005em}
+.thread-activity svg{width:12px;height:12px;stroke-width:2.25}
+.entry[data-activity="running"] .thread-activity{color:var(--running-text)}
+.entry[data-activity="running"] .thread-activity svg{animation:thread-activity-spin 1s linear infinite}
+.entry[data-activity="stopping"] .thread-activity{color:var(--text-muted)}
+.entry[data-activity="needs_approval"] .thread-activity{color:var(--warning-text)}
+.entry[data-activity="failed"] .thread-activity{color:var(--danger-text)}
+@keyframes thread-activity-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.entry[data-activity="running"] .thread-activity svg{animation:none}}

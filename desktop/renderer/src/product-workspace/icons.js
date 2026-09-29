@@ -189,6 +189,12 @@ export function createRelayerIcon(name, attributes = {}) {
   });
 }
 
+// Fixed product glyphs (such as thread status marks) that are not node icons.
+export function createLucideIcon(exportName, attributes = {}) {
+  const lucide = assertRelayerIconRendererReady();
+  return lucide.createElement(lucide[exportName] ?? lucide.Circle, { "aria-hidden": "true", focusable: "false", ...attributes });
+}
+
 export function assertRelayerIconRendererReady() {
   const lucide = globalThis.lucide;
   if (typeof lucide?.createElement !== "function" || !lucide.Circle) {
