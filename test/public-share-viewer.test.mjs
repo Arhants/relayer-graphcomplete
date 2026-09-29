@@ -466,7 +466,7 @@ describe("public share HTML boundary", () => {
     expect(html).not.toContain("public-share-footer");
     expect(html).toContain('class="public-share-download-card"');
     expect(html).not.toContain("Also for Windows");
-    expect(html).toContain("Explore this thread, then build your own.");
+    expect(html).toContain(">Get Relayer</a>");
   });
 
   it("lets the production workspace own the complete browser viewport", () => {
@@ -474,7 +474,6 @@ describe("public share HTML boundary", () => {
     expect(styles).toMatch(/\.public-share-main\s*{[^}]*height: 100vh;/s);
     expect(styles).toMatch(/\.public-share-workspace-host\s*{[^}]*height: 100%;[^}]*border: 0;[^}]*border-radius: 0;/s);
     expect(styles).toMatch(/\.public-share-shell \.thread-header\s*{[^}]*border-radius: 12px;/s);
-    expect(styles).toMatch(/@media \(min-width: 1101px\)[\s\S]*\.public-share-download-card\s*{[^}]*grid-row: 1 \/ 3;/s);
   });
 
   it("aligns the turn picker to the interaction card with five visible rows", () => {
@@ -676,9 +675,8 @@ describe("public share HTML boundary", () => {
       expect(windowRef.document.querySelector("#publicViewerHost")?.classList.contains("hidden")).toBe(false);
       const downloadCard = windowRef.document.querySelector(".public-share-download-card");
       if (presentation === "standalone") {
-        expect(downloadCard?.parentElement?.classList.contains("workspace-layout")).toBe(true);
-        expect(downloadCard?.textContent).toContain("Relayer for Mac");
-        expect(downloadCard?.textContent).toContain("Download");
+        expect(downloadCard?.parentElement?.classList.contains("thread-header")).toBe(true);
+        expect(downloadCard?.textContent).toContain("Get Relayer");
         expect(windowRef.document.querySelector(".public-share-embed-branding")).toBeNull();
       } else {
         expect(downloadCard).toBeNull();

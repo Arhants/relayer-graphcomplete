@@ -391,7 +391,7 @@ describe("conversation export to Eval end to end", () => {
       expect(viewer).not.toBeNull();
       expect(viewer.adapter.selection.currentInteractionId).toBe(servedSnapshot.interactions[0].id);
       expect(publicWindow.document.querySelector(".workspace-layout")).toBeTruthy();
-      expect(publicWindow.document.querySelector(".public-share-download-card")?.parentElement?.classList.contains("workspace-layout")).toBe(true);
+      expect(publicWindow.document.querySelector(".public-share-download-card")?.parentElement?.classList.contains("thread-header")).toBe(true);
       expect(publicWindow.document.querySelector("#environmentPanel")).toBeNull();
       const assetNodeButton = publicWindow.document.querySelector('[aria-label="Open Root evidence"]');
       expect(assetNodeButton, [...publicWindow.document.querySelectorAll(".graph-node")].map((node) => node.getAttribute("aria-label"))).not.toBeNull();

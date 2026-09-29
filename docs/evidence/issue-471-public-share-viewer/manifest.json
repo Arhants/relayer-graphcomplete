@@ -7,7 +7,7 @@
     "sha256": "b05db96cb2d008e213b3bc6e3398b958f4670ed919547329a607be8f0dc7d865"
   },
   "source": {
-    "commit": "c6813890b2fc3f5c0cb2807f3ce509ef31673931",
+    "commit": "8580c476eee0a8a4fc5a165532f39a9723b4ae9f",
     "dirty": true,
     "sourceFiles": {
       "desktop/renderer/assets/relayer-logo.svg": {
@@ -19,8 +19,8 @@
         "sha256": "92a9b06f3c70ec7959956614e8333f271eea7bf06a39bbe6798cedffe739e8ad"
       },
       "desktop/renderer/public-share.html": {
-        "bytes": 2598,
-        "sha256": "9fe98b2a55f720d7a29f42a31d332e43c880c3b6fd7ad44d1000553a1f0c12c8"
+        "bytes": 2213,
+        "sha256": "d6613d2edee780f4744f802b3b3207f441d01eb4288105585ebdbedca5c718ea"
       },
       "desktop/renderer/src/action-invocation-state.js": {
         "bytes": 2567,
@@ -115,20 +115,20 @@
         "sha256": "4289fa31c5293732affe016e1b497f01c5155a42eab9a7c0c354e608905fc471"
       },
       "desktop/renderer/src/public-share-viewer/main.js": {
-        "bytes": 10584,
-        "sha256": "2f357c0bf7b9507fcb77c27bd130bdaf9a8ebce59a99eef94ace3b078a8511d4"
+        "bytes": 10616,
+        "sha256": "ab1e9d489a3f1fa9e71bc41c02cddaa7d71911f02223cd9709c32c9cc8eae2bd"
       },
       "desktop/renderer/src/public-share-viewer/snapshot.js": {
         "bytes": 41193,
         "sha256": "b8d221775f380dc2b35b17f92b930888cddee14f2d2d4640c6c898d2a94698da"
       },
       "desktop/renderer/src/public-share-viewer/template.js": {
-        "bytes": 7626,
-        "sha256": "bf78fb16eee2254d8aaaeae8e105449cb627b42d410924f546175c0d686133a9"
+        "bytes": 7259,
+        "sha256": "2dd02248c31b14fa2e9fe8e47a0b3b9c4827124cd5c7f19054398df9449acf6c"
       },
       "desktop/renderer/src/public-share-viewer/viewer.css": {
-        "bytes": 8768,
-        "sha256": "d1eee7c8c878546a14617b7e073d13fc6fbe20110f067b31ba3916258c2083f9"
+        "bytes": 7944,
+        "sha256": "ad3537ba728bbaa5123fd5bbcf7b817b844c555f9b329234740454cc1f11ec05"
       },
       "desktop/renderer/src/share-publish-ui.js": {
         "bytes": 19669,
@@ -151,21 +151,21 @@
         "sha256": "2e20e86f0a13107ae9bf00675894bbb573716a8e5b4fde612eacaff1e404c128"
       },
       "scripts/capture-public-share-viewer-evidence.mjs": {
-        "bytes": 18522,
-        "sha256": "5f569bdae9c9f39af952f1ed573b9e21b446e7357c6856776b0b093a2c6e1252"
+        "bytes": 18553,
+        "sha256": "d395d794b4f65636042cebf4111bc2e2003eda3d8b3e895872b66f004b5cac35"
       }
     }
   },
   "browser": {
     "electron": "43.0.0",
-    "origin": "http://127.0.0.1:64258",
+    "origin": "http://127.0.0.1:52140",
     "networkRequests": [],
     "unchangedUrl": true,
     "paidInferenceCalls": 0,
     "assertions": [
       {
         "viewport": "desktop-overview",
-        "downloadCardInsideWorkspace": true,
+        "downloadActionInsideHeader": true,
         "environmentPanelAbsent": true,
         "graphNodeRendered": true,
         "interactionBannerRendered": true,
@@ -176,7 +176,7 @@
       },
       {
         "viewport": "mobile-overview",
-        "downloadCardInsideWorkspace": true,
+        "downloadActionInsideHeader": true,
         "environmentPanelAbsent": true,
         "graphNodeRendered": true,
         "interactionBannerRendered": true,
@@ -204,7 +204,7 @@
         "width": 2880,
         "height": 1834
       },
-      "sha256": "af0eb6e1685e71370ccf7bcc6b0279f18292598ec43506e9609e79d31f200e1c"
+      "sha256": "23ade9c9ae2ff31b918f8db08b57f781155708c036cc54660a13efbded6b611c"
     },
     {
       "name": "mobile-overview",
@@ -220,7 +220,7 @@
         "width": 750,
         "height": 1624
       },
-      "sha256": "e20a400c829babd306ea09c94d7f72cb184f5930f0005c7aae53c30beda51110"
+      "sha256": "7548022f55d6265485770f0a3762fcb97d7ea4b37333548f757fec3a4bdaff5a"
     },
     {
       "name": "mobile-node-details",
@@ -236,7 +236,7 @@
         "width": 750,
         "height": 1624
       },
-      "sha256": "dd18a5e11ec976e84cd994183e055107865f780543e681866c01f0cf2cb76003"
+      "sha256": "f04baca4163dbb547ce3cd840d858fc6a6400f825d417f5c32724e31ffe38b8a"
     }
   ]
 }
