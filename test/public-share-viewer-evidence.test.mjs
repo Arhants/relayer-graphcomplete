@@ -48,7 +48,7 @@ describe("public share viewer evidence seam", () => {
     expect(captureSource).toContain("RELAYER_CAPTURE_PUBLIC_SHARE_VIEWER_EVIDENCE");
     expect(captureSource).toContain("commit:");
     expect(captureSource).toContain("sourceFiles");
-    expect(captureSource).toContain("downloadCardInsideWorkspace");
+    expect(captureSource).toContain("downloadActionInsideHeader");
     expect(captureSource).toContain("environmentPanelAbsent");
     expect(captureSource).toContain("mutationControlsInert");
     expect(captureSource).toContain("nestedNavigationChangedLayer");

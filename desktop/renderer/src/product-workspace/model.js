@@ -25,6 +25,23 @@ export function workspaceTurns(state, thread) {
     .map(({ interaction }) => interaction);
 }
 
+/** The results an agent launched as semantic children. They are not human turns. */
+export function agentChildIds(state) {
+  return new Set((state.actionInvocations || [])
+    .filter((invocation) => invocation.agentInvoked === true)
+    .map((invocation) => String(invocation.resultInteractionId)));
+}
+
+/**
+ * The thread's human turns in order: its messages and the user's invoke actions. A child an
+ * agent launched runs beside them, so it never decides the composer's state, the next
+ * turn's inherited model, or what Stop targets.
+ */
+export function humanTurns(state, thread) {
+  const children = agentChildIds(state);
+  return workspaceTurns(state, thread).filter((turn) => !children.has(String(turn.id)));
+}
+
 function sameId(left, right) {
   return left != null && right != null && String(left) === String(right);
 }

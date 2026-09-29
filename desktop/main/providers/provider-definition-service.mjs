@@ -160,6 +160,17 @@ export class ProviderDefinitionService {
     });
   }
 
+  /** Whether this provider's runtime could not be activated in this process. */
+  activationFailed(id) {
+    return this.statusOverrides.get(id)?.unavailableReason?.code === "provider_activation_failed";
+  }
+
+  async activeDefinitions() {
+    return (await this.#initialize())
+      .filter(({ lifecycleState }) => lifecycleState === "active")
+      .map(publicDefinition);
+  }
+
   async #initialize() {
     if (this.definitions === null) this.definitions = await this.definitionStore.load();
     return this.definitions;

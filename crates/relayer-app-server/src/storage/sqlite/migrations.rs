@@ -17,6 +17,50 @@ mod tests {
     use sqlx::{Executor, Row, migrate::Migrator, sqlite::SqlitePoolOptions};
     use std::borrow::Cow;
 
+    /// Migration 0038 marks an existing result as an agent's child exactly when the broker
+    /// launched it, which the product recorded as a completion execution. A result without one
+    /// keeps the default: a user's invoke.
+    #[tokio::test]
+    async fn schema_37_results_with_a_completion_execution_are_marked_agent_children() {
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
+        let url = format!("sqlite://{}", file.path().display());
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .unwrap();
+        let before_agent_marker = Migrator {
+            migrations: Cow::Owned(
+                MIGRATOR
+                    .iter()
+                    .filter(|migration| migration.version < 38)
+                    .cloned()
+                    .collect(),
+            ),
+            ..Migrator::DEFAULT
+        };
+        before_agent_marker.run(&pool).await.unwrap();
+        for statement in [
+            "INSERT INTO threads(id,title,created_at,updated_at,harness_configuration_name,permission_profile_id) VALUES (1,'Recursive','1','1','codex-basic','auto')",
+            "INSERT INTO interactions(id,thread_id,sequence,text,created_at,graph_node_id,completion_status,permission_profile_id) VALUES (1,1,1,'Root','1',90,'accepted','auto'),(2,1,2,'Agent child','2',91,'accepted','auto'),(3,1,3,'User action','3',92,'accepted','auto')",
+            "INSERT INTO action_invocations(source_interaction_id,action_id,result_interaction_id,created_at,graph_lease_required,authoritative) VALUES (1,41,2,'2',1,1),(1,42,3,'3',1,1)",
+            "INSERT INTO completion_executions(interaction_id,graph_completion_id,harness_configuration_name,harness_configuration_digest,model_execution_digest,permission_origin_digest,phase,safe_reason,created_at,updated_at) VALUES (2,91,'codex-basic','sha256:h','sha256:e','sha256:o','settled','done','2','3')",
+        ] {
+            sqlx::query(statement).execute(&pool).await.unwrap();
+        }
+        pool.close().await;
+
+        let store = SqliteProductStore::open(file.path()).await.unwrap();
+        let marked: Vec<(i64, bool)> = sqlx::query_as(
+            "SELECT result_interaction_id,agent_invoked FROM action_invocations ORDER BY result_interaction_id",
+        )
+        .fetch_all(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(marked, vec![(2, true), (3, false)]);
+    }
+
     #[tokio::test]
     async fn schema_22_interactions_remain_unpinned_after_migration_and_reopen() {
         let temporary = tempfile::tempdir().unwrap();
@@ -533,6 +577,11 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
+        // The recreated action_invocations table also lacks 0038's agent_invoked column.
+        sqlx::query("DELETE FROM _sqlx_migrations WHERE version=38")
+            .execute(&pool)
+            .await
+            .unwrap();
         pool.execute("PRAGMA foreign_keys=ON").await.unwrap();
         pool.close().await;
 
@@ -642,6 +691,8 @@ mod tests {
             family_policy: None,
             runtime_available: true,
             restore_prior_readiness: false,
+            runtime_recipe: None,
+            runtime_updated: false,
             unavailable_reason: None,
         };
         store

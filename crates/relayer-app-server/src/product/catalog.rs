@@ -102,6 +102,10 @@ pub(crate) struct RuntimeProductHarness {
     /// runtime files validate. Startup then restores ready only from the app server's own
     /// previous record for the same runtime configuration digest (PROV-006).
     pub(crate) restore_prior_readiness: bool,
+    /// For a coordinated harness, the exact runtime recipe this release requires.
+    pub(crate) runtime_recipe: Option<String>,
+    /// This start's app update activated a new runtime recipe for it, or failed to.
+    pub(crate) runtime_updated: bool,
     pub(crate) runtime_available: bool,
     pub(crate) unavailable_reason: Option<UnavailableReason>,
 }

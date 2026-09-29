@@ -129,6 +129,7 @@
         "test/first-message-composer-integration.test.mjs",
         "test/settings-navigation.test.mjs",
         "test/model-family-settings-refresh.test.mjs",
+        "test/share-error-diagnostics.test.mjs",
         "test/share-publish-attempt-store.test.mjs",
         "test/share-publish-coordinator.test.mjs",
         "test/share-publish-ipc.test.mjs",
@@ -190,6 +191,7 @@
     { "exact": "docs/provider-model-family-harness-test-matrix.md", "chapters": [] }
   ],
   "scriptOwners": [
+    { "exact": "scripts/fixtures/share-action-details.mjs", "chapters": ["vitest"], "vitestFiles": ["test/public-share-viewer.test.mjs", "test/conversation-export-eval-e2e.test.mjs"] },
     { "exact": "scripts/fixtures/public-share-embed.mjs", "chapters": ["vitest"], "vitestFiles": ["test/public-share-embed.test.mjs", "test/public-share-viewer.test.mjs"] },
     { "exact": "scripts/capture-public-share-embed-evidence.mjs", "chapters": ["vitest"], "vitestFiles": ["test/public-share-embed.test.mjs", "test/public-share-viewer.test.mjs"] },
     { "prefix": "scripts/lint-ladybug-", "chapters": ["receipts", "vitest"], "vitestFiles": ["test/ladybug-native-receipts.test.mjs"] },
@@ -214,6 +216,7 @@
     { "exact": "scripts/prime-evidence/contract-matrix.mjs", "chapters": ["vitest"], "vitestFiles": ["test/prime-family-evidence-contract.test.mjs"] },
     { "exact": "scripts/prime-evidence/deterministic-openai-server.mjs", "chapters": ["vitest"], "vitestFiles": ["test/prime-deterministic-provider.test.mjs"] },
     { "exact": "scripts/capture-provider-ux-video.mjs", "chapters": ["vitest"], "vitestFiles": ["test/provider-electron-evidence.test.mjs"] },
+    { "exact": "scripts/capture-share-action-details-evidence.mjs", "chapters": ["vitest"], "vitestFiles": ["test/public-share-viewer.test.mjs", "test/conversation-export-eval-e2e.test.mjs"] },
     { "exact": "scripts/capture-public-share-viewer-evidence.mjs", "chapters": ["vitest"], "vitestFiles": ["test/public-share-viewer-evidence.test.mjs"] },
     { "exact": "scripts/test-share-publish-restart.mjs", "chapters": ["vitest"], "vitestFiles": ["test/share-publish-restart-evidence.test.mjs"] },
     { "exact": "scripts/capture-conversation-eval-evidence.mjs", "chapters": [] },

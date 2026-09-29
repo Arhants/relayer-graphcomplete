@@ -79,6 +79,20 @@ They are deterministic mappings chosen by the exporter, stable only within one f
 read or write authority. A canonical exporter assigns them in durable turn order and stable graph
 traversal/member order; raw SQLite IDs and graph capability tokens are never serialized.
 
+## Public-share binding aliases
+
+A shared V1/V2 snapshot may use each export-local node, layer, and action ID as its
+`clientKey` alias. These aliases are generated identities, not the original
+harness-authored strings. Compiled action references use the same aliases in
+`clientKey`, `sourceNode.clientKey`, and `sourceLayer.clientKey`; package integrity
+covers the derived references. Ordinary conversation export retains its existing
+keys and original package.
+
+For an absent provenance layer, a public action whose `clientKey` equals its `id`
+uses its `sourceLayerId` as its source-layer alias. Explicit layer keys take
+precedence so older valid snapshots remain readable. Provenance still grants no
+execution or mutation authority. The source node and action must match exactly.
+
 ## Bounds and exclusions
 
 The Rust module publishes the V1 limits used by exporters and importers: 256 MiB per file, 16 MiB per

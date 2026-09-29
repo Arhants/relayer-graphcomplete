@@ -19,6 +19,9 @@ export function createProviderComposition({
   diagnostics = null,
   modelCatalogOptions = {},
 }) {
+  // The models each provider's catalog last published in this process. A post-upgrade
+  // readiness evaluation evaluates the routes they give (#556).
+  const publishedModels = new Map();
   const modelCatalog = new ModelCatalogService({
     adapters: [],
     diagnostics,
@@ -42,6 +45,7 @@ export function createProviderComposition({
         }
       }
       const published = await publishCatalog(snapshot, options);
+      publishedModels.set(snapshot.providerId, snapshot.models ?? []);
       providerDefinitions.catalogPublished(snapshot.providerId, { connected: snapshot.connected });
       return published;
     },
@@ -102,6 +106,39 @@ export function createProviderComposition({
       await providerDefinitions.reconcileStartup();
       await providerDefinitions.activate();
       await modelCatalog.startup();
+    },
+    // After an upgrade: recovers, as Repair does, each managed provider whose activation
+    // failed and whose runtime recipe is one of recipeIds (installed, and due for an
+    // evaluation). Recovery reinstalls the exact recipe when needed, activates the provider
+    // and publishes its catalog. It evaluates no readiness: the post-upgrade step then
+    // evaluates each due harness once for all its providers. One failure spares the rest.
+    async repairFailedActivations(recipeIds, { recipeForAdapter }) {
+      const recipes = new Set(recipeIds);
+      const failed = (await providerDefinitions.activeDefinitions()).filter((definition) => {
+        if (definition.accessContract !== "managed-runtime@1") return false;
+        if (!providerDefinitions.activationFailed(definition.id)) return false;
+        try { return recipes.has(recipeForAdapter(definition.adapterId)); } catch { return false; }
+      });
+      const results = [];
+      for (const { id } of failed) {
+        try {
+          await providerDefinitions.recoverUnavailable(id);
+          results.push({ status: "fulfilled", value: await modelCatalog.providerChanged(id) });
+        } catch (reason) {
+          results.push({ status: "rejected", reason });
+        }
+      }
+      return results;
+    },
+    // Every active provider with its last published models, for an evaluation that is not
+    // tied to one provider (the recipe-update trigger).
+    async readinessRoutes() {
+      return (await providerDefinitions.activeDefinitions())
+        .filter(({ id }) => publishedModels.get(id)?.length)
+        .map((providerDefinition) => Object.freeze({
+          providerDefinition,
+          models: publishedModels.get(providerDefinition.id),
+        }));
     },
     async close() {
       const results = await Promise.allSettled([providerDefinitions.close(), modelCatalog.close()]);
