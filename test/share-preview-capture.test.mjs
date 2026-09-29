@@ -141,6 +141,31 @@ describe("desktop share preview capture", () => {
     expect(captureSession.clearStorageData).toHaveBeenCalledTimes(4);
     expect(windows).toHaveLength(2);
   });
+
+  it("normalizes renderer setup failures as export failures", async () => {
+    const captureSession = Object.assign(new EventEmitter(), {
+      setPermissionRequestHandler: vi.fn(),
+      setPermissionCheckHandler: vi.fn(),
+      clearStorageData: vi.fn(async () => {}),
+      webRequest: { onBeforeRequest: vi.fn() },
+    });
+    const BrowserWindow = vi.fn();
+    const capture = createSharePreviewCapture({
+      BrowserWindow,
+      session: { fromPartition: () => captureSession },
+      rendererDirectory: new URL("../desktop/renderer-missing", import.meta.url),
+    });
+
+    await expect(capture({
+      snapshotBytes: new Uint8Array(),
+      title: "Missing renderer",
+      theme: "light",
+    })).rejects.toMatchObject({
+      code: "share_export_failed",
+      failureStage: "export",
+    });
+    expect(BrowserWindow).not.toHaveBeenCalled();
+  });
 });
 
 function expectSessionTeardown(captureSession) {

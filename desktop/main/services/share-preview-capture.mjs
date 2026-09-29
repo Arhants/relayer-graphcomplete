@@ -16,13 +16,8 @@ export function createSharePreviewCapture({
     if (!["light", "dark"].includes(theme))
       throw new TypeError("Invalid capture theme");
     const prefix = `/${randomUUID()}/`;
-    const root = await realpath(rendererDirectory);
-    const html = renderPublicViewerTemplate({
-      snapshot: snapshotBytes,
-      title,
-      theme,
-      assetBase: prefix.slice(0, -1),
-    });
+    let root;
+    let html;
     let window;
     let origin;
     let deadline;
@@ -82,6 +77,13 @@ export function createSharePreviewCapture({
     };
     const abort = () => stop();
     try {
+      root = await realpath(rendererDirectory);
+      html = renderPublicViewerTemplate({
+        snapshot: snapshotBytes,
+        title,
+        theme,
+        assetBase: prefix.slice(0, -1),
+      });
       // A prior teardown may have failed. Never reuse this fixed partition
       // until Electron confirms its storage is empty.
       await captureSession.clearStorageData();
