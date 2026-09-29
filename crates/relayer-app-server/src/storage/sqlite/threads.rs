@@ -174,7 +174,11 @@ mod tests {
             ("cancelled", None),
         ] {
             set_status(&store, &thread, status).await;
-            assert_eq!(activity(&store, &thread).await.as_deref(), expected, "{status}");
+            assert_eq!(
+                activity(&store, &thread).await.as_deref(),
+                expected,
+                "{status}"
+            );
         }
         set_status(&store, &thread, "running").await;
         store
