@@ -2296,7 +2296,7 @@ graph.getConversationTurn(sequence: number): Promise&lt;ConversationTurn&gt;;
 <table>
 <thead><tr><th>Checkpoint</th><th>Smallest deterministic proof</th><th>Status</th></tr></thead>
 <tbody>
-<tr><td><code>CONT-001</code>, <code>CONT-002</code></td><td>Product storage tests cover the legacy default, the continuation value, rejection of imported continuation threads, and rejected format changes.</td><td>Delivered</td></tr>
+<tr><td><code>CONT-001</code>, <code>CONT-002</code></td><td>Product storage tests cover the legacy default, the continuation value, rejection of imported continuation threads, and rejected format changes. Reopen refuses a missing or weakened format constraint.</td><td>Delivered</td></tr>
 <tr><td><code>CONT-003</code></td><td>No production path writes the continuation format yet. The enabling change adds a creation test that storage homes and session identities never set it.</td><td>Planned</td></tr>
 <tr><td><code>CONT-004</code></td><td>#597's legacy compatibility tests still pass on the default legacy format. The same switched-route fixtures without the marker still refuse.</td><td>Delivered</td></tr>
 <tr><td><code>CONT-005</code></td><td>Storage tests accept a route switch at Send, identified Send, retry, and admission. Unit tests keep native continuity optional and the picker unrestricted.</td><td>Delivered</td></tr>

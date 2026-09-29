@@ -2,7 +2,8 @@
 -- thread is legacy, whose earlier turns exist for the agent only in a native session.
 -- A continuation-v1 conversation reads earlier turns from the graph. Only ordinary,
 -- non-imported conversations can have that format, and it is fixed at creation.
--- Any later rebuild of the threads table must keep both this CHECK and the trigger below.
+-- Any later rebuild of the threads table must keep both this CHECK and the trigger below;
+-- schema.rs refuses to open a database missing either.
 ALTER TABLE threads ADD COLUMN conversation_format TEXT NOT NULL DEFAULT 'legacy'
     CHECK (
         conversation_format = 'legacy'

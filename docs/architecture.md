@@ -576,6 +576,7 @@ whether the chosen representation communicates the task effectively.
 
 - **Format marker.** `threads.conversation_format` is `legacy` or `continuation-v1`.
   - It is set at creation, rejected on imported and non-conversation threads, and immutable, enforced by a SQLite trigger.
+  - Opening the product store refuses a database whose format CHECK or immutability trigger is missing or altered.
   - Nothing in production writes `continuation-v1` until the enabling change. Until then, every thread is legacy.
 - **Compatibility status.** `conversation_compatibility::compatibility_on` returns `portable` for a continuation thread before it derives any receipt route.
   - `validate_on` restricts only `compatible` and `blocked`, so Send, identified-input Send, retry, and admission accept a portable route switch through the unchanged catalog and model checks.
