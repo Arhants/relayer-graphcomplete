@@ -1,7 +1,7 @@
 import { RELAYER_ICON_NAMES, type GraphCapability, type GraphNode } from "@relayer/graph-client";
 import { createHash } from "node:crypto";
 import { isAbsolute, join, resolve } from "node:path";
-import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
+import { NativeExecutionCancelled, nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
 import { INTERACTION_INPUT_GUIDANCE, renderInteractionInput } from "../interaction-input.js";
 import {
   parseNativeSessionResetReason,
@@ -240,9 +240,10 @@ export class CodexBasicHarness implements Harness {
     }
     const capability = context.graph.acquireCapability();
     const resolvedRuntime = await this.codexRuntime(context.access);
-    // A turn force-stopped while its runtime resolved never ran: it must not change the root
-    // thread, which the next turn may still resume.
+    // A turn stopped or force-stopped while its runtime resolved never ran: it must not change
+    // the root thread, which the next turn may still resume.
     context.forceSignal?.throwIfAborted();
+    if (signal?.aborted) throw new NativeExecutionCancelled("Codex turn was cancelled before it started.");
     const environment = this.graphEnvironment(capability, context.completionBroker, context.access, resolvedRuntime.environment);
     const sessionIdentity = createHash("sha256").update(JSON.stringify({
       providerId: context.access?.providerId ?? null,

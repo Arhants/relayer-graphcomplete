@@ -167,6 +167,27 @@ function personalPresentationRunContext(
 }
 
 describe("ClaudeBasicHarness", () => {
+  it("drops, visibly, a saved session whose home marker is unreadable", async () => {
+    let call: Parameters<ClaudeSdkQuery>[0] | undefined;
+    const harness = new ClaudeBasicHarness(factoryContext("ask", {
+      claudeProviderHome: "future-home",
+      claudeSessionId: "session-in-an-unknown-home",
+      claudeSessionProviderDefinitionId: "anthropic-work",
+      claudeSessionPersonalPresentationVersionId: null,
+    }), {
+      query: sdkQuery([{ type: "result", subtype: "success", result: "done" }], (input) => { call = input; }),
+      browserSdk: browserSdk(),
+    });
+    const recorder = resetRecorder();
+
+    await harness.complete({ ...runContext(secretAccess()), trace: recorder.trace });
+
+    // The session may exist only in the home the marker named, so it is not resumed elsewhere.
+    expect(call?.options.resume).toBeUndefined();
+    expect(call?.options.env.CLAUDE_CONFIG_DIR).toBe("/isolated/anthropic-work");
+    expect(recorder.resets()).toEqual(["session_unavailable"]);
+  });
+
   it.each(["future-home", 7, null])("fails closed to the provider's private home for an unknown marker %s", async (marker) => {
     let env: Readonly<Record<string, string>> | undefined;
     const harness = new ClaudeBasicHarness(factoryContext("ask", { claudeProviderHome: marker }), {

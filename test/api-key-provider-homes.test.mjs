@@ -5,7 +5,7 @@
 // execution access broker, the harness host with its state file, and the harness with the
 // production runtime descriptor. Only the native process is fake: Codex's spawn and Claude's SDK
 // query record what they would have run, and fail the turn there.
-import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -207,6 +207,24 @@ describe("API-key provider native homes", () => {
     expect(spawns).toEqual([]);
     expect(claudeQueries).toEqual([]);
     await expectUserHomesUntouched();
+  });
+
+  it.each(["provider directory", "home"])("refuses a private home whose %s is a symlink out of the runtime root", async (linked) => {
+    const providerRoot = join(runtimeRoot, "openai-api-work");
+    if (linked === "provider directory") {
+      await mkdir(runtimeRoot, { recursive: true });
+      await symlink(userHome, providerRoot);
+    } else {
+      await mkdir(providerRoot, { recursive: true });
+      await symlink(join(userHome, ".codex"), join(providerRoot, "codex-home"));
+    }
+
+    await expect(connectProvider("openai-api", { runtimeRoot }))
+      .rejects.toThrow("private native home must stay inside the provider runtime directory");
+    await expectUserHomesUntouched();
+    // Nothing was created through the link.
+    await expect(access(join(userHome, "codex-home"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readdir(join(userHome, ".codex"))).resolves.toEqual(["sessions"]);
   });
 
   it("deletes only the provider's private homes when the provider is removed", async () => {

@@ -1,7 +1,7 @@
 // This is the only production module that imports concrete provider adapter
 // implementations. Consumers depend on this registry or inject a test registry.
 import { createProviderAdapterRegistry } from "./provider-adapter-contract.mjs";
-import { mkdir } from "node:fs/promises";
+import { lstat, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -110,7 +110,17 @@ async function secretProviderRuntimeDependencies(definition, context, runtimeId)
   if (root === null) return {};
   const { variable, directory } = SECRET_PROVIDER_HOMES[runtimeId];
   const home = join(root, directory);
-  await mkdir(home, { recursive: true });
+  // A symlink at the provider directory or its home, from restored or tampered data, could
+  // point at the user's own ~/.codex or ~/.claude. Each level must be a real directory, checked
+  // before anything is created beneath it.
+  await mkdir(context.runtimeRoot, { recursive: true });
+  for (const path of [root, home]) {
+    await mkdir(path).catch((error) => { if (error?.code !== "EEXIST") throw error; });
+    const entry = await lstat(path);
+    if (entry.isSymbolicLink() || !entry.isDirectory()) {
+      throw new Error("An API-key provider's private native home must stay inside the provider runtime directory.");
+    }
+  }
   return { environment: Object.freeze({ [variable]: home }) };
 }
 

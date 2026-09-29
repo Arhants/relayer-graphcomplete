@@ -126,6 +126,11 @@ export class ClaudeBasicHarness implements Harness {
     } else if (typeof savedSessionId === "string") {
       this.pendingRootReset = "session_unavailable";
     }
+    // An unreadable marker selects the private home, but the session may exist only in the home
+    // it named. Resuming it here would fail on every turn, so it is dropped, visibly.
+    if (this.sessionId !== undefined && unreadableProviderHome(context.savedState, "claudeProviderHome")) {
+      this.forgetRootSession("session_unavailable");
+    }
   }
 
   complete(context: HarnessRunContext, signal?: AbortSignal): NativeExecutionHandle {
@@ -489,6 +494,15 @@ export function createClaudeBasicFactory(dependencies: ClaudeBasicDependencies =
  * only it keeps the shared default home. An unknown value, from corruption or a newer build,
  * fails closed to the provider's private home: it never reaches the user's own home.
  */
+/** A marker is present but is neither known value, from corruption or a newer build. */
+function unreadableProviderHome(
+  savedState: HarnessSessionState | undefined,
+  key: "codexProviderHome" | "claudeProviderHome",
+): boolean {
+  return savedState !== undefined && key in savedState
+    && savedState[key] !== "isolated" && savedState[key] !== "legacy-shared";
+}
+
 function savedProviderHome(
   savedState: HarnessSessionState | undefined,
   key: "codexProviderHome" | "claudeProviderHome",

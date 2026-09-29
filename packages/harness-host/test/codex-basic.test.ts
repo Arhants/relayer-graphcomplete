@@ -47,7 +47,7 @@ describe("CodexBasicHarness", () => {
     ...(forceSignal === undefined ? {} : { forceSignal }),
   });
 
-  it("keeps the root thread when a turn to another home is force-stopped while its runtime resolves", async () => {
+  it.each(["force-stop", "Stop"] as const)("keeps the root thread when a turn to another home gets a %s while its runtime resolves", async (kind) => {
     let gate: Promise<void> = Promise.resolve();
     let resolving!: () => void;
     const resolvingStarted = new Promise<void>((resolve) => { resolving = resolve; });
@@ -73,12 +73,14 @@ describe("CodexBasicHarness", () => {
     let release!: () => void;
     gate = new Promise<void>((resolve) => { release = resolve; });
     const force = new AbortController();
-    const stopped = harness.complete(apiKeyTurn(2, "openai-b", "/homes/openai-b", force.signal));
+    const stop = new AbortController();
+    const stopped = harness.complete(apiKeyTurn(2, "openai-b", "/homes/openai-b", force.signal), stop.signal);
     await resolvingStarted;
-    force.abort(new Error("force-stopped after two minutes"));
+    if (kind === "force-stop") force.abort(new Error("force-stopped after two minutes"));
+    else stop.abort(new Error("Stopped by user"));
     release();
 
-    await expect(stopped).rejects.toThrow("force-stopped after two minutes");
+    await expect(stopped).rejects.toThrow();
     // The stopped turn never ran, so the thread the user can still resume is kept.
     expect(submissions).toHaveLength(1);
     expect(harness.state()).toEqual(saved);
