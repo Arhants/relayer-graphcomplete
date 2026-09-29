@@ -81,7 +81,11 @@ pub(crate) async fn resolve(
                     .into_iter()
                     .filter(|record| {
                         record.action.state == RecordState::Accepted
-                            || record.action.source_layer_id == Some(layer.id)
+                            || (record.action.source_layer_id == Some(layer.id)
+                                && nodes.iter().any(|node| {
+                                    node.id == record.action.source_node_id
+                                        && node.state == RecordState::Draft
+                                }))
                     })
                     .map(|record| record.action),
             );

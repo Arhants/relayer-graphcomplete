@@ -1,0 +1,8 @@
+file:///Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/scripts/capture-provider-ux-video.mjs:1189
+      throw new Error(`Evidence frame ${scene} is unexpectedly small (${size} bytes).`);
+            ^
+
+Error: Evidence frame onboarding is unexpectedly small (7078 bytes).
+    at file:///Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/scripts/capture-provider-ux-video.mjs:1189:13
+
+Node.js v22.23.2

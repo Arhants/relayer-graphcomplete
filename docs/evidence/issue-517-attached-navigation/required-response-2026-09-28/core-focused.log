@@ -1,0 +1,11 @@
+   Compiling relayer-graph-core v0.0.0 (/Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/crates/relayer-graph-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.46s
+     Running tests/graph_database.rs (target/debug/deps/graph_database-ab81e4d74e1ef132)
+
+running 3 tests
+test required_attached_navigation_covers_distinct_nodes_and_rich_controls ... ok
+test required_attached_navigation_rejects_response_only_then_repairs_after_reopen ... ok
+test required_attached_navigation_preserves_old_and_disabled_preparations ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 97 filtered out; finished in 0.38s
+

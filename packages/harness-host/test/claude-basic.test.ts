@@ -213,6 +213,11 @@ describe("ClaudeBasicHarness", () => {
       expect(prompt).toContain("rather than on every change");
       expect(prompt).toContain("await graph.getCurrent()");
       expect(prompt).toContain("await graph.advanceCurrent(");
+      expect(prompt).toContain("every distinct attached native node must receive a NEW navigate action");
+      expect(prompt).toContain("Version-1 descriptions grant ability only");
+      expect(prompt).toContain("Only an exact frozen attached-node navigation grant permits the exception");
+      expect(prompt).not.toContain("Reused accepted nodes cannot take new actions.");
+      expect(prompt).not.toContain("Do not add actions or edit published nodes afterward;");
       expect(prompt).toContain("Advancing current does not complete the interaction");
       expect(prompt).not.toContain("graph.prepareComplete(");
       expect(prompt).not.toContain("Import complete and watchCompletions from");

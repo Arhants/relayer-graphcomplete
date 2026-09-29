@@ -1,0 +1,1 @@
+{"reproduced":true,"seam":"production composer IPC remains on prior settings store after test replaces local variable","schedule":"held old-store write completes after new-store seed despite new-store flush","originalFailureCausality":"not established from original log","productionFilesChanged":false}

@@ -1,0 +1,27 @@
+{
+  "sourceDigest": "96530c5d31b0ca26d146a3ce7313246f4e57b5e8bee9384e3c99cc2a787f53f4",
+  "coordinator": "01a0d9c7-e4af-7112-a0f6-92226b2a4201",
+  "verifiedFiles": 160,
+  "verdicts": [
+    {
+      "reviewer": "/root/pr536_spec",
+      "verdict": "PASS",
+      "method": "static addendum; no independently executed tests",
+      "scope": "bounded root membership, import/error/control authority and canonical writer root exception"
+    },
+    {
+      "reviewer": "/root/pr536_standards",
+      "verdict": "PASS",
+      "method": "static addendum; no independently executed tests",
+      "scope": "storage SQL boundary and accurate current/historical evidence statements"
+    }
+  ],
+  "priorReview": "4135 Spec PASS; Standards required SQL move and stale documentation repair, both resolved",
+  "unresolvedFindings": [],
+  "limits": [
+    "prior broader scoped assertions carry",
+    "full check/build and accepted-data replay remain separate evidence",
+    "non-certifying until pinned to PR/source"
+  ],
+  "reviewerNameNote": "Legacy task labels; current reviewed scope is attached-navigation projection/storage delta, not another PR536 review"
+}

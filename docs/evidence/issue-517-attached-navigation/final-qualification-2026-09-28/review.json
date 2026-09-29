@@ -1,0 +1,26 @@
+{
+  "sourceDigest": "a55142b64038bcd0243ffb96b40f7938e3b19f77ff8c06b9b1958bce8e08ba2f",
+  "fileCount": 235,
+  "coordinatorThreadId": "01a0d9c7-e4af-7112-a0f6-92226b2a4201",
+  "reviews": [
+    {
+      "reviewer": "/root/pr536_spec",
+      "verdict": "PASS",
+      "scope": "Final test-harness queue ownership and evidence delta; all235 hashes; trace200events22graphoperations verified; source and logs inspected; no independent execution",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root/pr536_standards",
+      "verdict": "PASS",
+      "scope": "Final queue ownership fix and evidence distinction; all235 hashes; no assertion or timeout weakening; textual credential-signature scan without matches; static review, not full archive certification",
+      "unresolvedFindings": []
+    }
+  ],
+  "priorProductionReview": "../projection-repair-2026-09-28/review.json",
+  "openGates": [
+    "Rich compiled detail with new unbound action and no replacement remains a product decision",
+    "Human acceptance required",
+    "Native keyboard/account flow unverified"
+  ],
+  "certification": "Exact reviewed source; evidence-only finalization is separately inventoried in PR metadata addendum"
+}

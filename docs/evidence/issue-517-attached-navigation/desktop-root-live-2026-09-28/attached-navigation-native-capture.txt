@@ -1,0 +1,2 @@
+Electron ready; starting verified zero-inference capture.
+Live Product renderer navigation/reopen capture passed without new execution.

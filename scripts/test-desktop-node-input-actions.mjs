@@ -905,8 +905,8 @@ async function run() {
   await setValue(".node-input-text", "Thread A pending input replacement.");
   await click("[aria-label='Commit Name the governing constraint']");
   await waitFor("thread A input commit held in flight", () => pendingInputCommitHeld);
-  await waitFor("thread A Send disabled by its pending input", () => evaluate(`(
-    document.querySelector('#sendInteraction')?.disabled === true
+  await waitFor("thread A Send can wait for its pending input", () => evaluate(`(
+    document.querySelector('#sendInteraction')?.disabled === false
   )`));
   await click(`[data-thread='${idleThread.id}']`);
   await waitFor("thread B opens while A input commit is pending", () => evaluate(`(() => (
@@ -924,19 +924,12 @@ async function run() {
       && document.querySelectorAll('.graph-node').length === 2
   ))()`));
   await clickNode("Input grammar");
-  await waitFor("thread A Send remains disabled until input settlement", () => evaluate(`(
-    document.querySelector('#sendInteraction')?.disabled === true
+  await waitFor("thread A Send remains available with a pending commit", () => evaluate(`(
+    document.querySelector('#sendInteraction')?.disabled === false
   )`));
-  releasePendingInputCommit();
-  window.webContents.session.webRequest.onBeforeRequest(pendingInputCommitFilter, null);
-  await waitFor("thread A input commit settles and Send unlocks", async () => (
-    (await productRequest(`/api/threads/${thread.id}/input-draft`)).attachments?.some(
-      (attachment) => attachment.value?.text === "Thread A pending input replacement.",
-    )
-      && await evaluate(`document.querySelector('#sendInteraction')?.disabled === false`)
-  ));
 
   let pendingThreadSendHeld = false;
+  let pendingThreadSendBody;
   let cancelPendingThreadSend;
   const pendingThreadSendFilter = {
     urls: [`${productSession.origin}/api/threads/${thread.id}/interactions`],
@@ -946,6 +939,7 @@ async function run() {
     (details, callback) => {
       if (!pendingThreadSendHeld && details.method === "POST") {
         pendingThreadSendHeld = true;
+        pendingThreadSendBody = JSON.parse(Buffer.concat((details.uploadData || []).map(({ bytes }) => bytes)).toString());
         cancelPendingThreadSend = () => callback({ cancel: true });
         return;
       }
@@ -954,7 +948,17 @@ async function run() {
   );
   await setValue("#threadPrompt", "Hold the owning thread Send while editing another thread.");
   await click("#sendInteraction");
+  await waitFor("thread A Send waits for its held input commit", () => evaluate(`(
+    document.querySelector('#sendInteraction')?.disabled === true
+  )`));
+  if (pendingThreadSendHeld) throw new Error("Send posted before its input commit settled.");
+  releasePendingInputCommit();
   await waitFor("thread A Send held in flight", () => pendingThreadSendHeld);
+  const committedBeforeSend = await productRequest(`/api/threads/${thread.id}/input-draft`);
+  if (pendingThreadSendBody.inputDraftRevision !== committedBeforeSend.revision
+    || !committedBeforeSend.attachments?.some((attachment) => attachment.value?.text === "Thread A pending input replacement.")) {
+    throw new Error("Send did not include the exact settled input composition.");
+  }
   await click(`[data-thread='${idleThread.id}']`);
   await waitFor("idle thread B remains composable while A Send is pending", () => evaluate(`(() => (
     document.querySelector("[data-thread='${idleThread.id}']")?.classList.contains('active')

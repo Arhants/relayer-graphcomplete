@@ -1,0 +1,225 @@
+<html lang="en" data-theme="dark"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:;">
+  <title>Relayer</title>
+  <link rel="icon" href="/desktop/renderer/assets/relayer-logo.svg">
+  <script src="/desktop/renderer/theme-bootstrap.js"></script>
+  <link rel="stylesheet" href="/desktop/renderer/styles.css">
+<style>.evidence-caption{position:fixed;z-index:1000;right:22px;top:18px;max-width:520px;padding:9px 14px;border:1px solid rgba(126,231,191,.42);border-radius:999px;background:rgba(13,18,18,.9);box-shadow:0 10px 32px rgba(0,0,0,.34);color:#dffbef;font:600 13px/1.3 -apple-system,BlinkMacSystemFont,sans-serif;letter-spacing:.01em;pointer-events:none}</style></head>
+<body class="desktop-account-pending" data-evidence-ready="true">
+  <section class="auth-screen hidden" id="authScreen" aria-labelledby="authTitle">
+    <div class="auth-card provider-setup-card" aria-busy="false">
+      <div class="logo large" role="img" aria-label="Relayer"></div>
+      <div class="provider-setup-heading"><small>Welcome to Relayer</small><h1 id="authTitle">Connect a provider</h1><p id="authDescription">Choose how Relayer can access models. You can add more providers later.</p></div>
+      <div class="provider-setup-options" id="providerSetupOptions" aria-label="Provider options"></div>
+      <form class="provider-setup-form hidden" id="providerSetupForm" novalidate="">
+        <button type="button" class="provider-setup-back" id="providerSetupBack">← Back</button>
+        <div id="providerSetupFields"></div>
+        <div class="provider-setup-actions">
+          <button type="button" class="secondary" id="cancelProviderConnection">Cancel</button>
+          <button type="submit" class="primary" id="connectProvider">Connect</button>
+        </div>
+      </form>
+      <section class="provider-family-step hidden" id="providerFamilyStep" aria-labelledby="providerFamilyTitle">
+        <button type="button" class="provider-setup-back" id="providerFamilyBack">← Back</button>
+        <h2 id="providerFamilyTitle">Choose your default model family</h2>
+        <p>Confirm a compatible harness, then choose an existing family or create one with models you select.</p>
+        <h3>Harness</h3>
+        <div id="onboardingHarnessOptions"></div>
+        <h3>Model family</h3>
+        <div id="onboardingFamilyOptions"></div>
+        <button type="button" class="secondary wide hidden" id="refreshOnboardingProviderModels">Refresh models</button>
+        <button type="button" class="primary wide" id="finishProviderSetup">Continue</button>
+      </section>
+      <div class="auth-status" id="authStatus" role="status" aria-live="polite" tabindex="-1">Checking providers…</div>
+    </div>
+  </section>
+
+  <div class="app-shell hidden" id="appShell">
+    <aside class="sidebar">
+      <button class="titlebar-toggle" id="collapseSidebar" title="Collapse sidebar" aria-label="Collapse sidebar" aria-expanded="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="3"></rect><path d="M7.5 3v14"></path></svg>
+      </button>
+      <div class="sidebar-title"><div class="logo" role="img" aria-label="Relayer"></div><strong>Relayer</strong></div>
+      <div class="sidebar-content" id="appSidebarContent">
+        <button class="new-thread-button" id="newThread"><span>＋</span> New thread <kbd id="newThreadShortcut">Ctrl/⌘N</kbd></button>
+        <div class="side-section"><div class="section-label">Chats</div><div id="chatList" class="entry-list"></div></div>
+        <div class="side-section"><div class="section-label">Projects</div><div id="projectList" class="project-list"></div></div>
+      </div>
+      <div class="sidebar-content settings-sidebar-content hidden" id="settingsSidebarContent">
+        <button class="settings-back-button" id="settingsBackButton" type="button" title="Back to Relayer"><span aria-hidden="true">←</span><span>Back to Relayer</span></button>
+        <div class="side-section settings-navigation">
+          <div class="section-label">Settings</div>
+          <div class="entry-list" id="settingsTabs" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
+            <button class="entry settings-tab" type="button" role="tab" data-settings-tab="account" aria-label="Account" title="Account" aria-controls="accountSettingsPanel"><span class="entry-icon" aria-hidden="true">◎</span><span>Account</span></button>
+            <button class="entry settings-tab" type="button" role="tab" data-settings-tab="providers" aria-label="Providers" title="Providers" aria-controls="providerSettingsPanel"><span class="entry-icon" aria-hidden="true">◉</span><span>Providers</span></button>
+            <button class="entry settings-tab" type="button" role="tab" data-settings-tab="models" aria-label="Model families" title="Model families" aria-controls="modelSettingsPanel"><span class="entry-icon" aria-hidden="true">✦</span><span>Model families</span></button>
+            <button class="entry settings-tab" type="button" role="tab" data-settings-tab="harnesses" aria-label="Harnesses" title="Harnesses" aria-controls="harnessSettingsPanel"><span class="entry-icon" aria-hidden="true">⌘</span><span>Harnesses</span></button>
+            <button class="entry settings-tab" type="button" role="tab" data-settings-tab="appearance" aria-label="Appearance" title="Appearance" aria-controls="appearanceSettingsPanel"><span class="entry-icon" aria-hidden="true">◐</span><span>Appearance</span></button>
+            <button class="entry settings-tab" type="button" role="tab" data-settings-tab="updates" aria-label="Application updates" title="Application updates" aria-controls="updatesSettingsPanel"><span class="entry-icon" aria-hidden="true">↓</span><span>Application updates</span></button>
+            <button class="entry settings-tab" type="button" role="tab" data-settings-tab="advanced" aria-label="Advanced" title="Advanced" aria-controls="advancedSettingsPanel"><span class="entry-icon" aria-hidden="true">⋯</span><span>Advanced</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <button class="footer-button" id="settingsButton" type="button" title="Settings" aria-label="Settings"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5.6"></circle><circle cx="10" cy="10" r="2.2"></circle><path d="M15.6 10h1.4M13.96 13.96l.99.99M10 15.6v1.4M6.04 13.96l-.99.99M4.4 10H3M6.04 6.04l-.99-.99M10 4.4V3M13.96 6.04l.99-.99"></path></svg><span>Settings</span></button>
+        <button class="footer-button account-footer-button hidden" id="desktopAccountButton" type="button" title="Account"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="7" r="3.1"></circle><path d="M4.2 16.4a5.8 5.8 0 0 1 11.6 0"></path></svg><span id="desktopAccountLabel">Sign in</span></button>
+        <button class="update-button hidden" id="updateButton" type="button" title="Application update status" aria-label="Application update status"><span aria-hidden="true">↓</span></button>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <section class="new-thread-view" id="newThreadView">
+        <div class="new-thread-center">
+          <div class="logo hero-logo" role="img" aria-label="Relayer"></div>
+          <h1>What are we working on?</h1>
+          <p>Start without a folder or connect a local project.</p>
+          <div class="new-composer">
+            <textarea id="newThreadPrompt" rows="4" placeholder="Ask Relayer to investigate, design, or build something…"></textarea>
+            <div class="composer-row">
+              <div class="composer-context-controls">
+                <div class="scope-control">
+                  <button class="scope-button" id="scopeButton" type="button" aria-haspopup="menu" aria-expanded="false"><span>⌁</span><span id="scopeLabel">No folder</span><span>⌄</span></button>
+                  <div class="scope-menu hidden" id="scopeMenu"></div>
+                </div>
+                <div class="permission-control">
+                  <button class="permission-button" id="permissionButton" type="button" aria-haspopup="menu" aria-expanded="false" disabled=""><span>◇</span><span id="permissionLabel">Permissions</span><span>⌄</span></button>
+                  <div class="permission-menu hidden" id="permissionMenu" role="menu" aria-label="Permission profile"></div>
+                </div>
+              </div>
+              <div class="composer-submit-controls">
+                <div class="model-control model-control-new" id="newModelControl" data-model-picker="new">
+                  <button type="button" class="model-button" data-model-picker-trigger="" aria-haspopup="dialog" aria-expanded="false" title="Choose model"><span aria-hidden="true">✦</span><span data-model-picker-label="">Model</span><span aria-hidden="true">⌄</span></button>
+                  <div class="model-picker-popover hidden" data-model-picker-popover="" role="dialog" aria-label="Model and harness picker">
+                    <div class="model-picker-tabs" role="tablist" aria-label="Model picker sections">
+                      <button type="button" role="tab" data-model-picker-tab="model" aria-selected="true">Model</button>
+                      <button type="button" role="tab" data-model-picker-tab="advanced" aria-selected="false">Advanced</button>
+                    </div>
+                    <section class="model-picker-panel" data-model-picker-panel="model" role="tabpanel"></section>
+                    <section class="model-picker-panel hidden" data-model-picker-panel="advanced" role="tabpanel"></section>
+                    <p class="model-picker-error hidden" data-model-picker-error="" role="alert"></p>
+                  </div>
+                </div>
+                <button class="send-button" id="createThread" title="Create thread and send" disabled="">↑</button>
+              </div>
+            </div>
+            <div class="folder-summary hidden" id="folderSummary"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="thread-view hidden" id="threadView"></section>
+
+      <section class="settings-view hidden" id="settingsView" aria-labelledby="settingsTitle">
+        <header class="settings-header">
+          <div class="settings-compact-navigation">
+            <button class="settings-compact-back" id="settingsCompactBackButton" type="button" aria-label="Back to Relayer"><span aria-hidden="true">←</span><span>Relayer</span></button>
+            <label for="settingsCompactSelect">Settings section</label>
+            <select id="settingsCompactSelect">
+              <option value="account">Account</option>
+              <option value="providers">Providers</option>
+              <option value="models">Model families</option>
+              <option value="harnesses">Harnesses</option>
+              <option value="appearance">Appearance</option>
+              <option value="updates">Application updates</option>
+              <option value="advanced">Advanced</option>
+            </select>
+          </div>
+          <div><small>Settings</small><h1 id="settingsTitle">Appearance</h1></div>
+        </header>
+        <div class="settings-content">
+          <section class="settings-section account-settings-section hidden" id="accountSettingsPanel" role="tabpanel" data-settings-panel="account" aria-labelledby="accountSettingsHeading">
+            <h2 id="accountSettingsHeading">Account</h2>
+            <div class="setting-row account-status-row">
+              <b id="desktopAccountStatus">Checking account…</b>
+              <div class="account-settings-actions"><button type="button" class="secondary" id="desktopAccountSignIn">Sign in</button><button type="button" class="secondary hidden" id="desktopAccountLogout">Log out</button></div>
+            </div>
+          </section>
+          <section class="settings-section provider-settings-section hidden" id="providerSettingsPanel" role="tabpanel" data-settings-panel="providers" aria-labelledby="providerSettingsHeading">
+            <div class="settings-section-heading"><div><h2 id="providerSettingsHeading">Providers</h2><p>Each provider is an independent access path with its own credentials.</p></div><div class="provider-definition-actions"><button type="button" class="secondary" id="refreshProviderCatalogs">Refresh models</button><button type="button" class="primary" id="newProviderDefinition">＋ Add provider</button></div></div>
+            <div class="provider-definition-list" id="providerDefinitionList"><div class="family-empty">Loading providers…</div></div>
+            <div class="model-settings-status" id="providerSettingsStatus" role="status" aria-live="polite"></div>
+          </section>
+          <section class="settings-section model-settings-section hidden" id="modelSettingsPanel" role="tabpanel" data-settings-panel="models" aria-labelledby="modelSettingsHeading">
+            <h2 id="modelSettingsHeading">Model families</h2>
+            <div class="model-defaults">
+              <h3>Defaults</h3>
+              <label class="setting-row"><b>Harness</b><select id="defaultHarnessSelect" aria-describedby="defaultHarnessError"></select><small>Harness configuration is managed separately.</small></label>
+              <div class="setting-error hidden" id="defaultHarnessError" role="alert"></div>
+              <label class="setting-row"><b>Provider</b><select id="defaultProviderSelect" aria-describedby="defaultProviderHint"></select></label>
+              <div class="setting-hint hidden" id="defaultProviderHint"></div>
+            </div>
+            <div class="model-settings-divider" role="separator"></div>
+            <div class="model-families-heading">
+              <h3>Model families</h3>
+              <div class="family-carousel-controls">
+                <button type="button" class="icon-button family-arrow" id="previousFamily" aria-label="Previous model family">←</button>
+                <div class="current-family-control">
+                  <button type="button" class="current-family-button" aria-haspopup="listbox" aria-expanded="false">
+                    <strong id="currentFamilyName">Model families</strong>
+                    <span id="familyPosition">0 / 0</span>
+                    <span aria-hidden="true">⌄</span>
+                  </button>
+                  <div class="family-jump-list" id="familyJumpList" role="listbox" aria-label="Model families"></div>
+                </div>
+                <button type="button" class="icon-button family-arrow" id="nextFamily" aria-label="Next model family">→</button>
+              </div>
+              <button type="button" class="secondary" id="newModelFamily">＋ New family</button>
+            </div>
+            <div class="family-carousel" id="familyCarousel" aria-live="polite">
+              <div class="family-slide"><div class="family-empty" id="modelFamilyLoading">Loading…</div></div>
+            </div>
+            <div class="model-settings-status" id="modelSettingsStatus" role="status"></div>
+          </section>
+          <section class="settings-section harness-settings-section hidden" id="harnessSettingsPanel" role="tabpanel" data-settings-panel="harnesses" aria-labelledby="harnessSettingsHeading">
+            <div class="settings-section-heading"><div><h2 id="harnessSettingsHeading">Harnesses</h2></div></div>
+            <div id="harnessConfigurationList" class="harness-configuration-list"><div class="family-empty">Loading harnesses…</div></div>
+            <div class="model-settings-status" id="harnessSettingsStatus" role="status" aria-live="polite"></div>
+          </section>
+          <section class="settings-section" id="appearanceSettingsPanel" role="tabpanel" data-settings-panel="appearance">
+            <h2>Appearance</h2>
+            <label class="setting-row"><div><b>Theme</b><small id="appearanceDescription">Choose how Relayer looks on this computer.</small></div><select id="appearanceSelect"><option value="dark">Dark</option><option value="light">Light</option></select></label>
+          </section>
+          <section class="settings-section hidden" id="updatesSettingsPanel" role="tabpanel" data-settings-panel="updates">
+            <h2>Application updates</h2>
+            <label class="setting-row"><div><b>Update channel</b><small>Preview receives beta builds before Stable.</small></div><select id="updateChannel"><option value="stable">Stable</option><option value="preview">Preview</option></select></label>
+            <div class="setting-row"><div><b id="updateStatus">Up to date</b><small id="currentVersion"></small></div><button type="button" class="secondary" id="checkUpdates">Check for updates</button></div>
+          </section>
+          <section class="settings-section hidden" id="advancedSettingsPanel" role="tabpanel" data-settings-panel="advanced">
+            <h2>Advanced</h2>
+            <div class="setting-row"><div><b>Tutorial</b><small>Learn how to create a thread, explore its graph, and ask a follow-up.</small></div><button type="button" class="secondary" id="startTutorial">Start tutorial</button></div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="provider-dialog" id="providerDialog" aria-labelledby="providerDialogTitle">
+    <form method="dialog" class="provider-dialog-shell">
+      <header><div><small>Provider settings</small><h2 id="providerDialogTitle">Add provider</h2></div><button type="submit" class="icon-button" aria-label="Close provider dialog">×</button></header>
+      <div id="providerDialogContent"></div>
+      <div class="auth-status" id="providerDialogStatus" role="status" aria-live="polite"></div>
+    </form>
+  </dialog>
+  <section class="desktop-account-onboarding hidden" id="desktopAccountOnboarding" aria-labelledby="desktopAccountOnboardingTitle" aria-describedby="desktopAccountOnboardingStatus">
+    <div class="desktop-account-onboarding-card">
+      <div class="logo large" role="img" aria-label="Relayer"></div>
+      <small id="desktopAccountOnboardingChannel">Optional account</small>
+      <h2 id="desktopAccountOnboardingTitle">Sign in to Relayer</h2>
+      <p id="desktopAccountOnboardingStatus">Sign in to connect privacy-filtered error reports to a pseudonymous account. Your projects and conversations stay local, and you can continue without an account.</p>
+      <div class="desktop-account-onboarding-actions">
+        <button type="button" class="secondary" id="desktopAccountOnboardingNotNow">Continue without an account</button>
+        <button type="button" class="primary" id="desktopAccountOnboardingSignIn">Sign in</button>
+      </div>
+    </div>
+  </section>
+  <div class="update-popover hidden" id="updatePopover"><button class="icon-button close-popover" id="closeUpdate">×</button><small>Relayer update</small><h3 id="updateTitle">Update available</h3><p id="updateDetail"></p><button class="primary wide" id="updateAction">Download update</button></div>
+  <div class="toast hidden" id="toast"></div>
+  <script src="/desktop/renderer/vendor/lucide.min.js"></script>
+  <script src="/desktop/renderer/vendor/marked.umd.js"></script>
+  <script type="module" src="/scripts/provider-ux-evidence-browser.mjs"></script><script type="module" src="/desktop/renderer/src/main.js"></script>
+
+
+<div class="evidence-caption">Choose a provider</div></body></html>

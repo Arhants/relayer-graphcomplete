@@ -1,7 +1,7 @@
 """Object-based Python client for the GraphComplete Rust graph engine."""
 
 from .authoring import (ActionVariant, CompletionInputGraph, EdgeObject, GraphAuthoringClient, GraphEdge,
-                        GraphLayer, GraphNode, InteractionContext, InteractionInput,
+                        GraphLayer, GraphNode, InteractionContext, InteractionInput, InteractionPermissions,
                         InteractionInputNode, SubmittedInput,
                         LayerLayout, LayerLayoutObject,
                         InputControl, InputOption, LayerObject, NavigateRelation, NodeObject, NodePlacement,
@@ -31,7 +31,7 @@ __all__ = [
     "Client", "GraphClient", "RelayerGraphClient", "GraphAuthoringClient",
     "GraphSession",
     "NodeObject", "EdgeObject", "LayerObject", "NodePlacementObject", "LayerLayoutObject",
-    "GraphNode", "GraphEdge", "GraphLayer", "InteractionContext", "InteractionInput", "InteractionInputNode", "SubmittedInput",
+    "GraphNode", "GraphEdge", "GraphLayer", "InteractionContext", "InteractionInput", "InteractionPermissions", "InteractionInputNode", "SubmittedInput",
     "NodePlacement", "LayerLayout",
     "ActionVariant", "NavigateRelation", "InputControl", "InputOption",
     "CompletionInputGraph",

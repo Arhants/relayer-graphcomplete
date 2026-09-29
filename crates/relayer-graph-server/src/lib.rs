@@ -199,6 +199,10 @@ pub fn router(state: ServerState) -> Router {
             "/api/control/resolved-invoke-roots",
             post(control_resolved_invoke_roots),
         )
+        .route(
+            "/api/control/attached-navigation-roots",
+            post(control_attached_navigation_roots),
+        )
         .route("/api/control/interactions/{id}/output", get(control_output))
         .route(
             "/api/control/interactions/{id}/current",
@@ -281,6 +285,10 @@ pub fn router(state: ServerState) -> Router {
             "/api/control/recursive-completions",
             post(prepare_recursive_completion),
         )
+        .route(
+            "/api/control/interaction-features",
+            get(control_interaction_features),
+        )
         .route("/api/graph/nodes", post(submit_node))
         .route(
             "/api/graph/detail-assets/resolve",
@@ -292,6 +300,10 @@ pub fn router(state: ServerState) -> Router {
             post(visual_assets_operation).layer(DefaultBodyLimit::max(12 * 1024 * 1024)),
         )
         .route("/api/graph/nodes/{id}", get(get_node))
+        .route(
+            "/api/graph/nodes/{id}/presentation",
+            get(get_node_presentation).post(stage_node_presentation),
+        )
         .route("/api/graph/nodes/{id}/neighbors", get(neighbors))
         .route("/api/graph/input", get(interaction_input))
         .route(
@@ -1079,6 +1091,16 @@ async fn health() -> Json<Value> {
     Json(json!({"ok": true, "service": "relayer-graph"}))
 }
 
+async fn control_interaction_features(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    require_bearer(&headers, &state.control_token)?;
+    Ok(Json(
+        json!({"interactionGraph":state.graph.interaction_permissions_enabled().await?}),
+    ))
+}
+
 async fn control_temporal_features(
     State(state): State<ServerState>,
     headers: HeaderMap,
@@ -1624,6 +1646,20 @@ async fn control_resolved_invoke_roots(
     ))
 }
 
+async fn control_attached_navigation_roots(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Json(input): Json<ResolvedInvokeRootsRequest>,
+) -> Result<Json<Vec<NodeId>>, ApiError> {
+    require_bearer(&headers, &state.control_token)?;
+    Ok(Json(
+        state
+            .graph
+            .attached_navigation_roots(&input.completion_ids)
+            .await?,
+    ))
+}
+
 async fn control_current_projections(
     State(state): State<ServerState>,
     headers: HeaderMap,
@@ -2084,6 +2120,67 @@ async fn prepare_detail_assets(
     }
     Ok(prepared)
 }
+async fn get_node_presentation(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Path(id): Path<NodeId>,
+) -> Result<Json<Value>, ApiError> {
+    let authority = session(&state, &headers)?;
+    let writer = state
+        .graph
+        .writer_for_completion_authority(authority.node_id, authority.epoch)
+        .await?;
+    Ok(Json(writer.get_node_presentation(id).await?))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StageNodePresentation {
+    expected_revision: u64,
+    authored_detail: Value,
+}
+
+async fn stage_node_presentation(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Path(id): Path<NodeId>,
+    Json(input): Json<StageNodePresentation>,
+) -> Result<Json<Value>, ApiError> {
+    let authority = session(&state, &headers)?;
+    let gate = completion_asset_gate(&state, authority.node_id)?;
+    let generation = gate.lock().await;
+    let writer = state
+        .graph
+        .writer_for_completion_authority(authority.node_id, authority.epoch)
+        .await?;
+    writer
+        .authorize_interaction_permission(&relayer_graph_core::InteractionPermission::NavigateAdd {
+            node_id: id,
+        })
+        .await?;
+    let assets = if input
+        .authored_detail
+        .get("assets")
+        .and_then(Value::as_array)
+        .is_some_and(|a| !a.is_empty())
+    {
+        prepare_detail_assets(
+            &state,
+            &writer,
+            authority,
+            *generation,
+            &input.authored_detail,
+        )
+        .await?
+    } else {
+        Vec::new()
+    };
+    writer
+        .stage_node_presentation(id, input.expected_revision, &input.authored_detail, &assets)
+        .await?;
+    Ok(Json(json!({"staged":true})))
+}
+
 async fn get_node(
     State(state): State<ServerState>,
     headers: HeaderMap,
@@ -2659,57 +2756,65 @@ mod tests {
             .await
             .unwrap_or_else(|_| panic!("could not mint model capability"));
         let app = router(state);
-        for token in ["", "wrong", model_token.as_str()] {
+        for path in [
+            "/api/control/resolved-invoke-roots",
+            "/api/control/attached-navigation-roots",
+        ] {
+            for token in ["", "wrong", model_token.as_str()] {
+                let response = app
+                    .clone()
+                    .clone()
+                    .oneshot(
+                        Request::builder()
+                            .method("POST")
+                            .uri(path)
+                            .header("content-type", "application/json")
+                            .header("authorization", format!("Bearer {token}"))
+                            .body(Body::from(json!({"completionIds":[node.id]}).to_string()))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            }
+            for ids in [json!([0]), json!([-1]), json!(vec![node.id; 501])] {
+                let response = app
+                    .clone()
+                    .clone()
+                    .oneshot(
+                        Request::builder()
+                            .method("POST")
+                            .uri(path)
+                            .header("content-type", "application/json")
+                            .header("authorization", "Bearer control")
+                            .body(Body::from(json!({"completionIds":ids}).to_string()))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert!(response.status().is_client_error());
+            }
             let response = app
                 .clone()
                 .oneshot(
                     Request::builder()
                         .method("POST")
-                        .uri("/api/control/resolved-invoke-roots")
-                        .header("content-type", "application/json")
-                        .header("authorization", format!("Bearer {token}"))
-                        .body(Body::from(json!({"completionIds":[node.id]}).to_string()))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        }
-        for ids in [json!([0]), json!([-1]), json!(vec![node.id; 501])] {
-            let response = app
-                .clone()
-                .oneshot(
-                    Request::builder()
-                        .method("POST")
-                        .uri("/api/control/resolved-invoke-roots")
+                        .uri(path)
                         .header("content-type", "application/json")
                         .header("authorization", "Bearer control")
-                        .body(Body::from(json!({"completionIds":ids}).to_string()))
+                        .body(Body::from(
+                            json!({"completionIds":[node.id.value(),99999]}).to_string(),
+                        ))
                         .unwrap(),
                 )
                 .await
                 .unwrap();
-            assert!(response.status().is_client_error());
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(
+                &to_bytes(response.into_body(), 1024).await.unwrap()[..],
+                b"[]"
+            );
         }
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/control/resolved-invoke-roots")
-                    .header("content-type", "application/json")
-                    .header("authorization", "Bearer control")
-                    .body(Body::from(
-                        json!({"completionIds":[node.id.value(),99999]}).to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            &to_bytes(response.into_body(), 1024).await.unwrap()[..],
-            b"[]"
-        );
     }
 
     #[tokio::test]
@@ -6573,5 +6678,259 @@ mod no_ladybug_search_tests {
             body(explicit_current_target).await["error"]["code"],
             "search_unavailable"
         );
+    }
+}
+
+#[cfg(test)]
+mod attached_navigation_route_tests {
+    use super::*;
+    use axum::body::{Body, to_bytes};
+    use axum::http::Request;
+    use relayer_graph_core::{
+        ActionDraft, ActionKind, InteractionContextDraft, InteractionContextTarget, LayerDraft,
+        LayerLayout, NavigateRelation, NodeDraft, NodePlacement,
+    };
+    use sha2::{Digest, Sha256};
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn presentation_route_stages_only_authorized_full_replacement_until_acceptance() {
+        let database = GraphDatabase::in_memory().await.unwrap();
+        database
+            .set_interaction_permissions_enabled(true)
+            .await
+            .unwrap();
+        let source = database
+            .create_interaction(ProjectId::new(1), ThreadId::new(1).unwrap(), "Source")
+            .await
+            .unwrap();
+        let sw = database.writer_for_subgraph(source.id).await.unwrap();
+        let node = sw
+            .submit_node(&NodeDraft {
+                client_key: "persistent".into(),
+                kind: "concept".into(),
+                icon: "box".into(),
+                title: "Meaning".into(),
+                detail: "Unchanged meaning".into(),
+            })
+            .await
+            .unwrap();
+        let layer = sw
+            .submit_layer(&LayerDraft {
+                client_key: "source".into(),
+                nodes: vec![node.id],
+                edges: vec![],
+                layout: Some(LayerLayout::v1(vec![NodePlacement {
+                    node_id: node.id,
+                    x: 0.5,
+                    y: 0.5,
+                }])),
+                default_node_id: None,
+                size_justification: None,
+            })
+            .await
+            .unwrap();
+        let mut action = ActionDraft {
+            client_key: "root".into(),
+            source_node_id: source.id,
+            source_layer_id: None,
+            kind: ActionKind::Navigate,
+            relation: Some(NavigateRelation::Expand),
+            label: "Response".into(),
+            variant: Default::default(),
+            icon: None,
+            description: None,
+            target_layer_id: Some(layer.id),
+            interaction_text: None,
+            input: None,
+        };
+        sw.add_action(&action).await.unwrap();
+        sw.complete(source.id).await.unwrap();
+        let (edit, _) = database
+            .create_interaction_with_context(
+                ProjectId::new(1),
+                ThreadId::new(2).unwrap(),
+                "Extend",
+                &[InteractionContextDraft {
+                    target: InteractionContextTarget {
+                        node_id: node.id,
+                        source_interaction_node_id: source.id,
+                        source_layer_id: layer.id,
+                    },
+                    annotations: vec![],
+                }],
+            )
+            .await
+            .unwrap();
+        let writer = database.writer_for_subgraph(edit.id).await.unwrap();
+        // The response is a separate layer reusing the immutable meaning.
+        let response = writer
+            .submit_layer(&LayerDraft {
+                client_key: "response".into(),
+                nodes: vec![node.id],
+                edges: vec![],
+                layout: Some(LayerLayout::v1(vec![NodePlacement {
+                    node_id: node.id,
+                    x: 0.5,
+                    y: 0.5,
+                }])),
+                default_node_id: None,
+                size_justification: None,
+            })
+            .await
+            .unwrap();
+        action.source_node_id = edit.id;
+        action.target_layer_id = Some(response.id);
+        writer.add_action(&action).await.unwrap();
+        action.client_key = "reference".into();
+        action.source_node_id = node.id;
+        action.target_layer_id = Some(response.id);
+        action.relation = Some(NavigateRelation::Reference);
+        let pending_action = writer.add_action(&action).await.unwrap();
+        let unrelated = database
+            .create_interaction(ProjectId::new(1), ThreadId::new(3).unwrap(), "Unattached")
+            .await
+            .unwrap();
+        let unrelated_writer = database.writer_for_subgraph(unrelated.id).await.unwrap();
+        assert!(
+            unrelated_writer.get_node(node.id).await.is_ok(),
+            "ordinary project reads remain allowed"
+        );
+        database
+            .set_interaction_permissions_enabled(false)
+            .await
+            .unwrap();
+        let (disabled, _) = database
+            .create_interaction_with_context(
+                ProjectId::new(1),
+                ThreadId::new(4).unwrap(),
+                "Disabled",
+                &[InteractionContextDraft {
+                    target: InteractionContextTarget {
+                        node_id: node.id,
+                        source_interaction_node_id: source.id,
+                        source_layer_id: layer.id,
+                    },
+                    annotations: vec![],
+                }],
+            )
+            .await
+            .unwrap();
+        database
+            .set_interaction_permissions_enabled(true)
+            .await
+            .unwrap();
+        let state = ServerState::new(database, "control");
+        let token = mint_capability(&state, edit.id, None).await.ok().unwrap();
+        let unrelated_token = mint_capability(&state, unrelated.id, None)
+            .await
+            .ok()
+            .unwrap();
+        let disabled_token = mint_capability(&state, disabled.id, None)
+            .await
+            .ok()
+            .unwrap();
+        let app = router(state);
+        let path = format!("/api/graph/nodes/{}/presentation", node.id);
+        let request = |method: &str, body: Option<Value>, authorized: bool| {
+            Request::builder()
+                .method(method)
+                .uri(&path)
+                .header(
+                    "authorization",
+                    if authorized {
+                        format!("Bearer {token}")
+                    } else {
+                        "Bearer invalid".into()
+                    },
+                )
+                .header("content-type", "application/json")
+                .body(Body::from(body.map(|v| v.to_string()).unwrap_or_default()))
+                .unwrap()
+        };
+        for denied in [&unrelated_token, &disabled_token] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(&path)
+                        .header("authorization", format!("Bearer {denied}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
+        let read = app
+            .clone()
+            .oneshot(request("GET", None, true))
+            .await
+            .unwrap();
+        assert_eq!(read.status(), StatusCode::OK);
+        let read: Value =
+            serde_json::from_slice(&to_bytes(read.into_body(), usize::MAX).await.unwrap()).unwrap();
+        assert_eq!(read["revision"], 0);
+        assert_eq!(read["actions"], json!([pending_action]));
+        assert!(
+            sw.get_layer(layer.id)
+                .await
+                .unwrap()
+                .actions
+                .iter()
+                .all(|action| action.id != pending_action.id),
+            "ordinary layer reads must not expose the caller's unpublished addition"
+        );
+        let mut package = json!({"version":1,"components":[{"id":"main","order":0,"html":"<button data-gc-mount=\"open\">Context</button>","css":""}],"mounts":[{"id":"open","componentId":"main","host":"button","kind":"capability","capability":{"kind":"reference","action":{"clientKey":"reference","sourceNode":{"id":node.id}}}}],"assets":[]});
+        package["integritySha256"] = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&package).unwrap())
+        )
+        .into();
+        let body = json!({"expectedRevision":0,"authoredDetail":package});
+        assert_eq!(
+            app.clone()
+                .oneshot(request("POST", Some(body.clone()), false))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let mut semantic_edit = body.clone();
+        semantic_edit["title"] = json!("Changed");
+        assert!(
+            !app.clone()
+                .oneshot(request("POST", Some(semantic_edit), true))
+                .await
+                .unwrap()
+                .status()
+                .is_success()
+        );
+        let staged = app
+            .clone()
+            .oneshot(request("POST", Some(body), true))
+            .await
+            .unwrap();
+        assert_eq!(staged.status(), StatusCode::OK);
+        assert!(
+            sw.get_node(node.id)
+                .await
+                .unwrap()
+                .authored_detail
+                .is_none()
+        );
+        writer.complete(edit.id).await.unwrap();
+        assert_eq!(
+            app.clone()
+                .oneshot(request("GET", None, true))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+
+        let accepted = sw.get_node(node.id).await.unwrap();
+        assert_eq!(accepted.title, "Meaning");
+        assert_eq!(accepted.authored_detail, Some(package));
     }
 }

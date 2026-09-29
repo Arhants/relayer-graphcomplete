@@ -186,6 +186,8 @@ impl From<Thread> for ThreadResponse {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct InteractionResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    interaction_graph: Option<serde_json::Value>,
     id: i64,
     thread_id: i64,
     sequence: i64,
@@ -212,6 +214,7 @@ pub(crate) struct InteractionResponse {
 impl From<Interaction> for InteractionResponse {
     fn from(interaction: Interaction) -> Self {
         Self {
+            interaction_graph: None,
             id: interaction.id.value(),
             thread_id: interaction.thread_id.value(),
             sequence: interaction.sequence,
@@ -238,6 +241,15 @@ impl From<Interaction> for InteractionResponse {
 }
 
 impl InteractionResponse {
+    pub(crate) fn navigation_contexts(&self) -> Vec<(i64, i64)> {
+        self.contexts
+            .iter()
+            .map(|c| (c.target.source_layer_id, c.target.node_id))
+            .collect()
+    }
+    pub(crate) fn set_interaction_graph(&mut self, graph: serde_json::Value) {
+        self.interaction_graph = Some(graph);
+    }
     pub(crate) fn mark_projection_stale(&mut self) {
         self.projection_fresh = false;
     }

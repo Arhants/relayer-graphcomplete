@@ -1,0 +1,95 @@
+Starting isolated Electron first-message smoke test...
+Electron application ready.
+Error occurred in handler for 'relayer:layer-selections-read': Error: No handler registered for 'relayer:layer-selections-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-read': Error: No handler registered for 'relayer:layer-selections-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error: DetailCompilationError: Node Detail checkpoint failed with 3 validation issues
+    at compileAuthoring (file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/packages/graph-client/dist/detail.js:543:15)
+    at compileAuthenticatedNodeDetail (file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/packages/graph-client/dist/detail.js:435:12)
+    at RelayerGraphClient.compileNodeDetailCheckpoint (file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/packages/graph-client/dist/client.js:135:16)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async RelayerGraphClient.replaceNodePresentation (file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/packages/graph-client/dist/client.js:43:32)
+    at async harness.complete (file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/scripts/test-desktop-first-message.mjs:262:5)
+    at async HarnessHost.executeCompletion (file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/packages/harness-host/dist/host.js:836:13)
+    at async HarnessHost.runCompletion (file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/packages/harness-host/dist/host.js:551:22)
+    at async HarnessHost.withSessionLock (file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/packages/harness-host/dist/host.js:1103:20)
+    at async route (file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/packages/harness-host/dist/host.js:1450:35)
+    at file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/scripts/test-desktop-first-message.mjs:829:61
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async waitFor (file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/scripts/test-desktop-first-message.mjs:90:19)
+    at async run (file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/scripts/test-desktop-first-message.mjs:826:23)

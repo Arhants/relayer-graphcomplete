@@ -1,0 +1,90 @@
+{
+  "base": "c5820a6bb86c4d23b39801fb78a0b9f53c033852",
+  "files": [
+    {
+      "path": "crates/relayer-app-server/src/api/interaction_graph.rs",
+      "sha256": "3d333a0740ed903825c13aaf28710dededc37e594e2a079a416eb08c907b39e2"
+    },
+    {
+      "path": "crates/relayer-app-server/src/api/state.rs",
+      "sha256": "cc55c5030324afad28f93938d74abc8d5a8c060b2e4c85088c1182a76a5ab9d5"
+    },
+    {
+      "path": "crates/relayer-app-server/src/api/threads.rs",
+      "sha256": "53c211833bfe691dc0a6465490762371c10d500f794a9d85e81a5625c13ab81e"
+    },
+    {
+      "path": "crates/relayer-app-server/tests/product_persistence_flow.rs",
+      "sha256": "aff8127952272a597517441b1af98024f88e1a2989842cef2c8da884ea6bb185"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/attached_navigation.rs",
+      "sha256": "1be734fec1d396508f5de23554d17873ce867a16ce8e00db964673e5286a1d9e"
+    },
+    {
+      "path": "crates/relayer-graph-core/tests/graph_database.rs",
+      "sha256": "398e655fb771d8c6a45216ff6c401513058e30b725e9592ae57edd96a32106a8"
+    },
+    {
+      "path": "desktop/main/managed-runtimes/recipes.mjs",
+      "sha256": "5a4141a6da18701da37becb67f78a8d78c64363a270f4e1bccfeda486e9172e9"
+    },
+    {
+      "path": "desktop/main/services/prime-agent-runtime.mjs",
+      "sha256": "279dd1dc3fc68af1a5969ecb63a2a0ea1bad898a041d06f6d7e294f3738d5fbc"
+    },
+    {
+      "path": "desktop/renderer/src/product-workspace/interaction-graph.js",
+      "sha256": "c75ae9a03bd8d82addcc148a3dd6c6726aae6db685ba6783277142d17f9a6ad1"
+    },
+    {
+      "path": "desktop/renderer/src/threads.js",
+      "sha256": "2d24d57079bbb15f0b431611fec22430ac5a91876e890797b833ed81cca79b44"
+    },
+    {
+      "path": "packages/graph-client/src/client.ts",
+      "sha256": "99cee1dc5e24b7a45b12b707fd6292d366096709df1cad9166d81dc5064e71ed"
+    },
+    {
+      "path": "packages/graph-client/src/detail.ts",
+      "sha256": "f4eb02d3982da589b58879d0ae05e1f2189c1c67807522877f7e2c5ad65a4f36"
+    },
+    {
+      "path": "packages/graph-client/test/detail.test.ts",
+      "sha256": "514ecfc25cd0554258c8067233c49d15da31ed7141d6470c840a5c30e9d1ce54"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/prime-visual-authoring.ts",
+      "sha256": "c17856cc6d2224877b4febe078ffa5adef75eb560a21e0e02477a2eae71297f3"
+    },
+    {
+      "path": "packages/harness-host/test/prime-visual-authoring.test.ts",
+      "sha256": "122b01ef5b930cbde8ee926608cf1edec533d9413632557cef95aaff2af307ca"
+    },
+    {
+      "path": "python/relayer-graph/src/relayer_graph/session.py",
+      "sha256": "78f058e487c99a0881af403542925b48348137fb8e52ce8d3a6a5afb452ec1a2"
+    },
+    {
+      "path": "scripts/test-interaction-graph-layout.mjs",
+      "sha256": "094788d2286cfb8861536e739018889b23bd220076a0f16845bae5a6fd1747fc"
+    },
+    {
+      "path": "test/interaction-graph-workspace.test.mjs",
+      "sha256": "c5cf14e330cdcb34403a55b32813cf3ef1eb2b2cba904ac2f2887731f00a01c2"
+    },
+    {
+      "path": "test/workspace-navigation-integration.test.mjs",
+      "sha256": "efdd1e1474ca4e8ad8f452ae349d822f1d2baa0d7e026b41086a89a516ceddbb"
+    },
+    {
+      "path": "test/workspace-reading-context.test.mjs",
+      "sha256": "c94a44f023102fd2d56e606caa4e1e55774600ef1aa134e16d0285ee1f241bf6"
+    },
+    {
+      "path": "vendor/prime-agent/manifest.json",
+      "sha256": "6463757651355baaee741fb49c43be8249a648e199d2449d444a91623f293c3d"
+    }
+  ],
+  "digest": "b3218fbd75402a7136aaecdd09ab9915ac81c4c97ce91892fea232c7f11f64e7"
+}

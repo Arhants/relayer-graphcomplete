@@ -1,0 +1,66 @@
+{
+  "passed": true,
+  "sourceDigest": "96530c5d31b0ca26d146a3ce7313246f4e57b5e8bee9384e3c99cc2a787f53f4",
+  "generationSourceDigest": "63992a635b50ef6b2368e50ca4d0c283d13f862dec7df8e2542990fb72901447",
+  "captureDriverSha256": "80ebc30fb42e9ff31828cd7dc498196d171e1cba5d558a363ad4babad46aa348",
+  "mode": "production-browser-fallback",
+  "nativeKeyboardVerified": false,
+  "nativeDesktopAccountVerified": false,
+  "backendReopened": true,
+  "referenceToNewResponseRoot": true,
+  "reusedOccurrences": true,
+  "contextEdges": 1,
+  "expectedInteractionCards": 2,
+  "before": {
+    "interactions": 7,
+    "attempts": 2,
+    "executions": 0
+  },
+  "after": {
+    "interactions": 7,
+    "attempts": 2,
+    "executions": 0
+  },
+  "executionRequests": 0,
+  "screenshots": [
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live/01-live-source-root.png",
+      "sha256": "c3c025a259ce82876bdb5627e8acd2e9d39a38986b3aa3ea016d0b00306e5bc7"
+    },
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live/02-live-reused-occurrence.png",
+      "sha256": "b23c7068da814531b95256eb6b614f894dd2e2d1ab802b19d6eacaf2303209ab"
+    },
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live/03-live-reference-destination.png",
+      "sha256": "4fac883311737f9f565ede7cf9715b13ba2f2bc2b764747e87067b7745488c0e"
+    },
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live/04-live-context-graph.png",
+      "sha256": "544fb4f94f8f6aac86c84358f212b869e773c5e021f426c66fd0d2c214f82ad1"
+    },
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live/05-live-expansion-destination.png",
+      "sha256": "1b9bc429fd4daffd902555ba1e1f7e7098a0ff4e59ba05b49ccc0f8c497f1019"
+    },
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live/06-live-back.png",
+      "sha256": "d35236b514fdf7621cb64482b0dc3aef924e23aa8b4685154cac14ca384fc8f5"
+    },
+    {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/live/07-live-reopened.png",
+      "sha256": "c3c025a259ce82876bdb5627e8acd2e9d39a38986b3aa3ea016d0b00306e5bc7"
+    }
+  ],
+  "frames": 21,
+  "interactions": [
+    {
+      "id": 1,
+      "status": "accepted"
+    },
+    {
+      "id": 2,
+      "status": "accepted"
+    }
+  ]
+}

@@ -428,8 +428,10 @@ pub(super) async fn project_interaction(
     interaction: Interaction,
     imported_thread: bool,
     projection_stale: bool,
+    graph_deadline: tokio::time::Instant,
 ) -> Result<InteractionResponse, ApiError> {
     let id = interaction.id.value();
+    let thread_id = interaction.thread_id;
     let graph_node_id = interaction.graph_node_id;
     let mut response: InteractionResponse = interaction.into();
     if projection_stale {
@@ -451,6 +453,7 @@ pub(super) async fn project_interaction(
         })
         .collect::<Vec<_>>();
     response.set_submitted_inputs(durable_submitted_inputs.clone());
+    let mut context_projection_complete = true;
     let has_durable_context = durable_input
         .as_ref()
         .is_some_and(|input| !input.contexts.is_empty());
@@ -508,15 +511,34 @@ pub(super) async fn project_interaction(
                     }
                 };
                 if let Err(error) = projected {
+                    context_projection_complete = false;
                     response.mark_projection_stale();
                     eprintln!("could not project context for interaction {id}: {error}");
                 }
             }
             Err(error) => {
+                context_projection_complete = false;
                 response.mark_projection_stale();
                 eprintln!("could not project context for interaction {id}: {error}");
             }
         }
+    }
+    if !imported_thread
+        && let Some((runtime, graph_id)) = state.runtime.as_ref().zip(graph_node_id)
+        && runtime.interaction_graph_enabled()
+    {
+        let mut graph = super::interaction_graph::project_before(
+            state,
+            thread_id,
+            graph_id,
+            response.navigation_contexts(),
+            graph_deadline,
+        )
+        .await;
+        if !context_projection_complete {
+            graph["complete"] = serde_json::json!(false);
+        }
+        response.set_interaction_graph(graph);
     }
     Ok(response)
 }
@@ -548,10 +570,20 @@ async fn project_interactions(
     imported_thread: bool,
     stale: &std::collections::HashSet<i64>,
 ) -> Result<Vec<InteractionResponse>, ApiError> {
+    let graph_deadline = super::interaction_graph::projection_deadline();
     let mut responses = Vec::with_capacity(interactions.len());
     for interaction in interactions {
         let is_stale = stale.contains(&interaction.id.value());
-        responses.push(project_interaction(state, interaction, imported_thread, is_stale).await?);
+        responses.push(
+            project_interaction(
+                state,
+                interaction,
+                imported_thread,
+                is_stale,
+                graph_deadline,
+            )
+            .await?,
+        );
     }
     Ok(responses)
 }
@@ -1182,8 +1214,8 @@ pub(super) async fn refresh_accepted_outputs(
         .filter(|i| i.completion_status == "accepted" && !imported_threads.contains(&i.thread_id))
         .filter_map(|i| i.graph_node_id)
         .collect::<Vec<_>>();
-    let resolved_roots = match runtime {
-        Some(runtime) => match runtime.resolved_invoke_roots(&ids).await {
+    let changed_roots = match runtime {
+        Some(runtime) => match runtime.changed_accepted_roots(&ids).await {
             Ok(roots) => roots,
             Err(_) => {
                 // Unknown canonical membership must not certify cached output as fresh.
@@ -1220,7 +1252,7 @@ pub(super) async fn refresh_accepted_outputs(
         if interaction.completion_status != "accepted" {
             continue;
         }
-        if !resolved_roots.contains(&graph_node_id)
+        if !changed_roots.contains(&graph_node_id)
             && !invoked_source_interaction_ids.contains(&interaction.id.value())
             && !interaction
                 .completion_output

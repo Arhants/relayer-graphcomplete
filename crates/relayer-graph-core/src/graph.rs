@@ -1,3 +1,4 @@
+mod attached_navigation;
 mod completion;
 mod database;
 mod import;

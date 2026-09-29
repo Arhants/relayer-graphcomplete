@@ -1,0 +1,3 @@
+Preserved diagnostic excerpt from the first latency-test compilation (the full initial log was overwritten on rerun):
+error: failed to write file 'target/debug/deps/liblbug-51f77851a839cb55.rlib': No space left on device (os error 28)
+The test did not execute in this invocation. Only this worktree's disposable target/debug/incremental was removed before rebuilding.

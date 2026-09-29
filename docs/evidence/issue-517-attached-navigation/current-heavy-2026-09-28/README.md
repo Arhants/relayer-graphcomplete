@@ -1,0 +1,7 @@
+# Current-source deterministic desktop qualification
+
+Source: `96530c5d31b0ca26d146a3ce7313246f4e57b5e8bee9384e3c99cc2a787f53f4`.
+
+Gated first-message, default first-message, and context lifecycle passed their inner scenario assertions. Project restart failed its final folder-scoped draft restoration; the outer Electron status alone did not reflect this failure. The wrapper retained failure. An instrumented diagnostic copy subsequently passed, but that does not establish a flaky failure or clear the original result.
+
+A separate deterministic reproduction uses production settings-store and composer IPC registration. The project test binds IPC to its original store, replaces its local store after restart without rebinding, and later seeds/flushed through the new store. A held old-store write can overwrite the seeded folder draft despite new-store flush. The reproduction establishes that ordering hazard, not the exact causality of the original uninstrumented failure. No production source was modified for this diagnosis. The runner was subsequently repaired: drain the old store, rebind composer IPC to the replacement store, acknowledge renderer writes, destroy the old renderer, then drain and seed through the same store. The repaired run passed its actual restart and layer-selection markers; the original failure remains historical and its exact cause unproven. No timeout, sleep or assertion was weakened.

@@ -1,0 +1,146 @@
+// Real Product renderer/browser fallback capture. No synthetic preload or IPC identity.
+import { app, BrowserWindow } from "electron";
+import { mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { GraphCompleteRuntimeService, productTemporalFeatures } from "../../desktop/main/services/graphcomplete-runtime.mjs";
+import { RelayerAppServerService } from "../../desktop/main/services/relayer-app-server.mjs";
+import { productRequest } from "../../scripts/recursive-live-run-transport.mjs";
+const root = resolve(import.meta.dirname, "../..");
+const profile = join(root, ".relayer/attached-navigation-live");
+const output = join(root, ".relayer/evidence/attached-navigation/live-repair");
+app.setName("Relayer Attached Navigation Evidence");
+mkdirSync(join(profile,"electron-qualification"),{recursive:true});
+app.setPath("userData",join(profile,"electron-qualification"));
+app.commandLine.appendSwitch("disable-gpu");
+app.on("window-all-closed",()=>{});
+async function run() {
+console.log("Electron ready; starting verified zero-inference capture.");
+const result = JSON.parse(await readFile(join(output, "result.json"), "utf8"));
+const provenance = JSON.parse(await readFile(join(output, "operator-provenance.json"), "utf8"));
+if (result.passed !== true) throw new Error("Capture requires accepted live data");
+for (const identity of Object.values(provenance.runtimeIdentities).flatMap(value => value.entries ?? [value])) {
+  const bytes = await readFile(identity.path);
+  if (bytes.length !== identity.byteLength || createHash("sha256").update(bytes).digest("hex") !== identity.sha256) throw new Error(`Live runtime binary changed: ${identity.path}`);
+}
+const manifest = JSON.parse(await readFile("/tmp/attached-navigation-storage-source-manifest.json", "utf8"));
+for (const file of manifest.files) {
+  if (createHash("sha256").update(await readFile(join(root, file.path))).digest("hex") !== file.sha256) throw new Error(`Source changed: ${file.path}`);
+}
+const snapshotCounters = () => JSON.parse(execFileSync("/usr/bin/sqlite3", ["-json", join(profile, "product-data/product.sqlite3"),
+  "SELECT (SELECT COUNT(*) FROM interactions) AS interactions,(SELECT COUNT(*) FROM interaction_attempts) AS attempts,(SELECT COUNT(*) FROM completion_executions) AS executions"], { encoding: "utf8" }))[0];
+const before = snapshotCounters();
+let executionRequests = 0;
+let runtime, product, session, window;
+const frames = [];
+const screenshots = [];
+let recording = false;
+let recordingTask;
+const delay = ms => new Promise(resolveWait => setTimeout(resolveWait, ms));
+async function waitFor(label, expression) {
+  const deadline = Date.now() + 20_000;
+  do {
+    if (await window.webContents.executeJavaScript(expression)) return;
+    await delay(100);
+  } while (Date.now() < deadline);
+  throw new Error(`Capture timed out: ${label}`);
+}
+async function capture(name) {
+  await window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+  const bytes = (await window.webContents.capturePage()).toPNG();
+  const path = join(output, name + ".png");
+  await writeFile(path, bytes);
+  screenshots.push({ path, sha256: createHash("sha256").update(bytes).digest("hex") });
+  await delay(800);
+}
+async function openSource() {
+  const url = new URL(session.origin);
+  url.searchParams.set("threadId", result.threadId);
+  url.searchParams.set("interactionId", result.sourceInteractionId);
+  await window.loadURL(url.href);
+  await waitFor("persistent source root", `document.querySelector('.graph-node[data-node="${result.persistentNodeId}"]') && document.querySelector('#detailTitle')?.textContent === 'Launch decision'`);
+  await waitFor("compiled preserved and new controls", `(() => { const shadow=document.querySelector('[data-node-detail-runtime]')?.shadowRoot; return shadow && ['Draft rollout recommendation','Release readiness','Readiness checklist','Final readiness'].every(label => [...shadow.querySelectorAll('button,a')].some(button => button.textContent.trim()===label)); })()`);
+}
+async function clickControl(label) {
+  const clicked = await window.webContents.executeJavaScript(`(() => {
+    const hosts=[document,...[...document.querySelectorAll('[data-node-detail-runtime]')].map(node=>node.shadowRoot).filter(Boolean)];
+    const button=hosts.flatMap(host=>[...host.querySelectorAll('button,a')]).find(button=>button.textContent.trim()===${JSON.stringify(label)} && !button.disabled);
+    if (!button) return false; button.click(); return true;
+  })()`);
+  if (!clicked) throw new Error(`No usable mounted control ${label}`);
+}
+async function startBackend() {
+  runtime = new GraphCompleteRuntimeService({ userDataDirectory: profile,
+    graphServerBinary: join(root,"target/debug/relayer-graph-server"), configurationPaths:[join(root,"harnesses/codex-basic.yaml")],
+    codexPathOverride: provenance.executable, interactionPermissions: true, temporalFeatures: productTemporalFeatures(),
+    acquireProviderExecution: async () => { executionRequests++; throw new Error("Qualification navigation must not launch model execution"); },
+  });
+  product = new RelayerAppServerService({ userDataDirectory: profile, binaryPath:join(root,"target/debug/relayer-app-server"),
+    webDirectory:join(root,"desktop/renderer"), permissionCatalogPath:join(root,"permissions/desktop.json"),
+    runtimeSession:await runtime.start(), defaultHarnessConfiguration:"codex-basic", allowHarnessOverride:true,
+  });
+  session = await product.start();
+}
+async function stopBackend() { await product?.close(); await runtime?.close(); }
+try {
+  await startBackend();
+  window = new BrowserWindow({ width:1420,height:900,show:false,backgroundColor:"#0b0c0d",
+    webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true} });
+  await window.webContents.session.cookies.set({ url:session.origin,name:session.cookie.name,value:session.cookie.value,httpOnly:true,sameSite:"strict",secure:false });
+  await openSource();
+  await mkdir(join(output,"frames"),{recursive:true});
+  recording = true;
+  recordingTask = (async () => { while(recording) {
+    const path=join(output,"frames",String(frames.length).padStart(5,"0")+".png");
+    await writeFile(path,(await window.webContents.capturePage()).toPNG()); frames.push(path); await delay(200);
+  } })();
+  await capture("01-live-source-root");
+  await window.webContents.executeJavaScript(`([...document.querySelectorAll('.graph-node')].find(node=>node.textContent.includes('Evidence shelf'))).click()`);
+  await clickControl("Inspect baseline");
+  await waitFor("reused occurrence", "[...document.querySelectorAll('.graph-node b')].some(node=>node.textContent==='Traffic baseline')");
+  await window.webContents.executeJavaScript(`document.querySelector('.graph-node[data-node="${result.persistentNodeId}"]').click()`);
+  await waitFor("reused compiled controls", "document.querySelector('#detailTitle')?.textContent==='Launch decision' && Boolean(document.querySelector('[data-node-detail-runtime]')?.shadowRoot)");
+  await capture("02-live-reused-occurrence");
+  await clickControl("Final readiness");
+  await waitFor("reference to live response root", "[...document.querySelectorAll('.graph-node b')].map(node=>node.textContent).join(',')==='Release summary,Next steps'");
+  await capture("03-live-reference-destination");
+  await window.webContents.executeJavaScript("document.querySelector('#turnPickerButton').click()");
+  await waitFor("real causal context graph", `document.querySelectorAll('#turnPopover .interaction-graph-node').length===3 && document.querySelectorAll('#turnPopover .context-connection').length===2 && !document.querySelector('#turnPopover').classList.contains('hidden')`);
+  await capture("04-live-context-graph");
+  await window.webContents.executeJavaScript(`document.querySelector('#turnPopover [data-turn-id="${result.sourceInteractionId}"]').click()`);
+  await waitFor("source response selection", `document.querySelector('.graph-node[data-node="${result.persistentNodeId}"]') && [...document.querySelectorAll('.graph-node b')].some(node=>node.textContent==='Evidence shelf') && document.querySelector('#turnPopover').classList.contains('hidden') && document.querySelector('#workspaceBreadcrumb').classList.contains('hidden')`);
+  await writeFile(join(output,'source-selection-observation.json'),JSON.stringify(await window.webContents.executeJavaScript(`({detailTitle:document.querySelector('#detailTitle')?.textContent,rootNodes:[...document.querySelectorAll('.graph-node b')].map(n=>n.textContent)})`),null,2));
+  await window.webContents.executeJavaScript(`document.querySelector('.graph-node[data-node="${result.persistentNodeId}"]').click()`);
+  await waitFor("persistent node selected after remembered root selection", "document.querySelector('#detailTitle')?.textContent==='Launch decision'");
+  await clickControl("Readiness checklist");
+  await waitFor("live expansion target", "[...document.querySelectorAll('.graph-node b')].some(node=>node.textContent==='Confirm rollback')");
+  await capture("05-live-expansion-destination");
+  await window.webContents.executeJavaScript("document.querySelector('#historyBack').click()");
+  await waitFor("Back to source", "document.querySelector('#detailTitle')?.textContent==='Launch decision'");
+  await capture("06-live-back");
+  recording=false; await recordingTask;
+  await stopBackend();
+  await startBackend();
+  await window.webContents.session.cookies.set({url:session.origin,name:session.cookie.name,value:session.cookie.value,httpOnly:true,sameSite:"strict",secure:false});
+  await openSource();
+  await capture("07-live-reopened");
+  const detail=await productRequest(session,`/api/threads/${result.threadId}`);
+  const after=snapshotCounters();
+  if(JSON.stringify(before)!==JSON.stringify(after)||executionRequests!==0) throw new Error("Navigation or reopen changed execution counts");
+  await writeFile(join(output,"visual-receipt.json"),JSON.stringify({passed:true,sourceDigest:manifest.sourceDigest,
+    generationSourceDigest:provenance.sourceDigest,
+    captureDriverSha256:createHash("sha256").update(await readFile(import.meta.filename)).digest("hex"),
+    mode:"production-browser-fallback",nativeKeyboardVerified:false,nativeDesktopAccountVerified:false,
+    backendReopened:true,referenceToNewResponseRoot:true,reusedOccurrences:true,contextEdges:2,expectedInteractionCards:3,compiledControls:4,temporalFeatures:productTemporalFeatures(),nativeExecutionRows:0,recursiveExecutionRowsApplicable:false,
+    before,after,executionRequests,screenshots,frames:frames.length,interactions:detail.interactions.map(value=>({id:value.id,status:value.completionStatus})),
+  },null,2)+"\n");
+  console.log("Live Product renderer navigation/reopen capture passed without new execution.");
+} finally {
+  recording=false; await recordingTask?.catch(()=>{});
+  window?.destroy(); await stopBackend().catch(()=>{});
+}
+
+}
+void app.whenReady().then(run).then(()=>app.exit(0)).catch(error=>{console.error(error);app.exit(1);});

@@ -1,0 +1,67 @@
+[
+  {
+    "path": "README.md",
+    "byteLength": 1424,
+    "sha256": "a5fbcca24eb6186bba0b36798a9ee84e7c0ba781d869d8c7507910a2f7f5fbe9"
+  },
+  {
+    "path": "context.txt",
+    "byteLength": 40097,
+    "sha256": "1ed7ad2cc0e7920a5ace96effcf6db2329e9ffe4f09d7ebe2ceeb8565d336a68"
+  },
+  {
+    "path": "default.txt",
+    "byteLength": 8791,
+    "sha256": "5d59cf5bfa1c569953c975036cc6da79e58ab87e04781bf726bb077dcfa552f5"
+  },
+  {
+    "path": "gated.txt",
+    "byteLength": 12224,
+    "sha256": "bc38155ae48fe3698e16d9ad61df41c652bd2f719dff32dd0145b168874f3268"
+  },
+  {
+    "path": "project-diagnostic.txt",
+    "byteLength": 3501,
+    "sha256": "0cceca7c871b9951b700b61ff2d02cb8b580a5d5166cdec06af8005938cc5ebe"
+  },
+  {
+    "path": "project-repaired.txt",
+    "byteLength": 3049,
+    "sha256": "f336a35a330b61b390f4af88e141f27c45752e2683cdc59c6860db698a31ee08"
+  },
+  {
+    "path": "project-store-order-driver.txt",
+    "byteLength": 1813,
+    "sha256": "540bdfadfc1febfdd5b9b8c125528d7d885c7a517462d46a56d75d25a5d5e16b"
+  },
+  {
+    "path": "project-store-order.txt",
+    "byteLength": 303,
+    "sha256": "4e3fa7477e887ab7bb35e630bd7ea582a446e467fc9e0beb1a04a47b8f51ba78"
+  },
+  {
+    "path": "project.txt",
+    "byteLength": 3777,
+    "sha256": "9cf531ddcd7b17c08780551942e0a2610adabcee2ee92082cb4e12282705ff6a"
+  },
+  {
+    "path": "repaired-01-resting.png",
+    "byteLength": 544546,
+    "sha256": "5dd7c00e79a95e395ad5e7687f1a8e48dce86d9182341a71a0fbf8b39dc198dd"
+  },
+  {
+    "path": "repaired-02-hover.png",
+    "byteLength": 545421,
+    "sha256": "03f2abee1c377d1f963faf58952aa8d9e82ac21164b642e68d24c4ea41282c49"
+  },
+  {
+    "path": "repaired-03-activated.png",
+    "byteLength": 547256,
+    "sha256": "244277cb9f48a60fea90f36ebc9dbd9ae252b4e48b2498f05468bb4a03de1771"
+  },
+  {
+    "path": "results.json",
+    "byteLength": 934,
+    "sha256": "3fc50666fa18c12cb69f47c4d4159671c8e203076db2fccde415f9afc319f707"
+  }
+]

@@ -1,0 +1,4 @@
+{
+  "message": "/api/model-families failed (422): {\"code\":\"model_family_name_duplicate\",\"error\":\"A model family with this name already exists.\",\"familyId\":null,\"harnessId\":null,\"modelId\":null,\"providerId\":null}",
+  "at": "2026-09-28T13:00:36.485Z"
+}

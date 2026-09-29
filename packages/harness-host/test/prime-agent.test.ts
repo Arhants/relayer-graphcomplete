@@ -3221,7 +3221,14 @@ function expectGraphAuthoringRules(prompt: string): void {
   expect(prompt).toContain(`must be one of: ${RELAYER_ICON_NAMES.join(", ")}.`);
   expect(prompt).toContain("Only a card accepts description, and a card requires one.");
   // Graph core exempts the interaction root before enforcing draft ownership, so the rule states that exception.
-  expect(prompt).toContain("Apart from the interaction node's one root expand action, add actions only on draft nodes created for this interaction");
+  expect(prompt).toContain("Reuse alone grants no action authority");
+  expect(prompt).toContain("Only an exact frozen attached-node navigation grant permits the exception");
+  expect(prompt).not.toContain("Reused accepted nodes cannot take new actions.");
+  expect(prompt).not.toContain("Published records are immutable.");
+  expect(prompt).not.toContain("graph.replaceNodePresentation");
+  expect(prompt).toContain("graph.get_node_presentation");
+  expect(prompt).toContain("graph.replace_node_presentation");
+  expect(prompt).toContain("interaction_permissions");
   expect(prompt).toContain("The first current layer may contain visible accepted nodes");
   expect(prompt).toContain("when no prior current exists, it needs no new draft carrier");
   expect(prompt).toContain("Reuse an existing valid path when one already exists");

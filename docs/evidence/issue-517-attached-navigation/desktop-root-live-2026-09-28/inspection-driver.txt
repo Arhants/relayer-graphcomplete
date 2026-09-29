@@ -1,0 +1,21 @@
+// No-inference local Product inspection. Close the window to stop its isolated backend.
+import {app,BrowserWindow} from 'electron';
+import {mkdirSync} from 'node:fs';
+import {resolve,join} from 'node:path';
+import {GraphCompleteRuntimeService,productTemporalFeatures} from '../../desktop/main/services/graphcomplete-runtime.mjs';
+import {RelayerAppServerService} from '../../desktop/main/services/relayer-app-server.mjs';
+const root=resolve(import.meta.dirname,'../..'),profile=join(root,'.relayer/attached-navigation-live');
+mkdirSync(join(profile,'electron-inspection'),{recursive:true});
+app.setPath('userData',join(profile,'electron-inspection'));app.setName('Relayer Attached Navigation Review');
+let runtime,product,window;
+app.on('window-all-closed',()=>{void stop();});
+async function stop(){await product?.close();await runtime?.close();app.exit(0);}
+void app.whenReady().then(async()=>{
+ runtime=new GraphCompleteRuntimeService({userDataDirectory:profile,graphServerBinary:join(root,'target/debug/relayer-graph-server'),configurationPaths:[join(root,'harnesses/codex-basic.yaml')],interactionPermissions:true,temporalFeatures:productTemporalFeatures(),acquireProviderExecution:async()=>{throw new Error('Review is navigation only; model execution is disabled.');}});
+ product=new RelayerAppServerService({userDataDirectory:profile,binaryPath:join(root,'target/debug/relayer-app-server'),webDirectory:join(root,'desktop/renderer'),permissionCatalogPath:join(root,'permissions/desktop.json'),runtimeSession:await runtime.start(),defaultHarnessConfiguration:'codex-basic',allowHarnessOverride:true});
+ const session=await product.start();
+ window=new BrowserWindow({width:1420,height:900,show:true,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true}});
+ await window.webContents.session.cookies.set({url:session.origin,name:session.cookie.name,value:session.cookie.value,httpOnly:true,sameSite:'strict',secure:false});
+ await window.loadURL(session.origin+'/?threadId=1&interactionId=1');window.show();window.focus();app.focus({steal:true});
+ console.log('Local Product review: '+session.origin+'/?threadId=1&interactionId=1');
+}).catch(async error=>{console.error(error);await product?.close().catch(()=>{});await runtime?.close().catch(()=>{});app.exit(1);});

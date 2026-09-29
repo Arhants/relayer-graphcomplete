@@ -1,0 +1,122 @@
+{
+  "base": "c1db3d10825183c5ab7209b3abd22ef2ef7bbd97",
+  "files": [
+    {
+      "path": "CONTEXT.md",
+      "sha256": "e2b4c9499d45f7e0064e087f5e25f807c59ca49a1a7996baf09f378d88ee8c9a"
+    },
+    {
+      "path": "crates/relayer-app-server/src/conversation_export_service.rs",
+      "sha256": "ad270862802e7369d6a12d8e91bc1d19f02905c2a975d8770a47544803c2060c"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/completion/plan.rs",
+      "sha256": "78fcb7f1e366310faf5c5e29b662bce0e3412115125dfb0c9c56b6773c94682c"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/model/context.rs",
+      "sha256": "61185ea28d883a55ebd654cf13f6b6693642277f8029770df76f4f04ae2349d1"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/model/permission.rs",
+      "sha256": "297dfb220f9e3139e026e3734869671e17ab284051b15525ff467f2419d0781d"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite/contexts.rs",
+      "sha256": "eaeb6fac9cedcce3fbfdcc40a2366a2bb016b6e5013f963381af73eecbf8d00e"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite/permissions.rs",
+      "sha256": "5e4e53edfc62176950c72cba46c57cdee1f9942a243e53a50e74ad5f20893a83"
+    },
+    {
+      "path": "crates/relayer-graph-core/tests/graph_database.rs",
+      "sha256": "20064076e7d730656f37058ef7770cb4eaf2698ec5631179ffa103f8557092b4"
+    },
+    {
+      "path": "docs/decisions/0011-attached-navigation.md",
+      "sha256": "bb0de83d8efef624827cd2d14f62065c3a247df87838f50c1a3954632286b15b"
+    },
+    {
+      "path": "docs/evidence/issue-517-attached-navigation/prompt-followup-2026-09-28/README.md",
+      "sha256": "3aa1828d8a64d2ba34a8b593b18ddcd829107af5ecb5ffaf392fa75330d8420d"
+    },
+    {
+      "path": "docs/evidence/issue-517-attached-navigation/prompt-followup-2026-09-28/build.txt",
+      "sha256": "47887877addbe2f1dcd6afb0d04199c7e1baa9fda01c29f9d5f058770d6b8688"
+    },
+    {
+      "path": "docs/evidence/issue-517-attached-navigation/prompt-followup-2026-09-28/fixture-typecheck.txt",
+      "sha256": "66fc74fd49508a68cf1a166a3e067bd9e24295c01234b72a9387f801acd42c7c"
+    },
+    {
+      "path": "docs/evidence/issue-517-attached-navigation/prompt-followup-2026-09-28/focused-fixture-green.txt",
+      "sha256": "1d474d46b0bb23f3203fa484603fdff9ac4ae5e77af47c65f55a0df5979e55d6"
+    },
+    {
+      "path": "docs/evidence/issue-517-attached-navigation/prompt-followup-2026-09-28/focused-green.txt",
+      "sha256": "56aa20d12311c099299525d8137a03d5de009d2fc75b6a5a02f912fdf6b4aa76"
+    },
+    {
+      "path": "docs/evidence/issue-517-attached-navigation/prompt-followup-2026-09-28/full-check-initial-failure.txt",
+      "sha256": "cc255b78610c6a00d252b7726ea7f6a1f622a2cc6504d2cd501be6771155e87d"
+    },
+    {
+      "path": "docs/evidence/issue-517-attached-navigation/prompt-followup-2026-09-28/full-check.txt",
+      "sha256": "16052de9bed5fe2a680f46690b6627e0a3335cfd629d21a5f4f31dc9ca147b81"
+    },
+    {
+      "path": "docs/evidence/issue-517-attached-navigation/prompt-followup-2026-09-28/intermediate.txt",
+      "sha256": "dbb911c9fef654033aca48a4c8ac20ef433c8cfc795fcc8c317f8996506641e3"
+    },
+    {
+      "path": "docs/evidence/issue-517-attached-navigation/prompt-followup-2026-09-28/red.txt",
+      "sha256": "fba30c867f447040daf53fe848aab34277d72cacb593588886a0c14f6484bafc"
+    },
+    {
+      "path": "docs/evidence/issue-517-attached-navigation/prompt-followup-2026-09-28/review-assertions.md",
+      "sha256": "96fa9a7acf402a8029875fdf062a5cbfe96030fc621741c2b075676a001c7b96"
+    },
+    {
+      "path": "docs/prd/index.html",
+      "sha256": "a1d87bb629a21249a9522a068bbfa8aca3a40ab0927270b5444fbfc518c10291"
+    },
+    {
+      "path": "packages/graph-client/src/types.ts",
+      "sha256": "30c2aa9212f3913af244e5b75f4a5b19abd4e4778782bc04eb414bb17e21f441"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/codex-basic.ts",
+      "sha256": "db10096a7aed596ad437d72995a00f12b6548d475c7f189ad83af271412743a0"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/graph-presentation-guidance.ts",
+      "sha256": "4f1f749021fc8ef2567adf32b3956580e191d47a93cafa73a98bdc1b201fa0e7"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/prime-agent.ts",
+      "sha256": "5a8292049edb414c6605ef37940e83112c73668323942dd85ac6a0f78b471f6b"
+    },
+    {
+      "path": "packages/harness-host/src/interaction-input.ts",
+      "sha256": "ae2c6b8576cc0cdab78ab255b1f5d51fc05620d9c8650e0227360a3bebd6aa18"
+    },
+    {
+      "path": "packages/harness-host/test/claude-basic.test.ts",
+      "sha256": "3d762ff122f5b83c749ae5a480ab4d38f86208af5e4e739265b8344cf8c0ea3a"
+    },
+    {
+      "path": "packages/harness-host/test/codex-basic.test.ts",
+      "sha256": "b5fa6a4fa0dede43570417f6a0f4d459e4b2c43857c3a523cf65ae4f5089f3ce"
+    },
+    {
+      "path": "packages/harness-host/test/interaction-input.test.ts",
+      "sha256": "4233c99e92ee393bfbdf9803630fa3b082f9031697d84acce72b93927373dc4f"
+    },
+    {
+      "path": "packages/harness-host/test/prime-agent.test.ts",
+      "sha256": "bdbc4fc1e542fd7c11d6950b72c56a0c4e562e39229b197ce76f764947c6aa8a"
+    }
+  ],
+  "digest": "e93c25d476f93271cc920dd6bdeae1875b7cc23b9293cc049415b5b0949c6845"
+}

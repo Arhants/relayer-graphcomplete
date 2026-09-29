@@ -29,6 +29,9 @@ A frozen description of the exact graph operations a completion may perform,
 derived from that interaction's product origin and attachments.
 _Avoid_: Runtime token, permission profile
 
+**Attached response navigation obligation**:
+A frozen acceptance requirement for every distinct attached native node to expose a new control leading to the interaction's response. It is separate from permission to add navigation.
+
 **Invoke resolution**:
 The one-time acceptance of an invoked interaction's response, turning its exact
 source action into navigation while preserving that action's identity.

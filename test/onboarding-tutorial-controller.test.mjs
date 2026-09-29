@@ -981,7 +981,7 @@ describe("onboarding tutorial controller", () => {
     expect(main).toContain("PROJECT_COMPOSER_DESTINATION_SELECTOR");
     expect(graph).toContain(`onSelectTurn: (delta) => {
       projectComposerGate.invalidate();`);
-    expect(graph).toContain(`onSelectTurnById: (turnId) => {
+    expect(graph).toContain(`onSelectTurnById: async (turnId, options) => {
       projectComposerGate.invalidate();`);
     expect(threads.indexOf("const submission = projectComposerGate.begin();"))
       .toBeLessThan(threads.indexOf('creatingFirstThread = true;'));

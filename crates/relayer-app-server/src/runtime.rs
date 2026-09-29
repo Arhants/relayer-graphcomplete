@@ -143,6 +143,8 @@ pub(crate) struct RuntimeClient {
     configurations: HashMap<String, CatalogEntry>,
     unavailable_configurations: HashMap<String, UnavailableCatalogEntry>,
     temporal_features: relayer_graph_core::TemporalFeatureConfig,
+    interaction_graph_enabled: bool,
+    legacy_interaction_features: bool,
     /// How long one invoked-completion observation waits before the caller asks again.
     observation_poll: std::time::Duration,
 }
@@ -489,7 +491,29 @@ impl RuntimeClient {
             }
             Ok(response) => serde_json::from_value(response_json(response, StatusCode::OK).await?)?,
         };
+        let mut legacy_interaction_features = false;
+        let interaction_graph_enabled = match client
+            .get(graph_url.join("api/control/interaction-features")?)
+            .bearer_auth(&graph_control_token)
+            .timeout(CONTROL_REQUEST_TIMEOUT)
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == StatusCode::OK => response
+                .json::<Value>()
+                .await
+                .ok()
+                .and_then(|v| v["interactionGraph"].as_bool())
+                .unwrap_or(false),
+            Ok(response) if response.status() == StatusCode::NOT_FOUND => {
+                legacy_interaction_features = true;
+                false
+            }
+            _ => false,
+        };
         Ok(Self {
+            interaction_graph_enabled,
+            legacy_interaction_features,
             client,
             graph_url,
             harness_url,
@@ -510,6 +534,10 @@ impl RuntimeClient {
 
     pub(crate) fn has_configuration(&self, name: &str) -> bool {
         self.configurations.contains_key(name)
+    }
+
+    pub(crate) fn interaction_graph_enabled(&self) -> bool {
+        self.interaction_graph_enabled
     }
 
     pub(crate) fn temporal_features(&self) -> relayer_graph_core::TemporalFeatureConfig {
@@ -1352,23 +1380,36 @@ impl RuntimeClient {
         self.revoke_capability(&prepared.graph_token).await
     }
 
-    pub(crate) async fn resolved_invoke_roots(
+    pub(crate) async fn changed_accepted_roots(
         &self,
         ids: &[i64],
     ) -> Result<std::collections::HashSet<i64>, RuntimeError> {
         let mut roots = std::collections::HashSet::new();
-        for chunk in ids.chunks(500) {
-            let response = self
-                .client
-                .post(self.graph_url.join("api/control/resolved-invoke-roots")?)
-                .bearer_auth(&self.graph_control_token)
-                .timeout(CONTROL_REQUEST_TIMEOUT)
-                .json(&serde_json::json!({"completionIds":chunk}))
-                .send()
-                .await?;
-            let selected: Vec<i64> =
-                serde_json::from_value(response_json(response, StatusCode::OK).await?)?;
-            roots.extend(selected.into_iter().filter(|id| chunk.contains(id)));
+        for path in [
+            "api/control/resolved-invoke-roots",
+            "api/control/attached-navigation-roots",
+        ] {
+            for chunk in ids.chunks(500) {
+                let response = self
+                    .client
+                    .post(self.graph_url.join(path)?)
+                    .bearer_auth(&self.graph_control_token)
+                    .timeout(CONTROL_REQUEST_TIMEOUT)
+                    .json(&serde_json::json!({"completionIds":chunk}))
+                    .send()
+                    .await?;
+                // Older runtimes lack both feature discovery and attached mutation lookup.
+                // A supported gate-off runtime may still hold historical mutations.
+                if path == "api/control/attached-navigation-roots"
+                    && self.legacy_interaction_features
+                    && response.status() == StatusCode::NOT_FOUND
+                {
+                    continue;
+                }
+                let selected: Vec<i64> =
+                    serde_json::from_value(response_json(response, StatusCode::OK).await?)?;
+                roots.extend(selected.into_iter().filter(|id| chunk.contains(id)));
+            }
         }
         Ok(roots)
     }
