@@ -11,7 +11,7 @@ const THREAD_COLUMNS: &str = r#"
            t.conversation_import_id IS NOT NULL,
            (SELECT CASE
                 WHEN i.completion_status IN ('not_started','running','submitted','waiting_for_approval')
-                     AND EXISTS(SELECT 1 FROM interaction_stop_requests stop WHERE stop.interaction_id=i.id) THEN 'stopping'
+                     AND EXISTS(SELECT 1 FROM interaction_stop_requests stop WHERE stop.interaction_id=i.id AND stop.error IS NULL) THEN 'stopping'
                 WHEN i.completion_status='waiting_for_approval' THEN 'needs_approval'
                 WHEN i.completion_status IN ('not_started','running','submitted') THEN 'running'
                 WHEN i.completion_status='failed' THEN 'failed'
@@ -186,6 +186,20 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(activity(&store, &thread).await.as_deref(), Some("stopping"));
+        // A stop that could not be delivered leaves the run running.
+        sqlx::query(
+            "UPDATE interaction_stop_requests SET error='unreachable' WHERE interaction_id=?1",
+        )
+        .bind(thread.root_interaction_id.value())
+        .execute(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(activity(&store, &thread).await.as_deref(), Some("running"));
+        sqlx::query("UPDATE interaction_stop_requests SET error=NULL WHERE interaction_id=?1")
+            .bind(thread.root_interaction_id.value())
+            .execute(&store.pool)
+            .await
+            .unwrap();
         let listed = store.list_threads().await.unwrap();
         assert_eq!(listed[0].activity.as_deref(), Some("stopping"));
     }

@@ -862,6 +862,18 @@ describe("compiled Node Detail product runtime", () => {
       // The Sticker disc takes the node's presentation family from its icon ("box" is Data).
       expect(window.document.querySelector('[data-node="1"]').dataset.family).toBe("f3");
       expect(window.document.querySelector("#detailIcon").dataset.family).toBe("f3");
+      expect(window.document.querySelector("#threadStatusSymbol").classList.contains("hidden")).toBe(true);
+      // A draft node is marked hollow and dashed with a caption, and says so to assistive technology.
+      nodes[0].state = "draft";
+      workspace.render();
+      await window.happyDOM.waitUntilComplete();
+      const draft = window.document.querySelector('[data-node="1"]');
+      expect([draft.dataset.runState, draft.querySelector(".graph-node-caption")?.textContent]).toEqual(["draft", "Draft"]);
+      expect(draft.getAttribute("aria-label")).toContain("Detail 1. Draft");
+      delete nodes[0].state;
+      workspace.render();
+      await window.happyDOM.waitUntilComplete();
+      expect(window.document.querySelector('[data-node="1"]').dataset.runState).toBeUndefined();
       expectNodesInPane();
       // The pending turn's status stays visible while the accepted detail is retained.
       state.interactions.push({ id: 6, threadId: 801, sequence: 2, text: "Follow-up", completionStatus: "running" });
@@ -873,6 +885,9 @@ describe("compiled Node Detail product runtime", () => {
         expect(window.document.querySelector("#pendingTurnText").textContent.toLowerCase()).toContain(status);
         expect(window.document.querySelector("#detailTitle").textContent).toBe("Detail 2");
       }
+      // PRD §8.1: the running follow-up puts the Running symbol after the thread title.
+      const symbol = window.document.querySelector("#threadStatusSymbol");
+      expect([symbol.classList.contains("hidden"), symbol.dataset.activity, symbol.getAttribute("aria-label")]).toEqual([false, "running", "Running"]);
       state.pendingTurn.readyLayer = child;
       workspace.render();
       expect(window.document.querySelector("#openReadyResult").classList.contains("hidden")).toBe(false);

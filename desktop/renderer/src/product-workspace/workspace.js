@@ -18,7 +18,8 @@ import {
   humanTurns,
   workspaceTurns,
 } from "./model.js";
-import { createRelayerIcon, relayerIconFamily } from "./icons.js";
+import { createLucideIcon, createRelayerIcon, relayerIconFamily } from "./icons.js";
+import { interactionActivity, NODE_RUN_STATE, nodeRunState, THREAD_ACTIVITY } from "./run-state.js";
 import { graphLayoutSignature, projectLayerNodePositions } from "./graph-layout.js";
 import { renderMarkdown } from "./markdown.js";
 import { isResolvedInvokeAction, mountCompiledNodeDetail } from "./node-detail-runtime.js";
@@ -197,6 +198,8 @@ export function observeAutomaticGraphFitOnResize({
 const GRAPH_NODE_HALF_WIDTH = 82;
 // Sticker pills are anchored at their centre; 18 is half the 36px pill.
 const GRAPH_NODE_HALF_HEIGHT = 18;
+// A state caption sits 6px below the pill and is 16px tall.
+const GRAPH_NODE_CAPTION_HEIGHT = 22;
 const GRAPH_FIT_PADDING = 48;
 // Sticker pills stay readable without looking oversized when a layer has few nodes (H geometry fitCap).
 const GRAPH_FIT_MAX_ZOOM = 1.25;
@@ -293,11 +296,11 @@ export function approvalHistoryRenderTransition({
   };
 }
 
-export function graphNodeLayoutBounds(width, height) {
+export function graphNodeLayoutBounds(width, height, caption = 0) {
   return {
     halfWidth: Math.max(GRAPH_NODE_HALF_WIDTH, width / 2),
     top: Math.max(GRAPH_NODE_HALF_HEIGHT, height / 2),
-    bottom: Math.max(GRAPH_NODE_HALF_HEIGHT, height / 2),
+    bottom: Math.max(GRAPH_NODE_HALF_HEIGHT, height / 2) + caption,
   };
 }
 
@@ -4509,6 +4512,26 @@ export function createProductWorkspace({
     host.replaceChildren(heading, list);
   }
 
+  // PRD §8.1: a symbol follows the thread title only while Running, Stopping…, Needs approval or Failed.
+  function renderThreadStatusSymbol(activityKey) {
+    const symbol = $("#threadStatusSymbol");
+    if (!symbol) return;
+    const activity = THREAD_ACTIVITY[activityKey];
+    symbol.classList.toggle("hidden", !activity);
+    if (!activity) {
+      delete symbol.dataset.activity;
+      symbol.removeAttribute("aria-label");
+      symbol.removeAttribute("title");
+      symbol.replaceChildren();
+      return;
+    }
+    if (symbol.dataset.activity === activityKey) return;
+    symbol.dataset.activity = activityKey;
+    symbol.setAttribute("aria-label", activity.label);
+    symbol.title = activity.label;
+    symbol.replaceChildren(createLucideIcon(activity.icon));
+  }
+
   function render() {
     if (disposed) return;
     const state = getState();
@@ -4648,6 +4671,7 @@ export function createProductWorkspace({
     // A child an agent launched is not a human turn: the composer's scopes follow human turns.
     const turns = humanTurns(state, thread);
     const latestInteraction = turns.at(-1);
+    renderThreadStatusSymbol(interactionActivity(latestInteraction));
     if (inputDraftController && latestInteraction) {
       const statusKey = `${latestInteraction.id}:${latestInteraction.completionStatus || ""}`;
       const priorStatusKey = renderedInputDraftStatusKeys.get(threadId);
@@ -5200,7 +5224,13 @@ export function createProductWorkspace({
         : "";
       const annotationLabel = count ? `. ${count} comment${count === 1 ? "" : "s"}` : "";
       const family = relayerIconFamily(node.icon || node.metadata?.relayer?.icon);
-      return `<div class="graph-node ${String(node.id) === String(selection.selectedNodeId) ? "selected" : ""}" data-node="${escapeHtml(node.id)}" data-family="${family}" data-review-ref="node-${escapeHtml(node.id)}" data-review-kind="node" role="button" tabindex="0" aria-label="Open ${escapeHtml(node.title)}${annotationLabel}"><div class="glyph"></div>${badge}<div class="copy"><b>${escapeHtml(node.title)}</b></div></div>`;
+      const runStateKey = nodeRunState(node, state.actions, state.actionInvocations);
+      const runState = NODE_RUN_STATE[runStateKey];
+      const runStateMarks = runState
+        ? `${runState.icon ? '<span class="graph-node-state-badge" aria-hidden="true"></span>' : ""}<span class="graph-node-caption" aria-hidden="true">${runState.label}</span>`
+        : "";
+      const runStateLabel = runState ? `. ${runState.label}` : "";
+      return `<div class="graph-node ${String(node.id) === String(selection.selectedNodeId) ? "selected" : ""}" data-node="${escapeHtml(node.id)}" data-family="${family}"${runState ? ` data-run-state="${runStateKey}"` : ""} data-review-ref="node-${escapeHtml(node.id)}" data-review-kind="node" role="button" tabindex="0" aria-label="Open ${escapeHtml(node.title)}${runStateLabel}${annotationLabel}"><div class="glyph"></div>${badge}<div class="copy"><b>${escapeHtml(node.title)}</b></div>${runStateMarks}</div>`;
     }).join("");
     $$('[data-node]').forEach((element) => {
       const authoredNode = graphNodes.find((candidate) => String(candidate.id) === element.dataset.node);
@@ -5209,10 +5239,13 @@ export function createProductWorkspace({
         authoredNode?.icon || authoredNode?.metadata?.relayer?.icon,
         { class: "relayer-node-icon" },
       ));
+      const runState = NODE_RUN_STATE[element.dataset.runState];
+      if (runState?.icon) element.querySelector(".graph-node-state-badge").replaceChildren(createLucideIcon(runState.icon));
       if (authoredNode) {
         authoredNode.layoutBounds = graphNodeLayoutBounds(
           element.offsetWidth,
           element.offsetHeight,
+          runState ? GRAPH_NODE_CAPTION_HEIGHT : 0,
         );
       }
       element.onclick = () => {

@@ -415,3 +415,24 @@ h1,h2,.node-heading h2{font-family:var(--font-display);letter-spacing:-.005em}
 .entry[data-activity="failed"] .thread-activity{color:var(--danger-text)}
 @keyframes thread-activity-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.entry[data-activity="running"] .thread-activity svg{animation:none}}
+.thread-status-symbol{display:inline-grid;place-items:center;flex:none;width:18px;height:18px;margin-left:8px}
+.thread-status-symbol svg{width:16px;height:16px;stroke-width:2.25}
+.thread-status-symbol[data-activity="running"]{color:var(--running)}
+.thread-status-symbol[data-activity="running"] svg{animation:thread-activity-spin 1s linear infinite}
+.thread-status-symbol[data-activity="stopping"]{color:var(--text)}
+.thread-status-symbol[data-activity="needs_approval"]{color:var(--warning-text)}
+.thread-status-symbol[data-activity="failed"]{color:var(--danger-text)}
+html[data-theme] .graph-node[data-run-state="draft"]{background:var(--canvas-bg);border-style:dashed;border-color:var(--draft-outline)}
+html[data-theme] .graph-node[data-run-state="failed"]{border:2px solid var(--danger-solid)}
+.graph-node[data-run-state="running"] .glyph{position:relative}
+.graph-node[data-run-state="running"] .glyph::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:3px solid transparent;border-top-color:var(--running);animation:thread-activity-spin 1.4s linear infinite;pointer-events:none}
+.graph-node-state-badge{position:absolute;right:-8px;bottom:-8px;width:16px;height:16px;display:grid;place-items:center;border-radius:50%;box-shadow:0 0 0 2px var(--canvas-bg)}
+.graph-node-state-badge svg{width:10px;height:10px;stroke-width:2.5}
+.graph-node[data-run-state="running"] .graph-node-state-badge{background:var(--running);color:var(--running-ink)}
+.graph-node[data-run-state="failed"] .graph-node-state-badge{background:var(--danger-strong);color:var(--white)}
+.graph-node[data-run-state="stopped"] .graph-node-state-badge{background:var(--field);color:var(--text-muted);box-shadow:0 0 0 2px var(--canvas-bg),inset 0 0 0 1px var(--border-strong)}
+.graph-node-caption{position:absolute;left:40px;top:42px;font-size:12px;line-height:16px;font-weight:600;white-space:nowrap;color:var(--text-muted);pointer-events:none;text-shadow:0 0 1px var(--canvas-bg),0 0 2px var(--canvas-bg),0 0 3px var(--canvas-bg),0 0 4px var(--canvas-bg)}
+.graph-node[data-run-state="running"] .graph-node-caption{color:var(--running-text)}
+.graph-node[data-run-state="draft"] .graph-node-caption{color:var(--draft-text)}
+.graph-node[data-run-state="failed"] .graph-node-caption{color:var(--danger-text)}
+@media(prefers-reduced-motion:reduce){.thread-status-symbol[data-activity="running"] svg,.graph-node[data-run-state="running"] .glyph::after{animation:none}}

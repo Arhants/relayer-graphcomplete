@@ -5,6 +5,7 @@ import { evalSidebarHeading } from "./navigation-model.js";
 import { persistPendingNewThreadDraft } from "./composer-drafts.js";
 import { request } from "./api.js";
 import { createLucideIcon } from "./product-workspace/icons.js";
+import { THREAD_ACTIVITY } from "./product-workspace/run-state.js";
 
 const settingsTabs = {
   account: "Account",
@@ -70,13 +71,6 @@ export async function returnFromSettings(refreshThread) {
   return destination;
 }
 
-// A thread's live state (PRD §8.1): a symbol only while it runs, stops, waits for approval or has failed.
-export const THREAD_ACTIVITY = Object.freeze({
-  running: Object.freeze({ label: "Running", icon: "LoaderCircle", live: true }),
-  stopping: Object.freeze({ label: "Stopping…", icon: "Square", live: true }),
-  needs_approval: Object.freeze({ label: "Needs approval", icon: "Hand", live: true }),
-  failed: Object.freeze({ label: "Failed", icon: "OctagonX", live: false }),
-});
 const THREAD_ACTIVITY_POLL_MS = 2000;
 let threadActivityTimer = null;
 
