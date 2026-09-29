@@ -859,6 +859,9 @@ describe("compiled Node Detail product runtime", () => {
       await window.happyDOM.waitUntilComplete();
       expect(window.document.querySelector("#detailTitle").textContent).toBe("Detail 2");
       expect(window.document.querySelector("#inspector").classList.contains("hidden")).toBe(false);
+      // The Sticker disc takes the node's presentation family from its icon ("box" is Data).
+      expect(window.document.querySelector('[data-node="1"]').dataset.family).toBe("f3");
+      expect(window.document.querySelector("#detailIcon").dataset.family).toBe("f3");
       expectNodesInPane();
       // The pending turn's status stays visible while the accepted detail is retained.
       state.interactions.push({ id: 6, threadId: 801, sequence: 2, text: "Follow-up", completionStatus: "running" });

@@ -18,7 +18,7 @@ import {
   humanTurns,
   workspaceTurns,
 } from "./model.js";
-import { createRelayerIcon } from "./icons.js";
+import { createRelayerIcon, relayerIconFamily } from "./icons.js";
 import { graphLayoutSignature, projectLayerNodePositions } from "./graph-layout.js";
 import { renderMarkdown } from "./markdown.js";
 import { isResolvedInvokeAction, mountCompiledNodeDetail } from "./node-detail-runtime.js";
@@ -428,6 +428,27 @@ export function graphEdgeSegment(source, target, radius = GRAPH_NODE_ICON_RADIUS
     y1: source.y + offsetY,
     x2: target.x - offsetX,
     y2: target.y - offsetY,
+  };
+}
+
+// Sticker edges are gentle circular arcs: sagitta = 0.12 x chord, bulging away from the layer centroid.
+export function graphEdgeArc(segment, centroid, curvature = 0.12) {
+  const dx = segment.x2 - segment.x1;
+  const dy = segment.y2 - segment.y1;
+  const chord = Math.hypot(dx, dy);
+  const middle = { x: (segment.x1 + segment.x2) / 2, y: (segment.y1 + segment.y2) / 2 };
+  if (!chord || !curvature) {
+    return { d: `M${segment.x1} ${segment.y1}L${segment.x2} ${segment.y2}`, middle };
+  }
+  const normal = { x: -dy / chord, y: dx / chord };
+  const away = (middle.x - centroid.x) * normal.x + (middle.y - centroid.y) * normal.y >= 0 ? 1 : -1;
+  const sagitta = curvature * chord;
+  const radius = (chord * chord / 4 + sagitta * sagitta) / (2 * sagitta);
+  // With y pointing down, sweep 1 bulges to -normal and sweep 0 to +normal.
+  const sweep = away > 0 ? 0 : 1;
+  return {
+    d: `M${segment.x1} ${segment.y1}A${radius} ${radius} 0 0 ${sweep} ${segment.x2} ${segment.y2}`,
+    middle: { x: middle.x + normal.x * sagitta * away, y: middle.y + normal.y * sagitta * away },
   };
 }
 
@@ -2593,6 +2614,7 @@ export function createProductWorkspace({
     onSelectionChange(selection.selectedNodeId);
     const { reveal } = openInspector({ origin });
     $("#detailIcon").textContent = icon === "annotation" ? "✎" : icon;
+    $("#detailIcon").dataset.family = "neutral";
     $("#detailKind").textContent = kind || anchor.kind;
     $("#detailTitle").textContent = title || `${anchor.kind} comments`;
     $("#detailContent").replaceChildren();
@@ -5166,7 +5188,8 @@ export function createProductWorkspace({
         ? `<span class="graph-annotation-badge" aria-label="${count} comment${count === 1 ? "" : "s"}">${count}</span>`
         : "";
       const annotationLabel = count ? `. ${count} comment${count === 1 ? "" : "s"}` : "";
-      return `<div class="graph-node ${String(node.id) === String(selection.selectedNodeId) ? "selected" : ""}" data-node="${escapeHtml(node.id)}" data-review-ref="node-${escapeHtml(node.id)}" data-review-kind="node" role="button" tabindex="0" aria-label="Open ${escapeHtml(node.title)}${annotationLabel}"><div class="glyph"></div>${badge}<div class="copy"><b>${escapeHtml(node.title)}</b></div></div>`;
+      const family = relayerIconFamily(node.icon || node.metadata?.relayer?.icon);
+      return `<div class="graph-node ${String(node.id) === String(selection.selectedNodeId) ? "selected" : ""}" data-node="${escapeHtml(node.id)}" data-family="${family}" data-review-ref="node-${escapeHtml(node.id)}" data-review-kind="node" role="button" tabindex="0" aria-label="Open ${escapeHtml(node.title)}${annotationLabel}"><div class="glyph"></div>${badge}<div class="copy"><b>${escapeHtml(node.title)}</b></div></div>`;
     }).join("");
     $$('[data-node]').forEach((element) => {
       const authoredNode = graphNodes.find((candidate) => String(candidate.id) === element.dataset.node);
@@ -5340,6 +5363,11 @@ export function createProductWorkspace({
         element.dataset.layoutSource = node.layoutSource;
       }
     }
+    const screenPoints = graphNodes.map((node) => graphScreenPoint(node, camera));
+    const centroid = {
+      x: screenPoints.reduce((sum, point) => sum + point.x, 0) / (screenPoints.length || 1),
+      y: screenPoints.reduce((sum, point) => sum + point.y, 0) / (screenPoints.length || 1),
+    };
     $("#edgeCanvas").innerHTML = graphEdges.map((edge) => {
       const [source, target] = edge.endpoints || [edge.source, edge.target];
       const a = graphNodes.find((node) => String(node.id) === String(source));
@@ -5355,9 +5383,10 @@ export function createProductWorkspace({
       const annotatable = annotationEnabled && edge.id != null;
       const anchor = annotatable ? subjectAnchor("edge", { edgeId: edge.id }) : null;
       const count = anchor ? annotationCount(anchor) : 0;
-      const middleX = (segment.x1 + segment.x2) / 2;
-      const middleY = (segment.y1 + segment.y2) / 2;
-      return `<g class="graph-edge-group" data-edge="${edgeId}"><line class="graph-edge" aria-hidden="true" style="stroke-width:${graphEdgeStrokeWidth(camera.zoom)}" x1="${segment.x1}" y1="${segment.y1}" x2="${segment.x2}" y2="${segment.y2}"/><line class="graph-edge-hit ${annotatable ? "" : "hidden"}" tabindex="0" role="button" aria-label="Open relationship comments" x1="${segment.x1}" y1="${segment.y1}" x2="${segment.x2}" y2="${segment.y2}"/>${annotatable && count ? `<g class="edge-annotation-badge" aria-hidden="true" transform="translate(${middleX} ${middleY})"><circle r="9"></circle><text y="3">${count}</text></g>` : ""}</g>`;
+      const arc = graphEdgeArc(segment, centroid);
+      const middleX = arc.middle.x;
+      const middleY = arc.middle.y;
+      return `<g class="graph-edge-group" data-edge="${edgeId}"><path class="graph-edge" aria-hidden="true" style="stroke-width:${graphEdgeStrokeWidth(camera.zoom)}" d="${arc.d}"/><path class="graph-edge-hit ${annotatable ? "" : "hidden"}" tabindex="0" role="button" aria-label="Open relationship comments" d="${arc.d}"/>${annotatable && count ? `<g class="edge-annotation-badge" aria-hidden="true" transform="translate(${middleX} ${middleY})"><circle r="9"></circle><text y="3">${count}</text></g>` : ""}</g>`;
     }).join("");
     if (annotationEnabled) {
       $$("[data-edge]").forEach((group) => {
@@ -5835,6 +5864,7 @@ export function createProductWorkspace({
       node.icon || node.metadata?.relayer?.icon,
       { class: "relayer-detail-icon" },
     ));
+    $("#detailIcon").dataset.family = relayerIconFamily(node.icon || node.metadata?.relayer?.icon);
     $("#detailKind").textContent = node.kind;
     $("#detailTitle").textContent = node.title;
     const actions = (state.actions || []).filter((action) => String(action.sourceNodeId) === String(node.id));

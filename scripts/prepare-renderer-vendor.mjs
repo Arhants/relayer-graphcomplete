@@ -1,6 +1,8 @@
 import { copyFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { buildDesign } from "./design/build.mjs";
+
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const vendorDirectory = resolve(repositoryRoot, "desktop/renderer/vendor");
 
@@ -13,3 +15,4 @@ await copyFile(
   resolve(repositoryRoot, "node_modules/lucide/dist/umd/lucide.min.js"),
   resolve(vendorDirectory, "lucide.min.js"),
 );
+await buildDesign();

@@ -135,6 +135,23 @@ export const RELAYER_ICON_ALIASES = Object.freeze({
 
 export const RELAYER_ICON_FALLBACK = "circle";
 
+// Presentation-only node families (design brief §3.3, Appendix A); the disc colour comes from the design.
+const RELAYER_ICON_FAMILY_MEMBERS = Object.freeze({
+  f1: ["archive", "book-open", "book-open-text", "clipboard", "copy", "file", "file-edit", "file-output", "file-search", "file-text", "library", "pencil-line", "scroll-text"],
+  f2: ["blocks", "braces", "code", "component", "file-code", "file-code-2", "folder-git-2", "function-square", "git-branch", "git-branch-plus", "git-commit", "git-compare", "git-graph", "git-merge", "git-pull-request", "package", "puzzle", "terminal"],
+  f3: ["bar-chart-3", "box", "boxes", "columns-3", "database", "database-backup", "folder", "folder-tree", "folders", "frame", "grid-3x3", "layers", "layout", "layout-grid", "layout-panel-left", "layout-template", "list", "list-ordered", "list-tree", "panels-top-left", "pie-chart", "square-dashed-kanban", "table"],
+  f4: ["cloud", "cog", "cpu", "globe", "hard-drive", "key", "lock", "monitor", "network", "plug", "radio", "rss", "satellite", "server", "server-cog", "settings", "shield", "smartphone", "webhook", "wifi", "wrench"],
+  f5: ["bot", "mail", "messages-square", "mic", "send", "share-2", "user", "users"],
+  f6: ["bolt", "brain", "compass", "palette", "route", "search", "sprout", "star", "workflow", "zap"],
+});
+export const RELAYER_ICON_FAMILIES = Object.freeze(Object.fromEntries(
+  Object.entries(RELAYER_ICON_FAMILY_MEMBERS).flatMap(([family, names]) => names.map((name) => [name, family])),
+));
+
+export function relayerIconFamily(name) {
+  return RELAYER_ICON_FAMILIES[resolveRelayerIconName(name)] ?? "neutral";
+}
+
 const relayerIconNameSet = new Set(RELAYER_ICON_NAMES);
 
 export function normalizeRelayerIconName(name) {

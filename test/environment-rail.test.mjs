@@ -494,8 +494,8 @@ describe("desktop environment rail", () => {
     expect(styles).not.toContain("ResizeObserver");
     expect(styles).toContain("@media(prefers-reduced-transparency:reduce)");
     expect(styles).toContain("@media(forced-colors:active)");
-    expect(styles).toContain("--warning:#e3bd62");
-    expect(styles).toContain("--warning:#92400e");
+    // The stale warning uses the design's warning role in both themes (designs/h-sticker-cocoa.json).
+    expect(styles).toContain("--warning:var(--warning-text)");
     expect(styles).toContain(".environment-stale{color:var(--warning)}");
     expect(styles).toContain("@media(min-width:761px) and (max-width:1100px)");
     expect(styles).toContain(".interaction-banner p{margin:0;display:-webkit-box;");
