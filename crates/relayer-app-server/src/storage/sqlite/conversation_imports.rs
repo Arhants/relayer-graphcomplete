@@ -17,7 +17,7 @@ impl SqliteProductStore {
         thread_id: ThreadId,
     ) -> Result<Vec<ImportedTurnExportRecord>, StorageError> {
         let rows = sqlx::query(
-            "SELECT it.product_interaction_id,it.source_turn_id,it.source_origin_json,it.source_completion_json
+            "SELECT it.product_interaction_id,it.source_turn_id,it.source_origin_json,it.source_completion_json,ci.export_version
              FROM imported_turns it
              JOIN conversation_imports ci ON ci.id=it.conversation_import_id
              JOIN threads t ON t.conversation_import_id=ci.id
@@ -30,6 +30,7 @@ impl SqliteProductStore {
         rows.into_iter()
             .map(|row| {
                 Ok(ImportedTurnExportRecord {
+                    export_version: row.try_get(4)?,
                     interaction_id: InteractionId::from_database(row.try_get(0)?),
                     source_turn_id: row.try_get(1)?,
                     origin: serde_json::from_str(&row.try_get::<String, _>(2)?)
@@ -349,25 +350,9 @@ mod tests {
         storage::{NewConversationImport, SqliteProductStore},
     };
 
-    #[test]
-    fn imported_approval_lifecycle_statuses_round_trip() {
-        for status in [
-            ExportCompletionStatus::WaitingForApproval,
-            ExportCompletionStatus::Stopped,
-        ] {
-            let stored = completion_status(status);
-            assert_eq!(parse_completion_status(stored).unwrap(), status);
-        }
-    }
-
-    #[tokio::test]
-    async fn preparing_import_turn_rolls_back_interaction_when_portable_update_fails() {
-        let directory = tempfile::tempdir().unwrap();
-        let store = SqliteProductStore::open(directory.path().join("product.sqlite3"))
-            .await
-            .unwrap();
-        let header = ConversationExportHeader {
-            export_version: EXPORT_VERSION_V1,
+    fn fixture_header(export_version: u32) -> ConversationExportHeader {
+        ConversationExportHeader {
+            export_version,
             exported_at: "1770000000000".into(),
             producer: ExportProducer {
                 desktop_version: "test".into(),
@@ -388,8 +373,11 @@ mod tests {
                 sequence: 1,
             }],
             visual_asset_contents: Vec::new(),
-        };
-        let turn = ConversationExportTurn {
+        }
+    }
+
+    fn fixture_turn() -> ConversationExportTurn {
+        ConversationExportTurn {
             id: "turn:1".into(),
             sequence: 1,
             created_at: "1770000000001".into(),
@@ -412,7 +400,28 @@ mod tests {
             contexts: vec![],
             submitted_inputs: vec![],
             accepted_view: None,
-        };
+        }
+    }
+
+    #[test]
+    fn imported_approval_lifecycle_statuses_round_trip() {
+        for status in [
+            ExportCompletionStatus::WaitingForApproval,
+            ExportCompletionStatus::Stopped,
+        ] {
+            let stored = completion_status(status);
+            assert_eq!(parse_completion_status(stored).unwrap(), status);
+        }
+    }
+
+    #[tokio::test]
+    async fn preparing_import_turn_rolls_back_interaction_when_portable_update_fails() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = SqliteProductStore::open(directory.path().join("product.sqlite3"))
+            .await
+            .unwrap();
+        let header = fixture_header(EXPORT_VERSION_V1);
+        let turn = fixture_turn();
         store
             .stage_conversation_import(NewConversationImport {
                 id: "import:rollback",
@@ -463,5 +472,46 @@ mod tests {
             serde_json::from_str::<ConversationExportTurn>(&stored).unwrap(),
             turn
         );
+    }
+    #[tokio::test]
+    async fn published_import_retains_original_snapshot_version_for_reexport() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = SqliteProductStore::open(directory.path().join("product.sqlite3"))
+            .await
+            .unwrap();
+        for version in [1, 2, 3] {
+            let id = format!("import:version-{version}");
+            let staged = store
+                .stage_conversation_import(NewConversationImport {
+                    id: &id,
+                    source_sha256: &id,
+                    header: &fixture_header(version),
+                })
+                .await
+                .unwrap();
+            store
+                .append_conversation_import_turn(&id, &fixture_turn())
+                .await
+                .unwrap();
+            assert!(
+                store
+                    .imported_turn_export_records(staged.thread_id)
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+            sqlx::query("UPDATE conversation_imports SET state='published' WHERE id=?1")
+                .bind(&id)
+                .execute(&store.pool)
+                .await
+                .unwrap();
+            let records = store
+                .imported_turn_export_records(staged.thread_id)
+                .await
+                .unwrap();
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].export_version, version);
+            assert_eq!(records[0].turn, fixture_turn());
+        }
     }
 }

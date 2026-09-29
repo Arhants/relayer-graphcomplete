@@ -1,8 +1,10 @@
+import { execFileSync } from "node:child_process";
+import { interactionPositionCondition, selectRelativeInteraction } from "./interaction-navigator-driver.mjs";
 import { createSettingsStore } from "../desktop/main/services/settings-store.mjs";
 import { registerComposerDraftIpc } from "../desktop/main/ipc/register-ipc.mjs";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { mkdtempSync } from "node:fs";
-import { rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -16,6 +18,7 @@ import { createElectronWorkspaceDriver } from "./electron-workspace-driver.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const dataDirectory = mkdtempSync(join(tmpdir(), "relayer-interaction-context-lifecycle-"));
+const projectDirectory = join(dataDirectory, "project");
 const configurationPath = join(repositoryRoot, "harnesses", "fixture-task-system.yaml");
 const graphServerBinary = join(repositoryRoot, "target", "debug", "relayer-graph-server");
 const appServerBinary = join(repositoryRoot, "target", "debug", "relayer-app-server");
@@ -329,6 +332,10 @@ async function openThreadWindow(threadId) {
   });
   window = await createWindow(productSession);
   window.setSize(1280, 820);
+  // Real environment timers are eligible only in a visible, focused workspace.
+  window.show();
+  app.focus({ steal: true });
+  window.focus();
   await window.loadURL(`${productSession.origin}/?threadId=${encodeURIComponent(threadId)}`);
   await waitFor("production thread workspace", () => evaluate(`(() => (
     document.querySelector('#desktopAccountOnboarding')?.classList.contains('hidden')
@@ -339,6 +346,12 @@ async function openThreadWindow(threadId) {
       && document.querySelectorAll('.graph-node').length === 3
       && !document.querySelector('#threadPrompt')?.disabled
   ))()`));
+  app.focus({ steal: true });
+  window.focus();
+  window.webContents.focus();
+  await waitFor("focused workspace for environment timers", () => evaluate(
+    "document.visibilityState !== 'hidden' && document.hasFocus()",
+  ));
   await waitForPaint();
 }
 
@@ -430,10 +443,13 @@ async function run() {
   registerIpc();
   keepaliveWindow = new BrowserWindow({ width: 1, height: 1, show: false });
   await startServices();
+  // Keep real Git/environment requests independent of this checkout's size and changes.
+  await mkdir(projectDirectory);
+  execFileSync("git", ["init", "--quiet", projectDirectory]);
 
   const project = await productRequest("/api/projects", {
     method: "POST",
-    body: JSON.stringify({ path: repositoryRoot }),
+    body: JSON.stringify({ path: projectDirectory }),
   });
   const fixtureFamily = await productRequest("/api/model-families", {
     method: "POST",
@@ -704,6 +720,10 @@ async function run() {
   await waitFor("sidebar retry preserves the source draft", () => evaluate(`
     document.querySelector('#contextAnnotationEditor')?.value === ${JSON.stringify(EDITOR_VALUE)}
   `));
+  app.focus({ steal: true });
+  window.focus();
+  window.webContents.focus();
+  await waitFor("focused workspace for native keyboard input", () => evaluate("document.hasFocus()"));
   await evaluate("document.querySelector('#contextAnnotationEditor').focus()");
   window.webContents.sendInputEvent({ type: "keyDown", keyCode: "Tab" });
   window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab" });
@@ -832,9 +852,9 @@ async function run() {
   if (JSON.stringify(restoredDraft.drafts) !== JSON.stringify([savedDraft])) {
     throw new Error(`Restart did not preserve the exact saved draft: ${JSON.stringify({ savedDraft, restoredDraft })}`);
   }
-  await click("#previousTurn");
+  await evaluate(selectRelativeInteraction(-1));
   await waitFor("saved draft source turn", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 1 of 2'
+    ${interactionPositionCondition(1, 2)}
   `));
   await clickNode("Incoming queue");
   const restoredEditor = await waitFor("saved draft restoration in the editor", () => evaluate(`(() => {
@@ -859,26 +879,26 @@ async function run() {
   await click("[aria-label='Confirm annotation']");
   await waitFor("confirmation request held for selection race", () => Boolean(rejectConfirmRequest));
   await clickNode("Two-worker pool");
-  await click("#nextTurn");
+  await evaluate(selectRelativeInteraction(1));
   const selectionDuringConfirm = await evaluate(`(() => ({
     title: document.querySelector('#detailTitle')?.textContent,
     editorVisible: Boolean(document.querySelector('#contextAnnotationEditor')),
-    turn: document.querySelector('#turnPickerButton')?.textContent,
+    sourceSelected: ${interactionPositionCondition(1, 2)},
   }))()`);
   if (JSON.stringify(selectionDuringConfirm) !== JSON.stringify({
     title: "Incoming queue",
     editorVisible: true,
-    turn: "Turn 1 of 2",
+    sourceSelected: true,
   })) {
     throw new Error(`Selection or turn navigation escaped a pending confirm: ${JSON.stringify(selectionDuringConfirm)}`);
   }
   rejectConfirmRequest();
   await waitFor("the latest turn request proceeds after confirmation settles", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 2 of 2'
+    ${interactionPositionCondition(2, 2)}
   `));
-  await click("#previousTurn");
+  await evaluate(selectRelativeInteraction(-1));
   await waitFor("the failed confirmation source turn is restored", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 1 of 2'
+    ${interactionPositionCondition(1, 2)}
   `));
   await clickNode("Incoming queue");
   await waitFor("inline Node Details confirmation failure", () => evaluate(`(() => {
@@ -942,14 +962,14 @@ async function run() {
   await assertCollapsedPill();
 
   await click(".composer-context-pill");
-  await click("#previousTurn");
+  await evaluate(selectRelativeInteraction(-1));
   await waitFor("previous turn navigation", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 1 of 2'
+    ${interactionPositionCondition(1, 2)}
   `));
   await assertCollapsedPill();
-  await click("#nextTurn");
+  await evaluate(selectRelativeInteraction(1));
   await waitFor("latest turn restoration", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 2 of 2'
+    ${interactionPositionCondition(2, 2)}
   `));
   await assertCollapsedPill();
 
@@ -957,12 +977,12 @@ async function run() {
   await click("#turnPickerButton");
   await click(`#turnPopover [data-turn-id='${pendingDetail.interactions[0].id}']`);
   await waitFor("turn-picker navigation", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 1 of 2'
+    ${interactionPositionCondition(1, 2)}
   `));
   await assertCollapsedPill();
-  await click("#nextTurn");
+  await evaluate(selectRelativeInteraction(1));
   await waitFor("latest turn after picker navigation", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 2 of 2'
+    ${interactionPositionCondition(2, 2)}
   `));
   await assertCollapsedPill();
 
@@ -973,24 +993,24 @@ async function run() {
     stage.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
   })()`);
   await waitFor("graph-keyboard turn navigation", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 1 of 2'
+    ${interactionPositionCondition(1, 2)}
   `));
   await assertCollapsedPill();
-  await click("#nextTurn");
+  await evaluate(selectRelativeInteraction(1));
   await waitFor("latest turn after keyboard navigation", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 2 of 2'
+    ${interactionPositionCondition(2, 2)}
   `));
   await assertCollapsedPill();
 
   await click(".composer-context-pill");
   await click("#historyBack");
   await waitFor("history-back turn navigation", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 1 of 2'
+    ${interactionPositionCondition(1, 2)}
   `));
   await assertCollapsedPill();
   await click("#historyForward");
   await waitFor("history-forward turn restoration", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 2 of 2'
+    ${interactionPositionCondition(2, 2)}
   `));
   await assertCollapsedPill();
 
@@ -1004,7 +1024,7 @@ async function run() {
   await waitFor("accepted follow-up layer to become the visible turn", () => evaluate(`(() => {
     const visibleNodeIds = [...document.querySelectorAll('.graph-node[data-node]')]
       .map((node) => node.dataset.node).sort();
-    return document.querySelector('#turnPickerButton')?.textContent === 'Turn 3 of 3'
+    return ${interactionPositionCondition(3, 3)}
       && JSON.stringify(visibleNodeIds) === ${JSON.stringify(JSON.stringify(successfulNodeIds))};
   })()`));
   await waitFor("next composer to become available", () => evaluate(`

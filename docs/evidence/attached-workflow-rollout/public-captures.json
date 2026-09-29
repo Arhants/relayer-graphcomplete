@@ -1,0 +1,169 @@
+{
+  "snapshotSha256": "1558e5e260d367fc1392b1fbabdb43d9a4d33b90c376be2a2a5fde65155731f4",
+  "captures": [
+    {
+      "file": "public-light-desktop.png",
+      "theme": "light",
+      "size": "desktop",
+      "geometry": {
+        "buttons": [
+          {
+            "text": "Invoked result",
+            "left": 752,
+            "right": 850.9921875,
+            "top": 848.796875,
+            "bottom": 870.296875
+          },
+          {
+            "text": "Attached response",
+            "left": 850.9921875,
+            "right": 978.15625,
+            "top": 848.796875,
+            "bottom": 870.296875
+          }
+        ],
+        "viewportWidth": 1440,
+        "viewportHeight": 1000
+      },
+      "graphFile": "public-graph-light-desktop.png",
+      "graphGeometry": {
+        "left": 19,
+        "right": 707,
+        "top": 104,
+        "bottom": 369,
+        "width": 1440,
+        "height": 917,
+        "contextEdges": 1,
+        "invocationEdges": 1
+      },
+      "graphSha256": "a75ee0d04db10c162c3c4103f6629e1b96d6ba8ed30a093bef8ca8f0d4fd6ef8",
+      "sha256": "4c5305e36805d9b61b651302f9ac573aa40ae8a52b9d013b54974f4881f7aa7f",
+      "bothNavigationTargetsPassed": true,
+      "destinationTurnAndPromptPassed": true,
+      "externalNetworkRequests": 0
+    },
+    {
+      "file": "public-light-mobile.png",
+      "theme": "light",
+      "size": "mobile",
+      "geometry": {
+        "buttons": [
+          {
+            "text": "Invoked result",
+            "left": 44,
+            "right": 142.9921875,
+            "top": 761.296875,
+            "bottom": 782.796875
+          },
+          {
+            "text": "Attached response",
+            "left": 142.9921875,
+            "right": 270.15625,
+            "top": 761.296875,
+            "bottom": 782.796875
+          }
+        ],
+        "viewportWidth": 375,
+        "viewportHeight": 812
+      },
+      "graphFile": "public-graph-light-mobile.png",
+      "graphGeometry": {
+        "left": 31,
+        "right": 362,
+        "top": 96,
+        "bottom": 361,
+        "width": 375,
+        "height": 812,
+        "contextEdges": 1,
+        "invocationEdges": 1
+      },
+      "graphSha256": "1b97df32492e3b392f5309b62d072401371a873f363ddb20ec01ec2d0a34685c",
+      "sha256": "b7f54bb02ec14663bc818a29039ad2ae7c16c126668d629d0e82957dbe2f6a45",
+      "bothNavigationTargetsPassed": true,
+      "destinationTurnAndPromptPassed": true,
+      "externalNetworkRequests": 0
+    },
+    {
+      "file": "public-dark-desktop.png",
+      "theme": "dark",
+      "size": "desktop",
+      "geometry": {
+        "buttons": [
+          {
+            "text": "Invoked result",
+            "left": 752,
+            "right": 850.9921875,
+            "top": 848.796875,
+            "bottom": 870.296875
+          },
+          {
+            "text": "Attached response",
+            "left": 850.9921875,
+            "right": 978.15625,
+            "top": 848.796875,
+            "bottom": 870.296875
+          }
+        ],
+        "viewportWidth": 1440,
+        "viewportHeight": 1000
+      },
+      "graphFile": "public-graph-dark-desktop.png",
+      "graphGeometry": {
+        "left": 19,
+        "right": 707,
+        "top": 104,
+        "bottom": 369,
+        "width": 1440,
+        "height": 917,
+        "contextEdges": 1,
+        "invocationEdges": 1
+      },
+      "graphSha256": "22e55b32c367e3d8cda5f32f88e3983646aa9428d60605a1c2811454ccd5ead0",
+      "sha256": "a7db822ff7eb4f75751875d7dbb418eb2335341e43abe30242d7580c0c3ff0ab",
+      "bothNavigationTargetsPassed": true,
+      "destinationTurnAndPromptPassed": true,
+      "externalNetworkRequests": 0
+    },
+    {
+      "file": "public-dark-mobile.png",
+      "theme": "dark",
+      "size": "mobile",
+      "geometry": {
+        "buttons": [
+          {
+            "text": "Invoked result",
+            "left": 44,
+            "right": 142.9921875,
+            "top": 761.296875,
+            "bottom": 782.796875
+          },
+          {
+            "text": "Attached response",
+            "left": 142.9921875,
+            "right": 270.15625,
+            "top": 761.296875,
+            "bottom": 782.796875
+          }
+        ],
+        "viewportWidth": 375,
+        "viewportHeight": 812
+      },
+      "graphFile": "public-graph-dark-mobile.png",
+      "graphGeometry": {
+        "left": 31,
+        "right": 362,
+        "top": 96,
+        "bottom": 361,
+        "width": 375,
+        "height": 812,
+        "contextEdges": 1,
+        "invocationEdges": 1
+      },
+      "graphSha256": "f954fcc819b3e52fcb16f1f3ff4ef28b75b8f8a73f2680f237d672abcd708451",
+      "sha256": "c9b6d81d2a7eaaa444ceb84a6901322c0dff38784c0121c4afebc53473ebff69",
+      "bothNavigationTargetsPassed": true,
+      "destinationTurnAndPromptPassed": true,
+      "externalNetworkRequests": 0
+    }
+  ]
+}

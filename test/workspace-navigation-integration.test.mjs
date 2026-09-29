@@ -1675,3 +1675,29 @@ it("keeps the workspace when a graph origin has current state but no response", 
     expect(controller.getNavigationHistory().canGoBack).toBe(false);
   } finally { controller.cancelNavigationHistory(); }
 });
+
+
+it.each(["failed", "stopped", "running", "pending"])("navigates to a local %s interaction without retaining the accepted response", async (status) => {
+  const accepted = interaction(1, 10, rootLayer(101, 11));
+  const unfinished = { ...interaction(2, 10, null, 2), completionStatus: status, completionOutput: null };
+  const state = productState([{ id: 10, title: "Thread" }], [accepted, unfinished]);
+  requestImplementation = vi.fn(async (path) => {
+    if (path.startsWith("/api/state?threadId=10")) return state;
+    if (path === "/api/threads/10") return { thread: state.threads[0], interactions: state.interactions, actionInvocations: [] };
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  const controller = await loadModules();
+  try {
+    await controller.loadThread(10);
+    controller.selectTurnById(1, { responseRoot: true });
+    expect(controller.appState.visibleLayer.layer.id).toBe(101);
+    controller.selectTurnById(2, { responseRoot: false, threadId: 10 });
+    expect(controller.viewState.currentInteractionId).toBe(2);
+    expect(controller.appState.visibleLayer).toBeNull();
+    await controller.navigateHistory(-1);
+    expect(controller.appState.visibleLayer.layer.id).toBe(101);
+    await controller.navigateHistory(1);
+    expect(controller.viewState.currentInteractionId).toBe(2);
+    expect(controller.appState.visibleLayer).toBeNull();
+  } finally { controller.cancelNavigationHistory(); }
+});

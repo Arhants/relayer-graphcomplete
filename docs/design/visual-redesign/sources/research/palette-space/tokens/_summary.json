@@ -1,0 +1,362 @@
+{
+ "engine": "palette-space/engine.mjs v1",
+ "overridesFile": "overrides.json",
+ "candidates": [
+  {
+   "id": "K1",
+   "name": "Nocturne Orbit",
+   "pass": true,
+   "failures": [],
+   "warnings": 2,
+   "families": {
+    "light": "14.8/7.4",
+    "dark": "14.9/7.3"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K2",
+   "name": "Surly Sticker",
+   "pass": true,
+   "failures": [],
+   "warnings": 0,
+   "families": {
+    "light": "17.3/9.6",
+    "dark": "17.3/10.6"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K3",
+   "name": "Apex Index",
+   "pass": true,
+   "failures": [],
+   "warnings": 0,
+   "families": {
+    "light": "15.8/9.6",
+    "dark": "16/8.7"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K4",
+   "name": "Small Things Stamp",
+   "pass": true,
+   "failures": [],
+   "warnings": 1,
+   "families": {
+    "light": "15.5/7.7",
+    "dark": "16.1/8.4"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K5",
+   "name": "Lido Coral",
+   "pass": true,
+   "failures": [],
+   "warnings": 0,
+   "families": {
+    "light": "19.9/10.4",
+    "dark": "19.2/10.3"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K6",
+   "name": "Mustard Cellar",
+   "pass": true,
+   "failures": [],
+   "warnings": 0,
+   "families": {
+    "light": "19.9/11.4",
+    "dark": "19.8/11.3"
+   },
+   "overrides": [
+    "interaction"
+   ]
+  },
+  {
+   "id": "K7",
+   "name": "Deep Sea Rose",
+   "pass": true,
+   "failures": [],
+   "warnings": 4,
+   "families": {
+    "light": "13.9/7.4",
+    "dark": "14.1/7.2"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K8",
+   "name": "Cocoa Bubblegum",
+   "pass": true,
+   "failures": [],
+   "warnings": 4,
+   "families": {
+    "light": "14.3/7.6",
+    "dark": "14.4/8.2"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K9",
+   "name": "Riso Ultramarine",
+   "pass": true,
+   "failures": [],
+   "warnings": 0,
+   "families": {
+    "light": "18.9/10.1",
+    "dark": "19.5/10.4"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K10",
+   "name": "Blaze Periwinkle",
+   "pass": false,
+   "failures": [
+    "light: families too close (min dE 10.2 normal / 5.6 CVD; engine sanity floor 10 / 6)",
+    "dark: families too close (min dE 11.4 normal / 5.9 CVD; engine sanity floor 10 / 6)"
+   ],
+   "warnings": 0,
+   "families": {
+    "light": "10.2/5.6",
+    "dark": "11.4/5.9"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K11",
+   "name": "Linen Burgundy",
+   "pass": true,
+   "failures": [],
+   "warnings": 2,
+   "families": {
+    "light": "12.1/6.5",
+    "dark": "13/7.8"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K12",
+   "name": "Mocha Amber",
+   "pass": true,
+   "failures": [],
+   "warnings": 2,
+   "families": {
+    "light": "19.1/10.3",
+    "dark": "18.8/10.3"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K13",
+   "name": "Butter Lagoon",
+   "pass": true,
+   "failures": [],
+   "warnings": 1,
+   "families": {
+    "light": "16/8",
+    "dark": "15.1/7.7"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K14",
+   "name": "Lilac Ember",
+   "pass": true,
+   "failures": [],
+   "warnings": 2,
+   "families": {
+    "light": "13.6/7.4",
+    "dark": "13.9/8"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K15",
+   "name": "Caramel Sky",
+   "pass": true,
+   "failures": [],
+   "warnings": 2,
+   "families": {
+    "light": "15.6/8.3",
+    "dark": "17/8.7"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K16",
+   "name": "Lemon Midnight",
+   "pass": false,
+   "failures": [
+    "light: families too close (min dE 10.2 normal / 5.6 CVD; engine sanity floor 10 / 6)",
+    "dark: families too close (min dE 10.8 normal / 5.6 CVD; engine sanity floor 10 / 6)"
+   ],
+   "warnings": 2,
+   "families": {
+    "light": "10.2/5.6",
+    "dark": "10.8/5.6"
+   },
+   "overrides": []
+  },
+  {
+   "id": "K17",
+   "name": "Pop Kelly",
+   "pass": true,
+   "failures": [],
+   "warnings": 0,
+   "families": {
+    "light": "16.1/9.1",
+    "dark": "15.9/9.2"
+   },
+   "overrides": []
+  },
+  {
+   "id": "M1",
+   "name": "Roadside Fog",
+   "pass": true,
+   "failures": [],
+   "warnings": 2,
+   "families": {
+    "light": "16/8.8",
+    "dark": "16/8.7"
+   },
+   "overrides": []
+  },
+  {
+   "id": "M2",
+   "name": "Vanity Blush",
+   "pass": true,
+   "failures": [],
+   "warnings": 0,
+   "families": {
+    "light": "15.6/8.5",
+    "dark": "15.6/8.3"
+   },
+   "overrides": []
+  },
+  {
+   "id": "M3",
+   "name": "Olive Chilli",
+   "pass": true,
+   "failures": [],
+   "warnings": 2,
+   "families": {
+    "light": "11.9/6.3",
+    "dark": "11.7/6.4"
+   },
+   "overrides": []
+  },
+  {
+   "id": "M4",
+   "name": "Oat Terracotta",
+   "pass": true,
+   "failures": [],
+   "warnings": 2,
+   "families": {
+    "light": "15.7/8.4",
+    "dark": "15.7/9"
+   },
+   "overrides": []
+  },
+  {
+   "id": "M5",
+   "name": "Tungsten Kitchen",
+   "pass": true,
+   "failures": [],
+   "warnings": 0,
+   "families": {
+    "light": "17.2/9",
+    "dark": "16.9/9"
+   },
+   "overrides": []
+  },
+  {
+   "id": "M6",
+   "name": "Bone Umber",
+   "pass": true,
+   "failures": [],
+   "warnings": 2,
+   "families": {
+    "light": "16.2/8.6",
+    "dark": "16.2/9.1"
+   },
+   "overrides": []
+  },
+  {
+   "id": "M7",
+   "name": "Perfume Greige",
+   "pass": true,
+   "failures": [],
+   "warnings": 0,
+   "families": {
+    "light": "16/8.5",
+    "dark": "16/8.5"
+   },
+   "overrides": []
+  },
+  {
+   "id": "M8",
+   "name": "Petrol Camel",
+   "pass": true,
+   "failures": [],
+   "warnings": 0,
+   "families": {
+    "light": "19.8/11.2",
+    "dark": "19.4/10.5"
+   },
+   "overrides": []
+  },
+  {
+   "id": "M9",
+   "name": "Powder Lime",
+   "pass": true,
+   "failures": [],
+   "warnings": 0,
+   "families": {
+    "light": "17.1/9.2",
+    "dark": "17/9"
+   },
+   "overrides": []
+  },
+  {
+   "id": "M10",
+   "name": "Chestnut Cut",
+   "pass": true,
+   "failures": [],
+   "warnings": 2,
+   "families": {
+    "light": "16.2/8.6",
+    "dark": "16.2/9.1"
+   },
+   "overrides": []
+  },
+  {
+   "id": "M11",
+   "name": "Toffee Supper",
+   "pass": true,
+   "failures": [],
+   "warnings": 0,
+   "families": {
+    "light": "17.8/9.3",
+    "dark": "17/9.2"
+   },
+   "overrides": []
+  },
+  {
+   "id": "M12",
+   "name": "Parchment Chilli",
+   "pass": true,
+   "failures": [],
+   "warnings": 1,
+   "families": {
+    "light": "14.4/8.1",
+    "dark": "15.2/8.2"
+   },
+   "overrides": []
+  }
+ ]
+}

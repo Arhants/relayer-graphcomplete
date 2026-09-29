@@ -1,0 +1,7 @@
+{
+ "K7": {
+  "_why": "K7: (1) light interaction = the source deep-sea teal #07526C exact (white label 8.63), instead of the engine's C 0.12 cyan #1E9BC8 derived from the dark-theme ink, which no source chip contains; dark keeps the derived ink #67A7C4. The teal field cannot be the dark canvas: under gene A's stroke channel the families must reach 3:1 on it, and fewer than six hues 20 deg apart survive (engine: infeasible). (2) danger L hint 0.64 light: the darker primary lowers the engine's status lightness band, which would have darkened the rose to #B54854; the hint keeps the previous #D3646D, closest to the source #D96972 (dark stays exact)",
+  "interaction": { "light": "#07526C", "dark": "#67A7C4" },
+  "danger": { "swatch": "#D96972", "L": { "light": 0.64, "dark": 0.66 } }
+ }
+}

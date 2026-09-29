@@ -53,3 +53,9 @@ cannot grant source-thread records to the result thread.
 [ADR 0011](0011-attached-navigation.md) enables narrowly authorized persistent additions
 and current presentation replacement behind the existing default-off gate. Its terminal
 acceptance and B3 projection refine the earlier slice boundary without enabling general edits.
+
+
+The #604 Desktop rollout in ADR 0011 now enables that successor for new native
+Desktop completions, including packaged builds. The Slice 1 default-off description
+above remains historical; generic runtime callers and the graph-server CLI still
+require explicit opt-in. Existing frozen descriptions are never upgraded on reopen.

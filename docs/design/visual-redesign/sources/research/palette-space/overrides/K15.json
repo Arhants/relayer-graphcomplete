@@ -1,0 +1,7 @@
+{
+ "K15": {
+  "_why": "K15 tuning. (1) The candidate warns that caramel (h59) sits on the warning band ('links look like warnings'). The shared rule puts the light warning at caramel's own lightness (0.566) with a white label, so the light warning fill #947013 was dE 4.8 (CVD 2.3) from the caramel primary. Lifting light warning to L 0.62 (near the lightest step that still clears 3:1 on every light ground; the tightest is --field at 3.01) gives it an ink label like every Gen-1 light warning (A-D all ink-labelled amber at L ~0.64) and moves it to dE 6.7 (CVD 5.2) from the primary; hue 85 and the dark warning are unchanged. (2) The candidate says the sky highlighter is 'fill-only on light' (C's gene: 'a fill only'), but the engine derived hued draft tokens from it; light draft-text #266C9A landed dE 1.8 (CVD 0.8) from the F5 family tile #006C95, because draft tokens are not in the family reserved set. Draft goes back to the engine's neutral default (as in A, B and D); the sky stays exact as highlight-fill and signal-mark",
+  "warning": { "L": { "light": 0.62, "dark": 0.68 } },
+  "draft": { "swatch": null, "neutral": true, "Loff": { "light": -0.1, "dark": -0.14 } }
+ }
+}

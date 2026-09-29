@@ -3,7 +3,8 @@
   "snapshot": {
     "exportVersions": [
       1,
-      2
+      2,
+      3
     ],
     "mediaType": "application/x-ndjson",
     "maxBytes": 16777216,
@@ -281,7 +282,8 @@
     ],
     "snapshotExportVersions": [
       1,
-      2
+      2,
+      3
     ],
     "viewerArtifactVersions": [
       1

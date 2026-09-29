@@ -3,7 +3,7 @@ import { Window } from "happy-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NodeObject, html, css } from "../packages/graph-client/src/index.ts";
 
-import { compiledNodeDetailReviewControls, mountCompiledNodeDetail } from "../desktop/renderer/src/product-workspace/node-detail-runtime.js";
+import { compiledNodeDetailReviewControls, isResolvedInvokeAction, mountCompiledNodeDetail } from "../desktop/renderer/src/product-workspace/node-detail-runtime.js";
 import { createReviewPresentationAdapter } from "../desktop/renderer/src/review-tools.js";
 import { interactionForThread, workspaceTurns } from "../desktop/renderer/src/product-workspace/model.js";
 import { createProductWorkspace, renderProductNodeDetail } from "../desktop/renderer/src/product-workspace/workspace.js";
@@ -1107,6 +1107,21 @@ describe("compiled Node Detail product runtime", () => {
     await window.happyDOM.waitUntilComplete();
     expect(onInvokeAction).toHaveBeenCalledTimes(1);
     mounted.dispose();
+    // Imported conversion history preserves the same compiled invoke control but
+    // never needs (or manufactures) a native interaction-resolution receipt.
+    delete actions[1].resolvedInvokeInteractionId;
+    actions[1].convertedFromInvoke = true;
+    const importedHost = window.document.createElement("div");
+    window.document.body.append(importedHost);
+    const importedMount = await mountCompiledNodeDetail({ host: importedHost, detail,
+      resolveAction: (reference) => actions.find((action) => action.clientKey === reference.clientKey),
+      onNavigate: onNavigateLayer, onInvoke: onInvokeAction });
+    expect(importedMount.status).toBe("mounted");
+    importedHost.shadowRoot.querySelector("[data-gc-mount='invoke']").click();
+    await window.happyDOM.waitUntilComplete();
+    expect(onNavigateLayer).toHaveBeenLastCalledWith(actions[1], expect.anything());
+    expect(onInvokeAction).toHaveBeenCalledTimes(1);
+    importedMount.dispose();
     const input = runtimeHost.shadowRoot.querySelector("[data-gc-mount='input']");
     expect(input.disabled).toBe(false);
     input.dispatchEvent(new window.Event("change", { bubbles: true }));
@@ -1302,4 +1317,15 @@ describe("compiled Node Detail product runtime", () => {
     expect(() => noThreadWorkspace.dispose()).not.toThrow();
     expect(noThreadInputDraftApi.get).not.toHaveBeenCalled();
   });
+});
+
+it("requires exact converted navigation shape for inert imported invoke bindings", () => {
+  const action = { kind: "navigate", relation: "expand", state: "accepted", targetLayerId: 92,
+    interactionText: null, convertedFromInvoke: true };
+  expect(isResolvedInvokeAction(action)).toBe(true);
+  for (const invalid of [{ kind: "input" }, { relation: "reference" }, { state: "draft" },
+    { targetLayerId: null }, { interactionText: "Run" }, { convertedFromInvoke: "true" },
+    { convertedFromInvoke: false }]) {
+    expect(isResolvedInvokeAction({ ...action, ...invalid })).toBe(false);
+  }
 });

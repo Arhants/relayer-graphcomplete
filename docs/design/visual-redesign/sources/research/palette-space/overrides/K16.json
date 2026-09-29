@@ -1,0 +1,13 @@
+{
+ "K16": {
+  "_why": "K16 tuning: the candidate is Gen-1 D's ink/ice structure ('near D', 'light theme needs a derived navy-blue ink', mist is dE 4.2 from D's ice), which the parser missed because the text never says 'primary is ink'. Ink primary drops the derived sky-blue #4C95D5 fill and its alt from the reserved set (D: 'the derived light blue is not used'), which frees the cyan band and fixes the family failure (was 10.2/5.6). The light primary is the exact navy ground with an exact mist label (13.86:1), so light carries the navy-and-mist pairing that dark carries in reverse",
+  "primary": "ink",
+  "tokens": {
+   "light": {
+    "accent-solid": "#020125",
+    "accent-solid-label": "#C1D8EE",
+    "accent-solid-hover": "#020125"
+   }
+  }
+ }
+}

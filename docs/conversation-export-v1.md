@@ -81,7 +81,7 @@ traversal/member order; raw SQLite IDs and graph capability tokens are never ser
 
 ## Public-share binding aliases
 
-A shared V1/V2 snapshot may use each export-local node, layer, and action ID as its
+A shared V1/V2/V3 snapshot may use each export-local node, layer, and action ID as its
 `clientKey` alias. These aliases are generated identities, not the original
 harness-authored strings. Compiled action references use the same aliases in
 `clientKey`, `sourceNode.clientKey`, and `sourceLayer.clientKey`; package integrity
@@ -105,3 +105,52 @@ local project paths. Importers treat every field as inert data and never execute
 
 Visual-asset content records require [conversation export V2](conversation-export-v2.md).
 They are not an optional V1 field or a V1 record type. Current readers retain V1 support.
+
+
+## V3 current accepted snapshots
+
+V3 extends the V2 asset stream with current node-owned attached edits. All accepted roots
+are read in one graph transaction. Nodes contain current accepted details, compiled packages,
+actions and pinned assets, not historical HTML. Asset metadata and bytes must match pins;
+a missing asset is an error. Existing local and public byte limits remain unchanged.
+
+A converted invoke is an accepted navigate/expand action with a target and
+`convertedFromInvoke: true`; it carries neither interaction text nor input. This marker is
+for inert presentation only, never an execution receipt or grant. Root actions cannot carry
+it. If its originating result turn is included, that turn must identify the exact source
+action and accepted target root. A converted link may also lead to reachable graph from a
+conversation outside the exported turn inventory. V3 allows node-owned navigate actions
+without source-layer metadata when their source node belongs to the containing layer.
+
+Import remaps all graph identities, preserves converted provenance in import-owned storage,
+and remains read-only. Re-export keeps these semantics. V1/V2 rules and parsing remain
+unchanged; older readers reject version 3. Public V3 shares retain sensitive-content filtering
+and remap compiled bindings to public aliases. The share API remains contract version 1;
+its service and viewer snapshot-version allowlists must include 3 before publication.
+
+
+Imported storage uses distinct local keys while preserving authored node and layer keys
+as immutable import provenance. This allows a closure to contain results from different
+completions that reused the same authored key. Compiled package bytes remain unchanged.
+A source layer outside the exported closure is provenance only: import materializes an
+inert empty reference record, preserving an unambiguous compiled source-layer key when
+present. It adds no response topology or authority. Conflicting provenance keys fail closed.
+V3 re-export retains the originally imported format even without native mutation records.
+V3 permits a Reference backlink to the response root; Expand cycles and mixed arrivals
+at nonroot layers remain invalid.
+
+
+### V3 portable attachment ownership
+
+An exported context source may include `ownerTurnId`, the export-local identity of an
+earlier included accepted turn that canonically owns its exact source layer. This is
+distinct from `interactionNodeId`, which records the presenting occurrence. The owner
+must include that layer and attached node in its accepted view. All declarations for
+one layer must agree. The field is V3-only; exporting ownership promotes the snapshot
+to V3. Omitted owners remain unknown, including outside-conversation and old-view cases.
+
+Public graph navigation uses this inert provenance to group attachment edges and uses
+validated action origins for invocation edges. Missing ownership never permits inference
+from chronology, layer containment, or node creation. V1/V2 still render graph cards
+and their provable invocation connections. Imports store and re-export remapped owner
+turn identities without consulting imported materialization ownership or granting authority.
