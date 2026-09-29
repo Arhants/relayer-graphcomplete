@@ -546,6 +546,7 @@ describe("share publication coordinator", () => {
     });
     await coordinator.create({ threadId: 42, title: "Public title" });
     expect(report).toHaveBeenCalledWith({
+      frames: [], httpStatus: null, networkCode: null,
       code: "share.snapshot_too_large",
       failureStage: "export",
       attemptReferenceId: "SHR-ABCDEF12",
@@ -717,6 +718,8 @@ describe("share publication coordinator", () => {
     });
     await coordinator.create({ threadId: 42, title: "Public title" });
     expect(report).toHaveBeenCalledWith({
+      frames: expect.arrayContaining([expect.objectContaining({ module: "desktop/main/services/share-publish-coordinator.mjs" })]),
+      httpStatus: null, networkCode: null,
       code: "share.export_failed",
       failureStage: "export",
       attemptReferenceId: "SHR-ABCDEF12",

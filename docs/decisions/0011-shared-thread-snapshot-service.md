@@ -51,7 +51,8 @@ a generic error message and the attempt reference without exposing the size-limi
 reason. Export, oversize, upload, service, and unexpected deletion failures use
 that same reference in a main-owned handled-failure event. The closed event admits
 only reference, stage, code, optional snapshot bytes for the oversize code, the
-existing safe app diagnostics, and the main-derived pseudonym. It is deduplicated
+existing safe app diagnostics, the bounded sanitized stack/HTTP status/closed
+network code defined in ADR 0009, and the main-derived pseudonym. It is deduplicated
 by account, reference, stage, and code. Cancellation, sign-in requirements, and
 quota limits remain excluded. Titles, project names, conversation content,
 credentials, raw errors, and request data are forbidden. Telemetry availability

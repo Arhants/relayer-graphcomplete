@@ -10,6 +10,7 @@ import { createAuthenticatedErrorGateway } from "../desktop/main/services/authen
 const directories = [];
 
 async function fixture({
+  existingQueuePath,
   send = vi.fn(async () => {}),
   enable = vi.fn(async () => {}),
   disable = vi.fn(async () => {}),
@@ -23,7 +24,7 @@ async function fixture({
 } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "relayer-authenticated-errors-"));
   directories.push(directory);
-  const queuePath = join(directory, "queue.json");
+  const queuePath = existingQueuePath ?? join(directory, "queue.json");
   const gateway = createAuthenticatedErrorGateway({
     queuePath,
     encrypt,
@@ -475,4 +476,24 @@ describe("authenticated desktop error gateway", () => {
     ]);
     await gateway.close();
   });
+  it("reopens and flushes both legacy and diagnostic share reports for the same account", async () => {
+    const first = await fixture({ send: vi.fn(async () => { throw new Error("offline"); }) });
+    const identity = { generation: 1, subject: "auth0|same" };
+    await first.gateway.transitionIdentity(identity);
+    const legacy = { code: "share.service_failed", failureStage: "service", attemptReferenceId: "SHR-LEGACY01", snapshotBytes: null };
+    const diagnostic = { ...legacy, attemptReferenceId: "SHR-CURRENT1",
+      frames: [{ module: "desktop/main/services/share-service-client.mjs", line: 66, column: 3 }], httpStatus: 503, networkCode: null };
+    await first.gateway.reportHandledShareFailure(legacy);
+    await first.gateway.reportHandledShareFailure(diagnostic);
+    const queued = await queuedRecords(first.queuePath, first.decrypt);
+    expect(queued).toHaveLength(2);
+    expect(queued[0].event).not.toHaveProperty("httpStatus");
+    await first.gateway.close();
+    const reopened = await fixture({ existingQueuePath: first.queuePath });
+    await reopened.gateway.transitionIdentity(identity);
+    expect(reopened.send.mock.calls.map(([event]) => event)).toEqual(queued.map(({ event }) => event));
+    await expect(access(first.queuePath)).rejects.toMatchObject({ code: "ENOENT" });
+    await reopened.gateway.close();
+  });
+
 });

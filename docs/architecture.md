@@ -385,8 +385,8 @@ also occur in the checked-in packaged-module inventory, so a caller cannot encod
 private data inside a valid-looking application path. The final event is validated
 again immediately before transport.
 
-The handled-share schema adds only the reference, closed stage/code, and optional
-oversize byte count. It reuses verified-account admission, the main-owned
+The handled-share schema adds the reference, closed stage/code, optional
+oversize byte count, and the bounded diagnostics described below. It reuses verified-account admission, the main-owned
 pseudonym, bounded encrypted queue, final transport validation, and recursion
 suppression. Main deduplicates account + reference + stage + code in process;
 the durable publish-attempt owner must preserve the same identity for restart
@@ -404,6 +404,19 @@ successful response replaces snapshot bytes with a lightweight URL receipt;
 closing the result or explicitly dismissing a failure removes only that local
 record. Invalid or corrupt records fail closed, and capacity rejects new
 records instead of evicting an undisclosed frozen attempt.
+
+The approved share-diagnostics extension retains the first available approved app
+stack from the original exception or its causes, bounded to four inspected error
+objects and the existing 32-frame inventory limit. It additionally admits an
+optional integer HTTP status (100–599) and a network code from the fixed allowlist
+in `desktop/main/services/share-error-diagnostics.mjs`; unknown codes are omitted.
+TimeoutError maps to the code-owned `TIMEOUT` value. No raw error, cause message,
+host, URL, request/response body, header, or frame local is admitted. Diagnostic
+inspection cannot alter the product result. Sentry frames use oldest-to-newest
+order. Legacy records with no diagnostics remain accepted. Encrypted queue
+entries still require the existing same-account, release, and platform checks;
+this does not introduce cross-release replay. Deduplication still uses account/reference/stage/code, and the
+share attempt store never persists diagnostic stacks or raw exceptions.
 
 Authenticated transport failures may enter one `safeStorage`-encrypted queue. The
 queue holds at most 32 records and 256 KiB of encrypted bytes. Records expire after

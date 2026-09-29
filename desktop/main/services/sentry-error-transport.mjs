@@ -10,6 +10,8 @@ import {
 import { isApprovedTelemetryModule } from "../../shared/telemetry-module-inventory.mjs";
 import { exactKeys, validSourcePosition } from "../../shared/telemetry-validation.mjs";
 
+import { validShareHttpStatus, validShareNetworkCode } from "./share-error-diagnostics.mjs";
+
 const ENVIRONMENTS = new Set(["development", "preview", "stable"]);
 const COMPONENT_PREFIXES = Object.freeze({
   renderer: "desktop/renderer/",
@@ -83,7 +85,8 @@ function validateGatewayEvent(event, projection) {
   const shareKeys = ordinaryKeys.concat([
     "attemptReferenceId", "failureStage", "snapshotBytes",
   ]);
-  const shareFailure = exactKeys(event, shareKeys);
+  const diagnostics = exactKeys(event, shareKeys.concat(["httpStatus", "networkCode"]));
+  const shareFailure = exactKeys(event, shareKeys) || diagnostics;
   if ((!exactKeys(event, ordinaryKeys) && !shareFailure)
     || !exactKeys(event.user, ["id"])
     || event.user.id !== projection.user.id
@@ -113,7 +116,9 @@ function validateGatewayEvent(event, projection) {
     || (event.snapshotBytes !== null
       && (!Number.isSafeInteger(event.snapshotBytes) || event.snapshotBytes < 0))
     || event.exceptionClass !== null
-    || event.frames.length !== 0)) {
+    || (diagnostics
+      ? (!validShareHttpStatus(event.httpStatus) || !validShareNetworkCode(event.networkCode))
+      : event.frames.length !== 0))) {
     throw new TypeError("Sentry gateway event is invalid.");
   }
 }
@@ -135,6 +140,10 @@ function mapEvent(event) {
         attempt_reference: event.attemptReferenceId,
         failure_stage: event.failureStage,
         snapshot_bytes: event.snapshotBytes === null ? "none" : String(event.snapshotBytes),
+        ...(Object.hasOwn(event, "httpStatus") ? {
+          http_status: event.httpStatus === null ? "none" : String(event.httpStatus),
+          network_code: event.networkCode ?? "none",
+        } : {}),
       } : {}),
     },
     exception: {
@@ -142,7 +151,8 @@ function mapEvent(event) {
         type: event.exceptionClass ?? "Error",
         value: event.message,
         stacktrace: {
-          frames: event.frames.map((frame) => ({
+          // V8 stacks are newest-first; Sentry expects the failing frame last.
+          frames: (shareFailure ? [...event.frames].reverse() : event.frames).map((frame) => ({
             filename: frame.module,
             lineno: frame.line,
             colno: frame.column,
@@ -171,6 +181,7 @@ function isApprovedSentryEvent(event, projection) {
   const shareTagKeys = ordinaryTagKeys.concat([
     "attempt_reference", "failure_stage", "snapshot_bytes",
   ]);
+  const diagnostics = exactKeys(event?.tags, shareTagKeys.concat(["http_status", "network_code"]));
   if (!exactKeys(event, topLevelKeys)
     || event.level !== "error"
     || event.release !== projection.release
@@ -181,7 +192,7 @@ function isApprovedSentryEvent(event, projection) {
     || event.timestamp < 0
     || !exactKeys(event.user, ["id"])
     || event.user.id !== projection.user.id
-    || (!exactKeys(event.tags, ordinaryTagKeys) && !exactKeys(event.tags, shareTagKeys))
+    || (!exactKeys(event.tags, ordinaryTagKeys) && !exactKeys(event.tags, shareTagKeys) && !diagnostics)
     || event.tags.os !== projection.os
     || event.tags.architecture !== projection.architecture
     || !Object.hasOwn(COMPONENT_PREFIXES, event.tags.component)
@@ -198,7 +209,13 @@ function isApprovedSentryEvent(event, projection) {
       || (event.tags.failure_stage === "delete") !== (event.tags.operation === "share-deletion")
       || !/^SHR-[A-Z0-9]{8,32}$/u.test(event.tags.attempt_reference)
       || !/^(?:export|upload|service|delete)$/u.test(event.tags.failure_stage)
-      || !/^(?:none|0|[1-9][0-9]*)$/u.test(event.tags.snapshot_bytes))) return false;
+      || !/^(?:none|0|[1-9][0-9]*)$/u.test(event.tags.snapshot_bytes)
+      || (diagnostics && (
+        typeof event.tags.http_status !== "string"
+        || !/^(?:none|[1-5][0-9]{2})$/u.test(event.tags.http_status)
+        || typeof event.tags.network_code !== "string"
+        || !validShareNetworkCode(event.tags.network_code === "none" ? null : event.tags.network_code)
+      )))) return false;
   const [exception] = event.exception.values;
   return exactKeys(exception, ["type", "value", "stacktrace"])
     && EXCEPTION_CLASSES.has(exception.type)

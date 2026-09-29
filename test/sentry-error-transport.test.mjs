@@ -171,6 +171,35 @@ describe("Sentry error transport", () => {
     })).rejects.toThrow();
   });
 
+  it("validates share diagnostics at both transport boundaries and orders frames for Sentry", async () => {
+    const state = fixture();
+    await state.transport.enable(projection);
+    const event = { ...handledShareEvent, httpStatus: 503, networkCode: "ECONNRESET", frames: [
+      { module: "desktop/main/services/share-service-client.mjs", line: 66, column: 3 },
+      { module: "desktop/main/services/share-publish-coordinator.mjs", line: 348, column: 5 },
+    ] };
+    await state.transport.send(event);
+    const prepared = state.accepted[0];
+    expect(prepared.exception.values[0].stacktrace.frames.map((frame) => frame.lineno)).toEqual([348, 66]);
+    for (const mutation of [
+      { httpStatus: 600 }, { httpStatus: "503" }, { networkCode: "private-native-error" },
+      { frames: [{ module: "desktop/main/private.mjs", line: 1, column: 1 }] },
+      { frames: Array.from({ length: 33 }, () => event.frames[0]) },
+    ]) await expect(state.transport.send({ ...event, ...mutation })).rejects.toThrow();
+    const partial = { ...event };
+    delete partial.networkCode;
+    await expect(state.transport.send(partial)).rejects.toThrow();
+    for (const tags of [
+      { http_status: "600" }, { http_status: "503 private" }, { network_code: "private-native-error" },
+      { http_status: 503 }, { network_code: null },
+      { http_status: { toString: () => "503", secret: "private" } },
+    ]) expect(state.options.beforeSend({ ...prepared, tags: { ...prepared.tags, ...tags } })).toBeNull();
+    expect(state.options.beforeSend({ ...prepared, exception: { values: [{ ...prepared.exception.values[0],
+      stacktrace: { frames: [{ filename: "/Users/private/file.mjs", lineno: 1, colno: 1, in_app: true }] },
+    }] } })).toBeNull();
+    expect(state.accepted).toHaveLength(1);
+  });
+
   it("drops SDK or hook mutation at beforeSend and rejects non-gateway input", async () => {
     const state = fixture();
     await state.transport.enable(projection);

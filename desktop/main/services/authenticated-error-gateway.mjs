@@ -5,6 +5,8 @@ import { dirname } from "node:path";
 import { isApprovedTelemetryModule } from "../../shared/telemetry-module-inventory.mjs";
 import { exactKeys, validSourcePosition } from "../../shared/telemetry-validation.mjs";
 
+import { validShareHttpStatus, validShareNetworkCode } from "./share-error-diagnostics.mjs";
+
 const COMPONENTS = new Set([
   "renderer",
   "electron-main",
@@ -141,9 +143,13 @@ function validateRecord(record, component) {
 }
 
 function validateShareFailureRecord(record) {
-  if (!exactKeys(record, [
-    "code", "failureStage", "attemptReferenceId", "snapshotBytes",
-  ])) return null;
+  const legacyKeys = ["code", "failureStage", "attemptReferenceId", "snapshotBytes"];
+  const diagnostics = exactKeys(record, legacyKeys.concat(["frames", "httpStatus", "networkCode"]));
+  if (!exactKeys(record, legacyKeys) && !diagnostics) return null;
+  if (diagnostics && (!validShareHttpStatus(record.httpStatus)
+    || !validShareNetworkCode(record.networkCode)
+    || !Array.isArray(record.frames) || record.frames.length > 32
+    || record.frames.some((frame) => !validFrame(frame, "electron-main")))) return null;
   const definition = SHARE_FAILURE_DEFINITIONS[record.code];
   if (!definition
     || record.failureStage !== definition.stage
@@ -157,7 +163,8 @@ function validateShareFailureRecord(record) {
     operation: definition.operation,
     message: definition.message,
     exceptionClass: null,
-    frames: Object.freeze([]),
+    frames: Object.freeze(diagnostics ? record.frames.map((frame) => Object.freeze({ ...frame })) : []),
+    ...(diagnostics ? { httpStatus: record.httpStatus, networkCode: record.networkCode } : {}),
     attemptReferenceId: record.attemptReferenceId,
     failureStage: record.failureStage,
     snapshotBytes: record.snapshotBytes,
@@ -179,7 +186,8 @@ function validateEvent(event) {
   const shareKeys = ordinaryKeys.concat([
     "attemptReferenceId", "failureStage", "snapshotBytes",
   ]);
-  if ((!exactKeys(event, ordinaryKeys) && !exactKeys(event, shareKeys))
+  if ((!exactKeys(event, ordinaryKeys) && !exactKeys(event, shareKeys)
+    && !exactKeys(event, shareKeys.concat(["httpStatus", "networkCode"])))
     || !exactKeys(event.user, ["id"])
     || !/^[a-f0-9]{64}$/u.test(event.user.id)) return false;
   if (![event.release, event.environment, event.os, event.architecture].every((value) => typeof value === "string" && value.length > 0)) return false;
@@ -189,13 +197,16 @@ function validateEvent(event) {
       failureStage: event.failureStage,
       attemptReferenceId: event.attemptReferenceId,
       snapshotBytes: event.snapshotBytes,
+      ...(Object.hasOwn(event, "httpStatus") ? {
+        frames: event.frames, httpStatus: event.httpStatus, networkCode: event.networkCode,
+      } : {}),
     });
     return sanitized !== null
       && event.operation === sanitized.operation
       && event.message === sanitized.message
       && event.exceptionClass === null
       && Array.isArray(event.frames)
-      && event.frames.length === 0;
+      && (Object.hasOwn(event, "httpStatus") || event.frames.length === 0);
   }
   const sanitized = validateRecord({
     code: event.code,
