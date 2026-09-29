@@ -1104,8 +1104,8 @@ mod tests {
             .await
             .expect_err("admission still checks the catalog");
         assert!(
-            !admission.to_string().contains("original provider"),
-            "{admission}"
+            admission.to_string().contains("is unknown"),
+            "admission must fail the catalog check, not containment: {admission}"
         );
         end_running_turn(&store, interaction).await;
         let sent = store

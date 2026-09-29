@@ -92,7 +92,8 @@ function harnessFor(settings, harnessId) {
 
 // Only a legacy conversation is contained to its original route (#597). A portable
 // continuation conversation (ADR 0013) is offered every route an unrestricted one is. Any
-// other or missing status is treated as restricted, so an unknown state never widens routes.
+// other or missing status is restricted by the harness-default and empty-state gates that use
+// this check. Route filtering itself still narrows only the compatible and blocked statuses.
 export function compatibilityRestrictsRoute(compatibility) {
   if (!compatibility) return false;
   return compatibility.status !== "unrestricted" && compatibility.status !== "portable";

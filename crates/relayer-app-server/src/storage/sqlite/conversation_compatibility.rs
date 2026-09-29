@@ -307,6 +307,13 @@ mod tests {
 
         let store = SqliteProductStore::open(&path).await.unwrap();
         // Includes the personal presentation profile thread that earlier migrations created.
+        let profile_threads: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM threads WHERE surface='personal_presentation_profile'",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(profile_threads, 1);
         let formats: Vec<String> =
             sqlx::query_scalar("SELECT DISTINCT conversation_format FROM threads")
                 .fetch_all(&store.pool)

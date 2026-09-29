@@ -45,7 +45,8 @@ describe("model picker for a continuation conversation (CONT-005)", () => {
     [{ status: "portable", threadId: 1, harnessId: "codex-basic" }, "No available models", "Connect an available provider in Settings."],
     [{ status: "compatible", threadId: 1, harnessId: "codex-basic", providerId: "codex" }, "No compatible route available", "Reconnect the original provider or enable a compatible model in Settings."],
     [{ status: "blocked", threadId: 1, harnessId: "codex-basic", message: "History ownership cannot be verified." }, "No compatible route available", "History ownership cannot be verified."],
-    // An unknown or missing status never widens routes.
+    // The empty-state heading treats an unknown or missing status as restricted. Every provider
+    // is disconnected here, so these rows observe that gate, not route filtering.
     [{ threadId: 1, harnessId: "codex-basic" }, "No compatible route available", "Connect an available provider in Settings."],
     [{ status: "future-status", threadId: 1, harnessId: "codex-basic" }, "No compatible route available", "Connect an available provider in Settings."],
   ])("contains only a legacy conversation to its original route: %j", (compatibility, heading, guidance) => {
