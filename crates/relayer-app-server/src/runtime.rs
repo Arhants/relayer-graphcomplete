@@ -1787,7 +1787,12 @@ impl RuntimeClient {
             .client
             .post(self.graph_url.join("api/control/accepted-closures")?)
             .bearer_auth(&self.graph_control_token)
-            .timeout(CONTROL_REQUEST_TIMEOUT)
+            // Preserve the former per-root aggregate read budget in one coherent request.
+            // The control route accepts at most 10,000 roots.
+            .timeout(
+                CONTROL_REQUEST_TIMEOUT
+                    .saturating_mul(interaction_node_ids.len().clamp(1, 10_000) as u32),
+            )
             .json(&serde_json::json!({"interactionNodeIds": interaction_node_ids}))
             .send()
             .await?;
@@ -3488,8 +3493,11 @@ mod tests {
                 async move {
                     assert_eq!(headers["authorization"], "Bearer graph-control");
                     assert_eq!(body, json!({"interactionNodeIds":[1,2]}));
+                    if mode == 3 {
+                        tokio::time::sleep(Duration::from_millis(5500)).await;
+                    }
                     Json(match mode {
-                        0 => json!({"closures":[null,null]}),
+                        0 | 3 => json!({"closures":[null,null]}),
                         1 => json!({"closures":[null]}),
                         _ => json!({"closures":[null,{
                             "nodeId":3,"interaction":{"id":3,"kind":"user-interaction","icon":"user","title":"Question","detail":"Question","state":"accepted"},
@@ -3524,6 +3532,12 @@ mod tests {
                 RuntimeError::Configuration(_)
             ));
         }
+        mode.store(3, Ordering::SeqCst);
+        assert_eq!(
+            runtime.accepted_graph_closures(&[1, 2]).await.unwrap(),
+            vec![None, None],
+            "two roots retain their aggregate read budget rather than sharing one root's timeout"
+        );
         graph_task.abort();
     }
 

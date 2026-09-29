@@ -1,5 +1,5 @@
 {
-  "sourceManifestSha256": "a9cebb9972d6e712e4563839c35b1e5a1d53476792be18c3d6d4092f30b46c9d",
+  "sourceManifestSha256": "2c3b0d37eaebb7c4694d7e05f0bb9f9571883cf95301fe3b44e3bba691661482",
   "fullCheck": {
     "passed": true,
     "vitestPassed": 3225,
@@ -36,5 +36,16 @@
   "publicCapturesPassed": 4,
   "joinedServiceCommit": "fddecf52b03e542659cd74b887d1b77503de185c",
   "livePublication": "not run",
-  "signedRelease": "not run"
+  "signedRelease": "not run",
+  "priorQualificationSourceCommit": "dbf704e55d5adc81e4145937cac7bc3fef943360",
+  "batchTimeoutFollowup": {
+    "checkpoint": "AN-004",
+    "red": "Authenticated two-root HTTP request timed out after 5.01 seconds before fix",
+    "green": "Same request completed; all missing-slot and mismatch assertions passed in 5.52 seconds",
+    "reviewer": "navigator_standards",
+    "runtimeSha256": "b30c737cd427f3028ce99f89cea5f262256922b7af18d3a8c61067628c353fde",
+    "reviewVerdict": "PASS, no unresolved findings",
+    "fullCheck": "passed: Rust, Clippy, crash reconciliation, 3225 Vitest, 2 secret-boundary, 60 Python, lints",
+    "build": "passed"
+  }
 }

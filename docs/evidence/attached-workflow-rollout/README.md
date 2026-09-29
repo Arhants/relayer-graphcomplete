@@ -171,3 +171,31 @@ Reproduce public visual proof with the joined test's
 then `RELAYER_CAPTURE_ATTACHED_PORTABILITY=1 npx electron scripts/capture-attached-portability-evidence.mjs`.
 The optional `RELAYER_PRIVATE_SHARE_SERVICE_ROOT` points at the companion checkout for
 in-memory production-handler publication proof. Neither command publishes a live share.
+
+
+## Batched export timeout follow-up
+
+Review of `dbf704e55d5adc81e4145937cac7bc3fef943360` identified that the coherent
+batch request retained a single-root five-second timeout. AN-004 additionally requires
+the accepted-closure read to retain the former aggregate per-root time budget. The
+client now scales the timeout by root count, clamped to the route limit of 10,000,
+without splitting the transaction or weakening response validation.
+
+The existing authenticated HTTP client test now includes a two-root response delayed
+by 5.5 seconds. Before the fix it failed with `TimedOut` at 5.01 seconds; afterward it
+passed in 5.52 seconds, retaining missing-slot, cardinality and identity checks.
+No overlapping test was added or removed.
+
+The updated 54-file manifest SHA-256 is
+`2c3b0d37eaebb7c4694d7e05f0bb9f9571883cf95301fe3b44e3bba691661482`.
+Reviewer `/root/navigator_standards` reviewed the delta against `dbf704e`, runtime SHA-256
+`b30c737cd427f3028ce99f89cea5f262256922b7af18d3a8c61067628c353fde`:
+PASS for bounded timeout, authentication, coherence, response validation and retained
+regression assertions; no unresolved findings. Earlier assertions remain applicable
+only to unchanged files. Earlier native and joined heavy observations are from the
+prior source snapshot; this follow-up changes only this timeout and its client test.
+
+Follow-up verification: `npm run check` passed (Rust/Clippy/crash suites, 240 Vitest
+files with 3,225 passed and three skipped tests, two secret-boundary tests, 60 Python
+tests, receipts and PRD lints). `npm run build` passed afterward. The upstream receipt
+NO-GO remains an artifact qualification limit, not a failed implementation check.
