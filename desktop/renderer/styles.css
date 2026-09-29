@@ -413,6 +413,8 @@ h1,h2,.node-heading h2{font-family:var(--font-display);letter-spacing:-.005em}
 .entry[data-activity="stopping"] .thread-activity{color:var(--text-muted)}
 .entry[data-activity="needs_approval"] .thread-activity{color:var(--warning-text)}
 .entry[data-activity="failed"] .thread-activity{color:var(--danger-text)}
+body.sidebar-collapsed .entry{justify-content:center}
+body.sidebar-collapsed .entry:not([data-activity]) .thread-activity::before{content:"";display:block;width:6px;height:6px;border-radius:50%;background:var(--text-faint)}
 @keyframes thread-activity-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.entry[data-activity="running"] .thread-activity svg{animation:none}}
 .thread-status-symbol{display:inline-grid;place-items:center;flex:none;width:18px;height:18px;margin-left:8px}

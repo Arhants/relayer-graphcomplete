@@ -427,7 +427,7 @@ describe("public share HTML boundary", () => {
     expect(html).toContain("\\u003c");
     expect(html).not.toContain("</script>\\\";");
     expect(html).toContain('name="robots" content="noindex,nofollow,noarchive"');
-    expect(html).toContain('property="og:image" content="/assets/relayer-share-og.svg"');
+    expect(html).toContain('property="og:image" content="/design/share-og.svg"');
     expect(html).toContain("connect-src &#39;none&#39;");
     expect(html).toContain('src="/vendor/marked.umd.js"');
     expect(html).toContain('src="/vendor/lucide.min.js"');

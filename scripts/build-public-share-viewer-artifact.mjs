@@ -11,7 +11,6 @@ const builder = "scripts/build-public-share-viewer-artifact.mjs@1";
 
 const browserResources = Object.freeze([
   "assets/relayer-logo.svg",
-  "assets/relayer-share-og.svg",
   "styles.css",
   "vendor/lucide.min.js",
   "vendor/marked.umd.js",
@@ -49,7 +48,7 @@ const browserResources = Object.freeze([
 
 const logicalAssets = Object.freeze({
   logo: "assets/relayer-logo.svg",
-  ogImage: "assets/relayer-share-og.svg",
+  ogImage: "design/share-og.svg",
   viewerScript: "src/public-share-viewer/main.js",
   viewerStyles: "src/public-share-viewer/viewer.css",
   workspaceStyles: "styles.css",

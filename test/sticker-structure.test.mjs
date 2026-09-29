@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-import { designCss, loadDesignFonts, resolveDesignPath } from "../scripts/design/build.mjs";
+import { designCss, loadDesignFonts, resolveDesignPath, shareImageSvg } from "../scripts/design/build.mjs";
 import { loadStructure } from "../scripts/design/validate.mjs";
 import { RELAYER_ICON_NAMES, relayerIconFamily } from "../desktop/renderer/src/product-workspace/icons.js";
 import { graphEdgeArc } from "../desktop/renderer/src/product-workspace/workspace.js";
@@ -51,11 +51,22 @@ describe("Sticker structure", () => {
     expect(css).not.toMatch(/url\(["']?(https?:)?\/\//);
   });
 
+  it("draws the share link preview image from the design's dark roles, families and fonts (PD-14)", async () => {
+    const config = JSON.parse(await readFile(await resolveDesignPath(""), "utf8"));
+    const svg = shareImageSvg(config, await loadDesignFonts(await loadStructure(config.structure)));
+    const { roles, families } = config.palette;
+    for (const colour of [roles.bg.dark, roles.text.dark, roles["accent-text"].dark, roles.edge.dark, families.f3.dark, families.f6.dark]) {
+      expect(svg).toContain(`"${colour}"`);
+    }
+    expect(svg).toContain(`font-family="Bricolage Grotesque,-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"`);
+    expect([...svg.matchAll(/#[0-9A-Fa-f]{6}/g)].every(([colour]) => JSON.stringify(config.palette).includes(colour))).toBe(true);
+  });
+
   it("gives every allowlisted icon exactly one presentation family", () => {
     const counts = {};
     for (const name of RELAYER_ICON_NAMES) counts[relayerIconFamily(name)] = (counts[relayerIconFamily(name)] ?? 0) + 1;
-    // Design brief Appendix A: 13 / 18 / 23 / 21 / 8 / 10 coloured icons and 23 neutral.
-    expect(counts).toEqual({ f1: 13, f2: 18, f3: 23, f4: 21, f5: 8, f6: 10, neutral: 23 });
+    // Design brief Appendix A (13 / 18 / 23 / 21 / 8 / 10 coloured, 23 neutral) plus the temporary everyday icons (#613).
+    expect(counts).toEqual({ f1: 13, f2: 18, f3: 26, f4: 26, f5: 12, f6: 10, neutral: 23 });
     expect([relayerIconFamily("MessagesSquare"), relayerIconFamily("messagessquare"), relayerIconFamily("not-an-icon"), relayerIconFamily(undefined)])
       .toEqual(["f5", "f5", "neutral", "neutral"]);
   });

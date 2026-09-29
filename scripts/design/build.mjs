@@ -1,4 +1,4 @@
-// Generates the renderer's design tokens and fonts from a design config (design-config-plan.md §2).
+// Generates the renderer's design tokens, fonts and share preview image from a design config (design-config-plan.md §2).
 // RELAYER_DESIGN selects a config by id (designs/<id>.json) or path; otherwise designs/default names it.
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -49,11 +49,42 @@ export function designCss(config, source, fonts = []) {
     + `:root{${block("dark")}}\n:root[data-theme="light"]{${block("light")}}\n`;
 }
 
+// The share link preview (Open Graph) image in the design's dark roles and node families (PD-14).
+export function shareImageSvg(config, fonts = []) {
+  const role = (name) => config.palette.roles[name].dark;
+  const family = (id) => config.palette.families[id].dark;
+  const fontFamily = (name) => {
+    const font = fonts.find((candidate) => candidate.role === name)?.font;
+    return (font ? `${font.family},${font.fallback}` : "-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif").replaceAll("\"", "'");
+  };
+  const nodes = [[150, 400, "f6"], [410, 270, "f3"], [670, 410, "f4"], [930, 280, "f5"]];
+  const arcs = nodes.slice(1).map(([x, y], index) => {
+    const [px, py] = nodes[index];
+    return `<path d="M${px + 90} ${py}Q${(px + x) / 2 + 90} ${Math.min(py, y) - 60} ${x + 90} ${y}" fill="none" stroke="${role("edge")}" stroke-width="3"/>`;
+  });
+  const pills = nodes.map(([x, y, id]) => `<rect x="${x}" y="${y - 28}" width="180" height="56" rx="28" fill="${role("node-fill")}" stroke="${role("node-stroke")}" stroke-width="2"/>`
+    + `<circle cx="${x + 28}" cy="${y}" r="18" fill="${family(id)}"/>`
+    + `<rect x="${x + 58}" y="${y - 5}" width="96" height="10" rx="5" fill="${role("text-faint")}"/>`);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
+  <title id="title">Relayer shared conversation</title>
+  <desc id="description">A read-only graph snapshot shared from Relayer.</desc>
+  <rect width="1200" height="630" fill="${role("bg")}"/>
+  ${arcs.join("\n  ")}
+  ${pills.join("\n  ")}
+  <text x="120" y="128" fill="${role("text")}" font-family="${fontFamily("display")}" font-size="40" font-weight="700">Relayer</text>
+  <text x="120" y="184" fill="${role("text-muted")}" font-family="${fontFamily("ui")}" font-size="26">Shared conversation</text>
+  <text x="120" y="548" fill="${role("accent-text")}" font-family="${fontFamily("mono")}" font-size="18" letter-spacing="3">READ-ONLY SNAPSHOT</text>
+</svg>
+`;
+}
+
+const generatedFiles = ["design/design.css", "design/share-og.svg"];
+
 // The files the build writes, relative to desktop/renderer, for artifacts that must ship them.
 export async function designOutputFiles(selection) {
   const config = JSON.parse(await readFile(await resolveDesignPath(selection), "utf8"));
   const fonts = await loadDesignFonts(await loadStructure(config.structure));
-  return ["design/design.css", ...fonts.flatMap((font) => font.files.map((file) => file.path))];
+  return [...generatedFiles, ...fonts.flatMap((font) => font.files.map((file) => file.path))];
 }
 
 export async function buildDesign({ selection, outputDirectory = resolve(repositoryRoot, "desktop/renderer/design") } = {}) {
@@ -68,11 +99,12 @@ export async function buildDesign({ selection, outputDirectory = resolve(reposit
   await rm(outputDirectory, { recursive: true, force: true });
   await mkdir(outputDirectory, { recursive: true });
   await writeFile(resolve(outputDirectory, "design.css"), designCss(config, source, fonts));
+  await writeFile(resolve(outputDirectory, "share-og.svg"), shareImageSvg(config, fonts));
   for (const file of fonts.flatMap((font) => font.files)) {
     const target = resolve(outputDirectory, "..", file.path);
     await mkdir(resolve(target, ".."), { recursive: true });
     await writeFile(target, file.bytes);
   }
   console.log(`design: ${config.name} (${source}, sha256 ${sha256(bytes).slice(0, 12)}, ${warnings.length} floor warnings)`);
-  return { path, sha256: sha256(bytes), files: ["design/design.css", ...fonts.flatMap((font) => font.files.map((file) => file.path))] };
+  return { path, sha256: sha256(bytes), files: [...generatedFiles, ...fonts.flatMap((font) => font.files.map((file) => file.path))] };
 }

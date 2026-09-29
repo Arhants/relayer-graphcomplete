@@ -47,6 +47,7 @@ it("marks live and failed threads in the thread list and refreshes background st
   expect(row(4).getAttribute("title")).toBe("Migrate · Failed");
   expect(row(5).getAttribute("aria-label")).toBe("Notes");
   expect(row(5).dataset.activity).toBeUndefined();
+  expect(row(5).querySelector(".thread-activity").textContent).toBe("");
 
   // A background thread finishes: the next poll clears its symbol and polling stops once nothing is live.
   listed = { threads: [{ id: 1, title: "Build" }, { id: 2, title: "Deploy", activity: "stopping" }, { id: 3, title: "Review", activity: "needs_approval" }, { id: 4, title: "Migrate", activity: "failed" }, { id: 5, title: "Notes" }] };
