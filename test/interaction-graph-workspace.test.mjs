@@ -3,7 +3,7 @@ import { afterEach,it,expect,vi } from "vitest";
 import { createProductWorkspace } from "../desktop/renderer/src/product-workspace/workspace.js";
 
 afterEach(()=>vi.unstubAllGlobals());
-it("discloses B3 only behind the gate and selects the current response with keyboard dismissal",async()=>{
+it("discloses B3 when the runtime supports it and selects the current response with keyboard dismissal",async()=>{
  const window=new Window({url:"http://127.0.0.1:3000"});
  vi.stubGlobal("document",window.document);vi.stubGlobal("window",window);
  vi.stubGlobal("lucide",new Proxy({Circle:{},createElement:()=>window.document.createElement("svg")},{get:(t,k)=>t[k]??{}}));

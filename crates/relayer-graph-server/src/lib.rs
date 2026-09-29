@@ -1096,9 +1096,8 @@ async fn control_interaction_features(
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
     require_bearer(&headers, &state.control_token)?;
-    Ok(Json(
-        json!({"interactionGraph":state.graph.interaction_permissions_enabled().await?}),
-    ))
+    // Read-only provenance navigation is independent of attached-node mutation authority.
+    Ok(Json(json!({"interactionGraph": true})))
 }
 
 async fn control_temporal_features(

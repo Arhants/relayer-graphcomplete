@@ -10403,6 +10403,30 @@ async fn interaction_graph_projects_layer_owners_and_invocation_with_scope_and_r
         body["interactions"][0].get("interactionGraph").is_none(),
         "{body}"
     );
+    mode.store(0, Ordering::SeqCst);
+    let pool = sqlite_pool(&database).await;
+    sqlx::query("INSERT INTO conversation_imports(id,source_sha256,export_version,producer_json,header_json,state,created_at,published_at) VALUES ('b3-import','sha256:imported',1,'{}','{}','published','6','6')")
+        .execute(&pool).await.unwrap();
+    sqlx::query("UPDATE threads SET conversation_import_id='b3-import' WHERE id=?1")
+        .bind(thread_ids[2])
+        .execute(&pool)
+        .await
+        .unwrap();
+    owner_reads.store(0, Ordering::SeqCst);
+    let response = app
+        .oneshot(api_request_with_token("GET", &uri, None, "review"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let imported = response_json(response).await;
+    assert_eq!(imported["interactions"][0]["graphNodeId"], 92);
+    assert!(
+        imported["interactions"][0]
+            .get("interactionGraph")
+            .is_none(),
+        "Imported chats retain the legacy picker even when runtime discovery enables B3: {imported}"
+    );
+    assert_eq!(owner_reads.load(Ordering::SeqCst), 0);
     graph_task.abort();
     harness_task.abort();
 }

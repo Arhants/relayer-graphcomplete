@@ -24,8 +24,11 @@ transaction; rejection retains them for repair. Stop or failure discards unpubli
 presentation payloads while accepted mutation provenance remains available. Export of mutated records is explicitly unavailable until portability is defined.
 
 B3 is a read projection of canonical context-layer owners and immutable invocation origins.
-No chronology edge or second stored graph is introduced. It replaces only gated banner navigation,
-starts closed, and selection loads the response root through the normal navigation controller.
+No chronology edge or second stored graph is introduced. Read-only B3 navigation is enabled independently of the mutation gate for native threads,
+including packaged Desktop and existing interactions. Imported threads retain the turn picker, as do runtimes whose startup feature discovery
+is absent or unavailable. It starts closed, and selection loads the response root
+through the normal navigation controller. Enabling this read projection does not change
+frozen permissions or enable attached-node mutations.
 
 ## Required response navigation for new preparations
 

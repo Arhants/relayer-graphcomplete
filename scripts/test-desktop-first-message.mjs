@@ -1,3 +1,4 @@
+import { interactionPositionCondition as turnReady } from "./interaction-navigator-driver.mjs";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -25,10 +26,6 @@ const invokeEvidenceDirectory = process.env.RELAYER_INVOKE_EVIDENCE_DIR
 const dataDirectory = mkdtempSync(join(tmpdir(), "relayer-first-message-app-"));
 const services = [];
 const typedPermissions = process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1";
-function turnReady(position, total) {
-  if (!typedPermissions) return `document.querySelector("#turnPickerButton")?.textContent === "Turn ${position} of ${total}"`;
-  return `(() => { const cards=[...document.querySelectorAll("#turnPopover .interaction-graph-node")]; return document.querySelector("#turnPickerButton")?.classList.contains("interaction-graph-trigger") && cards.length===${total} && cards.findIndex(card=>card.getAttribute("aria-current")==="true")===${position-1}; })()`;
-}
 
 const ancillaryFailures = [];
 let window;
@@ -653,7 +650,7 @@ async function run() {
     return presentation.inspectorOpen && nodesAreContained(presentation) ? presentation : false;
   });
   const productChildLayout = requireAuthoredLayout("Product child", restoredInspectorFit);
-  if (typedPermissions) invokeEvidencePaths.graphClosed = await captureEvidence(webContents, "09-interaction-graph-closed");
+  invokeEvidencePaths.graphClosed = await captureEvidence(webContents, "09-interaction-graph-closed");
   await webContents.executeJavaScript(`document.querySelector("#turnPickerButton")?.click()`);
   const productNavigationState = await waitFor("the scrolling turn picker", () => webContents.executeJavaScript(`(() => {
     const popover = document.querySelector("#turnPopover");
@@ -667,14 +664,12 @@ async function run() {
       selectedNodeId: document.querySelector(".graph-node.selected")?.dataset.node || null,
     };
   })()`));
-  if (typedPermissions) {
-    invokeEvidencePaths.graphOpen = await captureEvidence(webContents, "10-interaction-graph-open");
-    await webContents.executeJavaScript(`document.querySelector('.interaction-graph-node[aria-current="true"]')?.click()`);
-    await waitFor("B3 current selection to return to the response root", () => webContents.executeJavaScript(`Boolean(document.querySelector('[data-node="${latestRoot.nodes[0].id}"]')) && document.querySelector("#turnPopover")?.classList.contains("hidden") && document.querySelector("#workspaceBreadcrumb")?.classList.contains("hidden")`));
-    invokeEvidencePaths.graphSelected = await captureEvidence(webContents, "11-interaction-graph-selected-root");
-    await webContents.executeJavaScript(`document.querySelector("#historyBack")?.click()`);
-    await waitFor("Back from B3 root to the prior descendant", () => webContents.executeJavaScript(`document.querySelectorAll("#workspaceBreadcrumb .breadcrumb-segment").length === 2`));
-  }
+  invokeEvidencePaths.graphOpen = await captureEvidence(webContents, "10-interaction-graph-open");
+  await webContents.executeJavaScript(`document.querySelector('.interaction-graph-node[aria-current="true"]')?.click()`);
+  await waitFor("B3 current selection to return to the response root", () => webContents.executeJavaScript(`Boolean(document.querySelector('[data-node="${latestRoot.nodes[0].id}"]')) && document.querySelector("#turnPopover")?.classList.contains("hidden") && document.querySelector("#workspaceBreadcrumb")?.classList.contains("hidden")`));
+  invokeEvidencePaths.graphSelected = await captureEvidence(webContents, "11-interaction-graph-selected-root");
+  await webContents.executeJavaScript(`document.querySelector("#historyBack")?.click()`);
+  await waitFor("Back from B3 root to the prior descendant", () => webContents.executeJavaScript(`document.querySelectorAll("#workspaceBreadcrumb .breadcrumb-segment").length === 2`));
   productNavigationState.inspectorFit = {
     initialContained: nodesAreContained(productInspectorFit),
     restoredContained: nodesAreContained(restoredInspectorFit),
