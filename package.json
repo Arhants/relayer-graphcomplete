@@ -90,7 +90,8 @@
     "evidence:public-share-embed": "RELAYER_CAPTURE_PUBLIC_SHARE_EMBED_EVIDENCE=1 electron scripts/capture-public-share-embed-evidence.mjs",
     "review:public-share-embed": "node scripts/fixtures/public-share-embed.mjs",
     "test:desktop:sidebar-overflow": "electron scripts/test-sidebar-overflow.mjs",
-    "test:desktop:narrow-sidebar": "npm run build && npm run test:desktop:sidebar-overflow && electron scripts/test-desktop-narrow-sidebar.mjs"
+    "test:desktop:narrow-sidebar": "npm run build && npm run test:desktop:sidebar-overflow && electron scripts/test-desktop-narrow-sidebar.mjs",
+    "evidence:share-preview": "electron scripts/capture-share-preview-evidence.mjs"
   },
   "devDependencies": {
     "@actions/cache": "6.2.0",

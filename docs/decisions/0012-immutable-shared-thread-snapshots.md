@@ -129,3 +129,18 @@ to opt into a newer renderer. Existing share records and frozen bytes are not mi
 The website preserves standalone links in print/PDF output. Real example shares
 and deployed framing require their own observed evidence; local fixtures cannot
 substitute for that acceptance.
+
+## Desktop-owned social previews
+
+At Create link, Electron main resolves the current light/dark appearance before
+exporting and captures the same frozen redacted bytes in an isolated read-only
+bundled viewer. The PNG is 1200×630, first accepted root view, Node Details closed,
+with Fit applied. This is a creation-time desktop rendering, not a screenshot of
+the live thread and not a promise of matching a later hosted viewer version.
+
+Main persists the PNG, digest, size and theme alongside the snapshot before
+reserving. V2 attempt envelopes extend V1 recovery; legacy attempts remain valid.
+Retries reuse both payloads. The service accepts an optional separate PNG upload,
+validates complete decoding and fixed dimensions, and atomically publishes both
+object identities. Existing shares remain immutable and keep generic previews.
+The hosted service no longer needs Chromium or a capture artifact catalog.
