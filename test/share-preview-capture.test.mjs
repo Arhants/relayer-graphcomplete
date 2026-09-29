@@ -161,6 +161,8 @@ describe("desktop share preview capture", () => {
     expect(captureSession.clearStorageData).toHaveBeenCalledTimes(4);
     expect(windows).toHaveLength(2);
   });
+
+
 });
 
 function expectSessionTeardown(captureSession) {

@@ -77,13 +77,13 @@ export function createSharePreviewCapture({
     };
     const abort = () => stop();
     try {
-    root = await realpath(rendererDirectory);
-    html = renderPublicViewerTemplate({
-      snapshot: snapshotBytes,
-      title,
-      theme,
-      assetBase: prefix.slice(0, -1),
-    });
+      root = await realpath(rendererDirectory);
+      html = renderPublicViewerTemplate({
+        snapshot: snapshotBytes,
+        title,
+        theme,
+        assetBase: prefix.slice(0, -1),
+      });
       // A prior teardown may have failed. Never reuse this fixed partition
       // until Electron confirms its storage is empty.
       await captureSession.clearStorageData();
