@@ -1,5 +1,6 @@
 import {
   availablePickerFamilies,
+  compatibilityExposesNoRoute,
   compatibilityRestrictsRoute,
   familyModelSetup,
   harnessUsesConfigurationModel,
@@ -34,7 +35,7 @@ export function modelPickerModelSetup(settings, selection) {
   if (!settings || pickerSelectionIsAvailable(settings, selection)) return null;
   const compatibility = settings.conversationCompatibility;
   const setup = familyModelSetup(settings, selection?.familyId ?? settings.defaults?.familyId);
-  if (compatibility?.status === "blocked") return null;
+  if (compatibilityExposesNoRoute(compatibility)) return null;
   if (compatibility?.status === "compatible" && (
     setup?.providerId !== compatibility.providerId
     || selection?.harnessId !== compatibility.harnessId

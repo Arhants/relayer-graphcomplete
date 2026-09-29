@@ -580,7 +580,7 @@ whether the chosen representation communicates the task effectively.
 - **Compatibility status.** `conversation_compatibility::compatibility_on` returns `portable` for a continuation thread before it derives any receipt route.
   - `validate_on` restricts only `compatible` and `blocked`, so Send, identified-input Send, retry, and admission accept a portable route switch through the unchanged catalog and model checks.
   - `ConversationCompatibility::requires_native_continuity` is the single decision passed to the harness host. It is false for `unrestricted` and `portable`.
-  - The renderer picker's `compatibilityRestrictsRoute` treats `portable` like `unrestricted`, and any other or missing status as restricted at the harness-default and empty-state gates. Route filtering still narrows only `compatible` and `blocked`. Legacy statuses keep #597's behaviour exactly.
+  - The renderer picker's `compatibilityRestrictsRoute` treats `portable` like `unrestricted`, and any other or missing status as restricted. `compatibilityExposesNoRoute` gives `blocked` and any unknown or missing status no family route and no model-setup refresh. Legacy statuses keep #597's behaviour exactly.
 - **Planned building blocks,** each merged inert:
   - a bounded adapter action ledger;
   - a manifest of earlier turns, frozen into graph control atomically with each interaction;

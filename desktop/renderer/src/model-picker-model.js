@@ -92,11 +92,16 @@ function harnessFor(settings, harnessId) {
 
 // Only a legacy conversation is contained to its original route (#597). A portable
 // continuation conversation (ADR 0013) is offered every route an unrestricted one is. Any
-// other or missing status is restricted by the harness-default and empty-state gates that use
-// this check. Route filtering itself still narrows only the compatible and blocked statuses.
+// other or missing status is restricted, so an unknown state never widens routes.
 export function compatibilityRestrictsRoute(compatibility) {
   if (!compatibility) return false;
   return compatibility.status !== "unrestricted" && compatibility.status !== "portable";
+}
+
+// A restricted conversation exposes routes only as a verified legacy owner ("compatible").
+// "blocked" and any unknown or missing status expose none.
+export function compatibilityExposesNoRoute(compatibility) {
+  return compatibilityRestrictsRoute(compatibility) && compatibility.status !== "compatible";
 }
 
 export function harnessUsesConfigurationModel(settings, harnessId) {
@@ -146,7 +151,7 @@ function harnessSupportsModel(harness, provider, modelId) {
 
 export function availableFamilyMembers(settings, family, harnessId) {
   const compatibility = settings.conversationCompatibility;
-  if (compatibility?.status === "blocked" || (compatibility?.status === "compatible" && compatibility.harnessId !== harnessId)) return [];
+  if (compatibilityExposesNoRoute(compatibility) || (compatibility?.status === "compatible" && compatibility.harnessId !== harnessId)) return [];
   const harness = harnessFor(settings, harnessId);
   if (!harness || harness.available === false) return [];
   return [...(family.members ?? [])]
