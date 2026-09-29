@@ -4,6 +4,13 @@ import { resolve, sep, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { renderPublicViewerTemplate } from "../../renderer/src/public-share-viewer/template.js";
 
+const shareExportFailure = (cause) =>
+  Object.assign(new Error("Share preview capture failed"), {
+    code: "share_export_failed",
+    failureStage: "export",
+    cause,
+  });
+
 /** Capture only the frozen redacted publication, never the live desktop window. */
 export function createSharePreviewCapture({
   BrowserWindow,
@@ -165,11 +172,7 @@ export function createSharePreviewCapture({
       ]);
     } catch (error) {
       signal?.throwIfAborted();
-      throw Object.assign(new Error("Share preview capture failed"), {
-        code: "share_export_failed",
-        failureStage: "export",
-        cause: error,
-      });
+      throw shareExportFailure(error);
     } finally {
       clearTimeout(deadline);
       signal?.removeEventListener("abort", abort);
@@ -179,7 +182,11 @@ export function createSharePreviewCapture({
       captureSession.setPermissionCheckHandler(null);
       captureSession.removeListener("will-download", preventDownload);
       captureSession.webRequest.onBeforeRequest(null);
-      await captureSession.clearStorageData();
+      try {
+        await captureSession.clearStorageData();
+      } catch (error) {
+        throw shareExportFailure(error);
+      }
     }
   };
   return function capture(input) {

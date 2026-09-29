@@ -156,7 +156,11 @@ describe("desktop share preview capture", () => {
     });
     const input = { snapshotBytes: new Uint8Array(), title: "Cleanup", theme: "light" };
 
-    await expect(capture(input)).rejects.toThrow("clear failed");
+    await expect(capture(input)).rejects.toMatchObject({
+      code: "share_export_failed",
+      failureStage: "export",
+      cause: new Error("clear failed"),
+    });
     await expect(capture(input)).resolves.toEqual(new Uint8Array(Buffer.from("png")));
     expect(captureSession.clearStorageData).toHaveBeenCalledTimes(4);
     expect(windows).toHaveLength(2);
