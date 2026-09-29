@@ -15,6 +15,7 @@ export function createProviderComposition({
   prepareRuntime = async () => null,
   evaluateReadiness = async () => null,
   removeRuntimeState = async () => false,
+  accountCheckTimeoutMs,
   diagnostics = null,
   modelCatalogOptions = {},
 }) {
@@ -45,6 +46,7 @@ export function createProviderComposition({
       }
       const published = await publishCatalog(snapshot, options);
       publishedModels.set(snapshot.providerId, snapshot.models ?? []);
+      providerDefinitions.catalogPublished(snapshot.providerId, { connected: snapshot.connected });
       return published;
     },
     ...modelCatalogOptions,
@@ -60,6 +62,7 @@ export function createProviderComposition({
     prepareRuntime,
     evaluateReadiness,
     removeRuntimeState,
+    accountCheckTimeoutMs,
     publishCatalog: (snapshot, options) => publishCatalog(toProductCatalogSnapshot(snapshot), options),
     onRuntimeReady: (definition, runtime) => {
       modelCatalog.unregister(definition.id);
