@@ -40,7 +40,9 @@ export function createProviderComposition({
           throw Object.assign(new Error("provider_connection_superseded"), { code: "provider_connection_superseded" });
         }
       }
-      return publishCatalog(snapshot, options);
+      const published = await publishCatalog(snapshot, options);
+      providerDefinitions.catalogPublished(snapshot.providerId, { connected: snapshot.connected });
+      return published;
     },
     ...modelCatalogOptions,
   });

@@ -757,7 +757,7 @@ commits, commit and lose its answer, or lose its answer and commit later
 carried. A settling reconnect's signed-out publish can fail too
 (`CancelPublishCanFail`).
 
-`lifecycle-today` mirrors the code. It has every fault on and ten fix
+`lifecycle-today` mirrors the code. It has every fault on and eleven fix
 constants, all landed. The refresh runs in three steps: it resolves its
 generation, reads the account, then publishes.
 
@@ -791,6 +791,13 @@ generation, reads the account, then publishes.
   answered superseded is settled by wiping, even when its own signed-out
   publish fails. That sign-out already recorded signed out, and no refresh
   ran since, so nothing is unknown.
+- `SignOutBlocksAdmission`: a sign-out the app server has not recorded, from
+  a failed sign-out publish or a cancel with no login to keep, refuses new
+  provider access. The block ends when a signed-out state is recorded, a
+  reconnect completes, or a refresh publishes a catalog that is not
+  connected. A connected catalog does not end it: its discovery may predate
+  the sign-out. The cancel keeps a login only when the account does not read
+  signed out.
 - `AdoptTracksLostWrites`: a lifecycle write whose answer was lost, even one
   sent before the reconnect started, may still commit. While one is
   outstanding, an advance in the generation proves nothing, so the reconnect
@@ -819,6 +826,8 @@ generation, reads the account, then publishes.
 | `lifecycle-cancel-keeps-unrecorded-login-reverted` | violated: shows why the fix is needed | Found by a Codex review of #572. With `CancelKeepsUnrecordedLogin` off: a sign-out whose publish fails, a reconnect, and a cancel whose own publish fails and still wipes the login. Regression test: `keeps the login when a cancelled reconnect cannot record signed out`. |
 | `lifecycle-confirmed-sign-out-stands` | Fixed; now passes | Checks `ConfirmedSignOutStands` with every fault on. Found by a Codex review of #572: a sign-out answered during a pending reconnect was followed by the browser sign-in. The refused reconnect's settle could not publish, so it kept the new login as an unknown outcome, and the next refresh published connected over the confirmed sign-out. Shutdown is excluded, because `close()` drops a pending reconnect without settling it. Regression test: `keeps a confirmed sign-out when a superseded reconnect cannot record signed out again`. |
 | `lifecycle-confirmed-sign-out-stands-reverted` | violated: shows why the fix is needed | With `SupersededCancelWipes` off: sign out, reconnect, sign out (answered), sign in, and a cancel whose publish fails keeps the login. |
+| `lifecycle-no-stale-admission` | Fixed; now passes | Checks `NoStaleAdmission` with every fault on: no provider access is granted while `P` has no login and the app server reads it ready. Found by a Codex review of #572: a cancel after a sign-out whose publish failed kept a login that did not exist and let turns take access against the stale connected catalog. The model then found that a refresh that read the account before such a sign-out could end the block by publishing connected. Regression tests: `refuses provider access after a sign-out the app server did not record`, `keeps admission blocked when a cancel after an unrecorded sign-out has no login to keep`, and `keeps admission blocked when a refresh from before an unrecorded sign-out publishes connected`. |
+| `lifecycle-no-stale-admission-reverted` | violated: shows why the fix is needed | With `SignOutBlocksAdmission` off: Rust admits a turn, a sign-out's publish fails, and the turn takes provider access with no login. |
 | `lifecycle-straddling-refresh` | Fixed; now passes | Checks `ReadyMeansSignedIn` with the sign-out fault off. Before the fix: a refresh resolved its generation before a reconnect, read the account after the browser sign-in, and reached its publish after the cancel. The cancel had not moved the generation, so both checks passed and Rust read ready over the wiped login. The cancel now advances it, so the result is stale. Regression test: `drops a refresh that straddles a cancelled reconnect`. |
 | `lifecycle-straddling-refresh-reverted` | violated: shows why the fix is needed | With `CancelSignsOut` off: sign out, refresh starts, reconnect, sign in, refresh reads, cancel, refresh publishes. |
 | `lifecycle-overlapping-refresh` | passes | Checks `OverlappingRefreshNeverReadiesWipedLogin`, with every fault but the sign-out's on. A Codex review of #572 asked for a refresh epoch across the reconnect, since `refreshGeneration` is only a level check. This check shows the epoch is not needed: every path that ends a reconnect and wipes the login first advances the generation, and a cancel that cannot keeps the login, so a straddling refresh is either stale or truthful. A refresh straddling a failed sign-out is the sign-out's known limit and is excluded. |
@@ -831,6 +840,16 @@ corrects it. While a reconnect is pending, no refresh runs, and the lease
 guard keeps turns off the reconnect's runtime. Settling the reconnect commits
 signed-out, which ends that state. If that publish fails too, the login is
 kept, so Rust stays ready with a login until the next refresh.
+
+A reconnect starts with `ReconnectBegin`: from its first check it prepares the
+runtime and starts the sign-in (`prepareRuntime`, `login()`) before it is
+pending, and it may fail there (`ReconnectAbort`). No refresh starts or
+publishes in that interval either. A Codex review of #572 found the code
+guarded only the pending entry; `refreshGeneration` now also returns null
+while a reconnect prepares. The browser sign-in cannot finish before
+`login()` returns, so no invariant tells the interval apart: a refresh there
+reads the signed-out account. The regression test is `runs no refresh while
+a reconnect prepares its runtime or starts its sign-in`.
 
 Two code seams sit inside single model steps, and the code now matches the
 model's assumption at each. `RefreshPublish` checks for a pending reconnect

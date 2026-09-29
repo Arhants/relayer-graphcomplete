@@ -193,6 +193,7 @@
       "CancelSignsOut": "TRUE",
       "CancelKeepsUnrecordedLogin": "TRUE",
       "SupersededCancelWipes": "TRUE",
+      "SignOutBlocksAdmission": "TRUE",
       "AdoptTracksLostWrites": "TRUE"
     }
   },
@@ -2491,6 +2492,33 @@
         "violated": "ConfirmedSignOutStands"
       },
       "finding": "With SupersededCancelWipes off, a sign-out answered during a reconnect is followed by the browser sign-in; the refused reconnect's settle cannot publish, keeps the new login, and the next refresh would publish connected over the confirmed sign-out."
+    },
+    {
+      "id": "lifecycle-no-stale-admission",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "NoStaleAdmission"
+      ],
+      "expect": "pass",
+      "finding": "No provider access is granted while P has no login and the app server still reads it ready, with every fault on, including a cancel after a sign-out whose publish failed."
+    },
+    {
+      "id": "lifecycle-no-stale-admission-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutBlocksAdmission": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoStaleAdmission"
+      ],
+      "expect": {
+        "violated": "NoStaleAdmission"
+      },
+      "finding": "With SignOutBlocksAdmission off, a sign-out whose publish fails leaves the app server ready, and a turn takes provider access with no login."
     },
     {
       "id": "lifecycle-straddling-refresh",
