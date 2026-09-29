@@ -209,9 +209,12 @@ describe("API-key provider native homes", () => {
     await expectUserHomesUntouched();
   });
 
-  it.each(["provider directory", "home"])("refuses a private home whose %s is a symlink out of the runtime root", async (linked) => {
+  it.each(["runtime root", "provider directory", "home"])("refuses a private home whose %s is a symlink out of Relayer's data", async (linked) => {
     const providerRoot = join(runtimeRoot, "openai-api-work");
-    if (linked === "provider directory") {
+    if (linked === "runtime root") {
+      await mkdir(join(profile, "userData"), { recursive: true });
+      await symlink(userHome, runtimeRoot);
+    } else if (linked === "provider directory") {
       await mkdir(runtimeRoot, { recursive: true });
       await symlink(userHome, providerRoot);
     } else {
@@ -224,7 +227,25 @@ describe("API-key provider native homes", () => {
     await expectUserHomesUntouched();
     // Nothing was created through the link.
     await expect(access(join(userHome, "codex-home"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(join(userHome, "openai-api-work"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readdir(join(userHome, ".codex"))).resolves.toEqual(["sessions"]);
+  });
+
+  it("refuses to remove provider state through a symlinked runtime root", async () => {
+    // Restored or tampered data: the runtime root points into the user's home.
+    await mkdir(join(userHome, "openai-api-work", "codex-home"), { recursive: true });
+    await mkdir(join(profile, "userData"), { recursive: true });
+    await symlink(userHome, runtimeRoot);
+    const removeRuntimeState = createProviderRuntimeStateRemover({
+      runtimeRoot,
+      registry: productionProviderAdapterRegistry,
+    });
+
+    await expect(removeRuntimeState({ id: "openai-api-work", adapterId: "openai-api", accessContract: "secret@1" }))
+      .rejects.toThrow("provider runtime root must be a real directory");
+    await expect(removeRuntimeState.reconcile([])).rejects.toThrow("provider runtime root must be a real directory");
+    await expect(access(join(userHome, "openai-api-work", "codex-home"))).resolves.toBeUndefined();
+    await expectUserHomesUntouched();
   });
 
   it("deletes only the provider's private homes when the provider is removed", async () => {

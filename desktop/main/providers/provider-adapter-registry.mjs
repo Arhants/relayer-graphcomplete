@@ -111,11 +111,17 @@ async function secretProviderRuntimeDependencies(definition, context, runtimeId)
   const { variable, directory } = SECRET_PROVIDER_HOMES[runtimeId];
   const home = join(root, directory);
   // A symlink at the provider directory or its home, from restored or tampered data, could
-  // point at the user's own ~/.codex or ~/.claude. Each level must be a real directory, checked
-  // before anything is created beneath it.
-  await mkdir(context.runtimeRoot, { recursive: true });
-  for (const path of [root, home]) {
-    await mkdir(path).catch((error) => { if (error?.code !== "EEXIST") throw error; });
+  // point at the user's own ~/.codex or ~/.claude. The runtime root and each level below it must
+  // be a real directory, checked before anything is created beneath it.
+  const runtimeRoot = await lstat(context.runtimeRoot).catch((error) => {
+    if (error?.code !== "ENOENT") throw error;
+    return null;
+  });
+  if (runtimeRoot === null) await mkdir(context.runtimeRoot, { recursive: true });
+  for (const path of [context.runtimeRoot, root, home]) {
+    if (path !== context.runtimeRoot) {
+      await mkdir(path).catch((error) => { if (error?.code !== "EEXIST") throw error; });
+    }
     const entry = await lstat(path);
     if (entry.isSymbolicLink() || !entry.isDirectory()) {
       throw new Error("An API-key provider's private native home must stay inside the provider runtime directory.");
