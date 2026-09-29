@@ -2538,6 +2538,14 @@ async fn authorize_child_completion(
         .get_action_invocation(grant.source_interaction_id, invocation.source_action_id)
         .await?
         .ok_or_else(|| ApiError::invalid("completion has no product invocation binding"))?;
+    // A user's own invoke of the action owns its result; only an agent's child answers to
+    // the broker, even while the source's agent still holds its grant.
+    if !outcome.invocation.agent_invoked {
+        return Err(ApiError::conflict(
+            "invocation_owned_by_user",
+            "A user invoked this action; its result is not a recursive completion.",
+        ));
+    }
     if outcome.interaction.graph_node_id != Some(completion_id) {
         return Err(ApiError::invalid(
             "completion graph identity does not match product history",

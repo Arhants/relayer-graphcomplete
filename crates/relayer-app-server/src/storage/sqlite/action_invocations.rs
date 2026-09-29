@@ -72,7 +72,10 @@ impl SqliteProductStore {
     /// accepted is terminal, so a result whose source is not accepted, or was accepted only
     /// after the result was created, is an agent's child. The acceptance time is read from the
     /// source's accepted attempt only for a source that is not itself a launched child: a
-    /// child's attempt finishes after its provider unwinds, which can be after acceptance.
+    /// child's attempt finishes after its provider unwinds, which can be after acceptance. A
+    /// launched child's acceptance time is its execution's settlement instead: the settlement
+    /// and the accepted product row are written in one transaction, and nothing updates a
+    /// settled execution afterwards.
     /// A root an older build accepted without an attempt row carries no acceptance time, so a
     /// result of it stays unmarked: the product row records no other acceptance evidence.
     /// Returns how many were marked.
@@ -85,6 +88,11 @@ impl SqliteProductStore {
                AND (EXISTS(SELECT 1 FROM interactions source
                            WHERE source.id=action_invocations.source_interaction_id
                              AND source.completion_status!='accepted')
+                    OR EXISTS(SELECT 1 FROM completion_executions launched
+                              WHERE launched.interaction_id=action_invocations.source_interaction_id
+                                AND launched.phase='settled'
+                                AND CAST(launched.updated_at AS INTEGER)
+                                    > CAST(action_invocations.created_at AS INTEGER))
                     OR EXISTS(SELECT 1 FROM interaction_attempts attempt
                               WHERE attempt.interaction_id=action_invocations.source_interaction_id
                                 AND NOT EXISTS(SELECT 1 FROM completion_executions launched
@@ -1516,6 +1524,10 @@ mod tests {
             "INSERT INTO interaction_attempts(interaction_id,attempt_number,started_at,finished_at,family_id,family_revision,harness_configuration_name,harness_configuration_revision,harness_configuration_digest,provider_id,adapter_id,adapter_implementation_version,model_id,access_contract,outcome,effect_boundary) VALUES (12,1,'400','900',1,1,'codex-basic',1,'sha256:h','codex','codex-subscription',1,'test-model','managed-runtime@1','accepted','graph_write')",
             "INSERT INTO interactions(id,thread_id,sequence,text,created_at,completion_status) VALUES (13,?1,5,'Early child','500','submitted')",
             "INSERT INTO action_invocations(source_interaction_id,action_id,result_interaction_id,created_at,graph_lease_required,authoritative,agent_invoked) VALUES (12,42,13,'500',1,1,0)",
+            // 15: a grandchild the launched child 10 invoked at 2, before its execution settled
+            // at 3, whose own launch never started: an agent's child.
+            "INSERT INTO interactions(id,thread_id,sequence,text,created_at,completion_status) VALUES (15,?1,7,'Grandchild','2','submitted')",
+            "INSERT INTO action_invocations(source_interaction_id,action_id,result_interaction_id,created_at,graph_lease_required,authoritative,agent_invoked) VALUES (10,44,15,'2',1,1,0)",
         ] {
             sqlx::query(statement)
                 .bind(thread_id)
@@ -1542,8 +1554,8 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(store.mark_unrecorded_agent_children().await.unwrap(), 2);
-        for (result, agent) in [(11, false), (13, true), (14, true)] {
+        assert_eq!(store.mark_unrecorded_agent_children().await.unwrap(), 3);
+        for (result, agent) in [(11, false), (13, true), (14, true), (15, true)] {
             assert_eq!(
                 store
                     .is_agent_invoked_child(InteractionId::from_database(result))

@@ -2798,3 +2798,48 @@ async fn the_broker_refuses_a_users_invoke_of_the_same_action() {
     assert_eq!(state["status"], "submitted", "{state}");
     world.finish().await;
 }
+
+/// A user's own invoke of the action owns its result, even while the agent of the accepted
+/// source that published the action still holds its broker grant. The broker's Stop, current
+/// and result endpoints all refuse that result, so the agent cannot end the user's run.
+#[tokio::test]
+async fn the_broker_refuses_every_request_for_a_users_result() {
+    let world = World::new("broker-user-result", false).await;
+    let (broker, _lease) = world.broker();
+    sqlx::query("UPDATE action_invocations SET agent_invoked=0")
+        .execute(&world.pool)
+        .await
+        .unwrap();
+
+    let stopped = stop_completion(
+        State(world.state.clone()),
+        broker.clone(),
+        Path(world.completion_id),
+        None,
+    )
+    .await;
+    assert!(stopped.is_err(), "the broker cannot stop a user's run");
+    let current = completion_current(
+        State(world.state.clone()),
+        broker.clone(),
+        Path(world.completion_id),
+    )
+    .await;
+    assert!(current.is_err(), "nor read its current");
+    let result = completion_result(
+        State(world.state.clone()),
+        broker.clone(),
+        Path(world.completion_id),
+        Query(CompletionResultQuery {
+            after_revision: None,
+        }),
+    )
+    .await;
+    assert!(result.is_err(), "nor its result");
+    let state = world.observe().await;
+    assert_eq!(
+        state["life"], "active",
+        "the user's run is untouched: {state}"
+    );
+    world.finish().await;
+}
