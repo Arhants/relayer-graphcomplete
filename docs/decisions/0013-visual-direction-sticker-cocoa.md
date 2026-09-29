@@ -1,7 +1,8 @@
 # ADR 0013: Visual direction "Sticker × Cocoa"
 
-Status: accepted visual direction (owner decision, 2026-09-28). Not implemented. The PRD has not been updated. The
-implementation architecture, including selectable themes, is still open and will be decided separately.
+Status: accepted visual direction (owner decision, 2026-09-28). Not implemented. Designs are build-time configuration
+with no in-product picker (see "Build decisions"). PRD §10.1 records item 3 below and the one-design-per-build rule; items
+1, 2 and 4 are not in the PRD yet.
 
 ## Context
 
@@ -65,8 +66,7 @@ selection ring with a gap, a `--text` focus ring, and contrast floors of 4.5:1 f
 
 **Not decided here:**
 
-- how themes are implemented, and whether palettes are user-selectable
-- the public share viewer's theme policy
+- the public share viewer's light/dark policy (the hosted artifact uses the default design; see "Build decisions")
 - the link-preview (OG) image
 - the approval dock and onboarding visuals beyond the prototype boards
 
@@ -80,7 +80,8 @@ selection ring with a gap, a `--text` focus ring, and contrast floors of 4.5:1 f
   label (running arc + badge + caption versus a static selection ring).
 - **Existing installs with no saved appearance move to System** when System ships.
 - **Plan only for now.** No implementation until the owner approves the revised plan
-  ([`design-config-plan.md`](../design/visual-redesign/design-config-plan.md)).
+  ([`design-config-plan.md`](../design/visual-redesign/design-config-plan.md)). Update: the owner approved step P0 (these
+  docs) on 2026-09-28; each later step needs its own approval (tracking issue #582).
 - **Keep #570's persistent workspace split.** H's floating inspector card fills the split's right pane (340px only below
   1101px); READ-002 is unchanged. (plan PD-16)
 - **Re-review the collapsed "Add annotation" row against #570's floating annotation editor** in the real app before
@@ -93,11 +94,12 @@ selection ring with a gap, a `--text` focus ring, and contrast floors of 4.5:1 f
 ## Consequences
 
 - Implementation touches:
-  - every surface's colour tokens: desktop renderer, eval/judge/trace, and the share viewer once merged
-  - font bundling and CSP `font-src`
+  - every surface's colour tokens: desktop renderer, eval/judge/trace, and the share viewer
+  - font bundling. Fonts are served from the app's own origin, so no CSP change is needed: the desktop page falls back to
+    `default-src 'self'`, and the share viewer already allows `font-src 'self'`.
   - graph node rendering: record state, node families and badges are not drawn today
   - several test pins listed in the specs
 - The visual record and rationale live in `docs/design/visual-redesign/`. The canvas is the review surface, not the
   source of truth.
 - Later palettes can reuse the same token architecture. The 29 engineered palettes and the palette engine are
-  candidates for selectable themes if that is decided.
+  candidates for further design configs.

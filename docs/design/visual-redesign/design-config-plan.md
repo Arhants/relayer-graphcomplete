@@ -2,7 +2,7 @@
 
 **What changed and why.** You decided that designs are chosen when the app is built, not in Settings. Each design type (prototypes A–H) is a config file, and the build takes one config file as its parameter. This plan replaces the runtime-palette architecture in `theming-proposal.md`. It keeps that plan's colour-role vocabulary, validator, token cleanup and order of work, and drops everything that existed only to switch palettes at runtime.
 
-**Snapshot and limits.** Line references are to `main` at **`18d6f23b`** (#570). I re-checked the lines this plan relies on; §2.7 lists the corrections. I made no repo edits and ran no builds, installs, test runs or paid inference. Two reviewers checked the draft. Their reviews were not tied to a PR, so this plan certifies nothing.
+**Snapshot and limits.** Code line references are to `main` at **`c6813890`** (#536); PRD line references are to the PRD as edited in P0. They were first taken at `18d6f23b` (#570) and re-derived at P0; §2.7 lists the corrections. I made no repo edits and ran no builds, installs, test runs or paid inference. Two reviewers checked the draft. Their reviews were not tied to a PR, so this plan certifies nothing.
 
 **Terms used below**
 - **Design type / design config.** One JSON file, `designs/<id>.json`, that names a structure and holds a palette. It may also override the structure's sizes or fonts. The file name is the id.
@@ -52,7 +52,7 @@
 | Change the design in a running app | `RELAYER_DESIGN=designs/lab/x.json npm run prepare:renderer`, then reload. The renderer is static files served from disk by `ServeDir` (`crates/relayer-app-server/src/api.rs:330`). Use Force Reload (⇧⌘R) until A4 confirms that a plain ⌘R picks up new `design.css`/`design.js`: `ServeDir` sends no `Cache-Control`. Only the launch frame's background waits for a restart. |
 | Build / check / test | `RELAYER_DESIGN=… npm run build` / `check` / `test`. **With the variable unset, these reset the prepared design to the default.** This also changes what a running dev app shows on its next reload. |
 | Packaged dev app | `RELAYER_DESIGN=… npm run desktop:pack`. electron-builder ships `desktop/renderer` whole as an extra resource (`electron-builder.mjs:92`), including `design/`. |
-| Release | `npm run desktop:dist`. Refuses lab configs always, and non-default designs if PD-17 = yes. |
+| Release | `npm run desktop:dist`. Refuses lab configs and non-default designs (PD-17). |
 | Share-viewer artifact | `npm run build:public-share-viewer-artifact -- --output <dir>`. It **always uses the committed default** and ignores `RELAYER_DESIGN` (§2.2). |
 | Preview a design in the share viewer | `RELAYER_DESIGN=… npm run prepare:renderer`, then the existing fixture server `scripts/fixtures/public-share-embed.mjs`, which serves `desktop/renderer` directly. No artifact needed. |
 | Check a config without building | `node scripts/design/validate.mjs designs/lab/x.json` |
@@ -61,7 +61,7 @@
 
 | Dropped (existed only for runtime switching) | Kept |
 |---|---|
-| `data-palette` attribute and selectors | `data-theme` stays exactly `light` or `dark` (the resolved appearance). Node Details depends on it (`node-detail-runtime.js:515`, `:520`). |
+| `data-palette` attribute and selectors | `data-theme` stays exactly `light` or `dark` (the resolved appearance). Node Details depends on it (`node-detail-runtime.js:545`, `:550`). |
 | Preload `sendSync` palette read; palette in Settings; the A7 theme picker | System / Light / Dark as a runtime user preference (A1), independent of the design |
 | Generating palettes into the committed `styles.css`; the committed palette manifest | The ~45 colour roles (70 values per mode), the rename set and the alias shim (old §2.2) |
 | Lab injection with `RELAYER_LAB_PALETTES` + `insertCSS` | A git-ignored lab folder (now for whole configs); the canary; screenshot evidence |
@@ -118,7 +118,7 @@ These compile to CSS custom properties in `design.css`. Values marked **(JS)** a
 - `--sidebar` and `--inspector` widths and their breakpoint and collapsed values. These are structure CSS; v1 has no `layout` group.
 - 3 × 52px turn rows;
 - explicit state glyphs and labels;
-- Stop stays neutral (PRD `:2257`);
+- Stop stays neutral (PRD `:2269`);
 - the focus ring uses `--text`.
 
 **Authoring palette (optional, later).** An `authoring` block (the `--relayer-*` names) waits for PD-A1.
@@ -223,7 +223,7 @@ Every other config is committed. Release scripts use this one check. There is no
 | Schema or integrity error | fail | fail |
 | Floor or colour state-pair failure | warn; build proceeds with a LAB badge (`body::after`) listing the failure count | warn until the PRD adopts the floors (PD-5), then **fail** |
 | Taste finding | report | report |
-| `desktop:dist`, preview and stable release | **refused** | default design only, if PD-17 = yes |
+| `desktop:dist`, preview and stable release | **refused** | default design only (PD-17) |
 | Share-viewer artifact | not applicable: the builder always regenerates the committed default (§2.2) | same |
 
 Explicit state glyphs and labels are enforced in every build by structure tests (PRD `:289`), not by colour checks.
@@ -251,9 +251,9 @@ RELAYER_DESIGN (or the id in designs/default)
 |---|---|---|
 | Renderer CSS | `styles.css` line 1 `@import url("./design/design.css")`; the hand-written `:root` (`:1`) and light block (`:26`) move into `designs/classic.json` in A4 | 1 line + deletions |
 | Renderer JS | **B2, not A4:** `src/product-workspace/workspace.js` imports `../../design/design.js`, replacing `GRAPH_NODE_ICON_RADIUS` (`:79`), `:188-190`, `:425-427` and the CSS-coupled node offsets. Add the module to `desktop/shared/telemetry-module-inventory.mjs` (as #570 did at `:45`). | S (in B2) |
-| Electron main (first paint) | `await import(pathToFileURL(join(rendererDirectory, "design/design.js")))` before `createWindow` (`index.mjs:174-176`, `:618`). `appearance.mjs` `firstPaint(mode, design)` replaces the literals at `window.mjs:46` and `register-ipc.mjs:334`. | S |
+| Electron main (first paint) | `await import(pathToFileURL(join(rendererDirectory, "design/design.js")))` before `createWindow` (`index.mjs:174-176`, `:619`). `appearance.mjs` `firstPaint(mode, design)` replaces the literals at `window.mjs:46` and `register-ipc.mjs:374`. | S |
 | Packaged app | Copied with `renderer/` (`electron-builder.mjs:92`). `relayerDesign: {id, sha256}` is added to `extraMetadata` (`:40-53`, next to `relayerReleaseSourceCommit`); the design id also goes into telemetry and bug-report context. `verify-bundled-app-server.mjs` (which already checks a generated vendor file at `:67`) checks that `renderer/design/design.js` exists and that its sha256 equals `relayerDesign`. Dev pack names gain `-<design>` when the design is not the default. | S |
-| Release | `desktop/release/build-release.mjs` refuses lab configs, and refuses non-default designs if PD-17 = yes. The check compares the prepared sha256 with one recomputed from the git-tracked default config, structure and font files. | S |
+| Release | `desktop/release/build-release.mjs` refuses lab configs and non-default designs (PD-17). The check compares the prepared sha256 with one recomputed from the git-tracked default config, structure and font files. | S |
 | Share viewer artifact | The builder **ignores `RELAYER_DESIGN`**. It regenerates the committed default in-process from git-tracked inputs into its staging area, and adds the file list `build.mjs` returns to `browserResources`. That list is literal today (`build-public-share-viewer-artifact.mjs:11-44`), so the returned list is appended to it. The template links `styles.css` (`template.js:116`, `:133`), whose `@import` resolves beside it in `assets/<commit>/`. **Why default-only:** every build from one commit publishes under the same immutable `assets/<productCommit>/` path (`:80`), and the clean-tree check (`:77-78`) cannot see ignored lab files. The design bytes are covered by `artifactSha256` once they are in `files`, so no new manifest key is needed. The contract's `requiredResources` (`contract.json:92`) is **unchanged**: a new logical asset would break old-manifest hosting, because `viewerAsset` throws on a missing key (`template.js:36-40`). | S |
 | Share first frame | `design.css` includes `@media (prefers-color-scheme:light){:root:not([data-theme]):not([data-viewer-theme="dark"]){…}}` and `:root[data-viewer-theme="light"]:not([data-theme]){…}`, which match until `setTheme` runs (`public-share-viewer/main.js:16-26`) | in the generator |
 | Eval review workspace | The Eval app hosts the product renderer (`productRendererDirectory`, `eval-main/index.mjs:66`, `:186`) and proxies review requests to it (`eval-main/web-host.mjs:126`), so it follows automatically. The Eval dashboard itself serves `eval-renderer` (`web-host.mjs:161`, `:192`), see PD-6/13. | none |
@@ -264,7 +264,8 @@ RELAYER_DESIGN (or the id in designs/default)
 `settings.appearance` becomes `system|light|dark` and drives `nativeTheme.themeSource`. The pieces:
 - **Bootstrap.** `theme-bootstrap.js` sets `data-theme` from `matchMedia("(prefers-color-scheme: light)")` and listens for changes. This replaces the dark-only `localStorage` bootstrap (`theme-bootstrap.js:1-4`).
 - **Meta tag.** `<meta name="color-scheme">` becomes `light dark` (`index.html:6`).
-- **One pure main-process module.** `desktop/main/appearance.mjs` replaces the clamps at `index.mjs:407-408`, `register-ipc.mjs:168` and `window.mjs:46`. The renderer clamps (`ui.js:6-9`, the bootstrap) are deleted.
+- **One pure main-process module.** `desktop/main/appearance.mjs` replaces the clamps at `index.mjs:408-409`, `register-ipc.mjs:208` and `:371-374`, and `window.mjs:46`. The renderer clamps (`src/ui.js:6-10`, the bootstrap) are deleted.
+- **Explicit modes apply directly.** When the preference is Light or Dark, the renderer sets `data-theme` from it exactly as today; only System reads `matchMedia`. 16 evidence and desktop-test scripts stub `relayer:appearance-read` with a fixed `"light"` or `"dark"` and never set `nativeTheme.themeSource`, so they keep rendering the mode they ask for instead of the host's OS mode.
 - **Settings row.** "Theme" (`index.html:185`) becomes "Appearance" with System · Light · Dark. The pinned ids `appearanceSelect` and `appearanceDescription` are kept.
 - **Migration.** A saved `light` or `dark` is kept. An install with no saved value becomes `system`, as decided. Defaults are never written eagerly.
 - **Scope.** `data-theme` stays binary. The design never touches it.
@@ -294,7 +295,7 @@ RELAYER_DESIGN (or the id in designs/default)
 ### 2.7 Corrections to the old plan's citations
 
 - `ServeDir` is now at `api.rs:330` (was `:326`).
-- The appearance clamps are at `register-ipc.mjs:168` and `:329-336` (were `:156`/`:322`).
+- The appearance clamps are at `register-ipc.mjs:208` and `:369-376` (were `:168`/`:329-336` at `18d6f23b`, `:156`/`:322` before), and `index.mjs:408-409` (was `:407-408`).
 - `styles.css` is now 319 lines, 109,329 B, 1,133 rules and 534 `var(--…)` uses.
   - It contains 223 hex and 82 `rgb(a)` literals, and 108 uses of the `html[data-theme="light"]` selector (the old "57 rules" was counted differently).
   - #570 added new literal shadows (`:292`, `:297`).
@@ -303,13 +304,13 @@ RELAYER_DESIGN (or the id in designs/default)
 - **Eval.** The review workspace follows the product renderer through `eval-main/index.mjs:66`/`:186` and the proxy at `web-host.mjs:126`, not `web-host.mjs:161`/`:192` (those serve `eval-renderer`).
 - **Node geometry.** `workspace.js:79` is `GRAPH_NODE_ICON_RADIUS = 24`. The 46px glyph exists only in CSS.
 - **PRD anchors re-derived.**
-  - Stop is neutral at `:2257`.
-  - The floating annotation editor is at `:2315` (#570 made it an overlay; pin at `test/workspace-keyboard.test.mjs:595`).
+  - Stop is neutral at `:2269`.
+  - The floating annotation editor is at `:2327` (#570 made it an overlay; pin at `test/workspace-keyboard.test.mjs:595`).
   - Explicit states are at `:289`.
-  - Appearance is at `:595` and `:1345`.
+  - Appearance is at `:1349` (§10.1). `:595` is the historical Slice 1 table, not the current tracker; P0 added the planned System appearance row to the §15C.1 evidence table.
   - The old `:2195`, `:2231` and `:2390` citations are dropped.
 - **#570 changed the layout H was drawn on.**
-  - At widths of 1101px and up, the fixed `--inspector` column became a draggable split: equal default, 280px minimum per pane, ratio persisted (`styles.css:299-309`, `workspace-layout.js`, IPC `register-ipc.mjs:97-107`).
+  - At widths of 1101px and up, the fixed `--inspector` column became a draggable split: equal default, 280px minimum per pane, ratio persisted (`styles.css:299-309`, `workspace-layout.js`, IPC `register-ipc.mjs:139-146`).
   - Environment became an overlay (`styles.css:292`).
   - H's fixed 340px floating inspector and in-inspector Environment row conflict with this. That is PD-16.
 - **Probable existing bug, not confirmed.** Zoom-scaled edge width is set through an inline `style` attribute via `innerHTML` (`workspace.js:4598`). The desktop CSP has no `'unsafe-inline'` (`index.html:7`), which would block it, so desktop edges probably stay at the CSS 1.5px. The share viewer allows `'unsafe-inline'` (`template.js:74`), so edges there scale.
@@ -358,15 +359,15 @@ Sizes: **S** ≤ 1 day; **M** 2–5 days; **L** 1–3 weeks over several PRs. "T
 
 | # | Where | Step | Size | Depends on | What it makes visible |
 |---|---|---|---|---|---|
-| P0 | main | **Docs from recorded decisions only.** Copy the prototype sources (§3) into `docs/design/`. ADR 0013: "Not decided" and Consequences say build-time designs; the CSP `font-src` consequence is dropped (fonts are same-origin). PRD: Appearance System/Light/Dark (`:595`, `:1345`); "one design per build; no product setting; shares render their artifact's design". Checkpoint rows are written as **planned** checkpoints, with no pass status or evidence link; each later step fills in its row. Floors only if PD-5 is answered. | S | — | none |
-| A1 | main | **Appearance**: §2.3 plus the three mode-switching evidence scripts (`test-desktop-visual-node-details.mjs` uses `applyAppearance`) and `browser-review.mjs:11` pinned to a `colorScheme` | S–M | — | System option; no dark first frame for light users |
+| P0 | main | **Docs from recorded decisions only.** Copy the prototype sources (§3) into `docs/design/`. ADR 0013: "Not decided" and Consequences say build-time designs; the CSP `font-src` consequence is dropped (fonts are same-origin). PRD §10.1: Appearance System/Light/Dark (`:1349`); "one design per build; no product setting; shares render their artifact's design"; a planned System appearance row in §15C.1. Checkpoint rows are written as **planned** checkpoints, with no pass status or evidence link; each later step fills in its row. Floors only if PD-5 is answered. | S | — | none |
+| A1 | main | **Appearance**: §2.3; `test-desktop-visual-node-details.mjs` (switches mode with `applyAppearance`) gains a System leg; the 16 scripts that stub `relayer:appearance-read` keep working unchanged (§2.3); `eval-main/browser-review.mjs:11` pinned to a `colorScheme` | S–M | — | System option; no dark first frame for light users |
 | A2 | main | **Schema, validator, structure data**: `schema.mjs`; `validate.mjs`; `color.mjs`; `designs/structures/sticker.json` roles + pair contract (running rule revised); H's palette as `designs/lab/h-sticker-cocoa.json` until B2; `import-palette.mjs`; engine under `docs/`; `h-colour-spec.md` points at the JSON. Floors and state pairs **warn** (PD-5). | M | P0 | none for users; configs can be validated |
 | A3 | main | **Token cleanup on today's look**: hard-coded colours → roles; the light override selectors deleted; alias shim; gradients flattened; `color-mix` hovers; literal-lint ratchet; reverse coverage; ~23 colour pins converted. Gate: your side-by-side review per area, plus the surface-mapping table. | **L** | A1, A2 | light mode fixed; small dark shifts |
 | A4 | main | **The build parameter**: `build.mjs`; `designs/default` = `classic`; `classic.json` + `structures/classic.json` (palette only); `@import`; `design.js` = `{id, sha256, structure, firstPaint}`; main first paint; `extraMetadata.relayerDesign`; packaging, release and artifact checks; stale guard; loader-based pins; CI owner mapping; confirm or fix the edge-width CSP bug; confirm which reload picks up changes | S–M | A3 | none for users; `RELAYER_DESIGN=<lab>` builds any palette on today's layout |
 | A5 | main | Authoring tokens `--relayer-*` | S | A4, PD-A1 | new authored pages follow the design |
 | A6 | main | `evidence:designs` (temporary renderer copy), canary, LAB badge | S–M | A4 | tiles per design × appearance |
 | B1 | train | Fonts: `designs/fonts/` library (Figtree, Bricolage, DM Mono, ~162 KB), re-measure on `document.fonts.ready`, `font/woff2` in `scripts/fixtures/public-share-embed.mjs:82` | S | A4 | new type in H builds |
-| B2 | train | **Sticker structure**, one PR per area. **The first PR** commits `designs/h-sticker-cocoa.json`, sets `designs/default` to it, and deletes `classic.json` and `structures/classic.json` on the train, so train CI tests H from day one. Then: sticker size tokens; `design.js` geometry replacing `workspace.js:79`, `:188-190`, `:425-427` and the CSS-coupled node offsets; pills and discs; edges as `<path>` including hit target, badge midpoint and pill clipping; `graph-layout.js` world size and overlap; `data-family`; floating cards reconciled with #570 (PD-16); annotations per PD-19 (PRD `:2315`); `sticker.json` contract final | **L** (3–5 wk) | A4, B1 | H on the train |
+| B2 | train | **Sticker structure**, one PR per area. **The first PR** commits `designs/h-sticker-cocoa.json`, sets `designs/default` to it, and deletes `classic.json` and `structures/classic.json` on the train, so train CI tests H from day one. Then: sticker size tokens; `design.js` geometry replacing `workspace.js:79`, `:188-190`, `:425-427` and the CSS-coupled node offsets; pills and discs; edges as `<path>` including hit target, badge midpoint and pill clipping; `graph-layout.js` world size and overlap; `data-family`; floating cards reconciled with #570 (PD-16); annotations per PD-19 (PRD `:2327`); `sticker.json` contract final | **L** (3–5 wk) | A4, B1 | H on the train |
 | B3 | train | Header thread-status symbol | S | B2 | ADR item 1 |
 | B4 | train → main | Merge the train: H becomes main's default and classic leaves main (PD-18). Lint at zero; shim removed except the 13 permanent aliases on `.node-detail-runtime-host`; PRD evidence refreshed; OG image per PD-14 | S | B2, B3 | **H reaches users whole** |
 | C | later | G and B configs (**S–M** each); Orbit structure only if wanted (**L**) | — | B4 | more real builds |
@@ -397,7 +398,7 @@ after B4 · PD-17 releases and the hosted share artifact use the default design 
 | **PD-8** | Fonts: set by the structure file only, or also overridable per design config? The UI font sets pill widths and moves the layout; gen2-brief held fonts fixed per structure. | Structure default; a config may override (validator checks it) | B1 |
 | **PD-10** | Colours on today's layout. With build-time designs this becomes moot: hybrids appear only as lab builds. Confirm. | Moot | — |
 | PD-5 | Accessibility floors (4.5 / 3 / 3.2, H's 12px floor) in the PRD. Until then, floors and colour state-pairs only warn. | Brief §2.5 numbers | before floors become a gate |
-| **PD-19** | ADR 0013 item 2 (40px collapsed "Add annotation" row) versus #570's floating annotation editor (PRD `:2315`, pin `test/workspace-keyboard.test.mjs:595`), which already reserves no space when hidden | Re-review against #570 | B2 annotations |
+| **PD-19** | ADR 0013 item 2 (40px collapsed "Add annotation" row) versus #570's floating annotation editor (PRD `:2327`, pin `test/workspace-keyboard.test.mjs:595`), which already reserves no space when hidden | Re-review against #570 | B2 annotations |
 | PD-A1 | Authoring tokens (4 parts, old §2.8). Also: does the agent guidance palette (`graph-presentation-guidance.ts:17`) stay one fixed text, updated once at B4, rather than following the build's design? | Tokens; fixed text | A5 |
 | PD-6 / PD-13 | Eval dashboard, judge and trace pages: follow the OS or stay dark; tokenise them or amend ADR `:76` | Your call | B4 |
 | PD-14 | OG link image: recolour the SVG or generate a PNG | Recolour in B4 | B4 |
@@ -413,14 +414,14 @@ after B4 · PD-17 releases and the hosted share artifact use the default design 
 | C2 | Every committed config meets its structure's floors and colour state pairs | brief §2.5, report only until PD-5, then a hard gate; PRD `:289` for explicit states | `test/design-contract.test.mjs`, parametrised over `designs/*.json` | warm | A2 |
 | C3 | Output is byte-identical across runs; the hash covers config, structure file, fonts and generator sources; every `var(--x)` in `styles.css` is defined by every committed design; the prepared output matches its source | integrity | `test/design-build.test.mjs` + `globalSetup` guard | warm | A4 |
 | C4 | No colour literal outside generated output (CSS, JS, main, `viewer.css`), except the alias shim | design integrity | literal-lint ratchet test | warm | A3 |
-| C5 | Preference → resolved mode; OS change applies in place; migration; first paint = design `bg` | PRD `:595`, `:1345`; ADR 0013 item 3 | `test/appearance.test.mjs` (pure module, bootstrap in HappyDOM with stubbed `matchMedia`, IPC with a fake `nativeTheme`) | warm | A1/A4 |
+| C5 | Preference → resolved mode; OS change applies in place; migration; first paint = design `bg` | PRD `:1349`; ADR 0013 item 3 | `test/appearance.test.mjs` (pure module, bootstrap in HappyDOM with stubbed `matchMedia`, IPC with a fake `nativeTheme`) | warm | A1/A4 |
 | C6 | `data-theme` stays binary; an appearance flip leaves authored pages, input and focus alone | PRD §6.2A | extend `test/node-detail-runtime.test.mjs` | warm | A1 |
 | C7 | The artifact contains the design files and every `@import` and `url()` resolves; it ignores `RELAYER_DESIGN` and contains the committed default; the template and `requiredResources` are unchanged | share contract | extend `test/public-share-viewer-artifact.test.mjs` (its import and `url()` checks at `:55-68`) | warm | A4 |
 | C8 | JS geometry comes from the config (bounds, edge clip against pills, arc path, hit target, tiers) | graph fit | repoint `test/graph-camera.test.mjs` at the loader | warm | **B2** |
 | C9 | Running is distinct from selection by shape, motion and label, including under reduced motion | ADR 0013 build decision; PRD `:289` | HappyDOM graph render test | warm | B2 |
 | C10 | Fonts ship with licences; re-measure after `fonts.ready` | PRD §14.3 | font provenance test + stubbed `document.fonts` layout test | warm | B1 |
-| C11 | Stop stays neutral in every shipped design × mode; draft stays dashed | PRD `:2257` (Stop); brief-level for draft | `test:desktop:stop` sentinels, run per design via `RELAYER_DESIGN` | heavy | A3/B2 |
-| C12 | The packaged app contains the intended design (sha256 matches `extraMetadata.relayerDesign`); release refuses lab, and refuses non-default if PD-17 = yes | release integrity | `verify-bundled-app-server.mjs` + a release-guard unit test | warm + pack | A4 |
+| C11 | Stop stays neutral in every shipped design × mode; draft stays dashed | PRD `:2269` (Stop); brief-level for draft | `test:desktop:stop` sentinels, run per design via `RELAYER_DESIGN` | heavy | A3/B2 |
+| C12 | The packaged app contains the intended design (sha256 matches `extraMetadata.relayerDesign`); release refuses lab and non-default designs (PD-17) | release integrity | `verify-bundled-app-server.mjs` + a release-guard unit test | warm + pack | A4 |
 | C13 | The real app paints each design × appearance (tokens resolve, nothing blank, no CSP errors, including the edge-width style) | your visual review (ADR 0013); brief-level, no PRD line | `evidence:designs` + your review | heavy | A6 |
 
 **Warm loop** (well under 10 s, no Electron):
@@ -461,7 +462,7 @@ Record the reviewer, the commit, the scope, the verdict and any open findings in
 ## Appendix: corrections not applied, or applied differently
 
 - **Palettes referenced by id from `designs/palettes/` (review 1).** Replaced by review 2's inline palette. It keeps one file per design type, as you asked, and palette reuse across structures has no user while one tree implements one structure.
-- **"The PRD has no Stop-stays-neutral promise; mark C11 brief-level" (review 1).** Wrong: PRD `:2257` says Stop controls and the stopped notice use neutral theme colours. C11 cites it. Only the draft-dashed leg is brief-level.
+- **"The PRD has no Stop-stays-neutral promise; mark C11 brief-level" (review 1).** Wrong: PRD `:2269` says Stop controls and the stopped notice use neutral theme colours. C11 cites it. Only the draft-dashed leg is brief-level.
 - **"List every sidebar/inspector breakpoint value as a structure token" (review 1, one of two options).** The other option was taken: layout stays structure code in v1. It is coupled to #570's READ-002 behaviour, and no prototype varies it without also changing structure.
 - **"Refuse the artifact unless the prepared sha256 matches" (review 1, one of two options).** The other option was taken: the builder regenerates the committed default in-process. That is one path with no way to be stale.
 - **"If PD-17 = no, put the design id in the artifact path" (review 2).** Recorded as the option inside PD-17, not built. The artifact is default-only now because the shared asset path requires it.

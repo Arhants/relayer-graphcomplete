@@ -20,7 +20,7 @@ is prototype **H · Sticker × Cocoa**.
 Notes:
 - The specs mention scratch paths (`<scratchpad>/…`, `gen1/B`, `gen2/H`, `tools/…`). Those were the build
   workspace for the prototypes and no longer exist; the Markdown here is the durable record.
-- Items marked **[PD]** are product decisions. Those Vishal made explicitly are recorded in ADR 0013; the PRD has not been
-  updated yet.
+- Items marked **[PD]** are product decisions. Those Vishal made explicitly are recorded in ADR 0013. PRD §10.1 records
+  System appearance (planned) and the one-design-per-build rule; the other ADR 0013 product changes are not in the PRD yet.
 - Nothing here is implemented. The implementation plan is `design-config-plan.md`; the prototype tooling and token
   sources it builds on are in `sources/` (see `sources/README.md`).
