@@ -488,9 +488,48 @@ clears every ready row once, because a row from an older build may not come
 from an evaluation; each route then waits for its next evaluation. Each app-server
 process starts a new readiness ordering epoch. The desktop never restarts the
 app server alone; if it did, the restored row stays the record and the
-coordinator's generations keep increasing. Startup does not download, prepare,
-invoke a readiness probe, or contact a provider. A digest mismatch or corrupt
+coordinator's generations keep increasing. Startup's own path does not download,
+prepare, invoke a readiness probe, or contact a provider. A digest mismatch or corrupt
 local descriptor keeps the harness unavailable and records a sanitized error.
+
+Two post-upgrade steps are the exceptions. Activating a runtime staged by an app
+update runs a local version probe of that runtime before the app server starts.
+Startup's catalog also names the exact runtime recipe (`recipeId#recipeDigest`) each
+coordinated harness requires. `initialize_model_catalog` keeps the recipe each row last
+loaded in `runtime_recipe`, and a changed recipe does not restore an old ready. When an
+upgrade changes a coordinated route's digest or recipe, it marks the row
+`readiness_update_due`; that covers an update whose staged runtime activated and one
+whose activation failed. Startup also flags each runtime its own activation changed
+(`runtimeUpdated`), which counts even before a recipe was recorded, as on the first
+start after migration 0039. When the first recipe is recorded, a ready route whose files
+no longer validate counts too, because an update whose prefetch failed staged nothing to
+report. The eval app records recipes too. After provider startup, Electron reads the marks and starts
+one background evaluation through the `recipe-update` trigger. A runtime recipe newly
+activated by the update also starts it for the harnesses that use it. The evaluation covers every active provider with a published
+route through those harnesses, so ChatGPT and OpenRouter share one result for
+`codex-basic`. It goes through the same coordinator and publication chain as Repair
+(PROV-005), and the app server's row stays the only record (PROV-006). Startup does
+not wait for it. Like Repair, it probes the runtime and may install the exact recipe
+again, but it skips a harness whose runtime was never installed on this machine; that
+route waits for Connect or Repair, so an upgrade never installs Prime by itself. A
+managed provider whose activation failed on a broken runtime publishes no models and so
+has no route; the step first recovers each such provider, as Repair does, when its
+recipe is installed and due. Recovery reinstalls the exact recipe if needed and publishes
+the provider's catalog without evaluating, so the step then evaluates each due harness
+once for all its providers. The eval app runs the same step at its startup and waits for
+it. The next committed result
+for the harness clears the mark, so it runs once per changed digest or recipe; a start
+before the commit tries again. Migration 0039 also marks every loaded route startup
+left in `harness_readiness_pending`. The evaluation runs once per process with the
+models already published; a route without one waits for the next start or Repair.
+
+Repair, app-update staging and post-update activation reuse an installation only
+when it passes the same layout validation as startup: exact receipt, ownership
+marker, owned private state, and confined entrypoints. Otherwise Repair and staging
+reinstall the exact recipe, so Repair cannot publish ready for an installation the next
+start rejects. Activation discards the pending generation; the changed recipe then marks
+the route due, and the post-upgrade evaluation reinstalls it.
+`models/tla/ReadinessRepair.tla` models these rules.
 
 Release configuration resolves through one fail-closed contract. The contract seals the numeric version, source commit, product identity, target, architecture, signing authority, channel manifest, and exact HTTPS update base into both the application package and its release receipt. macOS targets additionally seal the Apple team and minimum OS; Windows seals the Artifact Signing endpoint, account, profile, and publisher. The updater and publisher consume this contract rather than maintaining parallel identity or channel rules. See [ADR 0002](decisions/0002-desktop-release-contract.md).
 

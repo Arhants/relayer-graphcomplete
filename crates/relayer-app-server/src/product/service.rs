@@ -189,6 +189,13 @@ impl ProductService {
             .map_err(Into::into)
     }
 
+    pub(crate) async fn harness_readiness_updates_due(&self) -> Result<Vec<String>, ProductError> {
+        self.storage
+            .harness_readiness_updates_due()
+            .await
+            .map_err(Into::into)
+    }
+
     pub(crate) async fn provider_definitions(
         &self,
     ) -> Result<Vec<super::ProviderDefinition>, ProductError> {
@@ -3358,6 +3365,8 @@ mod tests {
             family_policy: None,
             runtime_available: true,
             restore_prior_readiness: false,
+            runtime_recipe: None,
+            runtime_updated: false,
             unavailable_reason: None,
         });
         storage
@@ -4679,6 +4688,8 @@ mod tests {
                 }),
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4701,6 +4712,8 @@ mod tests {
                 }),
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4723,6 +4736,8 @@ mod tests {
                 }),
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: None,
             },
         ]
@@ -4740,6 +4755,8 @@ mod tests {
                 family_policy: None,
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4756,6 +4773,8 @@ mod tests {
                 family_policy: None,
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: None,
             },
         ]

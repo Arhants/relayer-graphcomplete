@@ -103,6 +103,10 @@ const graphRuntime = new GraphCompleteRuntimeService({
     await runtimeFileValidator.validate(managedRuntimeRequirementForHarness(implementation).recipeId);
     return true;
   },
+  // The app server compares the required recipe with the one it last loaded (PROV-009).
+  harnessRuntimeRecipe: ({ implementation }) => runtimeFileValidator.recipeIdentity(
+    managedRuntimeRequirementForHarness(implementation).recipeId,
+  ),
   // Eval keeps the temporal substrate coherent for every matrix cell. The selected
   // harness configuration independently controls whether agent-authored Complete is
   // exposed, so control and treatment can share one production-faithful runtime.
