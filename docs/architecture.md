@@ -86,7 +86,7 @@ Provider access, model-family organization, and harness execution are separate p
 
 Threads pin a harness-configuration identity, not an immutable copy of catalog or family state. Unsent turns resolve lazily against current semantic revisions when the picker opens or Send is pressed. A still-valid exact selection is preserved; an invalid selection may move only within its current family. The product never selects another family implicitly. Once an attempt is sent, its provider/model identity cannot change or fall back mid-flight.
 
-Every provider row carries a connection generation owned by the Rust catalog. Creating a provider starts it at 1. Reconnect completion and sign-out publish their catalog with a lifecycle event that advances the generation in the same transaction; removal advances it with the lifecycle change. Every catalog publish names the generation its result started with, and Rust refuses an older one inside the write transaction with `provider_connection_superseded`, so a superseded refresh, recovery, or discovery changes nothing (PROV-002). Electron tags a refresh when it starts: the model-catalog service resolves the provider's adapter and generation at that point, not at request time, and skips the publish if the generation moved. Harness readiness is global per configuration and outside this rule. A refused publish rereads the generation, which recovers from a lifecycle write whose response was lost; a reconnect also reads the generation when it starts, and a refused sign-out retries once at the current generation. Sign-out commits its disconnected state itself and does not wait inside the provider queue for its refresh. A cancelled or failed reconnect leaves the provider a catalog adapter: a fresh runtime replaces a reused one, and the recovery adapter stays when the reconnect created its own runtime. Recovery refuses while a reconnect is pending, and no refresh runs or publishes then: the refresh generation is null until the reconnect settles. A cancelled or failed reconnect commits its signed-out state with the next generation before it wipes the provider home, as sign-out does, so a refresh that straddled the reconnect is stale. If that commit fails, or the service is closing, the cancel keeps the login and the reconnect's runtime instead, as an unknown outcome does, unless a sign-out the app server answered already superseded the reconnect; that sign-out stands and the login is wiped. An explicit refresh rechecks the refresh generation after its readiness evaluation, immediately before it publishes. Desktop shutdown calls `beginShutdown()` before it awaits the app server, so provider access closes first. A reconnect whose publish gets no answer rereads the generation. A sign-out the app server answered meanwhile settles it as failed, and so does an unmoved generation. It is adopted only when the generation is exactly one past a baseline it read at its start, no sign-out ran meanwhile, and no earlier lifecycle write for the provider is still unanswered (a lost request may commit late; an answered write that advances the generation ends that doubt); any other outcome keeps its runtime and login without adopting it. Execution leases refuse while a reconnect is pending and once the provider service is closing, and a settling reconnect never closes or wipes a runtime a lease holds (PROV-004).
+Every provider row carries a connection generation owned by the Rust catalog. Creating a provider starts it at 1. Reconnect completion and sign-out publish their catalog with a lifecycle event that advances the generation in the same transaction; removal advances it with the lifecycle change. Every catalog publish names the generation its result started with, and Rust refuses an older one inside the write transaction with `provider_connection_superseded`, so a superseded refresh, recovery, or discovery changes nothing (PROV-002). Electron tags a refresh when it starts: the model-catalog service resolves the provider's adapter and generation at that point, not at request time, and skips the publish if the generation moved. Harness readiness is global per configuration and outside this rule. A refused publish rereads the generation, which recovers from a lifecycle write whose response was lost; a reconnect also reads the generation when it starts, and a refused sign-out retries once at the current generation. Sign-out commits its disconnected state itself and does not wait inside the provider queue for its refresh. A cancelled or failed reconnect leaves the provider a catalog adapter: a fresh runtime replaces a reused one, and the recovery adapter stays when the reconnect created its own runtime. Recovery refuses while a reconnect is pending, and no refresh runs or publishes then: the refresh generation is null from the reconnect's first check, through runtime preparation and the start of its sign-in, until it settles. A cancelled or failed reconnect commits its signed-out state with the next generation before it wipes the provider home, as sign-out does, so a refresh that straddled the reconnect is stale. If that commit fails, or the service is closing, the cancel keeps the login and the reconnect's runtime instead, as an unknown outcome does, unless a sign-out the app server answered already superseded the reconnect; that sign-out stands and the login is wiped. An explicit refresh rechecks the refresh generation after its readiness evaluation, immediately before it publishes. Desktop shutdown calls `beginShutdown()` before it awaits the app server, so provider access closes first. A sign-out whose publish fails leaves the provider signed out locally while the app server may read it connected; execution leases are refused until the app server records a signed-out state (a sign-out or cancel publish, or a published catalog that is not connected), or the service confirms a sign-in again (a completed reconnect, including one whose outcome is unknown, or a cancel whose account check reads connected). The block is process-local: after a restart, the startup refresh reads the account and publishes its state. A cancel keeps a login only when the account does not read signed out; its account check is bounded (`ACCOUNT_CHECK_TIMEOUT_MS`), and a check that times out leaves the outcome unknown. A reconnect whose publish gets no answer rereads the generation. A sign-out the app server answered meanwhile settles it as failed, and so does an unmoved generation. It is adopted only when the generation is exactly one past a baseline it read at its start, no sign-out ran meanwhile, and no earlier lifecycle write for the provider is still unanswered (a lost request may commit late; an answered write that advances the generation ends that doubt); any other outcome keeps its runtime and login without adopting it. Execution leases refuse while a reconnect is pending and once the provider service is closing, and a settling reconnect never closes or wipes a runtime a lease holds (PROV-004).
 
 Connect is all-or-nothing (PROV-007). The credential is written just before the staged create so a committed definition always has it; a refused create removes it. The runtime and catalog adapter are registered only after the create commits, so nothing refreshes or publishes for a provider before its definition exists. A create with no answer is resolved by reading the definitions back; if that read fails, the credential and runtime state stay for startup reconciliation, which keeps them only for a persisted definition.
 
@@ -306,6 +306,8 @@ Terminal provider-execution lease debt is handled by one app-owned reconciliatio
 
 Invoke preparation supplies the accepted source interaction/action pair to graph control. That pair is the graph-side idempotency key, so retrying a lost create response recovers the same leased graph interaction while the product-side invocation record recovers the same result interaction. At startup, bound interrupted invokes are reconciled against canonical graph completion output: an accepted graph finalizes product history using its already persisted execution receipt, while the absence of graph acceptance fails the product result and leaves the leased action unresolved. This closes the graph-accepted/product-uncommitted crash window without a distributed transaction or a second scheduler.
 
+A child an agent launched through its completion broker is marked in `action_invocations.agent_invoked`, which the thread view exposes as `agentInvoked`. It never counts toward the thread's one active human turn, a new turn never inherits its model, and the product's Stop refuses it; only its parent agent's broker grant may stop it. The renderer's composer, retry, model inheritance and Stop target follow the latest human turn for the same reason. A user's invoke of the same action never runs it on the product path. Once the broker's launch has claimed the child, a failure it cannot recover fails the child in both stores: a failed capability activation through the launch-failure cleanup (`capability_activation_failed`), and an ambiguous or failed preparation, reservation or launch claim through the refused-launch cleanup (`preparation_failed`). The refused-launch cleanup fails the product row first, bound to the child's graph interaction, which fences out later launches, and then the graph current; a launch that already reached its claim owns the child instead. At startup, results an older build left unmarked are marked when only an agent could have created them: their source was never accepted, or was accepted after they were created, which a launched source's settled execution or a root's accepted attempt dates. An interrupted agent child that no launched execution covers is recovered from its own invoke occurrence, whatever its parent's status, and failed in both stores with `application_restart`; a reserved execution row settles with it. An unbound child is located through that occurrence directly in the graph, without the live harness catalog or a revalidated model, since it is only failed. A deterministic failure still fails its graph current when the node carries the child's own occurrence, then its product row; a transient error on that path keeps the child for the background retry rather than quarantining its product row alone. A child kept after a transient startup failure is retried in the background with capped exponential backoff until it ends. A refused child whose graph half a restart interrupted stays marked (`graph_failure_pending`) until startup, or its background retry, confirms its current is terminal. An agent's exact retry of a recursive invocation an older build left unmarked marks it, but only on proof that no user created it: a completion execution, or a source that was never accepted. The broker refuses a result that a user's own invoke of the same action created, for launch, Stop, current and result alike. A child the product never recorded, because the application stopped between the parent's `prepareComplete` and the broker's first write, stays a graph-only orphan.
+
 ## Optional desktop account boundary
 
 Relayer Desktop remains local-first and fully usable without a Relayer account. The
@@ -385,8 +387,8 @@ also occur in the checked-in packaged-module inventory, so a caller cannot encod
 private data inside a valid-looking application path. The final event is validated
 again immediately before transport.
 
-The handled-share schema adds only the reference, closed stage/code, and optional
-oversize byte count. It reuses verified-account admission, the main-owned
+The handled-share schema adds the reference, closed stage/code, optional
+oversize byte count, and the bounded diagnostics described below. It reuses verified-account admission, the main-owned
 pseudonym, bounded encrypted queue, final transport validation, and recursion
 suppression. Main deduplicates account + reference + stage + code in process;
 the durable publish-attempt owner must preserve the same identity for restart
@@ -404,6 +406,19 @@ successful response replaces snapshot bytes with a lightweight URL receipt;
 closing the result or explicitly dismissing a failure removes only that local
 record. Invalid or corrupt records fail closed, and capacity rejects new
 records instead of evicting an undisclosed frozen attempt.
+
+The approved share-diagnostics extension retains the first available approved app
+stack from the original exception or its causes, bounded to four inspected error
+objects and the existing 32-frame inventory limit. It additionally admits an
+optional integer HTTP status (100–599) and a network code from the fixed allowlist
+in `desktop/main/services/share-error-diagnostics.mjs`; unknown codes are omitted.
+TimeoutError maps to the code-owned `TIMEOUT` value. No raw error, cause message,
+host, URL, request/response body, header, or frame local is admitted. Diagnostic
+inspection cannot alter the product result. Sentry frames use oldest-to-newest
+order. Legacy records with no diagnostics remain accepted. Encrypted queue
+entries still require the existing same-account, release, and platform checks;
+this does not introduce cross-release replay. Deduplication still uses account/reference/stage/code, and the
+share attempt store never persists diagnostic stacks or raw exceptions.
 
 Authenticated transport failures may enter one `safeStorage`-encrypted queue. The
 queue holds at most 32 records and 256 KiB of encrypted bytes. Records expire after
@@ -486,9 +501,53 @@ clears every ready row once, because a row from an older build may not come
 from an evaluation; each route then waits for its next evaluation. Each app-server
 process starts a new readiness ordering epoch. The desktop never restarts the
 app server alone; if it did, the restored row stays the record and the
-coordinator's generations keep increasing. Startup does not download, prepare,
-invoke a readiness probe, or contact a provider. A digest mismatch or corrupt
+coordinator's generations keep increasing. Startup's own path does not download,
+prepare, invoke a readiness probe, or contact a provider. A digest mismatch or corrupt
 local descriptor keeps the harness unavailable and records a sanitized error.
+
+Two post-upgrade steps are the exceptions. Activating a runtime staged by an app
+update runs a local version probe of that runtime before the app server starts.
+Startup's catalog also names the exact runtime recipe (`recipeId#recipeDigest`) each
+coordinated harness requires. `initialize_model_catalog` keeps the recipe each row last
+loaded in `runtime_recipe`, and a changed recipe does not restore an old ready. When an
+upgrade changes a coordinated route's digest or recipe, it marks the row
+`readiness_update_due`; that covers an update whose staged runtime activated and one
+whose activation failed. Startup also flags each runtime its own activation changed
+(`runtimeUpdated`): a new recipe, any other replacement such as a frozen schema-v1
+receipt an older Desktop staged, or a failed activation. That counts even before a
+recipe was recorded, as on the first
+start after migration 0039. When the first recipe is recorded, a ready route whose files
+no longer validate counts too, because an update whose prefetch failed staged nothing to
+report. The eval app records recipes too. After provider startup, Electron reads the marks and starts
+one background evaluation through the `recipe-update` trigger. A runtime recipe newly
+activated by the update also starts it for the harnesses that use it. The evaluation covers every active provider with a published
+route through those harnesses, so ChatGPT and OpenRouter share one result for
+`codex-basic`. It goes through the same coordinator and publication chain as Repair
+(PROV-005), and the app server's row stays the only record (PROV-006). Startup does
+not wait for it. Like Repair, it probes the runtime and may install the exact recipe
+again, but it skips a harness whose runtime was never installed on this machine; that
+route waits for Connect or Repair, so an upgrade never installs Prime by itself. A
+managed provider whose activation failed on a broken runtime publishes no models and so
+has no route; the step first recovers each such provider, as Repair does, when its
+recipe is installed and due. Recovery reinstalls the exact recipe if needed and publishes
+the catalog from its one discovery without evaluating, so the step then evaluates each due harness
+once for all its providers. The eval app runs the same step at its startup and waits for
+it. Quitting stops the step before the quit guard looks, so no preparation starts behind
+it; shutdown cancels any installer operation the step started and awaits it before the
+app server closes. A stopped evaluation publishes nothing, so its mark stays for the
+next start. The next committed result
+for the harness clears the mark, so it runs once per changed digest or recipe; a start
+before the commit tries again. Migration 0039 also marks every loaded route startup
+left in `harness_readiness_pending`. The evaluation runs once per process with the
+models already published; a route without one waits for the next start or Repair.
+
+Repair, app-update staging and post-update activation reuse an installation only
+when it passes the same layout validation as startup: exact receipt, ownership
+marker, owned private state, and confined entrypoints. Otherwise Repair and staging
+reinstall the exact recipe, so Repair cannot publish ready for an installation the next
+start rejects. Activation discards the pending generation; the changed recipe then marks
+the route due, and the post-upgrade evaluation reinstalls it.
+`models/tla/ReadinessRepair.tla` models these rules.
 
 Release configuration resolves through one fail-closed contract. The contract seals the numeric version, source commit, product identity, target, architecture, signing authority, channel manifest, and exact HTTPS update base into both the application package and its release receipt. macOS targets additionally seal the Apple team and minimum OS; Windows seals the Artifact Signing endpoint, account, profile, and publisher. The updater and publisher consume this contract rather than maintaining parallel identity or channel rules. See [ADR 0002](decisions/0002-desktop-release-contract.md).
 
@@ -510,8 +569,11 @@ state; finalization validates the exact object before publication. Concurrent
 retries of one owner-scoped attempt recover the same immutable result and charge
 the UTC-day quota once.
 
-Public graph records omit harness-authored layer, node, and action client keys;
-portable record IDs retain reference identity without exposing arbitrary key text.
+Public graph records replace harness-authored layer, node, and action keys with
+export-local ID aliases. Compiled detail bindings resolve against exact accepted
+action provenance before Rust derives and validates a public package with those
+aliases and a new integrity digest. Privacy filtering and asset collection consume
+that same derived package. Ordinary export and accepted storage are unchanged.
 Asset collection uses the same rich-detail privacy predicate as node export, so
 omitted detail cannot leave orphan content. The V2 reader permits the canonical
 base64 expansion of an 8 MiB decoded asset while the whole snapshot remains

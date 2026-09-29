@@ -1365,6 +1365,15 @@ describe("product workspace keyboard behavior", () => {
         { id: 2, threadId: 10, sequence: 2, completionStatus: "running" },
       ],
     }, { id: 10 })).toBe("running");
+    // A running child an agent launched does not hold the composer.
+    expect(composerStatusForThread({
+      status: "running",
+      interactions: [
+        { id: 1, threadId: 10, sequence: 1, completionStatus: "accepted" },
+        { id: 2, threadId: 10, sequence: 2, completionStatus: "running" },
+      ],
+      actionInvocations: [{ resultInteractionId: 2, agentInvoked: true }],
+    }, { id: 10 })).toBe("accepted");
   });
 
   it("scopes restored and user-authored drafts across A to B to A switches", () => {

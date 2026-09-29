@@ -30,8 +30,32 @@ replaces the exported local title, while the chosen title and project display
 name are published unchanged except for ordinary safe HTML and inert-data
 handling. The local thread is not renamed.
 
-Public graph records omit layer, node, and action client keys because those are
-harness-authored strings. Export-local IDs preserve all graph references. Asset
+Public graph records omit author-chosen layer, node, and action client keys because
+those are harness-authored strings. Export-local IDs preserve all graph references.
+Under issue #586, generated aliases equal to those IDs occupy the existing V1
+`clientKey` fields. Rust resolves each compiled action reference against its exact
+accepted source node, action key, original source-layer key, and capability kind.
+Graph core's accepted action projection supplies original layer provenance even
+when the source layer is outside the visible closure. Only those three binding
+identity values are replaced. The original package must pass schema and integrity
+validation before derivation; the derived package is rehashed and validated.
+Persisted accepted content and ordinary export remain unchanged.
+
+The public reader prefers explicit layer keys for old snapshots. If a provenance
+layer is absent, an action whose generated alias equals its export ID uses its
+export-local source-layer ID as the alias. The existing production resolver still
+requires the exact action and source-node identity. No heuristic matching or
+execution authority is added. Unresolvable, ambiguous, mismatched, or corrupt
+bindings fail export. Input and unresolved invoke remain inert; accepted invoke
+results keep existing read-only navigation. Typed invoke-conversion portability
+is still a separate gated feature.
+
+Privacy filtering runs on the derived package. Keys removed from binding identity
+fields no longer cause omission, but secrets or paths elsewhere still omit the
+whole package. This is a derived publication representation, not an edit to an
+accepted package. Existing V1/V2 readers already understand these binding shapes;
+no new schema version is needed. Existing shares remain immutable and an omitted
+card cannot be recovered without a new export. Asset
 collection applies the same detail-omission predicate as node export, so an
 omitted private detail cannot emit unreachable visual content. V2 accepts the
 canonical base64 expansion of an asset up to the 8 MiB decoded limit while the

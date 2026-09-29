@@ -2187,6 +2187,52 @@ describe("HarnessHost", () => {
     }
   });
 
+  it("forgets a settled invoked completion once no late observer needs its answer", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const directory = await mkdtemp(join(tmpdir(), "relayer-harness-forget-invoked-"));
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const nodeId = new Headers(init?.headers).get("authorization")?.includes("running-token") ? 3 : 2;
+      return url.endsWith("/output")
+        ? new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404, headers: { "content-type": "application/json" } })
+        : url.endsWith("/neighbors")
+          ? new Response(JSON.stringify({ nodes: [] }), { status: 200, headers: { "content-type": "application/json" } })
+          : graphReadResponse(url, nodeId, [], nodeId + 100);
+    }));
+    try {
+      const host = new HarnessHost({
+        stateFile: join(directory, "sessions.json"), controlToken: "control",
+        implementations: { test: () => ({
+          supportsInvokedComplete: true,
+          // Child 2 ends at once; child 3 runs until the test ends.
+          complete(context) {
+            return context.inputGraph.id === 2 ? Promise.resolve() : new Promise<void>(() => undefined);
+          },
+          state: emptyState,
+        }) },
+      });
+      await host.initialize();
+      await host.createSession({ threadId: 1, permissionProfileId: "auto", configuration: completeEnabledConfiguration, workingDirectory: directory });
+      await host.startInvokedCompletion(1, invoked(graph(2, "ended-token")));
+      await host.startInvokedCompletion(1, invoked(graph(3, "running-token")));
+      await expect(host.observeInvokedCompletion(1, 2)).resolves.toEqual({ completionId: 2 });
+
+      // A late observer still gets the ended run's own answer for a while.
+      await vi.advanceTimersByTimeAsync(9 * 60_000);
+      await expect(host.observeInvokedCompletion(1, 2)).resolves.toEqual({ completionId: 2 });
+      // Then the host forgets it, as a restarted host would, and the product reads that as
+      // ended. A run that is still going is never forgotten.
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
+      await expect(host.observeInvokedCompletion(1, 2)).rejects.toThrow("Invoked completion is not registered");
+      const running = host.observeInvokedCompletion(1, 3, 1);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(running).resolves.toEqual({ completionId: 3, running: true });
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("keeps a cancelled turn's access until it settles when its harness cannot force-stop", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const directory = await mkdtemp(join(tmpdir(), "relayer-harness-no-force-stop-"));
