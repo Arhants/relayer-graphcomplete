@@ -198,6 +198,8 @@ const GRAPH_NODE_HALF_WIDTH = 82;
 const GRAPH_NODE_TOP = 28;
 const GRAPH_NODE_BOTTOM = 72;
 const GRAPH_FIT_PADDING = 48;
+// Sticker pills stay readable without looking oversized when a layer has few nodes (H geometry fitCap).
+const GRAPH_FIT_MAX_ZOOM = 1.25;
 const PENDING_COMPLETION_STATUSES = new Set([
   "not_started",
   "running",
@@ -362,6 +364,7 @@ export function fitGraphCamera(nodes, bounds, padding = GRAPH_FIT_PADDING) {
   const contentWidth = Math.max(1, content.maxX - content.minX);
   const contentHeight = Math.max(1, content.maxY - content.minY);
   const zoom = clampGraphZoom(Math.min(
+    GRAPH_FIT_MAX_ZOOM,
     availableWidth / contentWidth,
     availableHeight / contentHeight,
   ));
