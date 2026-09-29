@@ -10,7 +10,9 @@ export function createSharePreviewCapture({
   session,
   rendererDirectory,
 }) {
-  return async function capture({ snapshotBytes, title, theme, signal }) {
+  const captureSession = session.fromPartition("share-preview-capture");
+  let previousCapture = Promise.resolve();
+  const runCapture = async ({ snapshotBytes, title, theme, signal }) => {
     if (!["light", "dark"].includes(theme))
       throw new TypeError("Invalid capture theme");
     const prefix = `/${randomUUID()}/`;
@@ -21,12 +23,10 @@ export function createSharePreviewCapture({
       theme,
       assetBase: prefix.slice(0, -1),
     });
-    const captureSession = session.fromPartition(
-      `share-preview-${randomUUID()}`,
-    );
     let window;
     let origin;
     let deadline;
+    const preventDownload = (event) => event.preventDefault();
     const server = createServer(async (req, res) => {
       try {
         const path = new URL(req.url, "http://localhost").pathname;
@@ -82,6 +82,9 @@ export function createSharePreviewCapture({
     };
     const abort = () => stop();
     try {
+      // A prior teardown may have failed. Never reuse this fixed partition
+      // until Electron confirms its storage is empty.
+      await captureSession.clearStorageData();
       signal?.throwIfAborted();
       await new Promise((yes, no) => {
         server.once("error", no);
@@ -92,7 +95,7 @@ export function createSharePreviewCapture({
         callback(false),
       );
       captureSession.setPermissionCheckHandler(() => false);
-      captureSession.on("will-download", (event) => event.preventDefault());
+      captureSession.on("will-download", preventDownload);
       captureSession.webRequest.onBeforeRequest((details, callback) =>
         callback({
           cancel: !(
@@ -170,7 +173,16 @@ export function createSharePreviewCapture({
       signal?.removeEventListener("abort", abort);
       stop();
       await new Promise((resolve) => server.close(resolve));
+      captureSession.setPermissionRequestHandler(null);
+      captureSession.setPermissionCheckHandler(null);
+      captureSession.removeListener("will-download", preventDownload);
+      captureSession.webRequest.onBeforeRequest(null);
       await captureSession.clearStorageData();
     }
+  };
+  return function capture(input) {
+    const pending = previousCapture.then(() => runCapture(input));
+    previousCapture = pending.catch(() => {});
+    return pending;
   };
 }
