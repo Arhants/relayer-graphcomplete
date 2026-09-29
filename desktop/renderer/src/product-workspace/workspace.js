@@ -1649,6 +1649,14 @@ export function submittedInputHistoryPresentation(input) {
 // History state is supplied by the renderer integration so Product and Eval use the same
 // controls. `onSelectTurn(delta)` remains the keyboard/stepper contract; callers can add
 // `onSelectTurnById(id)` for direct popover jumps without changing existing integrations.
+// Loads the design's UI and display fonts before the first graph render, so pill
+// widths are measured with them. A missing font resolves to the fallback.
+export async function loadDesignFonts(documentObject = document) {
+  const style = documentObject.defaultView?.getComputedStyle?.(documentObject.documentElement);
+  const families = ["--font-ui", "--font-display"].map((name) => style?.getPropertyValue(name).trim()).filter(Boolean);
+  await Promise.all(families.map((family) => documentObject.fonts?.load?.(`600 14px ${family}`)?.catch(() => [])));
+}
+
 export function createProductWorkspace({
   root = document,
   mode = "interactive",
@@ -2736,9 +2744,6 @@ export function createProductWorkspace({
     }
   };
   graphDocument.addEventListener("pointerdown", blurGraphFromOutsidePointer, true);
-  // Web fonts change pill widths; re-measure the graph once they finish loading.
-  const remeasureAfterFonts = () => { if (!disposed) render(); };
-  graphDocument.fonts?.addEventListener?.("loadingdone", remeasureAfterFonts);
   graphStage.onkeydown = async (event) => {
     if (!capabilities.canNavigate) return;
     const delta = graphTurnNavigationDelta(event, graphDocument.activeElement === graphStage);
@@ -6208,7 +6213,6 @@ export function createProductWorkspace({
     automaticGraphFit.dispose();
     cancelInspectorFit();
     graphDocument.removeEventListener("pointerdown", blurGraphFromOutsidePointer, true);
-    graphDocument.fonts?.removeEventListener?.("loadingdone", remeasureAfterFonts);
     graphDocument.removeEventListener("pointerdown", closeTurnPopoverFromOutside, true);
     graphDocument.removeEventListener("pointerdown", closeSettingsMenuFromOutside, true);
     readingLayout.dispose();
