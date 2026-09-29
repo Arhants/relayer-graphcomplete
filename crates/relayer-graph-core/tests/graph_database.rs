@@ -159,6 +159,7 @@ fn imported_conversation(interaction_node_id: &str) -> ImportedConversation {
             accepted_view: Some(ImportedAcceptedView {
                 interaction_node_id: interaction_node_id.into(),
                 root_action: ImportedAction {
+                    converted_from_invoke: false,
                     id: "action-1".into(),
                     client_key: None,
                     source_node_id: interaction_node_id.into(),
@@ -256,6 +257,7 @@ fn imported_invoke_conversation() -> ImportedConversation {
         accepted_view: Some(ImportedAcceptedView {
             interaction_node_id: "interaction-1".into(),
             root_action: ImportedAction {
+                converted_from_invoke: false,
                 id: "root-action-1".into(),
                 client_key: Some("authored-root-action-1".into()),
                 source_node_id: "interaction-1".into(),
@@ -293,6 +295,7 @@ fn imported_invoke_conversation() -> ImportedConversation {
                 }],
                 edges: vec![],
                 actions: vec![ImportedAction {
+                    converted_from_invoke: false,
                     id: "invoke-action-1".into(),
                     client_key: Some("authored-invoke-action-1".into()),
                     source_node_id: "node-1".into(),
@@ -323,6 +326,7 @@ fn imported_invoke_conversation() -> ImportedConversation {
         accepted_view: Some(ImportedAcceptedView {
             interaction_node_id: "interaction-2".into(),
             root_action: ImportedAction {
+                converted_from_invoke: false,
                 id: "root-action-2".into(),
                 client_key: None,
                 source_node_id: "interaction-2".into(),
@@ -661,6 +665,7 @@ async fn imported_unanswered_input_action_keeps_its_authored_payload() {
     conversation.turns[0].accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            converted_from_invoke: false,
             id: "unanswered-input".into(),
             client_key: None,
             source_node_id: "node-1".into(),
@@ -719,6 +724,7 @@ async fn imported_submitted_inputs_are_semantic_inert_turn_owned_and_removable()
     input.turns[0].accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            converted_from_invoke: false,
             id: "input-action-1".into(),
             client_key: None,
             source_node_id: "node-1".into(),
@@ -835,6 +841,7 @@ async fn imported_submitted_input_provenance_must_be_one_exact_accepted_occurren
     // Two input actions, both genuinely authored by node-1.
     for id in ["input-action-1", "input-action-2"] {
         resolved.actions.push(ImportedAction {
+            converted_from_invoke: false,
             id: id.into(),
             client_key: None,
             source_node_id: "node-1".into(),
@@ -934,6 +941,7 @@ async fn imported_submitted_input_value_must_satisfy_the_accepted_action() {
     // carries provenance that actually happened.
     for id in ["input-action-1", "input-action-2"] {
         resolved.actions.push(ImportedAction {
+            converted_from_invoke: false,
             id: id.into(),
             client_key: None,
             source_node_id: "node-1".into(),
@@ -1019,6 +1027,7 @@ async fn imported_submitted_input_value_must_satisfy_the_accepted_action() {
         unsupported_fields: Default::default(),
     };
     resolved.actions.push(ImportedAction {
+        converted_from_invoke: false,
         id: "input-action-authored-text".into(),
         client_key: None,
         source_node_id: "node-1".into(),
@@ -1140,6 +1149,7 @@ async fn imported_submitted_input_requires_an_earlier_presenting_turn() {
     input.turns[0].accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            converted_from_invoke: false,
             id: "input-action-1".into(),
             client_key: None,
             source_node_id: "node-1".into(),
@@ -1165,6 +1175,7 @@ async fn imported_submitted_input_requires_an_earlier_presenting_turn() {
     same_turn.accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            converted_from_invoke: false,
             id: "input-action-2".into(),
             client_key: None,
             source_node_id: "node-2".into(),
@@ -1190,6 +1201,7 @@ async fn imported_submitted_input_requires_an_earlier_presenting_turn() {
     later.accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            converted_from_invoke: false,
             id: "input-action-3".into(),
             client_key: None,
             source_node_id: "node-3".into(),
@@ -1307,6 +1319,7 @@ async fn imported_duplicate_input_occurrence_drops_only_extra_answer_per_turn() 
         ("input-action-2", action_two.clone()),
     ] {
         source_layer.actions.push(ImportedAction {
+            converted_from_invoke: false,
             id: id.into(),
             client_key: None,
             source_node_id: "node-1".into(),
@@ -1481,6 +1494,7 @@ async fn invalid_legacy_child_snapshot_does_not_poison_a_later_valid_answer() {
     input.turns[0].accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            converted_from_invoke: false,
             id: "legacy-input-action".into(),
             client_key: None,
             source_node_id: "node-1".into(),
@@ -1581,6 +1595,7 @@ async fn reused_legacy_input_uses_presenting_layer_for_snapshot_preference() {
     input.turns[0].accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            converted_from_invoke: false,
             id: "legacy-input-action".into(),
             client_key: None,
             source_node_id: "node-1".into(),
@@ -1727,6 +1742,7 @@ async fn wrong_occurrence_legacy_snapshot_cannot_poison_exact_sibling() {
     input.turns[0].accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            converted_from_invoke: false,
             id: "legacy-input-action".into(),
             client_key: None,
             source_node_id: "node-1".into(),
@@ -1844,6 +1860,7 @@ async fn assert_chronologically_invalid_legacy_snapshot_is_ignored(scenario: &st
     presenting_turn.accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            converted_from_invoke: false,
             id: "legacy-input-action".into(),
             client_key: None,
             source_node_id: "node-1".into(),
@@ -2044,6 +2061,423 @@ async fn imported_action_origin_reconstructs_resolved_invoke_navigation() {
             .value(),
         destination.graph_node_id.unwrap()
     );
+}
+
+fn imported_converted_invoke_conversation() -> ImportedConversation {
+    let mut input = imported_invoke_conversation();
+    let action = &mut input.turns[0].accepted_view.as_mut().unwrap().layers[0].actions[0];
+    action.kind = "navigate".into();
+    action.relation = Some("expand".into());
+    action.target_layer_id = Some("layer-2".into());
+    action.interaction_text = None;
+    action.converted_from_invoke = true;
+    action.source_layer_id = None;
+    let mut context_node =
+        input.turns[0].accepted_view.as_ref().unwrap().layers[0].nodes[0].clone();
+    context_node.client_key = None;
+    input.turns[1].contexts.push(ImportedInteractionContext {
+        id: "context-1".into(),
+        target: context_node,
+        source_interaction_node_id: "interaction-1".into(),
+        source_layer_id: "layer-1".into(),
+        annotations: vec![],
+    });
+    input.turns[1].accepted_view.as_mut().unwrap().layers[0].nodes[0].client_key =
+        Some("authored-node-1".into());
+    input.turns[1].accepted_view.as_mut().unwrap().layers[0]
+        .layer
+        .client_key = Some("authored-layer-1".into());
+    input
+}
+
+#[tokio::test]
+async fn imported_converted_invoke_reopens_as_inert_navigation_and_is_removable() {
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("graph.sqlite");
+    let database = GraphDatabase::open(&path).await.unwrap();
+    database
+        .set_interaction_permissions_enabled(true)
+        .await
+        .unwrap();
+    let input = imported_converted_invoke_conversation();
+    let receipt = database.import_accepted_conversation(&input).await.unwrap();
+    let source = NodeId::new(receipt.turns[0].graph_node_id.unwrap()).unwrap();
+    let layer = LayerId::new(receipt.turns[0].root_layer_id.unwrap()).unwrap();
+    database.close().await;
+    let database = GraphDatabase::open(&path).await.unwrap();
+    let writer = database.writer_for_subgraph(source).await.unwrap();
+    let resolved = writer.get_layer(layer).await.unwrap();
+    let action = &resolved.actions[0];
+    assert_eq!(action.kind, ActionKind::Navigate);
+    assert_eq!(action.relation, Some(NavigateRelation::Expand));
+    assert_eq!(
+        action.target_layer_id.map(LayerId::value),
+        receipt.turns[1].root_layer_id
+    );
+    assert!(action.converted_from_invoke);
+    assert_eq!(action.source_layer_id, None);
+    assert_eq!(
+        resolved.nodes[0].client_key.as_deref(),
+        Some("authored-node-1")
+    );
+    assert_eq!(
+        resolved.layer.client_key.as_deref(),
+        Some("authored-layer-1")
+    );
+    let destination = writer
+        .get_layer(action.target_layer_id.unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        destination.nodes[0].client_key,
+        resolved.nodes[0].client_key
+    );
+    assert_eq!(destination.layer.client_key, resolved.layer.client_key);
+    assert_eq!(action.resolved_invoke_interaction_id, None);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(
+            SqliteConnectOptions::new()
+                .filename(&path)
+                .foreign_keys(true),
+        )
+        .await
+        .unwrap();
+    for statement in [
+        "UPDATE imported_action_conversions SET target_layer_id=target_layer_id WHERE action_id=?1",
+        "DELETE FROM imported_action_conversions WHERE action_id=?1",
+    ] {
+        assert!(
+            sqlx::query(statement)
+                .bind(action.id.value())
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+    }
+    let native_receipts: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM invoke_resolution_transitions")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(native_receipts, 0);
+    let stored_key: (String, String) = sqlx::query_as("SELECT n.client_key,k.client_key FROM nodes n JOIN imported_node_client_keys k ON k.node_id=n.id WHERE n.id=?1")
+        .bind(resolved.nodes[0].id.value()).fetch_one(&pool).await.unwrap();
+    assert_eq!(stored_key, ("node-1".into(), "authored-node-1".into()));
+    for (table, column, id) in [
+        (
+            "imported_node_client_keys",
+            "node_id",
+            resolved.nodes[0].id.value(),
+        ),
+        (
+            "imported_layer_client_keys",
+            "layer_id",
+            resolved.layer.id.value(),
+        ),
+    ] {
+        for statement in [
+            format!("UPDATE {table} SET client_key='changed' WHERE {column}=?1"),
+            format!("DELETE FROM {table} WHERE {column}=?1"),
+            format!(
+                "INSERT INTO {table}({column},import_id,client_key) VALUES (?1,'wrong-import','tampered')"
+            ),
+        ] {
+            let error = sqlx::query(&statement)
+                .bind(id)
+                .execute(&pool)
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("imported_"), "{error}");
+        }
+    }
+    pool.close().await;
+    assert_eq!(
+        database.interaction_permissions(source).await.unwrap(),
+        None
+    );
+    assert!(
+        writer
+            .authorize_interaction_permission(&InteractionPermission::NavigateAdd {
+                node_id: action.source_node_id,
+            })
+            .await
+            .is_err()
+    );
+    assert!(
+        database
+            .create_interaction_with_invocation(
+                None,
+                thread(999),
+                "Retry imported action",
+                Some(InteractionInvocation {
+                    source_interaction_node_id: source,
+                    source_action_id: action.id,
+                })
+            )
+            .await
+            .is_err()
+    );
+    database
+        .remove_imported_conversation(&input.import_id)
+        .await
+        .unwrap();
+    // Removal cascades the inert provenance; the same import can then be restored.
+    database.import_accepted_conversation(&input).await.unwrap();
+}
+
+#[tokio::test]
+async fn imported_external_source_provenance_preserves_compiled_keys_without_response_topology() {
+    use sha2::{Digest, Sha256};
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("graph.sqlite");
+    let database = GraphDatabase::open(&path).await.unwrap();
+    let mut input = imported_converted_invoke_conversation();
+    input.project_id = Some(project(1));
+    let resolved = &mut input.turns[0].accepted_view.as_mut().unwrap().layers[0];
+    resolved.actions[0].source_layer_id = Some("external-layer".into());
+    let mut package = serde_json::json!({"version":1,"assets":[],
+    "components":[{"id":"main","order":0,"css":"", "html":"<button data-gc-mount=\"continue\">Continue</button>"}],
+    "mounts":[{"id":"continue","componentId":"main","host":"button","kind":"capability", "capability":{"kind":"invoke", "action":{
+        "clientKey":"authored-invoke-action-1", "sourceNode":{"clientKey":"authored-node-1"}, "sourceLayer":{"clientKey":"original-outside-layer"}
+    }}}]});
+    package["integritySha256"] = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&package).unwrap())
+    )
+    .into();
+    resolved.nodes[0].authored_detail = Some(package.clone());
+    let receipt = database.import_accepted_conversation(&input).await.unwrap();
+    database.close().await;
+    let database = GraphDatabase::open(&path).await.unwrap();
+    let writer = database
+        .writer_for_subgraph(NodeId::new(receipt.turns[0].graph_node_id.unwrap()).unwrap())
+        .await
+        .unwrap();
+    let closure = database
+        .accepted_graph_closure(NodeId::new(receipt.turns[0].graph_node_id.unwrap()).unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        closure.layers.len(),
+        2,
+        "provenance placeholders never enter the response closure"
+    );
+    let root = writer
+        .get_layer(LayerId::new(receipt.turns[0].root_layer_id.unwrap()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(root.nodes[0].authored_detail, Some(package.clone()));
+    assert_eq!(
+        root.actions[0].source_layer_client_key.as_deref(),
+        Some("original-outside-layer")
+    );
+    let provenance = root.actions[0].source_layer_id.unwrap();
+    let native = database
+        .create_interaction(Some(project(1)), thread(9099), "Native after import")
+        .await
+        .unwrap();
+    let native_writer = database.writer_for_subgraph(native.id).await.unwrap();
+    let answer = node(&native_writer, "answer").await;
+    let native_layer = single_node_layer(&native_writer, "response", &answer).await;
+    root_expand(&native_writer, &native, &native_layer).await;
+    let error = native_writer
+        .add_action(&ActionDraft {
+            client_key: "reject-provenance-target".into(),
+            source_node_id: answer.id,
+            source_layer_id: Some(native_layer.id),
+            kind: ActionKind::Navigate,
+            relation: Some(NavigateRelation::Reference),
+            label: "Invalid target".into(),
+            variant: ActionVariant::default(),
+            icon: None,
+            description: None,
+            target_layer_id: Some(provenance),
+            interaction_text: None,
+            input: None,
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        GraphError::Validation {
+            code: "unknown_target_layer",
+            ..
+        }
+    ));
+    assert!(matches!(
+        writer.get_layer(provenance).await,
+        Err(GraphError::NotFound(_))
+    ));
+    assert!(matches!(
+        native_writer.get_layer(provenance).await,
+        Err(GraphError::NotFound(_))
+    ));
+    assert!(matches!(
+        native_writer.get_layer_owner(provenance).await,
+        Err(GraphError::NotFound(_))
+    ));
+    native_writer.complete(native.id).await.unwrap();
+    assert_eq!(
+        database
+            .accepted_graph_closure(native.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .layers
+            .len(),
+        1
+    );
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(
+            SqliteConnectOptions::new()
+                .filename(&path)
+                .foreign_keys(true),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT import_id FROM imported_provenance_layers WHERE layer_id=?1"
+        )
+        .bind(provenance.value())
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        input.import_id
+    );
+    for statement in [
+        "UPDATE imported_provenance_layers SET import_id=import_id WHERE layer_id=?1",
+        "DELETE FROM imported_provenance_layers WHERE layer_id=?1",
+    ] {
+        let error = sqlx::query(statement)
+            .bind(provenance.value())
+            .execute(&pool)
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("immutable_imported_provenance_layer")
+        );
+    }
+    let error = sqlx::query("INSERT INTO actions(project_id,thread_id,source_node_id,source_layer_id,kind,relation,label,target_layer_id,state,owner_interaction_id,client_key) VALUES (1,9099,?1,?2,'navigate','reference','Forged target',?3,'draft',?4,'forged')")
+        .bind(answer.id.value()).bind(native_layer.id.value()).bind(provenance.value()).bind(native.id.value())
+        .execute(&pool).await.unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("imported_provenance_layer_is_not_target")
+    );
+    let error = sqlx::query("INSERT INTO layer_nodes(layer_id,node_id,position) VALUES (?1,?2,0)")
+        .bind(provenance.value())
+        .bind(root.nodes[0].id.value())
+        .execute(&pool)
+        .await
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("imported_provenance_layer_has_no_topology")
+    );
+    database
+        .remove_imported_conversation(&input.import_id)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM imported_provenance_layers")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    pool.close().await;
+
+    // A second compiled binding to the same action cannot relabel its provenance.
+    package.as_object_mut().unwrap().remove("integritySha256");
+    package["components"][0]["html"] = "<button data-gc-mount=\"continue\">Continue</button><button data-gc-mount=\"other\">Other</button>".into();
+    let mut other = package["mounts"][0].clone();
+    other["id"] = "other".into();
+    other["capability"]["action"]["sourceLayer"]["clientKey"] = "conflicting-layer".into();
+    package["mounts"].as_array_mut().unwrap().push(other);
+    package["integritySha256"] = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&package).unwrap())
+    )
+    .into();
+    input.turns[0].accepted_view.as_mut().unwrap().layers[0].nodes[0].authored_detail =
+        Some(package);
+    let error = database
+        .import_accepted_conversation(&input)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        GraphError::Validation {
+            code: "imported_source_layer_key_conflict",
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
+async fn imported_converted_invoke_rejects_malformed_or_redirected_history_atomically() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    for invalid in [
+        "target",
+        "missing-target",
+        "provenance-target",
+        "kind",
+        "relation",
+        "text",
+        "root",
+        "duplicate",
+    ] {
+        let mut input = imported_converted_invoke_conversation();
+        let action = &mut input.turns[0].accepted_view.as_mut().unwrap().layers[0].actions[0];
+        match invalid {
+            "target" => action.target_layer_id = Some("layer-1".into()),
+            "missing-target" => action.target_layer_id = Some("layer-missing".into()),
+            "provenance-target" => {
+                action.target_layer_id = Some("external-layer".into());
+                action.source_layer_id = Some("external-layer".into());
+            }
+            "kind" => action.kind = "invoke".into(),
+            "relation" => action.relation = Some("reference".into()),
+            "text" => action.interaction_text = Some("Run again".into()),
+            "root" => {
+                input.turns[0]
+                    .accepted_view
+                    .as_mut()
+                    .unwrap()
+                    .root_action
+                    .converted_from_invoke = true
+            }
+            "duplicate" => {
+                let mut duplicate =
+                    input.turns[0].accepted_view.as_ref().unwrap().layers[0].clone();
+                duplicate.actions[0].converted_from_invoke = false;
+                input.turns[1]
+                    .accepted_view
+                    .as_mut()
+                    .unwrap()
+                    .layers
+                    .push(duplicate);
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            database.import_accepted_conversation(&input).await.is_err(),
+            "{invalid}"
+        );
+    }
+    // A graph closure need not carry the destination Product turn's provenance.
+    let mut valid = imported_converted_invoke_conversation();
+    valid.turns[1].invoke_origin = None;
+    database.import_accepted_conversation(&valid).await.unwrap();
 }
 
 #[tokio::test]
@@ -7824,6 +8258,166 @@ async fn attached_navigation_concurrent_replacements_preserve_controls_and_reope
                 .has_persistent_mutations
         );
     }
+    // A second accepted replacement can reclaim the bytes named by a captured
+    // package. Both deferred reads must signal retry, never read the new asset
+    // under the old package pin or report a missing old asset.
+    let captured = reopened
+        .accepted_graph_closures(&[source.id, reuse.id])
+        .await
+        .unwrap();
+    let captured_revision = captured[0]
+        .as_ref()
+        .unwrap()
+        .detail_asset_revisions
+        .as_ref()
+        .unwrap()[&persistent.id];
+    let metadata = reopened
+        .accepted_detail_asset_metadata_at_revision(
+            persistent.id,
+            "diagram",
+            Some(captured_revision),
+        )
+        .await
+        .unwrap();
+    let (replacement, _) = reopened
+        .create_interaction_with_context(
+            Some(project(1)),
+            thread(6),
+            "Replace image",
+            &[InteractionContextDraft {
+                target: InteractionContextTarget {
+                    node_id: persistent.id,
+                    source_interaction_node_id: source.id,
+                    source_layer_id: source_layer.id,
+                },
+                annotations: vec!["Add image navigation".into()],
+            }],
+        )
+        .await
+        .unwrap();
+    let replacement_writer = reopened.writer_for_subgraph(replacement.id).await.unwrap();
+    let answer = node(&replacement_writer, "new-image-answer").await;
+    let response = single_node_layer(&replacement_writer, "new-image-layer", &answer).await;
+    root_expand(&replacement_writer, &replacement, &response).await;
+    replacement_writer
+        .add_action(&ActionDraft {
+            client_key: "new-image-link".into(),
+            source_node_id: persistent.id,
+            source_layer_id: Some(source_layer.id),
+            kind: ActionKind::Navigate,
+            relation: Some(NavigateRelation::Reference),
+            label: "New image".into(),
+            variant: ActionVariant::Pill,
+            icon: None,
+            description: None,
+            target_layer_id: Some(response.id),
+            interaction_text: None,
+            input: None,
+        })
+        .await
+        .unwrap();
+    let presentation = replacement_writer
+        .get_node_presentation(persistent.id)
+        .await
+        .unwrap();
+    let actions: Vec<GraphAction> =
+        serde_json::from_value(presentation["actions"].clone()).unwrap();
+    let mut replacement_package = presentation_with_actions(&persistent, &actions);
+    let bytes = b"replacement asset";
+    let digest = {
+        use sha2::{Digest, Sha256};
+        format!("{:x}", Sha256::digest(bytes))
+    };
+    let replacement_asset = PreparedDetailAsset {
+        asset_id: "diagram".into(),
+        digest_sha256: digest.clone(),
+        media_type: "image/png".into(),
+        byte_length: bytes.len(),
+        provenance_source: "user".into(),
+        provenance_file_name: "replacement.png".into(),
+        content: bytes.to_vec(),
+    };
+    replacement_package["assets"] = serde_json::json!([{"id":"diagram","digestSha256":digest,"mediaType":"image/png","representation":"image"}]);
+    replacement_package["mounts"].as_array_mut().unwrap().push(serde_json::json!({"id":"diagram-mount","componentId":"main","kind":"asset","host":"img","assetId":"diagram"}));
+    replacement_package["components"][0]["html"] = format!(
+        "{}<img data-asset-mount=\"diagram-mount\">",
+        replacement_package["components"][0]["html"]
+            .as_str()
+            .unwrap()
+    )
+    .into();
+    replacement_package
+        .as_object_mut()
+        .unwrap()
+        .remove("integritySha256");
+    {
+        use sha2::{Digest, Sha256};
+        replacement_package["integritySha256"] = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&replacement_package).unwrap())
+        )
+        .into();
+    }
+    replacement_writer
+        .stage_node_presentation(
+            persistent.id,
+            captured_revision,
+            &replacement_package,
+            &[replacement_asset],
+        )
+        .await
+        .unwrap();
+    replacement_writer.complete(replacement.id).await.unwrap();
+    for result in [
+        reopened
+            .accepted_detail_asset_metadata_at_revision(
+                persistent.id,
+                "diagram",
+                Some(captured_revision),
+            )
+            .await
+            .map(|_| ()),
+        reopened
+            .accepted_detail_asset_at_revision(persistent.id, "diagram", Some(captured_revision))
+            .await
+            .map(|_| ()),
+    ] {
+        assert!(
+            matches!(
+                result,
+                Err(GraphError::Validation {
+                    code: "asset_snapshot_changed",
+                    ..
+                })
+            ),
+            "{result:?}"
+        );
+    }
+    let fresh = reopened
+        .accepted_graph_closures(&[source.id, reuse.id])
+        .await
+        .unwrap();
+    let fresh_revision = fresh[0]
+        .as_ref()
+        .unwrap()
+        .detail_asset_revisions
+        .as_ref()
+        .unwrap()[&persistent.id];
+    let fresh_asset = reopened
+        .accepted_detail_asset_at_revision(persistent.id, "diagram", Some(fresh_revision))
+        .await
+        .unwrap();
+    assert_eq!(fresh_asset.content, bytes);
+    assert_ne!(fresh_asset.digest_sha256, metadata.digest_sha256);
+    assert_eq!(
+        fresh[1]
+            .as_ref()
+            .unwrap()
+            .detail_asset_revisions
+            .as_ref()
+            .unwrap()[&persistent.id],
+        fresh_revision
+    );
     let imported_fixture = sqlx::SqlitePool::connect(&format!("sqlite://{}", path.display()))
         .await
         .unwrap();

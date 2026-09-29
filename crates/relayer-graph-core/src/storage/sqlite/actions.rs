@@ -21,6 +21,7 @@ pub(crate) struct RootActionIdentity {
 
 #[derive(FromRow)]
 struct ActionRow {
+    converted_from_invoke: bool,
     id: i64,
     resolved_invoke_interaction_id: Option<i64>,
     client_key: String,
@@ -44,7 +45,7 @@ struct ActionRow {
 
 macro_rules! action_projection {
     () => {
-        "SELECT id,(SELECT t.interaction_node_id FROM invoke_resolution_transitions t WHERE t.action_id=action_records.id AND t.target_layer_id=action_records.target_layer_id AND action_records.kind='navigate' AND action_records.relation='expand' AND action_records.state='accepted') AS resolved_invoke_interaction_id,client_key,source_node_id,source_layer_id,(SELECT client_key FROM layers WHERE layers.id=action_records.source_layer_id) AS source_layer_client_key,kind,relation,label,variant,icon,description,target_layer_id,interaction_text,input_control,input_prompt,input_options_json,input_minimum_selections,state FROM action_records"
+        "SELECT id,(SELECT t.interaction_node_id FROM invoke_resolution_transitions t WHERE t.action_id=action_records.id AND t.target_layer_id=action_records.target_layer_id AND action_records.kind='navigate' AND action_records.relation='expand' AND action_records.state='accepted') AS resolved_invoke_interaction_id,EXISTS(SELECT 1 FROM imported_action_conversions c WHERE c.action_id=action_records.id AND c.target_layer_id=action_records.target_layer_id AND action_records.kind='navigate' AND action_records.relation='expand' AND action_records.state='accepted' AND action_records.interaction_text IS NULL) AS converted_from_invoke,client_key,source_node_id,source_layer_id,(SELECT COALESCE((SELECT k.client_key FROM imported_layer_client_keys k WHERE k.layer_id=layers.id),client_key) FROM layers WHERE layers.id=action_records.source_layer_id) AS source_layer_client_key,kind,relation,label,variant,icon,description,target_layer_id,interaction_text,input_control,input_prompt,input_options_json,input_minimum_selections,state FROM action_records"
     };
 }
 
@@ -659,6 +660,7 @@ impl TryFrom<ActionRow> for ActionRecord {
         };
         Ok(Self {
             action: GraphAction {
+                converted_from_invoke: row.converted_from_invoke,
                 id: valid_action_id(row.id)?,
                 resolved_invoke_interaction_id: row
                     .resolved_invoke_interaction_id
@@ -689,6 +691,7 @@ impl TryFrom<ActionRow> for ActionRecord {
 
 fn draft_action(id: ActionId, draft: &ActionDraft) -> GraphAction {
     GraphAction {
+        converted_from_invoke: false,
         id,
         resolved_invoke_interaction_id: None,
         client_key: Some(draft.client_key.clone()),

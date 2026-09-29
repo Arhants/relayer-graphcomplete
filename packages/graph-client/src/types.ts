@@ -62,6 +62,8 @@ export interface InputOption {
 }
 
 export interface GraphAction {
+  /** Inert imported conversion provenance; never grants invocation or edit authority. */
+  readonly convertedFromInvoke?: boolean;
   readonly resolvedInvokeInteractionId?: GraphId;
   readonly id: GraphId;
   /** Stable author-assigned identity; absent only in projections written before client keys were exposed. */

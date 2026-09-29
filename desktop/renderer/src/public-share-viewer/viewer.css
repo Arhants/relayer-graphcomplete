@@ -107,7 +107,7 @@
   position: static;
 }
 
-.public-share-shell .turn-popover {
+.public-share-shell .turn-popover:not(.interaction-graph-popover) {
   top: calc(100% + 8px);
   right: 0;
   left: 0;

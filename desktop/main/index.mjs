@@ -36,7 +36,7 @@ import { RelayerAppServerService } from "./services/relayer-app-server.mjs";
 import { installElectronMainErrorAdapter } from "./services/electron-main-error-adapter.mjs";
 import { createCanaryEvidenceLog } from "./services/canary-evidence-log.mjs";
 import { settleShutdownWithin } from "./services/update-restart.mjs";
-import { GraphCompleteRuntimeService, productTemporalFeatures } from "./services/graphcomplete-runtime.mjs";
+import { createDesktopGraphRuntime, productTemporalFeatures } from "./services/graphcomplete-runtime.mjs";
 import {
   inspectPrimeAgentRuntime,
   PRIME_AGENT_ASSET_SHA256,
@@ -203,9 +203,8 @@ if (primaryInstance) {
     fatalShutdownRequested = true;
     app.quit();
   };
-  const graphRuntime = new GraphCompleteRuntimeService({
+  const graphRuntime = createDesktopGraphRuntime({
     userDataDirectory: userDataPath,
-    interactionPermissions: !app.isPackaged && process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1",
     graphServerBinary: relayerGraphServerBinary,
     configurationPaths: [...new Set([
       defaultHarnessConfiguration,

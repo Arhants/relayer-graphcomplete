@@ -3161,8 +3161,8 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
     assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
 
     // Convert the real accepted invoke, retaining the durable Product origin row.
-    // Export must report the declared portability boundary before validating that
-    // row against the now-navigation action shape.
+    // V3 export and sharing preserve the exact resolved target and inert origin
+    // while the read-only export authorization check above remains enforced.
     graph_database
         .set_interaction_permissions_enabled(true)
         .await
@@ -3223,25 +3223,45 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
     sqlx::query("UPDATE interactions SET graph_node_id=?1,completion_status='accepted',completion_error=NULL WHERE id=2")
         .bind(child.id.value()).execute(&pool).await.unwrap();
     pool.close().await;
-    let blocked = app
+    let portable = app
         .clone()
         .oneshot(api_request("GET", "/api/threads/1/export", None, true))
         .await
         .unwrap();
-    assert!(!blocked.status().is_success());
-    assert_ne!(
-        blocked
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok()),
-        Some("application/x-ndjson; charset=utf-8")
+    assert_eq!(portable.status(), StatusCode::OK);
+    let bytes = to_bytes(portable.into_body(), 16 * 1024 * 1024)
+        .await
+        .unwrap();
+    let exported = decode_export_jsonl(&bytes).unwrap();
+    let ConversationExportRecord::Header(header) = &exported[0] else {
+        panic!("missing header")
+    };
+    assert_eq!(header.export_version, 3);
+    let turns = exported
+        .iter()
+        .filter_map(|record| match record {
+            ConversationExportRecord::Turn(turn) => Some(turn),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let converted = turns[0]
+        .accepted_view
+        .as_ref()
+        .unwrap()
+        .layers
+        .iter()
+        .flat_map(|layer| &layer.actions)
+        .find(|action| action.converted_from_invoke)
+        .unwrap();
+    assert_eq!(
+        converted.kind,
+        relayer_app_server::conversation_export::ExportActionKind::Navigate
     );
-    let body = response_json(blocked).await;
-    assert!(
-        body.to_string()
-            .contains("Typed invoke resolution portability requires Slice 2."),
-        "{body}"
+    assert_eq!(
+        converted.target_layer_id.as_ref(),
+        Some(&turns[1].accepted_view.as_ref().unwrap().root_layer_id)
     );
+    assert!(converted.interaction_text.is_none());
 
     let shared = app
         .oneshot(api_request(
@@ -3252,14 +3272,24 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
         ))
         .await
         .unwrap();
-    assert!(!shared.status().is_success());
-    let shared_error = response_json(shared).await;
-    assert!(
-        shared_error
-            .to_string()
-            .contains("Typed invoke resolution portability requires Slice 2."),
-        "{shared_error}"
-    );
+    assert_eq!(shared.status(), StatusCode::OK);
+    let shared_bytes = to_bytes(shared.into_body(), 16 * 1024 * 1024)
+        .await
+        .unwrap();
+    let shared_records = decode_export_jsonl(&shared_bytes).unwrap();
+    let ConversationExportRecord::Header(shared_header) = &shared_records[0] else {
+        panic!("missing shared header")
+    };
+    assert_eq!(shared_header.export_version, 3);
+    assert!(shared_records.iter().any(|record| match record {
+        ConversationExportRecord::Turn(turn) => turn.accepted_view.as_ref().is_some_and(|view| {
+            view.layers
+                .iter()
+                .flat_map(|layer| &layer.actions)
+                .any(|action| action.converted_from_invoke)
+        }),
+        _ => false,
+    }));
 
     graph_task.abort();
     harness_task.abort();
@@ -10409,6 +10439,30 @@ async fn interaction_graph_projects_layer_owners_and_invocation_with_scope_and_r
         body["interactions"][0].get("interactionGraph").is_none(),
         "{body}"
     );
+    mode.store(0, Ordering::SeqCst);
+    let pool = sqlite_pool(&database).await;
+    sqlx::query("INSERT INTO conversation_imports(id,source_sha256,export_version,producer_json,header_json,state,created_at,published_at) VALUES ('b3-import','sha256:imported',1,'{}','{}','published','6','6')")
+        .execute(&pool).await.unwrap();
+    sqlx::query("UPDATE threads SET conversation_import_id='b3-import' WHERE id=?1")
+        .bind(thread_ids[2])
+        .execute(&pool)
+        .await
+        .unwrap();
+    owner_reads.store(0, Ordering::SeqCst);
+    let response = app
+        .oneshot(api_request_with_token("GET", &uri, None, "review"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let imported = response_json(response).await;
+    assert_eq!(imported["interactions"][0]["graphNodeId"], 92);
+    assert!(
+        imported["interactions"][0]
+            .get("interactionGraph")
+            .is_none(),
+        "Imported chats retain the legacy picker even when runtime discovery enables B3: {imported}"
+    );
+    assert_eq!(owner_reads.load(Ordering::SeqCst), 0);
     graph_task.abort();
     harness_task.abort();
 }
