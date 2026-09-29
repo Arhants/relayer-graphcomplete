@@ -118,7 +118,9 @@
       "DefaultProviderPairsFamily": "TRUE",
       "ConnectionGeneration": "TRUE",
       "ReconnectKeepsAdapter": "TRUE",
-      "AdapterAfterCommit": "TRUE"
+      "AdapterAfterCommit": "TRUE",
+      "RefreshSkipsPendingReconnect": "TRUE",
+      "CancelSignsOut": "TRUE"
     },
     "readiness-today": {
       "Evals": "{1, 2, 3}",
@@ -174,6 +176,23 @@
       "ForgetOnlyRunning": "TRUE",
       "ForceClosePersists": "TRUE",
       "SessionScopedInstructions": "TRUE"
+    },
+    "lifecycle-today": {
+      "MaxRt": "3",
+      "MaxGen": "4",
+      "SignOutPublishCanFail": "TRUE",
+      "CancelPublishCanFail": "TRUE",
+      "ReconnectAnswerCanBeLost": "TRUE",
+      "LeaseWaitsForReconnect": "TRUE",
+      "CancelSparesLease": "TRUE",
+      "ShutdownRefusesLeases": "TRUE",
+      "RefreshSkipsPendingReconnect": "TRUE",
+      "LostReconnectAdopted": "TRUE",
+      "AdoptChecksBaseline": "TRUE",
+      "CancelSignsOut": "TRUE",
+      "CancelKeepsUnrecordedLogin": "TRUE",
+      "SupersededCancelWipes": "TRUE",
+      "AdoptTracksLostWrites": "TRUE"
     }
   },
   "checks": [
@@ -185,10 +204,8 @@
         "TypeOK",
         "LeasedRuntimeStaysOpen"
       ],
-      "expect": {
-        "violated": "LeasedRuntimeStaysOpen"
-      },
-      "finding": "A turn admitted while the provider looked connected leases the runtime a pending reconnect registered; cancelling that reconnect closes it under the turn."
+      "expect": "pass",
+      "finding": "A turn's lease waits for a pending reconnect, and a reconnect never closes a leased runtime (fixed; was: a turn admitted while the provider looked connected leased the runtime a pending reconnect registered, and cancelling that reconnect closed it under the turn)."
     },
     {
       "id": "provider-remove-during-reconnect",
@@ -220,10 +237,8 @@
         "TypeOK",
         "CloseLeavesNoOpenRuntime"
       ],
-      "expect": {
-        "violated": "CloseLeavesNoOpenRuntime"
-      },
-      "finding": "close() does not drain the provider queue or refuse leases: a turn admitted before shutdown creates and registers a runtime after the maps are cleared."
+      "expect": "pass",
+      "finding": "Leases are refused once close() begins, and a runtime that finishes starting after it is closed again (fixed; was: a turn admitted before shutdown created and registered a runtime after the maps were cleared)."
     },
     {
       "id": "provider-default-family",
@@ -2162,6 +2177,373 @@
       ],
       "expect": "pass",
       "finding": "A force-stopped root turn's host run always ends and frees the session lock, even when its native turn never settles."
+    },
+    {
+      "id": "lifecycle-lease-during-reconnect",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "PROV004_NoCloseUnderLease"
+      ],
+      "expect": "pass",
+      "finding": "A turn's lease waits for a pending reconnect, so settling that reconnect never closes or wipes the runtime a turn uses (PROV-004), with every publish fault on."
+    },
+    {
+      "id": "lifecycle-lease-acquire-guard-alone",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "CancelSparesLease": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "PROV004_NoCloseUnderLease"
+      ],
+      "expect": "pass",
+      "finding": "The acquire guard alone keeps PROV-004: with CancelSparesLease off, no lease exists while a reconnect is pending."
+    },
+    {
+      "id": "lifecycle-lease-cancel-guard-alone",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "LeaseWaitsForReconnect": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "PROV004_NoCloseUnderLease"
+      ],
+      "expect": "pass",
+      "finding": "The cancel guard alone also keeps PROV-004: with LeaseWaitsForReconnect off, a settling reconnect spares the runtime a lease holds."
+    },
+    {
+      "id": "lifecycle-lease-during-reconnect-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "LeaseWaitsForReconnect": "FALSE",
+        "CancelSparesLease": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "PROV004_NoCloseUnderLease"
+      ],
+      "expect": {
+        "violated": "PROV004_NoCloseUnderLease"
+      },
+      "finding": "With both lease fixes off, a turn leases the runtime a pending reconnect is signing in, and cancelling the reconnect closes it and wipes its home under the turn."
+    },
+    {
+      "id": "lifecycle-close",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "CloseLeavesNoOpenRuntime"
+      ],
+      "expect": "pass",
+      "finding": "Leases are refused once close() begins, and a runtime that finishes starting after it is closed again."
+    },
+    {
+      "id": "lifecycle-close-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "ShutdownRefusesLeases": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "CloseLeavesNoOpenRuntime"
+      ],
+      "expect": {
+        "violated": "CloseLeavesNoOpenRuntime"
+      },
+      "finding": "With ShutdownRefusesLeases off, a lease queued before shutdown registers a runtime after close() cleared the maps, and nothing closes it."
+    },
+    {
+      "id": "lifecycle-refresh-during-reconnect",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE",
+        "ReconnectAnswerCanBeLost": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyMeansSignedIn",
+        "PendingReconnectNotReady"
+      ],
+      "expect": "pass",
+      "finding": "No refresh starts or publishes during a pending reconnect, so an automatic result never stands for the reconnect's sign-in, and Rust never reads P ready with no login."
+    },
+    {
+      "id": "lifecycle-refresh-during-reconnect-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE",
+        "ReconnectAnswerCanBeLost": "FALSE",
+        "RefreshSkipsPendingReconnect": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "PendingReconnectNotReady"
+      ],
+      "expect": {
+        "violated": "PendingReconnectNotReady"
+      },
+      "finding": "With RefreshSkipsPendingReconnect off, a refresh publishes ready through the runtime a reconnect is signing in, before the user's reconnect settles."
+    },
+    {
+      "id": "lifecycle-lost-reconnect-answer",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyMeansSignedIn"
+      ],
+      "expect": "pass",
+      "finding": "A reconnect whose answer was lost is adopted when the generation reads back advanced, and keeps its login when the read fails too."
+    },
+    {
+      "id": "lifecycle-lost-reconnect-answer-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE",
+        "LostReconnectAdopted": "FALSE",
+        "CancelSignsOut": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyMeansSignedIn"
+      ],
+      "expect": {
+        "violated": "ReadyMeansSignedIn"
+      },
+      "finding": "With LostReconnectAdopted and CancelSignsOut off (the code before this fix), a reconnect the app server committed settles as failed and its cancel wipes the login the app server reads as connected."
+    },
+    {
+      "id": "lifecycle-lost-answer-adopts-only-commit",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "AdoptsOnlyCommittedReconnect"
+      ],
+      "expect": "pass",
+      "finding": "An unanswered reconnect is adopted only when the app server committed it, including after a sign-out during the reconnect, a baseline read that failed, and an earlier sign-out request that commits late."
+    },
+    {
+      "id": "lifecycle-lost-answer-adopts-only-commit-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "AdoptChecksBaseline": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "AdoptsOnlyCommittedReconnect"
+      ],
+      "expect": {
+        "violated": "AdoptsOnlyCommittedReconnect"
+      },
+      "finding": "With AdoptChecksBaseline off, any advance past the reconnect's baseline is adopted: a sign-out during the reconnect supersedes it, the refusal's answer is lost, and the refused reconnect is adopted."
+    },
+    {
+      "id": "lifecycle-late-sign-out-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "AdoptTracksLostWrites": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "AdoptsOnlyCommittedReconnect"
+      ],
+      "expect": {
+        "violated": "AdoptsOnlyCommittedReconnect"
+      },
+      "finding": "With AdoptTracksLostWrites off, a sign-out whose answer was lost commits only after the next reconnect read its baseline; the reconnect's refused publish loses its answer too, reads one step past the baseline, and is adopted."
+    },
+    {
+      "id": "lifecycle-committed-reconnect-keeps-login",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "CommittedReconnectKeepsLogin"
+      ],
+      "expect": "pass",
+      "finding": "A reconnect the app server committed is never settled and wiped, with every fault on, including a sign-out during the reconnect whose publish got no answer."
+    },
+    {
+      "id": "lifecycle-committed-reconnect-keeps-login-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "LostReconnectAdopted": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "CommittedReconnectKeepsLogin"
+      ],
+      "expect": {
+        "violated": "CommittedReconnectKeepsLogin"
+      },
+      "finding": "With LostReconnectAdopted off, a reconnect whose committed publish lost its answer is settled and its login wiped."
+    },
+    {
+      "id": "lifecycle-cancel-records-signed-out",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "CancelRecordsSignedOut"
+      ],
+      "expect": "pass",
+      "finding": "A settled reconnect never leaves the app server reading ready over the login it wiped: it commits signed-out first, and keeps the login when that publish fails, with every fault on."
+    },
+    {
+      "id": "lifecycle-cancel-records-signed-out-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "CancelSignsOut": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "CancelRecordsSignedOut"
+      ],
+      "expect": {
+        "violated": "CancelRecordsSignedOut"
+      },
+      "finding": "With CancelSignsOut off, a sign-out whose publish failed leaves Rust ready; a reconnect then starts and is cancelled, wiping the login while Rust still reads ready."
+    },
+    {
+      "id": "lifecycle-cancel-keeps-unrecorded-login-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "CancelKeepsUnrecordedLogin": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "CancelRecordsSignedOut"
+      ],
+      "expect": {
+        "violated": "CancelRecordsSignedOut"
+      },
+      "finding": "With CancelKeepsUnrecordedLogin off, a cancel whose signed-out publish fails still wipes the login, while a failed sign-out left the app server reading ready."
+    },
+    {
+      "id": "lifecycle-confirmed-sign-out-stands",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "ConfirmedSignOutStands"
+      ],
+      "expect": "pass",
+      "finding": "Once the app server answered a sign-out, the home holds no login again until the user starts a new reconnect, with every fault on."
+    },
+    {
+      "id": "lifecycle-confirmed-sign-out-stands-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SupersededCancelWipes": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ConfirmedSignOutStands"
+      ],
+      "expect": {
+        "violated": "ConfirmedSignOutStands"
+      },
+      "finding": "With SupersededCancelWipes off, a sign-out answered during a reconnect is followed by the browser sign-in; the refused reconnect's settle cannot publish, keeps the new login, and the next refresh would publish connected over the confirmed sign-out."
+    },
+    {
+      "id": "lifecycle-straddling-refresh",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE",
+        "ReconnectAnswerCanBeLost": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyMeansSignedIn"
+      ],
+      "expect": "pass",
+      "finding": "A refresh that resolved its generation before a reconnect and read the account mid-sign-in is dropped after the reconnect is cancelled, because the cancel advanced the generation."
+    },
+    {
+      "id": "lifecycle-straddling-refresh-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE",
+        "ReconnectAnswerCanBeLost": "FALSE",
+        "CancelSignsOut": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyMeansSignedIn"
+      ],
+      "expect": {
+        "violated": "ReadyMeansSignedIn"
+      },
+      "finding": "With CancelSignsOut off, a refresh straddling a cancelled reconnect passes both generation checks and publishes ready over the wiped login."
+    },
+    {
+      "id": "lifecycle-overlapping-refresh",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "OverlappingRefreshNeverReadiesWipedLogin"
+      ],
+      "expect": "pass",
+      "finding": "A refresh that overlapped a reconnect never readies the app server over a wiped login, including when the cancel's own publish fails: every path that wipes first advances the generation, and a cancel that cannot keeps the login. The sign-out fault is off; its own straddle is the known limit.",
+      "constants": {
+        "SignOutPublishCanFail": "FALSE"
+      }
+    },
+    {
+      "id": "lifecycle-overlapping-refresh-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "CancelKeepsUnrecordedLogin": "FALSE",
+        "SignOutPublishCanFail": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "OverlappingRefreshNeverReadiesWipedLogin"
+      ],
+      "expect": {
+        "violated": "OverlappingRefreshNeverReadiesWipedLogin"
+      },
+      "finding": "With CancelKeepsUnrecordedLogin off, a cancel whose signed-out publish fails wipes the login without advancing the generation, and a refresh that straddled the reconnect publishes ready over it."
+    },
+    {
+      "id": "lifecycle-removal-completes",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "fair": true,
+      "properties": [
+        "RemovalCompletes"
+      ],
+      "invariants": [
+        "TypeOK"
+      ],
+      "expect": "pass",
+      "finding": "PROV-003: a removal that waited on the turn finishes once the turn releases, with every fault on."
     }
   ]
 }

@@ -373,6 +373,9 @@ if (primaryInstance) {
   async function shutdownServices() {
     shutdownPromise ??= (async () => {
       const results = [];
+      // Provider admission closes first, so no turn takes provider access while shutdown
+      // awaits the app server; the provider teardown below would close it underneath (PROV-004).
+      providerComposition?.beginShutdown();
       updater.stopPolling();
       try {
         electronMainErrorAdapter?.close();

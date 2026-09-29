@@ -249,6 +249,10 @@ describe("desktop skeleton", () => {
     expect(desktopMain).toContain('allowHarnessOverride: !app.isPackaged && defaultHarnessConfiguration.startsWith("prime-agent-")');
     expect(desktopMain).toContain("productServer.start()");
     expect(desktopMain).toContain("productServer.close()");
+    // Provider admission closes before shutdown awaits the app server (PROV-004).
+    const shutdown = desktopMain.slice(desktopMain.indexOf("async function shutdownServices()"));
+    expect(shutdown.indexOf("providerComposition?.beginShutdown()")).toBeGreaterThan(-1);
+    expect(shutdown.indexOf("providerComposition?.beginShutdown()")).toBeLessThan(shutdown.indexOf("productServer.close()"));
     expect(desktopMain).not.toContain("startModelCatalogRefreshServer");
     expect(desktopMain).not.toContain("providerCatalogRefreshSession");
     expect(desktopPreload).not.toContain("provider-catalog/refresh");
