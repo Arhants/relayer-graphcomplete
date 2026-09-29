@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createHarnessReadinessCoordinator } from "../desktop/main/services/harness-readiness.mjs";
+import {
+  createHarnessReadinessCoordinator,
+  startPostUpgradeReadiness,
+} from "../desktop/main/services/harness-readiness.mjs";
 
 function configuration(name, implementation, adapterId) {
   return {
@@ -223,5 +226,54 @@ describe("production harness readiness", () => {
       [{ harnessId: "codex-basic", configurationDigest: "sha256:codex-basic", generation: 2, available: true, unavailableReason: null }],
       [{ harnessId: "prime-agent-basic", configurationDigest: "sha256:prime-agent-basic", generation: 1, available: true, unavailableReason: null }],
     ]);
+  });
+
+  // PR #576 review: quitting stops the background post-upgrade evaluation. It then starts no
+  // preparation and no repair, and a preparation already running publishes nothing, so a
+  // cancelled evaluation never clears the app server's due mark.
+  it("stops the post-upgrade evaluation for shutdown before it prepares or publishes", async () => {
+    const configurations = new Map([["codex-basic", configuration("codex-basic", "codex.basic", "openai-api")]]);
+    let releasePrepare;
+    const prepareRecipe = vi.fn(() => new Promise((resolve) => { releasePrepare = resolve; }));
+    const publishAvailability = vi.fn(async () => {});
+    const readiness = createHarnessReadinessCoordinator({
+      configurations,
+      digestConfiguration: ({ name }) => `sha256:${name}`,
+      runtimeRequirements: { "codex.basic": { runtimeId: "codex", recipeId: "codex@0.147.0" } },
+      prepareRecipe,
+      checkers: { "codex.basic": async () => ({ available: true }) },
+      publishAvailability,
+      recipeInstalled: async () => true,
+    });
+    const providers = [{
+      providerDefinition: { id: "work", adapterId: "openai-api", accessContract: "secret@1" },
+      models: [{ id: "gpt-work", visible: true, availability: "available" }],
+    }];
+
+    // Stopped while it still reads the due marks: nothing starts.
+    let releaseMarks;
+    const repairProviders = vi.fn(async () => {});
+    const early = startPostUpgradeReadiness({
+      readiness,
+      updatesDue: () => new Promise((resolve) => { releaseMarks = resolve; }),
+      routes: async () => providers,
+      repairProviders,
+    });
+    await vi.waitFor(() => expect(releaseMarks).toBeTypeOf("function"));
+    early.stop();
+    releaseMarks(["codex-basic"]);
+    await expect(early.evaluation).resolves.toBeNull();
+    expect(repairProviders).not.toHaveBeenCalled();
+    expect(prepareRecipe).not.toHaveBeenCalled();
+
+    // Stopped while preparing: the preparation's result is not published.
+    const late = startPostUpgradeReadiness({
+      readiness, updatesDue: async () => ["codex-basic"], routes: async () => providers,
+    });
+    await vi.waitFor(() => expect(prepareRecipe).toHaveBeenCalledOnce());
+    late.stop();
+    releasePrepare({ recipeId: "codex@0.147.0" });
+    await late.evaluation;
+    expect(publishAvailability).not.toHaveBeenCalled();
   });
 });

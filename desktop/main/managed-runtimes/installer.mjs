@@ -556,8 +556,10 @@ function managedAssemblyContext(staging, installationRoot, recipe, signal) {
 // The runtimes a post-update activation changed: a new exact recipe activated, or its
 // activation failed and left the previous runtime. Startup tells the app server, which
 // withholds their old ready and marks them due for one evaluation (PROV-009).
-export function runtimesChangedByActivation({ activated = [], recipeUpdates = [], failures = [] } = {}) {
-  const changed = new Set();
+export function runtimesChangedByActivation({
+  activated = [], recipeUpdates = [], changedRuntimeIds = [], failures = [],
+} = {}) {
+  const changed = new Set(changedRuntimeIds.filter((runtimeId) => RUNTIME_IDS.has(runtimeId)));
   for (const { runtimeId, recipeId } of activated) {
     if (recipeId && recipeUpdates.includes(recipeId)) changed.add(runtimeId);
   }
@@ -1110,13 +1112,18 @@ export function createManagedRuntimeInstaller({
     } catch (error) {
       if (error?.code === "ENOENT") {
         return Object.freeze({
-          appVersion, activated: Object.freeze([]), recipeUpdates: Object.freeze([]), failures: Object.freeze([]),
+          appVersion,
+          activated: Object.freeze([]),
+          recipeUpdates: Object.freeze([]),
+          changedRuntimeIds: Object.freeze([]),
+          failures: Object.freeze([]),
         });
       }
       return Object.freeze({
         appVersion,
         activated: Object.freeze([]),
         recipeUpdates: Object.freeze([]),
+        changedRuntimeIds: Object.freeze([]),
         failures: Object.freeze([Object.freeze({ runtimeId: null, error })]),
       });
     }
@@ -1126,6 +1133,7 @@ export function createManagedRuntimeInstaller({
     operation.runtimeIds = runtimeIds;
     const activated = [];
     const recipeUpdates = [];
+    const changedRuntimeIds = [];
     const failures = [];
     for (const runtimeId of runtimeIds) {
       try {
@@ -1141,6 +1149,15 @@ export function createManagedRuntimeInstaller({
           && (previous?.recipeId !== receipt.recipeId || previous?.recipeDigest !== receipt.recipeDigest)) {
           recipeUpdates.push(receipt.recipeId);
         }
+        // Any activation that replaced what the runtime ran changes it, including a frozen
+        // schema-v1 receipt an older Desktop staged, which has no recipe identity.
+        if (previous?.installation !== receipt.installation
+          && (previous?.schemaVersion !== receipt.schemaVersion
+            || previous?.recipeId !== receipt.recipeId
+            || previous?.recipeDigest !== receipt.recipeDigest
+            || !sameArtifacts(previous, receipt))) {
+          changedRuntimeIds.push(runtimeId);
+        }
       } catch (error) {
         failures.push(Object.freeze({ runtimeId, error }));
         await discardFailedPending(appVersion, runtimeId).catch(() => undefined);
@@ -1151,6 +1168,7 @@ export function createManagedRuntimeInstaller({
       appVersion,
       activated: Object.freeze(activated),
       recipeUpdates: Object.freeze(recipeUpdates),
+      changedRuntimeIds: Object.freeze(changedRuntimeIds),
       failures: Object.freeze(failures),
     });
   }

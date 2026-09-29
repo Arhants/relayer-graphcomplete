@@ -356,14 +356,21 @@ if (primaryInstance) {
   let shutdownPromise;
   let shutdownComplete = false;
   let quitFlowPromise;
+  // The background post-upgrade readiness evaluation (#556), fenced for shutdown.
+  let postUpgradeReadiness = null;
 
-  const confirmQuit = ({ fatal = false } = {}) => confirmManagedRuntimeQuit({
-    installer: managedRuntimeInstaller,
-    dialog,
-    parent: mainWindow,
-    fatal,
-    ...(fatal ? { reason: new Error("Relayer is closing after a fatal service failure.") } : {}),
-  });
+  // Quitting first stops the post-upgrade evaluation, so no preparation starts behind the
+  // quit guard's check; one already running is an installer operation the guard sees.
+  const confirmQuit = ({ fatal = false } = {}) => {
+    postUpgradeReadiness?.stop();
+    return confirmManagedRuntimeQuit({
+      installer: managedRuntimeInstaller,
+      dialog,
+      parent: mainWindow,
+      fatal,
+      ...(fatal ? { reason: new Error("Relayer is closing after a fatal service failure.") } : {}),
+    });
+  };
 
   const UPDATE_RESTART_SHUTDOWN_BUDGET_MS = 10_000;
 
@@ -386,6 +393,11 @@ if (primaryInstance) {
       // awaits the app server; the provider teardown below would close it underneath (PROV-004).
       providerComposition?.beginShutdown();
       updater.stopPolling();
+      // No post-upgrade preparation outlives shutdown: stop the step, cancel any installer
+      // operation it started, and let it settle before the services it uses close.
+      postUpgradeReadiness?.stop();
+      await managedRuntimeInstaller.cancelAll(new DOMException("Relayer is shutting down.", "AbortError"));
+      await postUpgradeReadiness?.evaluation;
       try {
         electronMainErrorAdapter?.close();
       } catch (error) {
@@ -576,7 +588,7 @@ if (primaryInstance) {
     // #556: an upgrade that changed a route's configuration digest, or activated a new
     // runtime recipe, gets one readiness evaluation through the recipe-update trigger. It
     // runs in the background, so startup's cheap path never waits for it.
-    startPostUpgradeReadiness({
+    postUpgradeReadiness = startPostUpgradeReadiness({
       readiness,
       updatesDue: () => productServer.harnessReadinessUpdatesDue(),
       recipeUpdates: activation.recipeUpdates,

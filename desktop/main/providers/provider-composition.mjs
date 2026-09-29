@@ -72,7 +72,7 @@ export function createProviderComposition({
       modelCatalog.register({
         providerId: definition.id,
         discover: async ({ signal, reason } = {}) => {
-          if (reason !== "explicit") {
+          if (reason !== "explicit" && reason !== "recovery") {
             return unavailableModelCatalogSnapshot({
               providerId: definition.id,
               providerLabel: definition.label,
@@ -106,10 +106,11 @@ export function createProviderComposition({
     },
     // After an upgrade: recovers, as Repair does, each managed provider whose activation
     // failed and whose runtime recipe is one of recipeIds (installed, and due for an
-    // evaluation). Recovery reinstalls the exact recipe when needed, activates the provider
-    // and publishes its catalog. It evaluates no readiness: the post-upgrade step then
-    // evaluates each due harness once for all its providers. One failure spares the rest.
-    async repairFailedActivations(recipeIds, { recipeForAdapter }) {
+    // evaluation). Its "recovery" refresh reinstalls the exact recipe when needed, activates
+    // the provider and publishes the catalog that recovery discovered, once. It evaluates no
+    // readiness: the post-upgrade step then evaluates each due harness once for all its
+    // providers. One failure spares the rest; a stopped step recovers no further provider.
+    async repairFailedActivations(recipeIds, { recipeForAdapter, signal } = {}) {
       const recipes = new Set(recipeIds);
       const failed = (await providerDefinitions.activeDefinitions()).filter((definition) => {
         if (definition.accessContract !== "managed-runtime@1") return false;
@@ -118,9 +119,9 @@ export function createProviderComposition({
       });
       const results = [];
       for (const { id } of failed) {
+        if (signal?.aborted) break;
         try {
-          await providerDefinitions.recoverUnavailable(id);
-          results.push({ status: "fulfilled", value: await modelCatalog.providerChanged(id) });
+          results.push({ status: "fulfilled", value: await modelCatalog.refresh(id, "recovery", { signal }) });
         } catch (reason) {
           results.push({ status: "rejected", reason });
         }

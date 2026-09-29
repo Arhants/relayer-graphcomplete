@@ -445,14 +445,26 @@ describe("injectable production provider composition", () => {
     ["repairs a managed provider whose activation failed on its broken runtime", true, "digest"],
     ["repairs a failed managed provider once for a newly activated recipe", true, "recipe"],
     ["never installs a missing runtime to recover a managed provider", false, "digest"],
-  ])("%s", async (_, installedBefore, trigger) => {
+    // PR #576 review: recovery discovers once and that catalog is what publishes. A second
+    // discovery that fails must not leave the provider without a route.
+    ["publishes the catalog its recovery discovered, without discovering again", true, "digest", true],
+  ])("%s", async (_, installedBefore, trigger, discoverOnce = false) => {
     let runtimeHealthy = false;
+    let discoveries = 0;
     const prepareRuntime = vi.fn(async () => { runtimeHealthy = true; });
     const create = vi.fn(({ definition }) => {
       if (!runtimeHealthy) throw new Error("managed runtime installation is invalid");
       return {
         providerId: definition.id,
-        discover: async () => ({
+        discover: async () => {
+          discoveries += 1;
+          if (discoverOnce && discoveries > 1) throw new Error("provider catalog unavailable");
+          return discoveredCatalog(definition);
+        },
+        close: vi.fn(async () => {}),
+      };
+    });
+    const discoveredCatalog = (definition) => ({
           provider: { id: definition.id, label: definition.label, status: "available" },
           models: [{
             id: "work-chatgpt", executionModel: "work-chatgpt", label: "Work", description: "",
@@ -462,9 +474,6 @@ describe("injectable production provider composition", () => {
             serviceTiers: [], defaultServiceTier: null,
           }],
           systemFamily: { id: definition.id, label: definition.label, modelIds: ["work-chatgpt"] },
-        }),
-        close: vi.fn(async () => {}),
-      };
     });
     const configurations = new Map([["codex-basic", {
       schemaVersion: 1, name: "codex-basic", implementation: "codex.basic", implementationVersion: 1,
@@ -643,6 +652,15 @@ describe("injectable production provider composition", () => {
     expect(step).toContain("recipeForAdapter: (adapterId) => managedRuntimeRequirementForAdapter(adapterId).recipeId");
     expect(source).toContain("recipeInstalled: (recipeId) => managedRecipeInstalled(managedRuntimeResolver, recipeId)");
     expect(source).not.toMatch(/await\s+startPostUpgradeReadiness/);
+    // PR #576 review: quitting stops it before the quit guard looks, and shutdown cancels and
+    // awaits it before the services it uses close.
+    expect(source).toContain("postUpgradeReadiness = startPostUpgradeReadiness({");
+    const confirm = source.slice(source.indexOf("const confirmQuit = "), source.indexOf("confirmManagedRuntimeQuit({", source.indexOf("const confirmQuit = ")));
+    expect(confirm).toContain("postUpgradeReadiness?.stop();");
+    const shutdown = source.slice(source.indexOf("async function shutdownServices()"), source.indexOf("if (productServer) await productServer.close();"));
+    expect(shutdown).toContain("postUpgradeReadiness?.stop();");
+    expect(shutdown).toContain("await managedRuntimeInstaller.cancelAll(");
+    expect(shutdown).toContain("await postUpgradeReadiness?.evaluation;");
     // Startup names each coordinated harness's required recipe for the app server.
     expect(source).toContain("harnessRuntimeRecipe: (configuration) => managedRuntimeInstaller.recipeIdentity(");
     expect(source).toContain("harnessRuntimeUpdated: (configuration) => updatedRuntimeIds.has(");
