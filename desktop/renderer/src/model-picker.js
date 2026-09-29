@@ -208,7 +208,11 @@ export function createModelPicker({
         panel.innerHTML = `<div class="model-picker-empty"><strong>Harness default</strong><span>The model is set by this harness configuration.</span></div>`;
         return;
       }
-      panel.innerHTML = `<div class="model-picker-empty"><strong>No available models</strong><button type="button" class="secondary" data-model-picker-settings>Open Settings</button></div>`;
+      const compatibility = currentSettings?.conversationCompatibility;
+      const unavailableMessage = compatibility?.status === "compatible"
+        ? "Reconnect the original provider or enable a compatible model in Settings."
+        : compatibility?.message ?? "Connect an available provider in Settings.";
+      panel.innerHTML = `<div class="model-picker-empty"><strong>${currentSettings?.conversationCompatibility?.status && currentSettings.conversationCompatibility.status !== "unrestricted" ? "No compatible route available" : "No available models"}</strong><span>${escapeHtml(unavailableMessage)}</span><button type="button" class="secondary" data-model-picker-settings>Open Settings</button></div>`;
       panel.querySelector("[data-model-picker-settings]").onclick = () => {
         onUserTakeover();
         close();
@@ -356,8 +360,14 @@ export function createModelPicker({
     });
     renderModelPanel();
     renderAdvancedPanel();
-    errorElement.textContent = error ?? "";
-    errorElement.classList.toggle("hidden", !error);
+    const compatibilityNotice = currentSettings?.conversationCompatibility?.status === "compatible"
+      ? "Only models from the original provider are available."
+      : currentSettings?.conversationCompatibility?.message;
+    const notice = error ?? (hasAvailableModels ? compatibilityNotice : null);
+    errorElement.textContent = notice ?? "";
+    errorElement.classList.toggle("model-picker-warning", !error && Boolean(notice));
+    errorElement.setAttribute("role", error ? "alert" : "status");
+    errorElement.classList.toggle("hidden", !notice);
   }
 
   function open(tab = activeTab) {

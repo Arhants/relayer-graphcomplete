@@ -1119,6 +1119,13 @@ impl ProductService {
             .map_err(Into::into)
     }
 
+    pub(crate) async fn conversation_compatibility(
+        &self,
+        id: ThreadId,
+    ) -> Result<crate::storage::ConversationCompatibility, ProductError> {
+        Ok(self.storage.conversation_compatibility(id).await?)
+    }
+
     pub(crate) async fn get_thread(&self, id: ThreadId) -> Result<ThreadDetail, ProductError> {
         let snapshot = self.storage.load_thread(id).await?;
         let thread = snapshot

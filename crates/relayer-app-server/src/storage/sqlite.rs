@@ -5,6 +5,8 @@ mod attempts;
 mod catalog;
 mod completion_executions;
 mod context_drafts;
+mod conversation_compatibility;
+pub(crate) use conversation_compatibility::ConversationCompatibility;
 mod conversation_imports;
 mod input_drafts;
 mod interaction_contexts;

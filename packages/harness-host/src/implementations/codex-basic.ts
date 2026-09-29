@@ -1,7 +1,7 @@
 import { RELAYER_ICON_NAMES, type GraphCapability, type GraphNode } from "@relayer/graph-client";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, rename, rm, unlink, writeFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
 import { INTERACTION_INPUT_GUIDANCE, renderInteractionInput } from "../interaction-input.js";
 import { redactTraceData } from "../trace.js";
@@ -187,6 +187,7 @@ export class CodexBasicHarness implements Harness {
   private readonly completeModuleUrl: string;
   private readonly resolved: ResolvedCodexConfiguration;
   private codexThreadId: string | undefined;
+  private codexSessionIdentity: string | undefined;
   private codexThreadPersonalPresentationVersionId: number | null | undefined;
   private readonly activeForceShutdowns = new Set<AbortController>();
 
@@ -203,10 +204,12 @@ export class CodexBasicHarness implements Harness {
       || (typeof savedPresentationVersionId === "number"
         && Number.isSafeInteger(savedPresentationVersionId)
         && savedPresentationVersionId > 0);
+    if (typeof codexThreadId === "string" && !validSavedPresentationVersion) throw new Error("Legacy native history has an invalid presentation pin; its saved state was preserved.");
     if (resolved.settings.rootSessionMode !== "fresh"
       && typeof codexThreadId === "string"
       && validSavedPresentationVersion) {
       this.codexThreadId = codexThreadId;
+      if (typeof context.savedState?.codexSessionIdentity === "string") this.codexSessionIdentity = context.savedState.codexSessionIdentity;
       this.codexThreadPersonalPresentationVersionId = savedPresentationVersionId;
     }
   }
@@ -244,8 +247,13 @@ export class CodexBasicHarness implements Harness {
   ): Promise<void> {
     const personalPresentationVersionId = context.personalPresentation?.attachment.versionInteractionNodeId ?? null;
     const persistentRootSession = kind === "root" && this.resolved.settings.rootSessionMode !== "fresh";
+    if (kind === "root" && context.requireNativeContinuity && (!persistentRootSession || this.codexThreadId === undefined)) {
+      throw new Error("This conversation's native history is unavailable. Continuing with a fresh session would lose context; its saved history was preserved.");
+    }
     if (persistentRootSession && this.codexThreadId !== undefined
-      && this.codexThreadPersonalPresentationVersionId !== personalPresentationVersionId) {
+      && this.codexThreadPersonalPresentationVersionId !== personalPresentationVersionId
+      && !(context.requireNativeContinuity && this.codexThreadPersonalPresentationVersionId === undefined)) {
+      if (context.requireNativeContinuity) throw new Error("This conversation's native history cannot be reused with the changed presentation settings. Its history was preserved.");
       this.codexThreadId = undefined;
       this.codexThreadPersonalPresentationVersionId = undefined;
     }
@@ -258,6 +266,16 @@ export class CodexBasicHarness implements Harness {
     // A turn force-stopped while resolving its runtime no longer holds access: write nothing.
     context.forceSignal?.throwIfAborted();
     const environment = this.graphEnvironment(capability, context.completionBroker, context.access, resolvedRuntime.environment);
+    const sessionIdentity = createHash("sha256").update(JSON.stringify({
+      providerId: context.access?.providerId ?? null,
+      adapterId: context.access?.adapterId ?? null,
+      kind: context.access?.kind ?? null,
+      endpoint: context.access?.kind === "secret" ? context.access.endpoint : null,
+      home: resolve(environment.CODEX_HOME || join(environment.HOME || process.env.HOME || this.context.workingDirectory, ".codex")),
+    })).digest("hex");
+    if (persistentRootSession && this.codexThreadId !== undefined && this.codexSessionIdentity !== undefined && this.codexSessionIdentity !== sessionIdentity) {
+      throw new Error("This conversation's provider or native session location changed. Its original history was preserved; this route cannot continue it.");
+    }
     let authHome: string | undefined;
     try {
       if (context.access?.kind === "secret") {
@@ -275,7 +293,7 @@ export class CodexBasicHarness implements Harness {
           });
         }
       }
-      await this.runCodexTurn(context, attach, signal, environment, resolvedRuntime.executable, persistentRootSession, personalPresentationVersionId);
+      await this.runCodexTurn(context, attach, signal, environment, resolvedRuntime.executable, persistentRootSession, personalPresentationVersionId, sessionIdentity);
     } finally {
       if (authHome !== undefined) {
         await releaseCodexApiKeyAuth(
@@ -294,6 +312,7 @@ export class CodexBasicHarness implements Harness {
     executable: string,
     persistentRootSession: boolean,
     personalPresentationVersionId: number | null,
+    sessionIdentity: string,
   ): Promise<void> {
     const sandboxPolicy = this.sandboxPolicy();
     const run = this.dependencies.runAppServerTurn ?? runCodexAppServerTurn;
@@ -333,6 +352,8 @@ export class CodexBasicHarness implements Harness {
         ...(persistentRootSession && this.codexThreadId !== undefined
           ? { savedThreadId: this.codexThreadId }
           : {}),
+        ...(persistentRootSession && context.requireNativeContinuity && this.codexSessionIdentity === undefined
+          ? { legacyHistoryAnchor: context.nativeHistoryAnchor ?? { interactionNodeId: -1, message: "" } } : {}),
         threadParams: this.threadParams(model, context, context.access),
         turnParams: this.turnParams(sandboxPolicy, model),
         prompt,
@@ -347,7 +368,9 @@ export class CodexBasicHarness implements Harness {
         ...(this.dependencies.spawnProcess === undefined ? {} : { spawnProcess: this.dependencies.spawnProcess }),
         onThreadId: (threadId) => {
           if (persistentRootSession && context.forceSignal?.aborted !== true) {
+            if (context.requireNativeContinuity && this.codexThreadId !== threadId) throw new Error("Native resume returned a different conversation. The original history was preserved.");
             this.codexThreadId = threadId;
+            this.codexSessionIdentity = sessionIdentity;
             this.codexThreadPersonalPresentationVersionId = personalPresentationVersionId;
           }
         },
@@ -384,11 +407,11 @@ export class CodexBasicHarness implements Harness {
 
   state(): HarnessSessionState {
     return this.codexThreadId === undefined
-      || this.codexThreadPersonalPresentationVersionId === undefined
       ? {}
       : {
           codexThreadId: this.codexThreadId,
-          codexThreadPersonalPresentationVersionId: this.codexThreadPersonalPresentationVersionId,
+          ...(this.codexSessionIdentity === undefined ? {} : { codexSessionIdentity: this.codexSessionIdentity }),
+          ...(this.codexThreadPersonalPresentationVersionId === undefined ? {} : { codexThreadPersonalPresentationVersionId: this.codexThreadPersonalPresentationVersionId }),
         };
   }
 

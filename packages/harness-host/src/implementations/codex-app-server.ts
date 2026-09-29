@@ -22,6 +22,7 @@ export interface CodexAppServerTurnOptions {
   readonly environment: Readonly<Record<string, string>>;
   readonly codexConfigOverrides?: readonly string[];
   readonly savedThreadId?: string;
+  readonly legacyHistoryAnchor?: { readonly interactionNodeId: number; readonly message: string };
   readonly threadParams: JsonObject;
   readonly turnParams: JsonObject;
   readonly prompt: string;
@@ -203,6 +204,23 @@ class CodexAppServerConnection {
     const threadId = stringProperty(thread, "id");
     if (threadId === undefined || (this.options.savedThreadId !== undefined && threadId !== this.options.savedThreadId)) {
       throw new Error("Codex app-server returned an invalid thread identity");
+    }
+    const anchor = this.options.legacyHistoryAnchor;
+    if (anchor !== undefined) {
+      const turns = thread?.turns;
+      const found = anchor.interactionNodeId > 0 && Array.isArray(turns) && turns.some((turn) => {
+        const items = isRecord(turn) ? turn.items : undefined;
+        return Array.isArray(items) && items.some((item) => {
+          if (stringProperty(item, "type") !== "userMessage") return false;
+          const content = isRecord(item) ? item.content : undefined;
+          return Array.isArray(content) && content.some((part) => {
+            const text = stringProperty(part, "text");
+            return text?.includes(`Current interaction node: ${anchor.interactionNodeId}\n`)
+              && text.includes(`"message": ${JSON.stringify(anchor.message)}`);
+          });
+        });
+      });
+      if (!found) throw new Error("The saved native conversation could not be matched to its accepted history. No new turn was started; the original history was preserved.");
     }
     await abortableCallback(this.options.onThreadId(threadId), this.options.signal);
 

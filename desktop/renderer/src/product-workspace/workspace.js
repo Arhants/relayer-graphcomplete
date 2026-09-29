@@ -4702,7 +4702,7 @@ export function createProductWorkspace({
     if (modelPicker) {
       const replaceSelection = inheritanceKey !== pickerInheritanceKey;
       modelPicker.setContext({
-        settings: state.modelSettings,
+        settings: { ...state.modelSettings, conversationCompatibility: state.conversationCompatibility?.threadId === Number(thread.id) ? state.conversationCompatibility : { status: "blocked", message: "Checking conversation compatibility…" } },
         pinnedHarnessId: harnessId,
         selection: replaceSelection
           ? selectionForNextInteraction(state.modelSettings, harnessId, latestInteraction)

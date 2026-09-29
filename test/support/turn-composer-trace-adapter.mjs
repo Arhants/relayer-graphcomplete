@@ -161,6 +161,8 @@ export class TurnComposerWorld {
     const latest = this.turns[this.view].length;
     this.state.currentInteractionId = interactionId(this.view, latest);
     this.state.status = this.turns[this.view][latest - 1].status;
+    // This configuration-owned fixture has no provider-native conversation state.
+    this.state.conversationCompatibility = { threadId: THREAD_ID[this.view], status: "unrestricted", harnessId: "fixture" };
     this.selection.currentThreadId = THREAD_ID[this.view];
     this.selection.currentInteractionId = this.state.currentInteractionId;
   }

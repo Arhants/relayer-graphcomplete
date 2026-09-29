@@ -323,7 +323,12 @@ pub(super) async fn get(
         &stale,
     )
     .await?;
+    let compatibility = state
+        .product
+        .conversation_compatibility(detail.thread.id)
+        .await?;
     let response = ThreadDetailResponse::from(detail)
+        .with_conversation_compatibility(Some(compatibility))
         .with_interactions(interactions)
         .with_completion_executions(completion_executions);
     Ok(Json(response))
@@ -1847,6 +1852,8 @@ async fn admit_recursive_child(
         .map_err(|error| refused("configuration")(error.into()))?;
     let attempt_admission_id = uuid::Uuid::new_v4().to_string();
     let command = CompleteInteraction {
+        require_native_continuity: false,
+        native_history_anchor: None,
         project_id: thread.project_id.map(ProjectId::value),
         product_interaction_id: interaction.id.value(),
         thread_id: thread.id.value(),
@@ -3152,6 +3159,8 @@ async fn prepare_and_claim_interaction(
         None
     };
     let command = CompleteInteraction {
+        require_native_continuity: false,
+        native_history_anchor: None,
         project_id: thread.project_id.map(ProjectId::value),
         product_interaction_id: interaction.id.value(),
         thread_id: thread.id.value(),
@@ -3784,6 +3793,8 @@ mod tests {
         let working_directory = root.path().to_string_lossy().into_owned();
         let seeded = runtime
             .prepare(&CompleteInteraction {
+                require_native_continuity: false,
+                native_history_anchor: None,
                 project_id: None,
                 product_interaction_id: child.id.value(),
                 thread_id: thread.id.value(),

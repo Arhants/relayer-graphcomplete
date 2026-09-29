@@ -146,6 +146,22 @@ impl SqliteProductStore {
             provider_id: receipt.route.provider_id.clone(),
             model_id: receipt.route.model_id.clone(),
         };
+        let (thread_id, is_child): (i64, bool) = sqlx::query_as("SELECT thread_id,EXISTS(SELECT 1 FROM action_invocations WHERE result_interaction_id=i.id) FROM interactions i WHERE id=?1")
+            .bind(receipt.interaction_id.value()).fetch_one(&mut *transaction).await?;
+        if !is_child {
+            super::conversation_compatibility::validate_on(
+                &mut transaction,
+                thread_id,
+                Some(receipt.interaction_id.value()),
+                &crate::product::ValidateModelSelectionCommand {
+                    harness_id: receipt.harness_name.to_owned(),
+                    family_id: selection.family_id,
+                    provider_id: selection.provider_id.clone(),
+                    model_id: selection.model_id.clone(),
+                },
+            )
+            .await?;
+        }
         let (current_plan, admitted) = catalog::resolve_execution_model_plan_on(
             &mut transaction,
             receipt.harness_name,
@@ -629,6 +645,272 @@ mod tests {
                 model_id: "gpt-test".into(),
             },
         )
+    }
+
+    #[tokio::test]
+    async fn legacy_conversation_blocks_unknown_and_conflicting_successful_provenance() {
+        let (_directory, store, root, route) = seeded_store().await;
+        let thread: i64 = sqlx::query_scalar("SELECT thread_id FROM interactions WHERE id=?1")
+            .bind(root.value())
+            .fetch_one(&store.pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE interactions SET completion_status='accepted',model_provider_id=NULL,provider_model_id=NULL,model_family_id=NULL WHERE id=?1").bind(root.value()).execute(&store.pool).await.unwrap();
+        assert_eq!(
+            store
+                .conversation_compatibility(ThreadId::from_database(thread))
+                .await
+                .unwrap()
+                .status,
+            "blocked"
+        );
+        sqlx::query("UPDATE interactions SET model_provider_id='codex',provider_model_id='gpt-test',model_family_id=?1,harness_configuration_name='codex-basic' WHERE id=?2").bind(route.family_id.value()).bind(root.value()).execute(&store.pool).await.unwrap();
+        sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,completion_status,model_provider_id,provider_model_id,model_family_id,harness_configuration_name) VALUES (?1,1,'Conflicting successful route','12','accepted','foreign','foreign-model',?2,'codex-basic')").bind(thread).bind(route.family_id.value()).execute(&store.pool).await.unwrap();
+        let projection = store
+            .conversation_compatibility(ThreadId::from_database(thread))
+            .await
+            .unwrap();
+        assert_eq!(projection.status, "blocked");
+        assert!(projection.provider_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn legacy_conversation_excludes_children_and_rejects_changed_adapter_and_attached_send() {
+        let (_directory, store, root, route) = seeded_store().await;
+        let attempt = store
+            .begin_interaction_attempt(receipt(root, &route), "10")
+            .await
+            .unwrap();
+        store
+            .finish_interaction_attempt(attempt, "accepted", None, "graph_write", "11")
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE interactions SET completion_status='accepted',graph_node_id=17 WHERE id=?1",
+        )
+        .bind(root.value())
+        .execute(&store.pool)
+        .await
+        .unwrap();
+        let thread_id: i64 = sqlx::query_scalar("SELECT thread_id FROM interactions WHERE id=?1")
+            .bind(root.value())
+            .fetch_one(&store.pool)
+            .await
+            .unwrap();
+        let child = sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,completion_status,graph_node_id,model_provider_id,provider_model_id,model_family_id,harness_configuration_name) VALUES (?1,1,'Foreign child', '12','accepted',19,'foreign','foreign-model',?2,'codex-basic')").bind(thread_id).bind(route.family_id.value()).execute(&store.pool).await.unwrap().last_insert_rowid();
+        sqlx::query("INSERT INTO action_invocations(source_interaction_id,action_id,result_interaction_id,created_at) VALUES (?1,42,?2,'12')").bind(root.value()).bind(child).execute(&store.pool).await.unwrap();
+        let owner = store
+            .conversation_compatibility(ThreadId::from_database(thread_id))
+            .await
+            .unwrap();
+        assert_eq!(owner.provider_id.as_deref(), Some("codex"));
+        assert_eq!(
+            owner.native_history_anchor.as_ref().unwrap()["interactionNodeId"],
+            17
+        );
+        sqlx::query("INSERT INTO node_context_draft_resolutions(draft_id,thread_id,outcome,draft_revision,target_node_id,source_interaction_node_id,source_layer_id,target_node_json,text,resolved_at,composer_text) VALUES ('legacy-context',?1,'confirmed',1,7,17,5,'{}','Keep this attachment','13','Keep this attachment')").bind(thread_id).execute(&store.pool).await.unwrap();
+        let contexts = [crate::product::InteractionContextIntent {
+            target: crate::product::InteractionContextTarget {
+                node_id: 7,
+                source_interaction_node_id: 17,
+                source_layer_id: 5,
+            },
+            annotations: vec!["Keep this attachment".into()],
+        }];
+        let confirmations = ["legacy-context".to_owned()];
+        let input = crate::storage::NewInteractionInput {
+            text: "Keep my draft",
+            input_identity: "legacy-send",
+            input_digest: "fixture-digest",
+            contexts: &contexts,
+            context_confirmation_ids: &confirmations,
+            submitted_input_draft_revision: None,
+        };
+        let foreign = crate::product::InteractionModelSelection {
+            family_id: route.family_id,
+            provider_id: ProviderId::from_database("foreign".into()),
+            model_id: "foreign-model".into(),
+        };
+        let error = store
+            .insert_interaction_input(
+                ThreadId::from_database(thread_id),
+                input,
+                Some(&foreign),
+                true,
+                true,
+            )
+            .await
+            .err()
+            .unwrap();
+        assert!(error.to_string().contains("original provider"), "{error}");
+        let saved: (String,Option<i64>) = sqlx::query_as("SELECT composer_text,consumed_interaction_id FROM node_context_draft_resolutions WHERE draft_id='legacy-context'").fetch_one(&store.pool).await.unwrap();
+        assert_eq!(saved, ("Keep this attachment".into(), None));
+        sqlx::query("UPDATE model_providers SET adapter_id='changed-adapter' WHERE id='codex'")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        let next = sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,completion_status,model_provider_id,provider_model_id,model_family_id) VALUES (?1,2,'Stale route','14','running','codex','gpt-test',?2)").bind(thread_id).bind(route.family_id.value()).execute(&store.pool).await.unwrap().last_insert_rowid();
+        let error = store
+            .begin_interaction_attempt(receipt(InteractionId::from_database(next), &route), "15")
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("cannot be verified"));
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM interaction_attempts")
+            .fetch_one(&store.pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn legacy_conversation_uses_success_receipt_not_failed_foreign_attempt_and_preserves_send()
+     {
+        let (_directory, store, interaction_id, route) = seeded_store().await;
+        let attempt = store
+            .begin_interaction_attempt(receipt(interaction_id, &route), "10")
+            .await
+            .unwrap();
+        store
+            .finish_interaction_attempt(attempt, "accepted", None, "graph_write", "11")
+            .await
+            .unwrap();
+        sqlx::query("UPDATE interactions SET completion_status='accepted',harness_configuration_name='codex-basic' WHERE id=?1").bind(interaction_id.value()).execute(&store.pool).await.unwrap();
+        let thread_id: i64 = sqlx::query_scalar("SELECT thread_id FROM interactions WHERE id=?1")
+            .bind(interaction_id.value())
+            .fetch_one(&store.pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,completion_status,model_provider_id,provider_model_id,model_family_id,harness_configuration_name) VALUES (?1,1,'Failed foreign attempt; keep my text','12','failed','foreign','foreign-model',?2,'codex-basic')").bind(thread_id).bind(route.family_id.value()).execute(&store.pool).await.unwrap();
+        let owner = store
+            .conversation_compatibility(ThreadId::from_database(thread_id))
+            .await
+            .unwrap();
+        assert_eq!(owner.status, "compatible");
+        assert_eq!(owner.provider_id.as_deref(), Some("codex"));
+        let foreign = crate::product::InteractionModelSelection {
+            family_id: route.family_id,
+            provider_id: ProviderId::from_database("foreign".into()),
+            model_id: "foreign-model".into(),
+        };
+        let before: Vec<(i64, String)> =
+            sqlx::query_as("SELECT id,text FROM interactions ORDER BY id")
+                .fetch_all(&store.pool)
+                .await
+                .unwrap();
+        let error = store
+            .insert_interaction(
+                ThreadId::from_database(thread_id),
+                "Do not lose this draft",
+                Some(&foreign),
+                true,
+                true,
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("original provider"));
+        let after: Vec<(i64, String)> =
+            sqlx::query_as("SELECT id,text FROM interactions ORDER BY id")
+                .fetch_all(&store.pool)
+                .await
+                .unwrap();
+        assert_eq!(before, after);
+        let compatible = crate::product::InteractionModelSelection {
+            family_id: route.family_id,
+            provider_id: route.provider_id.clone(),
+            model_id: route.model_id.clone(),
+        };
+        let sent = store
+            .insert_interaction(
+                ThreadId::from_database(thread_id),
+                "Compatible follow-up",
+                Some(&compatible),
+                true,
+                true,
+            )
+            .await
+            .unwrap();
+        assert_eq!(sent.text, "Compatible follow-up");
+        sqlx::query("UPDATE interactions SET completion_status='running' WHERE id=?1")
+            .bind(sent.id.value())
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        let mut retry_receipt = receipt(sent.id, &route);
+        retry_receipt.attempt_admission_id = "00000000-0000-0000-0000-000000000002".into();
+        let retry_attempt = store
+            .begin_interaction_attempt(retry_receipt, "20")
+            .await
+            .unwrap();
+        store
+            .fail_interaction_completion_with_attempt(
+                FailedInteractionCompletion {
+                    attempt_id: retry_attempt,
+                    interaction_id: sent.id,
+                    harness_configuration_name: "codex-basic",
+                    error: "timeout",
+                    outcome: "model_failed",
+                    failure_category: "provider_timeout",
+                    effect_boundary: "none",
+                    return_to_unsent: true,
+                    graph_node_id: None,
+                },
+                "21",
+            )
+            .await
+            .unwrap();
+        let retry_error = store
+            .claim_interaction_retry(
+                sent.id,
+                retry_attempt,
+                retry_input("Do not replace the preserved draft"),
+                &foreign,
+                "codex-basic",
+            )
+            .await
+            .unwrap_err();
+        assert!(retry_error.to_string().contains("original provider"));
+        let preserved: (String, String) =
+            sqlx::query_as("SELECT text,completion_status FROM interactions WHERE id=?1")
+                .bind(sent.id.value())
+                .fetch_one(&store.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            preserved,
+            ("Compatible follow-up".into(), "not_started".into())
+        );
+        // A new connection must resolve the same owner independently of prior reads.
+        let mut connection = store.pool.acquire().await.unwrap();
+        let reopened = super::super::conversation_compatibility::compatibility_on(
+            &mut connection,
+            thread_id,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(reopened.provider_id, owner.provider_id);
+    }
+
+    #[tokio::test]
+    async fn legacy_conversation_rejects_foreign_admission_after_successful_owner() {
+        let (_directory, store, interaction_id, route) = seeded_store().await;
+        sqlx::query("UPDATE interactions SET sequence=2 WHERE id=?1")
+            .bind(interaction_id.value())
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,completion_status,model_provider_id,provider_model_id,model_family_id,harness_configuration_name) SELECT thread_id,1,'Original accepted history','1','accepted','original-provider','original-model',model_family_id,'codex-basic' FROM interactions WHERE id=?1")
+            .bind(interaction_id.value()).execute(&store.pool).await.unwrap();
+        let error = store
+            .begin_interaction_attempt(receipt(interaction_id, &route), "10")
+            .await
+            .expect_err("foreign route must not acquire an execution attempt");
+        assert!(error.to_string().contains("original provider"), "{error}");
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM interaction_attempts")
+            .fetch_one(&store.pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[tokio::test]

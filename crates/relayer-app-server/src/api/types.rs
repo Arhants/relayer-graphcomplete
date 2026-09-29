@@ -511,6 +511,7 @@ impl From<ThreadView> for ThreadViewResponse {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ProductStateResponse {
+    conversation_compatibility: Option<crate::storage::ConversationCompatibility>,
     projects: Vec<ProjectResponse>,
     threads: Vec<ThreadViewResponse>,
     interactions: Vec<InteractionResponse>,
@@ -522,6 +523,13 @@ pub(crate) struct ProductStateResponse {
 }
 
 impl ProductStateResponse {
+    pub(crate) fn with_conversation_compatibility(
+        mut self,
+        value: Option<crate::storage::ConversationCompatibility>,
+    ) -> Self {
+        self.conversation_compatibility = value;
+        self
+    }
     pub(crate) fn with_stop_runs(mut self, enabled: bool) -> Self {
         self.capabilities.stop_runs = enabled;
         self
@@ -554,6 +562,7 @@ impl ProductStateResponse {
 impl From<ProductState> for ProductStateResponse {
     fn from(state: ProductState) -> Self {
         Self {
+            conversation_compatibility: None,
             projects: state.projects.into_iter().map(Into::into).collect(),
             threads: state.threads.into_iter().map(Into::into).collect(),
             interactions: state.interactions.into_iter().map(Into::into).collect(),
@@ -573,6 +582,7 @@ impl From<ProductState> for ProductStateResponse {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ThreadDetailResponse {
+    conversation_compatibility: Option<crate::storage::ConversationCompatibility>,
     thread: ThreadResponse,
     interactions: Vec<InteractionResponse>,
     action_invocations: Vec<ActionInvocationResponse>,
@@ -582,6 +592,7 @@ pub(crate) struct ThreadDetailResponse {
 impl From<ThreadDetail> for ThreadDetailResponse {
     fn from(detail: ThreadDetail) -> Self {
         Self {
+            conversation_compatibility: None,
             thread: detail.thread.into(),
             interactions: detail.interactions.into_iter().map(Into::into).collect(),
             action_invocations: detail
@@ -595,6 +606,13 @@ impl From<ThreadDetail> for ThreadDetailResponse {
 }
 
 impl ThreadDetailResponse {
+    pub(crate) fn with_conversation_compatibility(
+        mut self,
+        value: Option<crate::storage::ConversationCompatibility>,
+    ) -> Self {
+        self.conversation_compatibility = value;
+        self
+    }
     pub(crate) fn with_completion_executions(
         mut self,
         executions: HashMap<i64, crate::storage::CompletionExecution>,
