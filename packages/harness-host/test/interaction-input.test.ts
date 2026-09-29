@@ -11,6 +11,14 @@ const interaction = {
 };
 
 describe("normalized harness interaction input", () => {
+  it("delivers the exact frozen policy including legacy and disabled snapshots", () => {
+    for (const version of ["1", "2"] as const) {
+      for (const enabled of [false, true]) {
+        const interactionPermissions = { version, enabled, permissions: [{ kind: "navigate.add" as const, nodeId: 20 }] };
+        expect(JSON.parse(renderInteractionInput({ interaction, contexts: [], interactionPermissions })).interactionPermissions).toEqual(interactionPermissions);
+      }
+    }
+  });
   it("keeps legacy text-only rendering byte-compatible", () => {
     expect(renderInteractionInput({ interaction, contexts: [] })).toBe(`{
   "message": "Question",

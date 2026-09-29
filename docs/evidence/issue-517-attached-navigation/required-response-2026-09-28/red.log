@@ -1,0 +1,19 @@
+   Compiling relayer-graph-core v0.0.0 (/Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/crates/relayer-graph-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.29s
+     Running tests/graph_database.rs (target/debug/deps/graph_database-ab81e4d74e1ef132)
+
+running 1 test
+
+thread 'required_attached_navigation_rejects_response_only_then_repairs_after_reopen' (192724013) panicked at crates/relayer-graph-core/tests/graph_database.rs:8135:59:
+called `Result::unwrap_err()` on an `Ok` value: CompletionOutput { node_id: NodeId(3), root_action: GraphAction { id: ActionId(3), resolved_invoke_interaction_id: None, client_key: Some("response"), source_node_id: NodeId(3), source_layer_id: None, source_layer_client_key: None, kind: Navigate, relation: Some(Expand), label: "Response", variant: Pill, icon: None, description: None, target_layer_id: Some(LayerId(2)), interaction_text: None, input: None, state: Accepted }, root_layer: ResolvedLayer { layer: GraphLayer { default_node_id: None, id: LayerId(2), client_key: Some("response"), nodes: [NodeId(4)], edges: [], layout: Some(LayerLayout { version: 1, placements: [NodePlacement { node_id: NodeId(4), x: 0.5, y: 0.5 }] }), state: Accepted }, nodes: [GraphNode { id: NodeId(4), client_key: Some("rayleigh"), leased_action_id: None, kind: "concept", icon: "box", title: "rayleigh", detail: "detail rayleigh", authored_detail: None, state: Accepted }], edges: [], actions: [] } }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test required_attached_navigation_rejects_response_only_then_repairs_after_reopen ... FAILED
+
+failures:
+
+failures:
+    required_attached_navigation_rejects_response_only_then_repairs_after_reopen
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 97 filtered out; finished in 0.08s
+
+error: test failed, to rerun pass `-p relayer-graph-core --test graph_database`

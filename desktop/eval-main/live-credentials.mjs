@@ -1,5 +1,10 @@
 import { CodexCredentialAdapter } from "../main/credentials/codex-credential-adapter.mjs";
-import { firstAvailableSelection, harnessUsesConfigurationModel } from "../renderer/src/model-picker-model.js";
+import {
+  defaultFamilyRecoveryError,
+  firstAvailableSelection,
+  harnessUsesConfigurationModel,
+  requireDefaultModelSelection,
+} from "../renderer/src/model-picker-model.js";
 
 const CONNECTED_PRODUCT_PROVIDER = "connected-product-provider";
 const CODEX_JUDGE_CONFIGURATION_NAMES = new Set(["simulated-user", "simulated-user-sol-high"]);
@@ -58,6 +63,9 @@ export function createLiveModelRouteResolver({
         selectedModel = firstAvailableSelection(settings, harnessName);
         provider = providerForSelection(settings, selectedModel);
       }
+      // A recovering default family is refused, never replaced by another family (PROV-008).
+      const recoveryError = selectedModel ? null : defaultFamilyRecoveryError(settings);
+      if (recoveryError) throw recoveryError;
       return routeForSelection({
         settings,
         selectedModel,
@@ -71,8 +79,13 @@ export function createLiveModelRouteResolver({
       if (typeof readDefaultModelSelection !== "function") {
         throw new Error("Claude Eval has no product model-selection reader.");
       }
-      const selectedModel = await readDefaultModelSelection(harnessName);
       const settings = await readModelSettings();
+      // A recovering default family is refused with its code (PROV-008).
+      const selectedModel = requireDefaultModelSelection(
+        await readDefaultModelSelection(harnessName),
+        settings,
+        "The selected provider has no available model.",
+      );
       return routeForSelection({
         settings,
         selectedModel,

@@ -1,0 +1,13 @@
+
+> relayer-graphcomplete@0.0.0 test:eval-compiled-runtime
+> vitest run --config scripts/eval-compiled.vitest.config.mjs
+
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  13:18:52
+   Duration  14.67s (transform 277ms, setup 0ms, import 580ms, tests 14.00s, environment 0ms)
+

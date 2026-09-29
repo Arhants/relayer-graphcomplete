@@ -1,0 +1,187 @@
+{
+  "actions": [
+    {
+      "clientKey": "draft-rollout-recommendation",
+      "description": null,
+      "icon": "pencil-line",
+      "id": 6,
+      "interactionText": "Draft a rollout recommendation for this release-readiness walkthrough.",
+      "kind": "invoke",
+      "label": "Draft rollout recommendation",
+      "relation": null,
+      "sourceLayerClientKey": "release-readiness-root",
+      "sourceLayerId": 7,
+      "sourceNodeId": 22,
+      "state": "accepted",
+      "targetLayerId": null,
+      "variant": "wide"
+    },
+    {
+      "clientKey": "launch-release-readiness-reference",
+      "description": null,
+      "icon": "route",
+      "id": 11,
+      "interactionText": null,
+      "kind": "navigate",
+      "label": "Release readiness",
+      "relation": "reference",
+      "sourceLayerId": null,
+      "sourceNodeId": 22,
+      "state": "accepted",
+      "targetLayerId": 9,
+      "variant": "wide"
+    },
+    {
+      "clientKey": "launch-readiness-checklist-expand",
+      "description": null,
+      "icon": "list-checks",
+      "id": 12,
+      "interactionText": null,
+      "kind": "navigate",
+      "label": "Readiness checklist",
+      "relation": "expand",
+      "sourceLayerId": null,
+      "sourceNodeId": 22,
+      "state": "accepted",
+      "targetLayerId": 8,
+      "variant": "wide"
+    }
+  ],
+  "edges": [
+    {
+      "endpoints": [
+        22,
+        24
+      ],
+      "id": 12,
+      "state": "accepted"
+    }
+  ],
+  "layer": {
+    "clientKey": "baseline-inspection-layer",
+    "defaultNodeId": 22,
+    "edges": [
+      12
+    ],
+    "id": 6,
+    "layout": {
+      "placements": [
+        {
+          "nodeId": 22,
+          "x": 0.3,
+          "y": 0.5
+        },
+        {
+          "nodeId": 24,
+          "x": 0.72,
+          "y": 0.5
+        }
+      ],
+      "version": 1
+    },
+    "nodes": [
+      22,
+      24
+    ],
+    "state": "accepted"
+  },
+  "nodes": [
+    {
+      "authoredDetail": {
+        "assets": [],
+        "components": [
+          {
+            "css": ".decision-card{display:grid;gap:1rem;padding:1.35rem;border:1px solid;border-radius:1rem;max-width:42rem;box-sizing:border-box}.eyebrow{font-size:0.74rem;font-weight:700;letter-spacing:0.08rem;text-transform:uppercase}h2{margin:0;font-size:1.45rem;line-height:1.2}.summary{margin:0;font-size:1.04rem;line-height:1.58}.status{display:grid;grid-template-columns:auto 1fr;gap:0.75rem;align-items:center;padding:0.8rem;border:1px solid;border-radius:0.75rem}.status-mark{display:grid;place-items:center;width:2.1rem;height:2.1rem;border-radius:1.1rem;font-weight:800}.status span:last-child{display:grid;gap:0.18rem}.status small{font-size:0.78rem}.controls{display:grid;gap:0.65rem}.control{width:100%;padding:0.8rem 1rem;border:1px solid;border-radius:0.65rem;font:inherit;font-weight:700}.control:hover{opacity:0.88}.control:focus-visible{outline:3px solid;outline-offset:2px}[data-relayer-theme=\"light\"] .decision-card{color:#172126;background-color:#fbfcfd;border-color:#d6dee2;box-shadow:0 8px 24px rgba(25,38,45,0.08)}[data-relayer-theme=\"light\"] .eyebrow,[data-relayer-theme=\"light\"] .status small{color:#586970}[data-relayer-theme=\"light\"] .status{background-color:#f1f7f4;border-color:#bfd7cc}[data-relayer-theme=\"light\"] .status-mark{color:#ffffff;background-color:#236454}[data-relayer-theme=\"light\"] .primary{color:#ffffff;background-color:#175f4c;border-color:#175f4c}[data-relayer-theme=\"light\"] .secondary{color:#243b45;background-color:#eef4f6;border-color:#b9ccd4}[data-relayer-theme=\"light\"] .control:focus-visible{outline-color:#0b6bcb}[data-relayer-theme=\"dark\"] .decision-card{color:#edf3f4;background-color:#141a1d;border-color:#364449;box-shadow:0 8px 24px rgba(0,0,0,0.28)}[data-relayer-theme=\"dark\"] .eyebrow,[data-relayer-theme=\"dark\"] .status small{color:#a8b8bd}[data-relayer-theme=\"dark\"] .status{background-color:#192622;border-color:#3e6b5d}[data-relayer-theme=\"dark\"] .status-mark{color:#102019;background-color:#93d5bd}[data-relayer-theme=\"dark\"] .primary{color:#0d201a;background-color:#8fd5ba;border-color:#8fd5ba}[data-relayer-theme=\"dark\"] .secondary{color:#e8f0f2;background-color:#223037;border-color:#53666e}[data-relayer-theme=\"dark\"] .control:focus-visible{outline-color:#76bfff}",
+            "html": "<main class=\"decision-card\">\n  <div class=\"eyebrow\">Synthetic release gate</div><h2>Launch decision</h2>\n  <p class=\"summary\">Release when error rate stays below <strong>1%</strong> and rollback is ready.</p>\n  <div class=\"status\"><span class=\"status-mark\">2</span><span><strong>Readiness status</strong><small>Two explicit checks define the launch gate.</small></span></div>\n  <div aria-label=\"Launch decision actions\" class=\"controls\">\n    <button class=\"control primary\" data-gc-mount=\"m_c4b3bc8f2ad930ae\">Draft rollout recommendation</button>\n    <button class=\"control secondary\" data-gc-mount=\"m_6d5f1b10b3413bcb\">Release readiness</button>\n    <button class=\"control secondary\" data-gc-mount=\"m_bd1aebf78f714573\">Readiness checklist</button>\n  </div>\n</main>",
+            "id": "main",
+            "order": 0
+          }
+        ],
+        "integritySha256": "5afdf1aa199b5d3673227602dec8ed4b2b88c48dbdfb65f385672be8d2fd6e6b",
+        "mounts": [
+          {
+            "capability": {
+              "action": {
+                "clientKey": "draft-rollout-recommendation",
+                "sourceLayer": {
+                  "clientKey": "release-readiness-root"
+                },
+                "sourceNode": {
+                  "clientKey": "launch-decision"
+                }
+              },
+              "kind": "invoke"
+            },
+            "componentId": "main",
+            "host": "button",
+            "id": "m_c4b3bc8f2ad930ae",
+            "kind": "capability"
+          },
+          {
+            "capability": {
+              "action": {
+                "clientKey": "launch-release-readiness-reference",
+                "sourceNode": {
+                  "clientKey": "launch-decision"
+                }
+              },
+              "kind": "reference"
+            },
+            "componentId": "main",
+            "host": "button",
+            "id": "m_6d5f1b10b3413bcb",
+            "kind": "capability"
+          },
+          {
+            "capability": {
+              "action": {
+                "clientKey": "launch-readiness-checklist-expand",
+                "sourceNode": {
+                  "clientKey": "launch-decision"
+                }
+              },
+              "kind": "expand"
+            },
+            "componentId": "main",
+            "host": "button",
+            "id": "m_bd1aebf78f714573",
+            "kind": "capability"
+          }
+        ],
+        "version": 1
+      },
+      "clientKey": "launch-decision",
+      "detail": "Release when error rate stays below 1% and rollback is ready.",
+      "icon": "info",
+      "id": 22,
+      "kind": "check-circle",
+      "leasedActionId": null,
+      "state": "accepted",
+      "title": "Launch decision"
+    },
+    {
+      "authoredDetail": {
+        "assets": [],
+        "components": [
+          {
+            "css": ".card{display:grid;gap:1rem;padding:1.4rem;border:1px solid;border-radius:1rem;max-width:42rem;box-sizing:border-box}.eyebrow{font-size:0.75rem;font-weight:700;letter-spacing:0.08rem;text-transform:uppercase}h2{margin:0;font-size:1.45rem;line-height:1.2}p{margin:0;line-height:1.6}.primary{width:100%;padding:0.8rem 1rem;border:1px solid;border-radius:0.65rem;font:inherit;font-weight:700}.primary:hover{opacity:0.88}.primary:focus-visible{outline:3px solid;outline-offset:2px}.gate-row{display:grid;grid-template-columns:1fr auto 1fr;gap:0.65rem;align-items:center}.gate{display:grid;gap:0.2rem;padding:0.8rem;border:1px solid;border-radius:0.75rem;text-align:center}.join{font-size:0.78rem;font-weight:700;text-transform:uppercase}dl{display:grid;gap:0.65rem;margin:0}dl div{display:grid;grid-template-columns:1fr 1.2fr;gap:0.8rem;padding:0.75rem;border:1px solid;border-radius:0.7rem}dt{font-weight:700}dd{margin:0}[data-relayer-theme=\"light\"] .card{color:#17202a;background-color:#fbfcfe;border-color:#d9e0e7;box-shadow:0 8px 24px rgba(25,38,52,0.08)}[data-relayer-theme=\"light\"] .eyebrow{color:#52606d}[data-relayer-theme=\"light\"] .gate{background-color:#f2f7f5;border-color:#b8d4c6}[data-relayer-theme=\"light\"] dl div{background-color:#f5f7f9;border-color:#d5dde4}[data-relayer-theme=\"light\"] .primary{color:#ffffff;background-color:#245f70;border-color:#245f70}[data-relayer-theme=\"light\"] .primary:focus-visible{outline-color:#0b6bcb}[data-relayer-theme=\"dark\"] .card{color:#edf3f5;background-color:#141a1d;border-color:#344248;box-shadow:0 8px 24px rgba(0,0,0,0.28)}[data-relayer-theme=\"dark\"] .eyebrow{color:#a9b7bd}[data-relayer-theme=\"dark\"] .gate{background-color:#192622;border-color:#3e6b5d}[data-relayer-theme=\"dark\"] dl div{background-color:#1d2529;border-color:#3d4b51}[data-relayer-theme=\"dark\"] .primary{color:#10202b;background-color:#9fd3d6;border-color:#9fd3d6}[data-relayer-theme=\"dark\"] .primary:focus-visible{outline-color:#76bfff}",
+            "html": "<main class=\"card\"><div class=\"eyebrow\">Synthetic baseline</div><h2>Traffic baseline</h2><p>This fixture supplies no measured traffic or customer facts. It keeps the walkthrough focused on the two release checks.</p><dl><div><dt>Error-rate gate</dt><dd>Must stay below 1%</dd></div><div><dt>Recovery gate</dt><dd>Rollback must be ready</dd></div></dl></main>",
+            "id": "main",
+            "order": 0
+          }
+        ],
+        "integritySha256": "f38bb04fa63bdb5172761c8e885938d48e100a2d3d4ab75801cd0bb06cdaad12",
+        "mounts": [],
+        "version": 1
+      },
+      "clientKey": "traffic-baseline",
+      "detail": "Synthetic walkthrough context only: verify the error-rate gate and rollback readiness before release.",
+      "icon": "info",
+      "id": 24,
+      "kind": "bar-chart-3",
+      "leasedActionId": null,
+      "state": "accepted",
+      "title": "Traffic baseline"
+    }
+  ]
+}

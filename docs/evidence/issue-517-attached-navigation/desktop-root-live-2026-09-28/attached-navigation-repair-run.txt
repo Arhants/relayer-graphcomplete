@@ -1,0 +1,12 @@
+{"interactionId":3,"status":"running"}
+{"interactionId":3,"status":"accepted"}
+file:///Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/scripts/recursive-live-run-transport.mjs:145
+      throw new Error(`Durable completion executions did not settle before timeout: ${pending.join(", ")}`);
+            ^
+
+Error: Durable completion executions did not settle before timeout: 31
+    at waitForSettledCompletionExecutionEvidence (file:///Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/scripts/recursive-live-run-transport.mjs:145:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async file:///Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation-repair.mjs:182:20
+
+Node.js v22.23.2

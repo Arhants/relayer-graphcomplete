@@ -1,4 +1,5 @@
 mod sqlite;
+pub(crate) use sqlite::ConversationCompatibility;
 
 use crate::conversation_export::{
     ConversationExportHeader, ConversationExportTurn, ExportTurnOrigin,

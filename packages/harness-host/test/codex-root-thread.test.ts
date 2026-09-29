@@ -63,6 +63,23 @@ describe("Codex persistent root thread", () => {
     expect(harness.state()).toEqual(pinned("thread-3", SUBSCRIPTION_HOME));
   });
 
+  it.each(["home", "missing-rollout"])("required continuity refuses %s reset before losing the saved pointer or starting a turn", async (reason) => {
+    const codex = new EmulatedCodex();
+    const harness = codex.harness();
+    await harness.complete(rootTurn(1, "codex"));
+    const saved = harness.state();
+    if (reason === "missing-rollout") codex.rollouts.clear();
+    const trace = recordingTrace();
+    await expect(harness.complete({
+      ...rootTurn(2, reason === "home" ? "openai-work" : "codex", trace.sink),
+      requireNativeContinuity: true,
+    })).rejects.toThrow(/history was preserved/);
+    expect(harness.state()).toEqual(saved);
+    expect(codex.turnStarts).toBe(1);
+    expect(codex.threadRequests.filter(request => request.includes("thread/start"))).toHaveLength(1);
+    expect(trace.resets()).toEqual([]);
+  });
+
   it("does not pin a root thread whose turn was stopped before turn/start", async () => {
     const codex = new EmulatedCodex();
     const stop = new AbortController();
@@ -209,6 +226,7 @@ describe("Codex persistent root thread", () => {
 
 function pinned(threadId: string, codexHome: string): HarnessSessionState {
   return {
+    codexSessionIdentity: expect.any(String),
     codexThreadId: threadId,
     codexThreadPersonalPresentationVersionId: null,
     // Without CODEX_HOME, Codex's default home is recorded by a stable name.

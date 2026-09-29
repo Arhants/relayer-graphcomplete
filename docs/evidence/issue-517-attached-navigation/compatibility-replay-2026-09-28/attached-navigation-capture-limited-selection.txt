@@ -1,0 +1,22 @@
+Electron ready; starting verified zero-inference capture.
+Error: in prepare, unable to open database file (14)
+Error: Command failed: /usr/bin/sqlite3 -readonly -json /Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/attached-navigation-live/product-data/product.sqlite3 SELECT (SELECT COUNT(*) FROM interactions) AS interactions,(SELECT COUNT(*) FROM interaction_attempts) AS attempts,(SELECT COUNT(*) FROM completion_executions) AS executions
+Error: in prepare, unable to open database file (14)
+
+    at genericNodeError (node:internal/errors:985:15)
+    at wrappedFn (node:internal/errors:539:14)
+    at checkExecSyncError (node:child_process:939:11)
+    at execFileSync (node:child_process:975:15)
+    at snapshotCounters (file:///Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation-capture.mjs:32:43)
+    at run (file:///Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation-capture.mjs:34:16) {
+  status: 14,
+  signal: null,
+  output: [
+    null,
+    '',
+    'Error: in prepare, unable to open database file (14)\n'
+  ],
+  pid: 3416,
+  stdout: '',
+  stderr: 'Error: in prepare, unable to open database file (14)\n'
+}

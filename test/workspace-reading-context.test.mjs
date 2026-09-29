@@ -131,6 +131,31 @@ describe("follow-up reading context at the production thread controller", () => 
     expect(controller.appState.pendingTurn?.readyLayer).toEqual(resultLayer);
   });
 
+  it("cancels following when graph selection crosses threads before the POST returns", async () => {
+    const post = deferred();
+    const fixture = await setup({ post });
+    const baseRequest = requestImplementation;
+    const ownerLoad = deferred();
+    const other = { ...source, id: 3, threadId: 20, completionOutput: { rootLayer: resultLayer } };
+    requestImplementation = vi.fn(async (path, options) => {
+      if (path === "/api/threads/20") return ownerLoad.promise;
+      if (path === "/api/threads/10") return { thread: { id: 10 }, interactions: [source, pending], actionInvocations: [] };
+      if (path.startsWith("/api/state?threadId=20")) return { ...state(), interactions: [other] };
+      return baseRequest(path, options);
+    });
+    const sending = controller.submitInteraction("Follow-up", modelSelection);
+    const selecting = controller.selectTurnById(3, { responseRoot: true, threadId: 20 });
+    post.resolve(pending);
+    await sending;
+    expect(controller.appState.pendingTurn.auto).toBe(false);
+    ownerLoad.resolve({ thread: { id: 20 }, interactions: [other], actionInvocations: [] });
+    await selecting;
+    await controller.navigateHistory(-1);
+    fixture.setState(state({ ...pending, completionStatus: "accepted", completionOutput: { rootLayer: resultLayer } }));
+    await controller.refreshState(10);
+    expectOldSelection("11");
+  });
+
   it.each([1, 2])("keeps a newer node choice during accepted-layer read %s", async (deferredRead) => {
     const readStarted = deferred();
     const result = deferred();

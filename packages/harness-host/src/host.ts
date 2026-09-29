@@ -247,6 +247,7 @@ export class HarnessHost {
   private persistTail: Promise<void> = Promise.resolve();
   private initialized = false;
   private readonly pendingExecutionAccess = new Map<string, PendingExecutionAccess>();
+  private readonly ownerReleasesInProgress = new Set<string>();
   private readonly visualAssetAuthorities = new Map<number, { state: "active" | "paused" | "revoked"; generation: number; barrierId?: string; completionEpoch?: number }>();
   private closed = false;
   private closeAbandoned = false;
@@ -988,6 +989,18 @@ export class HarnessHost {
    * an unknown lease.
    */
   async releaseProviderExecution(executionLeaseId: string): Promise<boolean> {
+    // An HTTP client may disconnect while the provider still releases or acknowledges.
+    // Reject retries until that work settles instead of accumulating server-side waiters.
+    if (this.ownerReleasesInProgress.has(executionLeaseId)) throw new ExecutionLeaseReleaseInProgress();
+    this.ownerReleasesInProgress.add(executionLeaseId);
+    try {
+      return await this.releaseProviderExecutionOnce(executionLeaseId);
+    } finally {
+      this.ownerReleasesInProgress.delete(executionLeaseId);
+    }
+  }
+
+  private async releaseProviderExecutionOnce(executionLeaseId: string): Promise<boolean> {
     const pending = this.pendingExecutionAccess.get(executionLeaseId);
     if (pending === undefined) {
       // The acknowledgement this lease would have carried must not be lost: a failure here is
@@ -1249,6 +1262,8 @@ export class HarnessHost {
       onNativeStarted?.();
       const native = session.harness.complete({
         origin,
+        requireNativeContinuity: traceContext?.requireNativeContinuity === true,
+        ...(traceContext?.nativeHistoryAnchor === undefined ? {} : { nativeHistoryAnchor: traceContext.nativeHistoryAnchor }),
         inputGraph: interaction,
         interactionInput,
         ...(personalPresentation === undefined ? {} : { personalPresentation }),
@@ -1817,6 +1832,10 @@ export async function startHarnessHost(options: HarnessHostOptions): Promise<Run
 
 const executionNotStartedErrors = new WeakSet<object>();
 
+class ExecutionLeaseReleaseInProgress extends Error {
+  constructor() { super("execution_lease_release_in_progress"); }
+}
+
 class HarnessCancellationSettled extends Error {
   constructor(message: string) { super(message); }
 }
@@ -1971,6 +1990,9 @@ async function route(host: HarnessHost, options: HarnessHostOptions, request: In
     if (request.method === "GET" && url.pathname === "/health") return reply(response, 200, { ok: true });
     return reply(response, 404, { error: "not_found" });
   } catch (error) {
+    if (error instanceof ExecutionLeaseReleaseInProgress) {
+      return reply(response, 503, { error: error.message });
+    }
     if (error instanceof HarnessCancellationSettled) {
       return reply(response, 409, { error: error.message, cancellationSettled: true });
     }
@@ -3092,7 +3114,9 @@ function isNativeExecutionHandle(value: Promise<void> | NativeExecutionHandle): 
 function readTraceContext(value: unknown): HarnessCompletionTraceContext | undefined {
   if (!isRecord(value) || value.traceContext === undefined) return undefined;
   if (!isRecord(value.traceContext)) throw new Error("Harness completion contains an invalid trace context");
-  const { productInteractionId, personalPresentationVersionId, personalPresentationVersionKey } = value.traceContext;
+  const { productInteractionId, personalPresentationVersionId, personalPresentationVersionKey, requireNativeContinuity, nativeHistoryAnchor } = value.traceContext;
+  if (nativeHistoryAnchor != null && (!isRecord(nativeHistoryAnchor) || !Number.isSafeInteger(nativeHistoryAnchor.interactionNodeId) || Number(nativeHistoryAnchor.interactionNodeId) < 1 || typeof nativeHistoryAnchor.message !== "string")) throw new Error("Invalid native history anchor");
+  if (requireNativeContinuity !== undefined && typeof requireNativeContinuity !== "boolean") throw new Error("Invalid native continuity requirement");
   if (typeof productInteractionId !== "number" || !Number.isSafeInteger(productInteractionId) || productInteractionId < 1) {
     throw new Error("Harness completion trace context requires a positive product interaction id");
   }
@@ -3110,6 +3134,8 @@ function readTraceContext(value: unknown): HarnessCompletionTraceContext | undef
   }
   return {
     productInteractionId,
+    ...(requireNativeContinuity === undefined ? {} : { requireNativeContinuity }),
+    ...(nativeHistoryAnchor == null ? {} : { nativeHistoryAnchor: nativeHistoryAnchor as { interactionNodeId: number; message: string } }),
     ...(personalPresentationVersionId === undefined ? {} : { personalPresentationVersionId }),
     ...(personalPresentationVersionKey === undefined ? {} : { personalPresentationVersionKey }),
   };

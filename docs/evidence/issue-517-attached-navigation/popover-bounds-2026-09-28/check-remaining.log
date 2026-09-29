@@ -1,0 +1,141 @@
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete
+
+(node:97947) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-seal-rollback-KtykDA/tool-0.relayer-seal-work.sign: replacing existing signature
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-linkedit-rollback-Dv5lYX/tool-0.relayer-seal-work.sign: replacing existing signature
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-linkedit-rollback-Dv5lYX/tool-1.relayer-seal-work.sign: replacing existing signature
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-linkedit-rollback-Dv5lYX/tool-1.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/node.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/node.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libada.3.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libada.3.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libbrotlicommon.1.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libbrotlicommon.1.dylib.relayer-seal-work.sign: replacing existing signature
+    Blocking waiting for file lock on package cache
+node:fs:1746
+  const stats = binding.stat(
+                        ^
+
+Error: ELOOP: too many symbolic links encountered, stat '/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/factory-408-planner-cYf4uO/docs/postmortems/entry.md'
+    at statSync (node:fs:1746:25)
+    at isAbsentOrDirectory (file:///Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/scripts/ci/plan-affected.mjs:21:12)
+    at buildPlan (file:///Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/scripts/ci/plan-affected.mjs:314:11)
+    at file:///Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/scripts/ci/plan-affected.mjs:450:14
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5) {
+  errno: -62,
+  code: 'ELOOP',
+  syscall: 'stat',
+  path: '/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/factory-408-planner-cYf4uO/docs/postmortems/entry.md'
+}
+
+Node.js v22.23.2
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libbrotlidec.1.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libbrotlidec.1.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libbrotlienc.1.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libbrotlienc.1.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libcares.2.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libcares.2.dylib.relayer-seal-work.sign: replacing existing signature
+Cargo-resolved lbug source tree changed; re-review the native source contract
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libcrypto.3.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libcrypto.3.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libhdr_histogram.6.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libhdr_histogram.6.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libicudata.78.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libicudata.78.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libicui18n.78.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libicui18n.78.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libicuuc.78.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libicuuc.78.dylib.relayer-seal-work.sign: replacing existing signature
+prebuilt Ladybug bundle rejected: Cargo-resolved lbug source tree changed; re-review the native source contract
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libllhttp.9.4.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libllhttp.9.4.dylib.relayer-seal-work.sign: replacing existing signature
+create does not accept test-only native source overrides: lbug-source-dir, lbug-version, lbug-features
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libmerve.1.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libmerve.1.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libnbytes.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libnbytes.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libnghttp2.14.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libnghttp2.14.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libnghttp3.9.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libnghttp3.9.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libngtcp2.16.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libngtcp2.16.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libnode.147.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libnode.147.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libsimdjson.33.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libsimdjson.33.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libsimdutf.34.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libsimdutf.34.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libsqlite3.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libsqlite3.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libssl.3.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libssl.3.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libuv.1.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libuv.1.dylib.relayer-seal-work.sign: replacing existing signature
+prebuilt Ladybug bundle rejected: liblbug.a digest does not match the manifest; liblbug.a size does not match the manifest; bundle contents digest does not match the manifest
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libuvwasi.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libuvwasi.dylib.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libzstd.1.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-sealed-node-runtime-OP7TgO/runtime/libzstd.1.dylib.relayer-seal-work.sign: replacing existing signature
+prebuilt Ladybug bundle rejected: platform Linux-X64 does not match macOS-ARM64
+prebuilt Ladybug bundle rejected: rustc 1.94.0 does not match 9.9.9
+prebuilt Ladybug bundle rejected: Cargo.lock digest does not match the current checkout
+prebuilt Ladybug bundle rejected: bundle contents digest does not match the manifest
+prebuilt Ladybug bundle rejected: liblbug.a size does not match the manifest
+prebuilt Ladybug bundle rejected: manifest.json missing or unreadable
+no build outputs under /var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-lbug-artifact-1790619080009-ad3f88a2428b1/empty-target/debug/build; run cargo build -p lbug first
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-mutator-swap-0-W5fHNG/libzstd.1.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-mutator-swap-1-ZV2dEs/echo.relayer-seal-work.sign: replacing existing signature
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-mutator-swap-2-mZjMbY/echo.relayer-seal-work.sign: replacing existing signature
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/install_name_tool: warning: changes being made to the file will invalidate the code signature in: /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-mutator-swap-3-064jCc/libzstd.1.dylib.relayer-seal-work.install
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-mutator-swap-3-064jCc/libzstd.1.dylib.relayer-seal-work.sign: replacing existing signature
+/private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/relayer-mutator-swap-4-8bhG3L/echo.relayer-seal-work.sign: replacing existing signature
+CI resource profile unavailable: [Errno 17] File exists: '/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/ci-profile-HFTEbR/executed'
+
+ Test Files  207 passed | 1 skipped (208)
+      Tests  2684 passed | 3 skipped (2687)
+   Start at  14:11:19
+   Duration  80.71s (transform 19.41s, setup 0ms, import 56.10s, tests 420.07s, environment 16ms)
+
+
+> relayer-graphcomplete@0.0.0 test:codex-secret-boundary
+> RELAYER_RUN_CODEX_SECRET_BOUNDARY=1 vitest run packages/harness-host/test/codex-secret-provider-process.test.ts
+
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  14:12:40
+   Duration  7.57s (transform 124ms, setup 0ms, import 191ms, tests 7.31s, environment 0ms)
+
+...........................................
+----------------------------------------------------------------------
+Ran 43 tests in 1.178s
+
+OK
+
+> relayer-graphcomplete@0.0.0 lint:ladybug-receipt
+> cargo fmt --manifest-path docs/evidence/issue-261-ladybug-probe/Cargo.toml -- --check && rustfmt --edition 2021 --check docs/evidence/issue-261-ladybug-probe/source-build-probe/src/main.rs && node scripts/lint-ladybug-qualification-receipt.mjs && npm run lint:ladybug-native-receipt && npm run lint:ladybug-contract-probe
+
+Ladybug v0.19.1 qualification receipt lint passed: upstream artifacts NO-GO
+
+> relayer-graphcomplete@0.0.0 lint:ladybug-native-receipt
+> node scripts/verify-ladybug-native-receipts.mjs
+
+Ladybug native receipt verified: 27 subtrees inventoried; no release blockers declared
+
+> relayer-graphcomplete@0.0.0 lint:ladybug-contract-probe
+> node scripts/lint-ladybug-contract-probe.mjs
+
+Ladybug contract probe receipt covers 20 positive, 27 negative, 15 value, and 9 limit/budget cases; current conformance adds 3 positive and 34 negative Issue #354 cases.
+
+> relayer-graphcomplete@0.0.0 prd:check-readability
+> node docs/prd/check-readability.mjs
+
+PRD readability check passed. No checked sentence has more than 25 words.

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isProxy } from "node:util/types";
-import { DetailCompilationError, NodeDetailAuthoring, bindNodeDetailOwner, beginNodeDetailAuthoringFinalization, cancelNodeDetailAuthoringFinalization, compileAuthenticatedNodeDetail, finalizedNodeDetailAuthoring, freezeNodeDetailAuthoring, isNodeDetailAuthoringCleared, isNodeDetailAuthoringOwner, snapshotAuthoredNodeDetailProgram, snapshotRetainedCompiledNodeDetail, type AuthenticatedNodeDetailOwnerSnapshot, type AuthenticatedNodeDetailProgramSnapshot, type CompiledNodeDetail } from "./detail.js";
+import { DetailCompilationError, NodeDetailAuthoring, bindNodeDetailOwner, beginNodeDetailAuthoringFinalization, cancelNodeDetailAuthoringFinalization, compileAuthenticatedNodeDetail, compileAttachedNodeDetail, finalizedNodeDetailAuthoring, freezeNodeDetailAuthoring, isNodeDetailAuthoringCleared, isNodeDetailAuthoringOwner, snapshotAuthoredNodeDetailProgram, snapshotRetainedCompiledNodeDetail, type AuthenticatedNodeDetailOwnerSnapshot, type AuthenticatedNodeDetailProgramSnapshot, type CompiledNodeDetail } from "./detail.js";
 import { isRelayerIconName } from "./icons.js";
 import { applyAcceptedNodeResponse } from "./node-response.js";
 import { EdgeObject, LayerObject, NodeObject, actionId, edgeId, layerId, nodeId, type ActionObject, type ActionReference, type EdgeReference, type LayerReference, type NodeReference } from "./objects.js";
@@ -36,6 +36,21 @@ export class RelayerGraphClient {
   async getNode(reference: NodeReference): Promise<GraphNode> {
     const body = await this.request<{ node: GraphNode }>(`/api/graph/nodes/${nodeId(reference)}`);
     return body.node;
+  }
+
+  async getNodePresentation(reference: NodeReference): Promise<{ node: GraphNode; revision: number; actions: readonly GraphAction[] }> {
+    return this.request(`/api/graph/nodes/${nodeId(reference)}/presentation`);
+  }
+
+  /** Stage a complete presentation only; the builder's title/detail never edit the persistent node. */
+  async replaceNodePresentation(reference: NodeReference, expectedRevision: number, presentation: NodeObject): Promise<void> {
+    this.bindSubmissionNode(presentation);
+    const envelope = materializeNodeSubmissionEnvelope(presentation);
+    const program = snapshotAuthoredNodeDetailProgram(envelope.detailAuthoring, envelope.owner);
+    const authoredDetail = compileAttachedNodeDetail(program, await this.resolveDetailAssets(program));
+    await this.request(`/api/graph/nodes/${nodeId(reference)}/presentation`, {
+      method: "POST", body: JSON.stringify({ expectedRevision, authoredDetail }),
+    });
   }
 
   async getNeighbors(reference: NodeReference): Promise<readonly GraphNode[]> {

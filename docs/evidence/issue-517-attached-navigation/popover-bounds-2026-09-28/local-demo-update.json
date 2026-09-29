@@ -1,0 +1,42 @@
+{
+  "action": "User-authorized renderer-only update of local running demo; UI reload left to parent",
+  "timeUtc": "2026-09-28T18:29:27.932554+00:00",
+  "liveCheckout": "/Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete",
+  "verifiedSnapshot": "c37a7b3d24577349032edeb232859e4aa16523f06f3da25abbdcd9d00831b01d",
+  "files": {
+    "desktop/renderer/src/product-workspace/workspace.js": "a516628b2b12b7c5c6b09050e496044848e7f1805172d895e5853639bc8df1a3",
+    "desktop/renderer/styles.css": "54175b23827e4f62158f36fb2cced3422171629eec7392f95a528655baba7cfe"
+  },
+  "changedTrackedFiles": [
+    "desktop/renderer/src/product-workspace/workspace.js",
+    "desktop/renderer/styles.css"
+  ],
+  "otherTrackedFilesUnchanged": true,
+  "buildRestartInferencePerformed": false,
+  "reloadPerformed": false,
+  "parentReloadObservation": {
+    "reloadMethod": "View > Force Reload through CUA; no native restart",
+    "loaded": true,
+    "accessibilityResponsive": true,
+    "observed": "Thread 1 root, Luna, new Open Rayleigh detail control; graph trigger responds and accessibility exposes both interaction cards",
+    "nativeVisualVerification": "blocked: native screenshots remain uniformly dark after rebind, CUA reset, and Raise; actual blank window versus capture failure unresolved",
+    "visualPassClaimed": false,
+    "nextStep": "Parent asks user whether window is actually blank before restart or broader diagnosis",
+    "appPreserved": true,
+    "visibilityGateHypothesis": "Falsified by parent CUA Elements: body class empty, app-shell has no hidden class, authScreen and desktopAccountOnboarding hidden. No secret values read."
+  },
+  "humanAcceptance": {
+    "recordedAtUtc": "2026-09-28T18:40:15.583672+00:00",
+    "reportedByParentChat": "01a0d9c7-e4af-7112-a0f6-92226b2a4201",
+    "currentUserQuote": "it works i sign off",
+    "earlierNavigationUserQuote": "okay woohoo it worked now",
+    "acceptedScope": [
+      "Required attached-node navigate-button flow",
+      "Popover clipping fix in refreshed active desktop at app server 59885"
+    ],
+    "actualDesktopConfirmedWorking": true,
+    "agentNativeCaptureStatus": "Still blocked; user confirmation does not relabel blank CUA screenshots as passing visual capture",
+    "priorAutomatedJourneyStatus": "Failed/indeterminate evidence preserved unchanged",
+    "authorization": "Record human signoff only; no merge, deployment, push, PR mutation, or further product changes"
+  }
+}

@@ -13,6 +13,23 @@ from relayer_graph.exceptions import ValidationError
 
 
 class VisualAuthoringTests(unittest.IsolatedAsyncioTestCase):
+    async def test_presentation_read_and_frozen_policy_versions(self):
+        from relayer_graph import InteractionInput
+        node = {"id": 1, "kind": "interaction", "icon": "box", "title": "Ask", "detail": "Ask", "state": "accepted"}
+        for policy in (None, {"version": "1", "enabled": True, "permissions": [{"kind": "navigate.add", "nodeId": 2}]},
+                       {"version": "2", "enabled": True, "permissions": [{"kind": "navigate.add", "nodeId": 2}, {"kind": "invoke.resolve", "actionId": 3}]},
+                       {"version": "2", "enabled": False, "permissions": []}):
+            graph = GraphSession("http://unused", "run", 1)
+            async def request(method, path, body=None):
+                self.assertEqual(method, "GET")
+                if path == "/api/graph/input":
+                    return {"interaction": node, **({} if policy is None else {"interactionPermissions": policy})}
+                self.assertEqual(path, "/api/graph/nodes/2/presentation")
+                return {"node": {**node, "id": 2, "clientKey": "persistent"}, "revision": 4, "actions": []}
+            graph._request = request
+            self.assertEqual((await graph.get_interaction_input()).interaction_permissions, policy)
+            self.assertEqual((await graph.get_node_presentation(2))["node"]["clientKey"], "persistent")
+
     async def test_session_binding_snapshot_and_frozen_submission(self):
         node = NodeObject('box', 'Answer', 'Fallback', client_key='answer')
         layer = LayerObject([node], [], LayerLayoutObject([NodePlacementObject(node, .5, .5)]), client_key='root')

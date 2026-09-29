@@ -1,0 +1,23 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import assert from 'node:assert/strict';
+import { createSettingsStore } from '../../desktop/main/services/settings-store.mjs';
+import { registerComposerDraftIpc } from '../../desktop/main/ipc/register-ipc.mjs';
+const directory=await mkdtemp(join(tmpdir(),'relayer-store-order-'));
+try {
+ const oldStore=createSettingsStore(directory), handlers=new Map();
+ registerComposerDraftIpc({ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},settings:oldStore});
+ await oldStore.write({composerDrafts:{pendingNewThread:null,threadFollowups:{}}});
+ const newStore=createSettingsStore(directory);
+ let release;const held=new Promise(resolve=>release=resolve);
+ const prior=oldStore.update(async current=>{await held;return current;});
+ const rendererWrite=handlers.get('relayer:composer-drafts-write')({}, {pendingNewThread:null,threadFollowups:{}});
+ await newStore.flush();
+ const folderDraft={text:'Restore this exact folder-scoped draft.',scope:{kind:'folder',label:'unregistered-worktree'}};
+ await newStore.update(current=>({...current,composerDrafts:{pendingNewThread:folderDraft,threadFollowups:{}}}));
+ assert.equal((await newStore.read()).composerDrafts.pendingNewThread.text,folderDraft.text);
+ release();await prior;await rendererWrite;
+ assert.equal((await newStore.read()).composerDrafts.pendingNewThread,null);
+ console.log(JSON.stringify({reproduced:true,seam:'production composer IPC remains on prior settings store after test replaces local variable',schedule:'held old-store write completes after new-store seed despite new-store flush',originalFailureCausality:'not established from original log',productionFilesChanged:false}));
+}finally{await rm(directory,{recursive:true,force:true});}
