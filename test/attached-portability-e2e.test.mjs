@@ -12,6 +12,7 @@ import { createDesktopGraphRuntime } from "../desktop/main/services/graphcomplet
 import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 import { EvalService } from "../desktop/eval-main/eval-service.mjs";
 import { parseConversationExportV1 } from "../desktop/renderer/src/public-share-viewer/snapshot.js";
+import { createProductWorkspace } from "../desktop/renderer/src/product-workspace/workspace.js";
 import { mountCompiledNodeDetail } from "../desktop/renderer/src/product-workspace/node-detail-runtime.js";
 
 const root = resolve(import.meta.dirname, "..");
@@ -109,6 +110,14 @@ it("preserves accepted attached navigation, converted invokes, rich controls and
   const importedConverted = importedRoot.actions.find((action) => action.convertedFromInvoke);
   expect(importedConverted).toMatchObject({ kind: "navigate", relation: "expand", targetLayerId: importedDetail.interactions[1].completionOutput.rootLayer.layer.id });
   expect(importedConverted.resolvedInvokeInteractionId).toBeUndefined();
+  // Exercise the production workspace dispatch and real Product layer endpoint,
+  // including Eval's read-only session. An import has no native invoke receipt.
+  for (const mode of ["interactive", "review"]) {
+    for (const presentation of ["compiled", "ordinary"]) {
+      await navigateImportedControl({ session: mode === "review" ? { ...session, cookie: session.readOnlyCookie } : session,
+        detail: importedDetail, mode, presentation });
+    }
+  }
   expect(importedRoot.nodes[0].authoredDetail).toEqual(currentRoot.nodes[0].authoredDetail);
   await expect(request(session, `/api/threads/${importedId}/interactions`, { text: "No new authority", modelSelection })).rejects.toMatchObject({ status: 422, message: "imported conversations are immutable" });
   await expect(request(session, `/api/threads/${importedId}/interactions/${importedSource.id}/actions/${importedConverted.id}/invoke`, {})).rejects.toMatchObject({ status: 422, message: "action is not an accepted invoke action for this interaction" });
@@ -338,4 +347,73 @@ async function accepted(session, threadId, index) {
     expect(turn?.completionStatus).toBe("accepted");
   }, { timeout: 10_000, interval: 20 });
   return detail;
+}
+
+async function navigateImportedControl({ session, detail, mode, presentation }) {
+  const window = new Window({ url: session.origin });
+  const source = detail.interactions[0];
+  // Strip only the in-memory presentation to cover fallback pills against the
+  // same durable imported action and endpoint, without changing accepted data.
+  const rootLayer = structuredClone(source.completionOutput.rootLayer);
+  if (presentation === "ordinary") {
+    for (const node of rootLayer.nodes) delete node.authoredDetail;
+  }
+  const converted = rootLayer.actions.find((action) => action.convertedFromInvoke);
+  const state = { ...detail, status: "accepted", currentInteractionId: source.id, visibleLayer: rootLayer,
+    nodes: rootLayer.nodes, actions: rootLayer.actions, projects: [], permissionProfiles: [],
+    modelSettings: { defaults: {}, harnesses: [], providers: [], families: [] }, modelCatalog: [],
+    actionInvocations: [], pendingActionInvocations: [] };
+  const destinationRequests = [];
+  const layerReads = [];
+  let workspace;
+  try {
+    vi.stubGlobal("window", window);
+    vi.stubGlobal("document", window.document);
+    vi.stubGlobal("lucide", new Proxy({ Circle: {}, createElement: (_icon, attributes) => {
+      const element = window.document.createElement("svg");
+      for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+      return element;
+    } }, { get: (target, key) => target[key] ?? {} }));
+    window.document.body.innerHTML = '<section id="threadView"></section>';
+    workspace = createProductWorkspace({ root: window.document, mode,
+      getState: () => state, getThread: () => detail.thread,
+      selection: { currentThreadId: detail.thread.id, currentInteractionId: source.id, selectedNodeId: null, layerPath: [] },
+      showThread() {}, showEmpty() {},
+      onNavigateResolvedInvoke: async (action) => {
+        destinationRequests.push(action.id);
+        return request(session, `/api/threads/${detail.thread.id}/interactions/${source.id}/actions/${action.id}/destination`);
+      },
+      onNavigateLayer: async (layerId) => {
+        const resolved = await request(session, `/api/threads/${detail.thread.id}/interactions/${source.id}/layers/${layerId}`);
+        layerReads.push(resolved);
+        state.visibleLayer = resolved;
+        state.nodes = resolved.nodes;
+        state.actions = resolved.actions;
+        workspace.render();
+        return true;
+      },
+    });
+    workspace.render();
+    window.document.querySelector(`[data-node="${rootLayer.nodes[0].id}"]`).click();
+    let button;
+    await vi.waitFor(() => {
+      const container = presentation === "compiled"
+        ? window.document.querySelector("#detailContent [data-node-detail-runtime]")?.shadowRoot
+        : window.document.querySelector("#detailActions");
+      button = [...(container?.querySelectorAll("button") ?? [])]
+        .find((candidate) => candidate.textContent.trim() === (presentation === "compiled" ? "Invoked result" : converted.label));
+      expect(button, `${mode}/${presentation}: ${window.document.querySelector("#detailActions")?.textContent}`).toBeTruthy();
+    });
+    expect(button.disabled).toBe(false);
+    button.click();
+    await window.happyDOM.waitUntilComplete();
+    expect(destinationRequests).toEqual([]);
+    await vi.waitFor(() => expect(layerReads).toHaveLength(1));
+    expect(layerReads[0].layer.id).toBe(converted.targetLayerId);
+    expect(window.document.querySelector('.graph-node[aria-label="Open Invoked response"]')).toBeTruthy();
+  } finally {
+    workspace?.dispose();
+    vi.unstubAllGlobals();
+    await window.close();
+  }
 }

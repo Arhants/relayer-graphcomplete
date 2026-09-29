@@ -199,3 +199,53 @@ Follow-up verification: `npm run check` passed (Rust/Clippy/crash suites, 240 Vi
 files with 3,225 passed and three skipped tests, two secret-boundary tests, 60 Python
 tests, receipts and PRD lints). `npm run build` passed afterward. The upstream receipt
 NO-GO remains an artifact qualification limit, not a failed implementation check.
+
+
+## Converted-control navigation follow-up
+
+Late review of `5c4c48102b4b5edfc18ea0ac57f8c09a1badc749` found two gaps in AN-003/004:
+imported controls had retained their binding shape but dispatched to a native receipt
+endpoint; public converted controls selected the first turn containing a shared layer.
+Earlier metadata and callback observations did not prove either downstream behavior.
+
+Changed seams: ProductWorkspace dispatch for imported converted navigation; public
+snapshot origin-to-destination indexing and adapter turn selection; realistic joined
+Product/Eval test and native public capture assertions. Imported conversions remain
+inert accepted layer navigation. Public controls use the validated accepted destination
+turn when included, otherwise the current included occurrence. No mutation authority
+or new network access is granted.
+
+The public regression failed with expected `turn:2`, actual `turn:1` before repair.
+After repair all 47 public viewer tests passed, including omitted-destination fallback
+and existing legacy origin tests. Four native public captures now assert the selected
+turn and prompt as well as the visible target: converted result selects Turn 2/INVOKE;
+ordinary attached Reference retains Turn 1/SOURCE. All four passed with zero external
+network requests and zero inference. The PNG bytes remain unchanged because the
+capture shows the source controls; the added navigation assertions live in the runner.
+
+The imported regression reproduced the rejected native destination request. After the
+imported-only dispatch repair, 56 focused tests passed. The joined fixture now clicks
+both compiled controls and ordinary action pills through the production workspace in
+interactive Product and read-only Eval, reads the actual authenticated imported layer
+endpoint, and observes the rendered result. It asserts no native destination requests;
+existing immutable-send and invoke-denial checks remain in place. This replaces no
+existing test and reuses the existing realistic fixture rather than duplicating setup.
+
+Final follow-up source manifest: 56 files, SHA-256
+`22946def8ec75b681607f723b882c59f95dcfcd6b96c33010b2e3825878ee29f`.
+Independent reviewer `/root/navigator_standards` verified every hash and reviewed the
+cumulative standards, authority/provenance, coherent export, test subsumption, product
+mapping, timeout, imported dispatch, public destination mapping and capture assertions:
+PASS; no unresolved findings. Execution results and artifact verification remain
+separate evidence; any manifested source change invalidates this assertion.
+
+Final follow-up execution on that manifest passed: full `npm run check` (3,226 Vitest
+passed, three skipped; all Rust/Clippy/crash, two secret-boundary, 60 Python and lints),
+then `npm run build`. Native default first-message passed with native keyboard true,
+Product/Eval/reopened controls, no ancillary failures and zero inference. Compiled Eval
+passed 4/4; Prime visual 2/2. The joined real Product/Eval/export/share-service journey
+passed against companion `fddecf52b03e542659cd74b887d1b77503de185c`, including both imported
+control presentations with real read-only credentials. The final public native rerun
+passed all four theme/viewport and exact-turn/prompt checks. The remaining earlier
+native off/context/project/approval/layout observations retain their recorded snapshot.
+No hosted deployment, paid inference, signed release or source merge was performed.

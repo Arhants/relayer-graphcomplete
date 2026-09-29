@@ -1408,13 +1408,22 @@ export function actionPresentation(action) {
   };
 }
 
+function usesResolvedInvokeDestination(action, imported) {
+  // Imported conversions retain binding history, but no native invoke receipt.
+  // Their accepted target is ordinary read-only layer navigation. Public shares
+  // use their own validated turn mapping and still take the resolved callback.
+  const importedConversion = imported && action?.convertedFromInvoke === true
+    && !(Number.isSafeInteger(action.resolvedInvokeInteractionId) && action.resolvedInvokeInteractionId > 0);
+  return action != null && isResolvedInvokeAction(action) && !importedConversion;
+}
+
 export function actionActivationPresentation(
   action,
-  { invoked = false, retryable = false, canInvokeMutatingActions = false } = {},
+  { invoked = false, retryable = false, canInvokeMutatingActions = false, imported = false } = {},
 ) {
   const layerNavigation = action?.kind === "navigate" && action.targetLayerId != null;
   const resolvedInvoke = (action?.kind === "invoke" && action.targetLayerId != null)
-    || (action != null && isResolvedInvokeAction(action));
+    || usesResolvedInvokeDestination(action, imported);
   const navigational = layerNavigation || resolvedInvoke;
   const retryableInvoke = action?.kind === "invoke" && !navigational && retryable;
   return Object.freeze({
@@ -5865,6 +5874,7 @@ export function createProductWorkspace({
             invoked,
             retryable: actionCanRetry(state.actionInvocations, action.id),
             canInvokeMutatingActions: capabilities.canInvokeMutatingActions,
+            imported: getThread()?.imported,
           }).disabled,
         };
       } else if (action.kind === "input") {
@@ -5914,7 +5924,7 @@ export function createProductWorkspace({
       capabilityState: authoredCapabilityState,
       onNavigate: async (action) => {
         if (!await prepareNodeContextSelectionChange()) return;
-        if (isResolvedInvokeAction(action)) {
+        if (usesResolvedInvokeDestination(action, getThread()?.imported)) {
           await onNavigateResolvedInvoke(action, { beforeCommit: collapseContextPreviews });
           return;
         }
@@ -5934,6 +5944,7 @@ export function createProductWorkspace({
           ),
           retryable: actionCanRetry(state.actionInvocations, action.id),
           canInvokeMutatingActions: capabilities.canInvokeMutatingActions,
+          imported: getThread()?.imported,
         });
         if (activation.navigational) {
           if (!await prepareNodeContextSelectionChange()) return;
@@ -6097,6 +6108,7 @@ export function createProductWorkspace({
           invoked,
           retryable,
           canInvokeMutatingActions: capabilities.canInvokeMutatingActions,
+          imported: getThread()?.imported,
         });
         button.querySelector(".action-label").textContent = activation.label;
         button.disabled = activation.disabled;

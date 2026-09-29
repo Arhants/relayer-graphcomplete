@@ -58,14 +58,15 @@ try {
         await window.webContents.executeJavaScript("new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))");
         const image = (await window.webContents.capturePage()).toPNG();
         await writeFile(resolve(output, file), image);
-        for (const [label, destination] of [["Invoked result", "Invoked response"], ["Attached response", "Attached response"]]) {
+        for (const [label, destination, turn, prompt] of [["Invoked result", "Invoked response", 2, "INVOKE"], ["Attached response", "Attached response", 1, "SOURCE"]]) {
           await window.webContents.executeJavaScript(`[...${host}.querySelectorAll('button')].find(button => button.textContent === ${JSON.stringify(label)}).click()`);
           await wait(window, `${label} destination`, `Boolean(document.querySelector('.graph-node[aria-label=${JSON.stringify(`Open ${destination}`)}]'))`);
+          await wait(window, `${label} selected turn and prompt`, `document.querySelector('#turnPickerButton')?.textContent === ${JSON.stringify(`Turn ${turn} of 3`)} && document.querySelector('#interactionText')?.textContent === ${JSON.stringify(prompt)}`);
           if (window.webContents.getURL() !== url) throw new Error("Public navigation changed URL");
           await openSource();
         }
         if (unexpected.length) throw new Error(`Unexpected network destinations: ${unexpected.length}`);
-        captures.push({ file, theme, size, geometry, sha256: createHash("sha256").update(image).digest("hex"), bothNavigationTargetsPassed: true, externalNetworkRequests: 0 });
+        captures.push({ file, theme, size, geometry, sha256: createHash("sha256").update(image).digest("hex"), bothNavigationTargetsPassed: true, destinationTurnAndPromptPassed: true, externalNetworkRequests: 0 });
       } finally { window.destroy(); }
     }
   }

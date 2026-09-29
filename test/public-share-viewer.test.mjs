@@ -761,12 +761,24 @@ describe("V3 current converted-invoke snapshots", () => {
     const adapter = createPublicViewerAdapter(snapshot);
     const converted = adapter.state.actions.find(action => action.convertedFromInvoke);
     expect(converted.kind).toBe("navigate");
-    await expect(adapter.navigateLayer(converted.targetLayerId, { action: converted, sourceNode: adapter.state.nodes[0] })).resolves.toBe(true);
+    await expect(adapter.navigateResolvedInvoke(converted)).resolves.toBe(true);
     expect(adapter.state.visibleLayer.layer.id).toBe("layer:child");
+    expect(adapter.selection.currentInteractionId).toBe("turn:2");
+    expect(adapter.state.currentInteractionId).toBe("turn:2");
     records[2].acceptedView.rootLayerId = "layer:root";
     records[2].acceptedView.rootAction.targetLayerId = "layer:root";
     records[2].acceptedView.layers = structuredClone(records[1].acceptedView.layers);
     expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+  });
+  it("navigates an included converted result within its source when the result turn is omitted", async () => {
+    const records = convertedRecords();
+    records.pop();
+    records[0].turns.pop();
+    const adapter = createPublicViewerAdapter(parsePublicSnapshot(recordsJsonl(records)));
+    const converted = adapter.state.actions.find(action => action.convertedFromInvoke);
+    await expect(adapter.navigateResolvedInvoke(converted)).resolves.toBe(true);
+    expect(adapter.state.visibleLayer.layer.id).toBe("layer:child");
+    expect(adapter.selection.currentInteractionId).toBe("turn:1");
   });
   it.each([1, 2])("rejects conversion provenance in V%s", version => {
     const records = convertedRecords(); records[0].exportVersion = version;

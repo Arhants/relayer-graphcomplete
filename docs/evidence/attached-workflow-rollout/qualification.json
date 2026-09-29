@@ -1,5 +1,5 @@
 {
-  "sourceManifestSha256": "2c3b0d37eaebb7c4694d7e05f0bb9f9571883cf95301fe3b44e3bba691661482",
+  "sourceManifestSha256": "22946def8ec75b681607f723b882c59f95dcfcd6b96c33010b2e3825878ee29f",
   "fullCheck": {
     "passed": true,
     "vitestPassed": 3225,
@@ -47,5 +47,36 @@
     "reviewVerdict": "PASS, no unresolved findings",
     "fullCheck": "passed: Rust, Clippy, crash reconciliation, 3225 Vitest, 2 secret-boundary, 60 Python, lints",
     "build": "passed"
+  },
+  "convertedNavigationFollowup": {
+    "priorCommit": "5c4c48102b4b5edfc18ea0ac57f8c09a1badc749",
+    "checkpoints": [
+      "AN-003",
+      "AN-004"
+    ],
+    "publicViewerTestsPassed": 47,
+    "importedNavigationFocusedTestsPassed": 56,
+    "importedModes": [
+      "interactive",
+      "review with read-only cookie"
+    ],
+    "importedControls": [
+      "compiled invoke binding",
+      "ordinary action pill"
+    ],
+    "publicCaptureSelectedTurnAndPromptPassed": 4,
+    "fullCheck": "passed: Rust/Clippy/crash, 3226 Vitest, 2 secret-boundary, 60 Python and lints",
+    "build": "passed",
+    "nativeDefault": "passed: typed permissions, native keyboard, Product/Eval/reopened controls, zero ancillary failures, zero inference",
+    "compiledEvalPassed": 4,
+    "primeVisualPassed": 2,
+    "joinedCompanionService": "passed against fddecf52b03e542659cd74b887d1b77503de185c",
+    "finalPublicCaptureRerunPassed": 4,
+    "independentReview": {
+      "reviewer": "navigator_standards",
+      "manifestSha256": "22946def8ec75b681607f723b882c59f95dcfcd6b96c33010b2e3825878ee29f",
+      "files": 56,
+      "verdict": "PASS; no unresolved findings"
+    }
   }
 }

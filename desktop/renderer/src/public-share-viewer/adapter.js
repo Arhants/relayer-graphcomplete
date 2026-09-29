@@ -92,9 +92,12 @@ export function createPublicViewerAdapter(snapshot) {
   }
 
   async function navigateResolvedInvoke(action, { beforeCommit } = {}) {
-    const sourceTurn = snapshot.turnContainingLayer(action?.targetLayerId);
-    const interaction = turns().find((candidate) => sameId(candidate.id, sourceTurn?.id));
-    const layer = snapshot.layerFor(sourceTurn?.id, action?.targetLayerId);
+    // A converted result layer can occur in both the source closure and its own turn.
+    // Follow validated origin identity when that turn is included in the snapshot.
+    const destinationTurnId = snapshot.invokeDestinationTurnId(action?.id)
+      ?? selection.currentInteractionId;
+    const interaction = turns().find((candidate) => sameId(candidate.id, destinationTurnId));
+    const layer = snapshot.layerFor(destinationTurnId, action?.targetLayerId);
     if (!interaction || !layer) return false;
     selection.selectedNodeId = null;
     hydrate(interaction, layer);

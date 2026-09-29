@@ -735,6 +735,7 @@ export function parseConversationExportSnapshot(input) {
     }
   }
   const invokeTargets = new Map();
+  const invokeDestinationTurns = new Map();
   for (const turn of acceptedTurns) {
     const origin = validateOrigin(turn.origin, `turn[${turn.sequence - 1}].origin`);
     if (origin.kind !== "action") continue;
@@ -747,6 +748,7 @@ export function parseConversationExportSnapshot(input) {
       fail("invoke_origin_invalid", `turn[${turn.sequence - 1}].origin`, "Accepted invoke results require one earlier accepted source action.");
     }
     invokeTargets.set(action.id, turn.acceptedView.rootLayerId);
+    invokeDestinationTurns.set(action.id, turn.id);
   }
   const layersByTurn = new Map(acceptedTurns.map((turn) => [turn.id, new Map(
     turn.acceptedView.layers.map((resolved) => [
@@ -781,6 +783,9 @@ export function parseConversationExportSnapshot(input) {
     state: null,
     layerFor(turnId, layerId) {
       return layersByTurn.get(String(turnId))?.get(String(layerId)) ?? null;
+    },
+    invokeDestinationTurnId(actionId) {
+      return invokeDestinationTurns.get(actionId) ?? null;
     },
     turnContainingLayer(layerId) {
       return interactions.find((interaction) => layersByTurn.get(String(interaction.id))?.has(String(layerId))) ?? null;

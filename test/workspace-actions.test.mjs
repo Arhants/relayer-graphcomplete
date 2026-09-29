@@ -76,6 +76,11 @@ describe("workspace action presentation grammar", () => {
       .toMatchObject({ resolvedInvoke: true, navigational: true, disabled: false });
     expect(actionActivationPresentation({ ...converted, resolvedInvokeInteractionId: undefined }))
       .toMatchObject({ resolvedInvoke: false });
+    const importedConversion = { ...converted, resolvedInvokeInteractionId: undefined, convertedFromInvoke: true };
+    expect(actionActivationPresentation(importedConversion, { imported: true }))
+      .toMatchObject({ resolvedInvoke: false, navigational: true, disabled: false });
+    expect(actionActivationPresentation(importedConversion, { imported: false }))
+      .toMatchObject({ resolvedInvoke: true, navigational: true, disabled: false });
     expect(actionReviewKind(unresolved)).toBe("invoke-action");
     expect(actionReviewKind(resolved)).toBe("navigate-action");
     expect(actionReviewKind({ kind: "input" })).toBe("input-action");
