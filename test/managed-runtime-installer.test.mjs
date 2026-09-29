@@ -433,6 +433,36 @@ describe("managed runtime installer", () => {
     }
   });
 
+  // PR #576 review: an older Desktop may have staged a frozen schema-v1 receipt. Activating
+  // one that differs from the active runtime changes the runtime too, although it has no
+  // recipe identity; activating the runtime it already ran changes nothing.
+  it("reports a legacy schema-v1 activation that changed the runtime", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
+    let routes = latestClaudeRoutes("0.3.247", "legacy-before");
+    const fetch = vi.fn((url, options) => registryFixture(routes)(url, options));
+    const installer = createManagedRuntimeInstaller({
+      root, platform: "darwin", architecture: "arm64", fetch,
+      probes: { claude: async ({ version }) => ({ version }) },
+      extract: async (_tarball, destination, { artifact }) => {
+        await mkdir(destination, { recursive: true });
+        await writeFile(join(destination, artifact.role === "sdk" ? "sdk.mjs" : "claude"), artifact.version, { mode: 0o755 });
+      },
+    });
+    try {
+      await installer.ensure("claude", "0.3.200");
+      await installer.stageForAppUpdate("0.2.15", [{ runtimeId: "claude", minimumVersion: "0.3.200" }]);
+      expect(runtimesChangedByActivation(await installer.activatePendingAppUpdate("0.2.15"))).toEqual([]);
+
+      routes = latestClaudeRoutes("0.3.248", "legacy-after");
+      await installer.stageForAppUpdate("0.2.16", [{ runtimeId: "claude", minimumVersion: "0.3.200" }]);
+      const activated = await installer.activatePendingAppUpdate("0.2.16");
+      expect(activated).toMatchObject({ failures: [], activated: [{ runtimeId: "claude", version: "0.3.248" }] });
+      expect(runtimesChangedByActivation(activated)).toEqual(["claude"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the local version probe when it activates a validated app-update generation", async () => {
     // R2: post-update activation at startup probes the new runtime's version locally (PRD).
     const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
@@ -1683,7 +1713,7 @@ describe("managed runtime installer", () => {
       await installer.stageForAppUpdate("0.2.15", [{ runtimeId: "claude", minimumVersion: "0.3.200" }]);
       fetch.mockClear();
       const wrongVersion = await installer.activatePendingAppUpdate("0.2.16");
-      expect(wrongVersion).toEqual({ appVersion: "0.2.16", activated: [], recipeUpdates: [], failures: [] });
+      expect(wrongVersion).toEqual({ appVersion: "0.2.16", activated: [], recipeUpdates: [], changedRuntimeIds: [], failures: [] });
       const activated = await installer.activatePendingAppUpdate("0.2.15");
 
       expect(activated.failures).toEqual([]);
@@ -1713,6 +1743,7 @@ describe("managed runtime installer", () => {
         appVersion: "2.0.0",
         activated: [],
         recipeUpdates: [],
+        changedRuntimeIds: [],
         failures: [{ runtimeId: null, error: unreadable }],
       });
     } finally {
@@ -1786,6 +1817,7 @@ describe("managed runtime installer", () => {
         appVersion: "2.0.0",
         activated: [],
         recipeUpdates: [],
+        changedRuntimeIds: [],
         failures: [],
       });
       expect(probeCalls).toBe(2);
