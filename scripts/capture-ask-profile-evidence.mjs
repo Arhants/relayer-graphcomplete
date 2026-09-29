@@ -1065,13 +1065,12 @@ async function waitForOpenApproval(session, threadId, interactionId, label) {
   if (!completeWaitingDock(dock, receipt)) {
     throw new Error(`Incomplete Ask waiting presentation for ${label}: ${JSON.stringify(dock)}`);
   }
-  await click("#previousTurn");
+  await mainWindow.webContents.executeJavaScript(selectRelativeInteraction(-1));
   const graphDock = await waitFor(`${label} prior accepted graph with live dock`, async () => {
     const state = await approvalDockState();
     if (state?.requestId !== dock.requestId) return false;
     if (visibleGraphDock(state) && completeWaitingDock(state, receipt)) return state;
-    const canStepBack = await mainWindow.webContents.executeJavaScript(`document.querySelector('#previousTurn')?.disabled === false`);
-    if (canStepBack) await click("#previousTurn");
+    await mainWindow.webContents.executeJavaScript(selectRelativeInteraction(-1));
     return false;
   }, 20_000);
   return { detail, dock: graphDock, receipt };
@@ -1112,8 +1111,7 @@ async function requireWaitingCaptureState(receipt, label) {
     const state = await approvalDockState();
     if (state?.requestId !== requestId || !completeWaitingDock(state, receipt)) return false;
     if (visibleGraphDock(state)) return state;
-    const canStepBack = await mainWindow.webContents.executeJavaScript(`document.querySelector('#previousTurn')?.disabled === false`);
-    if (canStepBack) await click("#previousTurn");
+    await mainWindow.webContents.executeJavaScript(selectRelativeInteraction(-1));
     return false;
   }, 20_000);
 }
@@ -2598,7 +2596,7 @@ async function run() {
   await exportTrace(baselineInteraction, threadId, "baseline");
   await openThread(productSession, threadId);
   const baselineCaptureState = () => mainWindow.webContents.executeJavaScript(`(() => (
-    document.querySelector('#turnPickerButton')?.textContent?.trim() === 'Turn 1 of 1'
+    ${interactionPositionCondition(1, 1)}
     && document.querySelectorAll('.graph-node').length > 0
     && !document.querySelector('#graphStage')?.classList.contains('hidden')
     && document.querySelector('#graphEmpty')?.classList.contains('hidden')
@@ -2879,7 +2877,7 @@ async function run() {
       && historyListStyle?.overflowY === 'auto'
       && firstRect?.top >= listRect?.top
       && firstRect?.bottom <= listRect?.bottom
-      && document.querySelector('#turnPickerButton')?.textContent?.trim() === 'Turn ${finalDetail.interactions.length} of ${finalDetail.interactions.length}'
+      && ${interactionPositionCondition(finalDetail.interactions.length, finalDetail.interactions.length)}
       && !graphEmpty?.classList.contains('hidden')
       && graphStage?.classList.contains('hidden')
       && document.querySelectorAll('.graph-node').length === 0
@@ -3137,3 +3135,28 @@ process.stdout.write(`Starting paid Ask-profile evidence capture with ${MODEL_ID
 void app.whenReady().then(run).catch((error) => {
   process.stderr.write(`${error.stack || error.message}\n`);
 }).finally(shutdown);
+
+// Keep these expressions local: this runner is copied into an authenticated standalone bootstrap.
+// Browser expressions for native-thread evidence. Imported/legacy threads keep
+// their separate turn-picker assertions.
+function interactionPositionCondition(position, total) {
+  return `(() => {
+    const cards = [...document.querySelectorAll('#turnPopover .interaction-graph-node')];
+    return document.querySelector('#turnPickerButton')?.classList.contains('interaction-graph-trigger')
+      && cards.length === ${total}
+      && cards.findIndex(card => card.getAttribute('aria-current') === 'true') === ${position - 1};
+  })()`;
+}
+
+function selectRelativeInteraction(offset) {
+  return `(() => {
+    const cards = [...document.querySelectorAll('#turnPopover .interaction-graph-node')];
+    const index = cards.findIndex(card => card.getAttribute('aria-current') === 'true');
+    const target = cards[index + ${offset}];
+    if (index < 0 || !target || target.disabled) return false;
+    const trigger = document.querySelector('#turnPickerButton');
+    if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
+    target.click();
+    return true;
+  })()`;
+}

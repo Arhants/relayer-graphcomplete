@@ -1,8 +1,8 @@
 # ADR 0013: Visual direction "Sticker × Cocoa"
 
 Status: accepted visual direction (owner decision, 2026-09-28). Not implemented. Designs are build-time configuration
-with no in-product picker (see "Build decisions"). PRD §10.1 records item 3 below and the one-design-per-build rule; items
-1, 2 and 4 are not in the PRD yet.
+with no in-product picker (see "Build decisions"). PRD §10.1 records item 3 below and the one-design-per-build rule; PRD §8.1
+records item 1 (planned). Items 2 and 4 are not in the PRD yet.
 
 ## Context
 

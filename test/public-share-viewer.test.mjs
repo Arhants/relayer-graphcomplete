@@ -4,8 +4,9 @@ import { spawnSync } from "node:child_process";
 import { createHash, webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 
+import { interactionGraph } from "../desktop/renderer/src/product-workspace/interaction-graph.js";
 import { createPublicViewerAdapter } from "../desktop/renderer/src/public-share-viewer/adapter.js";
-import { compiledNodeDetailCoversActions } from "../desktop/renderer/src/product-workspace/workspace.js";
+import { compiledNodeDetailCoversActions, resolveCompiledNodeDetailAction } from "../desktop/renderer/src/product-workspace/workspace.js";
 import {
   bootPublicViewer,
   fitPublicTurnPopover,
@@ -480,7 +481,7 @@ describe("public share HTML boundary", () => {
     const styles = readFileSync(new URL("../desktop/renderer/src/public-share-viewer/viewer.css", import.meta.url), "utf8");
     expect(styles).toMatch(/\.public-share-shell \.interaction-banner\s*{[^}]*position: relative;[^}]*margin-left: 0;/s);
     expect(styles).toMatch(/\.public-share-shell \.turn-picker\s*{[^}]*position: static;/s);
-    expect(styles).toMatch(/\.public-share-shell \.turn-popover\s*{[^}]*right: 0;[^}]*left: 0;[^}]*width: auto;[^}]*52px \* 5/s);
+    expect(styles).toMatch(/\.public-share-shell \.turn-popover:not\(\.interaction-graph-popover\)\s*{[^}]*right: 0;[^}]*left: 0;[^}]*width: auto;[^}]*52px \* 5/s);
   });
 
   it("fits embed layout transitions while newer gestures, narrow viewports and disposal cancel pending work", async () => {
@@ -569,6 +570,10 @@ describe("public share HTML boundary", () => {
     try {
       fitPublicTurnPopover(host, windowRef);
       expect(host.querySelector(".turn-popover").style.maxHeight).toBe("210px");
+      host.querySelector(".turn-popover").classList.add("interaction-graph-popover");
+      host.querySelector(".turn-popover").style.maxHeight = "";
+      fitPublicTurnPopover(host, windowRef);
+      expect(host.querySelector(".turn-popover").style.maxHeight).toBe("");
     } finally {
       await windowRef.close();
     }
@@ -672,8 +677,8 @@ describe("public share HTML boundary", () => {
       expect(viewer).not.toBeNull();
       if (presentation === "embed") expect(windowRef.document.documentElement.dataset.theme).toBe("light");
       expect(viewer.adapter.selection.currentInteractionId).toBe("turn:1");
-      expect(windowRef.document.querySelector(".interaction-graph-stepper")).toBeNull();
-      expect(windowRef.document.querySelector(".interaction-graph-popover")).toBeNull();
+      expect(windowRef.document.querySelector(".interaction-graph-stepper")).toBeTruthy();
+      expect(windowRef.document.querySelector(".interaction-graph-popover")).toBeTruthy();
       expect(windowRef.document.querySelector("#publicViewerHost")?.classList.contains("hidden")).toBe(false);
       const downloadCard = windowRef.document.querySelector(".public-share-download-card");
       if (presentation === "standalone") {
@@ -702,6 +707,10 @@ describe("public share HTML boundary", () => {
       expect(viewer.adapter.selection.currentInteractionId).toBe("turn:1");
       await expect(viewer.adapter.onInvokeAction()).resolves.toBe(false);
       await expect(viewer.adapter.onSubmitInteraction()).resolves.toBe(false);
+      const navigator = windowRef.document.querySelector("#turnPickerButton");
+      expect(navigator.classList.contains("interaction-graph-trigger")).toBe(true);
+      expect(navigator.textContent).not.toMatch(/Turn \d+ of/);
+      expect(windowRef.document.querySelector("#turnPopover").classList.contains("hidden")).toBe(true);
       const invokeButton = windowRef.document.querySelector('[data-action-id="action:invoke"]');
       expect(invokeButton.disabled).toBe(false);
       invokeButton.click();
@@ -716,6 +725,12 @@ describe("public share HTML boundary", () => {
       await windowRef.happyDOM.waitUntilComplete();
       windowRef.document.querySelector('[data-action-id="action:reference"]').click();
       await vi.waitFor(() => expect(viewer.adapter.state.visibleLayer.layer.id).toBe("layer:related"));
+      windowRef.document.querySelector("#turnPickerButton").click();
+      expect(windowRef.document.querySelectorAll(".interaction-graph-node")).toHaveLength(2);
+      windowRef.document.querySelector('.interaction-graph-node[data-turn-id="turn:1"]').click();
+      await vi.waitFor(() => expect(viewer.adapter.state.visibleLayer.layer.id).toBe("layer:root"));
+      expect(windowRef.document.querySelector("#turnPopover").classList.contains("hidden")).toBe(true);
+
       expect(windowRef.location.href).toBe(originalUrl);
       viewer.adapter.selectTurnById("turn:2");
       viewer.adapter.selectTurnById("turn:1");
@@ -741,4 +756,222 @@ describe("public share HTML boundary", () => {
       await windowRef.close();
     }
   });
+});
+
+
+describe("public interaction graph", () => {
+  function attachedRecords() {
+    const records = invokeFixtureRecords();
+    records[0].exportVersion = 3;
+    // A owns the layers; B also presents them. C attaches while viewing B.
+    const owner = records[1];
+    const presenter = records[2];
+    presenter.acceptedView.layers[0].actions.push(action("action:prior", "node:child", "layer:nested", "reference", "layer:child"));
+    presenter.acceptedView.layers.push(...structuredClone(owner.acceptedView.layers.slice(1)));
+    records[0].turns.push({ id: "turn:3", sequence: 3 });
+    const contexts = ["nested", "nested", "related"].map((name, index) => ({
+      id: `action:context${index}`, target: structuredClone(owner.acceptedView.layers.find(item => item.layer.id === `layer:${name}`).nodes[0]),
+      source: { interactionNodeId: "node:child-interaction", layerId: `layer:${name}`, ownerTurnId: "turn:1" }, annotations: [],
+    }));
+    records.push({ ...structuredClone(presenter), id: "turn:3", sequence: 3, text: "Attached follow-up",
+      interactionNodeId: "node:third-interaction", origin: { kind: "user" }, contexts,
+      acceptedView: { interactionNodeId: "node:third-interaction", rootLayerId: "layer:third",
+        rootAction: action("action:third-root", "node:third-interaction", "layer:third", "expand"),
+        layers: [layer("layer:third", "node:third")] },
+    });
+    return records;
+  }
+
+  it("groups attachments by exact exported owner, never by presenting occurrence or chronology", () => {
+    const snapshot = parsePublicSnapshot(recordsJsonl(attachedRecords()));
+    const graph = interactionGraph(snapshot.interactions, "turn:3");
+    expect(graph.incomplete).toBe(false);
+    expect(graph.contextCount).toBe(3);
+    expect(graph.edges).toEqual([
+      { source: "turn:1", target: "turn:2", layers: [], invocationActionId: "action:invoke" },
+      { source: "turn:1", target: "turn:3", layers: [
+        { layerId: "layer:nested", nodeIds: ["node:nested"] },
+        { layerId: "layer:related", nodeIds: ["node:related"] },
+      ], invocationActionId: null },
+    ]);
+  });
+
+  it.each([1, 2, 3])("keeps V%s graph cards and proven invocation edges when attachment ownership is unavailable", version => {
+    const records = attachedRecords(); records[0].exportVersion = version;
+    for (const context of records[3].contexts) {
+      delete context.source.ownerTurnId;
+      context.source.interactionNodeId = "node:outside";
+    }
+    const snapshot = parsePublicSnapshot(recordsJsonl(records));
+    const graph = interactionGraph(snapshot.interactions, "turn:3");
+    expect(graph.nodes.map(node => node.id)).toEqual(["turn:1", "turn:2", "turn:3"]);
+    expect(graph.incomplete).toBe(true);
+    expect(graph.edges).toHaveLength(1);
+    expect(graph.edges[0].invocationActionId).toBe("action:invoke");
+  });
+
+  it.each(["outside", "later", "membership", "conflict", "version"])("rejects %s portable owner claims", fault => {
+    const records = attachedRecords();
+    const context = records[3].contexts[0];
+    if (fault === "outside") context.source.ownerTurnId = "turn:99";
+    if (fault === "later") context.source.ownerTurnId = "turn:3";
+    if (fault === "membership") context.target.id = "node:third";
+    if (fault === "conflict") records[3].contexts[1].source.ownerTurnId = "turn:2";
+    if (fault === "version") records[0].exportVersion = 2;
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "context_owner_invalid" }));
+  });
+});
+
+describe("V3 current converted-invoke snapshots", () => {
+  function convertedRecords() {
+    const records = invokeFixtureRecords();
+    records[0].exportVersion = 3;
+    const source = records[1].acceptedView;
+    const converted = source.layers[0].actions.find(action => action.kind === "invoke");
+    Object.assign(converted, { kind: "navigate", relation: "expand", targetLayerId: "layer:child", convertedFromInvoke: true });
+    delete converted.interactionText;
+    source.layers.push(structuredClone(records[2].acceptedView.layers[0]));
+    return records;
+  }
+  it("preserves current navigation and validates its exact accepted origin", async () => {
+    const records = convertedRecords();
+    const snapshot = parsePublicSnapshot(recordsJsonl(records));
+    const adapter = createPublicViewerAdapter(snapshot);
+    const converted = adapter.state.actions.find(action => action.convertedFromInvoke);
+    expect(converted.kind).toBe("navigate");
+    await expect(adapter.navigateResolvedInvoke(converted)).resolves.toBe(true);
+    expect(adapter.state.visibleLayer.layer.id).toBe("layer:child");
+    expect(adapter.selection.currentInteractionId).toBe("turn:2");
+    expect(adapter.state.currentInteractionId).toBe("turn:2");
+    records[2].acceptedView.rootLayerId = "layer:root";
+    records[2].acceptedView.rootAction.targetLayerId = "layer:root";
+    records[2].acceptedView.layers = structuredClone(records[1].acceptedView.layers);
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+  });
+  it("navigates an included converted result within its source when the result turn is omitted", async () => {
+    const records = convertedRecords();
+    records.pop();
+    records[0].turns.pop();
+    const adapter = createPublicViewerAdapter(parsePublicSnapshot(recordsJsonl(records)));
+    const converted = adapter.state.actions.find(action => action.convertedFromInvoke);
+    await expect(adapter.navigateResolvedInvoke(converted)).resolves.toBe(true);
+    expect(adapter.state.visibleLayer.layer.id).toBe("layer:child");
+    expect(adapter.selection.currentInteractionId).toBe("turn:1");
+  });
+  it.each([1, 2])("rejects conversion provenance in V%s", version => {
+    const records = convertedRecords(); records[0].exportVersion = version;
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "converted_invoke_version" }));
+  });
+  it("retains the declared reused-source turn instead of choosing its first occurrence", () => {
+    const records = convertedRecords();
+    const reused = structuredClone(records[1]);
+    Object.assign(reused, { id: "turn:2", sequence: 2, interactionNodeId: "node:reused-interaction" });
+    Object.assign(reused.acceptedView, { interactionNodeId: "node:reused-interaction", rootLayerId: "layer:reused" });
+    Object.assign(reused.acceptedView.rootAction, { id: "action:reused-root", sourceNodeId: "node:reused-interaction", targetLayerId: "layer:reused" });
+    Object.assign(reused.acceptedView.layers[0].layer, { id: "layer:reused", clientKey: "reused-source" });
+    Object.assign(records[2], { id: "turn:3", sequence: 3 });
+    records[2].origin.source_turn_id = "turn:2";
+    records.splice(2, 0, reused);
+    records[0].turns.push({ id: "turn:3", sequence: 3 });
+    const snapshot = parsePublicSnapshot(recordsJsonl(records));
+    const invocation = interactionGraph(snapshot.interactions, "turn:3").edges.find(edge => edge.invocationActionId === "action:invoke");
+    expect(invocation.source).toBe("turn:2");
+    expect(invocation.target).toBe("turn:3");
+    const other = structuredClone(reused.acceptedView.layers[0].actions.find(action => action.convertedFromInvoke));
+    Object.assign(other, { id: "action:other-conversion", clientKey: "other-conversion" });
+    reused.acceptedView.layers[0].actions.push(other);
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+    // A conflicting action discovered after the result is equally ambiguous.
+    [records[2], records[3]] = [records[3], records[2]];
+    Object.assign(records[2], { id: "turn:2", sequence: 2 });
+    records[2].origin.source_turn_id = "turn:1";
+    Object.assign(records[3], { id: "turn:3", sequence: 3 });
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+    // Omitting the result keeps the external navigation without inventing lineage.
+    records.splice(2, 1);
+    Object.assign(records[2], { id: "turn:2", sequence: 2 });
+    records[0].turns.pop();
+    expect(parsePublicSnapshot(recordsJsonl(records)).interactions).toHaveLength(2);
+
+  });
+  it("rejects an included converted result with erased invocation lineage", () => {
+    const records = convertedRecords();
+    records[2].origin = { kind: "user" };
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+    [records[1], records[2]] = [records[2], records[1]];
+    Object.assign(records[1], { id: "turn:1", sequence: 1 });
+    Object.assign(records[2], { id: "turn:2", sequence: 2 });
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+
+  });
+  it("rejects a converted origin pointing to an unaccepted result", () => {
+    const records = convertedRecords();
+    records[2].completion = { ...records[2].completion, status: "failed" };
+    records[2].acceptedView = null;
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invoke_origin_invalid" }));
+  });
+  it("rejects a forged conversion shape", () => {
+    const records = convertedRecords();
+    records[1].acceptedView.layers[0].actions.find(action => action.convertedFromInvoke).relation = "reference";
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "converted_invoke_shape" }));
+  });
+  it("permits node-owned V3 navigation but rejects missing source membership and root conversion", () => {
+    const records = convertedRecords();
+    const converted = records[1].acceptedView.layers[0].actions.find(action => action.convertedFromInvoke);
+    delete converted.sourceLayerId;
+    expect(parsePublicSnapshot(recordsJsonl(records)).header.exportVersion).toBe(3);
+    converted.sourceNodeId = "node:absent";
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "action_source_outside_layer" }));
+    converted.sourceNodeId = "node:root";
+    records[1].acceptedView.rootAction.convertedFromInvoke = true;
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "invalid_root_action" }));
+  });
+  it("keeps repeated native completion keys unambiguous by exact source node", () => {
+    const records = convertedRecords();
+    for (const turn of records.slice(1)) {
+      for (const resolved of turn.acceptedView.layers) {
+        resolved.layer.clientKey = "answer-layer";
+        resolved.nodes[0].clientKey = "answer-node";
+        if (resolved.layer.id === "layer:child") {
+          resolved.actions.push({ id: "action:second-follow-up", sourceNodeId: "node:child", sourceLayerId: "layer:child", clientKey: "follow-up", kind: "invoke", interactionText: "Next", label: "Next", variant: "pill", state: "accepted" });
+        } else if (resolved.layer.id === "layer:root") {
+          resolved.actions.find(action => action.convertedFromInvoke).clientKey = "follow-up";
+        }
+      }
+    }
+    const snapshot = parsePublicSnapshot(recordsJsonl(records));
+    const root = snapshot.layerFor("turn:1", "layer:root");
+    const child = snapshot.layerFor("turn:1", "layer:child");
+    const reference = { clientKey: "follow-up", sourceNode: { clientKey: "answer-node" }, sourceLayer: { clientKey: "answer-layer" } };
+    const actions = [...root.actions, ...child.actions];
+    expect(resolveCompiledNodeDetailAction(actions, reference, root.nodes[0]).id).toBe("action:invoke");
+    expect(resolveCompiledNodeDetailAction(actions, reference, child.nodes[0]).id).toBe("action:second-follow-up");
+    const collision = structuredClone(records[1].acceptedView.layers[0].actions.find(action => action.convertedFromInvoke));
+    collision.id = "action:ambiguous";
+    records[1].acceptedView.layers[0].actions.push(collision);
+    expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "duplicate_action_client_key" }));
+  });
+  it("retains V2 visual assets in V3", () => {
+    const records = assetFixtureJsonl().jsonl.trimEnd().split("\n").map(JSON.parse);
+    records[0].exportVersion = 3;
+    expect(parsePublicSnapshot(recordsJsonl(records)).assetContents).toHaveLength(1);
+  });
+});
+
+it("V3 root reference backlinks preserve nonroot mixed-arrival and expansion-cycle guards", () => {
+  const records = fixtureJsonl().trimEnd().split("\n").map(JSON.parse);
+  records[0].exportVersion = 3;
+  const layers = records[1].acceptedView.layers;
+  layers[2].actions.push(action("action:back", "node:related", "layer:root", "reference", "layer:related"));
+  expect(() => parsePublicSnapshot(recordsJsonl(records))).not.toThrow();
+  for (const version of [1, 2]) {
+    const older = structuredClone(records);
+    older[0].exportVersion = version;
+    expect(() => parsePublicSnapshot(recordsJsonl(older))).toThrow(expect.objectContaining({ code: "mixed_target_relations" }));
+  }
+  const cycle = structuredClone(records);
+  cycle[1].acceptedView.layers[0].actions.push(action("action:cycle-root", "node:root", "layer:root", "expand", "layer:root"));
+  expect(() => parsePublicSnapshot(recordsJsonl(cycle))).toThrow(expect.objectContaining({ code: "expand_cycle" }));
+  layers[2].actions.at(-1).targetLayerId = "layer:nested";
+  expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "mixed_target_relations" }));
 });

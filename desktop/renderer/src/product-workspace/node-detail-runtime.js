@@ -323,8 +323,8 @@ export function isResolvedInvokeAction(action) {
   return action?.kind === "navigate"
     && action.relation === "expand"
     && action.state === "accepted"
-    && Number.isSafeInteger(action.resolvedInvokeInteractionId)
-    && action.resolvedInvokeInteractionId > 0
+    && ((Number.isSafeInteger(action.resolvedInvokeInteractionId)
+      && action.resolvedInvokeInteractionId > 0) || action.convertedFromInvoke === true)
     && action.targetLayerId != null
     && action.interactionText == null;
 }

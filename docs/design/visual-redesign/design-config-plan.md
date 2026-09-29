@@ -324,7 +324,7 @@ RELAYER_DESIGN (or the id in designs/default)
 ```
 idea (3 colours / a reel)
   → docs/design/palette-engine/engine.mjs
-  → node scripts/design/import-palette.mjs --into designs/lab/x.json   # copies the default config, writes the palette block
+  → node scripts/design/import-palette.mjs <tokens.mjs> --structure sticker --name "X" > designs/lab/x.json   # prototype TOKENS + FAMILIES → a config
 edit designs/lab/x.json                                    # palette, or overrides of structure tokens
 node scripts/design/validate.mjs designs/lab/x.json        # the exact failing pairs to hand-tune
 RELAYER_DESIGN=designs/lab/x.json npm run prepare:renderer # then reload the running app (first time: npm run desktop:dev)
