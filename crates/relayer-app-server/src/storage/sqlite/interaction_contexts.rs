@@ -164,8 +164,10 @@ impl SqliteProductStore {
         }
 
         if enforce_single_active_interaction {
-            let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM interactions WHERE thread_id=?1 AND completion_status IN ('not_started','running','submitted'))")
-                .bind(thread_id.value()).fetch_one(&mut *tx).await?;
+            let active: bool = sqlx::query_scalar(super::HUMAN_TURN_IN_PROGRESS)
+                .bind(thread_id.value())
+                .fetch_one(&mut *tx)
+                .await?;
             if active {
                 return Err(StorageError::Catalog(
                     crate::product::CatalogError::invalid(
@@ -224,9 +226,13 @@ impl SqliteProductStore {
         };
         let model_selection = match model_selection {
             Some(value) => Some(value.clone()),
-            None => sqlx::query("SELECT model_provider_id,provider_model_id,model_family_id FROM interactions WHERE thread_id=?1 ORDER BY sequence DESC LIMIT 1")
-                .bind(thread_id.value()).fetch_optional(&mut *tx).await?
-                .map(|row| super::interactions::interaction_model_selection_from_row(&row, 0, 1, 2)).transpose()?.flatten(),
+            None => sqlx::query(super::LATEST_HUMAN_TURN_MODEL)
+                .bind(thread_id.value())
+                .fetch_optional(&mut *tx)
+                .await?
+                .map(|row| super::interactions::interaction_model_selection_from_row(&row, 0, 1, 2))
+                .transpose()?
+                .flatten(),
         };
         if let Some(selection) = model_selection.as_ref() {
             let command = ValidateModelSelectionCommand {

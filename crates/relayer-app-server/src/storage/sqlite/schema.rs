@@ -214,6 +214,8 @@ const ACTION_INVOCATION_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("created_at", "TEXT", true, 0),
     ("graph_lease_required", "INTEGER", true, 0),
     ("authoritative", "INTEGER", true, 0),
+    ("agent_invoked", "INTEGER", true, 0),
+    ("graph_failure_pending", "INTEGER", true, 0),
 ];
 const COMPLETION_EXECUTION_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("interaction_id", "INTEGER", true, 1),

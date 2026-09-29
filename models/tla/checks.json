@@ -14,17 +14,17 @@
     "completion-today": {
       "Launchers": "{1, 2}",
       "MaxRev": "3",
-      "ValidFailReasons": "{\"provider_exited_without_return\", \"application_restart\", \"execution\", \"provider_start_failed\", \"provider_attachment_persist_failed\", \"graph_observation_failed\", \"model_unavailable\"}",
+      "ValidFailReasons": "{\"provider_exited_without_return\", \"application_restart\", \"execution\", \"provider_start_failed\", \"provider_attachment_persist_failed\", \"graph_observation_failed\", \"capability_activation_failed\", \"model_unavailable\"}",
       "ObserveTimesOut": "FALSE",
       "CleanExitIsChecked": "TRUE",
-      "ActivationFailureSettlesGraph": "FALSE",
+      "ActivationFailureSettlesGraph": "TRUE",
       "TerminalReadSettlesCleanup": "TRUE",
       "ChildAdmission": "TRUE"
     },
     "completion-fixed": {
       "Launchers": "{1, 2}",
       "MaxRev": "3",
-      "ValidFailReasons": "{\"provider_exited_without_return\", \"application_restart\", \"execution\", \"provider_start_failed\", \"provider_attachment_persist_failed\", \"graph_observation_failed\", \"model_unavailable\"}",
+      "ValidFailReasons": "{\"provider_exited_without_return\", \"application_restart\", \"execution\", \"provider_start_failed\", \"provider_attachment_persist_failed\", \"graph_observation_failed\", \"capability_activation_failed\", \"model_unavailable\"}",
       "ObserveTimesOut": "FALSE",
       "CleanExitIsChecked": "TRUE",
       "ActivationFailureSettlesGraph": "TRUE",
@@ -195,6 +195,16 @@
       "SupersededCancelWipes": "TRUE",
       "AdoptTracksLostWrites": "TRUE"
     },
+    "launch-today": {
+      "Launchers": "{1, 2}",
+      "MaxRestarts": "2",
+      "ActivationFailsGraph": "TRUE",
+      "StartupFailsUnlaunched": "TRUE",
+      "PrepareCanBeAmbiguous": "TRUE",
+      "RefusedLaunchFailsChild": "TRUE",
+      "ChildrenOutsideRootGate": "TRUE",
+      "ProductLeavesChildren": "TRUE"
+    },
     "readiness-repair-today": {
       "Providers": "{chatgpt, openrouter}",
       "Evals": "{e1, e2}",
@@ -312,10 +322,24 @@
         "TypeOK",
         "SettledExecutionAgreesWithGraph"
       ],
+      "expect": "pass",
+      "finding": "A failed activation fails the child in both stores through the launch-failure cleanup (fixed; was: it settled the execution row while the graph current stayed active)."
+    },
+    {
+      "id": "completion-activation-failure-reverted",
+      "module": "CompletionCurrent",
+      "preset": "completion-today",
+      "constants": {
+        "ActivationFailureSettlesGraph": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SettledExecutionAgreesWithGraph"
+      ],
       "expect": {
         "violated": "SettledExecutionAgreesWithGraph"
       },
-      "finding": "A failed activation settles the execution row while the graph current stays active."
+      "finding": "Without the fix, a failed activation settles the execution row while the graph current stays active."
     },
     {
       "id": "completion-clean-exit",
@@ -1400,6 +1424,180 @@
         "violated": "AdapterOnlyForDefinition"
       },
       "finding": "Registering the catalog adapter before the commit gives a provider an adapter before its definition exists."
+    },
+    {
+      "id": "launch-safety",
+      "module": "CompletionLaunchWindows",
+      "preset": "launch-today",
+      "invariants": [
+        "TypeOK",
+        "SettledRowIsTerminal",
+        "StartupFailsActiveChildren",
+        "SendNeverWaitsOnChild",
+        "OneHumanTurn",
+        "ProductLeavesChildAlone"
+      ],
+      "expect": "pass",
+      "finding": "With every fix, a settled execution row has a terminal current and product row, and startup leaves no interrupted child active. The user can send whenever no human turn runs, two human turns never run at once, and the product neither stops nor runs an agent's child."
+    },
+    {
+      "id": "launch-liveness",
+      "module": "CompletionLaunchWindows",
+      "preset": "launch-today",
+      "constants": {
+        "MaxRestarts": "0"
+      },
+      "fair": true,
+      "properties": [
+        "ChildCurrentSettles",
+        "ChildRowSettles"
+      ],
+      "expect": "pass",
+      "finding": "Without a restart, every child the parent launched ends in the graph, and its product row ends once its parent is done."
+    },
+    {
+      "id": "launch-restart-liveness",
+      "module": "CompletionLaunchWindows",
+      "preset": "launch-today",
+      "fair": true,
+      "properties": [
+        "RecordedChildCurrentSettles",
+        "ChildRowSettles"
+      ],
+      "expect": "pass",
+      "finding": "Across up to two restarts, every child the product recorded ends in the graph and in the product."
+    },
+    {
+      "id": "launch-graph-orphan",
+      "module": "CompletionLaunchWindows",
+      "preset": "launch-today",
+      "constants": {
+        "MaxRestarts": "1"
+      },
+      "fair": true,
+      "properties": [
+        "ChildCurrentSettles"
+      ],
+      "expect": {
+        "violated": "ChildCurrentSettles"
+      },
+      "finding": "Known open: a crash after the parent's prepareComplete but before the broker's first product write leaves a graph-only child whose current stays active; no product row names it, so startup cannot fail it."
+    },
+    {
+      "id": "launch-activation-reverted",
+      "module": "CompletionLaunchWindows",
+      "preset": "launch-today",
+      "constants": {
+        "ActivationFailsGraph": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SettledRowIsTerminal"
+      ],
+      "expect": {
+        "violated": "SettledRowIsTerminal"
+      },
+      "finding": "Without the activation fix, a failed activation settles the execution row while the current stays active and the product row stays submitted."
+    },
+    {
+      "id": "launch-activation-liveness-reverted",
+      "module": "CompletionLaunchWindows",
+      "preset": "launch-today",
+      "constants": {
+        "MaxRestarts": "0",
+        "ActivationFailsGraph": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "ChildCurrentSettles"
+      ],
+      "expect": {
+        "violated": "ChildCurrentSettles"
+      },
+      "finding": "Without the activation fix, an awaiting parent never sees the child end: nothing runs it, and a retry answers 200 with no launch."
+    },
+    {
+      "id": "launch-restart-reverted",
+      "module": "CompletionLaunchWindows",
+      "preset": "launch-today",
+      "constants": {
+        "StartupFailsUnlaunched": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "StartupFailsActiveChildren"
+      ],
+      "expect": {
+        "violated": "StartupFailsActiveChildren"
+      },
+      "finding": "Without the startup fix, a restart between the child row and `launching` re-binds the child but leaves its current active."
+    },
+    {
+      "id": "launch-refused-prepare-reverted",
+      "module": "CompletionLaunchWindows",
+      "preset": "launch-today",
+      "constants": {
+        "MaxRestarts": "0",
+        "RefusedLaunchFailsChild": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "ChildCurrentSettles"
+      ],
+      "expect": {
+        "violated": "ChildCurrentSettles"
+      },
+      "finding": "Without the refused-launch cleanup, an ambiguous preparation leaves the claimed child submitted and unbound with its current active."
+    },
+    {
+      "id": "launch-child-row-reverted",
+      "module": "CompletionLaunchWindows",
+      "preset": "launch-today",
+      "constants": {
+        "MaxRestarts": "0",
+        "RefusedLaunchFailsChild": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "ChildRowSettles"
+      ],
+      "expect": {
+        "violated": "ChildRowSettles"
+      },
+      "finding": "Without the refused-launch cleanup, the claimed child's product row stays submitted after its parent is done, so its turn never ends."
+    },
+    {
+      "id": "launch-child-gate-reverted",
+      "module": "CompletionLaunchWindows",
+      "preset": "launch-today",
+      "constants": {
+        "ChildrenOutsideRootGate": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "SendNeverWaitsOnChild",
+        "OneHumanTurn"
+      ],
+      "expect": {
+        "violated": "SendNeverWaitsOnChild"
+      },
+      "finding": "Before the decision, a child that still runs after its parent is done refuses the user's next message (the gate counted it as a turn)."
+    },
+    {
+      "id": "launch-product-child-reverted",
+      "module": "CompletionLaunchWindows",
+      "preset": "launch-today",
+      "constants": {
+        "ProductLeavesChildren": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ProductLeavesChildAlone"
+      ],
+      "expect": {
+        "violated": "ProductLeavesChildAlone"
+      },
+      "finding": "Before the decision, the product accepted a Stop for an agent's child, and a user's invoke of the delegate action ran the child on the product path."
     },
     {
       "id": "catalog-own-family",

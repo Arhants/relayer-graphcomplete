@@ -1720,6 +1720,47 @@ impl ProductService {
             .await?)
     }
 
+    /// See `SqliteProductStore::fail_unlaunched_recursive_child`.
+    pub(crate) async fn fail_unlaunched_recursive_child(
+        &self,
+        interaction_id: InteractionId,
+        graph_completion_id: i64,
+        harness_configuration_name: &str,
+        safe_reason: &str,
+        graph_pending: bool,
+        timestamp: &str,
+    ) -> Result<bool, ProductError> {
+        Ok(self
+            .storage
+            .fail_unlaunched_recursive_child(
+                interaction_id,
+                graph_completion_id,
+                harness_configuration_name,
+                safe_reason,
+                false,
+                graph_pending,
+                timestamp,
+            )
+            .await?)
+    }
+
+    pub(crate) async fn confirm_refused_child_graph_failure(
+        &self,
+        interaction_id: InteractionId,
+    ) -> Result<(), ProductError> {
+        Ok(self
+            .storage
+            .confirm_refused_child_graph_failure(interaction_id)
+            .await?)
+    }
+
+    pub(crate) async fn is_agent_invoked_child(
+        &self,
+        interaction_id: InteractionId,
+    ) -> Result<bool, ProductError> {
+        Ok(self.storage.is_agent_invoked_child(interaction_id).await?)
+    }
+
     pub(crate) async fn reserve_completion_execution(
         &self,
         binding: crate::storage::CompletionExecutionBinding<'_>,
