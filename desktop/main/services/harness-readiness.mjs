@@ -71,6 +71,57 @@ export function startPostUpgradeReadiness({
   });
 }
 
+// The post-upgrade evaluation as Desktop and Eval run it. It recovers failed managed providers
+// through the composition, forwarding the stop signal, so no recovery outlives a stop.
+//
+// confirmQuit(confirm) stops the evaluation before the quit guard looks, so no preparation
+// starts behind its check; if the user declines the quit, an evaluation that had not
+// finished starts again. stopForShutdown(cancel) stops it, cancels installer operations it
+// started, and waits for it to settle.
+export function createPostUpgradeReadiness({
+  readiness,
+  updatesDue,
+  recipeUpdates = [],
+  composition,
+  recipeForAdapter,
+  onError = () => {},
+}) {
+  let current = null;
+  let finished = true;
+  function start() {
+    const run = startPostUpgradeReadiness({
+      readiness,
+      updatesDue,
+      recipeUpdates,
+      routes: () => composition.readinessRoutes(),
+      repairProviders: (recipeIds, { signal } = {}) => (
+        composition.repairFailedActivations(recipeIds, { recipeForAdapter, signal })
+      ),
+      onError,
+    });
+    current = run;
+    finished = false;
+    run.evaluation.finally(() => { if (current === run) finished = true; });
+    return run;
+  }
+  return Object.freeze({
+    start,
+    get evaluation() { return current?.evaluation ?? Promise.resolve(null); },
+    async confirmQuit(confirm) {
+      const unfinished = current !== null && !finished;
+      current?.stop();
+      const accepted = await confirm();
+      if (!accepted && unfinished) start();
+      return accepted;
+    },
+    async stopForShutdown(cancelInstallerOperations) {
+      current?.stop();
+      await cancelInstallerOperations?.();
+      await current?.evaluation;
+    },
+  });
+}
+
 export function createHarnessReadinessCoordinator({
   configurations,
   digestConfiguration,
@@ -149,6 +200,9 @@ export function createHarnessReadinessCoordinator({
         result = await checkers[configuration.implementation]({
           configuration,
           runtime,
+          // A stopped post-upgrade evaluation stops a checker still running, such as the
+          // Prime kernel probe, so it cannot hold shutdown.
+          ...(signal ? { signal } : {}),
         });
         if (result?.available !== true && result?.available !== false) {
           throw new Error("Harness readiness checker returned an invalid result.");
@@ -182,6 +236,8 @@ export function createHarnessReadinessCoordinator({
       return Object.freeze({ readyHarnessIds: [], routeResults: [] });
     }
     const publish = publication.catch(() => undefined).then(async () => {
+      // A stop that landed while this waited behind an earlier publication records nothing.
+      if (signal?.aborted) return [];
       const publishable = currentRouteResults.filter(({ harnessId }) => (
         harnessGenerations.get(harnessId) === currentGeneration
       ));

@@ -60,7 +60,7 @@ import {
 import { createDesktopUpdater, resolveUpdateChannel } from "./services/updater.mjs";
 import { createManagedRuntimeInstaller, runtimesChangedByActivation } from "./managed-runtimes/installer.mjs";
 import { createManagedRuntimeResolver, managedRecipeInstalled } from "./managed-runtimes/resolver.mjs";
-import { createHarnessReadinessCoordinator, startPostUpgradeReadiness } from "./services/harness-readiness.mjs";
+import { createHarnessReadinessCoordinator, createPostUpgradeReadiness } from "./services/harness-readiness.mjs";
 import { confirmManagedRuntimeQuit } from "./managed-runtimes/quit-guard.mjs";
 import { claimPrimaryDesktopInstance } from "./single-instance.mjs";
 import { createWindowFactory } from "./window.mjs";
@@ -360,17 +360,18 @@ if (primaryInstance) {
   let postUpgradeReadiness = null;
 
   // Quitting first stops the post-upgrade evaluation, so no preparation starts behind the
-  // quit guard's check; one already running is an installer operation the guard sees.
-  const confirmQuit = ({ fatal = false } = {}) => {
-    postUpgradeReadiness?.stop();
-    return confirmManagedRuntimeQuit({
-      installer: managedRuntimeInstaller,
-      dialog,
-      parent: mainWindow,
-      fatal,
-      ...(fatal ? { reason: new Error("Relayer is closing after a fatal service failure.") } : {}),
-    });
-  };
+  // quit guard's check; one already running is an installer operation the guard sees. If
+  // the user keeps downloading, an unfinished evaluation starts again.
+  const confirmManagedQuit = ({ fatal = false } = {}) => confirmManagedRuntimeQuit({
+    installer: managedRuntimeInstaller,
+    dialog,
+    parent: mainWindow,
+    fatal,
+    ...(fatal ? { reason: new Error("Relayer is closing after a fatal service failure.") } : {}),
+  });
+  const confirmQuit = (options) => (postUpgradeReadiness
+    ? postUpgradeReadiness.confirmQuit(() => confirmManagedQuit(options))
+    : confirmManagedQuit(options));
 
   const UPDATE_RESTART_SHUTDOWN_BUDGET_MS = 10_000;
 
@@ -395,9 +396,9 @@ if (primaryInstance) {
       updater.stopPolling();
       // No post-upgrade preparation outlives shutdown: stop the step, cancel any installer
       // operation it started, and let it settle before the services it uses close.
-      postUpgradeReadiness?.stop();
-      await managedRuntimeInstaller.cancelAll(new DOMException("Relayer is shutting down.", "AbortError"));
-      await postUpgradeReadiness?.evaluation;
+      await postUpgradeReadiness?.stopForShutdown(() => (
+        managedRuntimeInstaller.cancelAll(new DOMException("Relayer is shutting down.", "AbortError"))
+      ));
       try {
         electronMainErrorAdapter?.close();
       } catch (error) {
@@ -526,7 +527,7 @@ if (primaryInstance) {
             && runtime.environment !== null
             && typeof runtime.environment === "object",
         }),
-        "prime.agent": ({ runtime }) => checkPrimeManagedRuntime({ runtime }),
+        "prime.agent": ({ runtime, signal }) => checkPrimeManagedRuntime({ runtime, signal }),
       },
       // The app server's record is the only readiness record (PROV-006).
       publishAvailability: (updates) => productServer.publishHarnessReadiness(updates),
@@ -587,16 +588,15 @@ if (primaryInstance) {
     // #556: an upgrade that changed a route's configuration digest, or activated a new
     // runtime recipe, gets one readiness evaluation through the recipe-update trigger. It
     // runs in the background, so startup's cheap path never waits for it.
-    postUpgradeReadiness = startPostUpgradeReadiness({
+    postUpgradeReadiness = createPostUpgradeReadiness({
       readiness,
       updatesDue: () => productServer.harnessReadinessUpdatesDue(),
       recipeUpdates: activation.recipeUpdates,
-      routes: () => providerComposition.readinessRoutes(),
-      repairProviders: (recipeIds) => providerComposition.repairFailedActivations(recipeIds, {
-        recipeForAdapter: (adapterId) => managedRuntimeRequirementForAdapter(adapterId).recipeId,
-      }),
+      composition: providerComposition,
+      recipeForAdapter: (adapterId) => managedRuntimeRequirementForAdapter(adapterId).recipeId,
       onError: (error) => console.error("Post-upgrade harness readiness evaluation failed:", error),
     });
+    postUpgradeReadiness.start();
     const conversationExporter = createConversationExportService({
       dialog,
       getWindow: () => mainWindow,

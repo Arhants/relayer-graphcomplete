@@ -1149,15 +1149,11 @@ export function createManagedRuntimeInstaller({
           && (previous?.recipeId !== receipt.recipeId || previous?.recipeDigest !== receipt.recipeDigest)) {
           recipeUpdates.push(receipt.recipeId);
         }
-        // Any activation that replaced what the runtime ran changes it, including a frozen
-        // schema-v1 receipt an older Desktop staged, which has no recipe identity.
-        if (previous?.installation !== receipt.installation
-          && (previous?.schemaVersion !== receipt.schemaVersion
-            || previous?.recipeId !== receipt.recipeId
-            || previous?.recipeDigest !== receipt.recipeDigest
-            || !sameArtifacts(previous, receipt))) {
-          changedRuntimeIds.push(runtimeId);
-        }
+        // Any activation that replaced the installation the runtime ran changes it: a new
+        // recipe, a frozen schema-v1 receipt an older Desktop staged, or the same recipe
+        // rebuilt because the active installation was unusable. Activating the installation
+        // it already ran keeps its installation id and changes nothing.
+        if (previous?.installation !== receipt.installation) changedRuntimeIds.push(runtimeId);
       } catch (error) {
         failures.push(Object.freeze({ runtimeId, error }));
         await discardFailedPending(appVersion, runtimeId).catch(() => undefined);
