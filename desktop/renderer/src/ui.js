@@ -2,11 +2,21 @@ export const $ = (selector, root = document) => root.querySelector(selector);
 export const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
 let toastTimer;
+let appearance = "dark";
+let systemAppearance;
 
+// Light and Dark apply directly. System follows the operating system in place.
 export function applyAppearance(value) {
-  const appearance = value === "light" ? "light" : "dark";
-  document.documentElement.dataset.theme = appearance;
-  localStorage.setItem("relayerAppearance", appearance);
+  appearance = ["system", "light"].includes(value) ? value : "dark";
+  if (!systemAppearance) {
+    systemAppearance = matchMedia("(prefers-color-scheme: light)");
+    systemAppearance.addEventListener("change", () => {
+      if (appearance === "system") document.documentElement.dataset.theme = systemAppearance.matches ? "light" : "dark";
+    });
+  }
+  const resolved = appearance === "system" ? (systemAppearance.matches ? "light" : "dark") : appearance;
+  document.documentElement.dataset.theme = resolved;
+  localStorage.setItem("relayerAppearance", resolved);
   $("#appearanceSelect").value = appearance;
 }
 

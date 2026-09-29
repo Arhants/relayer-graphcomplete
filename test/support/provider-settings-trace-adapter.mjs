@@ -132,8 +132,6 @@ export class ProviderSettingsWorld {
       providerDefinitions: this.service,
       presentWindow: () => {},
       getWindow: () => null,
-      getAppearance: () => "dark",
-      setAppearance: () => {},
     });
   }
 
