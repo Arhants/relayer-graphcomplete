@@ -1,0 +1,27 @@
+[
+  {
+    "path": "README.md",
+    "byteLength": 1400,
+    "sha256": "83c6196e06cc194c6a72ed40caed6e9a7af28335fff4fbfa90b57386eb7c0d4d"
+  },
+  {
+    "path": "build.txt",
+    "byteLength": 1940,
+    "sha256": "a9753f37099cfe4a2c4b574ee47b2f74131c438ab53d3d0258f388427900c9ef"
+  },
+  {
+    "path": "full-check.txt",
+    "byteLength": 106929,
+    "sha256": "7ebc09e0781135cd2696d0ffa1b402cc6e7a088b1ab6d73bf23587aff9ec4b0f"
+  },
+  {
+    "path": "review.json",
+    "byteLength": 1206,
+    "sha256": "6c534841a3cb3a870e4a407aef0056d55e1c173d991cf8da794c074ef049e05b"
+  },
+  {
+    "path": "tested-source.json",
+    "byteLength": 46244,
+    "sha256": "72b233849c9a10ac137093048e6fc5cf56179d8ae2ce955cb10e959fcb30c385"
+  }
+]

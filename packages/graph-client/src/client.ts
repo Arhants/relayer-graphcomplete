@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isProxy } from "node:util/types";
-import { DetailCompilationError, NodeDetailAuthoring, beginNodeDetailAuthoringFinalization, cancelNodeDetailAuthoringFinalization, compileAuthenticatedNodeDetail, finalizedNodeDetailAuthoring, freezeNodeDetailAuthoring, isNodeDetailAuthoringCleared, isNodeDetailAuthoringOwner, snapshotAuthoredNodeDetailProgram, snapshotRetainedCompiledNodeDetail, type AuthenticatedNodeDetailOwnerSnapshot, type AuthenticatedNodeDetailProgramSnapshot, type CompiledNodeDetail } from "./detail.js";
+import { DetailCompilationError, NodeDetailAuthoring, bindNodeDetailOwner, beginNodeDetailAuthoringFinalization, cancelNodeDetailAuthoringFinalization, compileAuthenticatedNodeDetail, compileAttachedNodeDetail, finalizedNodeDetailAuthoring, freezeNodeDetailAuthoring, isNodeDetailAuthoringCleared, isNodeDetailAuthoringOwner, snapshotAuthoredNodeDetailProgram, snapshotRetainedCompiledNodeDetail, type AuthenticatedNodeDetailOwnerSnapshot, type AuthenticatedNodeDetailProgramSnapshot, type CompiledNodeDetail } from "./detail.js";
 import { isRelayerIconName } from "./icons.js";
 import { applyAcceptedNodeResponse } from "./node-response.js";
 import { EdgeObject, LayerObject, NodeObject, actionId, edgeId, layerId, nodeId, type ActionObject, type ActionReference, type EdgeReference, type LayerReference, type NodeReference } from "./objects.js";
@@ -38,6 +38,21 @@ export class RelayerGraphClient {
     return body.node;
   }
 
+  async getNodePresentation(reference: NodeReference): Promise<{ node: GraphNode; revision: number; actions: readonly GraphAction[] }> {
+    return this.request(`/api/graph/nodes/${nodeId(reference)}/presentation`);
+  }
+
+  /** Stage a complete presentation only; the builder's title/detail never edit the persistent node. */
+  async replaceNodePresentation(reference: NodeReference, expectedRevision: number, presentation: NodeObject): Promise<void> {
+    this.bindSubmissionNode(presentation);
+    const envelope = materializeNodeSubmissionEnvelope(presentation);
+    const program = snapshotAuthoredNodeDetailProgram(envelope.detailAuthoring, envelope.owner);
+    const authoredDetail = compileAttachedNodeDetail(program, await this.resolveDetailAssets(program));
+    await this.request(`/api/graph/nodes/${nodeId(reference)}/presentation`, {
+      method: "POST", body: JSON.stringify({ expectedRevision, authoredDetail }),
+    });
+  }
+
   async getNeighbors(reference: NodeReference): Promise<readonly GraphNode[]> {
     const body = await this.request<{ nodes: GraphNode[] }>(`/api/graph/nodes/${nodeId(reference)}/neighbors`);
     return body.nodes;
@@ -51,7 +66,21 @@ export class RelayerGraphClient {
     return this.request<ResolvedPersonalPresentation>("/api/graph/personal-presentation");
   }
 
+  /** Bind a replacement object before reusing an existing same-node HTML template. */
+  bindNode(node: NodeObject): NodeObject {
+    const envelope = materializeNodeSubmissionEnvelope(node);
+    bindNodeDetailOwner(envelope.detailAuthoring, node, this.capability.url, this.capability.nodeId);
+    return node;
+  }
+
+  private bindSubmissionNode(node: NodeObject): void {
+    const envelope = this.#submissionEnvelopes.get(node);
+    if (envelope === undefined) this.bindNode(node);
+    else bindNodeDetailOwner(envelope.detailAuthoring, node, this.capability.url, this.capability.nodeId, envelope.clientKey);
+  }
+
   submitNode(node: NodeObject): Promise<GraphNode> {
+    try { this.bindSubmissionNode(node); } catch (error) { return Promise.reject(error); }
     const existing = this.#submittedNodes.get(node);
     if (existing !== undefined) return existing;
     const submission = deferred<GraphNode>();
@@ -117,6 +146,7 @@ export class RelayerGraphClient {
   }
 
   checkpointNodeDetail(node: NodeObject): Promise<CompiledNodeDetail> {
+    try { this.bindSubmissionNode(node); } catch (error) { return Promise.reject(error); }
     const accepted = this.#acceptedDetails.get(node);
     if (accepted !== undefined) return accepted;
     const finalized = this.#submittedDetails.get(node);

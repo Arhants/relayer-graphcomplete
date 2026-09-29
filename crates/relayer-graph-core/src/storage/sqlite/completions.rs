@@ -7,6 +7,29 @@ pub(crate) struct CompletionTable<'connection> {
 }
 
 impl<'connection> CompletionTable<'connection> {
+    pub(crate) async fn resolved_invoke_roots(
+        &mut self,
+        completion_ids: &[NodeId],
+    ) -> Result<Vec<NodeId>, GraphError> {
+        let ids: Vec<i64> = completion_ids.iter().map(|id| id.value()).collect();
+        let rows: Vec<i64> = sqlx::query_scalar(
+            "SELECT DISTINCT c.interaction_node_id FROM json_each(?1) requested
+             JOIN completions c ON c.interaction_node_id=requested.value
+             JOIN nodes owner ON owner.id=c.interaction_node_id
+             JOIN actions root ON root.id=c.root_action_id
+             JOIN layer_actions membership ON membership.layer_id=root.target_layer_id
+             JOIN invoke_resolution_transitions receipt ON receipt.action_id=membership.action_id
+             WHERE NOT EXISTS(SELECT 1 FROM graph_imports imported WHERE imported.thread_id=owner.thread_id)")
+            .bind(serde_json::to_string(&ids).map_err(|error|GraphError::Internal(error.to_string()))?)
+            .fetch_all(&mut *self.connection).await?;
+        rows.into_iter()
+            .map(|id| {
+                NodeId::new(id)
+                    .ok_or_else(|| GraphError::Internal("invalid completion identity".into()))
+            })
+            .collect()
+    }
+
     pub(crate) fn new(connection: &'connection mut SqliteConnection) -> Self {
         Self { connection }
     }

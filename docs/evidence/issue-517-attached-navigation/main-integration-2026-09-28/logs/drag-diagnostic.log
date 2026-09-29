@@ -1,0 +1,65 @@
+Starting isolated Electron first-message smoke test...
+Electron application ready.
+Error occurred in handler for 'relayer:layer-selections-read': Error: No handler registered for 'relayer:layer-selections-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:workspace-layout-read': Error: No handler registered for 'relayer:workspace-layout-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-read': Error: No handler registered for 'relayer:layer-selections-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:workspace-layout-read': Error: No handler registered for 'relayer:workspace-layout-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+[DEBUG-drag560] {"dragPoint":{"x":421,"y":437},"before":{"innerWidth":1420,"inspectorOpen":false,"inspector":{"left":0,"right":0,"width":0},"stage":{"left":244,"right":1408,"top":134,"bottom":837,"width":1164},"nodes":[{"id":"40","left":291.99505615234375,"right":550.9424438476562,"top":414.4420166015625,"bottom":519.8367919921875,"worldX":223.8,"worldY":298,"canonicalWorldX":223.8,"canonicalWorldY":298,"layoutSource":"authored"},{"id":"41","left":696.5263061523438,"right":955.4736938476562,"top":414.4420166015625,"bottom":519.8367919921875,"worldX":480,"worldY":298,"canonicalWorldX":480,"canonicalWorldY":298,"layoutSource":"authored"},{"id":"42","left":1101.0498046875,"right":1359.9970703125,"top":414.4420166015625,"bottom":519.8367919921875,"worldX":736.1999999999999,"worldY":298,"canonicalWorldX":736.1999999999999,"canonicalWorldY":298,"layoutSource":"authored"}]},"after":{"innerWidth":1420,"inspectorOpen":true,"inspector":{"left":832,"right":1408,"width":576},"stage":{"left":244,"right":820,"top":134,"bottom":837,"width":576},"nodes":[{"id":"40","left":291.9970703125,"right":408.3779296875,"top":453.56109619140625,"bottom":500.92950439453125,"worldX":223.8,"worldY":298,"canonicalWorldX":223.8,"canonicalWorldY":298,"layoutSource":"authored"},{"id":"41","left":473.8095703125,"right":590.1904296875,"top":453.56109619140625,"bottom":500.92950439453125,"worldX":480,"worldY":298,"canonicalWorldX":480,"canonicalWorldY":298,"layoutSource":"authored"},{"id":"42","left":655.6142578125,"right":771.9951171875,"top":453.56109619140625,"bottom":500.92950439453125,"worldX":736.1999999999999,"worldY":298,"canonicalWorldX":736.1999999999999,"canonicalWorldY":298,"layoutSource":"authored"}]},"events":[{"type":"pointerdown","x":421,"y":437,"buttons":1,"target":"svg","node":"40","inspectorOpen":false},{"type":"pointermove","x":445,"y":449,"buttons":0,"target":"DIV","node":"40","inspectorOpen":false},{"type":"pointerup","x":445,"y":449,"buttons":0,"target":"DIV","node":"40","inspectorOpen":false},{"type":"click","x":445,"y":449,"buttons":0,"target":"DIV","node":"40","inspectorOpen":false}]}
+Error: Dragging a Product graph node opened the inspector and refit the camera.
+    at run (file:///Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete/.relayer/pr560-drag-diagnostic.mjs:633:11)

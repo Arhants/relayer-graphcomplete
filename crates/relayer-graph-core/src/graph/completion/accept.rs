@@ -17,9 +17,27 @@ pub(crate) async fn finalize(
     scope: &InteractionScope,
     plan: &CompletionPlan,
 ) -> Result<(), GraphError> {
+    super::super::attached_navigation::publish(connection, scope).await?;
     if let Some(lease) = plan.lease {
+        let typed = crate::storage::sqlite::permissions::read(connection, scope.root_node_id)
+            .await?
+            .is_some_and(|snapshot| snapshot.enabled());
+        if typed {
+            crate::storage::sqlite::permissions::authorize(
+                connection,
+                scope,
+                &crate::InteractionPermission::InvokeResolve {
+                    action_id: lease.action_id,
+                },
+            )
+            .await?;
+        }
         ActionTable::new(&mut *connection)
-            .resolve_leased_invoke(lease.action_id, plan.root_layer_id()?)
+            .resolve_leased_invoke(
+                lease.action_id,
+                plan.root_layer_id()?,
+                typed.then_some(scope.root_node_id),
+            )
             .await?;
     }
     CompletionTable::new(connection)
@@ -53,9 +71,26 @@ pub(crate) async fn publish(
             .publish_owned(*action, scope.root_node_id, revision)
             .await?;
     }
+    let typed = crate::storage::sqlite::permissions::read(connection, scope.root_node_id)
+        .await?
+        .is_some_and(|snapshot| snapshot.enabled());
     for (layer, actions) in &plan.layer_actions {
+        let mut actions = actions.clone();
+        if typed {
+            // A validated invoke belongs to its node, including occurrences in
+            // other layers authored by this same completion. Do not broaden
+            // authored navigate projection without its separate cycle checks.
+            let invokes = ActionTable::new(&mut *connection)
+                .accepted_owned_invokes_in_layer(*layer, scope.root_node_id)
+                .await?;
+            for id in invokes {
+                if plan.actions.contains(&id) && !actions.contains(&id) {
+                    actions.push(id);
+                }
+            }
+        }
         LayerTable::new(&mut *connection)
-            .snapshot_actions(*layer, scope.root_node_id, actions)
+            .snapshot_actions(*layer, scope.root_node_id, &actions)
             .await?;
     }
     Ok(())

@@ -6,6 +6,11 @@ import { lstat, mkdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { RELAYER_ICON_NAMES, type GraphCapability } from "@relayer/graph-client";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
+import {
+  parseNativeSessionResetReason,
+  reportNativeSessionReset,
+  type NativeSessionResetReason,
+} from "../native-session-reset.js";
 import { MAX_HARNESS_APPROVAL_TEXT_LENGTH } from "../approval.js";
 import { INTERACTION_INPUT_GUIDANCE, renderInteractionInput } from "../interaction-input.js";
 import { HarnessApprovalRequestTerminatedError } from "../approval-coordinator.js";
@@ -98,8 +103,24 @@ interface PrimeAgentSessionManagerFactory {
   open(path: string): unknown;
 }
 
+interface PrimeRootTurn {
+  readonly forceSignal: AbortSignal | undefined;
+  /** Set once the turn is bound to the session its conversation runs on. */
+  session: PrimeAgentSession | undefined;
+}
+
+/** One native session's own presentation instructions, appended to its system prompt. */
+interface PrimeSessionInstructions {
+  current: string;
+  /** False when the installed package gave the session no resource loader to scope them to. */
+  readonly scoped: boolean;
+}
+
 interface PrimeAgentSessionHandle {
   readonly session: PrimeAgentSession;
+  readonly instructions: PrimeSessionInstructions;
+  /** The session holds a root conversation: it was restored from a file, or a root turn ran on it. */
+  conversed: boolean;
   readonly nativeDispose: () => void;
   disposeInProgress: boolean;
   disposeCompleted: boolean;
@@ -450,6 +471,7 @@ export class PrimeAgentHarness implements Harness {
   private forceShutdownStarted = false;
   private gracefullyDisposed = false;
   private gracefulDisposePromise: Promise<void> | undefined;
+  private rootHistoryAvailable = false;
   private readonly invokedSessions = new Set<PrimeAgentSessionLifecycle>();
   private readonly pendingInvokedSessions = new Set<Promise<PrimeAgentSessionLifecycle>>();
   private sessionHandle: PrimeAgentSessionHandle | undefined;
@@ -464,7 +486,13 @@ export class PrimeAgentHarness implements Harness {
    * never settle; a late result from an older generation is discarded rather than installed.
    */
   private rootSessionGeneration = 0;
-  private readonly presentationInstructions: { current: string };
+  /**
+   * Root turns in flight, with the session each one's conversation runs on once bound. Force
+   * shutdown forgets the root session only when a bound turn's conversation runs on it. A turn
+   * still acquiring its session wrote nothing, and a turn already force-stopped dropped its
+   * session then, even while its native work has not settled.
+   */
+  private readonly activeRootTurns = new Set<PrimeRootTurn>();
 
   private constructor(
     private readonly context: HarnessFactoryContext,
@@ -472,16 +500,16 @@ export class PrimeAgentHarness implements Harness {
     private readonly permission: PrimeAgentPermission,
     private readonly workspaceRoot: string,
     private readonly createKernelBoundary: PrimeAgentDependencies["createKernelBoundary"],
-    private readonly createSession: (sessionManager: unknown) => Promise<PrimeAgentSession>,
+    private readonly createSession: (sessionManager: unknown, instructions: string) => Promise<PrimeAgentSessionHandle>,
     private readonly createSessionManager: () => unknown,
     private resumableSessionFile: string | undefined,
     savedPresentationVersionId: number | null | undefined,
-    presentationInstructions: { current: string },
+    private pendingRootReset: NativeSessionResetReason | undefined,
     sessionHandle?: PrimeAgentSessionHandle,
   ) {
     this.sessionHandle = sessionHandle;
+    this.rootHistoryAvailable = resumableSessionFile !== undefined;
     this.sessionPersonalPresentationVersionId = savedPresentationVersionId;
-    this.presentationInstructions = presentationInstructions;
   }
 
   static async create(context: HarnessFactoryContext, dependencies: PrimeAgentDependencies = {}): Promise<PrimeAgentHarness> {
@@ -537,7 +565,6 @@ export class PrimeAgentHarness implements Harness {
       && (savedPresentationVersionId === null || typeof savedPresentationVersionId === "number")
       ? savedPresentationVersionId
       : undefined;
-    const presentationInstructions = { current: "" };
     const managedAgentDir = managedRuntime ? join(managedRuntime.privateStateRoot, "agent") : undefined;
     const managedSessionDir = managedRuntime ? join(managedRuntime.privateStateRoot, "sessions") : undefined;
     const services = await primeAgent.createAgentSessionServices({
@@ -560,17 +587,18 @@ export class PrimeAgentHarness implements Harness {
             } catch { return false; }
           }),
         }),
-        appendSystemPromptOverride: (base: string[]) => presentationInstructions.current === ""
-          ? [...base]
-          : [...base, presentationInstructions.current],
       },
     });
     const prewarmIpythonKernel = permission.profile === "full"
       ? configuration.prewarmIpythonKernel
       : false;
-    const createSession = async (sessionManager: unknown): Promise<PrimeAgentSession> => {
+    // The services, and so their resource loader, are shared by every session. Each session
+    // reads its own presentation instructions through its own view of that loader, so a root
+    // rotation or an invoked child never builds from another interaction's instructions.
+    const createSession = async (sessionManager: unknown, initialInstructions: string): Promise<PrimeAgentSessionHandle> => {
+      const scoped = sessionScopedServices(services, initialInstructions);
       const { session } = await primeAgent.createAgentSessionFromServices({
-        services,
+        services: scoped.services,
         sessionManager,
         tools: ["ipython"],
         hostRequestHandlers: {
@@ -600,7 +628,7 @@ export class PrimeAgentHarness implements Harness {
         session.dispose();
         throw new Error("Installed Prime Agent package does not expose recursive quiescence");
       }
-      return session;
+      return primeSessionHandle(session, scoped.instructions);
     };
     const confinedSavedSessionFile = managedSessionDir === undefined
       ? (typeof savedSessionFile === "string" ? savedSessionFile : undefined)
@@ -610,13 +638,19 @@ export class PrimeAgentHarness implements Harness {
     const restorableSessionFile = parsedSavedPresentationVersionId !== undefined
       ? confinedSavedSessionFile
       : undefined;
+    if (typeof savedSessionFile === "string" && restorableSessionFile === undefined) throw new Error("Legacy native history cannot be safely restored; its saved state was preserved.");
     const createSessionManager = () => managedSessionDir === undefined
       ? primeAgent.SessionManager.create(workspaceRoot)
       : primeAgent.SessionManager.create(workspaceRoot, managedSessionDir);
     const initialSessionManager = restorableSessionFile === undefined
       ? createSessionManager()
       : primeAgent.SessionManager.open(restorableSessionFile);
-    const initialSession = primeSessionHandle(await createSession(initialSessionManager));
+    // A restored session learns its instructions from its first root turn, which reloads it.
+    const initialSession = await createSession(initialSessionManager, "");
+    initialSession.conversed = restorableSessionFile !== undefined;
+    const pendingRootReset = typeof savedSessionFile === "string" && restorableSessionFile === undefined
+      ? "session_unavailable"
+      : parseNativeSessionResetReason(context.savedState?.primeRootResetReason);
     return new PrimeAgentHarness(
       context,
       primeAgent,
@@ -627,7 +661,7 @@ export class PrimeAgentHarness implements Harness {
       createSessionManager,
       restorableSessionFile,
       restorableSessionFile === undefined ? undefined : parsedSavedPresentationVersionId,
-      presentationInstructions,
+      pendingRootReset,
       initialSession,
     );
   }
@@ -660,6 +694,21 @@ export class PrimeAgentHarness implements Harness {
   }
 
   private async executeRoot(context: HarnessRunContext, signal: AbortSignal, forceStop: PrimeTurnForceStop): Promise<void> {
+    const turn: PrimeRootTurn = { forceSignal: context.forceSignal, session: undefined };
+    this.activeRootTurns.add(turn);
+    try {
+      await this.executeRootTurn(context, signal, forceStop, turn);
+    } finally {
+      this.activeRootTurns.delete(turn);
+    }
+  }
+
+  private async executeRootTurn(
+    context: HarnessRunContext,
+    signal: AbortSignal,
+    forceStop: PrimeTurnForceStop,
+    turn: PrimeRootTurn,
+  ): Promise<void> {
     // Until this turn binds a session, a force-stop abandons its acquisition, which may hang in
     // reload(), disposeAsync() or session creation. A turn already force-stopped starts none.
     const generation = this.rootSessionGeneration;
@@ -677,6 +726,15 @@ export class PrimeAgentHarness implements Harness {
     }
     const session = candidate instanceof Promise ? await candidate : candidate;
     const handle = this.sessionHandle?.session === session ? this.sessionHandle : undefined;
+    turn.session = session;
+    if (handle !== undefined) {
+      // A new session that replaces a previous root conversation says so before it runs.
+      if (!handle.conversed && this.pendingRootReset !== undefined) {
+        reportNativeSessionReset(context, "Prime Agent", this.context.threadId, this.pendingRootReset);
+      }
+      this.pendingRootReset = undefined;
+      handle.conversed = true;
+    }
     forceStop.bind(() => {
       if (handle !== undefined) this.forceStopRootSession(handle);
       else void session.abort().catch(() => undefined);
@@ -686,6 +744,7 @@ export class PrimeAgentHarness implements Harness {
       signal.throwIfAborted();
     }
     await this.executeOn(session, context, signal);
+    this.rootHistoryAvailable = true;
   }
 
   private async executeInvoked(
@@ -696,7 +755,9 @@ export class PrimeAgentHarness implements Harness {
   ): Promise<void> {
     signal.throwIfAborted();
     if (this.forceShutdownStarted) throw new Error("Prime Agent harness is shutting down");
-    const pending = this.createSession(this.createSessionManager()).then((session) => {
+    // A child session gets its own interaction's instructions, never the root session's.
+    const instructions = personalPresentationNativeInstructions(context);
+    const pending = this.createSession(this.createSessionManager(), instructions).then(({ session }) => {
       const lifecycle = new PrimeAgentSessionLifecycle(session);
       this.invokedSessions.add(lifecycle);
       if (this.forceShutdownStarted) lifecycle.forceShutdown();
@@ -808,11 +869,13 @@ export class PrimeAgentHarness implements Harness {
 
   state(): HarnessSessionState {
     const sessionFile = this.sessionHandle?.session.sessionFile;
+    const reset = this.pendingRootReset === undefined ? {} : { primeRootResetReason: this.pendingRootReset };
     return sessionFile === undefined || this.sessionPersonalPresentationVersionId === undefined
-      ? {}
+      ? reset
       : {
           primeAgentSessionFile: sessionFile,
           primeAgentSessionPersonalPresentationVersionId: this.sessionPersonalPresentationVersionId,
+          ...reset,
         };
   }
 
@@ -847,6 +910,16 @@ export class PrimeAgentHarness implements Harness {
       void pending.then((lifecycle) => lifecycle.forceShutdown(), () => undefined);
     }
     const handle = this.sessionHandle;
+    if (handle !== undefined && [...this.activeRootTurns].some((turn) => (
+      turn.session === handle.session && turn.forceSignal?.aborted !== true
+    ))) {
+      // A root turn's conversation is killed mid-run, as by a per-turn force-stop: the host
+      // records that the next root turn, after a restart, starts a fresh session.
+      this.sessionHandle = undefined;
+      this.sessionPersonalPresentationVersionId = undefined;
+      this.resumableSessionFile = undefined;
+      this.pendingRootReset = "force_stopped";
+    }
     if (handle === undefined) return;
     this.installNativeDisposeGuard(handle);
     try {
@@ -868,6 +941,7 @@ export class PrimeAgentHarness implements Harness {
       this.sessionHandle = undefined;
       this.sessionPersonalPresentationVersionId = undefined;
       this.resumableSessionFile = undefined;
+      if (handle.conversed) this.pendingRootReset = "force_stopped";
     }
     this.installNativeDisposeGuard(handle);
     try {
@@ -889,6 +963,7 @@ export class PrimeAgentHarness implements Harness {
     this.pendingRootSessionAcquisition = undefined;
     const handle = this.sessionHandle;
     if (handle !== undefined) this.forceStopRootSession(handle);
+    if (this.resumableSessionFile !== undefined) this.pendingRootReset = "force_stopped";
     this.sessionPersonalPresentationVersionId = undefined;
     this.resumableSessionFile = undefined;
   }
@@ -900,42 +975,47 @@ export class PrimeAgentHarness implements Harness {
   private sessionFor(context: HarnessRunContext): PrimeAgentSession | Promise<PrimeAgentSession> {
     this.throwIfShuttingDown();
     const versionId = context.personalPresentation?.attachment.versionInteractionNodeId ?? null;
+    if (context.requireNativeContinuity && (!this.rootHistoryAvailable || (this.sessionPersonalPresentationVersionId !== undefined && this.sessionPersonalPresentationVersionId !== versionId))) {
+      throw new Error("This conversation's native history is unavailable or incompatible. Its saved history was preserved; a fresh session was not started.");
+    }
     const instructions = personalPresentationNativeInstructions(context);
     if (this.sessionHandle !== undefined
       && this.sessionPersonalPresentationVersionId === versionId) {
-      if (instructions === this.presentationInstructions.current) return this.sessionHandle.session;
-      return this.reloadPresentationInstructions(this.sessionHandle.session, versionId, instructions);
+      if (instructions === this.sessionHandle.instructions.current) return this.sessionHandle.session;
+      return this.reloadPresentationInstructions(this.sessionHandle, versionId, instructions);
     }
     if (this.sessionHandle !== undefined
       && this.sessionPersonalPresentationVersionId === undefined) {
-      if (instructions === this.presentationInstructions.current) {
+      if (instructions === this.sessionHandle.instructions.current) {
         this.sessionPersonalPresentationVersionId = versionId;
         return this.sessionHandle.session;
       }
-      return this.reloadPresentationInstructions(this.sessionHandle.session, versionId, instructions);
+      return this.reloadPresentationInstructions(this.sessionHandle, versionId, instructions);
     }
+    if (context.requireNativeContinuity && this.resumableSessionFile === undefined) throw new Error("This conversation has no resumable native history. Its saved history was preserved.");
     return this.rotateSession(context, versionId);
   }
 
   private reloadPresentationInstructions(
-    session: PrimeAgentSession,
+    handle: PrimeAgentSessionHandle,
     versionId: number | null,
     instructions: string,
   ): Promise<PrimeAgentSession> {
+    const { session } = handle;
     const reload = session.reload;
-    if (reload === undefined) {
+    if (reload === undefined || (!handle.instructions.scoped && instructions !== "")) {
       throw new Error("Installed Prime Agent package cannot refresh interaction-scoped presentation instructions");
     }
     const generation = this.rootSessionGeneration;
-    const previousInstructions = this.presentationInstructions.current;
-    this.presentationInstructions.current = instructions;
+    const previousInstructions = handle.instructions.current;
+    handle.instructions.current = instructions;
     return reload.call(session).then(() => {
       this.throwIfRootAcquisitionAbandoned(generation);
       this.sessionPersonalPresentationVersionId = versionId;
       return session;
     }, (error: unknown) => {
       this.throwIfRootAcquisitionAbandoned(generation);
-      this.presentationInstructions.current = previousInstructions;
+      handle.instructions.current = previousInstructions;
       throw error;
     });
   }
@@ -951,14 +1031,18 @@ export class PrimeAgentHarness implements Harness {
     this.throwIfShuttingDown();
     this.throwIfRootAcquisitionAbandoned(generation);
     if (this.sessionHandle === previousHandle) this.sessionHandle = undefined;
-    this.presentationInstructions.current = personalPresentationNativeInstructions(context);
     const resumeSavedSession = this.resumableSessionFile !== undefined
       && this.sessionPersonalPresentationVersionId === versionId;
+    // Rotating away from a root conversation cannot continue it; the new session reports why.
+    const reset: NativeSessionResetReason | undefined = resumeSavedSession
+      ? undefined
+      : this.pendingRootReset
+        ?? (previousHandle?.conversed === true || this.resumableSessionFile !== undefined ? "presentation_changed" : undefined);
     const sessionManager = resumeSavedSession
       ? this.primeAgent.SessionManager.open(this.resumableSessionFile!)
       : this.createSessionManager();
-    const session = await this.createSession(sessionManager);
-    const replacement = primeSessionHandle(session);
+    const replacement = await this.createSession(sessionManager, personalPresentationNativeInstructions(context));
+    const { session } = replacement;
     if (this.rootSessionGeneration !== generation) {
       // A successor already runs on its own fresh session; never install or reuse this one.
       this.installNativeDisposeGuard(replacement);
@@ -971,6 +1055,8 @@ export class PrimeAgentHarness implements Harness {
     }
     this.sessionHandle = replacement;
     this.sessionPersonalPresentationVersionId = versionId;
+    replacement.conversed = resumeSavedSession;
+    this.pendingRootReset = reset;
     return session;
   }
 
@@ -1117,14 +1203,48 @@ The graph service enforces exact provenance, target visibility, layer size, expa
   }
 }
 
-function primeSessionHandle(session: PrimeAgentSession): PrimeAgentSessionHandle {
+function primeSessionHandle(session: PrimeAgentSession, instructions: PrimeSessionInstructions): PrimeAgentSessionHandle {
   return {
     session,
+    instructions,
+    conversed: false,
     nativeDispose: session.dispose.bind(session),
     disposeInProgress: false,
     disposeCompleted: false,
     guardInstalled: false,
   };
+}
+
+/**
+ * Gives one session a view of the shared services whose resource loader appends that
+ * session's own presentation instructions. Everything else reads and writes the shared loader.
+ */
+function sessionScopedServices(
+  services: Record<string, unknown>,
+  initialInstructions: string,
+): { readonly services: Record<string, unknown>; readonly instructions: PrimeSessionInstructions } {
+  const loader = services.resourceLoader;
+  if (typeof loader !== "object" || loader === null
+    || typeof (loader as { getAppendSystemPrompt?: unknown }).getAppendSystemPrompt !== "function") {
+    if (initialInstructions !== "") {
+      throw new Error("Installed Prime Agent package cannot scope presentation instructions to a session");
+    }
+    return { services, instructions: { current: "", scoped: false } };
+  }
+  const instructions: PrimeSessionInstructions = { current: initialInstructions, scoped: true };
+  const resourceLoader = new Proxy(loader, {
+    get(target, property) {
+      if (property === "getAppendSystemPrompt") {
+        return () => {
+          const base = (target as { getAppendSystemPrompt(): string[] }).getAppendSystemPrompt();
+          return instructions.current === "" ? [...base] : [...base, instructions.current];
+        };
+      }
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  return { services: { ...services, resourceLoader }, instructions };
 }
 
 function primeSessionAttachment(session: PrimeAgentSession): JsonObject {
@@ -1139,11 +1259,14 @@ function primeSessionAttachment(session: PrimeAgentSession): JsonObject {
 }
 
 function currentWorkspaceMechanicsPython(): string {
-  return `Read current with current = await graph.get_current(). The first current layer may contain visible accepted nodes; when no prior current exists, it needs no new draft carrier. When a prior current exists, every later current layer and the root of your final graph.submit must retain a navigation path back to that prior current. Reuse an existing valid path when one already exists; otherwise, after submitting the new layer and before publishing it, add await graph.add_navigate_action(node, "Earlier view", current["currentLayerId"], relation="reference", source_layer=new_layer, client_key="back-to-earlier-view") from one of its draft nodes created for this interaction. Reused accepted nodes cannot take new actions. Give each distinct logical advance_current transition its own stable operation key. Save that transition's exact layer, expected headRevision, and operation key together. After submitting the complete closure and registering all its actions, publish it with await graph.advance_current(layer, expected_revision=expected_revision, operation_key=operation_key). An exact retry reuses all three unchanged. After a successful nonterminal advance_current, refresh with current = await graph.get_current() before building the next logical transition, so its revision and backreference use the new current. Use a different stable key for that next transition. A successful terminal graph.submit ends graph access: do not call get_current or perform any further graph reads or writes afterward.`;
+  return `Read current with current = await graph.get_current(). The first current layer may contain visible accepted nodes; when no prior current exists, it needs no new draft carrier. When a prior current exists, every later current layer and the root of your final graph.submit must retain a navigation path back to that prior current. Reuse an existing valid path when one already exists; otherwise, after submitting the new layer and before publishing it, add await graph.add_navigate_action(node, "Earlier view", current["currentLayerId"], relation="reference", source_layer=new_layer, client_key="back-to-earlier-view") from one of its draft nodes created for this interaction. Reuse alone grants no action authority; only an exact frozen attached-node navigation grant can permit an addition through supported client operations. Give each distinct logical advance_current transition its own stable operation key. Save that transition's exact layer, expected headRevision, and operation key together. After submitting the complete closure and registering all its actions, publish it with await graph.advance_current(layer, expected_revision=expected_revision, operation_key=operation_key). An exact retry reuses all three unchanged. After a successful nonterminal advance_current, refresh with current = await graph.get_current() before building the next logical transition, so its revision and backreference use the new current. Use a different stable key for that next transition. A successful terminal graph.submit ends graph access: do not call get_current or perform any further graph reads or writes afterward.`;
 }
 
 /** The graph client calls a Prime cell uses, as the Python client declares them. Every method is async. */
 export const PYTHON_GRAPH_API_REFERENCE = `Graph client reference (every graph method is async; always await it):
+- await graph.get_node_presentation(node): authorized current node, revision and existing actions.
+- await graph.replace_node_presentation(node, expected_revision, presentation): GraphSession compiles and stages a full attached-node presentation replacement.
+- (await graph.get_interaction_input()).interaction_permissions: frozen read-only version, enabled flag and exact permission entries; None for absent legacy snapshots.
 - NodeObject(icon, title, detail, kind="concept", client_key=...), EdgeObject((left_node, right_node), client_key=...), LayerObject(nodes, edges, layout, client_key=...), LayerLayoutObject(placements), NodePlacementObject(node, x, y); import them from relayer_graph.
 - await graph.submit_node(node) -> node; await graph.create_edge(left, right, client_key=...) -> edge; await graph.submit_layer(layer, size_justification=None) -> layer.
 - await graph.add_navigate_action(source_node, label, target_layer, relation="expand" | "reference", client_key=..., source_layer=None, variant="pill", icon=None, description=None).
@@ -1152,7 +1275,7 @@ export const PYTHON_GRAPH_API_REFERENCE = `Graph client reference (every graph m
 - Graph objects do not expose client_key after submission; keep your own references to the objects you submitted.`;
 
 /** Rules the graph service enforces on authored objects, stated so the first attempt passes. */
-const PYTHON_GRAPH_AUTHORING_RULES = `Every node and every optional action icon must be one of: ${RELAYER_ICON_NAMES.join(", ")}. Action variants are "chip", "pill", "wide", or "card". Only a card accepts description, and a card requires one. Apart from the interaction node's one root expand action, add actions only on draft nodes created for this interaction; an accepted node you reuse keeps its existing actions.`;
+const PYTHON_GRAPH_AUTHORING_RULES = `Every node and every optional action icon must be one of: ${RELAYER_ICON_NAMES.join(", ")}. Action variants are "chip", "pill", "wide", or "card". Only a card accepts description, and a card requires one. Apart from the interaction node's one root expand action or an exact frozen attached-node navigation grant, add actions only on draft nodes created for this interaction. Reuse alone grants no action authority. Preserve existing accepted-node actions and semantic content. Use only supported client operations; if a required full presentation replacement is unavailable, do not add an unbound action or bypass the client boundary.`;
 
 // Present only when the product granted this completion a broker, as in codex.basic.
 function semanticChildGuidancePython(context: HarnessRunContext): string {
@@ -1907,7 +2030,7 @@ function optionalEnum<const T extends readonly string[]>(value: unknown, allowed
   return value as T[number];
 }
 
-const PRIME_VISUAL_GUIDANCE = `For visual Node Details, import html, asset_ref, external_link, action_capability, ActionObject, and VisualAssetFile from relayer_graph. node.detail_authoring.set_component("main", html("<h2>Answer</h2>"), "h2 { color: blue; }") authors a component; node.detail remains the Markdown fallback. Use html(["<button gc=", ">Continue</button>"], action_capability("continue", action)) for a declared ActionObject. Its source_layer must be the exact LayerObject containing that node. Reuse the same action in await graph.add_action(node, action) after submitting nodes and layers. Navigate actions use kind="navigate", relation="expand" or "reference", and target=layer; invoke actions use interaction_text; input actions use control, prompt, and options. Checkpoint with await graph.checkpoint_node_detail(node). submit_node freezes the local object's detail; while the record remains a draft, use a fresh NodeObject with the same client_key for repairs. Published records are immutable. Untouched detail retains its prior package; detail_authoring.clear() explicitly removes it.
+const PRIME_VISUAL_GUIDANCE = `For visual Node Details, import html, asset_ref, external_link, action_capability, ActionObject, and VisualAssetFile from relayer_graph. node.detail_authoring.set_component("main", html("<h2>Answer</h2>"), "h2 { color: blue; }") authors a component; node.detail remains the Markdown fallback. Each node’s detail must explain that node’s title and purpose. Reuse styles and layout helpers, but do not copy a whole explanation across siblings. If several nodes would have the same explanation, consolidate them. HTML binds permanently on first attachment, including fragments; copies retain ownership. Only node.detail_authoring authors components. For same-node repair reusing an existing template, call graph.bind_node(original) and graph.bind_node(replacement) before attachment; both must have the same stable client_key in this interaction. Use html(["<button gc=", ">Continue</button>"], action_capability("continue", action)) for a declared ActionObject. When present, source_layer must be the exact LayerObject containing that node; authorized node-owned navigate additions may use source_layer=None. Reuse the same action in await graph.add_action(node, action) after submitting nodes and layers. Navigate actions use kind="navigate", relation="expand" or "reference", and target=layer; invoke actions use interaction_text; input actions use control, prompt, and options. Checkpoint with await graph.checkpoint_node_detail(node). submit_node freezes the local object's detail; while the record remains a draft, use a fresh NodeObject with the same client_key for repairs. Accepted node identity and semantic content remain immutable; for an authorized attached-node replacement, read await graph.get_node_presentation(node_id). Use its node.clientKey for a fresh NodeObject, preserve all existing action clientKey, kind and sourceLayer provenance, and bind every new action. Reconstruct retained source layers with their sourceLayerClientKey and the exact presentation NodeObject as a member; omitted source provenance must stay omitted in its binding. Call await graph.replace_node_presentation(node_id, snapshot["revision"], presentation) to stage the full compiled detail without editing title or semantic text. On stale_presentation_revision, reread and repair the full replacement. Read the frozen policy through (await graph.get_interaction_input()).interaction_permissions; do not infer version-2 obligations from old or disabled preparations. Untouched detail retains its prior package; detail_authoring.clear() explicitly removes it.
 Discover assets with graph.visual_assets.scope(), list_assets(scope=scope), list_tags(scope=scope), and inspect(asset_id, scope). Add caller-read bytes with VisualAssetFile(name, media_type, bytes) and await graph.visual_assets.add(file=file, scope=scope, name=name). Bind logical asset IDs with html(['<img asset=', ' alt="Description">'], asset_ref(asset_id)); the host resolves and pins content. Never supply compiled packages, mounts, hashes, raw image URLs, or executable JavaScript.`;
 
 function primeVisualExample(interactionNodeId: number): string {
@@ -1921,8 +2044,9 @@ child = NodeObject("info", "Details", "Replace with useful depth.", client_key="
 layer = LayerObject([node], [], LayerLayoutObject([NodePlacementObject(node, 0.5, 0.5)]), client_key="answer-layer")
 child_layer = LayerObject([child], [], LayerLayoutObject([NodePlacementObject(child, 0.5, 0.5)]), client_key="details-layer")
 expand = ActionObject("navigate", "Details", layer, "details-action", relation="expand", target=child_layer)
-node.detail_authoring.set_component("main", html(["<section><h2>Answer</h2><p>Replace with the answer.</p><button gc=", ">Details</button></section>"], action_capability("details-control", expand)), "section { display: grid; gap: 0.75rem; }")
-child.detail_authoring.set_component("main", html("<p>Replace with useful depth.</p>"))
+shared_styles = "section { display: grid; gap: 0.75rem; }"
+node.detail_authoring.set_component("main", html(["<section><h2>Answer</h2><p>Replace with the answer.</p><button gc=", ">Details</button></section>"], action_capability("details-control", expand)), shared_styles)
+child.detail_authoring.set_component("main", html("<section><h2>Supporting evidence</h2><p>Explain the evidence behind the answer.</p></section>"), shared_styles)
 for item in [node, child]:
     await graph.checkpoint_node_detail(item)
     await graph.submit_node(item)

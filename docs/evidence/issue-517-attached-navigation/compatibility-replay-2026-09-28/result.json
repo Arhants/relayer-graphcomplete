@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "threadId": 1,
+  "sourceInteractionId": 1,
+  "editedInteractionId": 2,
+  "persistentNodeId": 22,
+  "sourceRootLayerId": 7,
+  "sourceChildLayerId": 6,
+  "sourceDigest": "96530c5d31b0ca26d146a3ce7313246f4e57b5e8bee9384e3c99cc2a787f53f4",
+  "generationSourceDigest": "63992a635b50ef6b2368e50ca4d0c283d13f862dec7df8e2542990fb72901447",
+  "modelId": "gpt-5.6-sol",
+  "harness": "codex-basic",
+  "observedRootExecutions": 0,
+  "nativeExecutionReceiptsAvailable": false,
+  "qualificationScope": "compatibility-generation replay only",
+  "observedAttempts": 2,
+  "executionRequests": 0,
+  "nativeKeyboardVerified": false,
+  "visualInspectionPending": true
+}

@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrimeVisualAuthoring } from "../src/implementations/prime-visual-authoring.js";
 
@@ -32,6 +34,76 @@ describe("Prime declarative visual authoring", () => {
     expect(bodies[0]).toMatchObject({ authoredDetail: { version: 1, components: [{ id: "main", html: "<h2>Answer</h2>" }] } });
     const edited = request(); edited.node.title = "Changed";
     await expect(bridge.execute(edited, capability, () => {}, signal())).rejects.toThrow("detail_finalized");
+  });
+  it("compiles action-bearing Python replacement payloads through checkpoint and submit", async () => {
+    const payloads = JSON.parse(execFileSync("python3", ["-c", `
+import json
+from relayer_graph import GraphSession, NodeObject, LayerObject, LayerLayoutObject, ActionObject, html, action_capability
+graph = GraphSession("http://graph.test", "run-one", 1)
+original = graph.bind_node(NodeObject("box", "Answer", "Fallback", client_key="answer"))
+replacement = graph.bind_node(NodeObject("box", "Answer", "Fallback", client_key="answer"))
+layer = LayerObject([original], [], LayerLayoutObject([]), client_key="source")
+action = ActionObject("invoke", "Continue", layer, "continue", interaction_text="Continue")
+page = html(["<button gc=", ">Continue</button>"], action_capability("continue", action))
+original.detail_authoring.set_component("main", page)
+replacement.detail_authoring.set_component("main", page)
+print(json.dumps([graph._visual_payload("checkpoint", original), graph._visual_payload("checkpoint", replacement), graph._visual_payload("submit", replacement)]))
+`], { encoding: "utf8", env: { ...process.env, PYTHONPATH: resolve("python/relayer-graph/src") } }));
+    const { bodies, fetch } = graphTransport();
+    const bridge = new PrimeVisualAuthoring();
+    const original = await bridge.execute(payloads[0], capability, () => {}, signal());
+    const repaired = await bridge.execute(payloads[1], capability, () => {}, signal());
+    expect(original.ok).toBe(true);
+    expect(repaired).toMatchObject({ ok: true, value: original.value });
+    expect(repaired.value).toMatchObject({ mounts: [{ kind: "capability", capability: {
+      kind: "invoke", action: { clientKey: "continue", sourceNode: { clientKey: "answer" }, sourceLayer: { clientKey: "source" } },
+    } }] });
+    expect(await bridge.execute(payloads[2], capability, () => {}, signal())).toMatchObject({ ok: true, frozen: true });
+    expect(bodies[0]!.authoredDetail).toEqual(repaired.value);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it("compiles Python attached-node replacements with retained and node-owned controls", async () => {
+    const payload = JSON.parse(execFileSync("python3", ["-c", `
+import asyncio, json, sys, types
+from relayer_graph import GraphSession, NodeObject, LayerObject, LayerLayoutObject, ActionObject, html, action_capability
+async def run():
+    graph = GraphSession("http://graph.test", "run-one", 1)
+    replacement = NodeObject("box", "Meaning", "Unchanged", client_key="persistent")
+    layer = LayerObject([replacement], [], LayerLayoutObject([]), client_key="old-source")
+    old = ActionObject("invoke", "Continue", layer, "old", interaction_text="Continue")
+    new = ActionObject("navigate", "Response", None, "response", relation="reference", target=3)
+    replacement.detail_authoring.set_component("main", html(["<button gc=", ">Old</button><button gc=", ">Response</button>"], action_capability("old", old), action_capability("response", new)))
+    async def host_request(method, payload):
+        print(json.dumps(payload))
+        return {"ok": True, "value": {"compiled": True}}
+    async def request(method, path, body=None):
+        raise AssertionError("Replacement transport belongs to the host")
+    graph._request = request
+    sys.modules["rlm"] = types.SimpleNamespace(host_request=host_request)
+    await graph.replace_node_presentation(2, 7, replacement)
+asyncio.run(run())
+`], { encoding: "utf8", env: { ...process.env, PYTHONPATH: resolve("python/relayer-graph/src") } }));
+    const { fetch, bodies } = graphTransport();
+    const result = await new PrimeVisualAuthoring().execute(payload, capability, () => {}, signal());
+    expect(result).toMatchObject({ ok: true, frozen: false, value: null });
+    expect(payload).toMatchObject({ operation: "replace", replacement: { nodeId: 2, expectedRevision: 7 } });
+    expect(fetch.mock.calls[0]![0]).toBe("http://graph.test/api/graph/nodes/2/presentation");
+    expect(bodies[0]).toMatchObject({ expectedRevision: 7, authoredDetail: { mounts: [
+      { capability: { kind: "invoke", action: { clientKey: "old", sourceNode: { clientKey: "persistent" }, sourceLayer: { clientKey: "old-source" } } } },
+      { capability: { kind: "reference", action: { clientKey: "response", sourceNode: { clientKey: "persistent" } } } },
+    ] } });
+    const mounts = (bodies[0]!.authoredDetail as { mounts: { capability: { action: object } }[] }).mounts;
+    expect(mounts[1]!.capability.action).not.toHaveProperty("sourceLayer");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    for (const operation of ["checkpoint", "submit"]) {
+      const ordinary = { ...payload, operation };
+      delete ordinary.replacement;
+      expect(await new PrimeVisualAuthoring().execute(ordinary, capability, () => {}, signal())).toMatchObject({ ok: false });
+    }
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const malformed = structuredClone(payload);
+    delete malformed.detail.components[0].markup.values[0].action.sourceLayer;
+    expect(await new PrimeVisualAuthoring().execute(malformed, capability, () => {}, signal())).toMatchObject({ ok: false });
   });
   it("rejects another run, unknown authority fields and oversized programs before transport", async () => {
     const { fetch } = graphTransport(); const bridge = new PrimeVisualAuthoring();

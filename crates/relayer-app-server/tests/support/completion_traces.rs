@@ -644,6 +644,8 @@ impl World {
             let working_directory = root.path().to_string_lossy().into_owned();
             let prepared = runtime
                 .prepare(&CompleteInteraction {
+                    require_native_continuity: false,
+                    native_history_anchor: None,
                     project_id: None,
                     product_interaction_id: child.id.value(),
                     thread_id: thread.id.value(),

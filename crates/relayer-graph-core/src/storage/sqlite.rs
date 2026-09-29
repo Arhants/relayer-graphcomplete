@@ -1,4 +1,5 @@
 pub(crate) mod actions;
+pub(crate) mod attached_navigation;
 pub(crate) mod authored_detail_assets;
 pub(crate) mod completions;
 pub(crate) mod contexts;
@@ -9,6 +10,7 @@ pub(crate) mod input_children;
 pub(crate) mod layers;
 pub(crate) mod migrations;
 pub(crate) mod nodes;
+pub(crate) mod permissions;
 pub(crate) mod personal_presentation;
 pub(crate) mod search_index;
 

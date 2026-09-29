@@ -1,0 +1,290 @@
+{
+  "base": "c6813890b2fc3f5c0cb2807f3ce509ef31673931",
+  "files": [
+    {
+      "path": "CONTEXT.md",
+      "sha256": "e2b4c9499d45f7e0064e087f5e25f807c59ca49a1a7996baf09f378d88ee8c9a"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "a01aabe83348391c7d4b8e762299aad62af30cb9ae18055abc29fdf5388893a7"
+    },
+    {
+      "path": "crates/relayer-app-server/src/api.rs",
+      "sha256": "20752a8690243ff6501a219b74fa2c64ffc879eecbc70cc158c8dc3db250f996"
+    },
+    {
+      "path": "crates/relayer-app-server/src/api/interaction_graph.rs",
+      "sha256": "7c81fa09638aac693bc1893f6897cbf373659983e7d238bdec8c12fe86f33038"
+    },
+    {
+      "path": "crates/relayer-app-server/src/api/threads.rs",
+      "sha256": "17902783244240c93b772d1f885fffa8fde9113dd7758b2e49cf8065f9ac6e77"
+    },
+    {
+      "path": "crates/relayer-app-server/src/api/types.rs",
+      "sha256": "a65de4d2336354f16f05ce9c09ddcbcb2f27ccc07dbff33bd00cf27a43cba9e5"
+    },
+    {
+      "path": "crates/relayer-app-server/src/conversation_export_service.rs",
+      "sha256": "ad270862802e7369d6a12d8e91bc1d19f02905c2a975d8770a47544803c2060c"
+    },
+    {
+      "path": "crates/relayer-app-server/src/runtime.rs",
+      "sha256": "d8f88e61651c356acccae01685a2786a86be4a0a41b4ab282408565390dde3ae"
+    },
+    {
+      "path": "crates/relayer-app-server/tests/product_persistence_flow.rs",
+      "sha256": "be31e53a1e52c5b9014050f7ffac22228fcede87d00343d225821c112c39e167"
+    },
+    {
+      "path": "crates/relayer-graph-core/Cargo.toml",
+      "sha256": "7c7e8b382dd09cb53cebe827e4b97eb9bb2128458e16ae831403684fbca13d46"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph.rs",
+      "sha256": "f8de43ad8bef54d03538b632d27be25b7a7073d706a8185c48765e09fa9dc57a"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/attached_navigation.rs",
+      "sha256": "be8b26c8940d98e6dbc9ec80a9bf573d98d7e6da52956ed4f4c6af52cd0267f4"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/completion.rs",
+      "sha256": "92b23b5daedb07c13abcdfd718e99499143a65f0b6baa72f9e8068d859df642e"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/completion/accept.rs",
+      "sha256": "96867d5ae8c1172fa8b5a6e1318cdbc145eb9982af2f9b3513c3ec20d7936de2"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/completion/current.rs",
+      "sha256": "7338ef5648d349cfaf3af3f51de67a37c40882986f98b9df53b6c800d60aee79"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/completion/plan.rs",
+      "sha256": "78fcb7f1e366310faf5c5e29b662bce0e3412115125dfb0c9c56b6773c94682c"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/database.rs",
+      "sha256": "9545178d596b9c9ac3897b45370f6d6c303734929bc24f1aca223a18cdbe08a0"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/model/context.rs",
+      "sha256": "61185ea28d883a55ebd654cf13f6b6693642277f8029770df76f4f04ae2349d1"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/model/node.rs",
+      "sha256": "88b84bcd32c234641b4d39191cf3464b2e4fa640567cd6e67ed42eb60bc4c507"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/model/permission.rs",
+      "sha256": "297dfb220f9e3139e026e3734869671e17ab284051b15525ff467f2419d0781d"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/writer.rs",
+      "sha256": "b226b9acf275a70fb8d506580932e341bd5d81629efcf388db95b48cae72e53a"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite.rs",
+      "sha256": "44abb08a5ce3e5a2e2c39b350df198d36e25ee7cf702976f6ce584d5c9f42a30"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite/actions.rs",
+      "sha256": "05328d2b362b0fb258be1f40325ae28e594ea4cf2d5f5430894a74f486375019"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite/attached_navigation.rs",
+      "sha256": "704ef529e3f9072dd42305436942a8b25c376317a17f8812e431a68645620060"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite/contexts.rs",
+      "sha256": "eaeb6fac9cedcce3fbfdcc40a2366a2bb016b6e5013f963381af73eecbf8d00e"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite/currents.rs",
+      "sha256": "1e4cb3c763bd6683c4efd0189bd6a4cb818309d07fe991dc9e79bbd6076023ca"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite/layers.rs",
+      "sha256": "10d06d46683c99e614339846269ac061f7797bdd4685dc5f23f2298ddc09be05"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite/migrations/0027_attached_navigation.sql",
+      "sha256": "8b9e16ff81acfd75f2ea6243b5f23a5c7250d27b33515df670a94e9224ce9e29"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite/permissions.rs",
+      "sha256": "a4e5ff2ab33151c0086798b50a6b73fa722816bc257f3df1053cd5c399aa65a8"
+    },
+    {
+      "path": "crates/relayer-graph-core/tests/graph_database.rs",
+      "sha256": "a7d9f097e70431f0ad9ba77377ac1e3c841687917997003f52558c01059a5180"
+    },
+    {
+      "path": "crates/relayer-graph-server/src/lib.rs",
+      "sha256": "83563d0833b4cb6c191c65a2e39d3fcba6664c8373af72752156825976d5e79c"
+    },
+    {
+      "path": "crates/relayer-graph-server/tests/ladybug_search_lifecycle.rs",
+      "sha256": "f1d99fcd1d2cbcb8667ba13245bdc8b6add23ddc54155d10ac9ae30076a09595"
+    },
+    {
+      "path": "desktop/renderer/src/graph.js",
+      "sha256": "93e8ceb4f18e935a70abe9173c3e811ba25cd23e337581048d730bcf0475a108"
+    },
+    {
+      "path": "desktop/renderer/src/product-workspace/interaction-graph.js",
+      "sha256": "84e768f1ddca6cc1808278150f86113bd63b29fe67657340074a0ec649de71ff"
+    },
+    {
+      "path": "desktop/renderer/src/product-workspace/workspace.js",
+      "sha256": "906935e7d22e53ce96a6f003a0b824541d341dc438d65051e540e0e4477794c5"
+    },
+    {
+      "path": "desktop/renderer/src/threads.js",
+      "sha256": "641b2a328be2afc30f3e487ffabf187bcc9b639732cc341ebca80237636e6af8"
+    },
+    {
+      "path": "desktop/renderer/styles.css",
+      "sha256": "afa7b27e507751deceddfe8cf27f0f9b00d88f4db5933f3faaa7ffae8df506e7"
+    },
+    {
+      "path": "desktop/shared/telemetry-module-inventory.mjs",
+      "sha256": "07588b8747a5c5afbb2141bc52d0ad25984b21e5a68fefba04e84b121e111c61"
+    },
+    {
+      "path": "docs/decisions/0005-layered-navigation-contract.md",
+      "sha256": "c339e6d66c828ee12b66482b260af50b892874b7f34309b6183e4b74b6914df0"
+    },
+    {
+      "path": "docs/decisions/0007-interaction-context-actions.md",
+      "sha256": "0975653b7395e41e17c9b857f08bcb451f082aff87f6a7de36504b45b6995683"
+    },
+    {
+      "path": "docs/decisions/0010-typed-interaction-permissions.md",
+      "sha256": "8089355e2404626b94aae56b1ae557286a558565526bd740fafc35ad1d0c6e09"
+    },
+    {
+      "path": "docs/decisions/0011-attached-navigation.md",
+      "sha256": "bb0de83d8efef624827cd2d14f62065c3a247df87838f50c1a3954632286b15b"
+    },
+    {
+      "path": "docs/prd/index.html",
+      "sha256": "5f3135af2b99885934825a7f88663fec63291f2271a07747bc96d9c1795bfb71"
+    },
+    {
+      "path": "package.json",
+      "sha256": "7e5620daa99e5b21008de15421d6058878a658a4d370dec609f263207b3c5c43"
+    },
+    {
+      "path": "packages/eval-runner/src/fixtures/node-detail.ts",
+      "sha256": "0848851940a0d4aa829018e99a1c7353ba6830f00cd80bca30f3eb616da2cc49"
+    },
+    {
+      "path": "packages/graph-client/src/client.ts",
+      "sha256": "5909e8fa7f15255f01a158e810a02cfe8bb576f1f46b6873c5ce0ec11780c636"
+    },
+    {
+      "path": "packages/graph-client/src/detail.ts",
+      "sha256": "910ea6f31ebd8bb28410d01867b73d1d846659d1f5a45b031ddae79ac0a3ddd4"
+    },
+    {
+      "path": "packages/graph-client/src/types.ts",
+      "sha256": "30c2aa9212f3913af244e5b75f4a5b19abd4e4778782bc04eb414bb17e21f441"
+    },
+    {
+      "path": "packages/graph-client/test/detail.test.ts",
+      "sha256": "1483ef466b145d492626cc7526ef19380ff276c919fe0cccae7f92651fc3be06"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/codex-basic.ts",
+      "sha256": "65964360c1aca44b78ba6ac83a624a6fdffbd735cd87c97bc832859f1c68bbbc"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/graph-presentation-guidance.ts",
+      "sha256": "4f1f749021fc8ef2567adf32b3956580e191d47a93cafa73a98bdc1b201fa0e7"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/prime-agent.ts",
+      "sha256": "e5a7d96b02fbb7929f5ea7ed34be5b40013e4003f44a6472d67c846b5f28606d"
+    },
+    {
+      "path": "packages/harness-host/src/interaction-input.ts",
+      "sha256": "ae2c6b8576cc0cdab78ab255b1f5d51fc05620d9c8650e0227360a3bebd6aa18"
+    },
+    {
+      "path": "packages/harness-host/test/claude-basic.test.ts",
+      "sha256": "3d762ff122f5b83c749ae5a480ab4d38f86208af5e4e739265b8344cf8c0ea3a"
+    },
+    {
+      "path": "packages/harness-host/test/codex-basic.test.ts",
+      "sha256": "56e19b69bf47f8f50ab668426abc95859db3f93eb50fcf5e4f42407ac7a27452"
+    },
+    {
+      "path": "packages/harness-host/test/codex-secret-provider-process.test.ts",
+      "sha256": "0c5aecd037cc6969094b11ed317a8434a5cdea83f2c0bd52db673b45d94b4859"
+    },
+    {
+      "path": "packages/harness-host/test/interaction-input.test.ts",
+      "sha256": "4233c99e92ee393bfbdf9803630fa3b082f9031697d84acce72b93927373dc4f"
+    },
+    {
+      "path": "packages/harness-host/test/prime-agent.test.ts",
+      "sha256": "96fb318ff0ee357046d6a9a5b07ec5dbf73cf4d1922ed87e1cafa272dcccaca9"
+    },
+    {
+      "path": "scripts/build-public-share-viewer-artifact.mjs",
+      "sha256": "c6237b90e7b331355e9aa3ba3793894d6a41658d7bd44e0e4758726dd88577d3"
+    },
+    {
+      "path": "scripts/fixtures/interaction-graph-layout.js",
+      "sha256": "ab2d6df13dcf630385a4bec2ca8ced620a66e8a5ded5322def593e9e6a1c9ebe"
+    },
+    {
+      "path": "scripts/test-desktop-first-message.mjs",
+      "sha256": "e70800c5b788550b67818ea75ce8e96bfa06f716cae40affd2e262f78f685caf"
+    },
+    {
+      "path": "scripts/test-desktop-node-input-actions.mjs",
+      "sha256": "95468b6deaca763b490c5cbde97f9206cdd6b21f79ce13b6f18fd6ef2e0787c6"
+    },
+    {
+      "path": "scripts/test-desktop-project-new-thread.mjs",
+      "sha256": "4e78278961d5c6cfb6905ab75b168b5ba951684f0a79a6eed60be7b0e2e312c7"
+    },
+    {
+      "path": "scripts/test-interaction-context-lifecycle.mjs",
+      "sha256": "3ed87fcf6f48363535d4cb72e72bebc0665db2edda850118103d8df7797061cf"
+    },
+    {
+      "path": "scripts/test-interaction-graph-layout.mjs",
+      "sha256": "f02903df113a2ffe312dda02539fdd9547eab0943aff8d5661a1330b672584cd"
+    },
+    {
+      "path": "test/interaction-graph-workspace.test.mjs",
+      "sha256": "cec0b4eec8daf15bccbed3e397e91db87da2cb6ebb4f720b8cab4256d1f933c0"
+    },
+    {
+      "path": "test/interaction-graph.test.mjs",
+      "sha256": "f83737ad6729063fa90d44b470b1c99543598ae877f7b22ced1e141c83ba9dd5"
+    },
+    {
+      "path": "test/node-inspector-traces.test.mjs",
+      "sha256": "ae4bec05e6de8655b9f75527e3c75d926ba92feb28b1677d3972465a1c77a306"
+    },
+    {
+      "path": "test/onboarding-tutorial-controller.test.mjs",
+      "sha256": "9907c2cbe594e571e4c044899e445444a2f9f2ec40723d5ccb8513b02614eb61"
+    },
+    {
+      "path": "test/public-share-viewer.test.mjs",
+      "sha256": "abdacab91d054221165a9ab9d95b5759b30369827cfca78251222cabeab529a7"
+    },
+    {
+      "path": "test/workspace-navigation-integration.test.mjs",
+      "sha256": "220ece0daf673a3edab860532bc66061cf91c04b28ca416e5baac3eadbb3e2a4"
+    }
+  ],
+  "digest": "5d97857024f8c8367bebcd0dab6ff408a0be5da1b27a967dee3bb04f6eccb0a5"
+}

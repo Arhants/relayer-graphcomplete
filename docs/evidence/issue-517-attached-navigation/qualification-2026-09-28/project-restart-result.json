@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "projectId": 1,
+  "threads": 2,
+  "restartPersistence": true,
+  "layerSelectionRestartPersistence": true,
+  "evidence": {
+    "resting": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/project-new-thread/01-resting.png",
+    "hover": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/project-new-thread/02-hover.png",
+    "activated": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/project-new-thread/03-activated.png"
+  }
+}

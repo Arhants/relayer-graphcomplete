@@ -1,0 +1,20 @@
+{
+  "sidebarLayout": null,
+  "compactBackVisible": false,
+  "compactSelectVisible": false,
+  "compactSelectValue": "account",
+  "errorAssociationsValid": true,
+  "authErrorAnnounced": false,
+  "onboardingBusyLocksControls": false,
+  "customFamilyHasNoImplicitMembers": true,
+  "providerOptionsUseRovingRadio": false,
+  "onboardingHarnessChoiceIsExplicit": false,
+  "firstInvalidFocused": false,
+  "connectedProviderRetained": false,
+  "firstRunRecovery": {
+    "visible": false,
+    "label": "Refresh models",
+    "accessibleName": null
+  },
+  "harnessMarkup": "<div class=\"family-empty\">Loading harnesses…</div>"
+}

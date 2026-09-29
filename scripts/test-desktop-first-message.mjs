@@ -4,6 +4,8 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+import { RelayerGraphClient, NodeObject, LayerObject, LayerLayoutObject, NodePlacementObject, detailCapability, html } from "@relayer/graph-client";
+
 import { taskSystemFixtureFactory } from "@relayer/eval-runner";
 
 import { startModelCatalogRefreshServer } from "../desktop/main/models/model-catalog-refresh-server.mjs";
@@ -22,6 +24,13 @@ const invokeEvidenceDirectory = process.env.RELAYER_INVOKE_EVIDENCE_DIR
   || join(repositoryRoot, ".relayer", "evidence", "invoke-navigation");
 const dataDirectory = mkdtempSync(join(tmpdir(), "relayer-first-message-app-"));
 const services = [];
+const typedPermissions = process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1";
+function turnReady(position, total) {
+  if (!typedPermissions) return `document.querySelector("#turnPickerButton")?.textContent === "Turn ${position} of ${total}"`;
+  return `(() => { const cards=[...document.querySelectorAll("#turnPopover .interaction-graph-node")]; return document.querySelector("#turnPickerButton")?.classList.contains("interaction-graph-trigger") && cards.length===${total} && cards.findIndex(card=>card.getAttribute("aria-current")==="true")===${position-1}; })()`;
+}
+
+const ancillaryFailures = [];
 let window;
 let evalWindow;
 let exitCode = 1;
@@ -37,12 +46,18 @@ const electronProfileDirectory = join(dataDirectory, "electron-profile");
 mkdirSync(electronProfileDirectory, { recursive: true });
 app.setPath("userData", electronProfileDirectory);
 app.commandLine.appendSwitch("disable-gpu");
+// Keep the evidence process alive while both application services are reopened.
+app.on("window-all-closed", () => {});
 
 function registerTestIpc() {
-  ipcMain.handle("relayer:account-read", () => ({
-    status: "connected",
-    account: { email: "zero-inference@relayer.test", planType: "Fixture" },
-  }));
+  // This isolated fixture has no pending network publication attempts.
+  ipcMain.handle("relayer:share-pending", () => null);
+  let composerDrafts = {};
+  ipcMain.handle("relayer:composer-drafts-read", () => composerDrafts);
+  ipcMain.handle("relayer:composer-drafts-write", (_event, value) => { composerDrafts = value; return value; });
+  ipcMain.handle("relayer:account-read", () => ({ status: "signed-in", channel: "stable", subject: "fixture|interaction-permissions" }));
+  ipcMain.handle("relayer:provider-status", () => ({ adapters: [], definitions: [], hasCompletedOnboarding: true }));
+  ipcMain.handle("relayer:tutorial-read", () => ({ status: "dismissed", automaticEligible: false }));
   ipcMain.handle("relayer:appearance-read", () => ({ appearance: "dark" }));
   ipcMain.handle("relayer:update-status", () => ({
     phase: "development",
@@ -57,7 +72,12 @@ function registerTestIpc() {
 
 function unregisterTestIpc() {
   for (const channel of [
+    "relayer:share-pending",
     "relayer:account-read",
+    "relayer:provider-status",
+    "relayer:tutorial-read",
+    "relayer:composer-drafts-read",
+    "relayer:composer-drafts-write",
     "relayer:appearance-read",
     "relayer:update-status",
     "relayer-eval:review-context",
@@ -127,6 +147,16 @@ function nodeRectSignature(presentation) {
   ]);
 }
 
+// Camera coordinates are local to the graph stage. Responsive layout may move
+// that stage on screen without changing its camera transform.
+function nodeCameraSignature(presentation) {
+  const { left: stageLeft, top: stageTop } = presentation.stage;
+  return presentation.nodes.map(({ id, left, right, top, bottom }) => [
+    id, Math.round(left - stageLeft), Math.round(right - stageLeft),
+    Math.round(top - stageTop), Math.round(bottom - stageTop),
+  ]);
+}
+
 function canonicalLayoutSignature(presentation) {
   return [...presentation.nodes]
     .sort((left, right) => String(left.id).localeCompare(String(right.id)))
@@ -192,6 +222,64 @@ function pressEnter(webContents, modifiers = [], { insertText = false } = {}) {
   webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter", modifiers });
 }
 
+const attachedResponseText = "Explain the attached results store.";
+let attachedFixtureRejectedOmission = false;
+let attachedFixtureFailure = null;
+function requiredNavigationFixtureFactory(configuration) {
+  const harness = taskSystemFixtureFactory(configuration);
+  const ordinaryComplete = harness.complete.bind(harness);
+  harness.complete = async (context) => {
+    if (context.inputGraph.detail !== attachedResponseText) return ordinaryComplete(context);
+    try {
+    const graph = new RelayerGraphClient(context.graph.acquireCapability());
+    const input = await graph.getInteractionInput();
+    if (input.interactionPermissions?.version !== "2" || !input.interactionPermissions.enabled || input.contexts.length !== 1) {
+      throw new Error("Required navigation fixture did not receive exact frozen V2 input.");
+    }
+    const source = input.contexts[0].targetNode;
+    const before = await graph.getNodePresentation(source.id);
+    if (before.actions.length !== 1 || before.actions[0].kind !== "navigate") throw new Error("Fixture expected one preserved resolved control.");
+    const answer = new NodeObject("info", "Attached response", "The results store retains completed work.", "concept", "attached-answer");
+    await graph.submitNode(answer);
+    const response = new LayerObject([answer], [], new LayerLayoutObject([new NodePlacementObject(answer, .5, .5)]), "attached-response");
+    await graph.submitLayer(response);
+    await graph.addAction(context.inputGraph.id, {kind:"navigate",relation:"expand",label:"Response",target:response,clientKey:"response"});
+    try {
+      await graph.submit(context.inputGraph.id);
+      throw new Error("Response-only completion unexpectedly accepted.");
+    } catch (error) {
+      if (error.code !== "attached_response_navigation_required") throw error;
+      attachedFixtureRejectedOmission = true;
+    }
+    const addition = {kind:"navigate",relation:"reference",label:"Open attached response",target:response,clientKey:"required-response"};
+    await graph.addAction(source.id, addition);
+    const old = before.actions[0];
+    const presentation = new NodeObject(source.icon, source.title, source.detail, before.node.kind, before.node.clientKey);
+    // Reconstruct exact binding provenance only; this layer is never submitted.
+    const sourceLayer = new LayerObject([presentation], [], new LayerLayoutObject([new NodePlacementObject(presentation, .5, .5)]), old.sourceLayerClientKey);
+    const preserved = {kind:"invoke",label:old.label,interactionText:"Propose the most useful next improvement to this task system.",clientKey:old.clientKey,sourceLayer};
+    presentation.detailAuthoring.setComponent("continuation", html`<p>Completed tasks remain in the results store.</p><button gc=${detailCapability.invoke("preserved", preserved)}>Plan the next improvement</button><button gc=${detailCapability.reference("required", addition)}>Open attached response</button>`);
+    await graph.replaceNodePresentation(source.id, before.revision, presentation);
+    await graph.submit(context.inputGraph.id);
+    } catch (error) { attachedFixtureFailure = `${error.stack ?? error} ${JSON.stringify(error.issues ?? [])}`; throw error; }
+  };
+  return harness;
+}
+
+async function activateRequiredResponse(contents, sourceInteractionId, nodeId, responseNodeId, responseLayerId, evidenceName) {
+  await waitFor("required response workspace initialization", () => contents.executeJavaScript(`document.querySelectorAll("#turnPopover .interaction-graph-node").length === 5 && document.querySelectorAll(".graph-node").length > 0`));
+  await contents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${sourceInteractionId}))`);
+  await waitFor("attached source node", () => contents.executeJavaScript(`Boolean(document.querySelector('[data-node="${nodeId}"]'))`));
+  await contents.executeJavaScript(`document.querySelector('[data-node="${nodeId}"]').click()`);
+  const buttonExpression = `[...document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelectorAll("button") || []].find(button => button.textContent === "Open attached response")`;
+  await waitFor("visible required response button", () => contents.executeJavaScript(`(() => { const button=${buttonExpression}; const rect=button?.getBoundingClientRect(); return Boolean(button && !button.disabled && rect.width>0 && rect.height>0 && getComputedStyle(button).visibility!=="hidden" && getComputedStyle(button).display!=="none"); })()`));
+  const capture = await captureEvidence(contents, evidenceName);
+  await contents.executeJavaScript(`(${buttonExpression}).click()`);
+  await waitFor("exact attached response destination", () => contents.executeJavaScript(`import("./src/state.js").then(({appState}) => String(appState.visibleLayer?.layer?.id) === "${responseLayerId}" && Boolean(document.querySelector('[data-node="${responseNodeId}"]')))`));
+  process.stdout.write(`RELAYER_REQUIRED_RESPONSE_CONTROL ${JSON.stringify({stage:evidenceName,sourceNodeId:nodeId,responseNodeId,responseLayerId,visible:true,navigated:true,capture})}\n`);
+  return capture;
+}
+
 async function run() {
   process.stdout.write("Electron application ready.\n");
   registerTestIpc();
@@ -199,12 +287,20 @@ async function run() {
   await writeFile(invokeGatePath, "hold");
   process.env.RELAYER_FIXTURE_INVOKE_GATE_FILE = invokeGatePath;
   const configurationPath = join(repositoryRoot, "harnesses", "fixture-task-system.yaml");
-  const runtime = new GraphCompleteRuntimeService({
+  const runtimeOptions = {
     userDataDirectory: dataDirectory,
+    interactionPermissions: process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1",
     graphServerBinary: join(repositoryRoot, "target", "debug", "relayer-graph-server"),
     configurationPaths: [configurationPath],
-    additionalImplementations: { "fixture.task-system": taskSystemFixtureFactory },
-  });
+    additionalImplementations: { "fixture.task-system": requiredNavigationFixtureFactory },
+    acquireProviderExecution: async (providerId) => ({
+      definition: { id: providerId, adapterId: "codex-subscription", accessContract: "managed-runtime@1" },
+      descriptor: { adapterId: "codex-subscription", accessContract: "managed-runtime@1", implementationVersion: "1" },
+      runtime: { executionAccess: async () => ({ kind: "managed-runtime", environment: {} }) },
+      async release() {},
+    }),
+  };
+  const runtime = new GraphCompleteRuntimeService(runtimeOptions);
   services.push(runtime);
   const runtimeSession = await runtime.start();
   let product;
@@ -227,7 +323,7 @@ async function run() {
     refresh: () => product.seedProviderCatalog(catalogSnapshot),
   });
   services.push(modelCatalogRefreshServer);
-  product = new RelayerAppServerService({
+  const productOptions = {
     userDataDirectory: dataDirectory,
     binaryPath: join(repositoryRoot, "target", "debug", "relayer-app-server"),
     webDirectory: join(repositoryRoot, "desktop", "renderer"),
@@ -236,17 +332,25 @@ async function run() {
     providerCatalogRefreshSession: modelCatalogRefreshServer.session,
     defaultHarnessConfiguration: "fixture-task-system",
     enableReadOnlySession: true,
-  });
+  };
+  product = new RelayerAppServerService(productOptions);
   services.push(product);
   const productSession = await product.start();
   await product.seedProviderCatalog(catalogSnapshot);
+  await productRequest(productSession, "/api/model-families", {
+    method: "POST",
+    body: JSON.stringify({ name: "Fixture models", enabled: true,
+      members: [{ providerId: "codex", modelId: "fixture-model" }] }),
+  });
   const createWindow = createWindowFactory({
     BrowserWindow,
     desktopDirectory: join(repositoryRoot, "desktop"),
     getAppearance: () => "dark",
     updater: { status: () => ({ phase: "development" }) },
+    openExternal: async () => { throw new Error("External navigation is outside this deterministic fixture."); },
   });
   window = await createWindow(productSession);
+  window.webContents.setBackgroundThrottling(false);
   const webContents = window.webContents;
   const electronInputs = [];
   let acceptingTestInput = false;
@@ -263,9 +367,12 @@ async function run() {
     }
   };
   window.show();
+  window.webContents.focus();
   if (process.platform === "darwin") app.focus({ steal: true });
   window.focus();
-  await waitFor("the Electron window to receive keyboard focus", () => window.isFocused());
+  if (process.env.RELAYER_INVOKE_EVIDENCE_SKIP_NATIVE_KEYBOARD !== "1") {
+    await waitFor("the Electron window to receive keyboard focus", () => window.isFocused());
+  }
 
   await waitFor("the first-message composer", () => webContents.executeJavaScript(`(() => {
     const prompt = document.querySelector("#newThreadPrompt");
@@ -286,8 +393,15 @@ async function run() {
   })()`);
   await waitFor("the enabled first-message send button", () => webContents.executeJavaScript(
     `document.querySelector("#createThread")?.disabled === false`,
-  ));
+  )).catch(async (error) => {
+    process.stderr.write(await webContents.executeJavaScript(`document.body.innerText`) + "\n");
+    throw error;
+  });
 
+  let shiftedValue = null;
+  if (process.env.RELAYER_INVOKE_EVIDENCE_SKIP_NATIVE_KEYBOARD === "1") {
+    await webContents.executeJavaScript(`document.querySelector("#createThread").click()`);
+  } else {
   pressTestEnter(["shift"], { insertText: true });
   await new Promise((resolveWait) => setTimeout(resolveWait, 100));
   const shiftState = await webContents.executeJavaScript(`({
@@ -298,18 +412,28 @@ async function run() {
   if (!shiftState.value?.endsWith("\n")) {
     throw new Error(`Shift+Enter did not insert a newline: ${JSON.stringify({ shiftState, electronInputs })}`);
   }
-  const shiftedValue = shiftState.value;
+  shiftedValue = shiftState.value;
   const stateAfterShift = await productRequest(productSession, "/api/state");
   if (stateAfterShift.threads.length !== 0) {
     throw new Error("Shift+Enter unexpectedly created a thread.");
   }
 
   pressTestEnter();
+  }
   const accepted = await waitFor("the deterministic graph to be accepted", async () => {
     const state = await productRequest(productSession, "/api/state");
     if (state.threads.length !== 1) return false;
     const detail = await productRequest(productSession, `/api/threads/${state.threads[0].id}`);
+    if (detail.interactions[0]?.latestAttempt?.finishedAt && detail.interactions[0]?.latestAttempt?.outcome !== "accepted") throw new Error(`Fixture failed: ${JSON.stringify(detail.interactions[0])}`);
     return detail.interactions[0]?.completionStatus === "accepted" ? detail : false;
+  }).catch(async (error) => {
+    const failedState = await productRequest(productSession, "/api/state");
+    if (failedState.threads[0]) {
+      const failedDetail = await productRequest(productSession, `/api/threads/${failedState.threads[0].id}`);
+      process.stderr.write(JSON.stringify(failedDetail.interactions) + "\n");
+    }
+    process.stderr.write(await webContents.executeJavaScript(`document.body.innerText`) + "\n");
+    throw error;
   });
   const renderedNodes = await waitFor("the accepted graph to render", () => (
     webContents.executeJavaScript(`(() => {
@@ -328,7 +452,7 @@ async function run() {
   if (!invokeAction) throw new Error("The deterministic root did not expose an invoke action.");
   const unresolvedActionVisible = `(() => {
     const inspector = document.querySelector("#inspector");
-    const button = document.querySelector('[data-action-id="${invokeAction.id}"]');
+    const button = (document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelector("button") ?? (${typedPermissions} ? null : document.querySelector('[data-action-id="${invokeAction.id}"]')));
     return !inspector?.classList.contains("hidden")
       && document.querySelector("#detailTitle")?.textContent === "Results store"
       && Boolean(button && button.offsetParent !== null)
@@ -345,18 +469,23 @@ async function run() {
     unresolved: await captureEvidence(webContents, "01-unresolved", { settle: false }),
   };
 
-  await webContents.executeJavaScript(`document.querySelector('[data-action-id="${invokeAction.id}"]')?.click()`);
-  await waitFor("the running invoked interaction", async () => {
+  await webContents.executeJavaScript(`(document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelector("button") ?? (${typedPermissions} ? null : document.querySelector('[data-action-id="${invokeAction.id}"]')))?.click()`);
+  const runningInteraction = await waitFor("the running invoked interaction", async () => {
     const detail = await productRequest(productSession, `/api/threads/${threadId}`);
-    return detail.interactions.some((interaction) => interaction.completionStatus === "running");
+    return detail.interactions.find((interaction) => interaction.completionStatus === "running");
   });
-  await webContents.executeJavaScript(`document.querySelector("#previousTurn")?.click()`);
+  // READ-001 preserves the source while pending. Explicit browsing cancels the
+  // automatic ready-result switch so the mounted source control can be observed.
+  await waitFor("the source to remain visible while invoke is pending", () => webContents.executeJavaScript(`${turnReady(1, 2)} && document.querySelector("#interactionText")?.textContent === "Show the deterministic task system."`));
+  await webContents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${runningInteraction.id}))`);
+  await waitFor("the explicitly selected pending turn", () => webContents.executeJavaScript(`${turnReady(2, 2)} && document.querySelector("#interactionText")?.textContent === "Propose the most useful next improvement to this task system."`));
+  await webContents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${sourceInteraction.id}))`);
   await waitFor("the source turn while the invoked interaction runs", () => webContents.executeJavaScript(
     `document.querySelector("#interactionText")?.textContent === "Show the deterministic task system."`,
   ));
   await webContents.executeJavaScript(`document.querySelector('[data-node="${invokeAction.sourceNodeId}"]')?.click()`);
   await waitFor("the visible disabled source invoke while its result runs", () => webContents.executeJavaScript(`(() => {
-    const button = document.querySelector('[data-action-id="${invokeAction.id}"]');
+    const button = (document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelector("button") ?? (${typedPermissions} ? null : document.querySelector('[data-action-id="${invokeAction.id}"]')));
     return document.querySelector("#interactionText")?.textContent === "Show the deterministic task system."
       && !document.querySelector("#inspector")?.classList.contains("hidden")
       && document.querySelector("#detailTitle")?.textContent === "Results store"
@@ -364,6 +493,7 @@ async function run() {
       && button?.disabled === true;
   })()`));
   invokeEvidencePaths.runningDisabled = await captureEvidence(webContents, "02-running-disabled");
+  if (typedPermissions) await webContents.executeJavaScript(`window.__runningInvokeButton = document.querySelector("[data-node-detail-runtime]").shadowRoot.querySelector("button")`);
   await writeFile(invokeGatePath, "release");
 
   const invokedDetail = await waitFor("the invoked result to be accepted", async () => {
@@ -383,7 +513,7 @@ async function run() {
   ));
   const invokedRootLayerId = invokedResult?.completionOutput?.rootLayer?.layer?.id;
   if (
-    canonicalInvoke?.kind !== "invoke"
+    canonicalInvoke?.kind !== (process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1" ? "navigate" : "invoke")
     || canonicalInvoke.targetLayerId == null
     || String(canonicalInvoke.targetLayerId) !== String(invokedRootLayerId)
   ) {
@@ -401,20 +531,21 @@ async function run() {
     throw new Error("The resolved invoke destination did not identify the accepted result interaction and root.");
   }
   await waitFor("the visible source invoke to refresh as resolved navigation", () => webContents.executeJavaScript(`(() => {
-    const button = document.querySelector('[data-action-id="${invokeAction.id}"]');
+    const button = (document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelector("button") ?? (${typedPermissions} ? null : document.querySelector('[data-action-id="${invokeAction.id}"]')));
     return document.querySelector("#interactionText")?.textContent === "Show the deterministic task system."
       && !document.querySelector("#inspector")?.classList.contains("hidden")
       && document.querySelector("#detailTitle")?.textContent === "Results store"
       && Boolean(button && button.offsetParent !== null)
       && button?.disabled === false
-      && button?.dataset.reviewKind === "navigate-action"
-      && button?.dataset.reviewTargetLayerId === "${canonicalInvoke.targetLayerId}";
-  })()`));
+      && (button.getRootNode() instanceof ShadowRoot || (button?.dataset.reviewKind === "navigate-action"
+      && button?.dataset.reviewTargetLayerId === "${canonicalInvoke.targetLayerId}"));
+  })()`)).catch(async (error) => { process.stderr.write(await webContents.executeJavaScript(`JSON.stringify({text:document.querySelector("#interactionText")?.textContent,title:document.querySelector("#detailTitle")?.textContent,inspector:document.querySelector("#inspector")?.className,shadow:document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.innerHTML})`) + "\n"); throw error; });
+  if (typedPermissions && !await webContents.executeJavaScript(`window.__runningInvokeButton === document.querySelector("[data-node-detail-runtime]").shadowRoot.querySelector("button")`)) throw new Error("Acceptance replaced the mounted compiled button.");
   invokeEvidencePaths.resolved = await captureEvidence(webContents, "03-resolved");
 
-  await webContents.executeJavaScript(`document.querySelector('[data-action-id="${invokeAction.id}"]')?.click()`);
+  await webContents.executeJavaScript(`(document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelector("button") ?? (${typedPermissions} ? null : document.querySelector('[data-action-id="${invokeAction.id}"]')))?.click()`);
   await waitFor("the resolved cross-interaction destination", () => webContents.executeJavaScript(
-    `document.querySelector("#turnPickerButton")?.textContent === "Turn 2 of 2"`,
+    `${turnReady(2, 2)}`,
   ));
   invokeEvidencePaths.crossInteraction = await captureEvidence(webContents, "04-cross-interaction-destination");
   await webContents.executeJavaScript(`import("./src/threads.js").then(({ navigateHistory }) => navigateHistory("back"))`);
@@ -437,9 +568,11 @@ async function run() {
   }
 
   await window.loadURL(`${productSession.origin}/?threadId=${encodeURIComponent(threadId)}`);
+  window.show();
+  window.focus();
+  webContents.setBackgroundThrottling(false);
   await waitFor("the four-turn workspace", () => webContents.executeJavaScript(`(() => {
-    const picker = document.querySelector("#turnPickerButton");
-    return picker?.textContent === "Turn 4 of 4";
+    return ${turnReady(4, 4)};
   })()`));
   const latest = navigationDetail.interactions.at(-1);
   const latestRoot = latest.completionOutput.rootLayer;
@@ -454,6 +587,7 @@ async function run() {
   const productOpenSignature = nodeRectSignature(productStableOpen);
   const productRootLayout = requireAuthoredLayout("Product root", productStableOpen);
   await mkdir(dirname(screenshotPath), { recursive: true });
+  await waitForPaint(webContents);
   await writeFile(screenshotPath, (await webContents.capturePage()).toPNG());
   await webContents.executeJavaScript(`document.querySelector('[data-node]:not([data-node="${navigateAction.sourceNodeId}"])')?.click()`);
   await waitFor("the second Product node detail", () => webContents.executeJavaScript(
@@ -464,9 +598,10 @@ async function run() {
     throw new Error("Selecting another node while the inspector was open changed the Product graph camera.");
   }
   await webContents.executeJavaScript(`document.querySelector("#closeInspector")?.click()`);
-  const productAfterClose = await graphPresentation(webContents);
-  if (JSON.stringify(nodeRectSignature(productAfterClose)) !== JSON.stringify(productOpenSignature)) {
-    throw new Error("Closing the inspector changed the Product graph camera.");
+  const productAfterClose = await waitForStableGraph("the expanded Product graph after closing details", webContents);
+  if (productAfterClose.inspectorOpen || !nodesAreContained(productAfterClose)
+    || JSON.stringify(requireAuthoredLayout("Product closed inspector", productAfterClose)) !== JSON.stringify(productRootLayout)) {
+    throw new Error("Closing the inspector did not preserve canonical layout and fit the expanded Product graph.");
   }
   const dragPoint = await webContents.executeJavaScript(`(() => {
     const rect = document.querySelector("[data-node]")?.getBoundingClientRect();
@@ -474,7 +609,7 @@ async function run() {
   })()`);
   if (!dragPoint) throw new Error("The Product graph did not expose a node to drag.");
   webContents.sendInputEvent({ type: "mouseDown", ...dragPoint, button: "left", clickCount: 1 });
-  webContents.sendInputEvent({ type: "mouseMove", x: dragPoint.x + 24, y: dragPoint.y + 12 });
+  webContents.sendInputEvent({ type: "mouseMove", x: dragPoint.x + 24, y: dragPoint.y + 12, modifiers: ["leftButtonDown"] });
   webContents.sendInputEvent({
     type: "mouseUp",
     x: dragPoint.x + 24,
@@ -496,24 +631,29 @@ async function run() {
   await webContents.executeJavaScript(`document.querySelector('[data-action-id="${navigateAction.id}"]')?.click()`);
   const childNodes = await waitFor("the descendant layer", () => webContents.executeJavaScript(`(() => {
     const nodes = [...document.querySelectorAll("[data-node]")];
-    return nodes.length === 2 ? nodes.map((node) => node.dataset.node) : false;
+    return nodes.length === ${typedPermissions ? 3 : 2} && nodes.some((node) => node.querySelector("b")?.textContent === "Waiting tasks") ? nodes.map((node) => node.dataset.node) : false;
   })()`));
   await webContents.executeJavaScript(`document.querySelector('[data-node="${childNodes[0]}"]')?.click()`);
+  await waitFor("the selected descendant node", () => webContents.executeJavaScript(`document.querySelector(".graph-node.selected")?.dataset.node === "${childNodes[0]}" && !document.querySelector("#inspector")?.classList.contains("hidden")`));
   await webContents.executeJavaScript(`document.querySelector("#historyBack")?.click()`);
   await waitFor("Back to restore the selected root node", () => webContents.executeJavaScript(`(() => (
-    document.querySelector("#workspaceBreadcrumb")?.textContent?.includes("Response")
+    document.querySelector(".graph-node.selected")?.dataset.node === "${navigateAction.sourceNodeId}"
     && document.querySelector("#detailTitle")?.textContent === "Incoming queue"
   ))()`));
   await webContents.executeJavaScript(`document.querySelector("#historyForward")?.click()`);
   await waitFor("Forward to restore the selected descendant node", () => webContents.executeJavaScript(`(() => (
     document.querySelectorAll("#workspaceBreadcrumb .breadcrumb-segment").length === 2
     && !document.querySelector("#inspector")?.classList.contains("hidden")
-  ))()`));
+  ))()`)).catch(async (error) => {
+    process.stderr.write(await webContents.executeJavaScript(`JSON.stringify({breadcrumb: document.querySelector("#workspaceBreadcrumb")?.outerHTML, inspector:document.querySelector("#inspector")?.className, title:document.querySelector("#detailTitle")?.textContent, back:document.querySelector("#historyBack")?.outerHTML,forward:document.querySelector("#historyForward")?.outerHTML})`) + "\n");
+    throw error;
+  });
   const restoredInspectorFit = await waitFor("the restored Product inspector fit", async () => {
     const presentation = await graphPresentation(webContents);
     return presentation.inspectorOpen && nodesAreContained(presentation) ? presentation : false;
   });
   const productChildLayout = requireAuthoredLayout("Product child", restoredInspectorFit);
+  if (typedPermissions) invokeEvidencePaths.graphClosed = await captureEvidence(webContents, "09-interaction-graph-closed");
   await webContents.executeJavaScript(`document.querySelector("#turnPickerButton")?.click()`);
   const productNavigationState = await waitFor("the scrolling turn picker", () => webContents.executeJavaScript(`(() => {
     const popover = document.querySelector("#turnPopover");
@@ -527,11 +667,20 @@ async function run() {
       selectedNodeId: document.querySelector(".graph-node.selected")?.dataset.node || null,
     };
   })()`));
+  if (typedPermissions) {
+    invokeEvidencePaths.graphOpen = await captureEvidence(webContents, "10-interaction-graph-open");
+    await webContents.executeJavaScript(`document.querySelector('.interaction-graph-node[aria-current="true"]')?.click()`);
+    await waitFor("B3 current selection to return to the response root", () => webContents.executeJavaScript(`Boolean(document.querySelector('[data-node="${latestRoot.nodes[0].id}"]')) && document.querySelector("#turnPopover")?.classList.contains("hidden") && document.querySelector("#workspaceBreadcrumb")?.classList.contains("hidden")`));
+    invokeEvidencePaths.graphSelected = await captureEvidence(webContents, "11-interaction-graph-selected-root");
+    await webContents.executeJavaScript(`document.querySelector("#historyBack")?.click()`);
+    await waitFor("Back from B3 root to the prior descendant", () => webContents.executeJavaScript(`document.querySelectorAll("#workspaceBreadcrumb .breadcrumb-segment").length === 2`));
+  }
   productNavigationState.inspectorFit = {
     initialContained: nodesAreContained(productInspectorFit),
     restoredContained: nodesAreContained(restoredInspectorFit),
     openToOpenPreserved: true,
-    closePreserved: true,
+    closeCanonicalLayoutPreserved: true,
+    closedContained: nodesAreContained(productAfterClose),
     dragSelectionSuppressed,
   };
   reviewContext = {
@@ -550,6 +699,8 @@ async function run() {
     show: false,
     backgroundColor: "#0b0c0d",
     webPreferences: {
+      // Keep Eval's read-only cookie out of the Product window's session.
+      partition: "required-navigation-eval",
       preload: join(repositoryRoot, "desktop", "preload", "eval-review.cjs"),
       additionalArguments: ["--relayer-eval-execution=navigation-smoke"],
       contextIsolation: true,
@@ -567,9 +718,10 @@ async function run() {
   });
   await evalWindow.loadURL(`${productSession.origin}/?threadId=${encodeURIComponent(threadId)}&review=1`);
   const evalContents = evalWindow.webContents;
+  evalContents.setBackgroundThrottling(false);
   await waitFor("the read-only Eval workspace", () => evalContents.executeJavaScript(`(() => (
     document.querySelector("#threadView")?.dataset.workspaceMode === "review"
-    && document.querySelector("#turnPickerButton")?.textContent === "Turn 4 of 4"
+    && ${turnReady(4, 4)}
   ))()`));
   const evalRootStable = await waitForStableGraph("the stable Eval root graph", evalContents);
   const evalRootLayout = requireAuthoredLayout("Eval root", evalRootStable);
@@ -579,10 +731,10 @@ async function run() {
   await evalContents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${sourceInteraction.id}))`);
   await evalContents.executeJavaScript(`document.querySelector('[data-node="${invokeAction.sourceNodeId}"]')?.click()`);
   await waitFor("the Eval resolved invoke action", () => evalContents.executeJavaScript(`(() => {
-    const button = document.querySelector('[data-action-id="${invokeAction.id}"]');
+    const button = (document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelector("button") ?? (${typedPermissions} ? null : document.querySelector('[data-action-id="${invokeAction.id}"]')));
     return Boolean(button && button.offsetParent !== null && button.disabled === false);
   })()`));
-  await evalContents.executeJavaScript(`document.querySelector('[data-action-id="${invokeAction.id}"]')?.click()`);
+  await evalContents.executeJavaScript(`(document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelector("button") ?? (${typedPermissions} ? null : document.querySelector('[data-action-id="${invokeAction.id}"]')))?.click()`);
   await waitFor("the Eval resolved invoke destination", () => evalContents.executeJavaScript(
     `document.querySelector("#interactionText")?.textContent === "Propose the most useful next improvement to this task system."`,
   ));
@@ -592,6 +744,10 @@ async function run() {
   const evalRootInspectorFit = await waitFor("the Eval root inspector fit", async () => {
     const presentation = await graphPresentation(evalContents);
     return presentation.inspectorOpen && nodesAreContained(presentation) ? presentation : false;
+  }).catch(async (error) => {
+    process.stderr.write(`Eval root inspector failure: ${JSON.stringify(await graphPresentation(evalContents))}\n`);
+    await captureEvidence(evalContents, "failed-eval-root-inspector");
+    throw error;
   });
   if (JSON.stringify(requireAuthoredLayout("Eval root inspector", evalRootInspectorFit)) !== JSON.stringify(evalRootLayout)) {
     throw new Error("Opening the Eval inspector changed canonical root positions.");
@@ -618,18 +774,19 @@ async function run() {
 
   await evalContents.executeJavaScript(`document.querySelector("#closeInspector")?.click()`);
   evalWindow.setContentSize(760, 920);
-  const narrowClosed = await waitFor("the exact 760px Eval workspace", async () => {
+  await waitFor("the exact 760px Eval workspace", async () => {
     const presentation = await graphPresentation(evalContents);
     return presentation.innerWidth === 760 && !presentation.inspectorOpen
       ? presentation
       : false;
   });
-  const narrowClosedSignature = nodeRectSignature(await waitForStableGraph(
+  const narrowClosed = await waitForStableGraph(
     "the stable narrow Eval graph",
     evalContents,
-  ));
+  );
+  const narrowClosedSignature = nodeCameraSignature(narrowClosed);
   await evalContents.executeJavaScript(`document.querySelector("[data-node]")?.click()`);
-  const evalNarrowInspector = await waitFor("the narrow Eval inspector overlay", async () => {
+  await waitFor("the narrow Eval inspector", async () => {
     const presentation = await graphPresentation(evalContents);
     return presentation.innerWidth === 760
       && presentation.inspectorOpen
@@ -639,11 +796,18 @@ async function run() {
       ? presentation
       : false;
   });
+  const evalNarrowInspector = await waitForStableGraph("the settled narrow Eval inspector", evalContents);
   if (Math.round(evalNarrowInspector.stage.width) !== Math.round(narrowClosed.stage.width)) {
-    throw new Error("The 760px inspector changed the Eval graph-stage width instead of overlaying it.");
+    throw new Error(`The 760px inspector changed the Eval graph-stage width instead of overlaying it: ${JSON.stringify({ before: narrowClosed.stage, after: evalNarrowInspector.stage })}`);
   }
-  if (JSON.stringify(nodeRectSignature(evalNarrowInspector)) !== JSON.stringify(narrowClosedSignature)) {
-    throw new Error("The 760px inspector changed the Eval graph camera.");
+  const narrowStageResized = Math.round(evalNarrowInspector.stage.bottom - evalNarrowInspector.stage.top)
+    !== Math.round(narrowClosed.stage.bottom - narrowClosed.stage.top);
+  const narrowCameraPreserved = JSON.stringify(nodeCameraSignature(evalNarrowInspector)) === JSON.stringify(narrowClosedSignature);
+  // Responsive details may change the graph's height. Automatic cameras refit
+  // changed bounds; fixed bounds must retain the existing camera.
+  if (!nodesAreContained(evalNarrowInspector)) throw new Error("The narrow Eval graph is clipped after details open.");
+  if (!narrowStageResized && !narrowCameraPreserved) {
+    ancillaryFailures.push({ checkpoint: "760px Eval camera preservation", before: narrowClosedSignature, after: nodeCameraSignature(evalNarrowInspector), stageBefore: narrowClosed.stage, stageAfter: evalNarrowInspector.stage });
   }
   if (JSON.stringify(requireAuthoredLayout("narrow Eval child", evalNarrowInspector)) !== JSON.stringify(evalChildLayout)) {
     throw new Error("The narrow Eval viewport changed canonical child positions.");
@@ -675,13 +839,75 @@ async function run() {
   })()`));
   evalNavigationState.inspectorFit = {
     desktopContained: nodesAreContained(evalInspectorFit),
-    narrowOverlayPreservedStage: true,
-    narrowOverlayPreservedCamera: true,
+    narrowPreservedStageWidth: true,
+    narrowStageResized,
+    narrowCameraPreserved,
+    narrowContained: nodesAreContained(evalNarrowInspector),
     redockedContained: nodesAreContained(evalRedockedInspector),
   };
 
+  let requiredResponseJourney = null;
+  if (typedPermissions) {
+    const created = await productRequest(productSession, `/api/threads/${threadId}/interactions`, {
+      method:"POST", body:JSON.stringify({text:attachedResponseText,inputId:"required-response-fixture",contexts:[{target:{nodeId:invokeAction.sourceNodeId,sourceInteractionNodeId:sourceInteraction.graphNodeId,sourceLayerId:canonicalSource.completionOutput.rootLayer.layer.id},annotations:["Explain this attached source"]}]})
+    });
+    const completed = await waitFor("required response acceptance after repair", async () => {
+      const detail=await productRequest(productSession, `/api/threads/${threadId}`);
+      const interaction=detail.interactions.find(value=>value.id===created.id);
+      if (interaction?.completionStatus === "failed") throw new Error(attachedFixtureFailure ?? JSON.stringify(interaction));
+      return interaction?.completionStatus === "accepted" ? interaction : false;
+    });
+    if (!attachedFixtureRejectedOmission) throw new Error("Missing response-only rejection receipt.");
+    const responseNodeId=completed.completionOutput.rootLayer.nodes[0].id;
+    const responseLayerId=completed.completionOutput.rootLayer.layer.id;
+    await window.loadURL(`${productSession.origin}/?threadId=${threadId}`);
+    const productCapture=await activateRequiredResponse(webContents,sourceInteraction.id,invokeAction.sourceNodeId,responseNodeId,responseLayerId,"12-required-product-button");
+    await evalWindow.loadURL(`${productSession.origin}/?threadId=${threadId}&review=1`);
+    const evalCapture=await activateRequiredResponse(evalContents,sourceInteraction.id,invokeAction.sourceNodeId,responseNodeId,responseLayerId,"13-required-eval-button");
+    requiredResponseJourney={responseNodeId,responseLayerId,productCapture,evalCapture,rejectedOmission:true};
+    evalWindow.destroy();
+    window.destroy();
+    await product.close();
+    await runtime.close();
+    const reopenedRuntime = new GraphCompleteRuntimeService(runtimeOptions);
+    services.push(reopenedRuntime);
+    const reopenedSession = await reopenedRuntime.start();
+    const reopenedProduct = new RelayerAppServerService({ ...productOptions, runtimeSession: reopenedSession });
+    services.push(reopenedProduct);
+    const reopenedProductSession = await reopenedProduct.start();
+    window = await createWindow(reopenedProductSession);
+    await window.loadURL(`${reopenedProductSession.origin}/?threadId=${threadId}`);
+    const reopenedContents = window.webContents;
+    reopenedContents.setBackgroundThrottling(false);
+    await waitFor("reopened thread", () => reopenedContents.executeJavaScript(`${turnReady(5, 5)}`));
+    await reopenedContents.executeJavaScript(`import("./src/threads.js").then(({ selectTurnById }) => selectTurnById(${sourceInteraction.id}))`);
+    // Select the other occurrence through the source's queue expansion.
+    const queueAction = canonicalSource.completionOutput.rootLayer.actions.find((action) => action.kind === "navigate" && action.id !== invokeAction.id);
+    await reopenedContents.executeJavaScript(`document.querySelector('[data-node="${queueAction.sourceNodeId}"]')?.click()`);
+    await waitFor("reopened queue control", () => reopenedContents.executeJavaScript(`Boolean(document.querySelector('[data-action-id="${queueAction.id}"]'))`));
+    await reopenedContents.executeJavaScript(`document.querySelector('[data-action-id="${queueAction.id}"]')?.click()`);
+    await waitFor("second source occurrence", () => reopenedContents.executeJavaScript(`Boolean(document.querySelector('[data-node="${invokeAction.sourceNodeId}"]')) && [...document.querySelectorAll(".graph-node b")].some(node => node.textContent === "Waiting tasks")`));
+    await reopenedContents.executeJavaScript(`document.querySelector('[data-node="${invokeAction.sourceNodeId}"]')?.click()`);
+    await waitFor("reopened compiled invoke binding", () => reopenedContents.executeJavaScript(`(() => { const button=document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.querySelector("button"); return Boolean(button && !button.disabled && button.getBoundingClientRect().width > 0 && button.getBoundingClientRect().height > 0 && !document.querySelector("#inspector")?.classList.contains("hidden") && document.querySelector(".graph-node.selected")?.dataset.node === "${invokeAction.sourceNodeId}"); })()`)).catch(async (error) => { process.stderr.write(await reopenedContents.executeJavaScript(`JSON.stringify({body:document.body.innerText,detail:document.querySelector("#inspector")?.innerHTML,shadow:document.querySelector("[data-node-detail-runtime]")?.shadowRoot?.innerHTML})`) + "\n"); throw error; });
+    invokeEvidencePaths.reopenedSecondOccurrence = await captureEvidence(reopenedContents, "07-reopened-second-occurrence");
+    await reopenedContents.executeJavaScript(`document.querySelector("[data-node-detail-runtime]").shadowRoot.querySelector("button").click()`);
+    await waitFor("reopened compiled navigation destination", () => reopenedContents.executeJavaScript(`document.querySelector("#interactionText")?.textContent === "Propose the most useful next improvement to this task system."`));
+    const afterNavigation = await productRequest(reopenedProductSession, `/api/threads/${threadId}`);
+    if (afterNavigation.interactions.length !== 5) throw new Error("Reopened compiled navigation launched execution.");
+    invokeEvidencePaths.reopenedDestination = await captureEvidence(reopenedContents, "08-reopened-destination");
+    requiredResponseJourney.reopenedCapture=await activateRequiredResponse(reopenedContents,sourceInteraction.id,invokeAction.sourceNodeId,requiredResponseJourney.responseNodeId,requiredResponseJourney.responseLayerId,"14-required-reopened-button");
+    const afterRequired=await productRequest(reopenedProductSession, `/api/threads/${threadId}`);
+    if (afterRequired.interactions.length !== 5) throw new Error("Required navigation launched execution.");
+    requiredResponseJourney.reopenedNavigationPassed=true;
+  }
+
   const result = {
-    passed: true,
+    typedPermissions,
+    requiredResponseJourney,
+    nativeKeyboardVerified: process.env.RELAYER_INVOKE_EVIDENCE_SKIP_NATIVE_KEYBOARD !== "1",
+    passed: ancillaryFailures.length === 0,
+    typedPermissionJourneyPassed: typedPermissions,
+    ancillaryFailures,
     harness: "fixture-task-system",
     inferenceCalls: 0,
     shiftEnterValue: shiftedValue,
@@ -704,7 +930,7 @@ async function run() {
     invokeEvidencePaths,
   };
   process.stdout.write(`RELAYER_FIRST_MESSAGE_SMOKE ${JSON.stringify(result)}\n`);
-  exitCode = 0;
+  exitCode = ancillaryFailures.length === 0 ? 0 : 1;
 }
 
 async function shutdown() {

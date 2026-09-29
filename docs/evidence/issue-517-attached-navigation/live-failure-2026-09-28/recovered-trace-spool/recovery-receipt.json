@@ -1,0 +1,38 @@
+{
+  "method": "Byte-preserved spool recovery after driver assertion closed runtime; no supported post-restart host export exists",
+  "graphOperationRecorder": "Original in-memory recording unavailable after close; not reconstructed",
+  "traces": [
+    {
+      "interaction": 2,
+      "status": "complete",
+      "eventCount": 633,
+      "sha256": "sha256:b5e36813dd8bf3bc8d0292709869e63d03ed5191903ada193eb840fcdce42e0f",
+      "coverage": {
+        "prompt": "full",
+        "messages": "full",
+        "reasoningSummaries": "full",
+        "modelCalls": "full",
+        "toolCalls": "full",
+        "usage": "full",
+        "childStreams": "none",
+        "nativeArtifacts": "none"
+      }
+    },
+    {
+      "interaction": 1,
+      "status": "complete",
+      "eventCount": 396,
+      "sha256": "sha256:1d1321ed8576c2d522d5a043fb377f6fcdbe05e7c39b79a9227f6f9738a16f1e",
+      "coverage": {
+        "prompt": "full",
+        "messages": "full",
+        "reasoningSummaries": "full",
+        "modelCalls": "full",
+        "toolCalls": "full",
+        "usage": "full",
+        "childStreams": "none",
+        "nativeArtifacts": "none"
+      }
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+   Compiling relayer-graph-core v0.0.0 (/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/crates/relayer-graph-core)
+   Compiling relayer-graph-server v0.0.0 (/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/crates/relayer-graph-server)
+warning: field `layout` is never read
+  --> crates/relayer-graph-server/src/search_index.rs:61:5
+   |
+59 | struct LadybugRuntime {
+   |        -------------- field in this struct
+60 |     store: StdRwLock<Arc<LadybugStore>>,
+61 |     layout: StoreLayout,
+   |     ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `root` is never used
+  --> crates/relayer-graph-server/src/search_index/store.rs:49:12
+   |
+40 | impl StoreLayout {
+   | ---------------- method in this implementation
+...
+49 |     pub fn root(&self) -> &Path {
+   |            ^^^^
+
+warning: function `rows` is never used
+   --> crates/relayer-graph-server/src/search_index/store.rs:645:8
+    |
+645 | pub fn rows(connection: &Connection<'_>, query: &str) -> Result<Vec<Vec<Value>>> {
+    |        ^^^^
+
+warning: `relayer-graph-server` (lib) generated 3 warnings
+warning: `relayer-graph-server` (lib test) generated 3 warnings (3 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 25.93s
+     Running unittests src/lib.rs (target/debug/deps/relayer_graph_server-fa74d27e94d0e9c8)
+
+running 1 test
+test tests::resolved_invoke_roots_require_control_and_bounded_valid_ids ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 38 filtered out; finished in 0.03s
+
+     Running unittests src/main.rs (target/debug/deps/relayer_graph_server-bcf7d045ae09a92d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/desktop_parent_lifecycle.rs (target/debug/deps/desktop_parent_lifecycle-402d015deb531bcc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/import_visual_asset_transport.rs (target/debug/deps/import_visual_asset_transport-882e8df99c82f74e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/ladybug_qualification.rs (target/debug/deps/ladybug_qualification-50a5b62b7d6ea05f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/openssl_link.rs (target/debug/deps/openssl_link-f6beede529edb2bd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+

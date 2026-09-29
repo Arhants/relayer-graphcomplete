@@ -302,6 +302,7 @@ pub(super) async fn get(
         state.interaction_execution.as_ref(),
         &mut detail.interactions,
         &detail.action_invocations,
+        &std::collections::HashSet::from_iter(detail.thread.imported.then_some(detail.thread.id)),
     )
     .await;
     let imported_thread = detail.thread.imported;
@@ -322,7 +323,12 @@ pub(super) async fn get(
         &stale,
     )
     .await?;
+    let compatibility = state
+        .product
+        .conversation_compatibility(detail.thread.id)
+        .await?;
     let response = ThreadDetailResponse::from(detail)
+        .with_conversation_compatibility(Some(compatibility))
         .with_interactions(interactions)
         .with_completion_executions(completion_executions);
     Ok(Json(response))
@@ -413,6 +419,7 @@ pub(super) async fn list_interactions(
         state.interaction_execution.as_ref(),
         &mut detail.interactions,
         &detail.action_invocations,
+        &std::collections::HashSet::from_iter(detail.thread.imported.then_some(detail.thread.id)),
     )
     .await;
     let imported_thread = detail.thread.imported;
@@ -426,8 +433,10 @@ pub(super) async fn project_interaction(
     interaction: Interaction,
     imported_thread: bool,
     projection_stale: bool,
+    graph_deadline: tokio::time::Instant,
 ) -> Result<InteractionResponse, ApiError> {
     let id = interaction.id.value();
+    let thread_id = interaction.thread_id;
     let graph_node_id = interaction.graph_node_id;
     let mut response: InteractionResponse = interaction.into();
     if projection_stale {
@@ -449,6 +458,7 @@ pub(super) async fn project_interaction(
         })
         .collect::<Vec<_>>();
     response.set_submitted_inputs(durable_submitted_inputs.clone());
+    let mut context_projection_complete = true;
     let has_durable_context = durable_input
         .as_ref()
         .is_some_and(|input| !input.contexts.is_empty());
@@ -506,15 +516,34 @@ pub(super) async fn project_interaction(
                     }
                 };
                 if let Err(error) = projected {
+                    context_projection_complete = false;
                     response.mark_projection_stale();
                     eprintln!("could not project context for interaction {id}: {error}");
                 }
             }
             Err(error) => {
+                context_projection_complete = false;
                 response.mark_projection_stale();
                 eprintln!("could not project context for interaction {id}: {error}");
             }
         }
+    }
+    if !imported_thread
+        && let Some((runtime, graph_id)) = state.runtime.as_ref().zip(graph_node_id)
+        && runtime.interaction_graph_enabled()
+    {
+        let mut graph = super::interaction_graph::project_before(
+            state,
+            thread_id,
+            graph_id,
+            response.navigation_contexts(),
+            graph_deadline,
+        )
+        .await;
+        if !context_projection_complete {
+            graph["complete"] = serde_json::json!(false);
+        }
+        response.set_interaction_graph(graph);
     }
     Ok(response)
 }
@@ -546,10 +575,20 @@ async fn project_interactions(
     imported_thread: bool,
     stale: &std::collections::HashSet<i64>,
 ) -> Result<Vec<InteractionResponse>, ApiError> {
+    let graph_deadline = super::interaction_graph::projection_deadline();
     let mut responses = Vec::with_capacity(interactions.len());
     for interaction in interactions {
         let is_stale = stale.contains(&interaction.id.value());
-        responses.push(project_interaction(state, interaction, imported_thread, is_stale).await?);
+        responses.push(
+            project_interaction(
+                state,
+                interaction,
+                imported_thread,
+                is_stale,
+                graph_deadline,
+            )
+            .await?,
+        );
     }
     Ok(responses)
 }
@@ -1087,7 +1126,16 @@ pub(super) async fn get_action_destination(
     let target_layer_id = action
         .target_layer_id
         .ok_or_else(|| ApiError::invalid("invoke action has not resolved to a destination"))?;
-    if action.id != action_id || action.kind != "invoke" || action.state != "accepted" {
+    let typed_resolution = action.kind == "navigate"
+        && action.relation.as_deref() == Some("expand")
+        && action
+            .resolved_invoke_interaction_id
+            .is_some_and(|id| id > 0)
+        && action.interaction_text.is_none();
+    if action.id != action_id
+        || (action.kind != "invoke" && !typed_resolution)
+        || action.state != "accepted"
+    {
         return Err(ApiError::invalid(
             "action is not a resolved accepted invoke action for this interaction",
         ));
@@ -1095,7 +1143,10 @@ pub(super) async fn get_action_destination(
     let layer_owner = runtime
         .get_layer_owner(source_graph_node_id, target_layer_id)
         .await?;
-    if layer_owner.layer_id != target_layer_id {
+    if layer_owner.layer_id != target_layer_id
+        || (typed_resolution
+            && action.resolved_invoke_interaction_id != Some(layer_owner.owner_interaction_node_id))
+    {
         return Err(ApiError::internal(
             "GraphComplete returned a mismatched action destination layer",
         ));
@@ -1152,6 +1203,7 @@ pub(super) async fn refresh_accepted_outputs(
     execution: Option<&crate::product::InteractionExecutionService>,
     interactions: &mut [Interaction],
     action_invocations: &[crate::product::ActionInvocation],
+    imported_threads: &std::collections::HashSet<ThreadId>,
 ) -> std::collections::HashSet<i64> {
     let mut stale = std::collections::HashSet::new();
     let invoked_source_interaction_ids = action_invocations
@@ -1162,6 +1214,27 @@ pub(super) async fn refresh_accepted_outputs(
         .iter()
         .map(|invocation| invocation.action_id)
         .collect::<std::collections::HashSet<_>>();
+    let ids = interactions
+        .iter()
+        .filter(|i| i.completion_status == "accepted" && !imported_threads.contains(&i.thread_id))
+        .filter_map(|i| i.graph_node_id)
+        .collect::<Vec<_>>();
+    let changed_roots = match runtime {
+        Some(runtime) => match runtime.changed_accepted_roots(&ids).await {
+            Ok(roots) => roots,
+            Err(_) => {
+                // Unknown canonical membership must not certify cached output as fresh.
+                stale.extend(
+                    interactions
+                        .iter()
+                        .filter(|i| ids.contains(&i.graph_node_id.unwrap_or(0)))
+                        .map(|i| i.id.value()),
+                );
+                Default::default()
+            }
+        },
+        None => Default::default(),
+    };
     for interaction in interactions {
         if is_reconciliation_pending(interaction) {
             match runtime {
@@ -1184,7 +1257,8 @@ pub(super) async fn refresh_accepted_outputs(
         if interaction.completion_status != "accepted" {
             continue;
         }
-        if !invoked_source_interaction_ids.contains(&interaction.id.value())
+        if !changed_roots.contains(&graph_node_id)
+            && !invoked_source_interaction_ids.contains(&interaction.id.value())
             && !interaction
                 .completion_output
                 .as_ref()
@@ -1427,6 +1501,32 @@ async fn launch_prepared_child(
     let action = runtime
         .get_action(grant.source_completion_id, invocation.source_action_id)
         .await?;
+    if action.id == invocation.source_action_id
+        && action.kind == "navigate"
+        && action.state == "accepted"
+        && action.relation.as_deref() == Some("expand")
+        && action.target_layer_id.is_some()
+        && action.interaction_text.is_none()
+        && action.resolved_invoke_interaction_id == Some(input.interaction_node)
+        && let Some(outcome) = state
+            .product
+            .get_action_invocation(grant.source_interaction_id, invocation.source_action_id)
+            .await?
+        && outcome.interaction.thread_id == grant.thread_id
+        && let Some(existing) = state
+            .product
+            .completion_execution(outcome.interaction.id)
+            .await?
+        && existing.graph_completion_id == input.interaction_node
+        && existing.phase != CompletionExecutionPhase::Reserved
+    {
+        return Ok((
+            StatusCode::OK,
+            Json(CompletePreparedChildResponse {
+                completion_id: existing.graph_completion_id,
+            }),
+        ));
+    }
     if action.kind != "invoke" || action.state != "accepted" {
         return Err(ApiError::invalid(
             "prepared completion requires an accepted invoke action",
@@ -1861,6 +1961,8 @@ async fn admit_recursive_child(
         .map_err(|error| refused("configuration")(error.into()))?;
     let attempt_admission_id = uuid::Uuid::new_v4().to_string();
     let command = CompleteInteraction {
+        require_native_continuity: false,
+        native_history_anchor: None,
         project_id: thread.project_id.map(ProjectId::value),
         product_interaction_id: interaction.id.value(),
         thread_id: thread.id.value(),
@@ -3340,6 +3442,8 @@ async fn prepare_interaction(
         None
     };
     let command = CompleteInteraction {
+        require_native_continuity: false,
+        native_history_anchor: None,
         project_id: thread.project_id.map(ProjectId::value),
         product_interaction_id: interaction.id.value(),
         thread_id: thread.id.value(),
@@ -3604,6 +3708,7 @@ mod tests {
         starts: Arc<AtomicUsize>,
         headers: HeaderMap,
         current: Arc<Mutex<Value>>,
+        action: Arc<Mutex<Value>>,
         transitions: Arc<Mutex<Vec<Value>>>,
         cancellations: Arc<AtomicUsize>,
         start_held: Arc<std::sync::atomic::AtomicBool>,
@@ -3717,6 +3822,10 @@ mod tests {
         let recorded_transitions = transitions.clone();
         let transition_refusals = Arc::new(AtomicUsize::new(0));
         let refused_transitions = transition_refusals.clone();
+        let action = Arc::new(Mutex::new(
+            serde_json::json!({"id":41,"kind":"invoke","interactionText":"Child work","state":"accepted"}),
+        ));
+        let read_action = action.clone();
         let graph = Router::new()
             .route(
                 "/api/control/temporal-features",
@@ -3774,10 +3883,9 @@ mod tests {
             )
             .route(
                 "/api/control/interactions/101/actions/41",
-                routing::get(|| async {
-                    axum::Json(serde_json::json!({"action":{
-                        "id":41,"kind":"invoke","interactionText":"Child work","state":"accepted"
-                    }}))
+                routing::get(move || {
+                    let action = read_action.clone();
+                    async move { axum::Json(serde_json::json!({"action":action.lock().unwrap().clone()})) }
                 }),
             )
             .route(
@@ -3965,6 +4073,8 @@ mod tests {
         let working_directory = root.path().to_string_lossy().into_owned();
         let seeded = runtime
             .prepare(&CompleteInteraction {
+                require_native_continuity: false,
+                native_history_anchor: None,
                 project_id: None,
                 product_interaction_id: child.id.value(),
                 thread_id: thread.id.value(),
@@ -4071,6 +4181,7 @@ mod tests {
             starts,
             headers,
             current,
+            action,
             transitions,
             cancellations,
             start_held,
@@ -4164,6 +4275,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unrelated_offline_and_imported_outputs_keep_cached_freshness() {
+        let fixture = broker_fixture("projection-boundary", "succeeded").await;
+        let interaction = fixture
+            .product
+            .get_interaction(fixture.thread.root_interaction_id)
+            .await
+            .unwrap();
+        let mut offline = vec![interaction.clone()];
+        assert!(
+            refresh_accepted_outputs(
+                &fixture.product,
+                None,
+                None,
+                &mut offline,
+                &[],
+                &Default::default()
+            )
+            .await
+            .is_empty()
+        );
+        assert_eq!(offline[0].completion_output, interaction.completion_output);
+        let mut imported = vec![interaction.clone()];
+        assert!(
+            refresh_accepted_outputs(
+                &fixture.product,
+                fixture.state.runtime.as_ref(),
+                fixture.state.interaction_execution.as_ref(),
+                &mut imported,
+                &[],
+                &std::collections::HashSet::from([fixture.thread.id])
+            )
+            .await
+            .is_empty()
+        );
+        assert_eq!(imported[0].completion_output, interaction.completion_output);
+        fixture.finish();
+    }
+
+    #[tokio::test]
     async fn broker_exact_retries_launch_once_after_the_durable_fence() {
         let fixture = broker_fixture("retries", "succeeded").await;
 
@@ -4212,6 +4362,35 @@ mod tests {
             assert!(std::time::Instant::now() < deadline);
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
+
+        *fixture.action.lock().unwrap() = serde_json::json!({
+            "id":41,"kind":"navigate","relation":"expand","state":"accepted",
+            "targetLayerId":1,"resolvedInvokeInteractionId":202
+        });
+        let retry = complete_prepared_child(
+            State(fixture.state.clone()),
+            fixture.headers.clone(),
+            Json(CompletePreparedChildRequest {
+                interaction_node: 202,
+            }),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("converted replay failed: {}", error.message()));
+        assert_eq!(retry.0, StatusCode::OK);
+        assert_eq!(retry.1.0.completion_id, 202);
+        fixture.action.lock().unwrap()["resolvedInvokeInteractionId"] = serde_json::json!(203);
+        assert!(
+            complete_prepared_child(
+                State(fixture.state.clone()),
+                fixture.headers.clone(),
+                Json(CompletePreparedChildRequest {
+                    interaction_node: 202
+                })
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(fixture.starts.load(Ordering::SeqCst), 1);
 
         fixture.finish();
     }

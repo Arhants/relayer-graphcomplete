@@ -25,6 +25,8 @@ struct Arguments {
     control_token: Option<String>,
     #[arg(long)]
     temporal_schema_read: bool,
+    #[arg(long, hide = true)]
+    interaction_permissions: bool,
     #[arg(long)]
     temporal_root_current_write: bool,
     #[arg(long)]
@@ -110,6 +112,9 @@ async fn run(
     let state = open_server_state(&arguments.database, control_token, temporal_features)
         .await
         .context("open graph database")?;
+    state
+        .set_interaction_permissions_enabled(arguments.interaction_permissions)
+        .await?;
     let listener =
         tokio::net::TcpListener::bind(SocketAddr::new(arguments.host, arguments.port)).await?;
     let address = listener.local_addr()?;

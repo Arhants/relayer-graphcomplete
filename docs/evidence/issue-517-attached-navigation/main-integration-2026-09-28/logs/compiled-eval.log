@@ -1,0 +1,13 @@
+
+> relayer-graphcomplete@0.0.0 test:eval-compiled-runtime
+> vitest run --config scripts/eval-compiled.vitest.config.mjs
+
+
+ RUN  v4.1.10 /Users/vishaltandale/.codex/worktrees/attached-popover-bounds/relayer-graphcomplete
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  16:28:48
+   Duration  9.95s (transform 197ms, setup 0ms, import 378ms, tests 9.50s, environment 0ms)
+

@@ -13,6 +13,8 @@
     <aside>
       <div class="brand"><span class="mark"></span><div><b>Relayer Eval</b><small>Internal evaluation</small></div></div>
       <button class="primary wide" id="newRun">＋ New test run</button>
+      <button class="secondary wide" id="humanGrader">Human Grader</button>
+      <button class="secondary wide" id="evalSettings">Settings</button>
       <button class="secondary wide" id="importConversation">Import conversation…</button>
       <div class="section-label">Test runs</div>
       <div id="runList" class="run-list"></div>
@@ -31,6 +33,18 @@
           <fieldset><legend>Judge</legend><div id="judgeOptions" class="option-list"></div></fieldset>
         </div>
         <div class="actions"><button class="secondary" id="cancelRun">Cancel</button><button class="primary" id="startRun">Run evaluation</button></div>
+      </section>
+      <section id="humanView" class="view hidden">
+        <header><span class="eyebrow">Human Grader</span><h1>Work through a task</h1><p>Use the graph naturally, then review and annotate your experience. Starting a session runs its initial request using the selected harness.</p></header>
+        <form id="humanCreate" class="panel human-form">
+          <label>Case<select id="humanCase" name="testCaseId"></select></label>
+          <label>Harness<select id="humanHarness" name="harnessConfigurationName"></select></label>
+          <label>Maximum completions<input name="maxCompletions" type="number" min="1" max="1000" required placeholder="Choose a limit"></label>
+          <label>Artifact or endpoint<textarea id="humanEndpoint" name="endpoint" maxlength="8000" required></textarea></label>
+          <button class="primary">Start human task session</button>
+        </form>
+        <section class="panel"><h2>Sessions</h2><div id="humanSessions" class="human-sessions"></div></section>
+        <section id="humanTaskDetail" class="panel"></section>
       </section>
       <section id="runView" class="view hidden">
         <header class="run-header"><div><span class="eyebrow">Test run</span><h1 id="runTitle"></h1><p id="runMetadata"></p></div><span id="runStatus" class="status"></span></header>

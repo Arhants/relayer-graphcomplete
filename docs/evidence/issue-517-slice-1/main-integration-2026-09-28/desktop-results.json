@@ -1,0 +1,208 @@
+{
+  "gated": {
+    "typedPermissions": true,
+    "nativeKeyboardVerified": false,
+    "passed": true,
+    "typedPermissionJourneyPassed": true,
+    "ancillaryFailures": [],
+    "harness": "fixture-task-system",
+    "inferenceCalls": 0,
+    "shiftEnterValue": null,
+    "threadCount": 1,
+    "completionStatus": "accepted",
+    "renderedNodes": [
+      "Incoming queue",
+      "Two-worker pool",
+      "Results store"
+    ],
+    "screenshotPath": ".relayer/evidence/pr536-final/gated-visible/first-message.png",
+    "evalScreenshotPath": ".relayer/evidence/pr536-final/gated-visible/first-message-eval.png",
+    "evalNarrowScreenshotPath": ".relayer/evidence/pr536-final/gated-visible/first-message-eval-narrow.png",
+    "productNavigationState": {
+      "rows": 4,
+      "scrollable": true,
+      "backEnabled": true,
+      "breadcrumbSegments": 2,
+      "selectedNodeId": "43",
+      "inspectorFit": {
+        "initialContained": true,
+        "restoredContained": true,
+        "openToOpenPreserved": true,
+        "closeCanonicalLayoutPreserved": true,
+        "closedContained": true,
+        "dragSelectionSuppressed": true
+      }
+    },
+    "evalNavigationState": {
+      "rows": 4,
+      "scrollable": true,
+      "backEnabled": true,
+      "breadcrumbSegments": 2,
+      "readOnlyCopy": "Read-only evaluation result\n    ✦Model⌄\n    \n      \n        Model\n        Advanced\n      \n      \n      \n      \n    \n  ↑",
+      "viewportWidth": 1480,
+      "inspectorFit": {
+        "desktopContained": true,
+        "narrowPreservedStageWidth": true,
+        "narrowStageResized": true,
+        "narrowCameraPreserved": false,
+        "narrowContained": true,
+        "redockedContained": true
+      }
+    },
+    "layoutEvidence": {
+      "rootProductEvalParity": true,
+      "childProductEvalParity": true,
+      "narrowViewportPreservedCanonicalLayout": true,
+      "productRootLayout": [
+        [
+          "40",
+          223.8,
+          298,
+          "authored"
+        ],
+        [
+          "41",
+          480,
+          298,
+          "authored"
+        ],
+        [
+          "42",
+          736.1999999999999,
+          298,
+          "authored"
+        ]
+      ],
+      "productChildLayout": [
+        [
+          "42",
+          480,
+          440.8,
+          "authored"
+        ],
+        [
+          "43",
+          297,
+          298,
+          "authored"
+        ],
+        [
+          "44",
+          663,
+          298,
+          "authored"
+        ]
+      ]
+    },
+    "invokeResultInteractionId": 2,
+    "invokeEvidencePaths": {
+      "unresolved": ".relayer/evidence/pr536-final/gated-visible/01-unresolved.png",
+      "runningDisabled": ".relayer/evidence/pr536-final/gated-visible/02-running-disabled.png",
+      "resolved": ".relayer/evidence/pr536-final/gated-visible/03-resolved.png",
+      "crossInteraction": ".relayer/evidence/pr536-final/gated-visible/04-cross-interaction-destination.png",
+      "revisited": ".relayer/evidence/pr536-final/gated-visible/05-revisited-source.png",
+      "evalCrossInteraction": ".relayer/evidence/pr536-final/gated-visible/06-eval-cross-interaction-destination.png",
+      "reopenedSecondOccurrence": ".relayer/evidence/pr536-final/gated-visible/07-reopened-second-occurrence.png",
+      "reopenedDestination": ".relayer/evidence/pr536-final/gated-visible/08-reopened-destination.png"
+    }
+  },
+  "defaultOff": {
+    "typedPermissions": false,
+    "nativeKeyboardVerified": false,
+    "passed": true,
+    "typedPermissionJourneyPassed": false,
+    "ancillaryFailures": [],
+    "harness": "fixture-task-system",
+    "inferenceCalls": 0,
+    "shiftEnterValue": null,
+    "threadCount": 1,
+    "completionStatus": "accepted",
+    "renderedNodes": [
+      "Incoming queue",
+      "Two-worker pool",
+      "Results store"
+    ],
+    "screenshotPath": ".relayer/evidence/pr536-final/default-off-visible/first-message.png",
+    "evalScreenshotPath": ".relayer/evidence/pr536-final/default-off-visible/first-message-eval.png",
+    "evalNarrowScreenshotPath": ".relayer/evidence/pr536-final/default-off-visible/first-message-eval-narrow.png",
+    "productNavigationState": {
+      "rows": 4,
+      "scrollable": true,
+      "backEnabled": true,
+      "breadcrumbSegments": 2,
+      "selectedNodeId": "43",
+      "inspectorFit": {
+        "initialContained": true,
+        "restoredContained": true,
+        "openToOpenPreserved": true,
+        "closeCanonicalLayoutPreserved": true,
+        "closedContained": true,
+        "dragSelectionSuppressed": true
+      }
+    },
+    "evalNavigationState": {
+      "rows": 4,
+      "scrollable": true,
+      "backEnabled": true,
+      "breadcrumbSegments": 2,
+      "readOnlyCopy": "Read-only evaluation result\n    ✦Model⌄\n    \n      \n        Model\n        Advanced\n      \n      \n      \n      \n    \n  ↑",
+      "viewportWidth": 1480,
+      "inspectorFit": {
+        "desktopContained": true,
+        "narrowPreservedStageWidth": true,
+        "narrowStageResized": true,
+        "narrowCameraPreserved": false,
+        "narrowContained": true,
+        "redockedContained": true
+      }
+    },
+    "layoutEvidence": {
+      "rootProductEvalParity": true,
+      "childProductEvalParity": true,
+      "narrowViewportPreservedCanonicalLayout": true,
+      "productRootLayout": [
+        [
+          "40",
+          223.8,
+          298,
+          "authored"
+        ],
+        [
+          "41",
+          480,
+          298,
+          "authored"
+        ],
+        [
+          "42",
+          736.1999999999999,
+          298,
+          "authored"
+        ]
+      ],
+      "productChildLayout": [
+        [
+          "43",
+          297,
+          298,
+          "authored"
+        ],
+        [
+          "44",
+          663,
+          298,
+          "authored"
+        ]
+      ]
+    },
+    "invokeResultInteractionId": 2,
+    "invokeEvidencePaths": {
+      "unresolved": ".relayer/evidence/pr536-final/default-off-visible/01-unresolved.png",
+      "runningDisabled": ".relayer/evidence/pr536-final/default-off-visible/02-running-disabled.png",
+      "resolved": ".relayer/evidence/pr536-final/default-off-visible/03-resolved.png",
+      "crossInteraction": ".relayer/evidence/pr536-final/default-off-visible/04-cross-interaction-destination.png",
+      "revisited": ".relayer/evidence/pr536-final/default-off-visible/05-revisited-source.png",
+      "evalCrossInteraction": ".relayer/evidence/pr536-final/default-off-visible/06-eval-cross-interaction-destination.png"
+    }
+  }
+}

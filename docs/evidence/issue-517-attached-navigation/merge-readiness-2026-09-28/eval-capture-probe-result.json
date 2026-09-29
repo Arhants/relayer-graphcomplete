@@ -1,0 +1,135 @@
+{
+  "sourceNodeId": 24,
+  "sourceLayerId": 7,
+  "responseLayerId": 10,
+  "responseNodeId": 34,
+  "contentsId": 1,
+  "windowContentsId": 1,
+  "hiddenBefore": {
+    "currentInteractionId": 1,
+    "viewInteractionId": 1,
+    "visibleLayerId": 7,
+    "selectedNodeId": "24",
+    "detailTitle": "Results store",
+    "button": {
+      "text": "Open attached response",
+      "disabled": false,
+      "rect": {
+        "x": 1147,
+        "y": 325.296875,
+        "width": 161.9921875,
+        "height": 21.5,
+        "top": 325.296875,
+        "right": 1308.9921875,
+        "bottom": 346.796875,
+        "left": 1147
+      },
+      "visibility": "visible",
+      "display": "inline-block"
+    },
+    "viewport": {
+      "width": 1480,
+      "height": 888
+    },
+    "visibilityState": "visible"
+  },
+  "hiddenCapture": ".relayer/evidence/pr560-final/capture-probe/probe-hidden.png",
+  "hiddenAfter": {
+    "currentInteractionId": 1,
+    "viewInteractionId": 1,
+    "visibleLayerId": 7,
+    "selectedNodeId": "24",
+    "detailTitle": "Results store",
+    "button": {
+      "text": "Open attached response",
+      "disabled": false,
+      "rect": {
+        "x": 1147,
+        "y": 325.296875,
+        "width": 161.9921875,
+        "height": 21.5,
+        "top": 325.296875,
+        "right": 1308.9921875,
+        "bottom": 346.796875,
+        "left": 1147
+      },
+      "visibility": "visible",
+      "display": "inline-block"
+    },
+    "viewport": {
+      "width": 1480,
+      "height": 888
+    },
+    "visibilityState": "visible"
+  },
+  "shownBefore": {
+    "currentInteractionId": 1,
+    "viewInteractionId": 1,
+    "visibleLayerId": 7,
+    "selectedNodeId": "24",
+    "detailTitle": "Results store",
+    "button": {
+      "text": "Open attached response",
+      "disabled": false,
+      "rect": {
+        "x": 1147,
+        "y": 325.296875,
+        "width": 161.9921875,
+        "height": 21.5,
+        "top": 325.296875,
+        "right": 1308.9921875,
+        "bottom": 346.796875,
+        "left": 1147
+      },
+      "visibility": "visible",
+      "display": "inline-block"
+    },
+    "viewport": {
+      "width": 1480,
+      "height": 888
+    },
+    "visibilityState": "visible"
+  },
+  "shownCapture": ".relayer/evidence/pr560-final/capture-probe/probe-shown.png",
+  "shownAfter": {
+    "currentInteractionId": 1,
+    "viewInteractionId": 1,
+    "visibleLayerId": 7,
+    "selectedNodeId": "24",
+    "detailTitle": "Results store",
+    "button": {
+      "text": "Open attached response",
+      "disabled": false,
+      "rect": {
+        "x": 1147,
+        "y": 325.296875,
+        "width": 161.9921875,
+        "height": 21.5,
+        "top": 325.296875,
+        "right": 1308.9921875,
+        "bottom": 346.796875,
+        "left": 1147
+      },
+      "visibility": "visible",
+      "display": "inline-block"
+    },
+    "viewport": {
+      "width": 1480,
+      "height": 888
+    },
+    "visibilityState": "visible"
+  },
+  "afterClick": {
+    "currentInteractionId": 1,
+    "viewInteractionId": 1,
+    "visibleLayerId": 10,
+    "selectedNodeId": "34",
+    "detailTitle": "Attached response",
+    "button": null,
+    "viewport": {
+      "width": 1480,
+      "height": 888
+    },
+    "visibilityState": "visible"
+  }
+}

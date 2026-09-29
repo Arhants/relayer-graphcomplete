@@ -154,12 +154,16 @@ pub(crate) async fn transition(
                     .await?;
             (Some(*layer_id), Some(*layer_id), digest, Some(publication))
         }
-        CurrentTransition::Stop { .. } | CurrentTransition::Fail { .. } => (
-            persisted.current_layer_id,
-            None,
-            format!("sha256:{:x}", Sha256::digest(b"no-publication")),
-            None,
-        ),
+        CurrentTransition::Stop { .. } | CurrentTransition::Fail { .. } => {
+            crate::storage::sqlite::attached_navigation::discard_pending(&mut transaction, scope)
+                .await?;
+            (
+                persisted.current_layer_id,
+                None,
+                format!("sha256:{:x}", Sha256::digest(b"no-publication")),
+                None,
+            )
+        }
     };
     CurrentTable::new(&mut transaction)
         .append_revision(RevisionInsert {
@@ -211,15 +215,62 @@ pub(crate) async fn transition(
             database,
             super::CompletionCrashPoint::AfterSqliteClosureWrite,
         );
-        if let Err(error) = index_and_record(
-            database,
-            &mut transaction,
-            target,
-            vec![publication],
+        let mut publications = vec![(
+            publication,
             crate::publication_targets(scope.project_id, scope.thread_id),
-            expiry,
-        )
-        .await
+        )];
+        let converted_action = crate::storage::sqlite::actions::ActionTable::new(&mut transaction)
+            .converted_action_for_interaction(scope.root_node_id)
+            .await?;
+        let converted = converted_action.map(|id| id.value());
+        let mutated =
+            crate::storage::sqlite::attached_navigation::changed_nodes(&mut transaction, scope)
+                .await?;
+        if converted_action.is_some() || !mutated.is_empty() {
+            // Each presenting closure publishes only to its own project/thread.
+            // Select affected occurrences and ancestors before reconstructing closures.
+            let currents = CurrentTable::new(&mut transaction)
+                .published_currents_for_changes(converted_action, &mutated)
+                .await?;
+            for current in currents {
+                if current.completion_id == scope.root_node_id {
+                    continue;
+                }
+                let presenting = crate::storage::sqlite::nodes::NodeTable::new(&mut transaction)
+                    .interaction_scope(current.completion_id)
+                    .await?;
+                if SearchTarget::new(presenting.project_id, presenting.thread_id) != target {
+                    continue;
+                }
+                let root = super::read_output_on(&mut transaction, &presenting)
+                    .await?
+                    .map(|output| output.root_action);
+                let closure = read_accepted_publication_on(
+                    &mut transaction,
+                    &presenting,
+                    current.layer_id,
+                    root,
+                )
+                .await?;
+                if closure.layers.iter().any(|layer| {
+                    layer
+                        .actions
+                        .iter()
+                        .any(|action| Some(action.id.value()) == converted)
+                        || layer
+                            .nodes
+                            .iter()
+                            .any(|node| mutated.contains(&node.id.value()))
+                }) {
+                    publications.push((
+                        closure,
+                        crate::publication_targets(presenting.project_id, presenting.thread_id),
+                    ));
+                }
+            }
+        }
+        if let Err(error) =
+            index_and_record(database, &mut transaction, target, publications, expiry).await
         {
             transaction.rollback().await?;
             return Err(error);

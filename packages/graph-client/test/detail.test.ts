@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   LayerLayoutObject,
   LayerObject,
-  NodeDetailAuthoring,
   NodeObject,
   NodePlacementObject,
   RelayerGraphClient,
@@ -21,8 +20,27 @@ import { assetRef } from "../src/detail.js";
 describe("typed Node Detail authoring compiler", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("allows node-owned navigation only through replacement without seeding ordinary submission", async () => {
+    const node = new NodeObject("info", "Attached", "Fallback", "concept", "attached");
+    const graph = new RelayerGraphClient({ url: "http://graph.test", token: "test", nodeId: 1 });
+    const fetch = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    node.detailAuthoring.setComponent("main", html`<button gc=${detailCapability.reference("response", { kind: "navigate", relation: "reference", label: "Response", clientKey: "response", target: 9 })}>Response</button>`);
+    expect(() => node.detailAuthoring.checkpoint()).toThrow(DetailCompilationError);
+    await expect(graph.checkpointNodeDetail(node)).rejects.toBeInstanceOf(DetailCompilationError);
+    await expect(graph.submitNode(node)).rejects.toBeInstanceOf(DetailCompilationError);
+    expect(fetch).not.toHaveBeenCalled();
+    await graph.replaceNodePresentation(2, 3, node);
+    const [url, options] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://graph.test/api/graph/nodes/2/presentation");
+    expect(JSON.parse(options.body as string)).toMatchObject({ expectedRevision: 3, authoredDetail: { mounts: [{ capability: { action: { clientKey: "response", sourceNode: { clientKey: "attached" } } } }] } });
+    await expect(graph.checkpointNodeDetail(node)).rejects.toBeInstanceOf(DetailCompilationError);
+    await expect(graph.submitNode(node)).rejects.toBeInstanceOf(DetailCompilationError);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("compiles both product theme selectors but keeps general host access unavailable", () => {
-    const node = new NodeDetailAuthoring();
+    const node = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     node.setComponent("theme", html`<p>Same meaning</p>`, css`
       [data-relayer-theme="light"] p { color: #182c34; }
       [data-relayer-theme="dark"] p { color: #edf2f3; }
@@ -32,7 +50,7 @@ describe("typed Node Detail authoring compiler", () => {
     expect(detailAuthoringReference().themeSelectors).toHaveLength(2);
     for (const selector of [":host", ":host(*)", ':host([data-relayer-theme="dark"])', ':host([data-relayer-theme="system"])',
       ":host([secret])", ':host([data-relayer-theme="dark"], [secret])', ":host-context(body)"]) {
-      const invalid = new NodeDetailAuthoring();
+      const invalid = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
       invalid.setComponent("invalid", html`<p>Text</p>`, cssSource(`${selector} p { color: red; }`));
       expect(() => invalid.checkpoint(), selector).toThrow(DetailCompilationError);
     }
@@ -44,7 +62,7 @@ describe("typed Node Detail authoring compiler", () => {
     expect(reference.elements).not.toContain("script");
     reference.elements.push("script");
     reference.cssProperties.push("background-image");
-    const authoring = new NodeDetailAuthoring();
+    const authoring = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     authoring.setComponent("unsafe", html`<script>bad()</script>`);
     expect(() => authoring.checkpoint()).toThrow(DetailCompilationError);
     expect(detailAuthoringReference().elements).not.toContain("script");
@@ -65,7 +83,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("checkpoints incrementally authored components in stable identity order", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
 
     detail.setComponent("summary", html`<section><h2>Summary</h2></section>`);
     detail.setComponent("evidence", html`<section><h2>Evidence</h2></section>`);
@@ -84,7 +102,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("orders canonical HTML attributes by code point rather than host locale", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("attributes", html`<div title="Title" role="note" id="identity" class="card" aria-label="Label">Content</div>`);
 
     expect(detail.checkpoint().components[0]?.html).toBe(
@@ -93,7 +111,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("rejects malformed authored DOM identities at their source elements", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("invalid-dom-ids", htmlSource(`
       <span id=" leading">Whitespace</span>
       <span id="${"x".repeat(129)}">Oversized</span>
@@ -112,7 +130,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("rejects package-wide DOM id collisions and prevents aria-labelledby from using them", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("first-label", html`<span id="shared-label">First label</span>`);
     detail.setComponent("second-label", html`<span id="shared-label">Second label</span>`);
     detail.setComponent("labelled-link", html`
@@ -315,7 +333,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("bounds component, mount, and total compiled package size", () => {
-    const excessiveComponents = new NodeDetailAuthoring();
+    const excessiveComponents = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     for (let index = 0; index <= DETAIL_AUTHORING_LIMITS.maxComponents; index += 1) {
       excessiveComponents.setComponent(`component-${index}`, html`<p>Bounded</p>`);
     }
@@ -323,7 +341,7 @@ describe("typed Node Detail authoring compiler", () => {
       issues: expect.arrayContaining([expect.objectContaining({ code: "component_limit_exceeded" })]),
     }));
 
-    const excessiveMounts = new NodeDetailAuthoring();
+    const excessiveMounts = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     for (let index = 0; index < 43; index += 1) {
       excessiveMounts.setComponent(`mounts-${index}`, html`
         <a gc=${detailCapability.externalLink(`a-${index}`, "https://example.com/a")}>A</a>
@@ -335,7 +353,7 @@ describe("typed Node Detail authoring compiler", () => {
       issues: [expect.objectContaining({ code: "mount_limit_exceeded" })],
     }));
 
-    const excessiveBytes = new NodeDetailAuthoring();
+    const excessiveBytes = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     for (let index = 0; index < 3; index += 1) {
       excessiveBytes.setComponent(`large-${index}`, htmlSource(`<section>${"x".repeat(200_000)}</section>`));
     }
@@ -422,21 +440,10 @@ describe("typed Node Detail authoring compiler", () => {
 
   it("does not let a standalone authoring constructor mint source-node provenance", () => {
     const owner = new NodeObject("box", "Owner", "Fallback", "concept", "constructor-owner");
-    const layer = new LayerObject([owner], [], new LayerLayoutObject([]), "constructor-layer");
-    const action = {
-      kind: "invoke",
-      label: "Run",
-      interactionText: "Run",
-      sourceLayer: layer,
-      clientKey: "constructor-action",
-    } satisfies ActionObject;
-    const PublicAuthoring = NodeDetailAuthoring as unknown as new (ownerHint: string) => NodeDetailAuthoring;
-    const forged = new PublicAuthoring(owner.clientKey);
-    forged.setComponent("constructor-spoof", html`<button gc=${detailCapability.invoke("run", action)}>Run</button>`);
-
-    expect(() => forged.checkpoint()).toThrowError(expect.objectContaining<Partial<DetailCompilationError>>({
-      issues: [expect.objectContaining({ code: "capability_invalid", componentId: "constructor-spoof" })],
-    }));
+    const Constructor = owner.detailAuthoring.constructor as new (...args: unknown[]) => unknown;
+    expect(() => new Constructor()).toThrow("Use node.detailAuthoring");
+    expect(() => new Constructor(owner.clientKey)).toThrow("Use node.detailAuthoring");
+    expect(() => new Constructor(owner, Symbol("node-owned-authoring"))).toThrow("Use node.detailAuthoring");
   });
 
   it("rejects a legacy graph capability path that tries to spoof an unrelated source node", () => {
@@ -477,7 +484,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("rejects privileged HTML, direct network directives, and unsafe CSS at checkpoint", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("unsafe", html`
       <script>fetch("https://example.com")</script>
       <a href="https://example.com">Direct navigation</a>
@@ -578,7 +585,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("keeps checkpoint incremental and exposes no author-controlled finalization", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("summary", html`<p>First checkpoint</p>`);
 
     const first = detail.checkpoint();
@@ -593,7 +600,7 @@ describe("typed Node Detail authoring compiler", () => {
 
   it("rejects duplicate authored binding identities instead of emitting colliding mounts", () => {
     const docs = detailCapability.externalLink("docs", "https://example.com/docs");
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("duplicate", html`
       <a gc=${docs}>First</a>
       <a gc=${docs}>Second</a>
@@ -605,7 +612,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("reports untyped interpolation at its source instead of compiling executable values", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("interpolation", html`
       <p>${"untyped value"}</p>
     `);
@@ -617,11 +624,11 @@ describe("typed Node Detail authoring compiler", () => {
 
   it("accepts interpolations only as one unquoted opening-tag gc or asset attribute", () => {
     const docs = detailCapability.externalLink("docs", "https://example.com");
-    const quoted = new NodeDetailAuthoring();
+    const quoted = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     quoted.setComponent("quoted", html`<a title="gc=${docs}">Docs</a>`);
-    const text = new NodeDetailAuthoring();
+    const text = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     text.setComponent("text", html`<p>gc=${docs}</p>`);
-    const literal = new NodeDetailAuthoring();
+    const literal = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     literal.setComponent("literal", html`<a gc="${"docs"}">Docs</a>`);
 
     for (const authoring of [quoted, text, literal]) {
@@ -632,7 +639,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("requires every typed interpolation to be consumed by exactly one runtime host", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("double-binding", html`
       <a gc=${detailCapability.externalLink("first", "https://example.com/first")} gc=${detailCapability.externalLink("second", "https://example.com/second")}>Docs</a>
     `);
@@ -646,7 +653,7 @@ describe("typed Node Detail authoring compiler", () => {
 
   it("requires image assets to bind to explicit native visual hosts", () => {
     const visual = assetRef("visual");
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("bad-asset-host", html`
       <div asset=${visual} aria-hidden="true"></div>
     `);
@@ -657,7 +664,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("requires every component to have a stable authored identity", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent(" ", html`<p>Missing identity</p>`);
 
     expect(() => detail.checkpoint()).toThrowError(expect.objectContaining<Partial<DetailCompilationError>>({
@@ -666,7 +673,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("rejects foreign markup and escaped CSS resource directives", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("escaped", html`<svg><foreignObject><p>Escape</p></foreignObject></svg>`, css`.hero { background: \75rl("https://example.com/a.png"); }`);
 
     expect(() => detail.checkpoint()).toThrowError(expect.objectContaining<Partial<DetailCompilationError>>({
@@ -680,7 +687,7 @@ describe("typed Node Detail authoring compiler", () => {
   it("keeps duplicate logical asset references behind the host resolution boundary", () => {
     const first = assetRef("shared");
     const changed = assetRef("shared");
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("first", html`<span asset=${first} aria-hidden="true"></span>`);
     detail.setComponent("second", html`<span asset=${changed} aria-hidden="true"></span>`);
 
@@ -729,7 +736,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("rejects literal authoring directives and caller-forged runtime mounts", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("forged", html`
       <a gc="raw">Raw directive</a>
       <span data-asset-mount="m_forged" aria-hidden="true"></span>
@@ -744,7 +751,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("reports malformed CSS through the checkpoint issue contract", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("bad-css", html`<p>Styled content</p>`, css`.card { color: red;`);
 
     expect(() => detail.checkpoint()).toThrowError(expect.objectContaining<Partial<DetailCompilationError>>({
@@ -753,7 +760,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("accepts ordinary spatial CSS and escaped identifiers through token parsing", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("spatial-css", html`<section class="grid:wide"><p>Layout</p></section>`, css`
       .grid\:wide {
         display: grid;
@@ -767,7 +774,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("fail-closes unknown CSS functions that can produce external resources", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("unknown-css-function", html`<section>Unsafe image</section>`, css`
       .hero {
         background-image: image("https://attacker.example/a.png");
@@ -786,7 +793,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("fail-closes shadow-host and unknown CSS pseudos", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("unsafe-pseudos", html`<section class="card"><span>Content</span></section>`, css`
       :host .card { display: grid; }
       :host-context(.theme) .card { color: red; }
@@ -805,7 +812,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("allows documented local selector pseudos inside the isolated detail surface", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("safe-pseudos", html`<ul class="list"><li>One</li><li>Two</li></ul>`, css`
       .list > li:first-child { font-weight: 600; }
       .list > li:nth-child(2):hover::before { color: rgb(10 20 30); }
@@ -816,7 +823,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("rejects CSS external-resource and host API tokens at precise multiline locations", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("unsafe-css-ast", html`<section>Unsafe styles</section>`, css`
       .remote {
         background: image-set("https://example.com/a.png" 1x);
@@ -839,7 +846,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("checks decoded browser entity semantics for accessible names", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("encoded-names", html`
       <a gc=${detailCapability.externalLink("body", "https://example.com")}>&#32;&nbsp;</a>
       <a gc=${detailCapability.externalLink("label", "https://example.com")} aria-label="&#x20;&#32;"></a>
@@ -854,7 +861,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("does not treat hidden link icons or broken aria-labelledby references as accessible names", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("link-names", html`
       <a gc=${detailCapability.externalLink("icon-only", "https://example.com/icon")}><span aria-hidden="true">External link</span></a>
       <a gc=${detailCapability.externalLink("missing", "https://example.com/missing")} aria-labelledby="missing-label"><span aria-hidden="true">↗</span></a>
@@ -877,7 +884,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("accepts a #338 icon link when aria-labelledby resolves to a visible authored label", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("visible-link-label", html`
       <span id="docs-label">Read documentation</span>
       <a gc=${detailCapability.externalLink("docs", "https://example.com/docs")} aria-labelledby="docs-label"><span aria-hidden="true">↗</span></a>
@@ -911,17 +918,17 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("returns typed limit errors for excessive bytes, elements, and depth without overflowing", () => {
-    const overBytes = new NodeDetailAuthoring();
+    const overBytes = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     overBytes.setComponent("bytes", htmlSource("x".repeat(DETAIL_AUTHORING_LIMITS.maxHtmlBytesPerComponent + 1)));
-    const overElements = new NodeDetailAuthoring();
+    const overElements = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     overElements.setComponent("elements", htmlSource("<span></span>".repeat(DETAIL_AUTHORING_LIMITS.maxElementsPerComponent + 1)));
-    const overDepth = new NodeDetailAuthoring();
+    const overDepth = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     overDepth.setComponent("depth", htmlSource(
       "<div>".repeat(DETAIL_AUTHORING_LIMITS.maxElementDepth + 1)
       + "content"
       + "</div>".repeat(DETAIL_AUTHORING_LIMITS.maxElementDepth + 1),
     ));
-    const overCss = new NodeDetailAuthoring();
+    const overCss = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     overCss.setComponent("css-bytes", html`<p>CSS</p>`, cssSource(".x{}".repeat(Math.ceil((DETAIL_AUTHORING_LIMITS.maxCssBytesPerComponent + 1) / 4))));
 
     for (const [authoring, code] of [
@@ -937,7 +944,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("uses browser fragment semantics for tables, paragraphs, interactive hosts, and raw text", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("browser-html", html`<table><tr><td>A</td></tr></table><p>One<div>Two</div><button gc=${detailCapability.externalLink("bad-host", "https://example.com")}>Run</button><pre><code>&lt;tag&gt;&amp;text</code></pre>`);
 
     expect(() => detail.checkpoint()).toThrowError(expect.objectContaining<Partial<DetailCompilationError>>({
@@ -968,7 +975,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("rejects auxiliary network attributes even on a typed link host", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("link-policy", html`
       <a gc=${detailCapability.externalLink("docs", "https://example.com/docs")} ping="https://tracker.example.com">Docs</a>
     `);
@@ -979,7 +986,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("uses a fail-closed HTML allowlist for elements, attributes, projection, and runtime state", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("allowlist", html`
       <product-card>Host code</product-card>
       <button is="product-action">Customized built-in</button>
@@ -1000,7 +1007,7 @@ describe("typed Node Detail authoring compiler", () => {
   });
 
   it("rejects unbound interactive elements that could imitate runtime controls", () => {
-    const detail = new NodeDetailAuthoring();
+    const detail = new NodeObject("info", "Detail", "Fallback").detailAuthoring;
     detail.setComponent("unbound-controls", html`
       <a>Link-like text</a>
       <button>Fake action</button>
@@ -1079,3 +1086,16 @@ async function checkpointWithHostAssets(node: NodeObject, assets: readonly unkno
   })));
   return new RelayerGraphClient({ url: "http://127.0.0.1:1", token: "host", nodeId: 1 }).checkpointNodeDetail(node);
 }
+
+it("compiles attached replacement bindings without source-layer provenance", async () => {
+  const node = new NodeObject("box", "Persistent", "Meaning", "concept", "persistent");
+  const action = { kind: "navigate", relation: "reference", label: "Evidence", target: 77, clientKey: "evidence" } satisfies ActionObject;
+  node.detailAuthoring.setComponent("main", html`<button gc=${detailCapability.reference("open", action)}>Evidence</button>`);
+  const transport = vi.fn(async () => Response.json({}));
+  vi.stubGlobal("fetch", transport);
+  const graph = new RelayerGraphClient({ url: "http://graph.test", token: "test", nodeId: 1 });
+  await graph.replaceNodePresentation(2, 0, node);
+  const compiled = JSON.parse((transport.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).authoredDetail;
+  expect(compiled.mounts[0]).toMatchObject({ capability: { kind: "reference", action: { clientKey: "evidence", sourceNode: { clientKey: "persistent" } } } });
+  expect(compiled.mounts[0]).not.toHaveProperty("capability.action.sourceLayer");
+});

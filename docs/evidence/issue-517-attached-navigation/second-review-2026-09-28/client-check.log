@@ -1,0 +1,4 @@
+
+> @relayer/graph-client@0.0.0 check
+> node scripts/generate-query-errors.mjs --check && tsc --noEmit
+

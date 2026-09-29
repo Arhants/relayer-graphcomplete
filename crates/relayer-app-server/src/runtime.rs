@@ -143,6 +143,8 @@ pub(crate) struct RuntimeClient {
     configurations: HashMap<String, CatalogEntry>,
     unavailable_configurations: HashMap<String, UnavailableCatalogEntry>,
     temporal_features: relayer_graph_core::TemporalFeatureConfig,
+    interaction_graph_enabled: bool,
+    legacy_interaction_features: bool,
     /// How long one invoked-completion observation waits before the caller asks again.
     observation_poll: std::time::Duration,
 }
@@ -155,6 +157,8 @@ pub(crate) struct InvokedCompletionAdmission<'a> {
 }
 
 pub(crate) struct CompleteInteraction<'a> {
+    pub(crate) require_native_continuity: bool,
+    pub(crate) native_history_anchor: Option<&'a Value>,
     pub(crate) project_id: Option<i64>,
     pub(crate) product_interaction_id: i64,
     pub(crate) thread_id: i64,
@@ -261,6 +265,10 @@ pub(crate) struct RuntimeInvokedCompletionStart {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RuntimeAction {
     pub(crate) id: i64,
+    #[serde(default)]
+    pub(crate) relation: Option<String>,
+    #[serde(default)]
+    pub(crate) resolved_invoke_interaction_id: Option<i64>,
     pub(crate) kind: String,
     pub(crate) interaction_text: Option<String>,
     #[serde(default)]
@@ -485,7 +493,29 @@ impl RuntimeClient {
             }
             Ok(response) => serde_json::from_value(response_json(response, StatusCode::OK).await?)?,
         };
+        let mut legacy_interaction_features = false;
+        let interaction_graph_enabled = match client
+            .get(graph_url.join("api/control/interaction-features")?)
+            .bearer_auth(&graph_control_token)
+            .timeout(CONTROL_REQUEST_TIMEOUT)
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == StatusCode::OK => response
+                .json::<Value>()
+                .await
+                .ok()
+                .and_then(|v| v["interactionGraph"].as_bool())
+                .unwrap_or(false),
+            Ok(response) if response.status() == StatusCode::NOT_FOUND => {
+                legacy_interaction_features = true;
+                false
+            }
+            _ => false,
+        };
         Ok(Self {
+            interaction_graph_enabled,
+            legacy_interaction_features,
             client,
             graph_url,
             harness_url,
@@ -506,6 +536,10 @@ impl RuntimeClient {
 
     pub(crate) fn has_configuration(&self, name: &str) -> bool {
         self.configurations.contains_key(name)
+    }
+
+    pub(crate) fn interaction_graph_enabled(&self) -> bool {
+        self.interaction_graph_enabled
     }
 
     pub(crate) fn temporal_features(&self) -> relayer_graph_core::TemporalFeatureConfig {
@@ -934,7 +968,7 @@ impl RuntimeClient {
             let mut complete_body = serde_json::json!({
                 "interactionId": command.interaction_id,
                 "graph": graph,
-                "traceContext": { "productInteractionId": command.product_interaction_id },
+                "traceContext": { "productInteractionId": command.product_interaction_id, "requireNativeContinuity": command.require_native_continuity, "nativeHistoryAnchor": command.native_history_anchor },
             });
             if let Some(version_id) = prepared.personal_presentation_version_id {
                 complete_body["traceContext"]["personalPresentationVersionId"] =
@@ -1283,6 +1317,7 @@ impl RuntimeClient {
                 "sessions/{thread_id}/execution-leases/{execution_lease_id}"
             ))?)
             .bearer_auth(&self.harness_control_token)
+            .timeout(CONTROL_REQUEST_TIMEOUT)
             .send()
             .await?;
         response_json(response, StatusCode::OK).await?;
@@ -1383,6 +1418,40 @@ impl RuntimeClient {
         prepared: PreparedInteraction,
     ) -> Result<(), RuntimeError> {
         self.revoke_capability(&prepared.graph_token).await
+    }
+
+    pub(crate) async fn changed_accepted_roots(
+        &self,
+        ids: &[i64],
+    ) -> Result<std::collections::HashSet<i64>, RuntimeError> {
+        let mut roots = std::collections::HashSet::new();
+        for path in [
+            "api/control/resolved-invoke-roots",
+            "api/control/attached-navigation-roots",
+        ] {
+            for chunk in ids.chunks(500) {
+                let response = self
+                    .client
+                    .post(self.graph_url.join(path)?)
+                    .bearer_auth(&self.graph_control_token)
+                    .timeout(CONTROL_REQUEST_TIMEOUT)
+                    .json(&serde_json::json!({"completionIds":chunk}))
+                    .send()
+                    .await?;
+                // Older runtimes lack both feature discovery and attached mutation lookup.
+                // A supported gate-off runtime may still hold historical mutations.
+                if path == "api/control/attached-navigation-roots"
+                    && self.legacy_interaction_features
+                    && response.status() == StatusCode::NOT_FOUND
+                {
+                    continue;
+                }
+                let selected: Vec<i64> =
+                    serde_json::from_value(response_json(response, StatusCode::OK).await?)?;
+                roots.extend(selected.into_iter().filter(|id| chunk.contains(id)));
+            }
+        }
+        Ok(roots)
     }
 
     pub(crate) async fn completion_output(
@@ -3489,6 +3558,8 @@ mod tests {
             reviewer: "automatic".into(),
         };
         let command = CompleteInteraction {
+            require_native_continuity: false,
+            native_history_anchor: None,
             project_id: None,
             product_interaction_id: 1,
             thread_id: 1,
@@ -3535,6 +3606,8 @@ mod tests {
             },
         }];
         let identified = CompleteInteraction {
+            require_native_continuity: false,
+            native_history_anchor: None,
             project_id: None,
             product_interaction_id: 99,
             thread_id: 1,
@@ -3676,6 +3749,8 @@ mod tests {
             root_layer_id: 37,
         };
         let command = CompleteInteraction {
+            require_native_continuity: false,
+            native_history_anchor: None,
             project_id: None,
             product_interaction_id: 77,
             thread_id: 1,
@@ -4042,6 +4117,8 @@ mod tests {
             reviewer: "automatic".into(),
         };
         let command = CompleteInteraction {
+            require_native_continuity: false,
+            native_history_anchor: None,
             project_id: None,
             product_interaction_id: 1,
             thread_id: 1,
@@ -4183,6 +4260,8 @@ mod tests {
 
         let result = runtime
             .complete(CompleteInteraction {
+                require_native_continuity: false,
+                native_history_anchor: None,
                 project_id: None,
                 product_interaction_id: 1,
                 thread_id: 1,
@@ -4344,6 +4423,8 @@ mod tests {
         };
         let completed = runtime
             .complete(CompleteInteraction {
+                require_native_continuity: false,
+                native_history_anchor: None,
                 project_id: None,
                 product_interaction_id: 1,
                 thread_id: 1,

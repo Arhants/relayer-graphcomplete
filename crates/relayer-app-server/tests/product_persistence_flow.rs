@@ -2385,7 +2385,7 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
         "nodeId": 90,
         "rootLayer": {
             "layer": {"id": 500}, "nodes": [], "edges": [],
-            "actions": [{"id": 41, "sourceNodeId": 7, "kind": "invoke", "targetLayerId": null, "state": "accepted"}]
+            "actions": []
         }
     });
     let source_interaction_id = sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,graph_node_id,completion_status,completion_output_json,permission_profile_id) VALUES (?1,1,'Source','1',90,'accepted',?2,'auto')")
@@ -2402,21 +2402,53 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
         .execute(&pool).await.unwrap().last_insert_rowid();
     sqlx::query("INSERT INTO action_invocations(source_interaction_id,action_id,result_interaction_id,created_at) VALUES (?1,41,?2,'3')")
         .bind(reused_source_interaction_id).bind(result_interaction_id).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,graph_node_id,completion_status,completion_output_json,permission_profile_id) VALUES (?1,2,'Unrelated legacy','4',93,'accepted',?2,'auto')")
+        .bind(source_thread_id).bind(json!({"nodeId":93,"rootLayer":{"layer":{"id":503},"nodes":[],"edges":[],"actions":[]}}).to_string()).execute(&pool).await.unwrap();
     pool.close().await;
 
     let canonical_source = json!({
         "nodeId": 90,
         "rootLayer": {
             "layer": {"id": 500}, "nodes": [], "edges": [],
-            "actions": [{"id": 41, "sourceNodeId": 7, "kind": "invoke", "targetLayerId": 501, "state": "accepted"}]
+            "actions": [{"id": 41, "sourceNodeId": 7, "kind": "navigate", "relation":"expand", "resolvedInvokeInteractionId":91, "targetLayerId": 501, "state": "accepted"}]
         }
     });
+    let output_mode = Arc::new(AtomicI64::new(0));
+    let read_mode = output_mode.clone();
+    let lookup_mode = output_mode.clone();
+    let attached_mode = output_mode.clone();
+    let feature_mode = output_mode.clone();
+    let unrelated_reads = Arc::new(AtomicUsize::new(0));
+    let read_unrelated = unrelated_reads.clone();
     let graph = axum::Router::new()
+        .route("/api/control/interaction-features", axum::routing::get(move || {
+            let mode = feature_mode.load(Ordering::SeqCst); async move {
+                if mode == 8 { StatusCode::NOT_FOUND.into_response() }
+                else { axum::Json(json!({"interactionGraph":false})).into_response() }
+            }
+        }))
+        .route("/api/control/interactions/93/output", axum::routing::get(move || {
+            let count = read_unrelated.clone(); async move {count.fetch_add(1,Ordering::SeqCst); StatusCode::INTERNAL_SERVER_ERROR}
+        }))
+        .route(
+            "/api/control/resolved-invoke-roots",
+            axum::routing::post(move || {let mode = lookup_mode.load(Ordering::SeqCst); async move {
+                if mode == 3 { StatusCode::INTERNAL_SERVER_ERROR.into_response() }
+                else { axum::Json(if (4..8).contains(&mode) {json!([])} else {json!([90])}).into_response() }
+            }}),
+        )
+        .route("/api/control/attached-navigation-roots", axum::routing::post(move || {
+            let mode = attached_mode.load(Ordering::SeqCst); async move {
+                if mode == 8 || mode == 9 { StatusCode::NOT_FOUND.into_response() }
+                else if mode == 7 { StatusCode::INTERNAL_SERVER_ERROR.into_response() }
+                else { axum::Json(if mode >= 4 {json!([90])} else {json!([])}).into_response() }
+            }
+        }))
         .route(
             "/api/control/interactions/90/actions/41",
             axum::routing::get(|| async {
                 axum::Json(json!({"action": {
-                    "id": 41, "kind": "invoke", "interactionText": "Continue",
+                    "id": 41, "kind": "navigate", "relation":"expand", "resolvedInvokeInteractionId":91,
                     "targetLayerId": 501, "state": "accepted"
                 }}))
             }),
@@ -2430,8 +2462,16 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
         .route(
             "/api/control/interactions/90/output",
             axum::routing::get(move || {
-                let canonical_source = canonical_source.clone();
-                async move { axum::Json(canonical_source) }
+                let mut canonical_source = canonical_source.clone();
+                let mode = read_mode.load(Ordering::SeqCst);
+                async move {
+                    if mode == 1 || mode == 5 { return StatusCode::INTERNAL_SERVER_ERROR.into_response(); }
+                    if mode == 2 || mode == 6 { canonical_source["nodeId"] = json!(999); }
+                    if mode >= 4 {
+                        canonical_source["rootLayer"]["actions"] = json!([{"id":42,"sourceNodeId":7,"kind":"navigate","relation":"reference","targetLayerId":501,"state":"accepted"}]);
+                    }
+                    axum::Json(canonical_source).into_response()
+                }
             }),
         )
         .route(
@@ -2490,7 +2530,7 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
     assert_eq!(
         response_json(destination).await,
         json!({
-            "actionId": 41, "actionKind": "invoke", "targetLayerId": 501,
+            "actionId": 41, "actionKind": "navigate", "targetLayerId": 501,
             "threadId": result_thread_id, "interactionId": result_interaction_id,
             "rootLayerId": 501
         })
@@ -2510,17 +2550,18 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
     .await;
     assert_eq!(
         state["interactions"][0]["completionOutput"]["rootLayer"]["actions"][0],
-        json!({"id": 41, "sourceNodeId": 7, "kind": "invoke", "targetLayerId": 501, "state": "accepted"})
+        json!({"id": 41, "sourceNodeId": 7, "kind": "navigate", "relation":"expand", "resolvedInvokeInteractionId":91, "targetLayerId": 501, "state": "accepted"})
     );
     let interactions = response_json(
-        app.oneshot(api_request_with_token(
-            "GET",
-            &format!("/api/threads/{source_thread_id}/interactions"),
-            None,
-            "review",
-        ))
-        .await
-        .unwrap(),
+        app.clone()
+            .oneshot(api_request_with_token(
+                "GET",
+                &format!("/api/threads/{source_thread_id}/interactions"),
+                None,
+                "review",
+            ))
+            .await
+            .unwrap(),
     )
     .await;
     assert_eq!(
@@ -2528,6 +2569,92 @@ async fn resolved_invoke_destination_is_readable_cross_thread_in_review_mode() {
         501
     );
 
+    assert_eq!(unrelated_reads.load(Ordering::SeqCst), 0);
+    assert_eq!(state["interactions"][1]["projectionFresh"], true);
+    for mode in [1, 2, 3] {
+        output_mode.store(mode, Ordering::SeqCst);
+        let view = response_json(
+            app.clone()
+                .oneshot(api_request_with_token(
+                    "GET",
+                    &format!("/api/threads/{source_thread_id}/interactions"),
+                    None,
+                    "review",
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(view["interactions"][0]["projectionFresh"], false);
+        assert_eq!(view["interactions"][1]["projectionFresh"], mode != 3);
+    }
+    assert_eq!(unrelated_reads.load(Ordering::SeqCst), 0);
+    // A later attached-node mutation must refresh the cached source even with
+    // no invoke origin or typed conversion. Reopen cannot restore stale output.
+    output_mode.store(4, Ordering::SeqCst);
+    let reopened =
+        open_app_with_runtime(&database, &root, &catalog, &graph_url, &harness_url).await;
+    for reader in [app.clone(), reopened] {
+        for uri in [
+            format!("/api/threads/{source_thread_id}"),
+            format!("/api/state?threadId={source_thread_id}"),
+        ] {
+            let view = response_json(
+                reader
+                    .clone()
+                    .oneshot(api_request_with_token("GET", &uri, None, "review"))
+                    .await
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(
+                view["interactions"][0]["completionOutput"]["rootLayer"]["actions"][0]["id"], 42,
+                "{view}"
+            );
+            assert_eq!(view["interactions"][0]["projectionFresh"], true);
+        }
+    }
+    for mode in [5, 6, 7, 9] {
+        output_mode.store(mode, Ordering::SeqCst);
+        let view = response_json(
+            app.clone()
+                .oneshot(api_request_with_token(
+                    "GET",
+                    &format!("/api/threads/{source_thread_id}"),
+                    None,
+                    "review",
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(view["interactions"][0]["projectionFresh"], false);
+        assert_eq!(
+            view["interactions"][1]["projectionFresh"],
+            mode != 7 && mode != 9
+        );
+    }
+    // Switch to an older runtime lacking interaction-features. A missing
+    // attached lookup is compatible, while the resolved-invoke refresh stays live.
+    output_mode.store(8, Ordering::SeqCst);
+    let legacy_app =
+        open_app_with_runtime(&database, &root, &catalog, &graph_url, &harness_url).await;
+    let legacy = response_json(
+        legacy_app
+            .clone()
+            .oneshot(api_request_with_token(
+                "GET",
+                &format!("/api/state?threadId={source_thread_id}"),
+                None,
+                "review",
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(legacy["interactions"][0]["projectionFresh"], true);
+    assert_eq!(legacy["interactions"][1]["projectionFresh"], true);
+    assert_eq!(unrelated_reads.load(Ordering::SeqCst), 0);
     graph_task.abort();
     harness_task.abort();
 }
@@ -3022,6 +3149,7 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
     assert_eq!(repeated_first.accepted_view, first.accepted_view);
 
     let forbidden = app
+        .clone()
         .oneshot(api_request_with_token(
             "GET",
             "/api/threads/1/export",
@@ -3031,6 +3159,107 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
         .await
         .unwrap();
     assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+
+    // Convert the real accepted invoke, retaining the durable Product origin row.
+    // Export must report the declared portability boundary before validating that
+    // row against the now-navigation action shape.
+    graph_database
+        .set_interaction_permissions_enabled(true)
+        .await
+        .unwrap();
+    let child = graph_database
+        .create_interaction_with_invocation(
+            Some(GraphProjectId::new(1).unwrap()),
+            GraphThreadId::new(1).unwrap(),
+            "ignored",
+            Some(relayer_graph_core::InteractionInvocation {
+                source_interaction_node_id: graph_interaction.id,
+                source_action_id: invoked.id,
+            }),
+        )
+        .await
+        .unwrap();
+    let child_writer = graph_database.writer_for_subgraph(child.id).await.unwrap();
+    let answer = child_writer
+        .submit_node(&NodeDraft {
+            client_key: "typed-answer".into(),
+            title: "Result".into(),
+            kind: "note".into(),
+            icon: "file".into(),
+            detail: "Done".into(),
+        })
+        .await
+        .unwrap();
+    let result_layer = child_writer
+        .submit_layer(&LayerDraft {
+            default_node_id: None,
+            client_key: "typed-result".into(),
+            nodes: vec![answer.id],
+            edges: vec![],
+            size_justification: None,
+            layout: authored_layout(answer.id),
+        })
+        .await
+        .unwrap();
+    child_writer
+        .add_action(&ActionDraft {
+            client_key: "typed-root".into(),
+            source_node_id: child.id,
+            source_layer_id: None,
+            kind: ActionKind::Navigate,
+            relation: Some(NavigateRelation::Expand),
+            label: "Result".into(),
+            variant: ActionVariant::Pill,
+            icon: None,
+            description: None,
+            target_layer_id: Some(result_layer.id),
+            interaction_text: None,
+            input: None,
+        })
+        .await
+        .unwrap();
+    child_writer.complete(child.id).await.unwrap();
+    let pool = sqlite_pool(&product_database).await;
+    sqlx::query("UPDATE interactions SET graph_node_id=?1,completion_status='accepted',completion_error=NULL WHERE id=2")
+        .bind(child.id.value()).execute(&pool).await.unwrap();
+    pool.close().await;
+    let blocked = app
+        .clone()
+        .oneshot(api_request("GET", "/api/threads/1/export", None, true))
+        .await
+        .unwrap();
+    assert!(!blocked.status().is_success());
+    assert_ne!(
+        blocked
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok()),
+        Some("application/x-ndjson; charset=utf-8")
+    );
+    let body = response_json(blocked).await;
+    assert!(
+        body.to_string()
+            .contains("Typed invoke resolution portability requires Slice 2."),
+        "{body}"
+    );
+
+    let shared = app
+        .oneshot(api_request(
+            "POST",
+            "/api/threads/1/share-export",
+            Some(json!({"title":"Typed result"})),
+            true,
+        ))
+        .await
+        .unwrap();
+    assert!(!shared.status().is_success());
+    let shared_error = response_json(shared).await;
+    assert!(
+        shared_error
+            .to_string()
+            .contains("Typed invoke resolution portability requires Slice 2."),
+        "{shared_error}"
+    );
 
     graph_task.abort();
     harness_task.abort();
@@ -8247,7 +8476,7 @@ async fn seed_explicit_test_model_default(database: &Path, thread_id: i64) {
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE interactions SET completion_status='accepted',model_provider_id='codex',provider_model_id='test-model',model_family_id=?1 WHERE thread_id=?2")
+    sqlx::query("UPDATE interactions SET completion_status='accepted',harness_configuration_name='codex-basic',model_provider_id='codex',provider_model_id='test-model',model_family_id=?1 WHERE thread_id=?2")
         .bind(family_id)
         .bind(thread_id)
         .execute(&pool)
@@ -8264,7 +8493,7 @@ async fn seed_thread_with_current_test_model(database: &Path, thread_id: i64) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    sqlx::query("UPDATE interactions SET completion_status='accepted',model_provider_id='codex',provider_model_id='test-model',model_family_id=?1 WHERE thread_id=?2")
+    sqlx::query("UPDATE interactions SET completion_status='accepted',harness_configuration_name='codex-basic',model_provider_id='codex',provider_model_id='test-model',model_family_id=?1 WHERE thread_id=?2")
         .bind(family_id)
         .bind(thread_id)
         .execute(&pool)
@@ -8514,6 +8743,17 @@ async fn serve_test_app(
         "/api/control/personal-presentation",
         axum::routing::get(|| async { axum::Json(json!({ "schemaVersion": 0 })) }),
     );
+    // Mock graphs predate typed conversions unless a test supplies this route.
+    let app = app.fallback(|uri: axum::http::Uri| async move {
+        if matches!(
+            uri.path(),
+            "/api/control/resolved-invoke-roots" | "/api/control/attached-navigation-roots"
+        ) {
+            axum::Json(json!([])).into_response()
+        } else {
+            StatusCode::NOT_FOUND.into_response()
+        }
+    });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let task = tokio::spawn(axum::serve(listener, app).into_future());
@@ -10020,6 +10260,234 @@ async fn restart_ends_an_unwinding_child_before_startup_finishes_its_providers_r
     assert_eq!(lease_deletes.load(Ordering::SeqCst), 1);
 
     drop(resumed);
+    graph_task.abort();
+    harness_task.abort();
+}
+
+#[tokio::test]
+async fn interaction_graph_projects_layer_owners_and_invocation_with_scope_and_read_failures() {
+    let root = tempfile::tempdir().unwrap();
+    let database = root.path().join("product.sqlite3");
+    drop(open_app(&database, root.path()).await);
+    let pool = sqlite_pool(&database).await;
+    let project = sqlx::query(
+        "INSERT INTO projects(name,path,created_at,updated_at) VALUES ('Project',?1,'1','1')",
+    )
+    .bind(root.path().to_string_lossy().as_ref())
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_rowid();
+    let mut thread_ids = Vec::new();
+    let mut interaction_ids = Vec::new();
+    for (graph_id, title) in [
+        (90, "Layer owner"),
+        (91, "Presenting interaction"),
+        (92, "Consumer"),
+        (93, "Outside scope"),
+    ] {
+        let thread = sqlx::query("INSERT INTO threads(title,project_id,created_at,updated_at,harness_configuration_name,permission_profile_id) VALUES (?1,?2,'1','1','codex-basic','auto')")
+            .bind(title).bind(if graph_id == 93 { None } else { Some(project) }).execute(&pool).await.unwrap().last_insert_rowid();
+        let interaction = sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,graph_node_id,completion_status,permission_profile_id) VALUES (?1,1,?2,'1',?3,'failed','auto')")
+            .bind(thread).bind(title).bind(graph_id).execute(&pool).await.unwrap().last_insert_rowid();
+        thread_ids.push(thread);
+        interaction_ids.push(interaction);
+    }
+    sqlx::query("UPDATE interactions SET input_identity='b3-contexts',input_digest='sha256:b3-contexts' WHERE id=?1")
+        .bind(interaction_ids[2]).execute(&pool).await.unwrap();
+    for (position, node, layer) in [(0, 7, 500), (1, 8, 500), (2, 9, 501)] {
+        sqlx::query("INSERT INTO interaction_context_intents(interaction_id,position,target_node_id,source_interaction_node_id,source_layer_id) VALUES (?1,?2,?3,91,?4)")
+            .bind(interaction_ids[2]).bind(position).bind(node).bind(layer).execute(&pool).await.unwrap();
+    }
+    pool.close().await;
+    let mode = Arc::new(AtomicI64::new(0));
+    let owner_mode = mode.clone();
+    let metadata_mode = mode.clone();
+    let gate_mode = mode.clone();
+    let input_mode = mode.clone();
+    let owner_reads = Arc::new(AtomicUsize::new(0));
+    let observed_reads = owner_reads.clone();
+    let graph = Router::new()
+        .route("/api/control/interaction-features", axum::routing::get(move || {
+            let enabled = gate_mode.load(Ordering::SeqCst) != 4;
+            async move { axum::Json(json!({"interactionGraph":enabled})) }
+        }))
+        .route("/api/control/interactions/92/input", axum::routing::get(move || { let mode = input_mode.load(Ordering::SeqCst); async move {
+            if mode == 5 { return StatusCode::SERVICE_UNAVAILABLE.into_response(); }
+            axum::Json(json!({
+                "interaction":{"id":92,"kind":"user-interaction","icon":"user","title":"Consumer","detail":"Consumer","state":"accepted"},
+                "contexts":([7,8,9].map(|node| json!({"type":"interaction.context","targetNode":{"id":node,"kind":"concept","icon":"box","title":"Attached","detail":"Attached detail","state":"accepted"},"annotations":[]}))),
+                "submittedInputs":[]
+            })).into_response()
+        }}))
+        .route("/api/control/interactions/92/context-actions", axum::routing::get(|| async {
+            axum::Json(json!({"actions":([(7,500),(8,500),(9,501)].map(|(node,layer)| json!({
+                "id":node+100,"type":"interaction.context","sourceNodeId":92,
+                "target":{"nodeId":node,"sourceInteractionNodeId":91,"sourceLayerId":layer},"annotations":[],"state":"accepted"
+            })))}))
+        }))
+        .route("/api/control/interactions/92/layers/{layer}/owner", axum::routing::get(move |axum::extract::Path(layer):axum::extract::Path<i64>| {
+            observed_reads.fetch_add(1,Ordering::SeqCst);
+            let mode = owner_mode.load(Ordering::SeqCst);
+            async move { axum::Json(json!({"layerId":if mode==1 {999} else {layer},"ownerInteractionNodeId":if mode==2 {93} else {90}})) }
+        }))
+        .route("/api/control/interactions/92", axum::routing::get(move || {
+            let mode = metadata_mode.load(Ordering::SeqCst);
+            async move {
+                if mode==3 { StatusCode::SERVICE_UNAVAILABLE.into_response() }
+                else { axum::Json(json!({"nodeId":92,"invocation":{"sourceInteractionNodeId":91,"sourceActionId":41}})).into_response() }
+            }
+        }));
+    let (graph_url, graph_task) = serve_test_app(graph).await;
+    let (harness_url, harness_task) = serve_test_app(Router::new()).await;
+    let catalog = root.path().join("catalog.json");
+    fs::write(&catalog, json!({"schemaVersion":1,"configurations":[{"configuration":{
+        "schemaVersion":1,"name":"codex-basic","implementation":"test","implementationVersion":1,"permissionBindings":{"auto":{}},"settings":{}
+    },"digest":"sha256:test"}]}).to_string()).unwrap();
+    let app =
+        open_app_with_runtime(&database, root.path(), &catalog, &graph_url, &harness_url).await;
+    let uri = format!("/api/threads/{}/interactions", thread_ids[2]);
+    for scenario in 0..4 {
+        mode.store(scenario, Ordering::SeqCst);
+        owner_reads.store(0, Ordering::SeqCst);
+        let response = app
+            .clone()
+            .oneshot(api_request_with_token("GET", &uri, None, "review"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        let projection = &body["interactions"][0]["interactionGraph"];
+        assert_eq!(projection["enabled"], true, "{body}");
+        assert_eq!(projection["complete"], scenario == 0, "{body}");
+        assert_eq!(
+            owner_reads.load(Ordering::SeqCst),
+            2,
+            "one lookup per distinct attached layer"
+        );
+        let sources = projection["sources"].as_array().unwrap();
+        if scenario == 0 || scenario == 3 {
+            assert_eq!(sources[0]["interactionId"], interaction_ids[0]);
+            assert_eq!(
+                sources[0]["layers"],
+                json!([{"layerId":500,"nodeIds":[7,8]},{"layerId":501,"nodeIds":[9]}])
+            );
+            assert!(sources[0]["invocationActionId"].is_null());
+        }
+        if scenario != 3 {
+            let invocation = sources.last().unwrap();
+            assert_eq!(invocation["interactionId"], interaction_ids[1]);
+            assert_eq!(invocation["invocationActionId"], 41);
+            assert_eq!(invocation["layers"], json!([]));
+        }
+        assert_eq!(sources.len(), if scenario == 0 { 2 } else { 1 });
+    }
+    mode.store(5, Ordering::SeqCst);
+    let unavailable = response_json(
+        app.clone()
+            .oneshot(api_request_with_token("GET", &uri, None, "review"))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(unavailable["interactions"][0]["projectionFresh"], false);
+    assert_eq!(
+        unavailable["interactions"][0]["interactionGraph"]["complete"],
+        false
+    );
+    mode.store(4, Ordering::SeqCst);
+    let gated_off =
+        open_app_with_runtime(&database, root.path(), &catalog, &graph_url, &harness_url).await;
+    let body = response_json(
+        gated_off
+            .oneshot(api_request_with_token("GET", &uri, None, "review"))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert!(
+        body["interactions"][0].get("interactionGraph").is_none(),
+        "{body}"
+    );
+    graph_task.abort();
+    harness_task.abort();
+}
+
+#[tokio::test]
+async fn interaction_graph_projection_shares_one_deadline_across_all_turns() {
+    let root = tempfile::tempdir().unwrap();
+    let database = root.path().join("product.sqlite3");
+    drop(open_app(&database, root.path()).await);
+    let pool = sqlite_pool(&database).await;
+    let thread = sqlx::query("INSERT INTO threads(title,created_at,updated_at,harness_configuration_name,permission_profile_id) VALUES ('Many turns','1','1','codex-basic','auto')")
+        .execute(&pool).await.unwrap().last_insert_rowid();
+    for sequence in 1..=20 {
+        sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,graph_node_id,completion_status,permission_profile_id) VALUES (?1,?2,'Turn','1',?2,'failed','auto')")
+            .bind(thread).bind(sequence).execute(&pool).await.unwrap();
+    }
+    pool.close().await;
+    let started = Arc::new(tokio::sync::Notify::new());
+    let reads = Arc::new(AtomicUsize::new(0));
+    let observed = reads.clone();
+    let notify = started.clone();
+    let graph = Router::new()
+        .route(
+            "/api/control/interaction-features",
+            axum::routing::get(|| async { axum::Json(json!({"interactionGraph":true})) }),
+        )
+        .route(
+            "/api/control/interactions/{id}",
+            axum::routing::get(move || {
+                let notify = notify.clone();
+                observed.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    notify.notify_one();
+                    std::future::pending::<StatusCode>().await
+                }
+            }),
+        );
+    let (graph_url, graph_task) = serve_test_app(graph).await;
+    let (harness_url, harness_task) = serve_test_app(Router::new()).await;
+    let catalog = root.path().join("catalog.json");
+    fs::write(&catalog, json!({"schemaVersion":1,"configurations":[{"configuration":{
+        "schemaVersion":1,"name":"codex-basic","implementation":"test","implementationVersion":1,"permissionBindings":{"auto":{}},"settings":{}
+    },"digest":"sha256:test"}]}).to_string()).unwrap();
+    let app =
+        open_app_with_runtime(&database, root.path(), &catalog, &graph_url, &harness_url).await;
+    for uri in [
+        format!("/api/threads/{thread}"),
+        format!("/api/state?threadId={thread}"),
+    ] {
+        reads.store(0, Ordering::SeqCst);
+        let pending = tokio::spawn(
+            app.clone()
+                .oneshot(api_request_with_token("GET", &uri, None, "review")),
+        );
+        started.notified().await;
+        tokio::time::pause();
+        tokio::time::advance(std::time::Duration::from_secs(5)).await;
+        tokio::time::resume();
+        let response = tokio::time::timeout(std::time::Duration::from_secs(2), pending)
+            .await
+            .expect("all turns must share one B3 deadline, not one timeout per turn")
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        let turns = body["interactions"].as_array().unwrap();
+        assert_eq!(turns.len(), 20);
+        for turn in turns {
+            assert_eq!(
+                turn["interactionGraph"],
+                json!({"enabled":true,"complete":false,"sources":[]})
+            );
+        }
+        assert_eq!(
+            reads.load(Ordering::SeqCst),
+            1,
+            "expired budget must start no later metadata requests"
+        );
+    }
     graph_task.abort();
     harness_task.abort();
 }

@@ -55,6 +55,25 @@ pub(crate) enum ConversationExportBuildError {
     ShareSnapshotTooLarge { bytes: usize },
 }
 
+fn require_portable_invoke_shape(
+    closure: &AcceptedGraphClosure,
+) -> Result<(), ConversationExportBuildError> {
+    if closure.has_persistent_mutations {
+        return Err(ConversationExportBuildError::Invalid(
+            "Export is not yet available for conversations containing attached-node navigation changes.".into(),
+        ));
+    }
+    if std::iter::once(&closure.root_action)
+        .chain(closure.layers.iter().flat_map(|layer| &layer.actions))
+        .any(|action| action.resolved_invoke_interaction_id.is_some())
+    {
+        return Err(ConversationExportBuildError::Invalid(
+            "Typed invoke resolution portability requires Slice 2.".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) async fn build_conversation_export(
     product: &ProductService,
     runtime: &RuntimeClient,
@@ -142,6 +161,7 @@ pub(crate) async fn build_conversation_export(
                     closure.node_id
                 )));
             }
+            require_portable_invoke_shape(&closure)?;
             Some(closure)
         } else {
             None
@@ -371,6 +391,7 @@ pub(crate) async fn build_share_conversation_export(
                 closure.node_id
             )));
         }
+        require_portable_invoke_shape(&closure)?;
         closures.push(closure);
         let durable_input = product.interaction_input(interaction.id).await?;
         context_inputs.push(ContextInput::Runtime(RuntimeContextInput {
@@ -1730,6 +1751,12 @@ fn export_action(
     ids: &mut PortableIds,
     redactor: &ProjectPathRedactor,
 ) -> Result<ExportAction, ConversationExportBuildError> {
+    if action.resolved_invoke_interaction_id.is_some() {
+        return Err(ConversationExportBuildError::Invalid(
+            "Typed invoke resolution portability requires Slice 2.".into(),
+        ));
+    }
+
     ensure_accepted(action.state, "action", action.id.value())?;
     let kind = match action.kind {
         ActionKind::Navigate => ExportActionKind::Navigate,
@@ -3142,7 +3169,7 @@ mod tests {
         let missing_metadata = missing.clone();
         let large = Arc::new(AtomicBool::new(false));
         let large_metadata = large.clone();
-        let app = axum::Router::new().route("/api/control/temporal-features", axum::routing::get(|| async { axum::Json(json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true})) })).fallback(move |request: axum::extract::Request| {
+        let app = axum::Router::new().route("/api/control/temporal-features", axum::routing::get(|| async { axum::Json(json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true})) })).route("/api/control/interaction-features", axum::routing::get(|| async { axum::Json(json!({"interactionGraph":false})) })).fallback(move |request: axum::extract::Request| {
             let counted = counted.clone();
             let deny = deny.clone();
             let metadata_counted = metadata_counted.clone();
@@ -3293,6 +3320,23 @@ mod tests {
             "reject the second 8 MiB asset from metadata before fetching its body"
         );
         server.abort();
+    }
+
+    #[test]
+    fn portable_export_rejects_persistent_mutation_closures() {
+        let mut closure: relayer_graph_core::AcceptedGraphClosure = serde_json::from_value(serde_json::json!({
+            "nodeId":1,"interaction":{"id":1,"kind":"user-interaction","icon":"user","title":"Question","detail":"Question","state":"accepted"},
+            "rootAction":{"id":1,"sourceNodeId":1,"kind":"navigate","relation":"expand","label":"Response","variant":"pill","targetLayerId":1,"state":"accepted"},
+            "rootLayerId":1,"layers":[]
+        })).unwrap();
+        super::require_portable_invoke_shape(&closure).unwrap();
+        closure.has_persistent_mutations = true;
+        let error = super::require_portable_invoke_shape(&closure).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("attached-node navigation changes")
+        );
     }
 
     #[test]
@@ -4271,6 +4315,7 @@ mod tests {
         let target = InteractionInputNode::from(target_node.clone());
         let runtime = RuntimeContextInput {
             input: InteractionInput {
+                interaction_permissions: None,
                 interaction: InteractionInputNode::from(GraphNode {
                     id: NodeId::new(10).unwrap(),
                     client_key: None,
@@ -4432,6 +4477,7 @@ mod tests {
     #[test]
     fn resolved_invoke_exports_its_authored_shape() {
         let action = GraphAction {
+            resolved_invoke_interaction_id: None,
             id: ActionId::new(1).unwrap(),
             client_key: Some("continue".into()),
             source_node_id: NodeId::new(2).unwrap(),
@@ -4456,6 +4502,23 @@ mod tests {
         )
         .unwrap();
 
+        let converted = GraphAction {
+            kind: ActionKind::Navigate,
+            relation: Some(relayer_graph_core::NavigateRelation::Expand),
+            interaction_text: None,
+            resolved_invoke_interaction_id: Some(NodeId::new(5).unwrap()),
+            ..action.clone()
+        };
+        assert!(
+            export_action(
+                &converted,
+                &mut PortableIds::default(),
+                &ProjectPathRedactor::new(None)
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("Slice 2")
+        );
         assert!(exported.target_layer_id.is_none());
         assert_eq!(
             exported.interaction_text.as_deref(),
@@ -4466,6 +4529,7 @@ mod tests {
     #[test]
     fn unanswered_input_action_exports_its_authored_payload() {
         let action = GraphAction {
+            resolved_invoke_interaction_id: None,
             id: ActionId::new(1).unwrap(),
             client_key: Some("choose".into()),
             source_node_id: NodeId::new(2).unwrap(),
@@ -4526,6 +4590,7 @@ mod tests {
         assert_eq!(authored_key.len(), 128);
         assert_eq!(authored_key_with_internal_space.len(), 128);
         let action = GraphAction {
+            resolved_invoke_interaction_id: None,
             id: ActionId::new(1).unwrap(),
             client_key: Some("choose".into()),
             source_node_id: NodeId::new(2).unwrap(),

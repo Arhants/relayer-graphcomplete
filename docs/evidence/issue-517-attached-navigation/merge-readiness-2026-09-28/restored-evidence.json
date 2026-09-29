@@ -1,0 +1,19 @@
+{
+  "build.log": "03adb8e0a5dac20260ec09244912c7958d34f4c3d93024654cf6bc0db457548d",
+  "cache.log": "a4916edd52930ce061f7b4f6f52bfad497f8f5dc163ed0de6ea4355ae5f38eb0",
+  "compiled-eval.log": "2a9c228cf8fc87d09d815b87b53f04b6cdd7ff108231403afc572378a220dd8b",
+  "context-lifecycle.log": "59d99176566ddbacbffb39ceb14462782048e9c8946c947664a52c90fd12e3e8",
+  "core-focused.log": "d788bd22ae03a15e1ee665a4b05439922bc989936aab6a8d1edebd90a6834ac9",
+  "full-check.log": "8a7b28404e44d27ac3e285a9b332943cac1329435606045459df22573c1d34ab",
+  "gated-capture-failure.log": "cb0e251eabfbc28529b452243a6bba5d860f30d70c623400a6054c9d00ce19bc",
+  "gated-capture-recurrence.log": "cb0e251eabfbc28529b452243a6bba5d860f30d70c623400a6054c9d00ce19bc",
+  "gated-compiler-failure.log": "2c0565cb07ece3d93c708dacf63953d36f9b1d5a4bdf01082ad6adb16a6f0fd7",
+  "gated-fixture-failure.log": "8e032a17728e61400b697b1bda6d8706f1e898ab3e7fc8c1d70e4a83327da13b",
+  "gated-presenter-assertion-failure.log": "13a9056ed75aeffa347d465d8b9956d878d877fb3cba50d53718afb9db238f65",
+  "gated-readiness-failure.log": "6d10cab9faf764dc51cea0423d33fb5b1d38a9d98e3843dcc0457879877b54cb",
+  "gated-request-failure.log": "2418f22698683e467f5b27fd6a08e0007cd53a524a98d1f8c1a2a465d7c368d7",
+  "http-fixture-full-check-failure.log": "9ab78438188036d3d6ff5a6bd8bc3fc145349d5e375304ed738e9eb511472eea",
+  "intermediate-full-check-failure.log": "0ce13cd4a7f6ea3f58b555ccc13811d112b1e891a42b0c18db67ff0081cbe121",
+  "prompt-focused.log": "ccb07d4fa846ec57ce5fc85fa6268e5a433d1495064836089c7667bd91893301",
+  "red.log": "a85e3bfffbfd07ae198f2dc048cc1acbc08830ad89a3b69e083fb522950fc423"
+}

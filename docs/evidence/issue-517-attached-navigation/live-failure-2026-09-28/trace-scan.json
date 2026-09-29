@@ -1,0 +1,22 @@
+[
+  {
+    "interaction": "1",
+    "findings": {
+      "providerKey": 0,
+      "pem": 0,
+      "bearerValue": 0,
+      "jwt": 0,
+      "homePath": 0
+    }
+  },
+  {
+    "interaction": "2",
+    "findings": {
+      "providerKey": 0,
+      "pem": 0,
+      "bearerValue": 0,
+      "jwt": 0,
+      "homePath": 0
+    }
+  }
+]

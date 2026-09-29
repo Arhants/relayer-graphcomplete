@@ -1,0 +1,85 @@
+Starting isolated Electron first-message smoke test...
+Electron application ready.
+Error occurred in handler for 'relayer:layer-selections-read': Error: No handler registered for 'relayer:layer-selections-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-read': Error: No handler registered for 'relayer:layer-selections-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:layer-selections-remember': Error: No handler registered for 'relayer:layer-selections-remember'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error: {"interactionGraph":{"complete":true,"enabled":true,"sources":[{"completionStatus":"accepted","graphNodeId":21,"interactionId":1,"invocationActionId":null,"layers":[{"layerId":7,"nodeIds":[24]}],"text":"Show the deterministic task system.","threadId":1}]},"id":5,"threadId":1,"sequence":5,"text":"Explain the attached results store.","createdAt":"1790614969128","graphNodeId":45,"completionStatus":"failed","stopRequested":false,"stopError":null,"harnessConfigurationName":"fixture-task-system","harnessConfigurationDigest":"sha256:2114259d87423fe6d011ce54aac60afa32a16e596a02461440cdf7785fd16a57","permissionProfileId":"auto","modelSelection":{"familyId":1,"providerId":"codex","modelId":"fixture-model"},"effectiveExecutionDigest":"sha256:431c40e553d107fafbdb394fc6b19584742b5aafb44ac45340af88054bfdea9c","effectivePermissionReceipt":{"authority":"bounded","bindingPresent":true,"disclosure":null,"label":"Approve for me","permissionProfileId":"auto","reviewer":"automatic","schemaVersion":1,"unconfinedHostAccess":false},"completionOutput":null,"completionError":"The harness could not complete this attempt.","latestAttempt":{"id":5,"attemptNumber":1,"startedAt":"1790614969173","finishedAt":"1790614969227","modelSelection":{"familyId":1,"providerId":"codex","modelId":"fixture-model"},"familyRevision":1,"harnessConfigurationName":"fixture-task-system","harnessConfigurationRevision":1,"harnessConfigurationDigest":"sha256:2114259d87423fe6d011ce54aac60afa32a16e596a02461440cdf7785fd16a57","adapterId":"codex-subscription","adapterImplementationVersion":1,"accessContract":"managed-runtime@1","outcome":"execution_failed","failureCategory":"execution","failureMessage":"This attempt failed. Review the attempt details before trying again.","effectBoundary":"unknown","attemptAdmissionId":"870a6e6f-570a-4ccb-a67a-f13591ec9008","admittedPlan":{"familyId":1,"familyRevision":1,"orchestrator":{"providerId":"codex","adapterId":"codex-subscription","accessContract":"managed-runtime@1","modelId":"fixture-model","adapterImplementationVersion":"1"},"roster":[{"providerId":"codex","adapterId":"codex-subscription","accessContract":"managed-runtime@1","modelId":"fixture-model","adapterImplementationVersion":"1"}],"harnessPolicyDigest":"sha256:1ff2d9ece673ede441473ee005b4e9aadf7ba1c04c812885626179ec42afced0","digest":"sha256:03868f85352782a7086346aab2357e4a16ab66d198f6030a2afd45b348eb593d"}},"projectionFresh":true,"contexts":[{"id":18,"type":"interaction.context","target":{"nodeId":24,"sourceInteractionNodeId":21,"sourceLayerId":7},"targetNode":{"id":24,"kind":"concept","icon":"database","title":"Results store","detail":"When a worker completes a task, it writes the output to the results store. The freed worker then claims the next task from the queue.","state":"accepted"},"annotations":["Explain this attached source"]}],"submittedInputs":[]}
+    at file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/scripts/test-desktop-first-message.mjs:826:61
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async waitFor (file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/scripts/test-desktop-first-message.mjs:90:19)
+    at async run (file:///Users/vishaltandale/.codex/worktrees/required-attached-navigation/relayer-graphcomplete/scripts/test-desktop-first-message.mjs:823:23)

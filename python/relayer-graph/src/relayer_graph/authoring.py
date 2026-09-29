@@ -7,14 +7,14 @@ import os
 import socket
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence, TypedDict
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .exceptions import (APIError, AuthenticationError, ConfigurationError,
                          GraphQueryError, NotFound, TransportError,
                          ValidationError, ValidationIssue)
-from .detail import NodeDetailAuthoring
+from .detail import NodeDetailAuthoring, _create_owned_authoring
 from .visual_assets import GraphVisualAssets
 from .query import GraphSearchRequest, GraphSearchResult
 from .query_errors_generated import (GRAPH_QUERY_CONTRACT_VERSION,
@@ -92,11 +92,29 @@ class SubmittedInput:
         return cls(dict(value["action"]), dict(value["value"]))
 
 
+class NavigateAddPermission(TypedDict):
+    kind: Literal["navigate.add"]
+    nodeId: int
+
+
+class InvokeResolvePermission(TypedDict):
+    kind: Literal["invoke.resolve"]
+    actionId: int
+
+
+class InteractionPermissions(TypedDict):
+    """Read-only server snapshot; it is never accepted as authoring authority."""
+    version: Literal["1", "2"]
+    enabled: bool
+    permissions: Sequence[NavigateAddPermission | InvokeResolvePermission]
+
+
 @dataclass(frozen=True, slots=True)
 class InteractionInput:
     interaction: InteractionInputNode
     contexts: tuple[InteractionContext, ...]
     submitted_inputs: tuple[SubmittedInput, ...] = ()
+    interaction_permissions: InteractionPermissions | None = None
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "InteractionInput":
@@ -104,6 +122,7 @@ class InteractionInput:
             InteractionInputNode.from_dict(value["interaction"]),
             tuple(InteractionContext.from_dict(item) for item in value.get("contexts", ())),
             tuple(SubmittedInput.from_dict(item) for item in value.get("submittedInputs", ())),
+            value.get("interactionPermissions"),
         )
 
 
@@ -151,15 +170,22 @@ class GraphLayer:
         )
 
 
+class _WeakNode:
+    __slots__ = ("__weakref__",)
+
+
 @dataclass(slots=True)
-class NodeObject:
+class NodeObject(_WeakNode):
     icon: str
     title: str
     detail: str
     kind: str = "concept"
     client_key: str = field(default_factory=lambda: str(uuid.uuid4()))
     ref: GraphNode | None = field(default=None, init=False)
-    detail_authoring: NodeDetailAuthoring = field(default_factory=NodeDetailAuthoring, init=False)
+    detail_authoring: NodeDetailAuthoring = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.detail_authoring = _create_owned_authoring(self)
 
 
 @dataclass(slots=True)
@@ -241,6 +267,10 @@ class RelayerGraphClient:
         value = await self._request("GET", f"/api/graph/nodes/{_node_id(node)}")
         return GraphNode.from_dict(value["node"])
 
+    async def get_node_presentation(self, node: NodeReference) -> Mapping[str, Any]:
+        """Read the frozen-grant-authorized node, revision and existing actions."""
+        return await self._request("GET", f"/api/graph/nodes/{_node_id(node)}/presentation")
+
     async def get_neighbors(self, node: NodeReference) -> tuple[GraphNode, ...]:
         value = await self._request("GET", f"/api/graph/nodes/{_node_id(node)}/neighbors")
         return tuple(GraphNode.from_dict(item) for item in value["nodes"])
@@ -248,7 +278,13 @@ class RelayerGraphClient:
     async def get_interaction_input(self) -> InteractionInput:
         return InteractionInput.from_dict(await self._request("GET", "/api/graph/input"))
 
+    def bind_node(self, node: NodeObject) -> NodeObject:
+        """Bind a repair object before reusing the same logical node's HTML."""
+        node.detail_authoring._bind(node, self.url, self.node_id)
+        return node
+
     async def submit_node(self, node: NodeObject) -> GraphNode:
+        self.bind_node(node)
         if node.detail_authoring._components or node.detail_authoring._cleared:
             raise ConfigurationError("Visual details require GraphSession.current() in Prime")
         value = await self._request("POST", "/api/graph/nodes", {
@@ -293,7 +329,7 @@ class RelayerGraphClient:
                                   description: str | None = None) -> Mapping[str, Any]:
         """Add expansion or supporting-reference navigation.
 
-        Omit ``source_layer`` only for the interaction node's root expansion.
+        Omit ``source_layer`` for root expansion or authorized attached-node additions.
         At any layer, add navigation only when opening it materially improves
         understanding or support. The service returns direct repair guidance
         when the action violates the current layer's authoring contract.

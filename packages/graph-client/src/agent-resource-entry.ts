@@ -2,7 +2,6 @@ export * from "./client.js";
 export {
   DETAIL_AUTHORING_LIMITS,
   DetailCompilationError,
-  NodeDetailAuthoring,
   assetRef,
   css,
   detailCapability,
@@ -10,6 +9,7 @@ export {
   html,
 } from "./detail.js";
 export type {
+  NodeDetailAuthoring,
   CompiledCapabilityMount,
   CompiledDetailComponent,
   CompiledDetailMount,

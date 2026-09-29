@@ -1,0 +1,144 @@
+{
+  "sourceDigest": "c1eeb827dc4453d5efe6fdd53e679085b9bcf1523e31e5a525afb82983f2a7bf",
+  "humanAcceptance": "pending",
+  "provider": {
+    "harness": "Codex Basic",
+    "model": "Codex defaults / GPT-5.6-Sol",
+    "authentication": "Existing native Codex subscription home via supported RELAYER_CODEX_HOME; no secrets copied",
+    "profileIsolation": "Product data, graph data, and managed runtime installation",
+    "productionEntryPoint": "desktop/main/index.mjs",
+    "optionalRelayerAccount": "signed out"
+  },
+  "firstLivePair": {
+    "profile": ".relayer/pr536-live-qualification",
+    "threadId": 1,
+    "sourceInteractionId": 1,
+    "sourceNodeId": 22,
+    "actionId": 6,
+    "sourceLayers": [
+      7,
+      6
+    ],
+    "resultInteractionId": 2,
+    "resultLayerId": 8,
+    "resultNodeIds": [
+      26,
+      27,
+      28
+    ],
+    "turns": 2,
+    "invocations": 1,
+    "verdict": "Failed automatic presentation: accepted result retained source layer under Turn 2; explicit return to Turn 1 restored navigation",
+    "correction": "Use hydrated appState.currentInteractionId as prior presentation owner during refresh"
+  },
+  "boundedRecheck": {
+    "profile": ".relayer/pr536-live-qualification",
+    "threadId": 2,
+    "sourceInteractionId": 3,
+    "sourceNodeId": 30,
+    "actionId": 10,
+    "sourceLayers": [
+      10,
+      9
+    ],
+    "resultInteractionId": 4,
+    "verdict": "Stored acceptance and conversion confirmed; automatic visual transition indeterminate because native accessibility and screenshot observations disagree",
+    "resultLayerId": 11,
+    "resultNodeIds": [
+      34,
+      35,
+      36
+    ],
+    "turns": 2,
+    "invocations": 1,
+    "reopenObservation": "Unique local Electron bundle identity restored matching native AX and screenshot: accepted Prepare\u2192Observe\u2192Decide, Turn2of2. Automatic prior transition remains indeterminate.",
+    "parentReview": {
+      "reopenedResult": "Matching AX and screenshot personally observed: Prepare\u2192Observe\u2192Decide, Turn2of2",
+      "automaticTransition": "unverified",
+      "originalAndSecondOccurrenceNavigation": "unverified; stale native observations and noWindowsAvailable",
+      "reviewerThread": "01a0d9c7-e4af-7112-a0f6-92226b2a4201"
+    }
+  },
+  "userScenario": {
+    "profile": ".relayer/pr536-live-human",
+    "status": "Provider setup complete; source not generated because native input observations remain unreliable",
+    "liveCalls": 0,
+    "promptFile": "LIVE-PROMPT.txt",
+    "url": "http://127.0.0.1:52811/",
+    "appRunning": true,
+    "foreground": "Raise requested; AX shows empty connected composer, screenshot shows stale optional account prompt; exact foreground content unverified",
+    "browserFallback": "One ordinary localhost browser attempt refused missing desktop session; tab closed, no bridge or authentication bypass"
+  },
+  "verification": {
+    "focusedController": {
+      "testsPassed": 124,
+      "filesPassed": 5,
+      "durationSeconds": 1.2
+    },
+    "runtimeSpawnBoundary": {
+      "testsPassed": 6,
+      "durationSeconds": 0.551
+    },
+    "build": {
+      "status": "passed",
+      "log": "/tmp/pr536-live-display-build.log",
+      "logSha256": "140ad705720ee7aea7680355e35dd631ef36353d4b4dcfe28edd578dcd73ed32"
+    },
+    "desktopGated": {
+      "status": "passed",
+      "result": "gated-result.json",
+      "visualLimitation": "Current 07-reopened-second-occurrence.png shows the correct nested layer but no selected-node inspector. Runner DOM/control checks passed; this image does not certify compiled-control visibility."
+    },
+    "desktopDefaultOff": {
+      "status": "passed",
+      "result": "default-off-result.json"
+    },
+    "fullCheckFirst": {
+      "status": "failed",
+      "log": "/tmp/pr536-live-display-check.log",
+      "reason": "Managed-runtime restart activation cancellation test exceeded 15000ms",
+      "testsPassed": 2628,
+      "testsFailed": 1,
+      "testsSkipped": 3,
+      "logSha256": "fe4ccfbd653f3e41a2b7b84909d503ecb9ae85113760743e32669a36ef5a3d6d"
+    },
+    "focusedUnchangedRetry": {
+      "status": "passed",
+      "log": "/tmp/pr536-live-installer-recheck.log",
+      "test": "tracks and safely cancels restart activation before the active pointer changes",
+      "durationMilliseconds": 88,
+      "logSha256": "9336daa4a06c2eecd915bf054ebef61b6d5e6246b5b180eb021e710b62f675b2"
+    },
+    "fullCheckUnchangedRetry": {
+      "status": "failed",
+      "log": "/tmp/pr536-live-display-check-retry.log",
+      "testsPassed": 2629,
+      "testsSkipped": 3,
+      "filesPassed": 203,
+      "reason": "Final isolated secret-boundary test temporary-directory cleanup ENOTEMPTY; outer check exited 1",
+      "logSha256": "fe294fc0b8edc0fc1ec4eac78c9e34cff58094e3a61c8ceb2360dfcc053bcde4"
+    },
+    "secretBoundaryUnchangedRetry": {
+      "status": "passed",
+      "testsPassed": 2,
+      "log": "/tmp/pr536-live-secret-recheck.log",
+      "logSha256": "c827d4018dbfb9c8c40d633136c6d02d6b4b3767b33236f54148d3fb13e40fba"
+    },
+    "remainingCheckTail": {
+      "status": "passed",
+      "pythonTestsPassed": 43,
+      "receiptLint": "passed",
+      "prdReadability": "passed",
+      "log": "/tmp/pr536-live-check-remainder.log",
+      "logSha256": "49c4a9d60da6a60b616b5407105b027c0c046da4f3188a58c5e595932afa8b10"
+    }
+  },
+  "devAppIdentity": {
+    "path": ".relayer/Relayer PR536 Live.app",
+    "bundleId": "dev.relayer.pr536.live",
+    "origin": "Copy of existing official worktree Electron.app; only top-level Info.plist identity changed",
+    "reason": "Two concurrent Electron apps shared com.github.Electron; CUA observations disagreed",
+    "sourceChanges": false
+  },
+  "publication": "Additional changes local only; no push authorized"
+}

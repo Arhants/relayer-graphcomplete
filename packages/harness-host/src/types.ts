@@ -180,6 +180,8 @@ export interface HarnessTraceSink {
 }
 
 export interface HarnessCompletionTraceContext {
+  readonly requireNativeContinuity?: boolean;
+  readonly nativeHistoryAnchor?: { readonly interactionNodeId: number; readonly message: string };
   readonly productInteractionId: number;
   readonly personalPresentationVersionId?: number;
   /** Product-owned key for the same stored pin, never the current configuration default. */
@@ -223,6 +225,9 @@ export type CompletionOrigin =
     };
 
 export interface HarnessRunContext {
+  /** Trusted product assertion: a fresh native root would lose legacy context. */
+  readonly requireNativeContinuity?: boolean;
+  readonly nativeHistoryAnchor?: { readonly interactionNodeId: number; readonly message: string };
   /** GraphComplete provenance; provider session identity is deliberately separate. */
   readonly origin: CompletionOrigin;
   readonly inputGraph: GraphNode;

@@ -2,10 +2,18 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import Any, Mapping
 
-from .authoring import GraphNode, NodeObject, RelayerGraphClient
+from .authoring import GraphNode, NodeObject, NodeReference, RelayerGraphClient, _node_id
 from .exceptions import ConfigurationError, ValidationError
+from .detail import NodeDetailAuthoring
+
+
+@dataclass
+class _VisualSubmission:
+    payload: Any
+    task: asyncio.Task[GraphNode] | None = None
 
 
 class GraphSession(RelayerGraphClient):
@@ -13,7 +21,7 @@ class GraphSession(RelayerGraphClient):
 
     def __init__(self, url: str, token: str, node_id: int, *, timeout: float = 30.0) -> None:
         super().__init__(url, token, node_id, timeout=timeout)
-        self._visual_submissions: dict[str, asyncio.Task[GraphNode]] = {}
+        self._visual_submissions: dict[NodeDetailAuthoring, _VisualSubmission] = {}
 
     @classmethod
     async def current(cls, *, timeout: float = 30.0) -> "GraphSession":
@@ -44,6 +52,7 @@ class GraphSession(RelayerGraphClient):
         return cls(url, token, node_id, timeout=timeout)
 
     def _visual_payload(self, operation: str, node: NodeObject) -> Any:
+        self.bind_node(node)
         # Serialize now: nested Python mutations cannot change an in-flight program.
         import json
         payload = json.loads(json.dumps({
@@ -55,13 +64,14 @@ class GraphSession(RelayerGraphClient):
         }))
         return payload
 
-    async def _visual_authoring(self, operation: str, node: NodeObject, payload: Any = None) -> Any:
+    async def _visual_authoring(self, operation: str, node: NodeObject, payload: Any = None, *, authoring: NodeDetailAuthoring | None = None) -> Any:
         from rlm import host_request
+        authoring = node.detail_authoring if authoring is None else authoring
         if payload is None:
             payload = self._visual_payload(operation, node)
         result = await host_request("relayer.graph.visual-authoring", payload)
         if result.get("frozen") is True:
-            node.detail_authoring._frozen = True
+            authoring._frozen = True
         if result.get("ok") is not True:
             # Include compiler locations in the displayed exception as well as retaining
             # the exact structured response for programmatic repair.
@@ -73,36 +83,57 @@ class GraphSession(RelayerGraphClient):
         return result["value"]
 
     async def checkpoint_node_detail(self, node: NodeObject) -> Any:
+        self.bind_node(node)
         return await self._visual_authoring("checkpoint", node)
 
+    async def replace_node_presentation(self, node: NodeReference, expected_revision: int,
+                                        presentation: NodeObject) -> None:
+        """Stage a compiled full replacement; never submit the semantic node envelope."""
+        payload = self._visual_payload("replace", presentation)
+        payload["replacement"] = {"nodeId": _node_id(node), "expectedRevision": expected_revision}
+        await self._visual_authoring("replace", presentation, payload)
+
     async def submit_node(self, node: NodeObject) -> GraphNode:
-        key = node.detail_authoring._object_id
-        existing = self._visual_submissions.get(key)
-        if existing is not None:
-            return await asyncio.shield(existing)
-        if node.detail_authoring._finalizing:
-            raise ValueError("detail_finalization_in_progress")
-        payload = self._visual_payload("submit", node)
-        node.detail_authoring._finalizing = True
+        key = node.detail_authoring
+        submission = self._visual_submissions.get(key)
+        if submission is not None:
+            # Recheck the exact owner and scope against the frozen envelope, not
+            # mutable fields that cannot change the already registered request.
+            key._bind(node, self.url, self.node_id, captured_key=submission.payload["node"]["clientKey"])
+            if submission.task is not None:
+                return await asyncio.shield(submission.task)
+        else:
+            self.bind_node(node)
+            if key._finalizing:
+                raise ValueError("detail_finalization_in_progress")
+            submission = _VisualSubmission(self._visual_payload("submit", node))
+            self._visual_submissions[key] = submission
+        key._finalizing = True
 
         async def submit() -> GraphNode:
             try:
-                value = await self._visual_authoring("submit", node, payload)
+                value = await self._visual_authoring("submit", node, submission.payload, authoring=key)
                 node.ref = GraphNode.from_dict(value)
                 return node.ref
             except BaseException as error:
-                # A lost host response may follow successful compilation. Keep
-                # the local builder fixed until the same request is retried.
-                if not isinstance(error, ValidationError):
-                    node.detail_authoring._frozen = True
-                self._visual_submissions.pop(key, None)
+                # Only an explicit mutable rejection releases the frozen envelope.
+                # Lost responses and frozen host failures replay the exact payload.
+                mutable_rejection = (isinstance(error, ValidationError)
+                                     and isinstance(error.details, Mapping)
+                                     and error.details.get("frozen") is False)
+                if mutable_rejection:
+                    key._frozen = False
+                    self._visual_submissions.pop(key, None)
+                else:
+                    key._frozen = True
+                    submission.task = None
                 raise
             finally:
-                node.detail_authoring._finalizing = False
+                key._finalizing = False
 
         task = asyncio.create_task(submit())
         task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
-        self._visual_submissions[key] = task
+        submission.task = task
         return await asyncio.shield(task)
 
     def __getstate__(self) -> None:

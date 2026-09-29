@@ -1,0 +1,13 @@
+{
+  "caseId": "17eef7a18d02",
+  "cwdSha256": "83e515e099ef9a40f6580690d16e4c13c2fcc06db95a1b0b03e014e1ad2ac69d",
+  "snapshot": "false",
+  "nativeSha256": "19c4f144c5226a9f17c58e6f0fa854843b0f77a6eb420f40e2745a12f10f5d37",
+  "configSha256": "8302821c311b1830e12bda141e24fef5141ae9da78dcfc1b59a9da14a054285b",
+  "caseMatched": true,
+  "providerKeyPresent": false,
+  "providerUrlPresent": false,
+  "graphUrlPresent": true,
+  "graphTokenPresent": true,
+  "graphNodePresent": true
+}

@@ -643,6 +643,12 @@ async function run() {
   await waitFor("sidebar thread change waits for draft persistence", () => heldSidebarSave);
   await click("#closeInspector");
   releaseSidebarSave();
+  await waitFor("the latest Close cancels sidebar navigation after saving", () => evaluate(`
+    new URL(location.href).searchParams.get('threadId') === ${JSON.stringify(String(thread.id))}
+      && document.querySelector('#inspector')?.classList.contains('hidden')
+      && !document.querySelector('#contextAnnotationEditor')
+  `));
+  await clickNode("Incoming queue");
   await waitFor("cancelled sidebar change restores dock controls", () => evaluate(`(() => {
     const editor = document.querySelector('#contextAnnotationEditor');
     return new URL(location.href).searchParams.get('threadId') === ${JSON.stringify(String(thread.id))}
@@ -867,6 +873,14 @@ async function run() {
     throw new Error(`Selection or turn navigation escaped a pending confirm: ${JSON.stringify(selectionDuringConfirm)}`);
   }
   rejectConfirmRequest();
+  await waitFor("the latest turn request proceeds after confirmation settles", () => evaluate(`
+    document.querySelector('#turnPickerButton')?.textContent === 'Turn 2 of 2'
+  `));
+  await click("#previousTurn");
+  await waitFor("the failed confirmation source turn is restored", () => evaluate(`
+    document.querySelector('#turnPickerButton')?.textContent === 'Turn 1 of 2'
+  `));
+  await clickNode("Incoming queue");
   await waitFor("inline Node Details confirmation failure", () => evaluate(`(() => {
     const error = document.querySelector('#nodeContextDock [role="alert"]');
     const editor = document.querySelector('#contextAnnotationEditor');
@@ -982,7 +996,17 @@ async function run() {
 
   await setValue("#threadPrompt", SUCCESS_MESSAGE);
   await click("#sendInteraction");
-  await waitForAcceptedInteractions(thread.id, 3);
+  const successfulDetail = await waitForAcceptedInteractions(thread.id, 3);
+  const successfulNodeIds = successfulDetail.interactions.at(-1).completionOutput.rootLayer.nodes
+    .map(({ id }) => String(id)).sort();
+  // Durable acceptance precedes the renderer's next refresh. The prior turn's historical
+  // context must stay visible until first-ready navigation actually commits.
+  await waitFor("accepted follow-up layer to become the visible turn", () => evaluate(`(() => {
+    const visibleNodeIds = [...document.querySelectorAll('.graph-node[data-node]')]
+      .map((node) => node.dataset.node).sort();
+    return document.querySelector('#turnPickerButton')?.textContent === 'Turn 3 of 3'
+      && JSON.stringify(visibleNodeIds) === ${JSON.stringify(JSON.stringify(successfulNodeIds))};
+  })()`));
   await waitFor("next composer to become available", () => evaluate(`
     !document.querySelector('#threadPrompt')?.disabled
   `));

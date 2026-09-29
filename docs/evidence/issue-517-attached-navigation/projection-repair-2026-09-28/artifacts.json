@@ -1,0 +1,47 @@
+[
+  {
+    "path": "build.txt",
+    "byteLength": 1940,
+    "sha256": "ae802a3ac8b6762e911f917c6240ba77786dd661f6fbf6a7fd718f1389dc4583"
+  },
+  {
+    "path": "first-replay-failure.txt",
+    "byteLength": 773,
+    "sha256": "8ec61f7ea33f6e2f7448c5dadfbff7a13a62a57eeb83572548f105ca6a20b7c7"
+  },
+  {
+    "path": "fresh-readback-before-receipt-failure.json",
+    "byteLength": 60837,
+    "sha256": "075c8fbdb18fd755dfe4c1ab7c001283c77e5e021ce4f498aa15dd39d6a70115"
+  },
+  {
+    "path": "full-check.txt",
+    "byteLength": 108722,
+    "sha256": "e815027b1b15391e4ae22c9f169f823a119462fef2e5252bd17e4632b31d75a4"
+  },
+  {
+    "path": "generation-temporal-config.json",
+    "byteLength": 188,
+    "sha256": "e78d7141057f0ef4b9b78dbb7c2b33115b6b05bf52f85d51a7f3141d51b9c07b"
+  },
+  {
+    "path": "prior-full-check.txt",
+    "byteLength": 109190,
+    "sha256": "04b1b20642497eba5063b5d2364ef8b2f8e5e408a2bc4929eb748d62a802538d"
+  },
+  {
+    "path": "review.json",
+    "byteLength": 1147,
+    "sha256": "c913031101d136dc897c9160d02eb52504338ae2ef1fb9baeef365c7bd4f197f"
+  },
+  {
+    "path": "storage-core.txt",
+    "byteLength": 783,
+    "sha256": "af4444b71699ad66ac0f024f31d0083d3e286fa2761957847bf2d9c24e50b6f1"
+  },
+  {
+    "path": "tested-source.json",
+    "byteLength": 30700,
+    "sha256": "ffc00af339e940ef6fba9eee77b4a74d685719ce0d7ed289d39e86649cc83d86"
+  }
+]
