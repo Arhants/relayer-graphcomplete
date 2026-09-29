@@ -770,6 +770,69 @@ If the app server alone restarted, its restored row would stay the record.
 It would accept the coordinator's next generation, and the coordinator's
 counter only grows.
 
+### `ReadinessRepair.tla`
+
+This model covers readiness across Repair, restart and upgrade for two
+providers that share one harness. ChatGPT and OpenRouter both run through
+`codex-basic`. It adds three things to `HarnessReadiness`:
+
+- **Two runtime predicates:** `files` is what startup's cheap validation
+  checks, and `execs` is what the version probe checks. External damage
+  can break either one.
+- **Upgrades:** a restart may change the configuration digest, or require
+  the other runtime recipe. Its staged runtime then either activated or not.
+- **The automatic evaluation:** the app server's upgrade mark, Desktop's one
+  background evaluation, and the commit that clears the mark.
+
+`readiness-repair-today` mirrors the code, and each `-reverted` check turns
+one fix off. Three constants hold the fixes:
+
+- `RepairRevalidates` (R1): Repair, app-update staging and post-update
+  activation reuse an installation only when it passes startup's full
+  validation, then the probe. Otherwise they reinstall.
+- `UpgradeEvaluates` (#556): an upgrade that changes the digest marks the
+  route due in the app server. After startup, Desktop runs one background
+  evaluation through the `recipe-update` trigger. The next committed result
+  clears the mark.
+- `RecipeChangeMarksDue` (PR #576 review): the app server records the recipe
+  each route last loaded. An upgrade that changes only the recipe does not
+  restore the old ready and marks the route due, whether the staged runtime
+  activated or not.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `repair-validated` | Fixed; now passes | Before the fix (R1): reuse checked only that the entrypoints were regular files and that the probe passed, and `stat` follows symlinks. Startup also checks the ownership marker, the owned private state and entrypoint confinement. So Repair published ready for an installation the next start rejected. Regressions: the installer tests "repairs an installation startup rejects because …", "stages a fresh app-update generation when the active one is unusable because …" and "does not activate a pending generation startup would reject because …" fail on the old code. |
+| `repair-validated-reverted` | Confirmed | With the probe alone, a Repair after the layout broke publishes ready for an installation startup rejects. |
+| `repair-survives-restart` | Fixed; now passes | A route an evaluation made ready survives a restart that changes nothing. |
+| `repair-survives-restart-reverted` | Confirmed | Before the fix, the next unchanged restart withdrew the ready that Repair had published, so Repair never stuck. |
+| `repair-records` | passes | With both fixes, startup restores only from the app server's record (PROV-006), and the latest evaluation wins (PROV-005). A route marked due is never ready, across two restarts. Leaving the mark set after a publish breaks this check. |
+| `repair-records-prerule` | passes | The same holds from a row an older build left ready. |
+| `upgrade-evaluated` | Fixed; now passes | Before the fix (#556): a changed digest left both providers pending until someone pressed Repair. Now each changed digest gets one committed evaluation without a Repair, even across a restart before the commit. The model assumes a connected provider publishes a route; without one, the mark waits. Regressions: `an_upgraded_digest_is_due_one_automatic_evaluation`, `one_post_upgrade_evaluation_restores_both_providers_sharing_a_route`, the migration test `the_update_migration_marks_routes_an_earlier_upgrade_left_pending`, and the provider-composition test "evaluates an upgraded shared route once after startup". |
+| `upgrade-evaluated-reverted` | Confirmed | Without the automatic evaluation, the upgraded route stays pending while nobody presses Repair. |
+| `recipe-change-evaluated` | Fixed; now passes | A route restores ready only when an evaluation measured it on the recipe the release requires. Regressions: `a_changed_runtime_recipe_starts_pending_and_is_due_once` and the desktop-shell test "hands startup readiness to the app server record instead of the previous catalog file" fail on the old code. |
+| `recipe-change-evaluated-reverted` | Confirmed | Before the fix, an upgrade whose staged runtime activated, with the same digest, restored the ready measured on the old recipe. |
+| `recipe-change-due-reverted` | Confirmed | Before the fix, an upgrade that changed only the recipe was never marked due. When its activation failed, the route waited for Repair. |
+| `repair-liveness` | passes | Every started evaluation, automatic or not, settles. |
+| `shared-route-witness` | Witness, expected violation | Readiness is per harness, so an evaluation not started for a provider makes that provider's shared route ready too. This is why one Repair restored both providers in #556. |
+
+Desktop also passes the recipes this start activated; the recorded recipe
+covers that trigger, so the model leaves it out. The model starts with a
+recorded recipe. In the code, a row migration 0039 left without one counts a
+change only when this start's own update activated a new recipe or failed
+to, or when the route was ready and its files no longer validate;
+`the_first_recorded_recipe_marks_only_a_runtime_this_update_changed`
+covers that. Migration 0039 also marks every loaded route startup left pending.
+The model starts after that migration, so it does not cover the backfill.
+The automatic evaluation skips a harness whose runtime was never
+installed; the model has one harness whose runtime starts installed.
+The model's providers always have a route. In the code, a managed provider
+whose activation failed on a broken runtime has none, so the step first
+recovers it as Repair does, then evaluates each due harness once;
+composition tests cover that.
+In the code it runs once per process with the models published so far. A mark stays set
+when its evaluation found no provider with a route. The next start looks
+again, but it prepares nothing until a provider has a route.
+
 ### `ProviderLeaseLifecycle.tla`
 
 This model covers one managed provider `P` where its lifecycle meets a turn's
@@ -795,7 +858,7 @@ commits, commit and lose its answer, or lose its answer and commit later
 carried. A settling reconnect's signed-out publish can fail too
 (`CancelPublishCanFail`).
 
-`lifecycle-today` mirrors the code. It has every fault on and ten fix
+`lifecycle-today` mirrors the code. It has every fault on and eleven fix
 constants, all landed. The refresh runs in three steps: it resolves its
 generation, reads the account, then publishes.
 
@@ -829,6 +892,17 @@ generation, reads the account, then publishes.
   answered superseded is settled by wiping, even when its own signed-out
   publish fails. That sign-out already recorded signed out, and no refresh
   ran since, so nothing is unknown.
+- `SignOutBlocksAdmission`: a sign-out the app server has not recorded, from
+  a failed sign-out publish or a cancel with no login to keep, refuses new
+  provider access. The block ends when a signed-out state is recorded, a
+  refresh publishes a catalog that is not connected, or the service confirms
+  a sign-in: a completed reconnect, including one whose outcome is unknown,
+  or a cancel whose account check reads connected. A connected catalog does
+  not end it: its discovery may predate the sign-out. The cancel keeps a
+  login only when the account does not read signed out. Its account check is
+  bounded, and one that errs or times out (`AccountCheckCanFail`) leaves the
+  outcome unknown. The block is process-local and not modeled across a
+  restart; the startup refresh reads the account and records its state.
 - `AdoptTracksLostWrites`: a lifecycle write whose answer was lost, even one
   sent before the reconnect started, may still commit. While one is
   outstanding, an advance in the generation proves nothing, so the reconnect
@@ -857,6 +931,8 @@ generation, reads the account, then publishes.
 | `lifecycle-cancel-keeps-unrecorded-login-reverted` | violated: shows why the fix is needed | Found by a Codex review of #572. With `CancelKeepsUnrecordedLogin` off: a sign-out whose publish fails, a reconnect, and a cancel whose own publish fails and still wipes the login. Regression test: `keeps the login when a cancelled reconnect cannot record signed out`. |
 | `lifecycle-confirmed-sign-out-stands` | Fixed; now passes | Checks `ConfirmedSignOutStands` with every fault on. Found by a Codex review of #572: a sign-out answered during a pending reconnect was followed by the browser sign-in. The refused reconnect's settle could not publish, so it kept the new login as an unknown outcome, and the next refresh published connected over the confirmed sign-out. Shutdown is excluded, because `close()` drops a pending reconnect without settling it. Regression test: `keeps a confirmed sign-out when a superseded reconnect cannot record signed out again`. |
 | `lifecycle-confirmed-sign-out-stands-reverted` | violated: shows why the fix is needed | With `SupersededCancelWipes` off: sign out, reconnect, sign out (answered), sign in, and a cancel whose publish fails keeps the login. |
+| `lifecycle-no-stale-admission` | Fixed; now passes | Checks `NoStaleAdmission` with every fault on: no provider access is granted while `P` has no login and the app server reads it ready. Found by a Codex review of #572: a cancel after a sign-out whose publish failed kept a login that did not exist and let turns take access against the stale connected catalog. The model then found that a refresh that read the account before such a sign-out could end the block by publishing connected. Regression tests: `refuses provider access after a sign-out the app server did not record`, `keeps admission blocked when a cancel after an unrecorded sign-out has no login to keep`, and `keeps admission blocked when a refresh from before an unrecorded sign-out publishes connected`. |
+| `lifecycle-no-stale-admission-reverted` | violated: shows why the fix is needed | With `SignOutBlocksAdmission` off: Rust admits a turn, a sign-out's publish fails, and the turn takes provider access with no login. |
 | `lifecycle-straddling-refresh` | Fixed; now passes | Checks `ReadyMeansSignedIn` with the sign-out fault off. Before the fix: a refresh resolved its generation before a reconnect, read the account after the browser sign-in, and reached its publish after the cancel. The cancel had not moved the generation, so both checks passed and Rust read ready over the wiped login. The cancel now advances it, so the result is stale. Regression test: `drops a refresh that straddles a cancelled reconnect`. |
 | `lifecycle-straddling-refresh-reverted` | violated: shows why the fix is needed | With `CancelSignsOut` off: sign out, refresh starts, reconnect, sign in, refresh reads, cancel, refresh publishes. |
 | `lifecycle-overlapping-refresh` | passes | Checks `OverlappingRefreshNeverReadiesWipedLogin`, with every fault but the sign-out's on. A Codex review of #572 asked for a refresh epoch across the reconnect, since `refreshGeneration` is only a level check. This check shows the epoch is not needed: every path that ends a reconnect and wipes the login first advances the generation, and a cancel that cannot keeps the login, so a straddling refresh is either stale or truthful. A refresh straddling a failed sign-out is the sign-out's known limit and is excluded. |
@@ -869,6 +945,16 @@ corrects it. While a reconnect is pending, no refresh runs, and the lease
 guard keeps turns off the reconnect's runtime. Settling the reconnect commits
 signed-out, which ends that state. If that publish fails too, the login is
 kept, so Rust stays ready with a login until the next refresh.
+
+A reconnect starts with `ReconnectBegin`: from its first check it prepares the
+runtime and starts the sign-in (`prepareRuntime`, `login()`) before it is
+pending, and it may fail there (`ReconnectAbort`). No refresh starts or
+publishes in that interval either. A Codex review of #572 found the code
+guarded only the pending entry; `refreshGeneration` now also returns null
+while a reconnect prepares. The browser sign-in cannot finish before
+`login()` returns, so no invariant tells the interval apart: a refresh there
+reads the signed-out account. The regression test is `runs no refresh while
+a reconnect prepares its runtime or starts its sign-in`.
 
 Two code seams sit inside single model steps, and the code now matches the
 model's assumption at each. `RefreshPublish` checks for a pending reconnect

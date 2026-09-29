@@ -7,7 +7,7 @@ import { createProviderAdapterRegistry } from "../desktop/main/providers/provide
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
-async function setup({ managed = false, failing = false, credentialStore, now, accountStatus = "connected", closeFails = false, scheduleTimeout, cancelTimeout } = {}) {
+async function setup({ managed = false, failing = false, credentialStore, now, accountStatus = "connected", closeFails = false, scheduleTimeout, cancelTimeout, updatesDue = [], modelRules = { allow: [], deny: [] } } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "eval-provider-setup-"));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
   let stored = [];
@@ -41,7 +41,9 @@ async function setup({ managed = false, failing = false, credentialStore, now, a
       };
     },
   }]);
-  const runtimeResolver = { get: vi.fn(async () => ({ runtimeId: "codex", version: "0.147.0", executable: "/managed/codex" })), prepare: vi.fn(async () => ({ runtimeId: "codex", version: "0.147.0", executable: "/managed/codex" })) };
+  const runtimeResolver = { get: vi.fn(async () => ({ runtimeId: "codex", version: "0.147.0", executable: "/managed/codex" })), prepare: vi.fn(async () => ({ runtimeId: "codex", version: "0.147.0", executable: "/managed/codex" })), validate: vi.fn(async () => ({ runtimeId: "codex" })) };
+  const due = new Set(updatesDue);
+  const publishHarnessReadiness = vi.fn(async (updates) => { for (const { harnessId } of updates) due.delete(harnessId); });
   const fetchImpl = vi.fn(async (url, options) => {
     expect(options.headers.Cookie).toBe("control=private");
     if (url.pathname === "/api/model-settings") return Response.json({ defaults: { providerId: "chosen" } });
@@ -60,12 +62,13 @@ async function setup({ managed = false, failing = false, credentialStore, now, a
       providerDefinitionStore: () => ({ load: async () => structuredClone(stored), save: async (value) => { stored = structuredClone(value); } }),
       publishProviderCatalog: async (value) => { snapshots.set(value.providerId, value); },
       providerStatuses: async () => snapshots,
-      publishHarnessReadiness: vi.fn(async () => {}),
+      publishHarnessReadiness,
+      harnessReadinessUpdatesDue: async () => [...due],
     },
-    runtimeSession: { configurations: new Map([["codex-basic", { name: "codex-basic", implementation: "codex.basic", executionAccessContracts: [managed ? "managed-runtime@1" : "secret@1"], modelRules: { allow: [], deny: [] } }]]), digestConfiguration: () => "digest" },
+    runtimeSession: { configurations: new Map([["codex-basic", { name: "codex-basic", implementation: "codex.basic", executionAccessContracts: [managed ? "managed-runtime@1" : "secret@1"], modelRules }]]), digestConfiguration: () => "digest" },
   });
   cleanups.push(() => service.close());
-  return { service, directory, snapshots, dependencies, runtimeResolver, fetchImpl,
+  return { service, directory, snapshots, dependencies, runtimeResolver, fetchImpl, publishHarnessReadiness, due,
     setBusy: (value) => { busy = value; }, seed: (definitions) => { stored = structuredClone(definitions); }, stored: () => stored,
     connect: () => service.connect({ connectionId: "chosen", adapterId, label: "Chosen", fields: { "api-key": "private-key" } }),
   };
@@ -138,6 +141,22 @@ describe("Eval production provider setup", () => {
       expect(fixture.dependencies).toHaveLength(0);
     }
     expect(await readFile(join(home, "config.toml"), "utf8")).toBe(config);
+  });
+
+  // PR #576 review: an Eval profile that records a changed runtime recipe gets the same
+  // one post-upgrade evaluation as Desktop, before Eval resolves its default selections.
+  it("evaluates a route the app server marked due at startup, once", async () => {
+    const fixture = await setup({
+      managed: true, updatesDue: ["codex-basic"],
+      modelRules: { allow: [{ adapterId: "codex-subscription", modelIdRegex: ".*" }], deny: [] },
+    });
+    fixture.seed([{ id: "codex", adapterId: "codex-subscription", label: "Codex", accessContract: "managed-runtime@1", endpoint: null, credentialReference: null, lifecycleState: "active", removedAt: null }]);
+    await fixture.service.start();
+    expect(fixture.publishHarnessReadiness).toHaveBeenCalledOnce();
+    expect(fixture.publishHarnessReadiness).toHaveBeenCalledWith([expect.objectContaining({
+      harnessId: "codex-basic", available: true,
+    })]);
+    expect(fixture.due.size).toBe(0);
   });
 
   it("does not reflect arbitrary provider errors into the browser", async () => {

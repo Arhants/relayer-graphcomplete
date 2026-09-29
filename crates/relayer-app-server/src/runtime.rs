@@ -107,6 +107,14 @@ struct CatalogEntry {
 struct AppServerReadiness {
     /// The file-only startup validation of the local runtime passed. Never a probe.
     runtime_files_valid: bool,
+    /// The exact runtime recipe this release requires for the harness. A route last loaded
+    /// with another recipe starts pending and is due one evaluation, like a changed digest.
+    #[serde(default)]
+    runtime_recipe: Option<String>,
+    /// This start's app update activated a new recipe for the harness's runtime, or failed
+    /// to. It counts as a changed recipe even before any recipe was recorded.
+    #[serde(default)]
+    runtime_updated: bool,
 }
 
 const fn catalog_entry_available() -> bool {
@@ -615,6 +623,14 @@ impl RuntimeClient {
                         readiness.runtime_files_valid
                     }),
                 restore_prior_readiness: entry.app_server_readiness.is_some(),
+                runtime_recipe: entry
+                    .app_server_readiness
+                    .as_ref()
+                    .and_then(|readiness| readiness.runtime_recipe.clone()),
+                runtime_updated: entry
+                    .app_server_readiness
+                    .as_ref()
+                    .is_some_and(|readiness| readiness.runtime_updated),
                 unavailable_reason: entry.unavailable_reason.clone(),
             })
             .collect::<Vec<_>>();
@@ -629,6 +645,8 @@ impl RuntimeClient {
                 family_policy: None,
                 runtime_available: false,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: Some(entry.reason.clone()),
             }
         }));
@@ -1698,22 +1716,15 @@ impl RuntimeClient {
         node_id: i64,
         asset_id: &str,
     ) -> Result<Value, RuntimeError> {
-        self.read_detail_asset(node_id, asset_id, false).await
+        self.read_detail_asset(node_id, asset_id, false, None).await
     }
 
-    pub(crate) async fn get_detail_asset_metadata(
-        &self,
-        node_id: i64,
-        asset_id: &str,
-    ) -> Result<Value, RuntimeError> {
-        self.read_detail_asset(node_id, asset_id, true).await
-    }
-
-    async fn read_detail_asset(
+    pub(crate) async fn read_detail_asset(
         &self,
         node_id: i64,
         asset_id: &str,
         metadata_only: bool,
+        expected_revision: Option<u64>,
     ) -> Result<Value, RuntimeError> {
         // Append an opaque path segment rather than interpreting catalog IDs as paths.
         let mut url = self
@@ -1725,6 +1736,10 @@ impl RuntimeClient {
             .push(asset_id);
         if metadata_only {
             url.query_pairs_mut().append_pair("metadataOnly", "true");
+        }
+        if let Some(revision) = expected_revision {
+            url.query_pairs_mut()
+                .append_pair("expectedRevision", &revision.to_string());
         }
         self.control_get(url.as_str()).await
     }
@@ -1759,6 +1774,43 @@ impl RuntimeClient {
             ))
             .await?,
         )?)
+    }
+
+    pub(crate) async fn accepted_graph_closures(
+        &self,
+        interaction_node_ids: &[i64],
+    ) -> Result<Vec<Option<relayer_graph_core::AcceptedGraphClosure>>, RuntimeError> {
+        let response = self
+            .client
+            .post(self.graph_url.join("api/control/accepted-closures")?)
+            .bearer_auth(&self.graph_control_token)
+            // Preserve the former per-root aggregate read budget in one coherent request.
+            // The control route accepts at most 10,000 roots.
+            .timeout(
+                CONTROL_REQUEST_TIMEOUT
+                    .saturating_mul(interaction_node_ids.len().clamp(1, 10_000) as u32),
+            )
+            .json(&serde_json::json!({"interactionNodeIds": interaction_node_ids}))
+            .send()
+            .await?;
+        let value = response_json(response, StatusCode::OK).await?;
+        let closures: Vec<Option<relayer_graph_core::AcceptedGraphClosure>> =
+            serde_json::from_value(value["closures"].clone())?;
+        if closures.len() != interaction_node_ids.len()
+            || closures
+                .iter()
+                .zip(interaction_node_ids)
+                .any(|(closure, id)| {
+                    closure
+                        .as_ref()
+                        .is_some_and(|closure| closure.node_id.value() != *id)
+                })
+        {
+            return Err(RuntimeError::Configuration(
+                "Accepted closure snapshot does not match requested roots".into(),
+            ));
+        }
+        Ok(closures)
     }
 
     pub(crate) async fn accepted_graph_closure(
@@ -3424,6 +3476,65 @@ mod tests {
         .unwrap_err();
         assert!(matches!(bounded, RuntimeError::Http(ref error) if error.is_timeout()));
         assert!(!runtime.supports_personal_presentation());
+        graph_task.abort();
+    }
+
+    #[tokio::test]
+    async fn accepted_graph_closures_client_preserves_missing_slots_and_rejects_mismatches() {
+        let mode = Arc::new(AtomicUsize::new(0));
+        let observed = mode.clone();
+        let (graph_url, graph_task) = serve(Router::new().route(
+            "/api/control/accepted-closures",
+            routing::post(move |headers: axum::http::HeaderMap, Json(body): Json<Value>| {
+                let mode = observed.load(Ordering::SeqCst);
+                async move {
+                    assert_eq!(headers["authorization"], "Bearer graph-control");
+                    assert_eq!(body, json!({"interactionNodeIds":[1,2]}));
+                    if mode == 3 {
+                        tokio::time::sleep(Duration::from_millis(5500)).await;
+                    }
+                    Json(match mode {
+                        0 | 3 => json!({"closures":[null,null]}),
+                        1 => json!({"closures":[null]}),
+                        _ => json!({"closures":[null,{
+                            "nodeId":3,"interaction":{"id":3,"kind":"user-interaction","icon":"user","title":"Question","detail":"Question","state":"accepted"},
+                            "rootAction":{"id":1,"sourceNodeId":3,"kind":"navigate","relation":"expand","label":"Response","variant":"pill","targetLayerId":1,"state":"accepted"},
+                            "rootLayerId":1,"layers":[]
+                        }]}),
+                    })
+                }
+            }),
+        )).await;
+        let catalog = tempfile::NamedTempFile::new().unwrap();
+        fs::write(catalog.path(), json!({"schemaVersion":1,"configurations":[{"configuration":{
+            "schemaVersion":1,"name":"test","implementation":"test","implementationVersion":1,"permissionBindings":{"auto":{}},"settings":{}
+        },"digest":"sha256:test"}]}).to_string()).unwrap();
+        let runtime = RuntimeClient::open(
+            &graph_url,
+            "http://127.0.0.1:2/",
+            "graph-control".into(),
+            "harness-control".into(),
+            catalog.path(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            runtime.accepted_graph_closures(&[1, 2]).await.unwrap(),
+            vec![None, None]
+        );
+        for scenario in [1, 2] {
+            mode.store(scenario, Ordering::SeqCst);
+            assert!(matches!(
+                runtime.accepted_graph_closures(&[1, 2]).await.unwrap_err(),
+                RuntimeError::Configuration(_)
+            ));
+        }
+        mode.store(3, Ordering::SeqCst);
+        assert_eq!(
+            runtime.accepted_graph_closures(&[1, 2]).await.unwrap(),
+            vec![None, None],
+            "two roots retain their aggregate read budget rather than sharing one root's timeout"
+        );
         graph_task.abort();
     }
 

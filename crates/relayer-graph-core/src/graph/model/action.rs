@@ -243,6 +243,9 @@ impl ActionKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphAction {
+    /// Imported presentation history only; confers no mutation authority.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub converted_from_invoke: bool,
     pub id: ActionId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_invoke_interaction_id: Option<NodeId>,

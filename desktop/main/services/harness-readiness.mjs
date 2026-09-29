@@ -18,6 +18,110 @@ function modelAvailable(model) {
     && model?.availability !== "unavailable";
 }
 
+// #556: after startup, one background evaluation of the routes an upgrade left pending.
+// It returns at once; startup never waits for the evaluation, and a failure only reports.
+//
+// A managed provider whose activation failed on a broken runtime publishes no models, so it
+// has no route to evaluate. repairProviders first recovers such providers as Repair does,
+// for the installed recipes this step would evaluate, without evaluating their routes.
+//
+// stop() fences it for shutdown: after it, the step starts no repair or preparation, and a
+// preparation already running publishes nothing, so the app server's due mark stays for
+// the next start. A preparation that started is an installer operation, which the quit
+// guard sees and cancels.
+export function startPostUpgradeReadiness({
+  readiness,
+  updatesDue,
+  recipeUpdates = [],
+  routes,
+  repairProviders = null,
+  onError = () => {},
+}) {
+  const controller = new AbortController();
+  const { signal } = controller;
+  const evaluation = Promise.resolve().then(async () => {
+    let due = await updatesDue();
+    let settled = [];
+    if (signal.aborted) return null;
+    if (repairProviders) {
+      const { recipeIds } = await readiness.recipeUpdateTargets({ updatesDue: due, recipeUpdates });
+      if (signal.aborted) return null;
+      if (recipeIds.length > 0) {
+        const mark = readiness.publicationMark();
+        await repairProviders(recipeIds, { signal });
+        // A harness another evaluation published since, such as a Connect, has had its
+        // one evaluation, whether a due mark or a newly activated recipe selected it.
+        settled = readiness.publishedSince(mark);
+        due = await updatesDue();
+        if (signal.aborted) return null;
+      }
+    }
+    const providers = await routes();
+    if (signal.aborted) return null;
+    return await readiness.evaluateRecipeUpdate({
+      updatesDue: due, recipeUpdates, providers, skipHarnessIds: settled, signal,
+    });
+  }).catch((error) => {
+    if (!signal.aborted) onError(error);
+    return null;
+  });
+  return Object.freeze({
+    evaluation,
+    stop() { controller.abort(new DOMException("Relayer is shutting down.", "AbortError")); },
+  });
+}
+
+// The post-upgrade evaluation as Desktop and Eval run it. It recovers failed managed providers
+// through the composition, forwarding the stop signal, so no recovery outlives a stop.
+//
+// confirmQuit(confirm) stops the evaluation before the quit guard looks, so no preparation
+// starts behind its check; if the user declines the quit, an evaluation that had not
+// finished starts again. stopForShutdown(cancel) stops it, cancels installer operations it
+// started, and waits for it to settle.
+export function createPostUpgradeReadiness({
+  readiness,
+  updatesDue,
+  recipeUpdates = [],
+  composition,
+  recipeForAdapter,
+  onError = () => {},
+}) {
+  let current = null;
+  let finished = true;
+  function start() {
+    const run = startPostUpgradeReadiness({
+      readiness,
+      updatesDue,
+      recipeUpdates,
+      routes: () => composition.readinessRoutes(),
+      repairProviders: (recipeIds, { signal } = {}) => (
+        composition.repairFailedActivations(recipeIds, { recipeForAdapter, signal })
+      ),
+      onError,
+    });
+    current = run;
+    finished = false;
+    run.evaluation.finally(() => { if (current === run) finished = true; });
+    return run;
+  }
+  return Object.freeze({
+    start,
+    get evaluation() { return current?.evaluation ?? Promise.resolve(null); },
+    async confirmQuit(confirm) {
+      const unfinished = current !== null && !finished;
+      current?.stop();
+      const accepted = await confirm();
+      if (!accepted && unfinished) start();
+      return accepted;
+    },
+    async stopForShutdown(cancelInstallerOperations) {
+      current?.stop();
+      await cancelInstallerOperations?.();
+      await current?.evaluation;
+    },
+  });
+}
+
 export function createHarnessReadinessCoordinator({
   configurations,
   digestConfiguration,
@@ -25,6 +129,9 @@ export function createHarnessReadinessCoordinator({
   prepareRecipe,
   checkers,
   publishAvailability,
+  // Whether a recipe has an installation on disk, valid or not (managedRecipeInstalled).
+  // Only the post-upgrade evaluation asks, and it refuses to run without it.
+  recipeInstalled = null,
   diagnostics = null,
 }) {
   if (!(configurations instanceof Map) || typeof digestConfiguration !== "function"
@@ -40,19 +147,38 @@ export function createHarnessReadinessCoordinator({
   let generation = 0;
   const harnessGenerations = new Map();
   let publication = Promise.resolve();
+  // The generation of each harness's last result the app server accepted in this process.
+  const publishedGenerations = new Map();
 
-  async function evaluate({ trigger, providerDefinition, models = [] }) {
-    if (!READINESS_TRIGGERS.has(trigger)) {
-      return Object.freeze({ readyHarnessIds: [], routeResults: [] });
-    }
-    const candidates = [...configurations.values()].filter((configuration) => (
+  function routeProvider(configuration, providers) {
+    return providers.find(({ providerDefinition, models = [] }) => (
       configuration.executionAccessContracts?.includes(providerDefinition.accessContract)
       && models.some((model) => modelAvailable(model) && harnessAllowsModel(configuration.modelRules, {
         adapterId: providerDefinition.adapterId,
         modelId: model.id,
       }))
-    ));
-    if (candidates.length === 0) {
+    ))?.providerDefinition ?? null;
+  }
+
+  // One evaluation with one generation. A provider trigger evaluates the routes of one
+  // provider. The recipe-update trigger evaluates named harnesses once for every connected
+  // provider that has a route through them (#556: ChatGPT and OpenRouter share codex-basic).
+  async function evaluate({ trigger, providerDefinition, models = [], providers, harnessIds, signal }) {
+    if (!READINESS_TRIGGERS.has(trigger)) {
+      return Object.freeze({ readyHarnessIds: [], routeResults: [] });
+    }
+    const routes = providers ?? [{ providerDefinition, models }];
+    const named = harnessIds ? new Set(harnessIds) : null;
+    const candidates = [];
+    const candidateProviders = new Map();
+    for (const configuration of configurations.values()) {
+      if (named && !named.has(configuration.name)) continue;
+      const provider = routeProvider(configuration, routes);
+      if (!provider) continue;
+      candidates.push(configuration);
+      candidateProviders.set(configuration.name, provider);
+    }
+    if (candidates.length === 0 || signal?.aborted) {
       return Object.freeze({ readyHarnessIds: [], routeResults: [] });
     }
     const currentGeneration = ++generation;
@@ -61,7 +187,9 @@ export function createHarnessReadinessCoordinator({
       harnessGenerations.set(configuration.name, currentGeneration);
       const requirement = runtimeRequirements[configuration.implementation];
       if (requirement && !recipes.has(requirement.recipeId)) {
-        recipes.set(requirement.recipeId, Promise.resolve().then(() => prepareRecipe(requirement.recipeId)));
+        // Started in this turn, right after the stop check above, so a preparation is
+        // either never started or already an installer operation the quit guard sees.
+        recipes.set(requirement.recipeId, (async () => prepareRecipe(requirement.recipeId))());
       }
     }
     const routeResults = await Promise.all(candidates.map(async (configuration) => {
@@ -72,6 +200,9 @@ export function createHarnessReadinessCoordinator({
         result = await checkers[configuration.implementation]({
           configuration,
           runtime,
+          // A stopped post-upgrade evaluation stops a checker still running, such as the
+          // Prime kernel probe, so it cannot hold shutdown.
+          ...(signal ? { signal } : {}),
         });
         if (result?.available !== true && result?.available !== false) {
           throw new Error("Harness readiness checker returned an invalid result.");
@@ -81,7 +212,10 @@ export function createHarnessReadinessCoordinator({
         await diagnostics?.write({
           level: "error",
           category: "harness_readiness_failed",
-          providerId: providerDefinition.id,
+          // A recipe-update result belongs to the harness, not to one of its providers.
+          ...(trigger === "recipe-update"
+            ? { trigger }
+            : { providerId: candidateProviders.get(configuration.name).id }),
           harnessId: configuration.name,
           code: result.reason.code,
         }).catch(() => undefined);
@@ -97,15 +231,19 @@ export function createHarnessReadinessCoordinator({
     const currentRouteResults = routeResults.filter(({ harnessId }) => (
       harnessGenerations.get(harnessId) === currentGeneration
     ));
-    if (currentRouteResults.length === 0) {
+    // A stopped evaluation publishes nothing, so a cancelled preparation is never recorded.
+    if (currentRouteResults.length === 0 || signal?.aborted) {
       return Object.freeze({ readyHarnessIds: [], routeResults: [] });
     }
     const publish = publication.catch(() => undefined).then(async () => {
+      // A stop that landed while this waited behind an earlier publication records nothing.
+      if (signal?.aborted) return [];
       const publishable = currentRouteResults.filter(({ harnessId }) => (
         harnessGenerations.get(harnessId) === currentGeneration
       ));
       if (publishable.length === 0) return [];
       await publishAvailability(publishable);
+      for (const { harnessId } of publishable) publishedGenerations.set(harnessId, currentGeneration);
       return publishable.filter(({ harnessId }) => harnessGenerations.get(harnessId) === currentGeneration);
     });
     publication = publish;
@@ -119,5 +257,45 @@ export function createHarnessReadinessCoordinator({
     });
   }
 
-  return Object.freeze({ evaluate });
+  // #556: after an upgrade, one evaluation through the recipe-update trigger covers every
+  // harness whose digest the app server marked due, and every harness whose runtime recipe
+  // was newly activated. The app server clears its mark when the result commits.
+  // It never makes a first installation: a harness whose runtime was never installed
+  // waits for Connect or Repair, as on a first launch.
+  // The harnesses the post-upgrade step evaluates, and the installed recipes they run.
+  async function recipeUpdateTargets({ updatesDue = [], recipeUpdates = [] }) {
+    if (typeof recipeInstalled !== "function") {
+      throw new Error("The post-upgrade readiness evaluation requires an installed-recipe check.");
+    }
+    const due = new Set(updatesDue);
+    const activated = new Set(recipeUpdates);
+    const harnessIds = [];
+    const recipeIds = new Set();
+    for (const { name, implementation } of configurations.values()) {
+      const recipeId = runtimeRequirements[implementation]?.recipeId;
+      if (!due.has(name) && !activated.has(recipeId)) continue;
+      if (recipeId && !await recipeInstalled(recipeId)) continue;
+      harnessIds.push(name);
+      if (recipeId) recipeIds.add(recipeId);
+    }
+    return Object.freeze({ harnessIds: Object.freeze(harnessIds), recipeIds: Object.freeze([...recipeIds]) });
+  }
+
+  async function evaluateRecipeUpdate({
+    updatesDue = [], recipeUpdates = [], providers = [], skipHarnessIds = [], signal,
+  }) {
+    const skipped = new Set(skipHarnessIds);
+    const harnessIds = (await recipeUpdateTargets({ updatesDue, recipeUpdates })).harnessIds
+      .filter((harnessId) => !skipped.has(harnessId));
+    if (harnessIds.length === 0) return Object.freeze({ readyHarnessIds: [], routeResults: [] });
+    return evaluate({ trigger: "recipe-update", providers, harnessIds, signal });
+  }
+
+  // A point in evaluation order, and the harnesses published by evaluations started after it.
+  const publicationMark = () => generation;
+  const publishedSince = (mark) => [...publishedGenerations]
+    .filter(([, published]) => published > mark)
+    .map(([harnessId]) => harnessId);
+
+  return Object.freeze({ evaluate, evaluateRecipeUpdate, recipeUpdateTargets, publicationMark, publishedSince });
 }

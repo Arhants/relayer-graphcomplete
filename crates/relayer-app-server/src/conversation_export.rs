@@ -3,7 +3,9 @@
 //! V1 is a JSONL stream containing one [`ConversationExportRecord::Header`]
 //! followed by the exact ordered [`ConversationExportRecord::Turn`] records
 //! declared by that header. V2 adds digest-deduplicated visual content records
-//! between the header and turns. This module owns only the portable contract and
+//! between the header and turns. V3 adds current node-owned navigation and inert
+//! invoke-conversion provenance, never execution permissions or historical HTML.
+//! This module owns only the portable contract and
 //! inference-free validation; snapshot construction and persistence live at
 //! higher product boundaries.
 
@@ -16,6 +18,7 @@ use thiserror::Error;
 
 pub const EXPORT_VERSION_V1: u32 = 1;
 pub const EXPORT_VERSION_V2: u32 = 2;
+pub const EXPORT_VERSION_V3: u32 = 3;
 pub const MAX_EXPORT_BYTES: usize = 256 * 1024 * 1024;
 /// Public share snapshots use the transport-sized boundary, while ordinary
 /// local exports retain the larger desktop file limit above.
@@ -197,6 +200,10 @@ pub struct ExportContextTargetSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportContextSource {
+    /// Exact immutable layer owner, only when its accepted turn is included.
+    /// Absence means unknown; the presenting interaction is not an owner hint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_turn_id: Option<String>,
     /// Authority-free diagnostic references to the accepted occurrence used
     /// when the input was prepared. Imported graph state uses fresh local IDs.
     pub interaction_node_id: String,
@@ -471,6 +478,9 @@ pub enum ExportActionVariant {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportAction {
+    /// Inert provenance for a current accepted invoke-to-navigation snapshot.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub converted_from_invoke: bool,
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_key: Option<String>,
@@ -607,7 +617,7 @@ struct VisualAssetContentMetadata {
     byte_length: usize,
 }
 
-/// Inference-free V1/V2 validator for incremental JSONL readers.
+/// Inference-free V1/V2/V3 validator for incremental JSONL readers.
 ///
 /// Retains inventory, provenance, definition fingerprints, and content metadata;
 /// never retains complete turn payloads or base64 content after a push returns.
@@ -615,7 +625,12 @@ pub struct ConversationExportValidator {
     export_version: u32,
     manifest: Vec<ExportTurnManifestEntry>,
     next_turn: usize,
-    prior_invokes: HashMap<String, HashSet<String>>,
+    prior_invokes: HashMap<String, HashMap<String, Option<String>>>,
+    converted_origins: HashSet<String>,
+    converted_targets: HashMap<String, HashSet<String>>,
+    accepted_root_origins: Vec<(String, Option<String>)>,
+    accepted_occurrences: HashMap<String, HashMap<String, HashSet<String>>>,
+    context_layer_owners: HashMap<String, String>,
     interaction_ids: HashSet<String>,
     root_action_ids: HashSet<String>,
     layers_by_id: HashMap<String, [u8; 32]>,
@@ -657,6 +672,11 @@ impl ConversationExportValidator {
             manifest: header.turns.clone(),
             next_turn: 0,
             prior_invokes: HashMap::new(),
+            converted_origins: HashSet::new(),
+            converted_targets: HashMap::new(),
+            accepted_root_origins: Vec::new(),
+            accepted_occurrences: HashMap::new(),
+            context_layer_owners: HashMap::new(),
             interaction_ids: HashSet::new(),
             root_action_ids: HashSet::new(),
             layers_by_id: HashMap::new(),
@@ -737,7 +757,56 @@ impl ConversationExportValidator {
                 ),
             ));
         }
-        validate_turn(turn, &path, &self.prior_invokes, self.policy)?;
+        for action in turn.accepted_view.iter().flat_map(|view| {
+            std::iter::once(&view.root_action)
+                .chain(view.layers.iter().flat_map(|layer| &layer.actions))
+        }) {
+            if action.converted_from_invoke && self.export_version != EXPORT_VERSION_V3 {
+                return Err(ExportValidationError::new(
+                    "converted_invoke_version",
+                    &path,
+                    "Converted invoke provenance requires export V3.",
+                ));
+            }
+        }
+        validate_turn(
+            turn,
+            &path,
+            &self.prior_invokes,
+            self.policy,
+            self.export_version,
+        )?;
+        if let Some(view) = &turn.accepted_view
+            && let Some(actions) = self.converted_targets.get(&view.root_layer_id)
+            && !matches!(&turn.origin, ExportTurnOrigin::Action { source_turn_id, source_action_id }
+                if actions.contains(source_action_id)
+                    && self.prior_invokes.get(source_turn_id)
+                        .and_then(|prior| prior.get(source_action_id))
+                        .and_then(Option::as_ref) == Some(&view.root_layer_id))
+        {
+            return Err(ExportValidationError::new(
+                "converted_invoke_origin_missing",
+                format!("{path}.origin"),
+                "An included converted invoke result must retain its source action origin.",
+            ));
+        }
+        if let ExportTurnOrigin::Action {
+            source_turn_id,
+            source_action_id,
+        } = &turn.origin
+            && self
+                .prior_invokes
+                .get(source_turn_id)
+                .and_then(|actions| actions.get(source_action_id))
+                .is_some_and(Option::is_some)
+            && !self.converted_origins.insert(source_action_id.clone())
+        {
+            return Err(ExportValidationError::new(
+                "converted_invoke_origin_duplicate",
+                &path,
+                "A converted invoke has exactly one result origin.",
+            ));
+        }
         for (index, submitted) in turn.submitted_inputs.iter().enumerate() {
             let submitted_path = format!("{path}.submittedInputs[{index}]");
             if !self.submitted_input_ids.insert(submitted.id.clone()) {
@@ -770,6 +839,38 @@ impl ConversationExportValidator {
             }
         }
         for context in &turn.contexts {
+            if let Some(owner) = &context.source.owner_turn_id {
+                if self.export_version != EXPORT_VERSION_V3 {
+                    return Err(ExportValidationError::new(
+                        "context_owner_version",
+                        &path,
+                        "Context layer ownership requires export V3.",
+                    ));
+                }
+                require_id(owner, "turn", format!("{path}.contexts.source.ownerTurnId"))?;
+                let members = self
+                    .accepted_occurrences
+                    .get(owner)
+                    .and_then(|layers| layers.get(&context.source.layer_id));
+                if !members.is_some_and(|nodes| nodes.contains(&context.target.id)) {
+                    return Err(ExportValidationError::new(
+                        "context_owner_invalid",
+                        &path,
+                        "Context ownership must identify an exact occurrence in an earlier included accepted turn.",
+                    ));
+                }
+                if self
+                    .context_layer_owners
+                    .insert(context.source.layer_id.clone(), owner.clone())
+                    .is_some_and(|prior| prior != *owner)
+                {
+                    return Err(ExportValidationError::new(
+                        "context_owner_conflict",
+                        &path,
+                        "A context layer has one immutable owner.",
+                    ));
+                }
+            }
             if self.context_actions_by_id.contains_key(&context.id) {
                 return Err(ExportValidationError::new(
                     "duplicate_context_action",
@@ -873,14 +974,65 @@ impl ConversationExportValidator {
                     .map(|action| action.id.clone()),
             );
         }
+        if let Some(view) = &turn.accepted_view {
+            self.accepted_root_origins.push((
+                view.root_layer_id.clone(),
+                match &turn.origin {
+                    ExportTurnOrigin::Action {
+                        source_action_id, ..
+                    } => Some(source_action_id.clone()),
+                    ExportTurnOrigin::User => None,
+                },
+            ));
+            self.accepted_occurrences.insert(
+                turn.id.clone(),
+                view.layers
+                    .iter()
+                    .map(|resolved| {
+                        (
+                            resolved.layer.id.clone(),
+                            resolved.layer.nodes.iter().cloned().collect(),
+                        )
+                    })
+                    .collect(),
+            );
+        }
+        // An action may occur in several accepted views when its source node is
+        // reused. Preserve that ambiguity instead of inventing a source turn from
+        // the first presenting occurrence; the declared origin must resolve above.
+        for action in turn
+            .accepted_view
+            .iter()
+            .flat_map(|view| &view.layers)
+            .flat_map(|layer| &layer.actions)
+            .filter(|action| action.converted_from_invoke)
+        {
+            if let Some(target) = &action.target_layer_id {
+                self.converted_targets
+                    .entry(target.clone())
+                    .or_default()
+                    .insert(action.id.clone());
+            }
+        }
         self.prior_invokes.insert(
             turn.id.clone(),
             turn.accepted_view
                 .iter()
                 .flat_map(|view| &view.layers)
                 .flat_map(|layer| &layer.actions)
-                .filter(|action| action.kind == ExportActionKind::Invoke)
-                .map(|action| action.id.clone())
+                .filter(|action| {
+                    action.kind == ExportActionKind::Invoke || action.converted_from_invoke
+                })
+                .map(|action| {
+                    (
+                        action.id.clone(),
+                        if action.converted_from_invoke {
+                            action.target_layer_id.clone()
+                        } else {
+                            None
+                        },
+                    )
+                })
                 .collect(),
         );
         self.next_turn += 1;
@@ -898,6 +1050,30 @@ impl ConversationExportValidator {
                     self.next_turn
                 ),
             ));
+        }
+        // A later presenting turn can expose a converted action, so validate
+        // uniqueness and lineage against the complete inventory, not only a prefix.
+        for (root, origin) in &self.accepted_root_origins {
+            let Some(actions) = self.converted_targets.get(root) else {
+                continue;
+            };
+            if actions.len() > 1 {
+                return Err(ExportValidationError::new(
+                    "converted_invoke_origin_ambiguous",
+                    "records",
+                    "An included accepted result cannot be the destination of distinct converted invokes.",
+                ));
+            }
+            if !origin
+                .as_ref()
+                .is_some_and(|action| actions.contains(action))
+            {
+                return Err(ExportValidationError::new(
+                    "converted_invoke_origin_missing",
+                    "records",
+                    "An included converted invoke result must retain its source action origin.",
+                ));
+            }
         }
         if let Some(unreachable) = self
             .visual_asset_contents
@@ -1171,12 +1347,15 @@ fn register_definition<T: Serialize>(
 }
 
 fn validate_header(header: &ConversationExportHeader) -> Result<(), ExportValidationError> {
-    if !matches!(header.export_version, EXPORT_VERSION_V1 | EXPORT_VERSION_V2) {
+    if !matches!(
+        header.export_version,
+        EXPORT_VERSION_V1 | EXPORT_VERSION_V2 | EXPORT_VERSION_V3
+    ) {
         return Err(ExportValidationError::new(
             "unsupported_export_version",
             "header.exportVersion",
             format!(
-                "Readers support exportVersion 1 and 2, received {}.",
+                "Readers support exportVersion 1, 2 and 3, received {}.",
                 header.export_version
             ),
         ));
@@ -1319,8 +1498,9 @@ fn is_plain_sha256(value: &str) -> bool {
 fn validate_turn(
     turn: &ConversationExportTurn,
     path: &str,
-    prior_invokes: &HashMap<String, HashSet<String>>,
+    prior_invokes: &HashMap<String, HashMap<String, Option<String>>>,
     policy: ConversationExportValidationPolicy,
+    export_version: u32,
 ) -> Result<(), ExportValidationError> {
     require_string(&turn.created_at, format!("{path}.createdAt"))?;
     if turn.text.len() > MAX_STRING_BYTES {
@@ -1528,14 +1708,20 @@ fn validate_turn(
                 "action",
                 format!("{path}.origin.sourceActionId"),
             )?;
-            let source_is_prior_invoke = prior_invokes
-                .get(source_turn_id)
-                .is_some_and(|actions| actions.contains(source_action_id));
+            let source_is_prior_invoke = prior_invokes.get(source_turn_id).is_some_and(|actions| {
+                actions.get(source_action_id).is_some_and(|target| {
+                    target.as_ref().is_none_or(|target| {
+                        turn.accepted_view
+                            .as_ref()
+                            .is_some_and(|view| &view.root_layer_id == target)
+                    })
+                })
+            });
             if !source_is_prior_invoke {
                 return Err(ExportValidationError::new(
                     "action_origin_unresolved",
                     format!("{path}.origin"),
-                    "An action-created turn must reference an invoke action in an earlier exported turn.",
+                    "An action-created turn must reference an earlier invoke or a converted invoke targeting its exact accepted root.",
                 ));
             }
         }
@@ -1553,7 +1739,7 @@ fn validate_turn(
                     "Turn interactionNodeId must match acceptedView.interactionNodeId.",
                 ));
             }
-            validate_accepted_view(view, path)
+            validate_accepted_view(view, path, export_version)
         }
         (ExportCompletionStatus::Accepted, None) => Err(ExportValidationError::new(
             "accepted_view_missing",
@@ -2004,6 +2190,7 @@ fn validate_optional_strings(
 fn validate_accepted_view(
     view: &ExportAcceptedView,
     turn_path: &str,
+    export_version: u32,
 ) -> Result<(), ExportValidationError> {
     let path = format!("{turn_path}.acceptedView");
     require_id(
@@ -2043,7 +2230,10 @@ fn validate_accepted_view(
                 ),
             ));
         }
-        if let Some(client_key) = resolved.layer.client_key.as_deref()
+        // V3 closures can traverse layers authored by distinct completions.
+        // Authored keys remain unchanged; portable IDs own snapshot identity.
+        if export_version != EXPORT_VERSION_V3
+            && let Some(client_key) = resolved.layer.client_key.as_deref()
             && let Some(existing_id) =
                 layer_client_keys.insert(client_key, resolved.layer.id.as_str())
             && existing_id != resolved.layer.id
@@ -2089,7 +2279,8 @@ fn validate_accepted_view(
                     "A portable node ID must have one immutable definition within an accepted view.",
                 ));
             }
-            if let Some(client_key) = node.client_key.as_deref()
+            if export_version != EXPORT_VERSION_V3
+                && let Some(client_key) = node.client_key.as_deref()
                 && let Some(existing_id) = node_client_keys.insert(client_key, node.id.as_str())
                 && existing_id != node.id
             {
@@ -2149,14 +2340,20 @@ fn validate_accepted_view(
                     "A resolved layer action source must be a member of that layer.",
                 ));
             }
-            let Some(source_layer_id) = action.source_layer_id.as_deref() else {
+            if action.source_layer_id.is_none()
+                && !(export_version == EXPORT_VERSION_V3
+                    && action.kind == ExportActionKind::Navigate)
+            {
                 return Err(ExportValidationError::new(
                     "action_source_layer_missing",
                     format!("{path}.action[{}].sourceLayerId", action.id),
                     "Every non-root action must retain its exact source-layer provenance.",
                 ));
-            };
-            if let Some(source_layer) = layers.get(source_layer_id)
+            }
+            if let Some(source_layer) = action
+                .source_layer_id
+                .as_deref()
+                .and_then(|id| layers.get(id))
                 && !source_layer.layer.nodes.contains(&action.source_node_id)
             {
                 return Err(ExportValidationError::new(
@@ -2178,7 +2375,11 @@ fn validate_accepted_view(
                     ));
                 }
                 let relation = action.relation.expect("validated navigate relation");
-                if let Some(existing) = target_relations.insert(target, relation)
+                let root_backlink = export_version == EXPORT_VERSION_V3
+                    && target == view.root_layer_id
+                    && relation == ExportNavigateRelation::Reference;
+                if !root_backlink
+                    && let Some(existing) = target_relations.insert(target, relation)
                     && existing != relation
                 {
                     return Err(ExportValidationError::new(
@@ -2220,7 +2421,8 @@ fn validate_root_action(
     path: &str,
 ) -> Result<(), ExportValidationError> {
     validate_action(action, &format!("{path}.rootAction"))?;
-    if action.source_node_id != view.interaction_node_id
+    if action.converted_from_invoke
+        || action.source_node_id != view.interaction_node_id
         || action.source_layer_id.is_some()
         || action.kind != ExportActionKind::Navigate
         || action.relation != Some(ExportNavigateRelation::Expand)
@@ -2397,6 +2599,18 @@ fn validate_layer(resolved: &ExportResolvedLayer, path: &str) -> Result<(), Expo
 }
 
 fn validate_action(action: &ExportAction, path: &str) -> Result<(), ExportValidationError> {
+    if action.converted_from_invoke
+        && (action.kind != ExportActionKind::Navigate
+            || action.relation != Some(ExportNavigateRelation::Expand)
+            || action.target_layer_id.is_none()
+            || action.state != ExportRecordState::Accepted)
+    {
+        return Err(ExportValidationError::new(
+            "converted_invoke_shape",
+            path,
+            "Converted invokes must be accepted expand navigation with a target.",
+        ));
+    }
     require_id(&action.id, "action", format!("{path}.id"))?;
     if let Some(client_key) = &action.client_key {
         require_string(client_key, format!("{path}.clientKey"))?;

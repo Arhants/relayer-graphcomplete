@@ -1,0 +1,8 @@
+{
+ "_readme": "K12 (Mocha Amber) tuning overrides. Run: node engine.mjs --overrides overrides/K12.json K12",
+ "K12": {
+  "_why": "K12 tuning: the plan asks for 'a derived red, kept away from mocha'. Report 08's derived red takes its chroma from the interaction colour, and the deep teal ink is only C 0.059, so danger clamped to C 0.11: light #9F4D48 sat dE 8.0 (CVD 5.4) from the mocha block #946E65 and danger text dE 6.7 (CVD 3.3), a brick brown rather than a failure red. Same hue (25) and same start L (0.52 light / 0.66 dark), chroma raised to 0.16, the top of report 08's own clamp: light #B33736 is dE 12.3 from mocha and 13.4 from warning (was 10.5). Family reserved floor raised from 10 to 12 (the brief's stricter A value) because the amber is 'the one thing that asks for the user': with 10 the search placed an orange F4 tile (dark #F38300) dE 12.0 from the amber and 11.1 from the red, i.e. a node hue that reads as a state. With 12 the orange drops out and families stay above report 08's targets (16.0/8.5 light, 16.1/9.8 dark)",
+  "danger": { "swatch": "#B33736", "L": { "light": 0.52, "dark": 0.66 } },
+  "familyFloor": 12
+ }
+}

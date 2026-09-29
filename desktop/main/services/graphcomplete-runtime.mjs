@@ -5,6 +5,7 @@ import { isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 
 import { terminateChildProcess } from "./child-process.mjs";
+import { MANAGED_RUNTIME_ABSENT_CODES } from "../managed-runtimes/resolver.mjs";
 import { startGraphOperationRecorder } from "./graph-operation-recorder.mjs";
 import {
   acquireAuthenticatedErrorCapability,
@@ -288,6 +289,33 @@ async function writeFileAtomically(path, contents) {
   }
 }
 
+// The exact runtime recipe a coordinated harness requires, or nothing when it has none here.
+// The app server compares it with the recipe it last loaded, so an update that changed only
+// the recipe starts pending and is due one evaluation (PROV-009).
+function recipeIdentity(harnessRuntimeRecipe, configuration) {
+  try {
+    const recipe = harnessRuntimeRecipe(configuration);
+    return typeof recipe === "string" && recipe !== "" ? { runtimeRecipe: recipe } : {};
+  } catch {
+    return {};
+  }
+}
+
+// Whether this start's app update activated a new recipe for the harness's runtime, or
+// failed to. The app server then withholds an old ready even with no recipe recorded yet.
+function runtimeUpdated(harnessRuntimeUpdated, configuration) {
+  try {
+    return harnessRuntimeUpdated(configuration) === true;
+  } catch {
+    return false;
+  }
+}
+
+// Desktop owns rollout policy; generic runtime callers retain explicit opt-in.
+export function createDesktopGraphRuntime(options) {
+  return new GraphCompleteRuntimeService({ ...options, interactionPermissions: true });
+}
+
 export class GraphCompleteRuntimeService {
   constructor({
     userDataDirectory,
@@ -304,6 +332,8 @@ export class GraphCompleteRuntimeService {
     resolvePrimeRuntime,
     validateHarnessRuntime,
     onHarnessRuntimeValidationFailure = () => {},
+    harnessRuntimeRecipe = () => null,
+    harnessRuntimeUpdated = () => false,
     coordinateHarnessReadiness = false,
     harnessHostModuleUrl,
     candidateTrace,
@@ -333,6 +363,8 @@ export class GraphCompleteRuntimeService {
     this.resolvePrimeRuntime = resolvePrimeRuntime;
     this.validateHarnessRuntime = validateHarnessRuntime;
     this.onHarnessRuntimeValidationFailure = onHarnessRuntimeValidationFailure;
+    this.harnessRuntimeRecipe = harnessRuntimeRecipe;
+    this.harnessRuntimeUpdated = harnessRuntimeUpdated;
     this.coordinateHarnessReadiness = coordinateHarnessReadiness;
     this.harnessHostModuleUrl = harnessHostModuleUrl;
     this.candidateTrace = candidateTrace;
@@ -434,7 +466,7 @@ export class GraphCompleteRuntimeService {
           } catch (error) {
             // A runtime that was never installed, or has no recipe for this target, is the
             // normal state of an unused harness.
-            if (error?.code !== "managed_runtime_not_installed" && error?.code !== "managed_runtime_unsupported_target") {
+            if (!MANAGED_RUNTIME_ABSENT_CODES.has(error?.code)) {
               try { await this.onHarnessRuntimeValidationFailure(configuration, error); } catch { /* diagnostics cannot block startup */ }
             }
           }
@@ -447,7 +479,11 @@ export class GraphCompleteRuntimeService {
             code: "harness_readiness_pending",
             message: "This execution configuration is currently unavailable.",
           },
-          appServerReadiness: { runtimeFilesValid },
+          appServerReadiness: {
+            runtimeFilesValid,
+            ...recipeIdentity(this.harnessRuntimeRecipe, configuration),
+            ...(runtimeUpdated(this.harnessRuntimeUpdated, configuration) ? { runtimeUpdated: true } : {}),
+          },
         };
       }));
       await this.#awaitStartupOperation(writeFileAtomically(catalogPath, `${JSON.stringify({

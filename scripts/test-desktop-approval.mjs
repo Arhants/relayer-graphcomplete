@@ -1,3 +1,4 @@
+import { selectRelativeInteraction } from "./interaction-navigator-driver.mjs";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { rm, writeFile } from "node:fs/promises";
@@ -423,7 +424,7 @@ async function run() {
     throw new Error(`The three decisions were not discoverable: ${JSON.stringify(firstDock.buttons)}`);
   }
 
-  await click("#previousTurn");
+  await window.webContents.executeJavaScript(selectRelativeInteraction(-1));
   const graphVisibleWhileWaiting = await waitFor("the prior graph while approval remains pending", () => (
     window.webContents.executeJavaScript(`(() => (
       !document.querySelector("#graphStage")?.classList.contains("hidden")

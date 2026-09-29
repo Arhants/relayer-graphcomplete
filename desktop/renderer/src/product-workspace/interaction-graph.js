@@ -2,13 +2,13 @@
 export function interactionGraph(turns, selectedId) {
   const selected = turns.find((turn) => String(turn.id) === String(selectedId));
   if (selected?.interactionGraph?.enabled !== true) return null;
-  const nodes = new Map(turns.map((turn) => [String(turn.id), { ...turn, id: String(turn.id) }]));
+  const nodes = new Map(turns.map((turn) => [String(turn.id), { ...turn, id: String(turn.id), localTurn: true }]));
   const edges = [];
   for (const turn of turns) {
     for (const source of turn.interactionGraph?.sources ?? []) {
       if (source.interactionId == null || source.threadId == null) continue;
       const id = String(source.interactionId);
-      if (!nodes.has(id)) nodes.set(id, { ...source, id });
+      if (!nodes.has(id)) nodes.set(id, { ...source, id, localTurn: false });
       const layers = source.layers ?? [];
       if (!layers.length && source.invocationActionId == null) continue;
       edges.push({ source: id, target: String(turn.id), layers, invocationActionId: source.invocationActionId ?? null });
@@ -68,7 +68,7 @@ export function renderInteractionGraph(document, graph, selectedId, select) {
       return `${kinds.join(" and ")} ${source}`;
     });
     button.setAttribute("aria-label", `${label.textContent}. ${status.textContent}.${relationships.length ? ` ${relationships.join("; ")}.` : ""}`);
-    button.disabled = node.completionStatus !== "accepted";
+    button.disabled = !node.localTurn && node.completionStatus !== "accepted";
     button.append(label, status); button.onclick = () => { if (!button.disabled) select(node); };
     root.append(button);
   }

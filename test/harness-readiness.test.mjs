@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createHarnessReadinessCoordinator } from "../desktop/main/services/harness-readiness.mjs";
+import {
+  createHarnessReadinessCoordinator,
+  createPostUpgradeReadiness,
+  startPostUpgradeReadiness,
+} from "../desktop/main/services/harness-readiness.mjs";
+import { checkPrimeManagedRuntime } from "../desktop/main/services/prime-managed-runtime.mjs";
 
 function configuration(name, implementation, adapterId) {
   return {
@@ -223,5 +228,186 @@ describe("production harness readiness", () => {
       [{ harnessId: "codex-basic", configurationDigest: "sha256:codex-basic", generation: 2, available: true, unavailableReason: null }],
       [{ harnessId: "prime-agent-basic", configurationDigest: "sha256:prime-agent-basic", generation: 1, available: true, unavailableReason: null }],
     ]);
+  });
+
+  // PR #576 review: quitting stops the background post-upgrade evaluation. It then starts no
+  // preparation and no repair, and a preparation already running publishes nothing, so a
+  // cancelled evaluation never clears the app server's due mark.
+  it("stops the post-upgrade evaluation for shutdown before it prepares or publishes", async () => {
+    const configurations = new Map([["codex-basic", configuration("codex-basic", "codex.basic", "openai-api")]]);
+    let releasePrepare;
+    const prepareRecipe = vi.fn(() => new Promise((resolve) => { releasePrepare = resolve; }));
+    const publishAvailability = vi.fn(async () => {});
+    const readiness = createHarnessReadinessCoordinator({
+      configurations,
+      digestConfiguration: ({ name }) => `sha256:${name}`,
+      runtimeRequirements: { "codex.basic": { runtimeId: "codex", recipeId: "codex@0.147.0" } },
+      prepareRecipe,
+      checkers: { "codex.basic": async () => ({ available: true }) },
+      publishAvailability,
+      recipeInstalled: async () => true,
+    });
+    const providers = [{
+      providerDefinition: { id: "work", adapterId: "openai-api", accessContract: "secret@1" },
+      models: [{ id: "gpt-work", visible: true, availability: "available" }],
+    }];
+
+    // Stopped while it still reads the due marks: nothing starts.
+    let releaseMarks;
+    const repairProviders = vi.fn(async () => {});
+    const early = startPostUpgradeReadiness({
+      readiness,
+      updatesDue: () => new Promise((resolve) => { releaseMarks = resolve; }),
+      routes: async () => providers,
+      repairProviders,
+    });
+    await vi.waitFor(() => expect(releaseMarks).toBeTypeOf("function"));
+    early.stop();
+    releaseMarks(["codex-basic"]);
+    await expect(early.evaluation).resolves.toBeNull();
+    expect(repairProviders).not.toHaveBeenCalled();
+    expect(prepareRecipe).not.toHaveBeenCalled();
+
+    // Stopped while preparing: the preparation's result is not published.
+    const late = startPostUpgradeReadiness({
+      readiness, updatesDue: async () => ["codex-basic"], routes: async () => providers,
+    });
+    await vi.waitFor(() => expect(prepareRecipe).toHaveBeenCalledOnce());
+    late.stop();
+    releasePrepare({ recipeId: "codex@0.147.0" });
+    await late.evaluation;
+    expect(publishAvailability).not.toHaveBeenCalled();
+  });
+
+  function postUpgradeFixture({ checker, prepare } = {}) {
+    const configurations = new Map([["codex-basic", configuration("codex-basic", "codex.basic", "openai-api")]]);
+    const publishAvailability = vi.fn(async () => {});
+    const prepareRecipe = vi.fn(prepare ?? (async (recipeId) => ({ recipeId })));
+    const readiness = createHarnessReadinessCoordinator({
+      configurations,
+      digestConfiguration: ({ name }) => `sha256:${name}`,
+      runtimeRequirements: { "codex.basic": { runtimeId: "codex", recipeId: "codex@0.147.0" } },
+      prepareRecipe,
+      checkers: { "codex.basic": checker ?? (async () => ({ available: true })) },
+      publishAvailability,
+      recipeInstalled: async () => true,
+    });
+    const providers = [{
+      providerDefinition: { id: "work", adapterId: "openai-api", accessContract: "secret@1" },
+      models: [{ id: "gpt-work", visible: true, availability: "available" }],
+    }];
+    return { readiness, publishAvailability, prepareRecipe, providers };
+  }
+
+  // PR #607 review: a stop that lands while the evaluation waits behind an earlier
+  // publication still records nothing.
+  it("rechecks the stop after waiting for the publication queue", async () => {
+    const { readiness, publishAvailability, providers } = postUpgradeFixture();
+    let releaseEarlier;
+    publishAvailability.mockImplementationOnce(() => new Promise((resolve) => { releaseEarlier = resolve; }));
+    const earlier = readiness.evaluate({
+      trigger: "connect", providerDefinition: providers[0].providerDefinition, models: providers[0].models,
+    });
+    await vi.waitFor(() => expect(publishAvailability).toHaveBeenCalledOnce());
+    const upgrade = startPostUpgradeReadiness({
+      readiness, updatesDue: async () => ["codex-basic"], routes: async () => providers,
+    });
+    // Let it pass its checks and queue behind the earlier publication.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    upgrade.stop();
+    releaseEarlier();
+    await earlier;
+    await upgrade.evaluation;
+    expect(publishAvailability).toHaveBeenCalledOnce();
+  });
+
+  // PR #607 review: a stop reaches a readiness checker that is still running, so a stalled
+  // probe cannot hold shutdown.
+  it("passes the stop to a running readiness checker", async () => {
+    let checkerSignal;
+    const { readiness, publishAvailability, providers } = postUpgradeFixture({
+      checker: ({ signal }) => {
+        checkerSignal = signal;
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      },
+    });
+    const upgrade = startPostUpgradeReadiness({
+      readiness, updatesDue: async () => ["codex-basic"], routes: async () => providers,
+    });
+    await vi.waitFor(() => expect(checkerSignal).toBeInstanceOf(AbortSignal));
+    upgrade.stop();
+    await expect(upgrade.evaluation).resolves.not.toHaveProperty("routeResults.0");
+    expect(publishAvailability).not.toHaveBeenCalled();
+  });
+
+  it("stops waiting for a Prime kernel probe when the evaluation stops", async () => {
+    const controller = new AbortController();
+    const probeManagedKernel = vi.fn(() => new Promise(() => {}));
+    const checking = checkPrimeManagedRuntime({
+      runtime: { runtimeId: "prime", executable: "/managed/python", moduleUrl: "file:///managed/prime.mjs" },
+      importPrimeAgent: async () => ({ MANAGED_KERNEL_VERSION: 1, probeManagedKernel }),
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(probeManagedKernel).toHaveBeenCalledOnce());
+    controller.abort(new DOMException("stopped", "AbortError"));
+    await expect(checking).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  // PR #607 review: declining the quit ("Keep downloading") must not leave the post-upgrade
+  // evaluation stopped for good; accepting it stops the evaluation.
+  it("restarts the post-upgrade evaluation when quitting is declined", async () => {
+    const { readiness, publishAvailability, providers } = postUpgradeFixture();
+    let releaseMarks;
+    const marks = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseMarks = resolve; }))
+      .mockImplementation(async () => ["codex-basic"]);
+    const composition = {
+      readinessRoutes: async () => providers,
+      repairFailedActivations: vi.fn(async () => []),
+    };
+    const upgrade = createPostUpgradeReadiness({
+      readiness, updatesDue: marks, composition, recipeForAdapter: () => "codex@0.147.0",
+    });
+    upgrade.start();
+    await vi.waitFor(() => expect(releaseMarks).toBeTypeOf("function"));
+    await expect(upgrade.confirmQuit(async () => false)).resolves.toBe(false);
+    releaseMarks(["codex-basic"]);
+    await upgrade.evaluation;
+    expect(publishAvailability).toHaveBeenCalledOnce();
+
+    // Accepted: it stays stopped, and a finished evaluation is not restarted either.
+    await expect(upgrade.confirmQuit(async () => true)).resolves.toBe(true);
+    await upgrade.stopForShutdown();
+    expect(publishAvailability).toHaveBeenCalledOnce();
+  });
+
+  // PR #607 review: the stop reaches provider recovery, so a stalled recovery discovery
+  // cannot hold shutdown.
+  it("forwards the stop into provider recovery", async () => {
+    const { readiness, providers } = postUpgradeFixture();
+    let recoverySignal;
+    const composition = {
+      readinessRoutes: async () => providers,
+      repairFailedActivations: vi.fn((_recipeIds, { signal } = {}) => {
+        recoverySignal = signal;
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      }),
+    };
+    const upgrade = createPostUpgradeReadiness({
+      readiness, updatesDue: async () => ["codex-basic"], composition, recipeForAdapter: () => "codex@0.147.0",
+    });
+    upgrade.start();
+    await vi.waitFor(() => expect(composition.repairFailedActivations).toHaveBeenCalledOnce());
+    expect(composition.repairFailedActivations).toHaveBeenCalledWith(["codex@0.147.0"], expect.objectContaining({
+      recipeForAdapter: expect.any(Function), signal: expect.any(AbortSignal),
+    }));
+    const cancelInstallerOperations = vi.fn(async () => {});
+    await upgrade.stopForShutdown(cancelInstallerOperations);
+    expect(recoverySignal.aborted).toBe(true);
+    expect(cancelInstallerOperations).toHaveBeenCalledOnce();
   });
 });

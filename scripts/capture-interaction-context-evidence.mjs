@@ -1,3 +1,4 @@
+import { interactionPositionCondition } from "./interaction-navigator-driver.mjs";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -640,7 +641,7 @@ async function run() {
   await click("#sendInteraction");
   const secondDetail = await waitForAcceptedInteractions(thread.id, 2);
   await waitFor("second turn context pill", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 2 of 2'
+    ${interactionPositionCondition(2, 2)}
       && !document.querySelector('#interactionContextPill')?.classList.contains('hidden')
       && document.querySelector('#interactionContextCount')?.textContent === '1'
       && document.querySelector('#threadPrompt')?.disabled === false
@@ -690,7 +691,7 @@ async function run() {
   await click("#sendInteraction");
   const thirdDetail = await waitForAcceptedInteractions(thread.id, 3);
   await waitFor("annotation-only history pill", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 3 of 3'
+    ${interactionPositionCondition(3, 3)}
       && document.querySelector('#interactionText')?.textContent === ''
       && !document.querySelector('#interactionContextPill')?.classList.contains('hidden')
   `));
@@ -712,7 +713,7 @@ async function run() {
   await restartStack(thread.id);
   const restartedDetail = await waitForAcceptedInteractions(thread.id, 3);
   await waitFor("persisted context after full service and window restart", () => evaluate(`
-    document.querySelector('#turnPickerButton')?.textContent === 'Turn 3 of 3'
+    ${interactionPositionCondition(3, 3)}
       && document.querySelector('#interactionContextCount')?.textContent === '1'
       && !document.querySelector('#interactionContextPill')?.classList.contains('hidden')
   `));

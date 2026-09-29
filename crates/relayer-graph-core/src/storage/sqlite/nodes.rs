@@ -137,7 +137,7 @@ impl<'connection> NodeTable<'connection> {
         input_digest: &str,
     ) -> Result<Option<GraphNode>, GraphError> {
         let row = sqlx::query_as::<_, NodeRow>(
-            "SELECT id,client_key,leased_action_id,kind,icon,title,detail,authored_detail,state,owner_interaction_id FROM nodes WHERE thread_id=?1 AND input_identity=?2",
+            "SELECT id,COALESCE((SELECT k.client_key FROM imported_node_client_keys k WHERE k.node_id=nodes.id),client_key) AS client_key,leased_action_id,kind,icon,title,detail,authored_detail,state,owner_interaction_id FROM nodes WHERE thread_id=?1 AND input_identity=?2",
         ).bind(thread_id.value()).bind(input_identity).fetch_optional(&mut *self.connection).await?;
         let Some(row) = row else {
             return Ok(None);
@@ -209,7 +209,7 @@ impl<'connection> NodeTable<'connection> {
             return Ok(None);
         };
         let node = self.fetch_optional(
-            "SELECT id,client_key,leased_action_id,kind,icon,title,detail,authored_detail,state,owner_interaction_id FROM nodes WHERE leased_action_id=?1",
+            "SELECT id,COALESCE((SELECT k.client_key FROM imported_node_client_keys k WHERE k.node_id=nodes.id),client_key) AS client_key,leased_action_id,kind,icon,title,detail,authored_detail,state,owner_interaction_id FROM nodes WHERE leased_action_id=?1",
             action_id.value(),
             None,
         )
@@ -417,7 +417,7 @@ impl<'connection> NodeTable<'connection> {
         client_key: &str,
     ) -> Result<Option<NodeRecord>, GraphError> {
         self.fetch_optional(
-            "SELECT id,client_key,leased_action_id,kind,icon,title,detail,authored_detail,state,owner_interaction_id FROM nodes WHERE owner_interaction_id=?1 AND client_key=?2",
+            "SELECT id,COALESCE((SELECT k.client_key FROM imported_node_client_keys k WHERE k.node_id=nodes.id),client_key) AS client_key,leased_action_id,kind,icon,title,detail,authored_detail,state,owner_interaction_id FROM nodes WHERE owner_interaction_id=?1 AND client_key=?2",
             owner.value(),
             Some(client_key),
         )
@@ -430,7 +430,7 @@ impl<'connection> NodeTable<'connection> {
         id: NodeId,
     ) -> Result<GraphNode, GraphError> {
         let row = sqlx::query_as::<_, NodeRow>(
-            "SELECT id,client_key,leased_action_id,kind,icon,title,detail,authored_detail,state,owner_interaction_id FROM nodes WHERE id=?1 AND ((?2 IS NOT NULL AND project_id=?2) OR (?2 IS NULL AND project_id IS NULL AND thread_id=?3))",
+            "SELECT id,COALESCE((SELECT k.client_key FROM imported_node_client_keys k WHERE k.node_id=nodes.id),client_key) AS client_key,leased_action_id,kind,icon,title,detail,authored_detail,state,owner_interaction_id FROM nodes WHERE id=?1 AND ((?2 IS NOT NULL AND project_id=?2) OR (?2 IS NULL AND project_id IS NULL AND thread_id=?3))",
         )
         .bind(id.value())
         .bind(scope.project_id.map(ProjectId::value))
@@ -467,7 +467,7 @@ impl<'connection> NodeTable<'connection> {
 
     pub(crate) async fn record(&mut self, id: NodeId) -> Result<Option<NodeRecord>, GraphError> {
         self.fetch_optional(
-            "SELECT id,client_key,leased_action_id,kind,icon,title,detail,authored_detail,state,owner_interaction_id FROM nodes WHERE id=?1",
+            "SELECT id,COALESCE((SELECT k.client_key FROM imported_node_client_keys k WHERE k.node_id=nodes.id),client_key) AS client_key,leased_action_id,kind,icon,title,detail,authored_detail,state,owner_interaction_id FROM nodes WHERE id=?1",
             id.value(),
             None,
         )
@@ -542,7 +542,7 @@ impl<'connection> NodeTable<'connection> {
     ) -> Result<Vec<GraphNode>, GraphError> {
         let rows = sqlx::query_as::<_, NodeRow>(
             r#"
-            SELECT n.id,n.client_key,n.leased_action_id,n.kind,n.icon,n.title,n.detail,n.authored_detail,n.state,n.owner_interaction_id
+            SELECT n.id,COALESCE((SELECT k.client_key FROM imported_node_client_keys k WHERE k.node_id=n.id),n.client_key) AS client_key,n.leased_action_id,n.kind,n.icon,n.title,n.detail,n.authored_detail,n.state,n.owner_interaction_id
             FROM edges e
             JOIN nodes n ON n.id = CASE WHEN e.left_id = ?1 THEN e.right_id ELSE e.left_id END
             WHERE e.state='accepted'
@@ -564,7 +564,7 @@ impl<'connection> NodeTable<'connection> {
             .collect::<Result<Vec<_>, _>>()?;
         let derived = sqlx::query_as::<_, NodeRow>(
             r#"
-            SELECT source.id,source.client_key,source.leased_action_id,source.kind,source.icon,source.title,
+            SELECT source.id,COALESCE((SELECT k.client_key FROM imported_node_client_keys k WHERE k.node_id=source.id),source.client_key) AS client_key,source.leased_action_id,source.kind,source.icon,source.title,
                    source.detail,source.authored_detail,source.state,source.owner_interaction_id
             FROM nodes interaction
             JOIN actions leased ON leased.id=interaction.leased_action_id

@@ -10,7 +10,9 @@ import { renderPublicViewerTemplate } from "../desktop/renderer/src/public-share
 const OPT_IN = "RELAYER_CAPTURE_PUBLIC_SHARE_VIEWER_EVIDENCE";
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const rendererRoot = resolve(repositoryRoot, "desktop/renderer");
-const evidenceRoot = resolve(repositoryRoot, "docs/evidence/issue-471-public-share-viewer");
+const evidenceRoot = process.env.RELAYER_PUBLIC_SHARE_EVIDENCE_DIR
+  ? resolve(process.env.RELAYER_PUBLIC_SHARE_EVIDENCE_DIR)
+  : resolve(repositoryRoot, "docs/evidence/issue-471-public-share-viewer");
 const routeId = "a".repeat(32);
 const routePath = `/t/${routeId}`;
 const sourceFiles = [
@@ -277,7 +279,7 @@ async function openViewer({ width, height, label, url }) {
     const node = document.querySelector('.graph-node');
     const banner = document.querySelector('.interaction-banner');
     return {
-      downloadCardInsideWorkspace: Boolean(layout && card && card.parentElement === layout),
+      downloadActionInsideHeader: Boolean(layout && card && card.parentElement === layout.querySelector(".thread-header")),
       environmentPanelAbsent: !document.querySelector('.environment-panel'),
       graphNodeRendered: Boolean(node && node.getBoundingClientRect().width > 0),
       interactionBannerRendered: Boolean(banner && banner.getBoundingClientRect().height > 0),
@@ -310,8 +312,8 @@ async function navigateWithoutChangingUrl(viewer) {
 
 async function selectNextTurn(viewer) {
   const { window, originalUrl } = viewer;
-  await window.webContents.executeJavaScript("document.querySelector('#nextTurn').click(); true");
-  await waitFor(window, "second accepted turn", "document.querySelector('#turnPickerButton')?.textContent?.trim() === 'Turn 2 of 5' && document.querySelector('.graph-node .copy b')?.textContent?.trim() === 'Accepted turn 2'");
+  await window.webContents.executeJavaScript("document.querySelector('#turnPickerButton').click(); document.querySelector('.interaction-graph-node[data-turn-id=\"turn:synthetic-2\"]').click(); true");
+  await waitFor(window, "second accepted turn", "document.querySelector('.interaction-graph-node[aria-current=\"true\"]')?.dataset.turnId === 'turn:synthetic-2' && document.querySelector('.graph-node .copy b')?.textContent?.trim() === 'Accepted turn 2'");
   await waitFor(window, "unchanged URL after turn selection", `location.href === ${JSON.stringify(originalUrl)}`);
   viewer.assertions.turnNavigationChangedTurn = true;
 }
@@ -336,7 +338,7 @@ async function exerciseMobilePan(viewer) {
 async function reloadToFirstTurn(viewer) {
   const { window, originalUrl } = viewer;
   await window.webContents.reload();
-  await waitFor(window, "first accepted turn after reload", "document.querySelector('#turnPickerButton')?.textContent?.trim() === 'Turn 1 of 5' && document.querySelector('.graph-node .copy b')?.textContent?.trim() === 'Evidence-ready result'");
+  await waitFor(window, "first accepted turn after reload", "document.querySelector('.interaction-graph-node[aria-current=\"true\"]')?.dataset.turnId === 'turn:synthetic-1' && document.querySelector('.graph-node .copy b')?.textContent?.trim() === 'Evidence-ready result'");
   await waitFor(window, "unchanged URL after reload", `location.href === ${JSON.stringify(originalUrl)}`);
   viewer.assertions.reloadResetFirstTurn = true;
 }

@@ -1,0 +1,7 @@
+{
+ "_readme": "K11 (Linen Burgundy) tuning overrides. Run: node engine.mjs --overrides overrides/K11.json K11",
+ "K11": {
+  "_why": "K11 tuning: the plan keeps burgundy (selection, links) and red (failure) apart only by lightness (dE 27.3 in light). In dark both text steps land at L 0.80: link #F4A3B2 vs danger text #FFA096 is dE 3.9 (contrast 1.00), so a link reads as an error. Dark accent-text is lifted on its own hue (h7) to L 0.89, the first step dE >= 10 from danger text (11.0, CVD 9.8); contrast and APCA only rise. This is Gen-1 D's pale-ice dark link pattern (K11 is 'near D'). Saturating danger text instead would have cost APCA Lc 65 -> ~48",
+  "tokens": { "dark": { "accent-text": "#FFCBD4" } }
+ }
+}

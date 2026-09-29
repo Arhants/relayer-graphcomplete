@@ -17,7 +17,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 #[derive(Debug, Deserialize)]
@@ -420,6 +420,23 @@ pub(super) async fn publish_harness_readiness(
         .update_harness_runtime_availability(updates)
         .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct HarnessReadinessState {
+    /// Routes an upgrade left pending that still wait for their one automatic evaluation.
+    update_due: Vec<String>,
+}
+
+pub(super) async fn harness_readiness_state(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+) -> Result<Json<HarnessReadinessState>, ApiError> {
+    authorize_provider_publish(&state, &headers)?;
+    Ok(Json(HarnessReadinessState {
+        update_due: state.product.harness_readiness_updates_due().await?,
+    }))
 }
 
 pub(super) async fn provider_definitions(

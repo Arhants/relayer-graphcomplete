@@ -1,7 +1,11 @@
 {
   "contractVersion": 1,
   "snapshot": {
-    "exportVersions": [1, 2],
+    "exportVersions": [
+      1,
+      2,
+      3
+    ],
     "mediaType": "application/x-ndjson",
     "maxBytes": 16777216,
     "maxLineBytes": 16777216,
@@ -16,36 +20,101 @@
   },
   "attemptSemantics": {
     "ownerScoped": true,
-    "freezeAtCreateLink": ["attemptId", "sourceThreadId", "title", "projectName", "byteLength", "lineCount", "snapshotSha256", "snapshotBytes"],
+    "freezeAtCreateLink": [
+      "attemptId",
+      "sourceThreadId",
+      "title",
+      "projectName",
+      "byteLength",
+      "lineCount",
+      "snapshotSha256",
+      "snapshotBytes",
+      "preview",
+      "previewBytes"
+    ],
     "exactRetryReturnsSameShare": true,
     "changedRetryError": "attempt_conflict",
     "closedRetryError": "attempt_closed"
   },
   "operations": {
     "reserve": {
-      "requestRequired": ["attemptId", "sourceThreadId", "title", "byteLength", "lineCount", "snapshotSha256"],
-      "requestOptional": ["projectName"],
-      "responseRequired": ["status", "shareId", "attemptId", "url", "maxBytes", "expiresAt"],
-      "responseConditional": ["upload"]
+      "requestRequired": [
+        "attemptId",
+        "sourceThreadId",
+        "title",
+        "byteLength",
+        "lineCount",
+        "snapshotSha256"
+      ],
+      "requestOptional": [
+        "projectName",
+        "preview"
+      ],
+      "responseRequired": [
+        "status",
+        "shareId",
+        "attemptId",
+        "url",
+        "maxBytes",
+        "expiresAt"
+      ],
+      "responseConditional": [
+        "upload",
+        "previewUpload"
+      ]
     },
     "finalize": {
-      "requestRequired": ["shareId"],
-      "responseRequired": ["status", "shareId", "url", "title", "createdAt", "byteLength", "lineCount", "quotaResetAt"],
-      "responseOptional": ["projectName"]
+      "requestRequired": [
+        "shareId"
+      ],
+      "responseRequired": [
+        "status",
+        "shareId",
+        "url",
+        "title",
+        "createdAt",
+        "byteLength",
+        "lineCount",
+        "quotaResetAt"
+      ],
+      "responseOptional": [
+        "projectName"
+      ]
     },
     "list": {
-      "responseRequired": ["items"],
-      "itemRequired": ["shareId", "url", "title", "sourceThreadId", "createdAt"],
-      "itemOptional": ["projectName"]
+      "responseRequired": [
+        "items"
+      ],
+      "itemRequired": [
+        "shareId",
+        "url",
+        "title",
+        "sourceThreadId",
+        "createdAt"
+      ],
+      "itemOptional": [
+        "projectName"
+      ]
     },
     "quota": {
-      "responseRequired": ["used", "limit", "resetAt"]
+      "responseRequired": [
+        "used",
+        "limit",
+        "resetAt"
+      ]
     },
     "embed": {
       "responseMediaType": "text/html; charset=utf-8",
       "cacheControl": "no-store",
-      "frameAncestors": ["https://relayerlabs.ai", "https://www.relayerlabs.ai"],
-      "themeOptions": ["system", "light", "dark"],
+      "frameAncestors": [
+        "https://relayerlabs.ai",
+        "https://www.relayerlabs.ai"
+      ],
+      "themeOptions": [
+        "system",
+        "light",
+        "dark"
+      ],
       "requiredPinnedTemplateEmbedVersion": 1,
       "unavailableMessage": "This shared graph is unavailable"
     },
@@ -63,40 +132,181 @@
     "desktopRequestTimeoutMs": 15000
   },
   "routes": [
-    { "method": "POST", "path": "/shares", "authentication": "bearer", "operation": "reserve" },
-    { "method": "POST", "path": "/shares/{shareId}/finalize", "authentication": "bearer", "operation": "finalize" },
-    { "method": "GET", "path": "/shares", "authentication": "bearer", "operation": "list" },
-    { "method": "GET", "path": "/shares/quota", "authentication": "bearer", "operation": "quota" },
-    { "method": "GET", "path": "/shares/{shareId}", "authentication": "bearer", "operation": "read-owned" },
-    { "method": "GET", "path": "/t/{shareId}", "authentication": "public", "operation": "view" },
-    { "method": "GET", "path": "/t/{shareId}/embed", "authentication": "public", "operation": "embed" },
-    { "method": "GET", "path": "/t/{shareId}/install", "authentication": "public", "operation": "install" }
+    {
+      "method": "POST",
+      "path": "/shares",
+      "authentication": "bearer",
+      "operation": "reserve"
+    },
+    {
+      "method": "POST",
+      "path": "/shares/{shareId}/finalize",
+      "authentication": "bearer",
+      "operation": "finalize"
+    },
+    {
+      "method": "GET",
+      "path": "/shares",
+      "authentication": "bearer",
+      "operation": "list"
+    },
+    {
+      "method": "GET",
+      "path": "/shares/quota",
+      "authentication": "bearer",
+      "operation": "quota"
+    },
+    {
+      "method": "GET",
+      "path": "/shares/{shareId}",
+      "authentication": "bearer",
+      "operation": "read-owned"
+    },
+    {
+      "method": "GET",
+      "path": "/t/{shareId}",
+      "authentication": "public",
+      "operation": "view"
+    },
+    {
+      "method": "GET",
+      "path": "/t/{shareId}/preview.png",
+      "authentication": "public",
+      "operation": "preview"
+    },
+    {
+      "method": "GET",
+      "path": "/t/{shareId}/embed",
+      "authentication": "public",
+      "operation": "embed"
+    },
+    {
+      "method": "GET",
+      "path": "/t/{shareId}/install",
+      "authentication": "public",
+      "operation": "install"
+    }
   ],
   "stableErrors": {
-    "400": ["invalid_attempt_id", "invalid_project_name", "invalid_request", "invalid_share_title", "invalid_snapshot_digest", "invalid_snapshot_line_count", "invalid_source_thread"],
-    "401": ["invalid_authorization", "invalid_identity", "invalid_token", "missing_authorization"],
-    "404": ["not_found"],
-    "405": ["method_not_allowed"],
-    "409": ["attempt_closed", "attempt_conflict", "finalization_conflict", "finalization_in_progress", "staged_snapshot_changed"],
-    "410": ["reservation_expired"],
-    "413": ["snapshot_too_large"],
-    "422": ["snapshot_empty", "snapshot_empty_line", "snapshot_invalid_json", "snapshot_invalid_record", "snapshot_invalid_utf8", "snapshot_line_count", "snapshot_line_too_large", "snapshot_mismatch", "snapshot_unsupported_version", "staged_snapshot_missing"],
-    "429": ["daily_quota_exhausted", "reservation_limit_exhausted"],
-    "500": ["service_unavailable"],
-    "503": ["share_id_unavailable", "storage_unavailable"]
+    "400": [
+      "invalid_attempt_id",
+      "invalid_preview",
+      "invalid_project_name",
+      "invalid_request",
+      "invalid_share_title",
+      "invalid_snapshot_digest",
+      "invalid_snapshot_line_count",
+      "invalid_source_thread"
+    ],
+    "401": [
+      "invalid_authorization",
+      "invalid_identity",
+      "invalid_token",
+      "missing_authorization"
+    ],
+    "404": [
+      "not_found"
+    ],
+    "405": [
+      "method_not_allowed"
+    ],
+    "409": [
+      "attempt_closed",
+      "attempt_conflict",
+      "finalization_conflict",
+      "finalization_in_progress",
+      "staged_snapshot_changed"
+    ],
+    "410": [
+      "reservation_expired"
+    ],
+    "413": [
+      "snapshot_too_large"
+    ],
+    "422": [
+      "preview_mismatch",
+      "snapshot_empty",
+      "snapshot_empty_line",
+      "snapshot_invalid_json",
+      "snapshot_invalid_record",
+      "snapshot_invalid_utf8",
+      "snapshot_line_count",
+      "snapshot_line_too_large",
+      "snapshot_mismatch",
+      "snapshot_unsupported_version",
+      "staged_preview_missing",
+      "staged_snapshot_missing"
+    ],
+    "429": [
+      "daily_quota_exhausted",
+      "reservation_limit_exhausted"
+    ],
+    "500": [
+      "service_unavailable"
+    ],
+    "503": [
+      "preview_unavailable",
+      "share_id_unavailable",
+      "storage_unavailable"
+    ]
   },
   "viewerArtifact": {
     "manifestVersion": 1,
-    "requiredIdentity": ["productCommit", "artifactSha256", "builder", "contractVersion", "snapshotVersions", "resources"],
-    "resourceIdentity": ["path", "bytes", "sha256"],
-    "requiredResources": ["logo", "ogImage", "viewerScript", "viewerStyles", "workspaceStyles", "lucideScript", "markedScript"],
+    "requiredIdentity": [
+      "productCommit",
+      "artifactSha256",
+      "builder",
+      "contractVersion",
+      "snapshotVersions",
+      "resources"
+    ],
+    "resourceIdentity": [
+      "path",
+      "bytes",
+      "sha256"
+    ],
+    "requiredResources": [
+      "logo",
+      "ogImage",
+      "viewerScript",
+      "viewerStyles",
+      "workspaceStyles",
+      "lucideScript",
+      "markedScript"
+    ],
     "csp": "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'none'; form-action 'none'"
   },
   "compatibility": {
-    "httpContractVersions": [1],
-    "snapshotExportVersions": [1, 2],
-    "viewerArtifactVersions": [1],
+    "httpContractVersions": [
+      1
+    ],
+    "snapshotExportVersions": [
+      1,
+      2,
+      3
+    ],
+    "viewerArtifactVersions": [
+      1
+    ],
     "publishedSharesPinViewerArtifact": true,
     "publishedSnapshotBytesAreImmutable": true
+  },
+  "socialPreview": {
+    "version": 1,
+    "mediaType": "image/png",
+    "width": 1200,
+    "height": 630,
+    "maxBytes": 4194304,
+    "descriptorRequired": [
+      "byteLength",
+      "sha256",
+      "theme"
+    ],
+    "themeOptions": [
+      "light",
+      "dark"
+    ],
+    "oldShares": "generic-preview",
+    "source": "desktop-frozen-redacted-snapshot"
   }
 }

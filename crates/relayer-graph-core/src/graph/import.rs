@@ -185,9 +185,12 @@ pub struct ImportedEdge {
     pub endpoints: [String; 2],
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportedAction {
+    /// Inert portable history; never a native invoke-resolution permission.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub converted_from_invoke: bool,
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_key: Option<String>,
@@ -490,9 +493,12 @@ impl crate::GraphDatabase {
             let result = sqlx::query("INSERT INTO nodes(project_id,thread_id,kind,icon,title,detail,authored_detail,state,owner_interaction_id,client_key) VALUES (?1,?2,?3,?4,?5,?6,?7,'accepted',?8,?9)")
                 .bind(metadata.project_id.map(ProjectId::value)).bind(metadata.thread_id.value()).bind(node.kind).bind(node.icon)
                 .bind(node.title).bind(detail).bind(authored_detail).bind(owner)
-                .bind(node.client_key.as_deref().unwrap_or(&portable_id)).execute(&mut *tx).await?;
+                .bind(&portable_id).execute(&mut *tx).await?;
             let node_id =
                 NodeId::new(result.last_insert_rowid()).expect("inserted node ID is positive");
+            sqlx::query("INSERT INTO imported_node_client_keys(node_id,import_id,client_key) VALUES (?1,?2,?3)")
+                .bind(node_id.value()).bind(import_id).bind(node.client_key.as_deref().unwrap_or(&portable_id))
+                .execute(&mut *tx).await?;
             for asset in &node.authored_detail_assets {
                 AuthoredDetailAssetTable::new(&mut tx)
                     .insert_import_reference(node_id, asset)
@@ -530,11 +536,78 @@ impl crate::GraphDatabase {
                 let result = sqlx::query("INSERT INTO layers(project_id,thread_id,layout_schema_version,state,owner_interaction_id,client_key,default_node_id) VALUES (?1,?2,?3,'accepted',?4,?5,?6)")
                     .bind(metadata.project_id.map(ProjectId::value)).bind(metadata.thread_id.value())
                     .bind(resolved.layer.layout.as_ref().map(|layout| i64::from(layout.version)))
-                    .bind(owner).bind(resolved.layer.client_key.as_deref().unwrap_or(&resolved.layer.id))
+                    .bind(owner).bind(&resolved.layer.id)
                     .bind(resolved.layer.default_node_id.as_ref().map(|id| node_ids[id]))
                     .execute(&mut *tx).await?;
-                layer_ids.insert(resolved.layer.id, result.last_insert_rowid());
+                let layer_id = result.last_insert_rowid();
+                sqlx::query("INSERT INTO imported_layer_client_keys(layer_id,import_id,client_key) VALUES (?1,?2,?3)")
+                    .bind(layer_id).bind(import_id).bind(resolved.layer.client_key.as_deref().unwrap_or(&resolved.layer.id))
+                    .execute(&mut *tx).await?;
+                layer_ids.insert(resolved.layer.id, layer_id);
             }
+        }
+
+        let response_layer_ids = layer_ids.keys().cloned().collect::<HashSet<_>>();
+        // Source-layer provenance can name an occurrence outside the exported
+        // response closure. Preserve its identity as an empty inert layer, never
+        // as visible response topology or execution authority. A compiled package
+        // supplies the authored key when a control binds that provenance.
+        let mut external_layers = HashMap::<String, (i64, Option<String>)>::new();
+        for position in 0..turn_count {
+            let turn = load_turn(&mut tx, import_id, position).await?;
+            let Some(view) = turn.accepted_view else {
+                continue;
+            };
+            let owner = node_ids[&view.interaction_node_id];
+            for resolved in &view.layers {
+                for action in &resolved.actions {
+                    let Some(source_layer) = &action.source_layer_id else {
+                        continue;
+                    };
+                    if layer_ids.contains_key(source_layer) {
+                        continue;
+                    }
+                    let key = resolved
+                        .nodes
+                        .iter()
+                        .find(|node| node.id == action.source_node_id)
+                        .map(|node| imported_source_layer_key(node, action))
+                        .transpose()?
+                        .flatten();
+                    let (_, existing_key) = external_layers
+                        .entry(source_layer.clone())
+                        .or_insert((owner, None));
+                    if let (Some(existing), Some(incoming)) = (existing_key.as_ref(), key.as_ref())
+                        && existing != incoming
+                    {
+                        return Err(GraphError::validation(
+                            "imported_source_layer_key_conflict",
+                            "sourceLayerId",
+                            "One imported source layer cannot have conflicting authored binding keys.",
+                        ));
+                    }
+                    if existing_key.is_none() {
+                        *existing_key = key;
+                    }
+                }
+            }
+        }
+        for (portable_id, (owner, key)) in external_layers {
+            let result = sqlx::query("INSERT INTO layers(project_id,thread_id,state,owner_interaction_id,client_key) VALUES (?1,?2,'accepted',?3,?4)")
+                .bind(metadata.project_id.map(ProjectId::value)).bind(metadata.thread_id.value())
+                .bind(owner).bind(&portable_id).execute(&mut *tx).await?;
+            let layer_id = result.last_insert_rowid();
+            sqlx::query("INSERT INTO imported_layer_client_keys(layer_id,import_id,client_key) VALUES (?1,?2,?3)")
+                .bind(layer_id).bind(import_id).bind(key.as_deref().unwrap_or(&portable_id))
+                .execute(&mut *tx).await?;
+            sqlx::query(
+                "INSERT INTO imported_provenance_layers(layer_id,import_id) VALUES (?1,?2)",
+            )
+            .bind(layer_id)
+            .bind(import_id)
+            .execute(&mut *tx)
+            .await?;
+            layer_ids.insert(portable_id, layer_id);
         }
 
         seen_layers.clear();
@@ -676,11 +749,13 @@ impl crate::GraphDatabase {
         for (action_id, snapshot) in legacy_fallback_snapshots {
             input_action_snapshots.entry(action_id).or_insert(snapshot);
         }
+        let mut action_definitions = HashMap::<String, ImportedAction>::new();
         let mut action_ids = HashMap::<String, i64>::new();
         let context = InsertContext {
             metadata: &metadata,
             nodes: &node_ids,
             layers: &layer_ids,
+            response_layers: &response_layer_ids,
             input_actions: &input_action_snapshots,
         };
         for position in 0..turn_count {
@@ -700,6 +775,26 @@ impl crate::GraphDatabase {
             .await?;
             for resolved in view.layers {
                 for action in resolved.actions {
+                    if !resolved.layer.nodes.contains(&action.source_node_id)
+                        || (action.source_layer_id.is_none() && action.kind != "navigate")
+                    {
+                        return Err(GraphError::validation(
+                            "imported_action_occurrence_invalid",
+                            "actions",
+                            "Imported node action must belong to its containing occurrence; only navigation can omit source-layer provenance.",
+                        ));
+                    }
+                    if let Some(existing) = action_definitions.get(&action.id) {
+                        if existing != &action {
+                            return Err(GraphError::validation(
+                                "imported_action_snapshot_mismatch",
+                                "actions",
+                                "Repeated imported action identities must retain one exact snapshot.",
+                            ));
+                        }
+                    } else {
+                        action_definitions.insert(action.id.clone(), action.clone());
+                    }
                     if !action_ids.contains_key(&action.id) {
                         insert_action(&mut tx, &context, owner, &action, false, &mut action_ids)
                             .await?;
@@ -984,17 +1079,16 @@ impl crate::GraphDatabase {
                 ));
             }
             let source_turn = load_turn(&mut tx, import_id, source_turn_position).await?;
-            let source_has_invoke = source_turn
-                .accepted_view
-                .as_ref()
-                .is_some_and(|source_view| {
-                    source_view.layers.iter().any(|layer| {
-                        layer.actions.iter().any(|action| {
-                            action.id == origin.source_action_id && action.kind == "invoke"
-                        })
-                    })
-                });
-            if !source_has_invoke {
+            let source_action = source_turn.accepted_view.as_ref().and_then(|source_view| {
+                source_view
+                    .layers
+                    .iter()
+                    .flat_map(|layer| &layer.actions)
+                    .find(|action| action.id == origin.source_action_id)
+            });
+            if !source_action
+                .is_some_and(|action| action.kind == "invoke" || action.converted_from_invoke)
+            {
                 return Err(GraphError::Internal(
                     "imported invoke origin does not name an invoke in its source turn".into(),
                 ));
@@ -1010,6 +1104,16 @@ impl crate::GraphDatabase {
             let target_layer_id = layer_ids.get(&view.root_layer_id).ok_or_else(|| {
                 GraphError::Internal("imported invoke destination root was not materialized".into())
             })?;
+            if let Some(action) = source_action.filter(|action| action.converted_from_invoke) {
+                if action.target_layer_id.as_ref() != Some(&view.root_layer_id) {
+                    return Err(GraphError::validation(
+                        "imported_conversion_target_mismatch",
+                        "invokeOrigin",
+                        "Converted invoke navigation must retain the exact invoked result root.",
+                    ));
+                }
+                continue;
+            }
             let updated = sqlx::query(
                 "UPDATE actions SET target_layer_id=?1 WHERE id=?2 AND kind='invoke' AND target_layer_id IS NULL",
             )
@@ -1298,16 +1402,18 @@ fn register_imported_node(
     mut node: ImportedNode,
 ) -> Result<(), GraphError> {
     if let Some(existing) = definitions.get_mut(&node.id) {
+        let incoming_client_key = node.client_key.take();
+        let existing_client_key = existing.client_key.take();
         let incoming_authored_detail = node.authored_detail.take();
         let existing_authored_detail = existing.authored_detail.take();
         let incoming_assets = std::mem::take(&mut node.authored_detail_assets);
         let existing_assets = std::mem::take(&mut existing.authored_detail_assets);
-        // Context snapshots of a node carry neither its package nor the marker
-        // that export omitted one; only the accepted-view copy does. Compare the
-        // remaining identity fields, then merge both package-related fields.
+        // Context snapshots omit authored keys, packages and omission markers.
+        // Preserve the accepted-view metadata without weakening semantic identity.
         let incoming_omitted = std::mem::take(&mut node.authored_detail_omitted);
         let existing_omitted = std::mem::take(&mut existing.authored_detail_omitted);
         if existing != &node
+            || matches!((&existing_client_key, &incoming_client_key), (Some(left), Some(right)) if left != right)
             || (!existing_assets.is_empty()
                 && !incoming_assets.is_empty()
                 && existing_assets != incoming_assets)
@@ -1316,6 +1422,7 @@ fn register_imported_node(
                 (Some(left), Some(right)) if left != right
             )
         {
+            existing.client_key = existing_client_key;
             existing.authored_detail = existing_authored_detail;
             existing.authored_detail_omitted = existing_omitted;
             existing.authored_detail_assets = existing_assets;
@@ -1323,6 +1430,7 @@ fn register_imported_node(
                 "imported node snapshot changed for one portable ID".into(),
             ));
         }
+        existing.client_key = existing_client_key.or(incoming_client_key);
         existing.authored_detail = existing_authored_detail.or(incoming_authored_detail);
         existing.authored_detail_assets = if existing_assets.is_empty() {
             incoming_assets
@@ -1337,10 +1445,46 @@ fn register_imported_node(
     Ok(())
 }
 
+fn imported_source_layer_key(
+    node: &ImportedNode,
+    action: &ImportedAction,
+) -> Result<Option<String>, GraphError> {
+    let Some(mounts) = node
+        .authored_detail
+        .as_ref()
+        .and_then(|package| package["mounts"].as_array())
+    else {
+        return Ok(None);
+    };
+    let mut key: Option<String> = None;
+    for mount in mounts {
+        let binding = &mount["capability"]["action"];
+        if binding["clientKey"].as_str() != Some(action.client_key.as_deref().unwrap_or(&action.id))
+            || binding["sourceNode"]["clientKey"].as_str()
+                != Some(node.client_key.as_deref().unwrap_or(&node.id))
+        {
+            continue;
+        }
+        let Some(incoming) = binding["sourceLayer"]["clientKey"].as_str() else {
+            continue;
+        };
+        if key.as_ref().is_some_and(|existing| existing != incoming) {
+            return Err(GraphError::validation(
+                "imported_source_layer_key_conflict",
+                "authoredDetail",
+                "One imported action cannot bind conflicting source layer keys.",
+            ));
+        }
+        key = Some(incoming.to_owned());
+    }
+    Ok(key)
+}
+
 struct InsertContext<'a> {
     metadata: &'a ImportedConversationStage,
     nodes: &'a HashMap<String, i64>,
     layers: &'a HashMap<String, i64>,
+    response_layers: &'a HashSet<String>,
     input_actions: &'a HashMap<String, InputAction>,
 }
 
@@ -1352,6 +1496,64 @@ async fn insert_action(
     response: bool,
     ids: &mut HashMap<String, i64>,
 ) -> Result<(), GraphError> {
+    if action.converted_from_invoke
+        && (response
+            || action.kind != "navigate"
+            || action.relation.as_deref() != Some("expand")
+            || action.target_layer_id.is_none()
+            || action.interaction_text.is_some()
+            || action.input.is_some())
+    {
+        return Err(GraphError::validation(
+            "imported_conversion_invalid",
+            "convertedFromInvoke",
+            "Converted invoke history requires an accepted node-owned expand navigation action.",
+        ));
+    }
+    let source_node = context.nodes.get(&action.source_node_id).ok_or_else(|| {
+        GraphError::validation(
+            "imported_action_source_missing",
+            "sourceNodeId",
+            "Imported action source node is not materialized.",
+        )
+    })?;
+    let source_layer = action
+        .source_layer_id
+        .as_ref()
+        .map(|id| {
+            context.layers.get(id).copied().ok_or_else(|| {
+                GraphError::validation(
+                    "imported_action_source_missing",
+                    "sourceLayerId",
+                    "Imported action source layer is not materialized.",
+                )
+            })
+        })
+        .transpose()?;
+    if action
+        .target_layer_id
+        .as_ref()
+        .is_some_and(|id| !context.response_layers.contains(id))
+    {
+        return Err(GraphError::validation(
+            "imported_action_target_missing",
+            "targetLayerId",
+            "Imported navigation cannot target provenance-only or missing layers.",
+        ));
+    }
+    let target_layer = action
+        .target_layer_id
+        .as_ref()
+        .map(|id| {
+            context.layers.get(id).copied().ok_or_else(|| {
+                GraphError::validation(
+                    "imported_action_target_missing",
+                    "targetLayerId",
+                    "Imported action target must name a materialized response layer.",
+                )
+            })
+        })
+        .transpose()?;
     let consumed_snapshot = context.input_actions.get(&action.id);
     // Older draft exports carried the action snapshot only on a consuming child.
     // Keep that additive shape readable when an answer exists, while current
@@ -1369,12 +1571,17 @@ async fn insert_action(
         .map_err(|error| GraphError::Internal(error.to_string()))?;
     let result = sqlx::query("INSERT INTO actions(project_id,thread_id,source_node_id,source_layer_id,kind,relation,label,variant,icon,description,target_layer_id,interaction_text,response,state,owner_interaction_id,client_key) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'accepted',?14,?15)")
         .bind(context.metadata.project_id.map(ProjectId::value)).bind(context.metadata.thread_id.value())
-        .bind(context.nodes[&action.source_node_id]).bind(action.source_layer_id.as_ref().map(|id| context.layers[id]))
+        .bind(source_node).bind(source_layer)
         .bind(&action.kind).bind(&action.relation).bind(&action.label).bind(&action.variant).bind(&action.icon).bind(&action.description)
-        .bind(action.target_layer_id.as_ref().map(|id| context.layers[id])).bind(&action.interaction_text)
+        .bind(target_layer).bind(&action.interaction_text)
         .bind(response).bind(owner).bind(action.client_key.as_deref().unwrap_or(&action.id))
         .execute(&mut **tx).await?;
     let action_id = result.last_insert_rowid();
+    if action.converted_from_invoke {
+        sqlx::query("INSERT INTO imported_action_conversions(action_id,import_id,target_layer_id) SELECT ?1,import_id,?2 FROM graph_imports WHERE thread_id=?3")
+            .bind(action_id).bind(target_layer)
+            .bind(context.metadata.thread_id.value()).execute(&mut **tx).await?;
+    }
     if let Some(input) = input {
         sqlx::query("INSERT INTO input_action_payloads(action_id,control,prompt,options_json,minimum_selections) VALUES (?1,?2,?3,?4,?5)")
             .bind(action_id)

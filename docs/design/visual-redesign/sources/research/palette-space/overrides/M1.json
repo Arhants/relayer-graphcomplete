@@ -1,0 +1,6 @@
+{
+ "M1": {
+  "success": { "L": { "light": 0.55, "dark": 0.76 } },
+  "_why": "success: the candidate's own risk is that forest-teal 'selected' may read as 'accepted'. In dark the engine's teal selection ring #42A594 sat dE 5.6 from success #60AC76 (same lightness, 28 deg of hue), and success vs warning was only 6.4 under colour-blind simulation. Lifting dark success from L 0.68 to 0.76 (hue 152 and chroma 0.11 kept; light unchanged at L 0.55) puts the ring 11.3 away and success vs warning to 15.8 / 9.5 CVD. A hue shift (140 or 128) was tried and rejected: it pushed success into warning under CVD (4.4 / 2.8)."
+ }
+}

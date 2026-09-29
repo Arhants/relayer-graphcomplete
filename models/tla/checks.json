@@ -182,6 +182,7 @@
       "MaxGen": "4",
       "SignOutPublishCanFail": "TRUE",
       "CancelPublishCanFail": "TRUE",
+      "AccountCheckCanFail": "TRUE",
       "ReconnectAnswerCanBeLost": "TRUE",
       "LeaseWaitsForReconnect": "TRUE",
       "CancelSparesLease": "TRUE",
@@ -192,6 +193,7 @@
       "CancelSignsOut": "TRUE",
       "CancelKeepsUnrecordedLogin": "TRUE",
       "SupersededCancelWipes": "TRUE",
+      "SignOutBlocksAdmission": "TRUE",
       "AdoptTracksLostWrites": "TRUE"
     },
     "launch-today": {
@@ -203,6 +205,18 @@
       "RefusedLaunchFailsChild": "TRUE",
       "ChildrenOutsideRootGate": "TRUE",
       "ProductLeavesChildren": "TRUE"
+    },
+    "readiness-repair-today": {
+      "Providers": "{chatgpt, openrouter}",
+      "Evals": "{e1, e2}",
+      "MaxRestarts": "1",
+      "MaxTampers": "1",
+      "UpgradeCanChangeDigest": "TRUE",
+      "UpgradeCanChangeRecipe": "TRUE",
+      "StartsPreRule": "FALSE",
+      "RepairRevalidates": "TRUE",
+      "UpgradeEvaluates": "TRUE",
+      "RecipeChangeMarksDue": "TRUE"
     }
   },
   "checks": [
@@ -2666,6 +2680,33 @@
       "finding": "With SupersededCancelWipes off, a sign-out answered during a reconnect is followed by the browser sign-in; the refused reconnect's settle cannot publish, keeps the new login, and the next refresh would publish connected over the confirmed sign-out."
     },
     {
+      "id": "lifecycle-no-stale-admission",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "invariants": [
+        "TypeOK",
+        "NoStaleAdmission"
+      ],
+      "expect": "pass",
+      "finding": "No provider access is granted while P has no login and the app server still reads it ready, with every fault on, including a cancel after a sign-out whose publish failed."
+    },
+    {
+      "id": "lifecycle-no-stale-admission-reverted",
+      "module": "ProviderLeaseLifecycle",
+      "preset": "lifecycle-today",
+      "constants": {
+        "SignOutBlocksAdmission": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "NoStaleAdmission"
+      ],
+      "expect": {
+        "violated": "NoStaleAdmission"
+      },
+      "finding": "With SignOutBlocksAdmission off, a sign-out whose publish fails leaves the app server ready, and a turn takes provider access with no login."
+    },
+    {
       "id": "lifecycle-straddling-refresh",
       "module": "ProviderLeaseLifecycle",
       "preset": "lifecycle-today",
@@ -2742,6 +2783,190 @@
       ],
       "expect": "pass",
       "finding": "PROV-003: a removal that waited on the turn finishes once the turn releases, with every fault on."
+    },
+    {
+      "id": "repair-validated",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "invariants": [
+        "TypeOK",
+        "ReadyOnlyForValidatedRuntime"
+      ],
+      "expect": "pass",
+      "finding": "Preparation reuses an installation only when it passes startup's full validation, so readiness is never published for an installation the next start rejects (fixed R1)."
+    },
+    {
+      "id": "repair-validated-reverted",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "RepairRevalidates": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyOnlyForValidatedRuntime"
+      ],
+      "expect": {
+        "violated": "ReadyOnlyForValidatedRuntime"
+      },
+      "finding": "When reuse checks only that the entrypoints execute, a Repair after the private state, ownership marker or entrypoint confinement broke publishes ready for an installation startup rejects (R1, the behavior before the fix)."
+    },
+    {
+      "id": "repair-survives-restart",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "invariants": [
+        "TypeOK",
+        "RepairSurvivesRestart"
+      ],
+      "expect": "pass",
+      "finding": "A route an evaluation made ready survives a restart that changes neither digest nor recipe (fixed R1)."
+    },
+    {
+      "id": "repair-survives-restart-reverted",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "RepairRevalidates": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "RepairSurvivesRestart"
+      ],
+      "expect": {
+        "violated": "RepairSurvivesRestart"
+      },
+      "finding": "Before the fix, Repair republished ready on a broken layout, and the next unchanged restart dropped it again, so Repair never stuck (R1)."
+    },
+    {
+      "id": "repair-records",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "invariants": [
+        "TypeOK",
+        "PROV006_RestoreRule",
+        "PROV005_LatestWins",
+        "DueOnlyWhilePending"
+      ],
+      "expect": "pass",
+      "finding": "With both fixes, startup still restores only from the app server's record (PROV-006), the latest evaluation still wins (PROV-005), and a route marked due is never ready, across two restarts.",
+      "constants": {
+        "MaxRestarts": "2"
+      }
+    },
+    {
+      "id": "repair-records-prerule",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "StartsPreRule": "TRUE",
+        "MaxRestarts": "2"
+      },
+      "invariants": [
+        "TypeOK",
+        "PROV006_RestoreRule",
+        "PROV005_LatestWins",
+        "DueOnlyWhilePending"
+      ],
+      "expect": "pass",
+      "finding": "The same holds from a row an older build left ready, which migration 0034 verifies again once."
+    },
+    {
+      "id": "upgrade-evaluated",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "MaxRestarts": "2"
+      },
+      "fair": true,
+      "properties": [
+        "UpgradeEvaluatedWithoutRepair"
+      ],
+      "expect": "pass",
+      "finding": "An upgrade that changes the digest gets one committed evaluation without a Repair, also when the app restarts before it commits (fixed #556). The model assumes a connected provider publishes a route; without one the mark waits."
+    },
+    {
+      "id": "upgrade-evaluated-reverted",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "UpgradeEvaluates": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "UpgradeEvaluatedWithoutRepair"
+      ],
+      "expect": {
+        "violated": "UpgradeEvaluatedWithoutRepair"
+      },
+      "finding": "Without the automatic evaluation, a changed digest leaves both providers pending until someone presses Repair (#556, the behavior before the fix)."
+    },
+    {
+      "id": "recipe-change-evaluated",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "invariants": [
+        "TypeOK",
+        "ReadyOnlyForEvaluatedRecipe"
+      ],
+      "expect": "pass",
+      "finding": "A route restores ready only when an evaluation measured it on the recipe the release requires, so an upgrade that changes only the recipe starts pending (fixed, PR #576 review)."
+    },
+    {
+      "id": "recipe-change-evaluated-reverted",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "RecipeChangeMarksDue": "FALSE"
+      },
+      "invariants": [
+        "TypeOK",
+        "ReadyOnlyForEvaluatedRecipe"
+      ],
+      "expect": {
+        "violated": "ReadyOnlyForEvaluatedRecipe"
+      },
+      "finding": "Without the recorded recipe, an upgrade whose staged runtime activated restores the ready measured on the old recipe, with the same digest, and Send uses a runtime no evaluation checked."
+    },
+    {
+      "id": "recipe-change-due-reverted",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "constants": {
+        "RecipeChangeMarksDue": "FALSE",
+        "UpgradeCanChangeDigest": "FALSE"
+      },
+      "fair": true,
+      "properties": [
+        "UpgradeEvaluatedWithoutRepair"
+      ],
+      "expect": {
+        "violated": "UpgradeEvaluatedWithoutRepair"
+      },
+      "finding": "Without the recorded recipe, an upgrade that changes only the recipe, for example one whose activation failed, is never marked due and waits for Repair."
+    },
+    {
+      "id": "repair-liveness",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "fair": true,
+      "properties": [
+        "EvaluationsSettle"
+      ],
+      "expect": "pass",
+      "finding": "Every started evaluation, automatic or not, settles."
+    },
+    {
+      "id": "shared-route-witness",
+      "module": "ReadinessRepair",
+      "preset": "readiness-repair-today",
+      "invariants": [
+        "NoCrossProviderRestore"
+      ],
+      "expect": {
+        "violated": "NoCrossProviderRestore"
+      },
+      "finding": "Witness, not a bug: readiness is per harness, so an evaluation not started for a provider (another provider's Repair, or the automatic one) makes its shared route ready too."
     }
   ]
 }

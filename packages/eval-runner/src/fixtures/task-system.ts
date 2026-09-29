@@ -63,7 +63,7 @@ class TaskSystemFixtureHarness implements Harness {
       interactionText: "Propose the most useful next improvement to this task system.",
       clientKey: "next-improvement",
     } satisfies ActionObject;
-    const compiledInvoke = process.env.RELAYER_TEST_INTERACTION_PERMISSIONS === "1";
+    const compiledInvoke = rereadInput.interactionPermissions?.enabled === true;
     if (compiledInvoke) {
       results.detailAuthoring.setComponent("continuation", html`<p>Completed tasks remain in the results store.</p><button gc=${detailCapability.invoke("continue", nextImprovement)}>Plan the next improvement</button>`);
     }

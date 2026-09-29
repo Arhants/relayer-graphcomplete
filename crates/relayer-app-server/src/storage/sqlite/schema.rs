@@ -275,6 +275,8 @@ const PRODUCT_HARNESS_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("model_rules_modified", "INTEGER", true, 0),
     ("runtime_configuration_revision", "INTEGER", true, 0),
     ("runtime_configuration_digest", "TEXT", true, 0),
+    ("readiness_update_due", "INTEGER", true, 0),
+    ("runtime_recipe", "TEXT", true, 0),
 ];
 const HARNESS_MODEL_RULE_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("harness_configuration_name", "TEXT", true, 1),

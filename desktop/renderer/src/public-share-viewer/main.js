@@ -60,7 +60,8 @@ function securePublicLink(link) {
 export function fitPublicTurnPopover(host, windowRef) {
   const banner = host.querySelector(".interaction-banner");
   const popover = host.querySelector(".turn-popover");
-  if (!banner || !popover || !Number.isFinite(windowRef?.innerHeight)) return;
+  if (!banner || !popover || popover.classList.contains("interaction-graph-popover")
+    || !Number.isFinite(windowRef?.innerHeight)) return;
   const rowHeight = 52;
   const borderHeight = 2;
   const popoverGap = 8;
@@ -191,8 +192,8 @@ export function bootPublicViewer({
       onSelectTurn: (delta) => {
         if (adapter.selectTurn(delta)) render();
       },
-      onSelectTurnById: (turnId) => {
-        if (adapter.selectTurnById(turnId)) render();
+      onSelectTurnById: (turnId, navigation) => {
+        if (adapter.selectTurnById(turnId, navigation)) render();
       },
       onSelectionChange: (nodeId) => {
         adapter.selection.selectedNodeId = nodeId;
@@ -226,7 +227,7 @@ export function bootPublicViewer({
       throw new Error("Public viewer branding host is missing.");
     }
     workspaceLayout.querySelector(".environment-panel")?.remove();
-    if (!embedded) workspaceLayout.append(downloadCard);
+    if (!embedded) workspaceLayout.querySelector(".thread-header").append(downloadCard);
     if (embedded) {
       stopEmbedLayout = observeEmbedInspectorLayout(host, windowRef);
       stopEmbedReading = configureEmbedReading(host);
