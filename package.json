@@ -44,6 +44,7 @@
     "test:codex-secret-boundary": "RELAYER_RUN_CODEX_SECRET_BOUNDARY=1 vitest run packages/harness-host/test/codex-secret-provider-process.test.ts",
     "test:prime-managed-runtime": "node scripts/verify-prime-managed-runtime.mjs",
     "test:desktop:stop": "npm run build && electron scripts/test-desktop-stop.mjs",
+    "test:desktop:interaction-graph-layout": "node scripts/test-interaction-graph-layout.mjs",
     "test:desktop:first-message": "npm run build && electron scripts/test-desktop-first-message.mjs",
     "test:desktop:project-new-thread": "npm run build && node scripts/run-project-new-thread-test.mjs",
     "test:desktop:context-draft-warning": "npm run build && node scripts/run-context-draft-warning-test.mjs",
@@ -56,6 +57,8 @@
     "evidence:prime-family:packaged": "node scripts/capture-packaged-prime-family-evidence.mjs",
     "evidence:ladybug-index-latency": "node scripts/capture-ladybug-index-latency.mjs",
     "evidence:human-eval-annotations": "npm run build && RELAYER_CAPTURE_HUMAN_ANNOTATION_EVIDENCE=1 electron scripts/capture-human-eval-annotation-evidence.mjs",
+    "evidence:share-action-details": "RELAYER_CAPTURE_SHARE_ACTION_DETAILS=1 electron scripts/capture-share-action-details-evidence.mjs",
+    "review:share-action-details": "node scripts/fixtures/share-action-details.mjs",
     "evidence:public-share-viewer": "RELAYER_CAPTURE_PUBLIC_SHARE_VIEWER_EVIDENCE=1 electron scripts/capture-public-share-viewer-evidence.mjs",
     "evidence:share-publish-restart": "node scripts/test-share-publish-restart.mjs",
     "prebuild:public-share-viewer-artifact": "npm run prepare:renderer",
@@ -86,7 +89,8 @@
     "test:eval-compiled-runtime": "vitest run --config scripts/eval-compiled.vitest.config.mjs",
     "evidence:public-share-embed": "RELAYER_CAPTURE_PUBLIC_SHARE_EMBED_EVIDENCE=1 electron scripts/capture-public-share-embed-evidence.mjs",
     "review:public-share-embed": "node scripts/fixtures/public-share-embed.mjs",
-    "test:desktop:narrow-sidebar": "npm run build && electron scripts/test-desktop-narrow-sidebar.mjs"
+    "test:desktop:sidebar-overflow": "electron scripts/test-sidebar-overflow.mjs",
+    "test:desktop:narrow-sidebar": "npm run build && npm run test:desktop:sidebar-overflow && electron scripts/test-desktop-narrow-sidebar.mjs"
   },
   "devDependencies": {
     "@actions/cache": "6.2.0",

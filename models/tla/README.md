@@ -47,7 +47,8 @@ check can therefore come only from its own mechanism.
 
 `CatalogRefresh` follows the same rule with `catalog-today`, which mirrors
 the code. It has one constant per landed fix, and each open bug check keeps
-every landed fix on.
+every landed fix on. `ProviderLeaseLifecycle` does the same with
+`lifecycle-today`.
 
 A fix PR flips its constant in `completion-today` or `catalog-today`. That
 check then passes, so the PR must also flip its expectation to `pass`;
@@ -94,6 +95,9 @@ replays against the real app-server code:
 - **Product:** the real SQLite product store.
 - **Harness:** a fake whose start is refused, or runs while acknowledging
   another identity (a lost acknowledgement).
+- **Graph faults:** a layer in front of the graph server can fail the next
+  capability activation with a 503, or garble control preparations, so a
+  replay or a direct test reaches those failures on the real server.
 - **Launch steps:** each step calls the function `complete_prepared_child`
   calls for it (reserve, claim, activate, start).
 - **Cleanup:** the start-failure cleanup is the real background task. The fake
@@ -189,11 +193,11 @@ renderer.
 
 | Check | Verdict | Finding |
 | --- | --- | --- |
-| `provider-leased-runtime` | Plausible: narrow window | Rust admits a turn while `P` still reads connected in SQLite, and the user then signs out and reconnects. When the harness takes its lease, `acquireExecution` hands out the runtime the pending reconnect registered, because it never checks `pendingConnections`. A failed handoff, a cancel or a terminal check then runs `#cancelPendingConnection`, which closes that runtime under the turn. Since PR 4 the cancel registers a fresh runtime in its place (F4), but the leased one still closes. |
+| `provider-leased-runtime` | Fixed; now passes | Before the fix (plausible: narrow window): Rust admitted a turn while `P` still read connected in SQLite, and the user then signed out and reconnected. When the harness took its lease, `acquireExecution` handed out the runtime the pending reconnect registered, because it never checked `pendingConnections`. A failed handoff, a cancel or a terminal check then ran `#cancelPendingConnection`, which closed that runtime and wiped its home under the turn (PROV-004). Now `acquireExecution` refuses while a reconnect is pending, and a settling reconnect never closes or wipes a runtime a lease holds. When the sign-out's publish failed, Rust kept admitting turns through the whole reconnect, so the window was wide. `ProviderLeaseLifecycle` checks each fix and its reverted form. Regression tests: `refuses a turn's provider access while a reconnect is pending`, `refuses access during a reconnect after a sign-out the app server never recorded` and `never closes or wipes a leased runtime when a reconnect settles` in `provider-connection-generation.test.mjs`. |
 | `provider-remove-during-reconnect` | Fixed; now passes | Before the fix: after sign out, Reconnect, then Remove, the pending reconnect outlived the removal and could still complete. Now `remove()` drops it as the provider enters `removal_pending`, which "immediately blocks new attempts through it" (docs/architecture.md). The runtime stays in `this.runtimes` for turns still draining, and it closes with the tombstone. The PRD is silent here, so this is an architecture-backed decision. Scenario: `provider-remove-during-reconnect`. |
 | `provider-attempt-ownership` | Fixed; now passes | Before the fix: `bindConnection` ran only after `connect()`/`reconnect()` (including `login()`) and `openExternal` resolved. It added a `destroyed` listener to contents already destroyed, and that listener never fired. It now cancels the attempt instead. This restores PRD BRW-005. Scenario: `provider-destroyed-before-bind`. |
-| `provider-close` | Plausible: depends on shutdown order | `close()` waits for lifecycle tasks but not for the queue, and `acquireExecution` ignores `closing`. A turn admitted before shutdown can create and register a runtime after the maps are cleared. |
-| `provider-default-family` | Needs a product decision | A catalog refresh that reports `provider_no_eligible_execution_models` tombstones the provider's managed family even when it is the default family. A later refresh with eligible models reactivates the same family. Disable, delete and removal all refuse to break the default family, but the PRD makes no promise here. |
+| `provider-close` | Fixed; now passes | Before the fix (plausible: depends on shutdown order): `close()` waited for lifecycle tasks but not for the queue, and `acquireExecution` ignored `closing`. A turn admitted before shutdown could create and register a runtime after the maps were cleared, and nothing closed it. Now `acquireExecution` refuses once `close()` begins, and `#runtimeFor` closes a runtime that finishes starting after it. `close()` still does not wait for the queue. Regression test: `refuses access once shutdown begins, and closes a runtime that finished starting after it`. |
+| `provider-default-family` | Decided; now passes | A catalog refresh that reports `provider_no_eligible_execution_models` tombstones the provider's managed family even when it is the default family. PRD PROV-008 (decision Q15) makes this a recovery state. The family stays the default and Send is refused with that code. Settings and both composers show "Needs model setup" with an exact-provider **Refresh models** action. If the provider then disconnects, the family stays selected and shows the disconnected state with a reconnect through Settings. A managed family the user disabled is not in recovery and restores still disabled. A later eligible refresh restores the family, or after a policy upgrade its successor. The invariant was `DefaultFamilyIsLive`; it is now `DefaultFamilyIsLiveOrManagedByActiveProvider`, named for what it checks. It allows a non-live default only for `P`'s managed family while `P` is active, including after `P` disconnects. It does not model the user's enabled choice, the tombstone cause, or which family is kept for recovery; the Rust flow, storage and migration tests check those. Regression tests: `a_default_family_without_eligible_models_needs_model_setup_until_a_refresh_restores_it` and `test/default-family-recovery.test.mjs`. |
 
 ### `CatalogRefresh.tla`
 
@@ -217,7 +221,7 @@ and `mQ`, and one custom family `C` with members from both. Each check
 shrinks the bounds in `catalog-today`. On an idle machine the two slowest,
 the default-provider checks, take about 10 and 20 seconds.
 
-`catalog-today` has four fix constants, all landed:
+`catalog-today` has six fix constants, all landed:
 
 - `DefaultProviderPairsFamily`: choosing a default provider also selects that
   provider's enabled managed family, in the same transaction. A provider
@@ -233,6 +237,14 @@ the default-provider checks, take about 10 and 20 seconds.
   so it never discovers through that reconnect's runtime (F4, L1).
 - `AdapterAfterCommit`: connect registers the catalog adapter only after the
   definition commits (PROV-007).
+- `RefreshSkipsPendingReconnect`: while a reconnect is pending, a refresh
+  resolves no generation. It neither runs nor publishes until the reconnect
+  settles, and `DefaultRestores` counts a provider as healthy only then. This
+  model has no provider home, so `ProviderLeaseLifecycle` checks what the fix
+  prevents.
+- `CancelSignsOut`: a cancelled or failed reconnect commits signed-out with
+  the next generation, as logout does, and its wipe signs the account out.
+  Every result in flight is superseded.
 
 Each `-reverted` check turns one constant off and keeps the others on, so its
 violation comes only from its own mechanism.
@@ -276,7 +288,8 @@ This model covers one recursive child from `complete()` to settlement:
 | --- | --- | --- |
 | `completion-safety-holds` | passes | There is at most one launch per reservation. Stop reports what the graph holds. Terminal states are absorbing. |
 | `completion-observe-timeout` | Fixed; now passes | Before the fix: `observe_invoked_completion` had a 5 s control timeout, but the harness answers only when the run ends. A child still running after 5 s was failed with `provider_exited_without_return`, and its capability was revoked while the provider kept running. A live Prime delegation run hit this at about 5.1 s. The observation is now a long poll that the exit observer repeats on a timeout. `provider_end_waits_through_observation_timeouts` proves the repeat with a 100 ms poll against a run that is still going. |
-| `completion-activation-failure` | Confirmed | A lost or failed activation settles the execution row only. The graph current stays active, the product status is never finalized, and a broker retry gets 200 with no launch. Restart skips settled rows. |
+| `completion-activation-failure` | Fixed; now passes | Before the fix: a failed activation settled the execution row only and restored the child to `submitted`. The graph current stayed active, a broker retry got 200 with no launch, and restart skipped the settled row. Now the launch owns the child from its claim on: any activation failure, retryable or not, starts the launch-failure cleanup (`LaunchFailure::ActivationFailed`). It fails the current with `capability_activation_failed`, a canonical reason, and settles both product rows with it, without cancelling. A retry reports the failed child. Scenario: `completion-activation-failure`. Regression test: `a_failed_activation_fails_the_child_in_both_stores_and_an_exact_retry_reports_it`. |
+| `completion-activation-failure-reverted` | violated: shows why the fix is needed | Without the fix, a failed activation settles the execution row while the current stays active. |
 | `completion-clean-exit` | Fixed; now passes | Before the fix: for an invoked child, the harness resolves a clean native end without checking for Return (`host.ts`). The exit observer failed only on an error, so the child stayed active until its parent stopped it or the app restarted. With child admission, its attempt and leases were then held that whole time. The exit observer now fails an active child once its provider run ends, however it ended: a run that ends without Return is a failure. Scenario: `completion-admitted-exits-without-return`. |
 | `completion-clean-exit-reverted` | violated: shows why the fix is needed | Without the clean-exit check, a child whose provider exits cleanly without Return never settles. |
 | `completion-start-failure-reason` | Fixed; now passes | Before the fix: start-failure cleanup retried `fail_graph_completion("provider_start_failed")` every 250 ms, and the graph rejected that reason forever. `provider_start_failed`, `provider_attachment_persist_failed` and `graph_observation_failed` are now canonical failure reasons in `validate_terminal_reason`, so the graph and product rows share one reason. Scenario: `completion-start-failure`. `app_server_failure_reasons_are_canonical` in graph-core covers all three reasons. |
@@ -290,7 +303,7 @@ The candidate fixes are:
 
 1. Long-poll or re-poll the observation instead of timing out.
 2. Fail the child when a clean exit leaves its current active.
-3. Fail both stores when activation fails.
+3. Fail both stores when activation fails. Landed.
 4. Use valid failure reasons. Landed.
 5. Let cleanup settle a current another actor already terminated, with that
    current's own outcome. Landed.
@@ -300,6 +313,40 @@ A landed fix is on in `completion-today` as well.
 The committed scenarios do not step `HostAccessRelease`, since the adapter
 has no such step. In their traces the access stays held until
 `LeaseReconcile`, which the model also allows.
+
+### `CompletionLaunchWindows.tla`
+
+This model covers the launch windows `CompletionCurrent` abstracts, for one
+child from the parent's `prepareComplete` to settlement:
+
+- the broker's product preparation and binding, and a preparation that ends
+  ambiguously;
+- the execution row before `launching`, and capability activation;
+- the thread's one active human turn: the user's next message
+  (`UserSends`), which the gate admits only while no human turn runs;
+- the product's Stop of the child, and a user's re-invoke of the delegate
+  action, which resumed the child on the product path before the decision;
+- a crash, and startup reconciliation of each window.
+
+There is one parent, one child, two broker calls and at most two restarts.
+Admission, start, attach and the observers are one step each. Each cleanup
+is one atomic step: the activation cleanup fails the graph current first, and
+the refused-launch cleanup fails the product row first. Startup graph and
+store errors, the background retry after them, and a crash inside a cleanup
+are not modeled; Rust tests cover them. `launch-today` mirrors the
+code, with every fix on; each `-reverted` check turns one fix off.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `launch-safety` | passes | A settled execution row has a terminal current and product row. Startup leaves no interrupted child active. Whenever no human turn runs, the user's next message is admitted (`SendNeverWaitsOnChild`, which reads `ENABLED UserSends`, so the child's state is checked against the gate itself). Two human turns never run at once (`OneHumanTurn`). The product neither stops nor runs an agent's child (`ProductLeavesChildAlone`). |
+| `launch-liveness` | passes | Without a restart, every child the parent launched ends in the graph, and its product row ends once its parent is done. |
+| `launch-restart-liveness` | passes | Across two restarts, every child the product recorded ends in both stores. |
+| `launch-activation-reverted`, `launch-activation-liveness-reverted` | Fixed; the reverted checks show the old traces | A failed or lost activation restored the child to `submitted` and settled only the execution row. An exact retry got 200 and launched nothing, product Stop answered 500, and the next human turn got 422. Now the activation failure fails both stores (`ActivationFailsGraph`). Regression test: `a_failed_activation_fails_the_child_in_both_stores_and_an_exact_retry_reports_it`. |
+| `launch-restart-reverted` | Fixed; the reverted check shows the old trace | A restart after the child row existed but before `launching` re-bound the child and left its current active. A second restart then quarantined it as a provenance mismatch, because the expected occurrence was read only while the parent was accepted or running. Startup now reads the child's own occurrence whatever its parent's status, and fails the child in both stores with `application_restart`; a reserved row settles (`StartupFailsUnlaunched`). Startup also marks results an older build left unmarked when only an agent could have created them, and retries a child it kept after a transient graph failure in the background. A deterministic startup failure still fails the child's graph current when its node carries the child's own occurrence, and an unbound child is located without revalidating its model. None of this is modeled: the model has no startup errors or schema versions. Regression tests: `a_restart_before_launch_fails_the_bound_child_in_both_stores`, `a_restart_fails_a_bound_child_whose_parent_already_failed`, `a_restart_fails_an_unbound_child_whose_parent_already_failed`, `a_restart_fails_a_stuck_child_an_older_build_left_unmarked`, `a_restart_that_cannot_reach_the_graph_fails_the_child_once_it_can`, `a_deterministic_startup_failure_fails_the_child_in_both_stores`, `a_restart_fails_an_unbound_child_whose_model_no_longer_validates`, `a_restart_finishes_the_graph_half_of_a_refused_child`. |
+| `launch-refused-prepare-reverted`, `launch-child-row-reverted` | Fixed; the reverted checks show the old traces | An ambiguous preparation left the claimed child `submitted` and unbound, and the broker answered 422 "already in progress". Once the parent stopped, nothing recovered it, even across restarts. The refused-launch cleanup now fails it in both stores with `preparation_failed` and binds it to the parent's graph interaction (`RefusedLaunchFailsChild`). It fails the product row first, so a later launch cannot reserve or claim the child; `RefusedCleanup` is one atomic step, so the model does not show that ordering. Only the launch that claimed the child's preparation starts the cleanup, so a concurrent duplicate's refusal cannot end a child the claiming launch still runs. Regression tests: `an_ambiguous_preparation_fails_the_claimed_child_in_both_stores`, `a_duplicate_launchs_refusal_leaves_the_claiming_launch_its_child`. |
+| `launch-child-gate-reverted` | Decision; the reverted check shows the old trace | A child still running after its parent was accepted refused the thread's next human turn with 422. By product decision, only human root turns hold the thread (`ChildrenOutsideRootGate`, the gate's guard on `UserSends`). With it off, `SendNeverWaitsOnChild` fails as soon as the parent is accepted while the child is still pending; `OneHumanTurn` holds either way. Regression tests: `only_human_turns_hold_the_thread`, `a_running_child_does_not_hold_the_next_human_turn_and_product_stop_refuses_it`, the renderer tests that feed agent children to `composerStatusForThread` and `productStopTarget`, and the recursive end-to-end test "lets the next human turn run while a launched child still runs". |
+| `launch-product-child-reverted` | Decision; the reverted check shows the old trace | The product's Stop of a child answered 500 or recorded a Stop nothing acted on, and a user's invoke of the delegate action ran the child on the product path, where neither the user nor the parent could stop it. Now the product refuses both (`ProductLeavesChildren`, the guard on `UserStopsChild` and `UserReinvokes`). Regression tests: `only_human_turns_hold_the_thread` (Stop with and without an execution row) and `a_users_invoke_does_not_run_an_agents_child`. |
+| `launch-graph-orphan` | Known open | A crash after the parent's `prepareComplete` but before the broker's first product write leaves a graph-only child. No product row names it, so startup cannot fail it, and its current stays active. |
 
 ### `ExecutionLeases.tla`
 
@@ -723,6 +770,353 @@ If the app server alone restarted, its restored row would stay the record.
 It would accept the coordinator's next generation, and the coordinator's
 counter only grows.
 
+### `ReadinessRepair.tla`
+
+This model covers readiness across Repair, restart and upgrade for two
+providers that share one harness. ChatGPT and OpenRouter both run through
+`codex-basic`. It adds three things to `HarnessReadiness`:
+
+- **Two runtime predicates:** `files` is what startup's cheap validation
+  checks, and `execs` is what the version probe checks. External damage
+  can break either one.
+- **Upgrades:** a restart may change the configuration digest, or require
+  the other runtime recipe. Its staged runtime then either activated or not.
+- **The automatic evaluation:** the app server's upgrade mark, Desktop's one
+  background evaluation, and the commit that clears the mark.
+
+`readiness-repair-today` mirrors the code, and each `-reverted` check turns
+one fix off. Three constants hold the fixes:
+
+- `RepairRevalidates` (R1): Repair, app-update staging and post-update
+  activation reuse an installation only when it passes startup's full
+  validation, then the probe. Otherwise they reinstall.
+- `UpgradeEvaluates` (#556): an upgrade that changes the digest marks the
+  route due in the app server. After startup, Desktop runs one background
+  evaluation through the `recipe-update` trigger. The next committed result
+  clears the mark.
+- `RecipeChangeMarksDue` (PR #576 review): the app server records the recipe
+  each route last loaded. An upgrade that changes only the recipe does not
+  restore the old ready and marks the route due, whether the staged runtime
+  activated or not.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `repair-validated` | Fixed; now passes | Before the fix (R1): reuse checked only that the entrypoints were regular files and that the probe passed, and `stat` follows symlinks. Startup also checks the ownership marker, the owned private state and entrypoint confinement. So Repair published ready for an installation the next start rejected. Regressions: the installer tests "repairs an installation startup rejects because …", "stages a fresh app-update generation when the active one is unusable because …" and "does not activate a pending generation startup would reject because …" fail on the old code. |
+| `repair-validated-reverted` | Confirmed | With the probe alone, a Repair after the layout broke publishes ready for an installation startup rejects. |
+| `repair-survives-restart` | Fixed; now passes | A route an evaluation made ready survives a restart that changes nothing. |
+| `repair-survives-restart-reverted` | Confirmed | Before the fix, the next unchanged restart withdrew the ready that Repair had published, so Repair never stuck. |
+| `repair-records` | passes | With both fixes, startup restores only from the app server's record (PROV-006), and the latest evaluation wins (PROV-005). A route marked due is never ready, across two restarts. Leaving the mark set after a publish breaks this check. |
+| `repair-records-prerule` | passes | The same holds from a row an older build left ready. |
+| `upgrade-evaluated` | Fixed; now passes | Before the fix (#556): a changed digest left both providers pending until someone pressed Repair. Now each changed digest gets one committed evaluation without a Repair, even across a restart before the commit. The model assumes a connected provider publishes a route; without one, the mark waits. Regressions: `an_upgraded_digest_is_due_one_automatic_evaluation`, `one_post_upgrade_evaluation_restores_both_providers_sharing_a_route`, the migration test `the_update_migration_marks_routes_an_earlier_upgrade_left_pending`, and the provider-composition test "evaluates an upgraded shared route once after startup". |
+| `upgrade-evaluated-reverted` | Confirmed | Without the automatic evaluation, the upgraded route stays pending while nobody presses Repair. |
+| `recipe-change-evaluated` | Fixed; now passes | A route restores ready only when an evaluation measured it on the recipe the release requires. Regressions: `a_changed_runtime_recipe_starts_pending_and_is_due_once` and the desktop-shell test "hands startup readiness to the app server record instead of the previous catalog file" fail on the old code. |
+| `recipe-change-evaluated-reverted` | Confirmed | Before the fix, an upgrade whose staged runtime activated, with the same digest, restored the ready measured on the old recipe. |
+| `recipe-change-due-reverted` | Confirmed | Before the fix, an upgrade that changed only the recipe was never marked due. When its activation failed, the route waited for Repair. |
+| `repair-liveness` | passes | Every started evaluation, automatic or not, settles. |
+| `shared-route-witness` | Witness, expected violation | Readiness is per harness, so an evaluation not started for a provider makes that provider's shared route ready too. This is why one Repair restored both providers in #556. |
+
+Desktop also passes the recipes this start activated; the recorded recipe
+covers that trigger, so the model leaves it out. The model starts with a
+recorded recipe. In the code, a row migration 0039 left without one counts a
+change only when this start's own update activated a new recipe or failed
+to, or when the route was ready and its files no longer validate;
+`the_first_recorded_recipe_marks_only_a_runtime_this_update_changed`
+covers that. Migration 0039 also marks every loaded route startup left pending.
+The model starts after that migration, so it does not cover the backfill.
+The automatic evaluation skips a harness whose runtime was never
+installed; the model has one harness whose runtime starts installed.
+The model's providers always have a route. In the code, a managed provider
+whose activation failed on a broken runtime has none, so the step first
+recovers it as Repair does, then evaluates each due harness once;
+composition tests cover that.
+In the code it runs once per process with the models published so far. A mark stays set
+when its evaluation found no provider with a route. The next start looks
+again, but it prepares nothing until a provider has a route.
+
+### `ProviderLeaseLifecycle.tla`
+
+This model covers one managed provider `P` where its lifecycle meets a turn's
+execution lease, the catalog refresh and the connection generation:
+
+- **Desktop main:** sign-out, reconnect, its cancel and completion, removal,
+  `close()`, and `acquireExecution` with the runtime it may start. The provider
+  queue is a lock, and a lease that starts a runtime holds it across
+  `#runtimeFor`'s awaits, which `close()` does not wait for.
+- **Provider home:** one boolean, whether it holds a login. Wiping the runtime
+  state removes it.
+- **App server:** the connection generation and whether `P` reads ready. Rust
+  admits the turn only while it does (PROV-006).
+
+There is one turn and at most three runtimes. Two faults are constants. The
+sign-out's publish can fail, which is only logged. A reconnect's publish can
+get no answer, whether or not it committed. Reading the generation, at the
+reconnect's start or back after that publish, can fail too. Sign-out is also
+accepted while a reconnect is pending: Settings does not offer it then, but
+the service does not refuse it. A sign-out's publish can fail before it
+commits, commit and lose its answer, or lose its answer and commit later
+(`LateCommit`), when the app server applies it only at the generation it
+carried. A settling reconnect's signed-out publish can fail too
+(`CancelPublishCanFail`).
+
+`lifecycle-today` mirrors the code. It has every fault on and eleven fix
+constants, all landed. The refresh runs in three steps: it resolves its
+generation, reads the account, then publishes.
+
+- `LeaseWaitsForReconnect`: `acquireExecution` refuses while a reconnect is
+  pending (PROV-004).
+- `CancelSparesLease`: a settling reconnect never closes or wipes a runtime a
+  lease holds. With the first fix this is unreachable; it guards the
+  invariant.
+- `ShutdownRefusesLeases`: `acquireExecution` refuses once `close()` begins,
+  and a runtime that finishes starting after it is closed again.
+- `RefreshSkipsPendingReconnect`: no refresh runs or publishes while a
+  reconnect is pending (PROV-002: user actions supersede automatic ones).
+- `LostReconnectAdopted`: a reconnect whose publish got no answer reads the
+  generation back. Unmoved, the publish never committed, and the reconnect
+  settles as before. Otherwise the login may be committed, so it is kept.
+- `AdoptChecksBaseline`: the reconnect is adopted as connected only when the
+  generation reads exactly one past a baseline it read at its start, and no
+  sign-out ran meanwhile. A sign-out the app server answered makes the
+  refusal certain, so the reconnect settles as failed. An unanswered
+  sign-out, any other advance, or a failed read keeps the reconnect's runtime
+  and login without adopting it. This unknown outcome is a PRD decision: the
+  reconnect reports a failure, and the next refresh settles the state.
+- `CancelSignsOut`: a cancelled or failed reconnect commits signed-out with
+  the next generation before it wipes the home, as sign-out does. Its publish
+  can fail like sign-out's, and `close()` skips it.
+- `CancelKeepsUnrecordedLogin`: when that publish fails, or during shutdown,
+  the cancel keeps the login and the reconnect's runtime instead of wiping
+  them, as an unknown reconnect outcome does. The app server may still read
+  `P` connected, so a wipe would leave it admitting turns with no login.
+- `SupersededCancelWipes`: a reconnect that a sign-out the app server
+  answered superseded is settled by wiping, even when its own signed-out
+  publish fails. That sign-out already recorded signed out, and no refresh
+  ran since, so nothing is unknown.
+- `SignOutBlocksAdmission`: a sign-out the app server has not recorded, from
+  a failed sign-out publish or a cancel with no login to keep, refuses new
+  provider access. The block ends when a signed-out state is recorded, a
+  refresh publishes a catalog that is not connected, or the service confirms
+  a sign-in: a completed reconnect, including one whose outcome is unknown,
+  or a cancel whose account check reads connected. A connected catalog does
+  not end it: its discovery may predate the sign-out. The cancel keeps a
+  login only when the account does not read signed out. Its account check is
+  bounded, and one that errs or times out (`AccountCheckCanFail`) leaves the
+  outcome unknown. The block is process-local and not modeled across a
+  restart; the startup refresh reads the account and records its state.
+- `AdoptTracksLostWrites`: a lifecycle write whose answer was lost, even one
+  sent before the reconnect started, may still commit. While one is
+  outstanding, an advance in the generation proves nothing, so the reconnect
+  is not adopted. A later answered write that advances the generation ends
+  the doubt, because the app server refuses every older write.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `lifecycle-lease-during-reconnect` | Fixed; now passes | Checks `PROV004_NoCloseUnderLease` with every fault on. This is `provider-leased-runtime`, with the provider home added. |
+| `lifecycle-lease-acquire-guard-alone` | passes | With `CancelSparesLease` off, the acquire guard alone keeps PROV-004: no lease exists while a reconnect is pending. |
+| `lifecycle-lease-cancel-guard-alone` | passes | With `LeaseWaitsForReconnect` off, the cancel guard alone also keeps PROV-004. |
+| `lifecycle-lease-during-reconnect-reverted` | violated: shows why the fix is needed | With both lease fixes off, a turn leases the runtime a pending reconnect is signing in, and cancelling the reconnect closes it and wipes its home. Either fix alone passes, so this check turns both off. |
+| `lifecycle-close` | Fixed; now passes | Checks `CloseLeavesNoOpenRuntime`. This is `provider-close`. |
+| `lifecycle-close-reverted` | violated: shows why the fix is needed | With `ShutdownRefusesLeases` off, a lease queued before shutdown registers a runtime after `close()` cleared the maps. |
+| `lifecycle-refresh-during-reconnect` | Fixed; now passes | Before the fix (plausible: Settings reopened while a reconnect is pending): the refresh discovered through the runtime the reconnect reuses and published ready. Cancelling the reconnect wiped the login but superseded nothing, so Rust admitted turns that Settings showed signed out, and they failed. Checks `ReadyMeansSignedIn` and `PendingReconnectNotReady` with the sign-out fault off. Since `CancelSignsOut`, the cancel alone restores `ReadyMeansSignedIn`, so the skip's own promise is `PendingReconnectNotReady`: no automatic result stands for the user's sign-in. Regression test: `runs no refresh while a reconnect is pending, so a cancelled reconnect leaves the app server signed out`. |
+| `lifecycle-refresh-during-reconnect-reverted` | violated: shows why the fix is needed | With `RefreshSkipsPendingReconnect` off: sign out, reconnect, sign in, and a refresh publishes ready while the reconnect is pending. |
+| `lifecycle-lost-reconnect-answer` | Fixed; now passes | Before the fix (plausible: needs a lost answer): only a superseded refusal relearned the generation. Any other error settled the reconnect and wiped the login the app server had just committed. Rust then read connected with no login. This was the reconnect counterpart of F2. Regression tests: `adopts a reconnect the app server committed before its answer was lost`, `keeps the login of a reconnect whose outcome is unknown` and `registers the runtime a reconnect created when its outcome is unknown`. Keeping the login of an unknown outcome is a PRD decision. If the publish never committed, the next refresh publishes the signed-in account at the old generation, with no reconnect event. |
+| `lifecycle-lost-reconnect-answer-reverted` | violated: shows why the fix is needed | With `LostReconnectAdopted` and `CancelSignsOut` off, as before these fixes, the committed reconnect's cancel wipes its login while Rust reads connected. With `CancelSignsOut` on, that cancel would record signed out instead, so `lifecycle-committed-reconnect-keeps-login-reverted` shows the login lost. |
+| `lifecycle-lost-answer-adopts-only-commit` | Fixed; now passes | Checks `AdoptsOnlyCommittedReconnect`: an unanswered reconnect is adopted only when the app server committed it. An independent review found that an earlier draft of this fix adopted any advance past the baseline. Regression tests: `settles a reconnect whose unanswered publish did not commit`, which also covers a publish or discovery that failed before any commit; `neither adopts nor wipes a reconnect whose unanswered publish cannot be proven`; and `settles a reconnect the app server refused with a code it could not have committed`. |
+| `lifecycle-lost-answer-adopts-only-commit-reverted` | violated: shows why the fix is needed | With `AdoptChecksBaseline` off: a sign-out commits but loses its answer, and the reconnect cannot read its baseline. Its publish at the older generation never commits, yet the read shows an advance, and the reconnect is adopted. Before the baseline and sign-out checks, a sign-out during the reconnect led to the same adoption. |
+| `lifecycle-late-sign-out-reverted` | violated: shows why the fix is needed | Found by a Codex review of #572. With `AdoptTracksLostWrites` off: a sign-out's answer is lost while its request is still in flight, a reconnect reads its baseline, the sign-out commits, and the reconnect's refused publish loses its answer too. The read shows one step past the baseline, and the refused reconnect is adopted. Regression tests: `does not adopt a reconnect when an earlier unanswered sign-out may have moved the generation`, and `adopts a reconnect again once an answered sign-out supersedes an unanswered one` for the doubt's end. |
+| `lifecycle-committed-reconnect-keeps-login` | Fixed; now passes | Checks `CommittedReconnectKeepsLogin` with every fault on: a reconnect the app server committed is never settled and wiped. The review found that marking every sign-out as superseding, answered or not, broke this through a failed sign-out publish during the reconnect; this check catches that version. Regression test: `neither adopts nor wipes a reconnect whose unanswered publish cannot be proven`. |
+| `lifecycle-committed-reconnect-keeps-login-reverted` | violated: shows why the fix is needed | With `LostReconnectAdopted` off, the committed reconnect whose answer was lost is settled and its login wiped. |
+| `lifecycle-cancel-records-signed-out` | Fixed; now passes | Checks `CancelRecordsSignedOut` with every fault on: no settled reconnect wipes the login while Rust reads ready. Before the fix (the known limit): a sign-out whose publish failed left Rust reading ready. A reconnect started and was cancelled; the cancel wiped the login and recorded nothing, so Rust kept admitting turns until some later refresh. Regression test: `records signed out in the app server when a reconnect is cancelled after a failed sign-out`. |
+| `lifecycle-cancel-records-signed-out-reverted` | violated: shows why the fix is needed | With `CancelSignsOut` off: a sign-out whose publish fails, a reconnect, a cancel. |
+| `lifecycle-cancel-keeps-unrecorded-login-reverted` | violated: shows why the fix is needed | Found by a Codex review of #572. With `CancelKeepsUnrecordedLogin` off: a sign-out whose publish fails, a reconnect, and a cancel whose own publish fails and still wipes the login. Regression test: `keeps the login when a cancelled reconnect cannot record signed out`. |
+| `lifecycle-confirmed-sign-out-stands` | Fixed; now passes | Checks `ConfirmedSignOutStands` with every fault on. Found by a Codex review of #572: a sign-out answered during a pending reconnect was followed by the browser sign-in. The refused reconnect's settle could not publish, so it kept the new login as an unknown outcome, and the next refresh published connected over the confirmed sign-out. Shutdown is excluded, because `close()` drops a pending reconnect without settling it. Regression test: `keeps a confirmed sign-out when a superseded reconnect cannot record signed out again`. |
+| `lifecycle-confirmed-sign-out-stands-reverted` | violated: shows why the fix is needed | With `SupersededCancelWipes` off: sign out, reconnect, sign out (answered), sign in, and a cancel whose publish fails keeps the login. |
+| `lifecycle-no-stale-admission` | Fixed; now passes | Checks `NoStaleAdmission` with every fault on: no provider access is granted while `P` has no login and the app server reads it ready. Found by a Codex review of #572: a cancel after a sign-out whose publish failed kept a login that did not exist and let turns take access against the stale connected catalog. The model then found that a refresh that read the account before such a sign-out could end the block by publishing connected. Regression tests: `refuses provider access after a sign-out the app server did not record`, `keeps admission blocked when a cancel after an unrecorded sign-out has no login to keep`, and `keeps admission blocked when a refresh from before an unrecorded sign-out publishes connected`. |
+| `lifecycle-no-stale-admission-reverted` | violated: shows why the fix is needed | With `SignOutBlocksAdmission` off: Rust admits a turn, a sign-out's publish fails, and the turn takes provider access with no login. |
+| `lifecycle-straddling-refresh` | Fixed; now passes | Checks `ReadyMeansSignedIn` with the sign-out fault off. Before the fix: a refresh resolved its generation before a reconnect, read the account after the browser sign-in, and reached its publish after the cancel. The cancel had not moved the generation, so both checks passed and Rust read ready over the wiped login. The cancel now advances it, so the result is stale. Regression test: `drops a refresh that straddles a cancelled reconnect`. |
+| `lifecycle-straddling-refresh-reverted` | violated: shows why the fix is needed | With `CancelSignsOut` off: sign out, refresh starts, reconnect, sign in, refresh reads, cancel, refresh publishes. |
+| `lifecycle-overlapping-refresh` | passes | Checks `OverlappingRefreshNeverReadiesWipedLogin`, with every fault but the sign-out's on. A Codex review of #572 asked for a refresh epoch across the reconnect, since `refreshGeneration` is only a level check. This check shows the epoch is not needed: every path that ends a reconnect and wipes the login first advances the generation, and a cancel that cannot keeps the login, so a straddling refresh is either stale or truthful. A refresh straddling a failed sign-out is the sign-out's known limit and is excluded. |
+| `lifecycle-overlapping-refresh-reverted` | violated: shows why the fix is needed | With `CancelKeepsUnrecordedLogin` off, a cancel whose publish fails wipes the login without advancing the generation, and the straddling refresh publishes ready over it. |
+| `lifecycle-removal-completes` | passes | PROV-003: a removal that waited on the turn finishes once the turn releases, with every fault on. |
+
+`ReadyMeansSignedIn` is checked with the sign-out fault off. A failed
+sign-out publish leaves Rust ready with no login by itself; the next refresh
+corrects it. While a reconnect is pending, no refresh runs, and the lease
+guard keeps turns off the reconnect's runtime. Settling the reconnect commits
+signed-out, which ends that state. If that publish fails too, the login is
+kept, so Rust stays ready with a login until the next refresh.
+
+A reconnect starts with `ReconnectBegin`: from its first check it prepares the
+runtime and starts the sign-in (`prepareRuntime`, `login()`) before it is
+pending, and it may fail there (`ReconnectAbort`). No refresh starts or
+publishes in that interval either. A Codex review of #572 found the code
+guarded only the pending entry; `refreshGeneration` now also returns null
+while a reconnect prepares. The browser sign-in cannot finish before
+`login()` returns, so no invariant tells the interval apart: a refresh there
+reads the signed-out account. The regression test is `runs no refresh while
+a reconnect prepares its runtime or starts its sign-in`.
+
+Two code seams sit inside single model steps, and the code now matches the
+model's assumption at each. `RefreshPublish` checks for a pending reconnect
+at the write. An explicit refresh awaits a readiness evaluation after the
+catalog service's check, so the composition rechecks the refresh generation
+just before it publishes. The regression test is `publishes no explicit
+refresh whose readiness evaluation outlasted the start of a reconnect`.
+`Close` is the moment admission closes. Desktop shutdown awaits the app
+server before it closes the providers, so it now calls `beginShutdown()`
+first; leases requested meanwhile are refused. The regression tests are
+`refuses provider access from the moment shutdown begins` and a source-text
+check of `shutdownServices` in `desktop-shell.test.mjs`. Both were found by a
+Codex review of #572.
+
+### `HarnessCodexThread.tla`
+
+This model covers `codex.basic`'s persistent root thread across serialized
+root turns. Prompts carry only the current turn, so the native thread is the
+only holder of prior conversation ([#584](https://github.com/vishaltandale00/relayer-graphcomplete/issues/584)).
+It must be kept whenever it can be resumed, and a reset must be visible.
+
+- **Harness:** the saved thread, the Codex home it is bound to, the step that
+  saves it, and the pending reset notice.
+- **App server:** `thread/start`, `thread/resume` and `turn/start`. A thread
+  has a rollout only in the `CODEX_HOME` whose `turn/start` was accepted on it.
+  `thread/resume` without one fails with "no rollout found", as the pinned
+  Codex 0.147.0 binary does.
+- **Providers and homes:** the subscription `s` has its own home `S`. Two
+  API-key providers, `k1` and `k2`, share Codex's default home `D`, as they do
+  in production today.
+- **Interruptions:** Stop, the per-turn force-stop and force shutdown, and a
+  thread saved by an earlier release, whose home is unknown and whose rollout
+  may be missing. A force marks the turn, and the kill lands later (`Kill`), so
+  a `turn/start` answer already in flight can still arrive. A Stop while
+  `turn/start` is pending kills the app-server.
+
+The model decides only resumption for the provider each turn uses. Which
+providers an existing conversation may select belongs to the legacy
+compatibility policy, so the model lets every turn pick any provider.
+
+`codex-thread-today` mirrors the code, and each `-reverted` check turns one fix
+off. Nine constants hold the fixes:
+
+- `CommitAtTurnStart`: the thread is saved when `turn/start` is accepted
+  (`onTurnId`), not when `thread/start` answers.
+- `ThreadRecordsHome`: the saved thread records a binding, and a turn that
+  does not match it starts a fresh thread.
+- `BindToHome`: that binding is the Codex home, not the provider definition, so
+  providers that share a home keep resuming the thread.
+- `RecoverMissingRollout`: a `thread/resume` that finds no rollout forgets the
+  saved thread and starts a fresh one in the same turn.
+- `ForceForgets`: a force-stop or force shutdown of a root turn that sent
+  `turn/start` forgets the saved thread.
+- `CommitChecksForce`: a `turn/start` answer that arrives after the force is not
+  saved (`onTurnId` checks the force signal).
+- `ForgetOnlyAfterTurnStart`: a turn forced before it sent `turn/start` wrote
+  nothing, so the saved thread is kept.
+- `StopForgetsPendingStart`: a Stop that kills the app-server while
+  `turn/start` is pending forgets the thread, as a force does.
+- `ResetsVisible`: every forget leaves a reset notice, which the next fresh
+  root thread reports.
+
+The properties are:
+
+- `NoDeadResume`: a root turn never fails on a thread Codex cannot resume.
+- `ResumeOnlyMaterialized`: only a thread with a rollout in the turn's home is
+  offered for resume, except one saved by an earlier release.
+- `NoKilledResume`: a conversation killed mid-write, by a force or by a Stop
+  while `turn/start` was pending, is never resumed (PRD, Provider execution
+  access).
+- `NoNeedlessForget`: after a root turn in a home finishes, or is stopped once
+  running, the next root turn in that home resumes its thread, whichever
+  provider it uses. Only a later killed conversation lifts this.
+- `NoSilentReset`: a root turn that starts a fresh thread after a root
+  conversation was lost reports it. Each loss is reported once.
+- `NeverResumes`: a witness, expected to be violated, that a real resume is
+  reachable.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `codex-thread-resumable` | Fixed; now passes | Before the fix (H1): the thread was saved as soon as `thread/start` answered, and reset only when the presentation version changed. A follow-up in another Codex home resumed it without its rollout, and a Stop between `thread/start` and `turn/start` pinned a thread that never got one. Every later root turn failed with "no rollout found", also after a restart. Regressions: `codex-root-thread.test.ts` drives the real app-server transport against an emulated app-server with Codex's rollout rules. |
+| `codex-thread-home-reverted` | violated: shows why the fix is needed | Without a recorded binding, a follow-up in another home resumes a thread with no rollout there. |
+| `codex-thread-commit-reverted` | violated: shows why the fix is needed | A Stop before `turn/start` leaves a saved thread with no rollout. |
+| `codex-thread-recovery-reverted` | violated: shows why the fix is needed | A thread saved by an earlier release, with no rollout in the turn's home, fails the turn. It is still offered for resume, so that existing conversations keep their thread. |
+| `codex-thread-force-reverted` | violated: shows why the fix is needed | A force that keeps the saved thread lets the next root turn resume the killed conversation. |
+| `codex-thread-late-commit-reverted` | violated: shows why the fix is needed | A `turn/start` answer that arrives after the force saves the forced thread again. |
+| `codex-thread-forget-unwritten-reverted` | violated: shows why the fix is needed | Found in review: a force during `thread/resume`, before `turn/start`, forgot a thread nothing wrote. Now kept. Regressions: the two "before its turn/start" cases in `codex-root-thread.test.ts`. |
+| `codex-thread-home-binding-reverted` | violated: shows why the fix is needed | #584: binding the thread to its provider definition dropped native history when a follow-up moved between API-key providers sharing Codex's default home. Regression: "keeps resuming across providers that share a Codex home". |
+| `codex-thread-stop-kill-reverted` | violated: shows why the fix is needed | Found in review: a Stop while `turn/start` was pending killed the app-server but kept the thread. Regression: "forgets, visibly, a root thread whose turn a Stop killed while turn/start was pending". |
+| `codex-thread-silent-reset-reverted` | violated: shows why the fix is needed | #584: without the notice, a root turn silently starts over after its native conversation was lost. Regressions: the reset assertions in `codex-root-thread.test.ts`. |
+| `codex-thread-resume-witness` | violated: witness | A real resume is reachable. |
+
+In review, three mutants of this model and `HarnessPrimeRoot` passed every
+property then shipped: `Commit` always clearing the saved thread, `Force`
+keeping it, and force close forgetting an idle Prime session. They now violate
+`NoNeedlessForget`, `NoKilledResume` and Prime's `NoNeedlessForget`.
+
+`ResumeOnlyMaterialized` exempts the earlier release's thread by design: its
+home is unknown, so the harness tries it once and binds it on success.
+`NoNeedlessForget` gives up continuity only when a turn runs in another home,
+where the thread cannot be resumed.
+
+### `HarnessPrimeRoot.tla`
+
+This model covers the harness host and Prime Agent's persistent root session:
+
+- **Host:** the per-thread session lock, capture and persist after a run,
+  graceful close, force close, a crash and one restart.
+- **Prime:** pinning, rotation, reload, the force-stop generation, and the
+  presentation instructions each session was built with.
+- **Turns:** two root turns and one invoked child, which only captures state.
+
+`prime-root-today` mirrors the code, and each `-reverted` check turns one fix
+off. Five constants hold the fixes:
+
+- `ForcePersists`: the host records the harness state as soon as a per-turn
+  force-stop fires, not when the host run ends up to ten seconds later.
+- `ForceShutdownForgets`: force shutdown forgets the root session while a root
+  conversation runs on it, as a per-turn force-stop does.
+- `ForgetOnlyRunning`: only when an unforced root turn is bound to that
+  session. A turn still acquiring its session wrote nothing, and a turn
+  already force-stopped dropped its session then.
+- `ForceClosePersists`: force close captures and persists that state, although
+  it skips close's final persist.
+- `SessionScopedInstructions`: each session reads its own presentation
+  instructions. Before, every session read the shared resource loader's cache,
+  which only a session's `reload()` refreshed.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `prime-root-serialized` | passes | Root turns stay serialized, and two root natives never share a session. |
+| `prime-root-memory` | passes | While the harness is live, it never pins a force-stopped root conversation. |
+| `prime-root-capture` | Fixed; now passes | Before the fix: a graceful close captured the state, a force-stop then fired, and the close persisted the stale capture. |
+| `prime-root-capture-reverted` | violated: shows why the fix is needed | Without recording at the force-stop, the close persists the stopped session. |
+| `prime-root-restart-close` | Fixed; now passes | Before the fix: a turn force-stopped after close had persisted was restored after the restart. |
+| `prime-root-restart-close-reverted` | violated: shows why the fix is needed | Same trace with the force-stop recorded only at the end of the host run. |
+| `prime-root-force-close` | Fixed; now passes | Before the fix (H2): quitting while a root turn ran ended in force close. Force shutdown kept the root session (Codex kept its thread), and nothing persisted, so the restart resumed the killed conversation. The check also holds `NoNeedlessForget`: an idle session, or one a turn is still acquiring, is kept. Regressions: `host-root-session-force.test.ts` (Codex through the real host, restarted) and the Prime force-shutdown test in `prime-agent.test.ts`. |
+| `prime-root-force-close-forget-reverted` | violated: shows why the fix is needed | Force close persists the killed conversation it did not forget. |
+| `prime-root-force-close-persist-reverted` | violated: shows why the fix is needed | The previously saved killed conversation survives. |
+| `prime-root-forget-running-reverted` | violated: shows why the fix is needed | Found in review: forgetting whenever a root turn is in flight forgets a session a turn was still acquiring. `NoNeedlessForget` now also covers an idle session. Regression: "keeps the root session when force shutdown ends a root turn still acquiring it". |
+| `prime-root-keep-witness` | violated: witness | An idle session survives a force close and the restart. |
+| `prime-root-crash` | Open, narrowed | A crash after a per-turn force-stop but before its state write lands restores the stopped conversation. The write now starts when the force fires. Before, it waited for the host run to end. Regression for the new timing: "records a force-stopped root turn's forgotten session before its host run ends". |
+| `prime-root-instructions` | Fixed; now passes | Before the fix (H3): a rotated root session was built from the loader's cache, which held the previous version's instructions, because `createAgentSessionFromServices` does not reload it (PPG-003). Regression: `prime-agent-native-instructions.test.ts` with the real Prime SDK 0.8.1 and no inference; it also covers invoked children, which the model leaves out. |
+| `prime-root-instructions-reverted` | violated: shows why the fix is needed | With the shared cache, a rotated root session runs with stale instructions. |
+| `prime-root-liveness` | passes | A force-stopped turn's host run always ends and frees the lock. |
+
+`Restart` after a close or force close waits for the writes they await. A
+crash may restart at any point.
+
+### `HarnessCodexAuth.tla`
+
+This model covers the per-`CODEX_HOME` `auth.json` refcount and its serialized
+write and remove queue in `codex-basic.ts`. It has three concurrent turns,
+roots and children, on one provider home. It includes the per-turn
+force-stop and a host that stops waiting before a turn's cleanup ends. It found
+no bug, and its checks guard the queue against regressions.
+
+| Check | Verdict | Finding |
+| --- | --- | --- |
+| `codex-auth-safety` | passes | A running turn always finds its key file, the user count is exact, and no key file remains once every turn ends. |
+| `codex-auth-liveness` | passes | The key file is eventually removed for good. |
+
 ## Limits
 
 - **Bounds:** one provider plus one new connection, one renderer, one lease,
@@ -739,17 +1133,24 @@ counter only grows.
   makes `catalog-stale-refresh-after-reconnect`, `catalog-old-account-repopulates`
   and `catalog-stale-adapter-capture` fail, so their passes are not vacuous.
   A logout whose signed-out publish fails advances nothing and supersedes
-  nothing. A cancelled reconnect whose fresh runtime fails to start swaps the
+  nothing; a later reconnect's cancel records the signed-out state. A cancelled reconnect whose fresh runtime fails to start swaps the
   adapter for the stub within one generation; a real result already in
   flight may still publish, which PROV-002 allows because the account and
   generation are unchanged. No check covers restoring through the recovery
   adapter: that needs an explicit refresh, a user action the model does not
   make fair. `CatalogRefresh` checks the generation once, at publish. The code checks twice: the catalog service before it publishes,
   and Rust inside the write transaction. The model's single check stands for
-  both. A lifecycle write whose response is lost is not modeled; a JS test
+  both. `CatalogRefresh` does not model a lifecycle write whose response is lost; a JS test
   covers the refresh that relearns the generation. The ad hoc
   `ProviderConnect` model, which covers a crash between the create's commit
   and its reply (F2), is not promoted; a JS test covers F2.
+  `ProviderLeaseLifecycle` models a reconnect whose answer is lost. It makes
+  each publish atomic, so a request whose answer was lost has already
+  committed or never will. A sign-out request sent before a reconnect that
+  reaches the app server only after the reconnect read its baseline breaks
+  that assumption: the reconnect's refused publish can then read one step
+  past its baseline and be adopted. That needs three faults and is not
+  modeled.
 - **Catalog abstractions:** `CatalogRefresh` has no harness. A family is
   resolvable when it is enabled and has a connected member with available
   models. That stands for "some harness can run it": the model leaves out

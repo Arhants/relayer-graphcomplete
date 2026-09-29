@@ -247,6 +247,10 @@ describe("desktop skeleton", () => {
     expect(desktopMain).toContain('allowHarnessOverride: !app.isPackaged && defaultHarnessConfiguration.startsWith("prime-agent-")');
     expect(desktopMain).toContain("productServer.start()");
     expect(desktopMain).toContain("productServer.close()");
+    // Provider admission closes before shutdown awaits the app server (PROV-004).
+    const shutdown = desktopMain.slice(desktopMain.indexOf("async function shutdownServices()"));
+    expect(shutdown.indexOf("providerComposition?.beginShutdown()")).toBeGreaterThan(-1);
+    expect(shutdown.indexOf("providerComposition?.beginShutdown()")).toBeLessThan(shutdown.indexOf("productServer.close()"));
     expect(desktopMain).not.toContain("startModelCatalogRefreshServer");
     expect(desktopMain).not.toContain("providerCatalogRefreshSession");
     expect(desktopPreload).not.toContain("provider-catalog/refresh");
@@ -1051,6 +1055,15 @@ describe("desktop skeleton", () => {
       return true;
     });
     const onHarnessRuntimeValidationFailure = vi.fn(async () => {});
+    // The recipe the release requires; the app server compares it with the one it last
+    // loaded, so an update that changed only the recipe starts pending (PR #576 review).
+    const harnessRuntimeRecipe = vi.fn((configuration) => {
+      if (configuration.name === "codex-basic") return "codex@0.147.0#digest";
+      // A harness with no recipe on this target (Prime on Windows) must not stop startup.
+      throw Object.assign(new Error("no recipe here"), { code: "managed_runtime_unsupported_target" });
+    });
+    // This start's update activated a new codex recipe.
+    const harnessRuntimeUpdated = vi.fn((configuration) => configuration.name === "codex-basic");
     const services = [];
     const start = (coordinateHarnessReadiness) => {
       const child = Object.assign(new EventEmitter(), {
@@ -1066,6 +1079,8 @@ describe("desktop skeleton", () => {
         coordinateHarnessReadiness,
         validateHarnessRuntime,
         onHarnessRuntimeValidationFailure,
+        harnessRuntimeRecipe,
+        harnessRuntimeUpdated,
         spawnProcess: () => {
           queueMicrotask(() => child.stdout.write(`${JSON.stringify({ ready: true, url: "http://127.0.0.1:43128" })}\n`));
           return child;
@@ -1081,7 +1096,10 @@ describe("desktop skeleton", () => {
       // The previous file said codex-basic was unavailable; its files validate, so the
       // app server's own record decides. claude-basic is simply not installed.
       expect(entries.map(({ configuration, digest, ...readiness }) => [configuration.name, readiness])).toEqual([
-        ["codex-basic", { runtimeAvailable: false, unavailableReason: pending, appServerReadiness: { runtimeFilesValid: true } }],
+        ["codex-basic", {
+          runtimeAvailable: false, unavailableReason: pending,
+          appServerReadiness: { runtimeFilesValid: true, runtimeRecipe: "codex@0.147.0#digest", runtimeUpdated: true },
+        }],
         ["claude-basic", { runtimeAvailable: false, unavailableReason: pending, appServerReadiness: { runtimeFilesValid: false } }],
       ]);
       expect(validateHarnessRuntime).toHaveBeenCalledTimes(2);

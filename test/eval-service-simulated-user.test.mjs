@@ -235,6 +235,46 @@ describe("EvalService simulated-user result persistence", () => {
     expect(judgeArtifactForExecution({})).toBeUndefined();
   });
 
+  it.each([
+    ["codex-basic", "openrouter-work", "openai/gpt-6-luna"],
+    ["claude-basic", "anthropic-work", "claude-sonnet-4-6"],
+  ])("uses the profile resolver for %s and pins its identity across followups", async (harnessId, providerId, modelId) => {
+    const { stateFile } = await testPaths();
+    const product = fakeAcceptedProduct();
+    globalThis.fetch = product;
+    const pinned = { familyId: 17, providerId, modelId };
+    const selectModel = vi.fn(async () => pinned);
+    const service = await new EvalService({ stateFile, productSession: productSession(),
+      configurationPaths: [join(repositoryRoot, "harnesses", `${harnessId}.yaml`)],
+      selectModel, targetKey: "macos-arm64" }).open();
+    const created = await service.createRun({ testCaseIds: ["empty-project.task-system.two-turn"],
+      harnessConfigurationNames: [harnessId], judgeConfigurationName: "deterministic-graph-contract" });
+    await waitForCompletedRun(service, created.id);
+    const bodies = product.mock.calls.filter(([url, options]) => options?.method === "POST"
+      && /^\/api\/threads(?:\/[^/]+\/interactions)?$/.test(new URL(url).pathname))
+      .map(([, options]) => JSON.parse(options.body));
+    expect(bodies.map(({ modelSelection }) => modelSelection)).toEqual([pinned, pinned]);
+    expect(selectModel.mock.calls).toEqual([[harnessId], [harnessId]]);
+  });
+
+  it("stops before a followup if profile model resolution changes identity", async () => {
+    const { stateFile } = await testPaths();
+    const product = fakeAcceptedProduct();
+    globalThis.fetch = product;
+    const selectModel = vi.fn()
+      .mockResolvedValueOnce({ familyId: 17, providerId: "openrouter-work", modelId: "first" })
+      .mockResolvedValueOnce({ familyId: 17, providerId: "openrouter-work", modelId: "second" });
+    const service = await new EvalService({ stateFile, productSession: productSession(),
+      configurationPaths: [join(repositoryRoot, "harnesses", "codex-basic.yaml")],
+      selectModel, targetKey: "macos-arm64" }).open();
+    const created = await service.createRun({ testCaseIds: ["empty-project.task-system.two-turn"],
+      harnessConfigurationNames: ["codex-basic"], judgeConfigurationName: "deterministic-graph-contract" });
+    const completed = await waitForCompletedRun(service, created.id);
+    expect(JSON.stringify(completed)).toContain("model selection changed between product turns");
+    expect(product.mock.calls.filter(([url, options]) => options?.method === "POST"
+      && /^\/api\/threads\/[^/]+\/interactions$/.test(new URL(url).pathname))).toHaveLength(0);
+  });
+
   it("pins a connected default model when a Claude matrix cell creates its thread", async () => {
     const { stateFile } = await testPaths();
     const requests = [];

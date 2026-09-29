@@ -485,7 +485,10 @@ async function main() {
     window = created;
     window.webContents.on("console-message", (_event, level, message) => { if (level >= 3) rendererErrors.push(message); });
   } })(fixture.session);
-  window.show(); window.focus();
+  window.show();
+  // BrowserWindow.focus alone does not activate a CLI-launched macOS app.
+  if (process.platform === "darwin") app.focus({ steal: true });
+  window.focus();
   await recordPhase("window:shown-and-focused");
   await waitFor("native shell ready", () => evaluate("document.querySelector('#appShell')?.checkVisibility() && !document.body.classList.contains('desktop-account-pending')"));
   await evaluate("(() => {if(window.__nativeRafHeartbeatStarted)return;window.__nativeRafHeartbeatStarted=true;window.__nativeRafCount=0;const beat=()=>{window.__nativeRafCount++;window.__nativeRafAt=performance.now();requestAnimationFrame(beat);};requestAnimationFrame(beat);})()");

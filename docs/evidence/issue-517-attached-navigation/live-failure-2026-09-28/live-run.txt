@@ -1,0 +1,12 @@
+{"interactionId":1,"completionStatus":"running"}
+{"interactionId":1,"completionStatus":"accepted"}
+{"interactionId":2,"completionStatus":"running"}
+{"interactionId":2,"completionStatus":"accepted"}
+file:///Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation-live.mjs:259
+      if (!actions.some(value => value.relation === "reference" && value.targetLayerId === extended.interaction.completionOutput.rootLayer.layer.id)) throw new Error("Missing reference to response root");
+                                                                                                                                                            ^
+
+Error: Missing reference to response root
+    at file:///Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation-live.mjs:259:157
+
+Node.js v22.23.2

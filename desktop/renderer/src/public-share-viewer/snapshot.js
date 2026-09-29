@@ -519,7 +519,11 @@ function normalizeLayer(resolved, layerKeys, invokeTargets) {
     edges: cloneJson(resolved.edges),
     actions: resolved.actions.map((action) => ({
       ...cloneJson(action),
-      sourceLayerClientKey: layerKeys.get(action.sourceLayerId),
+      // Shared packages use export-local IDs as binding aliases. A reused
+      // action may retain provenance from a layer outside the visible snapshot.
+      // Derive only for the generated alias convention; never invent private keys.
+      sourceLayerClientKey: layerKeys.get(action.sourceLayerId)
+        ?? (action.clientKey === action.id ? action.sourceLayerId : undefined),
       ...(action.kind === "input" ? {
         control: action.input.control,
         prompt: action.input.prompt,

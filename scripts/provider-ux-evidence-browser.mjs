@@ -242,6 +242,10 @@ async function prepareScene() {
     document.body.dataset.evidenceReady = "true";
     return;
   }
+  if (scene === "onboarding") {
+    await waitForCondition(() => rendered(document.querySelector('[data-provider-adapter="openai-api"]')),
+      "visible onboarding provider choices");
+  }
   if (scene === "flow") {
     await waitFor('[data-provider-adapter="openai-api"]');
     document.body.dataset.evidenceReady = "true";

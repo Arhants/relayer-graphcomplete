@@ -1,0 +1,24 @@
+   Compiling relayer-graph-core v0.0.0 (/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/crates/relayer-graph-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.51s
+     Running tests/graph_database.rs (target/debug/deps/graph_database-ab81e4d74e1ef132)
+
+running 1 test
+test attached_navigation_concurrent_replacements_preserve_controls_and_reopen_occurrences ... FAILED
+
+failures:
+
+---- attached_navigation_concurrent_replacements_preserve_controls_and_reopen_occurrences stdout ----
+
+thread 'attached_navigation_concurrent_replacements_preserve_controls_and_reopen_occurrences' (189256390) panicked at crates/relayer-graph-core/tests/graph_database.rs:7581:5:
+assertion `left == right` failed: accepted staging is consumed while stale repair drafts survive
+  left: 3
+ right: 2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    attached_navigation_concurrent_replacements_preserve_controls_and_reopen_occurrences
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 96 filtered out; finished in 0.07s
+
+error: test failed, to rerun pass `-p relayer-graph-core --test graph_database`

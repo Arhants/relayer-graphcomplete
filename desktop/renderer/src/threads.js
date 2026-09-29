@@ -24,6 +24,7 @@ import {
   createLayerNavigationCoordinator,
   layerPathForVisibleLayer,
   reconcileCurrentProjection,
+  humanTurns,
   workspaceTurns,
 } from "./product-workspace/model.js";
 import {
@@ -50,8 +51,10 @@ import {
   closeNewThreadModelPicker,
   newThreadModelSelectionPayload,
   newThreadModelSelectionReady,
+  newThreadModelSetup,
   setNewThreadModelPickerDisabled,
 } from "./composer-model-picker.js";
+import { composerSendTitle } from "./model-picker.js";
 import { refreshModelFamilySettings } from "./model-family-settings.js";
 import {
   harnessUsesConfigurationModel,
@@ -304,6 +307,11 @@ export function updateCreateThreadAvailability() {
     || !$("#newThreadPrompt").value.trim()
     || !viewState.selectedPermissionProfileId
     || (productApiAvailable && !newThreadModelSelectionReady());
+  $("#createThread").title = composerSendTitle({
+    ready: !productApiAvailable || newThreadModelSelectionReady(),
+    modelSetup: productApiAvailable ? newThreadModelSetup() : null,
+    readyTitle: "Create thread and send",
+  });
 }
 
 function currentNavigationEntry() {
@@ -704,6 +712,7 @@ export async function refreshState(
     appState.pendingTurn = null;
   }
   appState.projects = nextProjects;
+  appState.conversationCompatibility = state.conversationCompatibility ?? null;
   appState.threads = nextThreads;
   appState.interactions = nextInteractions;
   appState.actionInvocations = nextActionInvocations;
@@ -809,12 +818,16 @@ export function selectTurn(offset) {
   selectTurnById(target.id);
 }
 
-export function selectTurnById(interactionId) {
+export function selectTurnById(interactionId, { responseRoot = false, threadId = viewState.currentThreadId } = {}) {
+  if (String(threadId) !== String(viewState.currentThreadId)) {
+    return selectInteractionGraphSource(threadId, interactionId);
+  }
   const target = appState.interactions.find((interaction) => (
     String(interaction.threadId) === String(viewState.currentThreadId)
     && String(interaction.id) === String(interactionId)
   ));
-  if (!target || String(target.id) === String(viewState.currentInteractionId)) return;
+  if (responseRoot && !target?.completionOutput?.rootLayer) return;
+  if (!target || (!responseRoot && String(target.id) === String(viewState.currentInteractionId))) return;
   cancelAutomaticTurn();
   supersedePendingHistory({ presentationChanged: true });
   viewState.selectedNodeId = null;
@@ -829,6 +842,41 @@ export function selectTurnById(interactionId) {
   recordCurrentNavigation("push");
   renderThread();
   schedulePendingRefresh(viewState.currentThreadId, { force: true });
+}
+
+async function selectInteractionGraphSource(threadId, interactionId) {
+  cancelAutomaticTurn();
+  recordCurrentNavigation();
+  const sourceLocationKey = navigationEntryKey(currentNavigationEntry());
+  supersedePendingHistory({ presentationChanged: true });
+  const requestToken = resolvedInvokeNavigationGate.begin();
+  pendingResolvedInvokeNavigation = true;
+  try {
+    const resolved = await resolveNavigationPresentation({
+      threadId, turnId: interactionId, navigationPath: [], selectedNodeId: null,
+    }, {
+      loadThread: (id) => request(`/api/threads/${encodeURIComponent(id)}`),
+      loadLayer: ({ threadId, turnId, layerId }) => request(
+        `/api/threads/${encodeURIComponent(threadId)}/interactions/${encodeURIComponent(turnId)}/layers/${encodeURIComponent(layerId)}`,
+      ),
+      layerCache: acceptedLayerCache,
+    });
+    if (!resolved.interaction.completionOutput?.rootLayer) return false;
+    if (!resolvedInvokeNavigationGate.isCurrent(requestToken)
+      || !currentNavigationEntry()
+      || navigationEntryKey(currentNavigationEntry()) !== sourceLocationKey) return false;
+    refreshGate.invalidate();
+    layerNavigationCoordinator.cancel();
+    applyResolvedPresentation(resolved);
+    recordCurrentNavigation("push");
+    schedulePendingRefresh(viewState.currentThreadId);
+    return true;
+  } finally {
+    if (resolvedInvokeNavigationGate.isCurrent(requestToken)) {
+      pendingResolvedInvokeNavigation = false;
+      renderThread();
+    }
+  }
 }
 
 export async function submitInteraction(
@@ -861,9 +909,8 @@ export async function submitInteraction(
     inputIdentityRevision,
   );
   try {
-    const latestInteraction = appState.interactions
-      .filter((interaction) => String(interaction.threadId) === String(threadId))
-      .at(-1);
+    // A child an agent launched is not a human turn: a follow-up or retry never targets it.
+    const latestInteraction = humanTurns(appState, { id: threadId }).at(-1);
     const { path, body: retryBody } = interactionSubmissionTarget(
       threadId,
       latestInteraction,

@@ -1,3 +1,5 @@
+mod share_bindings;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::OnceLock;
 
@@ -58,6 +60,11 @@ pub(crate) enum ConversationExportBuildError {
 fn require_portable_invoke_shape(
     closure: &AcceptedGraphClosure,
 ) -> Result<(), ConversationExportBuildError> {
+    if closure.has_persistent_mutations {
+        return Err(ConversationExportBuildError::Invalid(
+            "Export is not yet available for conversations containing attached-node navigation changes.".into(),
+        ));
+    }
     if std::iter::once(&closure.root_action)
         .chain(closure.layers.iter().flat_map(|layer| &layer.actions))
         .any(|action| action.resolved_invoke_interaction_id.is_some())
@@ -455,6 +462,7 @@ pub(crate) async fn build_share_conversation_export(
             })
         })
         .collect::<Result<Vec<_>, ConversationExportBuildError>>()?;
+    share_bindings::project_share_bindings(&mut closures, &mut ids)?;
     let (authored_detail_assets, visual_asset_contents) =
         collect_visual_assets(runtime, closures.iter(), &redactor).await?;
     let header = ConversationExportRecord::Header(Box::new(ConversationExportHeader {
@@ -1598,7 +1606,7 @@ fn export_layer(
                 .map(|id| ids.node(id.value())),
             id: ids.layer(resolved.layer.id.value()),
             client_key: if redactor.is_share() {
-                None
+                Some(ids.layer(resolved.layer.id.value()))
             } else {
                 redactor.optional(resolved.layer.client_key.as_deref())
             },
@@ -1655,7 +1663,7 @@ fn export_node(
     Ok(ExportNode {
         id: ids.node(node.id.value()),
         client_key: if redactor.is_share() {
-            None
+            Some(ids.node(node.id.value()))
         } else {
             redactor.optional(node.client_key.as_deref())
         },
@@ -1690,20 +1698,7 @@ fn authored_detail_omission(
     };
     if contains_private_path {
         Some(ExportAuthoredDetailOmission::PrivatePath)
-    } else if redactor.is_share()
-        && (redactor.contains_sensitive_json(authored_detail)
-            || authored_detail
-                .get("mounts")
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|mounts| {
-                    mounts
-                        .iter()
-                        .any(|mount| mount.pointer("/capability/action").is_some())
-                }))
-    {
-        // Capability action identities are author-chosen private client keys.
-        // The public records omit those keys, so the integrity-bound package
-        // cannot be kept with dangling mounts or rewritten in place.
+    } else if redactor.is_share() && redactor.contains_sensitive_json(authored_detail) {
         Some(ExportAuthoredDetailOmission::SensitiveData)
     } else {
         None
@@ -1782,7 +1777,7 @@ fn export_action(
     Ok(ExportAction {
         id: ids.action(action.id.value()),
         client_key: if redactor.is_share() {
-            None
+            Some(ids.action(action.id.value()))
         } else {
             redactor.optional(action.client_key.as_deref())
         },
@@ -3121,14 +3116,19 @@ mod tests {
             &ProjectPathRedactor::for_share(None),
         )
         .unwrap();
-        assert!(public.root_action.client_key.is_none());
-        assert!(public.layers[0].layer.client_key.is_none());
-        assert!(public.layers[0].nodes[0].client_key.is_none());
-        assert!(
-            !serde_json::to_string(&public)
-                .unwrap()
-                .contains("clientKey")
+        assert_eq!(
+            public.root_action.client_key.as_deref(),
+            Some(public.root_action.id.as_str())
         );
+        assert_eq!(
+            public.layers[0].layer.client_key.as_deref(),
+            Some(public.layers[0].layer.id.as_str())
+        );
+        assert_eq!(
+            public.layers[0].nodes[0].client_key.as_deref(),
+            Some(public.layers[0].nodes[0].id.as_str())
+        );
+        assert!(!serde_json::to_string(&public).unwrap().contains(key));
     }
     use crate::{
         conversation_export::{
@@ -3164,7 +3164,7 @@ mod tests {
         let missing_metadata = missing.clone();
         let large = Arc::new(AtomicBool::new(false));
         let large_metadata = large.clone();
-        let app = axum::Router::new().route("/api/control/temporal-features", axum::routing::get(|| async { axum::Json(json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true})) })).fallback(move |request: axum::extract::Request| {
+        let app = axum::Router::new().route("/api/control/temporal-features", axum::routing::get(|| async { axum::Json(json!({"configVersion":1,"schemaRead":true,"rootCurrentWrite":true,"projectionUi":true,"invokeResolution":true,"providerRecursion":true})) })).route("/api/control/interaction-features", axum::routing::get(|| async { axum::Json(json!({"interactionGraph":false})) })).fallback(move |request: axum::extract::Request| {
             let counted = counted.clone();
             let deny = deny.clone();
             let metadata_counted = metadata_counted.clone();
@@ -3315,6 +3315,23 @@ mod tests {
             "reject the second 8 MiB asset from metadata before fetching its body"
         );
         server.abort();
+    }
+
+    #[test]
+    fn portable_export_rejects_persistent_mutation_closures() {
+        let mut closure: relayer_graph_core::AcceptedGraphClosure = serde_json::from_value(serde_json::json!({
+            "nodeId":1,"interaction":{"id":1,"kind":"user-interaction","icon":"user","title":"Question","detail":"Question","state":"accepted"},
+            "rootAction":{"id":1,"sourceNodeId":1,"kind":"navigate","relation":"expand","label":"Response","variant":"pill","targetLayerId":1,"state":"accepted"},
+            "rootLayerId":1,"layers":[]
+        })).unwrap();
+        super::require_portable_invoke_shape(&closure).unwrap();
+        closure.has_persistent_mutations = true;
+        let error = super::require_portable_invoke_shape(&closure).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("attached-node navigation changes")
+        );
     }
 
     #[test]
@@ -3705,37 +3722,6 @@ mod tests {
     }
 
     #[test]
-    fn share_omits_compiled_action_mounts_without_rewriting_private_identity() {
-        let detail = serde_json::json!({
-            "version": 1,
-            "components": [{"id":"summary","order":0,"html":"<button data-gc-capability=\"open\">Open</button>","css":""}],
-            "mounts": [{"id":"open","componentId":"summary","kind":"capability","host":"button",
-                "capability":{"kind":"expand","action":{"clientKey":"expand","sourceNode":{"clientKey":"node"},"sourceLayer":{"clientKey":"layer"}}}}],
-            "assets": [], "integritySha256": "a".repeat(64)
-        });
-        let node = authored_node(detail.clone());
-        let ordinary = export_node(
-            &node,
-            &mut PortableIds::default(),
-            &ProjectPathRedactor::new(None),
-        )
-        .unwrap();
-        assert_eq!(ordinary.authored_detail, Some(detail));
-        let public = export_node(
-            &node,
-            &mut PortableIds::default(),
-            &ProjectPathRedactor::for_share(None),
-        )
-        .unwrap();
-        assert!(public.authored_detail.is_none());
-        assert_eq!(
-            public.authored_detail_omitted,
-            Some(ExportAuthoredDetailOmission::SensitiveData)
-        );
-        assert_eq!(public.detail, "Portable fallback");
-    }
-
-    #[test]
     fn share_authored_detail_omits_sensitive_fragmented_rich_detail() {
         let package = serde_json::json!({
             "version": 1,
@@ -3821,6 +3807,7 @@ mod tests {
             result_interaction_id: InteractionId::from_database(result),
             result_completion_status: "accepted".into(),
             created_at: "2026-01-01T00:00:00Z".into(),
+            agent_invoked: false,
         };
         let mut interactions = vec![
             interaction(1, "accepted"),
@@ -4292,6 +4279,7 @@ mod tests {
         let target = InteractionInputNode::from(target_node.clone());
         let runtime = RuntimeContextInput {
             input: InteractionInput {
+                interaction_permissions: None,
                 interaction: InteractionInputNode::from(GraphNode {
                     id: NodeId::new(10).unwrap(),
                     client_key: None,
@@ -4650,6 +4638,7 @@ mod tests {
             result_interaction_id: result_id,
             created_at: "2".into(),
             result_completion_status: "failed".into(),
+            agent_invoked: false,
         };
         let turn_sequences = [(source_id, 1), (result_id, 2)].into_iter().collect();
         let mut ids = PortableIds::default();

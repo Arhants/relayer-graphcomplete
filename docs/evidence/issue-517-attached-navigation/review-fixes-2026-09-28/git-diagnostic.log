@@ -1,0 +1,5 @@
+Initialized empty Git repository in /private/var/folders/xn/h0pkhpsx1jv47vgg5gff_ztw0000gn/T/pr560-sha256-diagnostic-2dxj7wsv/.git/
+[main (root-commit) a9e0c6b] baseline
+ 1 file changed, 1 insertion(+)
+ create mode 100644 tracked.txt
+elapsed=629.928541ms snapshot=EnvironmentSnapshot { kind: Git, worktree_label: "pr560-sha256-diagnostic-2dxj7wsv", branch: Some("main"), detached: false, changes: EnvironmentChanges { tracked_files: 1, additions: 1, deletions: 1, untracked_files: 0 }, observed_at: "2026-09-28T21:42:46.917434Z", unavailable_reason: None }

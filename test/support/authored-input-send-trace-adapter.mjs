@@ -134,6 +134,8 @@ export class AuthoredInputSendWorld {
     };
     this.thread = { id: THREAD, title: "Thread", harnessId: "fixture", projectId: null, permissionProfileId: null };
     this.state = {
+      // Match the authoritative state contract for this non-native fixture.
+      conversationCompatibility: { threadId: THREAD, status: "unrestricted", harnessId: "fixture" },
       status: "accepted",
       currentInteractionId: 5,
       interactions: [{ id: 5, threadId: THREAD, sequence: 1, text: "Question", graphNodeId: 50, completionStatus: "accepted", completionOutput: { rootLayer: layer } }],

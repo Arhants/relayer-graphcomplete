@@ -31,8 +31,8 @@ CONSTANTS
                     \* FALSE once the observer polls again on a timeout
   CleanExitIsChecked, \* FALSE today: only an observe Err leads to the
                     \* active-current check (THR:1998); a clean exit does not
-  ActivationFailureSettlesGraph, \* FALSE today: a lost or failed
-                    \* activation settles only the execution row (THR:1437-1463)
+  ActivationFailureSettlesGraph, \* FALSE before the fix: a failed activation
+                    \* settled only the execution row; now it starts cleanup (THR)
   TerminalReadSettlesCleanup, \* FALSE today: cleanup's fail loop treats a
                     \* current another actor terminated as an error (RT:1609)
   ChildAdmission    \* FALSE before child admission: a selected child ran on
@@ -45,7 +45,7 @@ Reason == [stop |-> "cancelled_by_user",
            attach |-> "provider_attachment_persist_failed",
            obs |-> "graph_observation_failed",
            restart |-> "application_restart",
-           activate |-> "execution",
+           activate |-> "capability_activation_failed",
            admit |-> "model_unavailable"]
 Target(k) == IF k = "stop" THEN "stopped" ELSE "failed"
 Active == {"submitted", "running"}     \* product statuses a finalize accepts
@@ -80,7 +80,7 @@ VARIABLES
   attempt,      \* interaction_attempts row: none | running | terminal
   lease,        \* the attempt's durable lease record: none | held | released
                 \* (released = execution_lease_reconciled_at is set)
-  cleanKey,     \* the start-failure cleanup's operation: start | admit
+  cleanKey,     \* the launch-failure cleanup's operation: start | admit | activate
   access        \* the host's provider access for the child: none | held | released
 
 vars == <<life, head, why, receipt, auth, phase, status, execWhy, prov, launches,
@@ -170,23 +170,29 @@ LaunchClaim(l) ==                                     \* CAS (CEX:108-134)
   /\ UNCHANGED <<graphVars, auth, status, prov, launches, appUp, semPc,
                  exitPc, cleanPc, stopPc, stopSeen, stopReport, restartPc, admissionVars>>
 
-\* claim_and_activate (THR:1423-1465): claim running, remint the capability.
-\* Ownership lost or activation failure settles the execution row only.
+\* claim_and_activate (THR launch_prepared_child): claim running, remint the
+\* capability. A failed activation, retryable or not, spawns the launch-failure
+\* cleanup, which fails the current and then settles both product rows with it.
+\* Nothing was admitted or started, so the cleanup never cancels. Before the fix
+\* it settled the execution row only and restored the child to `submitted`.
 LaunchActivate(l, ok) ==
   /\ appUp /\ lpc[l] = "activate"
   /\ \/ /\ ok
         /\ status' = "running" /\ auth' = TRUE
         /\ lpc' = [lpc EXCEPT ![l] = "admit"]
-        /\ UNCHANGED <<phase, execWhy, graphVars, admissionVars>>
+        /\ UNCHANGED <<phase, execWhy, graphVars, cleanPc, cleanKey>>
      \/ /\ ~ok
-        /\ phase' = "settled" /\ execWhy' = "capability_activation_failed"
         /\ lpc' = [lpc EXCEPT ![l] = "done"]
-        /\ UNCHANGED auth
-        /\ IF ActivationFailureSettlesGraph   \* candidate fix: fail both stores
-           THEN /\ TermNow("activate") /\ status' = "failed"
-           ELSE UNCHANGED <<graphVars, status, admissionVars>>
-  /\ UNCHANGED <<prov, launches, appUp, semPc, exitPc, cleanPc,
-                 stopPc, stopSeen, stopReport, restartPc, admissionVars>>
+        /\ UNCHANGED <<auth, graphVars>>
+        /\ IF ActivationFailureSettlesGraph
+           THEN /\ status' = "running"
+                /\ cleanPc' = "fail" /\ cleanKey' = "activate"
+                /\ UNCHANGED <<phase, execWhy>>
+           ELSE /\ phase' = "settled" /\ execWhy' = "capability_activation_failed"
+                /\ UNCHANGED <<status, cleanPc, cleanKey>>
+  /\ UNCHANGED <<prov, launches, appUp, semPc, exitPc,
+                 stopPc, stopSeen, stopReport, restartPc, selected, attempt, lease,
+                 access>>
 
 \* admit_recursive_child: a selected child resolves its plan, the host leases every
 \* provider in it, and the product records the running attempt before the start. A
@@ -323,8 +329,8 @@ ExitDiscard ==
 (* Start-failure cleanup (THR spawn_failed_recursive_start_cleanup): loops *)
 (* retrying every 250 ms until each step succeeds. It fails and settles    *)
 (* the child first, so an unreachable harness cannot hold its result open, *)
-(* then cancels a start that may have run. A refused admission started     *)
-(* nothing and skips the cancel.                                          *)
+(* then cancels a start that may have run. A refused admission or a       *)
+(* failed activation started nothing and skips the cancel.                *)
 CleanCancel ==
   /\ appUp /\ cleanPc = "cancel"
   /\ cleanPc' = "discard"

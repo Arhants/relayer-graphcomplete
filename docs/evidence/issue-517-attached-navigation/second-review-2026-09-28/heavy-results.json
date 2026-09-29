@@ -1,0 +1,60 @@
+[
+  {
+    "name": "gated",
+    "command": [
+      "node_modules/.bin/electron",
+      "scripts/test-desktop-first-message.mjs"
+    ],
+    "exitCode": 0
+  },
+  {
+    "name": "default",
+    "command": [
+      "node_modules/.bin/electron",
+      "scripts/test-desktop-first-message.mjs"
+    ],
+    "exitCode": 0
+  },
+  {
+    "name": "context",
+    "command": [
+      "node",
+      "scripts/run-interaction-context-lifecycle-test.mjs"
+    ],
+    "exitCode": 0
+  },
+  {
+    "name": "project",
+    "command": [
+      "node",
+      "scripts/run-project-new-thread-test.mjs"
+    ],
+    "exitCode": 0
+  },
+  {
+    "name": "compiled-eval",
+    "command": [
+      "npm",
+      "run",
+      "test:eval-compiled-runtime"
+    ],
+    "exitCode": 0
+  },
+  {
+    "name": "prime-integration",
+    "command": [
+      "node_modules/.bin/vitest",
+      "run",
+      "test/prime-visual-integration.test.mjs"
+    ],
+    "exitCode": 0
+  },
+  {
+    "name": "layout",
+    "command": [
+      "node",
+      "scripts/test-interaction-graph-layout.mjs"
+    ],
+    "exitCode": 0
+  }
+]

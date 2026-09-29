@@ -226,7 +226,7 @@ export function bootPublicViewer({
       throw new Error("Public viewer branding host is missing.");
     }
     workspaceLayout.querySelector(".environment-panel")?.remove();
-    if (!embedded) workspaceLayout.append(downloadCard);
+    if (!embedded) workspaceLayout.querySelector(".thread-header").append(downloadCard);
     if (embedded) {
       stopEmbedLayout = observeEmbedInspectorLayout(host, windowRef);
       stopEmbedReading = configureEmbedReading(host);

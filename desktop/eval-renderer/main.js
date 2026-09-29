@@ -1,3 +1,4 @@
+import { initializeHumanTasks } from "./human-tasks.js";
 import {
   authorizeRecursiveCompleteSelection,
   isolateRecursiveCompleteSelection,
@@ -30,7 +31,7 @@ function toast(message) {
 }
 
 function show(view) {
-  for (const id of ["emptyView", "configureView", "runView"]) $(`#${id}`).classList.toggle("hidden", id !== view);
+  for (const id of ["emptyView", "configureView", "runView", "humanView"]) $(`#${id}`).classList.toggle("hidden", id !== view);
 }
 
 function renderRunList() {
@@ -368,7 +369,7 @@ async function boot() {
     runs = nextRuns;
     renderRunList();
     const selected = runs.find((run) => run.id === selectedRunId);
-    if (selected) renderRun(selected);
+    if (selected && !$("#runView").classList.contains("hidden")) renderRun(selected);
   });
   $("#newRun").onclick = configure;
   $("#importConversation").onclick = async () => {
@@ -394,3 +395,7 @@ async function boot() {
 }
 
 void boot().catch((error) => toast(error.message));
+
+initializeHumanTasks({ api, show, toast });
+
+document.querySelector("#evalSettings").onclick = () => void api.openSettings().catch((error) => toast(error.message));

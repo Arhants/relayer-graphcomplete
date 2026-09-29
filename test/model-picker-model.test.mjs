@@ -412,3 +412,18 @@ describe("composer model picker selection", () => {
     });
   });
 });
+
+describe("legacy conversation compatibility", () => {
+  it("filters foreign choices and rejects a stale selection without blocking same-provider models", () => {
+    const catalog = settings();
+    catalog.conversationCompatibility = { status: "compatible", providerId: "codex", harnessId: "codex-basic" };
+    catalog.providers[1].connected = true;
+    catalog.harnesses[0].compatibleProviderIds.push("future");
+    expect(availablePickerFamilies(catalog, "codex-basic")[0].availableMembers.map(m => m.providerId)).toEqual(["codex"]);
+    expect(pickerSelectionIsAvailable(catalog, { harnessId: "codex-basic", familyId: 1, providerId: "future", modelId: "three" })).toBe(false);
+    expect(pickerSelectionIsAvailable(catalog, { harnessId: "codex-basic", familyId: 1, providerId: "codex", modelId: "one" })).toBe(true);
+    expect(availablePickerFamilies(catalog, "cooked")).toEqual([]);
+    catalog.conversationCompatibility = { status: "blocked", message: "History ownership cannot be verified." };
+    expect(availablePickerFamilies(catalog, "codex-basic")).toEqual([]);
+  });
+});

@@ -8,8 +8,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { c as createTar } from "tar";
 import { describe, expect, it, vi } from "vitest";
 
-import { createManagedRuntimeInstaller as createExactManagedRuntimeInstaller } from "../desktop/main/managed-runtimes/installer.mjs";
+import {
+  createManagedRuntimeInstaller as createExactManagedRuntimeInstaller,
+  runtimesChangedByActivation,
+} from "../desktop/main/managed-runtimes/installer.mjs";
 import { createDefaultRuntimeProbes } from "../desktop/main/managed-runtimes/probes.mjs";
+import { managedRecipeInstalled } from "../desktop/main/managed-runtimes/resolver.mjs";
 
 function deferred() {
   let resolve;
@@ -268,15 +272,240 @@ describe("managed runtime installer", () => {
     }
   });
 
-  it("refuses to create descriptor-owned private state through a preexisting symlink", async () => {
+  // Explicit Repair reconstructs the requested recipe (PRD "Exact managed-runtime
+  // preparation"). Each break below still executes and still reports its version, so only
+  // startup's full validation notices it. Reusing it would publish ready for an
+  // installation that the next start rejects again.
+  const layoutBreaks = [
+    ["its private state is removed", async (prepared) => {
+      await rm(prepared.privateStateRoot, { recursive: true, force: true });
+    }],
+    ["its ownership marker is removed", async (prepared) => {
+      await rm(join(prepared.installationRoot, ".relayer-managed-runtime.json"), { force: true });
+    }],
+    ["its executable is a symlink outside the installation", async (prepared, outside) => {
+      const moved = join(outside, "claude");
+      await writeFile(moved, "runtime", { mode: 0o755 });
+      await rm(prepared.executable, { force: true });
+      await symlink(moved, prepared.executable);
+    }],
+  ];
+
+  it.each(layoutBreaks)("repairs an installation startup rejects because %s", async (_, breakLayout) => {
     const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
-    const outside = await mkdtemp(join(tmpdir(), "relayer-private-state-outside-"));
+    const outside = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-outside-"));
+    try {
+      const { installer, fetch } = exactClaudeInstaller(root, "repair-layout");
+      const prepared = await installer.prepare("claude-fixture@0.3.250");
+      await breakLayout(prepared, outside);
+      await expect(installer.validate("claude-fixture@0.3.250")).rejects.toThrow();
+      fetch.mockClear();
+
+      const repaired = await installer.prepare("claude-fixture@0.3.250");
+      expect(repaired.installation).not.toBe(prepared.installation);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      await expect(installer.validate("claude-fixture@0.3.250")).resolves.toMatchObject({
+        installation: repaired.installation,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it.each(layoutBreaks)("stages a fresh app-update generation when the active one is unusable because %s", async (_, breakLayout) => {
+    const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
+    const outside = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-outside-"));
+    try {
+      const { installer } = exactClaudeInstaller(root, "stage-layout");
+      const prepared = await installer.prepare("claude-fixture@0.3.250");
+      await breakLayout(prepared, outside);
+
+      const staged = await installer.stageForAppUpdate("0.2.26", [{
+        runtimeId: "claude", recipeId: "claude-fixture@0.3.250",
+      }]);
+      expect(staged.failures).toEqual([]);
+      expect(staged.staged[0].installation).not.toBe(prepared.installation);
+      await expect(installer.activatePendingAppUpdate("0.2.26")).resolves.toMatchObject({
+        failures: [], activated: [{ installation: staged.staged[0].installation }],
+      });
+      await expect(installer.validate("claude-fixture@0.3.250")).resolves.toMatchObject({
+        installation: staged.staged[0].installation,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it.each(layoutBreaks)("does not activate a pending generation startup would reject because %s", async (_, breakLayout) => {
+    const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
+    const outside = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-outside-"));
+    const probe = vi.fn(async ({ version }) => ({ version }));
+    try {
+      const { installer } = exactClaudeInstaller(root, "activate-layout", { probes: { claude: probe } });
+      const staged = await installer.stageForAppUpdate("0.2.26", [{
+        runtimeId: "claude", recipeId: "claude-fixture@0.3.250",
+      }]);
+      await breakLayout(staged.staged[0], outside);
+      probe.mockClear();
+
+      await expect(installer.activatePendingAppUpdate("0.2.26")).resolves.toMatchObject({
+        activated: [], failures: [{ runtimeId: "claude", error: expect.any(Error) }],
+      });
+      expect(probe).not.toHaveBeenCalled();
+      await expect(installer.validate("claude-fixture@0.3.250"))
+        .rejects.toMatchObject({ code: "managed_runtime_not_installed" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  // #556: the post-upgrade evaluation repairs an installation that exists but never makes a
+  // first installation. This is the production check it uses, against the real installer.
+  it("counts a broken or mismatched installation as installed, and an absent one as not", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
+    const outside = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-outside-"));
+    try {
+      const { installer } = exactClaudeInstaller(root, "installed-check");
+      await expect(managedRecipeInstalled(installer, "claude-fixture@0.3.250")).resolves.toBe(false);
+      await expect(managedRecipeInstalled(
+        createExactManagedRuntimeInstaller({ root, platform: "darwin", architecture: "arm64" }),
+        "prime@0.8.1-unknown",
+      )).resolves.toBe(false);
+      const prepared = await installer.prepare("claude-fixture@0.3.250");
+      await expect(managedRecipeInstalled(installer, "claude-fixture@0.3.250")).resolves.toBe(true);
+
+      // Another recipe is active: validation fails as a mismatch, which is installed.
+      const other = exactClaudeInstaller(root, "installed-check-other").installer;
+      await expect(other.validate("claude-fixture@0.3.250")).rejects.toThrow(/does not match/);
+      await expect(managedRecipeInstalled(other, "claude-fixture@0.3.250")).resolves.toBe(true);
+
+      await layoutBreaks[2][1](prepared, outside);
+      await expect(installer.validate("claude-fixture@0.3.250")).rejects.toThrow();
+      await expect(managedRecipeInstalled(installer, "claude-fixture@0.3.250")).resolves.toBe(true);
+      await expect(managedRecipeInstalled({ validate() { throw new Error("no validation"); } }, "x"))
+        .resolves.toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("names a recipe by its id and lock digest, and nothing for a recipe this target lacks", () => {
+    const { installer, recipe } = exactClaudeInstaller(join(tmpdir(), "relayer-recipe-identity"), "identity");
+    expect(installer.recipeIdentity("claude-fixture@0.3.250")).toBe(`claude-fixture@0.3.250#${recipe.recipeDigest}`);
+    const real = createExactManagedRuntimeInstaller({
+      root: join(tmpdir(), "relayer-recipe-identity-real"), platform: "win32", architecture: "x64",
+    });
+    expect(real.recipeIdentity("codex@0.147.0")).toMatch(/^codex@0\.147\.0#[a-f0-9]{64}$/);
+    expect(() => real.recipeIdentity("prime@0.8.1")).toThrow(expect.objectContaining({
+      code: "managed_runtime_unsupported_target",
+    }));
+  });
+
+  it("reports the runtimes an activation changed: a new recipe, or a failed activation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
+    const outside = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-outside-"));
+    try {
+      const { installer } = exactClaudeInstaller(root, "changed-runtimes");
+      await installer.stageForAppUpdate("0.2.26", [{ runtimeId: "claude", recipeId: "claude-fixture@0.3.250" }]);
+      expect(runtimesChangedByActivation(await installer.activatePendingAppUpdate("0.2.26"))).toEqual(["claude"]);
+
+      // The same recipe again changes nothing.
+      await installer.stageForAppUpdate("0.2.27", [{ runtimeId: "claude", recipeId: "claude-fixture@0.3.250" }]);
+      expect(runtimesChangedByActivation(await installer.activatePendingAppUpdate("0.2.27"))).toEqual([]);
+
+      // A pending generation that no longer validates fails to activate: changed too.
+      const staged = await exactClaudeInstaller(root, "changed-runtimes-next").installer
+        .stageForAppUpdate("0.2.28", [{ runtimeId: "claude", recipeId: "claude-fixture@0.3.250" }]);
+      await layoutBreaks[0][1](staged.staged[0], outside);
+      const failed = await exactClaudeInstaller(root, "changed-runtimes-next").installer.activatePendingAppUpdate("0.2.28");
+      expect(failed.failures).toHaveLength(1);
+      expect(runtimesChangedByActivation(failed)).toEqual(["claude"]);
+      expect(runtimesChangedByActivation({
+        activated: [], recipeUpdates: [], failures: [{ runtimeId: null, error: new Error("unreadable") }],
+      })).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  // PR #576 review: an older Desktop may have staged a frozen schema-v1 receipt. Activating
+  // one that differs from the active runtime changes the runtime too, although it has no
+  // recipe identity; activating the runtime it already ran changes nothing.
+  it("reports a legacy schema-v1 activation that changed the runtime", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
+    let routes = latestClaudeRoutes("0.3.247", "legacy-before");
+    const fetch = vi.fn((url, options) => registryFixture(routes)(url, options));
+    const installer = createManagedRuntimeInstaller({
+      root, platform: "darwin", architecture: "arm64", fetch,
+      probes: { claude: async ({ version }) => ({ version }) },
+      extract: async (_tarball, destination, { artifact }) => {
+        await mkdir(destination, { recursive: true });
+        await writeFile(join(destination, artifact.role === "sdk" ? "sdk.mjs" : "claude"), artifact.version, { mode: 0o755 });
+      },
+    });
+    try {
+      await installer.ensure("claude", "0.3.200");
+      await installer.stageForAppUpdate("0.2.15", [{ runtimeId: "claude", minimumVersion: "0.3.200" }]);
+      expect(runtimesChangedByActivation(await installer.activatePendingAppUpdate("0.2.15"))).toEqual([]);
+
+      routes = latestClaudeRoutes("0.3.248", "legacy-after");
+      await installer.stageForAppUpdate("0.2.16", [{ runtimeId: "claude", minimumVersion: "0.3.200" }]);
+      const activated = await installer.activatePendingAppUpdate("0.2.16");
+      expect(activated).toMatchObject({ failures: [], activated: [{ runtimeId: "claude", version: "0.3.248" }] });
+      expect(runtimesChangedByActivation(activated)).toEqual(["claude"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the local version probe when it activates a validated app-update generation", async () => {
+    // R2: post-update activation at startup probes the new runtime's version locally (PRD).
+    const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
+    const probe = vi.fn(async ({ version }) => ({ version }));
+    try {
+      const { installer } = exactClaudeInstaller(root, "activate-probe", { probes: { claude: probe } });
+      await installer.stageForAppUpdate("0.2.26", [{ runtimeId: "claude", recipeId: "claude-fixture@0.3.250" }]);
+      probe.mockClear();
+      await expect(installer.activatePendingAppUpdate("0.2.26")).resolves.toMatchObject({ failures: [] });
+      expect(probe).toHaveBeenCalledOnce();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs an installation whose layout validates but whose version probe fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
     const probe = vi.fn()
       .mockImplementationOnce(async ({ version }) => ({ version }))
       .mockRejectedValueOnce(new Error("active runtime needs repair"))
       .mockImplementation(async ({ version }) => ({ version }));
     try {
-      const { installer } = exactClaudeInstaller(root, "private-state-symlink", { probes: { claude: probe } });
+      const { installer, fetch } = exactClaudeInstaller(root, "probe-repair", { probes: { claude: probe } });
+      const prepared = await installer.prepare("claude-fixture@0.3.250");
+      await expect(installer.validate("claude-fixture@0.3.250")).resolves.toBeTruthy();
+      fetch.mockClear();
+
+      const repaired = await installer.prepare("claude-fixture@0.3.250");
+      expect(repaired.installation).not.toBe(prepared.installation);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(probe).toHaveBeenCalledTimes(3);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to create descriptor-owned private state through a preexisting symlink", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
+    const outside = await mkdtemp(join(tmpdir(), "relayer-private-state-outside-"));
+    try {
+      // The redirected private state alone makes Repair reinstall; the reinstall must not
+      // create its private state through the redirect.
+      const { installer } = exactClaudeInstaller(root, "private-state-symlink");
       await installer.prepare("claude-fixture@0.3.250");
       const privateStateParent = join(root, "claude", "macos-arm64", "private-state");
       await rm(privateStateParent, { recursive: true, force: true });
@@ -686,9 +915,16 @@ describe("managed runtime installer", () => {
 
       await expect(installer.activatePendingAppUpdate("0.2.26")).resolves.toMatchObject({
         failures: [], activated: [{ recipeId: "claude-fixture@0.3.250" }],
+        recipeUpdates: ["claude-fixture@0.3.250"],
       });
       await expect(installer.installed("claude-fixture@0.3.250")).resolves.toMatchObject({
         recipeId: "claude-fixture@0.3.250",
+      });
+
+      // Staging the recipe it already runs activates no new recipe (#556: nothing is due).
+      await installer.stageForAppUpdate("0.2.27", [{ runtimeId: "claude", recipeId: "claude-fixture@0.3.250" }]);
+      await expect(installer.activatePendingAppUpdate("0.2.27")).resolves.toMatchObject({
+        failures: [], activated: [{ recipeId: "claude-fixture@0.3.250" }], recipeUpdates: [],
       });
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -1477,7 +1713,7 @@ describe("managed runtime installer", () => {
       await installer.stageForAppUpdate("0.2.15", [{ runtimeId: "claude", minimumVersion: "0.3.200" }]);
       fetch.mockClear();
       const wrongVersion = await installer.activatePendingAppUpdate("0.2.16");
-      expect(wrongVersion).toEqual({ appVersion: "0.2.16", activated: [], failures: [] });
+      expect(wrongVersion).toEqual({ appVersion: "0.2.16", activated: [], recipeUpdates: [], changedRuntimeIds: [], failures: [] });
       const activated = await installer.activatePendingAppUpdate("0.2.15");
 
       expect(activated.failures).toEqual([]);
@@ -1506,6 +1742,8 @@ describe("managed runtime installer", () => {
       await expect(installer.activatePendingAppUpdate("2.0.0")).resolves.toEqual({
         appVersion: "2.0.0",
         activated: [],
+        recipeUpdates: [],
+        changedRuntimeIds: [],
         failures: [{ runtimeId: null, error: unreadable }],
       });
     } finally {
@@ -1578,6 +1816,8 @@ describe("managed runtime installer", () => {
       await expect(installer.activatePendingAppUpdate("2.0.0")).resolves.toEqual({
         appVersion: "2.0.0",
         activated: [],
+        recipeUpdates: [],
+        changedRuntimeIds: [],
         failures: [],
       });
       expect(probeCalls).toBe(2);

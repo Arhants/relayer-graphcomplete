@@ -162,6 +162,14 @@ const EXECUTION_ADMISSION_TIMEOUT_MS = 30_000;
 const EXECUTION_RELEASE_RETRY_MS = 30_000;
 /** How long access released without an owner waits for the owner's acknowledgement. */
 const UNACKNOWLEDGED_RELEASE_TTL_MS = 10 * 60_000;
+/**
+ * How long a settled invoked completion still answers observations and exact start retries.
+ * The product observes a child's end at once; after this the host forgets the run, and an
+ * observation is refused as a restarted host refuses it, which the product also reads as ended.
+ * An exact start retry after that would start a new run; the product never sends one, since its
+ * launch claim allows one start per child.
+ */
+const SETTLED_INVOKED_COMPLETION_TTL_MS = 10 * 60_000;
 const HARNESS_CLOSE_SESSION_TIMEOUT_MS = 5_000;
 /** A cancelled turn that has not settled after this long is force-stopped (PROV-004). */
 export const CANCELLED_TURN_FORCE_STOP_MS = 2 * 60_000;
@@ -247,6 +255,7 @@ export class HarnessHost {
   private persistTail: Promise<void> = Promise.resolve();
   private initialized = false;
   private readonly pendingExecutionAccess = new Map<string, PendingExecutionAccess>();
+  private readonly ownerReleasesInProgress = new Set<string>();
   private readonly visualAssetAuthorities = new Map<number, { state: "active" | "paused" | "revoked"; generation: number; barrierId?: string; completionEpoch?: number }>();
   private closed = false;
   private closeAbandoned = false;
@@ -749,6 +758,15 @@ export class HarnessHost {
     );
     const entry = { invocationDigest, run, started };
     session.invokedCompletionRuns.set(capability.nodeId, entry);
+    const forget = () => {
+      const timer = setTimeout(() => {
+        if (session.invokedCompletionRuns.get(capability.nodeId) === entry) {
+          session.invokedCompletionRuns.delete(capability.nodeId);
+        }
+      }, SETTLED_INVOKED_COMPLETION_TTL_MS);
+      timer.unref?.();
+    };
+    void run.then(forget, forget);
     return entry;
   }
 
@@ -785,6 +803,13 @@ export class HarnessHost {
       forceTimer.unref?.();
     };
     controller.signal.addEventListener("abort", armForceStop, { once: true });
+    // A force-stopped root turn's harness forgets its native conversation in its own force
+    // listener. Record that at once: after the force (two minutes after the cancel), the host
+    // run may take ten more seconds to end, and a crash before then must not restore it.
+    const recordForcedState = () => queueMicrotask(() => {
+      void this.recordSessionState(threadId, session).catch(() => undefined);
+    });
+    forceController.signal.addEventListener("abort", recordForcedState, { once: true });
     const detachSignal = forwardAbort(input.signal, controller);
     const completeCallId = randomUUID();
     const approvals = session.approvals.beginCompletion({ interactionId, completeCallId });
@@ -828,6 +853,7 @@ export class HarnessHost {
       if (!nativeStarted && error !== null && typeof error === "object") executionNotStartedErrors.add(error);
     }
     controller.signal.removeEventListener("abort", armForceStop);
+    forceController.signal.removeEventListener("abort", recordForcedState);
     if (forceTimer !== undefined) clearTimeout(forceTimer);
     session.approvals.endCompletion(
       completeCallId,
@@ -844,9 +870,7 @@ export class HarnessHost {
     detachSignal();
     const errors: unknown[] = operationError === undefined ? [] : [operationError];
     try {
-      session.descriptor = { ...session.descriptor, state: captureHarnessState(session.harness) };
-      this.saved.set(threadId, persistedDescriptor(session.descriptor));
-      await this.persist();
+      await this.recordSessionState(threadId, session);
     } catch (error) {
       errors.push(error);
     }
@@ -982,6 +1006,18 @@ export class HarnessHost {
    * an unknown lease.
    */
   async releaseProviderExecution(executionLeaseId: string): Promise<boolean> {
+    // An HTTP client may disconnect while the provider still releases or acknowledges.
+    // Reject retries until that work settles instead of accumulating server-side waiters.
+    if (this.ownerReleasesInProgress.has(executionLeaseId)) throw new ExecutionLeaseReleaseInProgress();
+    this.ownerReleasesInProgress.add(executionLeaseId);
+    try {
+      return await this.releaseProviderExecutionOnce(executionLeaseId);
+    } finally {
+      this.ownerReleasesInProgress.delete(executionLeaseId);
+    }
+  }
+
+  private async releaseProviderExecutionOnce(executionLeaseId: string): Promise<boolean> {
     const pending = this.pendingExecutionAccess.get(executionLeaseId);
     if (pending === undefined) {
       // The acknowledgement this lease would have carried must not be lost: a failure here is
@@ -1243,6 +1279,8 @@ export class HarnessHost {
       onNativeStarted?.();
       const native = session.harness.complete({
         origin,
+        requireNativeContinuity: traceContext?.requireNativeContinuity === true,
+        ...(traceContext?.nativeHistoryAnchor === undefined ? {} : { nativeHistoryAnchor: traceContext.nativeHistoryAnchor }),
         inputGraph: interaction,
         interactionInput,
         ...(personalPresentation === undefined ? {} : { personalPresentation }),
@@ -1454,8 +1492,7 @@ export class HarnessHost {
         errors.push(error);
       }
       try {
-        session.descriptor = { ...session.descriptor, state: captureHarnessState(session.harness) };
-        this.saved.set(threadId, persistedDescriptor(session.descriptor));
+        this.captureSessionState(threadId, session);
       } catch (error) {
         errors.push(error);
       }
@@ -1510,13 +1547,26 @@ export class HarnessHost {
       reject = rejectPromise;
     });
     const errors: unknown[] = [];
-    for (const session of this.sessions.values()) {
+    for (const [threadId, session] of this.sessions) {
       session.approvals.close("Harness host force-closed before the approval was resolved.");
       for (const active of session.activeCompletions.values()) {
         active.controller.abort(new Error("Harness host force-closed"));
       }
       try { session.lifecycle.forceShutdown(); } catch (error) { errors.push(error); }
+      // A harness forgets a root conversation its force shutdown killed. Capture that now: the
+      // killed turn may never settle before the process exits. Recording is best effort: a
+      // failure keeps that thread's previous state and never fails the shutdown.
+      try {
+        this.captureSessionState(threadId, session);
+      } catch (error) {
+        console.warn(`Could not capture harness state for thread ${threadId} during force close`, errorMessage(error));
+      }
     }
+    // Force close skips close()'s final persist, so it writes the captured state itself.
+    const persisted = (this.initialized && this.sessions.size > 0 ? this.persist() : Promise.resolve())
+      .catch((error: unknown) => {
+        console.warn("Could not persist harness state during force close", errorMessage(error));
+      });
     for (const lifecycle of this.lateClosingHarnesses) {
       try { lifecycle.forceShutdown(); } catch (error) { errors.push(error); }
     }
@@ -1530,6 +1580,7 @@ export class HarnessHost {
       } catch (error) {
         if (!(error instanceof Error && error.message === "Harness host is closed")) errors.push(error);
       }
+      await persisted;
       await this.persistTail;
       try { await this.traceStore?.forceClose(); } catch (error) { errors.push(error); }
       if (errors.length > 0) throw new AggregateError(errors, "Harness host did not force-close cleanly");
@@ -1577,6 +1628,16 @@ export class HarnessHost {
       release();
       if (this.registrationTails.get(threadId) === tail) this.registrationTails.delete(threadId);
     }
+  }
+
+  private captureSessionState(threadId: number, session: LiveSession): void {
+    session.descriptor = { ...session.descriptor, state: captureHarnessState(session.harness) };
+    this.saved.set(threadId, persistedDescriptor(session.descriptor));
+  }
+
+  private async recordSessionState(threadId: number, session: LiveSession): Promise<void> {
+    this.captureSessionState(threadId, session);
+    await this.persist();
   }
 
   private persist(): Promise<void> {
@@ -1788,6 +1849,10 @@ export async function startHarnessHost(options: HarnessHostOptions): Promise<Run
 
 const executionNotStartedErrors = new WeakSet<object>();
 
+class ExecutionLeaseReleaseInProgress extends Error {
+  constructor() { super("execution_lease_release_in_progress"); }
+}
+
 class HarnessCancellationSettled extends Error {
   constructor(message: string) { super(message); }
 }
@@ -1942,6 +2007,9 @@ async function route(host: HarnessHost, options: HarnessHostOptions, request: In
     if (request.method === "GET" && url.pathname === "/health") return reply(response, 200, { ok: true });
     return reply(response, 404, { error: "not_found" });
   } catch (error) {
+    if (error instanceof ExecutionLeaseReleaseInProgress) {
+      return reply(response, 503, { error: error.message });
+    }
     if (error instanceof HarnessCancellationSettled) {
       return reply(response, 409, { error: error.message, cancellationSettled: true });
     }
@@ -3063,7 +3131,9 @@ function isNativeExecutionHandle(value: Promise<void> | NativeExecutionHandle): 
 function readTraceContext(value: unknown): HarnessCompletionTraceContext | undefined {
   if (!isRecord(value) || value.traceContext === undefined) return undefined;
   if (!isRecord(value.traceContext)) throw new Error("Harness completion contains an invalid trace context");
-  const { productInteractionId, personalPresentationVersionId, personalPresentationVersionKey } = value.traceContext;
+  const { productInteractionId, personalPresentationVersionId, personalPresentationVersionKey, requireNativeContinuity, nativeHistoryAnchor } = value.traceContext;
+  if (nativeHistoryAnchor != null && (!isRecord(nativeHistoryAnchor) || !Number.isSafeInteger(nativeHistoryAnchor.interactionNodeId) || Number(nativeHistoryAnchor.interactionNodeId) < 1 || typeof nativeHistoryAnchor.message !== "string")) throw new Error("Invalid native history anchor");
+  if (requireNativeContinuity !== undefined && typeof requireNativeContinuity !== "boolean") throw new Error("Invalid native continuity requirement");
   if (typeof productInteractionId !== "number" || !Number.isSafeInteger(productInteractionId) || productInteractionId < 1) {
     throw new Error("Harness completion trace context requires a positive product interaction id");
   }
@@ -3081,6 +3151,8 @@ function readTraceContext(value: unknown): HarnessCompletionTraceContext | undef
   }
   return {
     productInteractionId,
+    ...(requireNativeContinuity === undefined ? {} : { requireNativeContinuity }),
+    ...(nativeHistoryAnchor == null ? {} : { nativeHistoryAnchor: nativeHistoryAnchor as { interactionNodeId: number; message: string } }),
     ...(personalPresentationVersionId === undefined ? {} : { personalPresentationVersionId }),
     ...(personalPresentationVersionKey === undefined ? {} : { personalPresentationVersionKey }),
   };

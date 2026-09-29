@@ -73,7 +73,7 @@ pub(crate) async fn prepare(
                 .ok_or_else(|| GraphError::Internal("Invalid context identity".into()))?,
         });
     }
-    let description = serde_json::to_string(&InteractionPermissions::V1 {
+    let description = serde_json::to_string(&InteractionPermissions::V2 {
         enabled,
         permissions,
     })
@@ -98,6 +98,18 @@ pub(crate) async fn authorize(
             .require_native_provenance(*action_id)
             .await?;
     }
+    if let InteractionPermission::NavigateAdd { node_id } = permission {
+        let native: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM nodes n WHERE n.id=?1 AND n.state='accepted' AND n.owner_interaction_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM graph_imports i WHERE i.thread_id=n.thread_id))")
+            .bind(node_id.value()).fetch_one(&mut *connection).await?;
+        if !native {
+            return Err(GraphError::Forbidden(
+                "Only a native accepted attached node may receive navigation.".into(),
+            ));
+        }
+        super::nodes::NodeTable::new(&mut *connection)
+            .visible(scope, *node_id)
+            .await?;
+    }
     let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM completion_states WHERE interaction_node_id=?1 AND lifecycle='active')")
         .bind(scope.root_node_id.value()).fetch_one(&mut *connection).await?;
     if scope.read_only
@@ -111,4 +123,12 @@ pub(crate) async fn authorize(
         ));
     }
     Ok(())
+}
+
+pub(crate) async fn enabled(connection: &mut SqliteConnection) -> Result<bool, GraphError> {
+    Ok(
+        sqlx::query_scalar("SELECT enabled FROM interaction_permission_config WHERE singleton=1")
+            .fetch_one(connection)
+            .await?,
+    )
 }

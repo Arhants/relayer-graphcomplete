@@ -2205,9 +2205,12 @@ function validPersistenceCapability(value: unknown): boolean {
   }
   if (value.kind !== "expand" && value.kind !== "reference" && value.kind !== "invoke" && value.kind !== "input"
     || Object.keys(value).sort().join(",") !== "action,kind" || !plainRecord(value.action)
-    || Object.keys(value.action).sort().join(",") !== "clientKey,sourceLayer,sourceNode"
+    || !(Object.keys(value.action).sort().join(",") === "clientKey,sourceLayer,sourceNode"
+      || ((value.kind === "expand" || value.kind === "reference")
+        && Object.keys(value.action).sort().join(",") === "clientKey,sourceNode"))
     || !boundedPersistenceIdentity(value.action.clientKey)) return false;
-  return validPersistenceReference(value.action.sourceLayer) && validPersistenceReference(value.action.sourceNode);
+  return (!Object.hasOwn(value.action, "sourceLayer") || validPersistenceReference(value.action.sourceLayer))
+    && validPersistenceReference(value.action.sourceNode);
 }
 
 function validPersistenceReference(value: unknown): boolean {

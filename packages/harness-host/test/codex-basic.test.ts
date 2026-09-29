@@ -137,6 +137,7 @@ describe("CodexBasicHarness", () => {
     const harness = harnessFixture("auto", async (options) => {
       submitted.push(options);
       options.onThreadId("thread-1");
+      options.onTurnId?.("thread-1", "turn-1");
       return { threadId: "thread-1", turnId: "turn-1", status: "completed" };
     });
 
@@ -167,6 +168,34 @@ describe("CodexBasicHarness", () => {
     expect(submitted[2]?.threadParams.developerInstructions).toBeNull();
   });
 
+  it("preserves legacy native continuity across model changes and reopen, and rejects changed storage before execution", async () => {
+    const submitted: CodexAppServerTurnOptions[] = [];
+    const dependencies: CodexBasicDependencies = {
+      codexPathOverride: "/managed/codex",
+      runAppServerTurn: async (options) => {
+        submitted.push(options);
+        expect(options.savedThreadId).toBe("legacy-thread");
+        options.onThreadId("legacy-thread");
+        options.onTurnStarting?.("legacy-thread");
+        options.onTurnId?.("legacy-thread", "turn-1");
+        return { threadId: "legacy-thread", turnId: "turn-1", status: "completed" };
+      },
+    };
+    const harness = new CodexBasicHarness({ ...context("auto"), savedState: { codexThreadId: "legacy-thread" } }, dependencies);
+    const access = { kind: "managed-runtime" as const, contract: "managed-runtime@1" as const, runtimeId: "codex" as const, version: "0.147.0", adapterImplementationVersion: "1", providerId: "codex", adapterId: "codex-subscription", executable: "/managed/codex", environment: { CODEX_HOME: "/isolated/original" } };
+    const execution = { ...runContext(1, "token"), requireNativeContinuity: true, access, model: { providerId: "codex", adapterId: "codex-subscription", modelId: "gpt-test" } };
+    await harness.complete(execution);
+    const saved = harness.state();
+    const reopened = new CodexBasicHarness({ ...context("auto"), savedState: saved }, dependencies);
+    await reopened.complete({ ...execution, model: { ...execution.model, modelId: "gpt-other" } });
+    await expect(reopened.complete({ ...execution, access: { ...access, environment: { CODEX_HOME: "/isolated/foreign" } } })).rejects.toThrow("native session location changed");
+    expect(submitted).toHaveLength(2);
+    expect(reopened.state()).toEqual(saved);
+    const missing = new CodexBasicHarness(context("auto"), dependencies);
+    await expect(missing.complete(execution)).rejects.toThrow("native history is unavailable");
+    expect(submitted).toHaveLength(2);
+  });
+
   it("rotates a legacy saved Codex thread whose presentation version is unknown", async () => {
     let submitted: CodexAppServerTurnOptions | undefined;
     const harness = new CodexBasicHarness({
@@ -177,6 +206,7 @@ describe("CodexBasicHarness", () => {
       runAppServerTurn: async (options) => {
         submitted = options;
         options.onThreadId("replacement-thread");
+        options.onTurnId?.("replacement-thread", "turn-1");
         return { threadId: "replacement-thread", turnId: "turn-1", status: "completed" };
       },
     });
@@ -185,8 +215,10 @@ describe("CodexBasicHarness", () => {
 
     expect(submitted?.savedThreadId).toBeUndefined();
     expect(harness.state()).toEqual({
+      codexSessionIdentity: expect.any(String),
       codexThreadId: "replacement-thread",
       codexThreadPersonalPresentationVersionId: null,
+      codexThreadHome: expect.any(String),
     });
   });
 
@@ -306,6 +338,8 @@ describe("CodexBasicHarness", () => {
         submissions.push(options);
         const threadId = options.savedThreadId ?? `fresh-thread-${submissions.length}`;
         await options.onThreadId(threadId);
+        options.onTurnStarting?.(threadId);
+        await options.onTurnId?.(threadId, `turn-${submissions.length}`);
         if (submissions.length === 1) {
           // The first root turn is wedged until its process is killed.
           await new Promise<never>((_resolve, reject) => {
@@ -323,13 +357,15 @@ describe("CodexBasicHarness", () => {
     force.abort(new Error("force-stopped after two minutes"));
     await expect(stuck).rejects.toThrow("force-stopped after two minutes");
     // The killed process may have left the thread mid-write, so it is neither saved nor resumed.
-    expect(harness.state()).toEqual({});
+    expect(harness.state()).toEqual({ codexRootResetReason: "force_stopped" });
 
     await harness.complete({ ...runContext(2, "next-token"), forceSignal: new AbortController().signal });
     expect(submissions[1]?.savedThreadId).toBeUndefined();
     expect(harness.state()).toEqual({
+      codexSessionIdentity: expect.any(String),
       codexThreadId: "fresh-thread-2",
       codexThreadPersonalPresentationVersionId: null,
+      codexThreadHome: expect.any(String),
     });
   });
 
@@ -346,6 +382,8 @@ describe("CodexBasicHarness", () => {
         submissions.push(options);
         const threadId = options.savedThreadId ?? `fresh-thread-${submissions.length}`;
         await options.onThreadId(threadId);
+        options.onTurnStarting?.(threadId);
+        await options.onTurnId?.(threadId, `turn-${submissions.length}`);
         if (submissions.length === 1) {
           // The killed process takes longer than the host's wait to exit.
           await new Promise<void>((resolve) => options.forceSignal?.addEventListener("abort", () => resolve(), { once: true }));
@@ -362,12 +400,16 @@ describe("CodexBasicHarness", () => {
     force.abort(new Error("force-stopped after two minutes"));
     // The host has given up waiting, so the user's next root turn runs and stores its thread.
     await harness.complete({ ...runContext(2, "next-token"), forceSignal: new AbortController().signal });
+    // Quitting now kills no root turn: the stuck one was already force-stopped.
+    harness.forceShutdown();
     releaseKilledProcess();
     await expect(stuck).rejects.toThrow("killed app-server exited");
 
     expect(harness.state()).toEqual({
+      codexSessionIdentity: expect.any(String),
       codexThreadId: "fresh-thread-2",
       codexThreadPersonalPresentationVersionId: null,
+      codexThreadHome: expect.any(String),
     });
   });
 
@@ -376,8 +418,9 @@ describe("CodexBasicHarness", () => {
       codexPathOverride: "/managed/codex",
       runAppServerTurn: async (options) => {
         await new Promise<void>((resolve) => options.forceSignal?.addEventListener("abort", () => resolve(), { once: true }));
-        // A thread identity that arrives only after the kill must not be resumed.
+        // A turn accepted only after the kill must not have its thread resumed.
         await options.onThreadId("late-thread");
+        await options.onTurnId?.("late-thread", "late-turn");
         throw new Error("killed app-server exited");
       },
     });
@@ -414,19 +457,22 @@ describe("CodexBasicHarness", () => {
     })).toThrow("requires non-empty connection arguments");
   });
 
-  it("retains a provider thread ID when the first app-server turn fails", async () => {
+  it("retains a provider thread whose first turn was accepted when that turn then fails", async () => {
     let submitted: CodexAppServerTurnOptions | undefined;
     const harness = harnessFixture("auto", async (options) => {
       submitted = options;
       options.onThreadId("codex-thread-after-start");
+      options.onTurnId?.("codex-thread-after-start", "turn-1");
       throw new Error("turn failed");
     });
 
     await expect(harness.complete(runContext(1, "token"))).rejects.toThrow("turn failed");
 
     expect(harness.state()).toEqual({
+      codexSessionIdentity: expect.any(String),
       codexThreadId: "codex-thread-after-start",
       codexThreadPersonalPresentationVersionId: null,
+      codexThreadHome: expect.any(String),
     });
     expect(submitted?.prompt).toContain("Relayer graph affordances:");
     expect(submitted?.prompt).toContain("Each layer should explain its scope as a coherent whole");
@@ -584,6 +630,37 @@ describe("CodexBasicHarness", () => {
       expect(submittedEnvironment).not.toHaveProperty("RELAYER_GRAPH_AUTHORING_NODE");
     }
   });
+
+  it.each([undefined, "layered-navigation-v1", "layered-navigation-multi-agent-v1"] as const)(
+    "keeps attached follow-up guidance consistent with temporal publication in %s",
+    async (promptProfile) => {
+      let prompt = "";
+      const { promptProfile: _defaultProfile, ...settings } = codexBasicConfiguration.settings;
+      const harness = new CodexBasicHarness({
+        threadId: 1,
+        permissionProfileId: "auto",
+        permissionBinding: codexBasicConfiguration.permissionBindings.auto!,
+        workingDirectory: process.cwd(),
+        configuration: { ...codexBasicConfiguration, settings: promptProfile === undefined ? settings : { ...settings, promptProfile } },
+      }, { codexPathOverride: "/managed/codex", runAppServerTurn: async (options) => {
+        prompt = options.prompt;
+        return { threadId: "attached-follow-up", turnId: "turn-1", status: "completed" };
+      } });
+      await harness.complete(attachedRunContext(1, "token"));
+      expect(prompt).toContain('"title": "First target"');
+      expect(prompt).toContain('"interactionPermissions": {\n    "version": "2",\n    "enabled": true');
+      expect(prompt).toContain('"nodeId": 20');
+      expect(prompt).toContain("await graph.advanceCurrent(");
+      expect(prompt).toContain("every distinct attached native node must receive a NEW navigate action");
+      expect(prompt).toContain("Version-1 descriptions grant ability only");
+      expect(prompt).toContain("Only an exact frozen attached-node navigation grant permits the exception");
+      expect(prompt).toContain("graph.replaceNodePresentation(nodeId, revision, presentationBuilder)");
+      expect(prompt).not.toContain("Reused accepted nodes cannot take new actions.");
+      expect(prompt).not.toContain("Do not add actions or edit published nodes afterward;");
+      expect(prompt).toContain("title/detail edits, topology edits, or changes to other nodes");
+      expect(prompt).toContain("never after Advance");
+    },
+  );
 
   it("selects the layered-navigation prompt only for the opt-in profile", async () => {
     let submittedPrompt = "";
@@ -826,6 +903,7 @@ describe("CodexBasicHarness", () => {
     const harness = harnessFixture("auto", async (options) => {
       submissions.push(options);
       options.onThreadId(options.savedThreadId ?? "codex-thread-1");
+      options.onTurnId?.(options.savedThreadId ?? "codex-thread-1", `turn-${submissions.length}`);
       return { threadId: options.savedThreadId ?? "codex-thread-1", turnId: `turn-${submissions.length}`, status: "completed" };
     });
 
@@ -841,8 +919,10 @@ describe("CodexBasicHarness", () => {
       ["gpt-second", "gpt-second"],
     ]);
     expect(harness.state()).toEqual({
+      codexSessionIdentity: expect.any(String),
       codexThreadId: "codex-thread-1",
       codexThreadPersonalPresentationVersionId: null,
+      codexThreadHome: "codex-default-home",
     });
   });
 
@@ -937,8 +1017,10 @@ describe("CodexBasicHarness", () => {
     await harness.complete(runContext(1, "root-token"));
     expect(submissions[2]?.savedThreadId).toBe("root-thread");
     expect(harness.state()).toEqual({
+      codexSessionIdentity: expect.any(String),
       codexThreadId: "root-thread",
       codexThreadPersonalPresentationVersionId: null,
+      codexThreadHome: expect.any(String),
     });
   });
 
@@ -1371,6 +1453,7 @@ describe("CodexBasicHarness", () => {
     });
 
     expect(submitted?.environment.CODEX_HOME).toBe("/isolated/codex-home");
+    expect(submitted?.codexConfigOverrides).toBeUndefined();
     expect(submitted?.environment).not.toHaveProperty("OPENAI_API_KEY");
     expect(submitted?.environment.RELAYER_GRAPH_TOKEN).toBe("authoritative-graph-token");
     expect(submitted?.environment.RELAYER_GRAPH_URL).toBe("http://127.0.0.1:43123");
@@ -1872,6 +1955,7 @@ function attachedRunContext(id: number, token: string): HarnessRunContext {
   return {
     ...context,
     interactionInput: {
+      interactionPermissions: { version: "2", enabled: true, permissions: [{ kind: "navigate.add", nodeId: 20 }, { kind: "navigate.add", nodeId: 21 }] },
       interaction: context.inputGraph,
       contexts: [
         {

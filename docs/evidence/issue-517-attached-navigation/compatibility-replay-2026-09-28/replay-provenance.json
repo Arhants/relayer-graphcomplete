@@ -1,0 +1,374 @@
+{
+  "sourceDigest": "96530c5d31b0ca26d146a3ce7313246f4e57b5e8bee9384e3c99cc2a787f53f4",
+  "generationSourceDigest": "63992a635b50ef6b2368e50ca4d0c283d13f862dec7df8e2542990fb72901447",
+  "executable": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/attached-navigation-live/managed-runtimes/codex/macos-arm64/installations/c2288d95-d2e5-4ee4-9593-0aa2914d3414/native/vendor/aarch64-apple-darwin/bin/codex",
+  "runtimeIdentities": {
+    "codex": {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/attached-navigation-live/managed-runtimes/codex/macos-arm64/installations/c2288d95-d2e5-4ee4-9593-0aa2914d3414/native/vendor/aarch64-apple-darwin/bin/codex",
+      "byteLength": 219997536,
+      "sha256": "19c4f144c5226a9f17c58e6f0fa854843b0f77a6eb420f40e2745a12f10f5d37"
+    },
+    "graphServer": {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/target/debug/relayer-graph-server",
+      "byteLength": 124530536,
+      "sha256": "b5a9c7e505a3407cee1ebe276582d5d951c29ab3ed89dde1d4420969224eb6f6"
+    },
+    "appServer": {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/target/debug/relayer-app-server",
+      "byteLength": 73106640,
+      "sha256": "c2c1d5a17d7b8e915914697eeb3f9e0749e1c37e0f954bb69b8d856497cd0dc2"
+    },
+    "harnessConfiguration": {
+      "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/harnesses/codex-basic.yaml",
+      "byteLength": 1137,
+      "sha256": "c2a7daebca3d10c2d982adb9709ef088d2b82c72d8da0bde777b50bb093d96dc"
+    },
+    "graphClient": {
+      "directory": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist",
+      "entries": [
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/agent-resource-entry.d.ts",
+          "byteLength": 633,
+          "sha256": "5d4ca30000776bdec2fc9969f8887aa43949cc1742029b58ace6d882b144fddb"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/agent-resource-entry.js",
+          "byteLength": 345,
+          "sha256": "561fd59a45261eb6ba0db09857eda5bcf58d6bd1cf8da8e3952cb2a0830e6ea1"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/client.d.ts",
+          "byteLength": 3648,
+          "sha256": "05f12c10db274ccf105bd52a4967b90d090b8e9fac514b31488372f567e402a2"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/client.js",
+          "byteLength": 29644,
+          "sha256": "8777e4b06e2d8c261aaa01e99918babc58204a56860a99182430b887b828fc44"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/detail.d.ts",
+          "byteLength": 5882,
+          "sha256": "478cd012b2c6b4259092d3205dd2c4280922382848794e0c602add9d494de228"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/detail.js",
+          "byteLength": 82829,
+          "sha256": "22f0e5917b2bbb6433331fdd8129031e0bbdfbc838d964d0500d485aa3b4b250"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/icons.d.ts",
+          "byteLength": 2346,
+          "sha256": "f07fdbb633949150401f87a3eff5acee0ec0152e58a56da212b74895030d03d5"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/icons.js",
+          "byteLength": 3169,
+          "sha256": "2e0e009f9dd2c073c0c48de12bf2855943e65234265d5a781d2f06b1d99b3daa"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/index.d.ts",
+          "byteLength": 705,
+          "sha256": "0e425f0a51d4bfad7b506d36e4f6bba9ce9d2e3e986fa28a7bc1f79ff9614d26"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/index.js",
+          "byteLength": 382,
+          "sha256": "6d040f265e5089d6cc855b94e1d4a3eb6346ea05988e6ef77ac831a6407b708b"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/node-response.d.ts",
+          "byteLength": 220,
+          "sha256": "56996aca4ef2174e720ff926b644ce77f3e42884ec64caf1023577dd75958817"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/node-response.js",
+          "byteLength": 245,
+          "sha256": "8cbb7e90e69b2d90577fe14ca8144c978c4da0f4300159669fd21ec6fd14f787"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/objects.d.ts",
+          "byteLength": 3520,
+          "sha256": "2ed3d4d8acbfa030670156d4acd46a869df6b6cbd2017733f3d3287884dea825"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/objects.js",
+          "byteLength": 2947,
+          "sha256": "0ae57cbdf399d4584986d020bac2481a2e5985843cafe3c2f31dc031bb84cdd1"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/query-errors.generated.d.ts",
+          "byteLength": 1658,
+          "sha256": "9d91e6ec407e624dce844c72c62bd60519e35d300d207a311204118b032a222f"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/query-errors.generated.js",
+          "byteLength": 1324,
+          "sha256": "fd51806b8776c26a01ffab9a7c01bc47f141afc9f10ff940dc2a1a957a435e48"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/query.d.ts",
+          "byteLength": 5242,
+          "sha256": "cb2a0b89319bfda884db873f65632ec442c652ee295991fe96d3f9ed64fe9066"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/query.js",
+          "byteLength": 749,
+          "sha256": "a4dbedaa1947ff50aaefc614c492b5cfb3d8bf21c6223de9cec10b9607dbca3f"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/types.d.ts",
+          "byteLength": 7185,
+          "sha256": "11bb3064560ddb904ddf1e7910fc8466644eae028a064d851cfd465a077ee424"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/types.js",
+          "byteLength": 328,
+          "sha256": "13c550961be5b0146ffaa19d05ccaa945b93f70b1a1b0cafed31045cabc59292"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/visual-assets.d.ts",
+          "byteLength": 3878,
+          "sha256": "c96a00cc83b1d93e848c797972d539603c2622cd070aa5d53301ac6a0a40ba24"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/graph-client/dist/visual-assets.js",
+          "byteLength": 4073,
+          "sha256": "41b35ffe0dfe88137d48efb79a268db90e838eaeb94b6f2a215c43d02e324548"
+        }
+      ],
+      "sha256": "3f33e23202f42f3d85fc75afc85546fd4c6b0d87211c59a85670956515b72645"
+    },
+    "harnessHost": {
+      "directory": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist",
+      "entries": [
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/approval-coordinator.d.ts",
+          "byteLength": 4879,
+          "sha256": "7d9da9eccacf12bf003cd6dc3cce1c557eea42a60f9108109eb03b82739098b9"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/approval-coordinator.js",
+          "byteLength": 17020,
+          "sha256": "daff27685a534098c289490b39e30b795acaf15752740eef86c066fc168a6bfa"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/approval.d.ts",
+          "byteLength": 6315,
+          "sha256": "4f22f82870e49824b519992b18a1d3ef37c3dea0087f5bba2ed8a13562161a34"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/approval.js",
+          "byteLength": 15540,
+          "sha256": "4ae3ed1dd81319f0986f60bd7cf621415c85bf8f7866632b504b489dd3e82a6d"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/completion-execution.d.ts",
+          "byteLength": 4333,
+          "sha256": "96894f75b40d6ee20f87a176f710996d80afb0aeb3531d4baff98c2f591286a8"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/completion-execution.js",
+          "byteLength": 4144,
+          "sha256": "07f1e513e7822e9a61a59d07fc84d2078754081593966de781ef8a3f5648db82"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/configuration.d.ts",
+          "byteLength": 1573,
+          "sha256": "7b87470ec2ac64d137399f93033ff45b3f4c627f6a1583771e478fead9993f9d"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/configuration.js",
+          "byteLength": 15327,
+          "sha256": "b4f220cc2d79c4cf112c54c2fe27fdfc7690557f6356a7669c177128872ac9a8"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/host.d.ts",
+          "byteLength": 7162,
+          "sha256": "86be9a85553bc28f4c916d9eb2f772e8eaf3007c0ec0aeb72f943b0303b74037"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/host.js",
+          "byteLength": 130283,
+          "sha256": "9463418b079fceba7ea8fa07f6ee8dc4e87d19abc6c780dd7ef0bcd860f258d4"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/claude-basic-browser.d.ts",
+          "byteLength": 2574,
+          "sha256": "ff1bbf8a41e0dee8fd0aaa885583376eec039f9bab609ebbc8d446e96ab66bed"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/claude-basic-browser.js",
+          "byteLength": 23686,
+          "sha256": "a21271f24ba4d8634c7b961da80cf24067820a3e3ec67a2c4cae561707ff072a"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/claude-basic.d.ts",
+          "byteLength": 2693,
+          "sha256": "afdeb73d60dffaf51bb47c6fe0948066551b67cb414535964858f84865e7c516"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/claude-basic.js",
+          "byteLength": 15071,
+          "sha256": "86cf8a47ca5e0ed41e5d5099810741e2cc263ad7cf8533d2db8c9c0fa3a98e17"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/codex-app-server.d.ts",
+          "byteLength": 2198,
+          "sha256": "b5210c57d6a7010c3a95cfd13ebcdc1a7ff9bc75600319a4f7ec5f41d9cd8992"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/codex-app-server.js",
+          "byteLength": 21642,
+          "sha256": "5f9277911ebd14712a3ca84acff659ed54457a34c7dca589a7d19a9497f5d5b2"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/codex-approvals.d.ts",
+          "byteLength": 1100,
+          "sha256": "9b26c6da61b576dec6b93eb0dbb2af320a0d736be05ede4db146ab4ea4645444"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/codex-approvals.js",
+          "byteLength": 37214,
+          "sha256": "01a87d725b38da0856a66c20e791bb57bca5154ff3460b5ac2b2363d94e86926"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/codex-basic.d.ts",
+          "byteLength": 2877,
+          "sha256": "b391ef88b7dc58da20c9b94bdfa80c99aa758f05dab08fbc1d3be6071637089b"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/codex-basic.js",
+          "byteLength": 76583,
+          "sha256": "1bbf0ffcf007c37afb61e0ebf3f9396a3678dbd4b2b0862b54760d9de80b4660"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/codex-option-types.d.ts",
+          "byteLength": 414,
+          "sha256": "ea1937396d7138c3f08991b57645444568ce71c8c34348810715d0f651966b44"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/codex-option-types.js",
+          "byteLength": 11,
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/graph-presentation-guidance.d.ts",
+          "byteLength": 2205,
+          "sha256": "b4b7ea8e790ccd00d277829b2ba3ebdcff673c9f3b3fc60d1b6dd40ea2b7c811"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/graph-presentation-guidance.js",
+          "byteLength": 6311,
+          "sha256": "446d03eea029a580dc421cd63600b827228925c23f444cc59344cfed7be6b863"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/personal-presentation-guidance.d.ts",
+          "byteLength": 653,
+          "sha256": "7c9a859847bd2ad1b9c97d73992ee75b00733f4281f31cc1254486f407f0fc92"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/personal-presentation-guidance.js",
+          "byteLength": 6752,
+          "sha256": "98cbc905100ada9d8b8af016a59489e73e819cadc9c8efb054828ff3c0c268c1"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/prime-agent-workspace-boundary.d.ts",
+          "byteLength": 1519,
+          "sha256": "9d2add16d287e5ef91c15d50b88dda2f80ff45696b3de71a34c9ba297d41a29e"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/prime-agent-workspace-boundary.js",
+          "byteLength": 15539,
+          "sha256": "ec565706626e4d83571ed3b5d18fe01806f7370ea336826597a75fcf4a8f6a3d"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/prime-agent.d.ts",
+          "byteLength": 9382,
+          "sha256": "6f31773526e7e8064fdc4fcecd646f5e517a3929747bb46d1a2c47f40c821c9e"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/prime-agent.js",
+          "byteLength": 87229,
+          "sha256": "7c3ed05cf21a54c690ff0147fcd4c1f52828c4240746c93e835879c2c5a5a43a"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/prime-visual-authoring.d.ts",
+          "byteLength": 435,
+          "sha256": "90081818c801744848ffe9106ef1e0b92b121594cdc73b3b22d2100f7adf09d9"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/implementations/prime-visual-authoring.js",
+          "byteLength": 7876,
+          "sha256": "7f1f8521a32025fa1074654fc4d4f5d00b6b3c1d7ae3e1240d1f735c26f3737c"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/index.d.ts",
+          "byteLength": 567,
+          "sha256": "e58612b8fe972521139a16d887f6362bcda35b971a7ef57de9265a757f0514ee"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/index.js",
+          "byteLength": 567,
+          "sha256": "e58612b8fe972521139a16d887f6362bcda35b971a7ef57de9265a757f0514ee"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/interaction-input.d.ts",
+          "byteLength": 825,
+          "sha256": "d9ace4b08cdc64b492d7da30eb1717e8bbea982cc944c97d936bd6931a8108a9"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/interaction-input.js",
+          "byteLength": 1295,
+          "sha256": "5ed23ec653d41a555275af4474a8b11e1ac65bd432255c955084dcbae3a956c9"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/registry.d.ts",
+          "byteLength": 331,
+          "sha256": "9edf71521e214dfe2b81fefa8b75d1f5616670a08bcc6bea6721dee6eec5be4f"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/registry.js",
+          "byteLength": 806,
+          "sha256": "8d623450cc37768b79a6e68cbb6b943a61ed2613104b9eb28984f4aa2a148b34"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/trace.d.ts",
+          "byteLength": 3209,
+          "sha256": "d5083d6f03abf6d2ae1b4dd6387fb9141b02612e1ffbbde727bf14a8aa24df40"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/trace.js",
+          "byteLength": 95581,
+          "sha256": "461f8e58d5775c1f71bd383e3d6fcd6b80d0cea39e9c83cb863cde7adb9eedbf"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/types.d.ts",
+          "byteLength": 13687,
+          "sha256": "efc7b1ec55202719d04f2cfdd4c0c9309dea0479869b3ce00ffd4079e1f74898"
+        },
+        {
+          "path": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/packages/harness-host/dist/types.js",
+          "byteLength": 11,
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881"
+        }
+      ],
+      "sha256": "1e1ebdd4b85c9cf583dfb7db235d8bcac77dd450c68aae9aeac041319a763128"
+    }
+  },
+  "executionRequests": 0,
+  "replayDriverSha256": "8448cf6fd62f1cc56e444c51a13a6ae042350516ad8e16344ba758ac3aff6156",
+  "generationTemporalConfig": [
+    {
+      "singleton": 1,
+      "config_version": 1,
+      "schema_read": 0,
+      "root_current_write": 0,
+      "projection_ui": 0,
+      "invoke_resolution": 0,
+      "provider_recursion": 0
+    }
+  ],
+  "qualificationScope": "compatibility-generation replay only; native execution attachment proof unavailable",
+  "traceEvidence": "recovered-trace-spool; original in-memory graph-operation recorder unavailable"
+}

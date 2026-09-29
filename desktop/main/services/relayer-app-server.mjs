@@ -385,6 +385,22 @@ export class RelayerAppServerService {
     throw new Error(detail?.error?.message || detail?.error || `Harness readiness publish failed (${response.status}).`);
   }
 
+  // Coordinated routes an upgrade left pending that still wait for their one automatic
+  // readiness evaluation (#556). The app server clears them when a result commits.
+  async harnessReadinessUpdatesDue({ signal } = {}) {
+    const session = await this.start();
+    signal?.throwIfAborted();
+    const response = await fetch(new URL("/api/internal/harness-readiness", session.origin), {
+      headers: { Authorization: `Bearer ${session.cookie.value}` },
+      signal,
+    });
+    if (!response.ok) throw new Error(`Harness readiness read failed (${response.status}).`);
+    const state = await response.json();
+    return Array.isArray(state?.updateDue)
+      ? state.updateDue.filter((harnessId) => typeof harnessId === "string")
+      : [];
+  }
+
   async validateProviderOnboarding({ signal } = {}) {
     const session = await this.start();
     const response = await fetch(new URL("/api/provider-onboarding/status", session.origin), {

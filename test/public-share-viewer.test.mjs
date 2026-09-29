@@ -373,6 +373,24 @@ describe("public share V1 reader", () => {
     expect(compiledNodeDetailCoversActions(detail, stripped.actions, stripped.nodes[0])).toBe(false);
   });
 
+  it("resolves generated aliases for absent provenance layers and preserves explicit legacy keys", () => {
+    const records = fixtureJsonl().trimEnd().split("\n").map(JSON.parse);
+    const root = records[1].acceptedView.layers[0];
+    root.nodes[0].clientKey = root.nodes[0].id;
+    root.actions[0].clientKey = root.actions[0].id;
+    root.actions[0].sourceLayerId = "layer:earlier-source";
+    const detail = { mounts: [{ kind: "capability", capability: { kind: "expand", action: {
+      clientKey: root.actions[0].id, sourceNode: { clientKey: root.nodes[0].id }, sourceLayer: { clientKey: "layer:earlier-source" },
+    } } }] };
+    const projected = parsePublicSnapshot(recordsJsonl(records)).interactions[0].completionOutput.rootLayer;
+    expect(compiledNodeDetailCoversActions(detail, projected.actions, projected.nodes[0])).toBe(true);
+    root.actions[0].sourceLayerId = root.layer.id;
+    root.layer.clientKey = "legacy-private-key";
+    detail.mounts[0].capability.action.sourceLayer.clientKey = "legacy-private-key";
+    const legacy = parsePublicSnapshot(recordsJsonl(records)).interactions[0].completionOutput.rootLayer;
+    expect(compiledNodeDetailCoversActions(detail, legacy.actions, legacy.nodes[0])).toBe(true);
+  });
+
   it("preserves reused action provenance while requiring its node in the displayed layer", () => {
     const records = fixtureJsonl().trim().split("\n").map((line) => JSON.parse(line));
     const reused = records[1].acceptedView.layers[0].actions[0];
@@ -448,7 +466,7 @@ describe("public share HTML boundary", () => {
     expect(html).not.toContain("public-share-footer");
     expect(html).toContain('class="public-share-download-card"');
     expect(html).not.toContain("Also for Windows");
-    expect(html).toContain("Explore this thread, then build your own.");
+    expect(html).toContain(">Get Relayer</a>");
   });
 
   it("lets the production workspace own the complete browser viewport", () => {
@@ -456,7 +474,6 @@ describe("public share HTML boundary", () => {
     expect(styles).toMatch(/\.public-share-main\s*{[^}]*height: 100vh;/s);
     expect(styles).toMatch(/\.public-share-workspace-host\s*{[^}]*height: 100%;[^}]*border: 0;[^}]*border-radius: 0;/s);
     expect(styles).toMatch(/\.public-share-shell \.thread-header\s*{[^}]*border-radius: 12px;/s);
-    expect(styles).toMatch(/@media \(min-width: 1101px\)[\s\S]*\.public-share-download-card\s*{[^}]*grid-row: 1 \/ 3;/s);
   });
 
   it("aligns the turn picker to the interaction card with five visible rows", () => {
@@ -655,12 +672,13 @@ describe("public share HTML boundary", () => {
       expect(viewer).not.toBeNull();
       if (presentation === "embed") expect(windowRef.document.documentElement.dataset.theme).toBe("light");
       expect(viewer.adapter.selection.currentInteractionId).toBe("turn:1");
+      expect(windowRef.document.querySelector(".interaction-graph-stepper")).toBeNull();
+      expect(windowRef.document.querySelector(".interaction-graph-popover")).toBeNull();
       expect(windowRef.document.querySelector("#publicViewerHost")?.classList.contains("hidden")).toBe(false);
       const downloadCard = windowRef.document.querySelector(".public-share-download-card");
       if (presentation === "standalone") {
-        expect(downloadCard?.parentElement?.classList.contains("workspace-layout")).toBe(true);
-        expect(downloadCard?.textContent).toContain("Relayer for Mac");
-        expect(downloadCard?.textContent).toContain("Download");
+        expect(downloadCard?.parentElement?.classList.contains("thread-header")).toBe(true);
+        expect(downloadCard?.textContent).toContain("Get Relayer");
         expect(windowRef.document.querySelector(".public-share-embed-branding")).toBeNull();
       } else {
         expect(downloadCard).toBeNull();

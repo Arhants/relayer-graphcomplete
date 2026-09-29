@@ -1,5 +1,11 @@
+import { createHash } from "node:crypto";
 import type { GraphCapability } from "@relayer/graph-client";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
+import {
+  parseNativeSessionResetReason,
+  reportNativeSessionReset,
+  type NativeSessionResetReason,
+} from "../native-session-reset.js";
 import type {
   Harness,
   HarnessExecutionAccess,
@@ -75,8 +81,11 @@ export class ClaudeBasicHarness implements Harness {
   private readonly clientModuleUrl: string;
   private readonly completeModuleUrl: string;
   private sessionId: string | undefined;
+  private sessionLocationIdentity: string | undefined;
   private sessionProviderDefinitionId: string | undefined;
   private sessionPersonalPresentationVersionId: number | null | undefined;
+  /** Why the root session was dropped, until the next root turn reports it. Saved with the state. */
+  private pendingRootReset: NativeSessionResetReason | undefined;
 
   constructor(
     private readonly context: HarnessFactoryContext,
@@ -92,15 +101,20 @@ export class ClaudeBasicHarness implements Harness {
       || (typeof savedPresentationVersionId === "number"
         && Number.isSafeInteger(savedPresentationVersionId)
         && savedPresentationVersionId > 0);
+    if (typeof savedSessionId === "string" && (typeof savedProviderDefinitionId !== "string" || !validSavedPresentationVersion)) throw new Error("Legacy native history has unverified ownership; its saved state was preserved.");
     // State without a provider definition cannot prove which credentials created
     // the session. Provider-scoped legacy state is loaded only so the first turn
     // can detect its unknown presentation version and rotate the native session.
+    this.pendingRootReset = parseNativeSessionResetReason(context.savedState?.claudeRootResetReason);
     if (typeof savedSessionId === "string"
       && typeof savedProviderDefinitionId === "string"
       && validSavedPresentationVersion) {
       this.sessionId = savedSessionId;
+      if (typeof context.savedState?.claudeSessionLocationIdentity === "string") this.sessionLocationIdentity = context.savedState.claudeSessionLocationIdentity;
       this.sessionProviderDefinitionId = savedProviderDefinitionId;
       this.sessionPersonalPresentationVersionId = savedPresentationVersionId;
+    } else if (typeof savedSessionId === "string") {
+      this.pendingRootReset = "session_unavailable";
     }
   }
 
@@ -133,18 +147,25 @@ export class ClaudeBasicHarness implements Harness {
     const providerDefinitionId = context.model.providerId;
     const isRoot = context.origin.kind === "root";
     const personalPresentationVersionId = context.personalPresentation?.attachment.versionInteractionNodeId ?? null;
-    if (isRoot && this.sessionProviderDefinitionId !== providerDefinitionId) {
-      this.sessionId = undefined;
-      this.sessionProviderDefinitionId = undefined;
-      this.sessionPersonalPresentationVersionId = undefined;
+    if (isRoot && context.requireNativeContinuity && (this.sessionId === undefined || this.sessionProviderDefinitionId !== providerDefinitionId || (this.sessionPersonalPresentationVersionId !== undefined && this.sessionPersonalPresentationVersionId !== personalPresentationVersionId))) {
+      throw new Error("This conversation's native history cannot be verified for the selected route. Its saved history was preserved; a fresh session was not started.");
+    }
+    if (isRoot && context.requireNativeContinuity && this.sessionPersonalPresentationVersionId === undefined) this.sessionPersonalPresentationVersionId = personalPresentationVersionId;
+    // Each provider definition has its own Claude configuration directory, so another
+    // definition's session cannot be resumed. This decides only resumption for the provider the
+    // product selected, never which providers it may select.
+    if (isRoot && this.sessionId !== undefined && this.sessionProviderDefinitionId !== providerDefinitionId) {
+      this.forgetRootSession("provider_changed");
     }
     if (isRoot && this.sessionId !== undefined
       && this.sessionPersonalPresentationVersionId !== personalPresentationVersionId) {
-      this.sessionId = undefined;
-      this.sessionProviderDefinitionId = undefined;
-      this.sessionPersonalPresentationVersionId = undefined;
+      this.forgetRootSession("presentation_changed");
     }
     const resumeSessionId = isRoot ? this.sessionId : undefined;
+    if (isRoot && resumeSessionId === undefined && this.pendingRootReset !== undefined) {
+      reportNativeSessionReset(context, "Claude", this.context.threadId, this.pendingRootReset);
+      this.pendingRootReset = undefined;
+    }
     const graph = context.graph.acquireCapability();
     const prompt = this.prompt(context);
     await context.trace.emit({
@@ -160,6 +181,7 @@ export class ClaudeBasicHarness implements Harness {
       resumeSessionId,
       attach,
       signal,
+      isRoot,
     );
     if (!isRoot && result.sessionId === undefined) {
       throw new Error("Claude invoked completion did not expose a durable native session identity");
@@ -182,15 +204,22 @@ export class ClaudeBasicHarness implements Harness {
     };
   }
 
+  private forgetRootSession(reason: NativeSessionResetReason): void {
+    this.sessionId = undefined;
+    this.sessionProviderDefinitionId = undefined;
+    this.sessionPersonalPresentationVersionId = undefined;
+    this.pendingRootReset = reason;
+  }
+
   state(): HarnessSessionState {
     return this.sessionId === undefined
       || this.sessionProviderDefinitionId === undefined
-      || this.sessionPersonalPresentationVersionId === undefined
-      ? {}
+      ? (this.pendingRootReset === undefined ? {} : { claudeRootResetReason: this.pendingRootReset })
       : {
           claudeSessionId: this.sessionId,
+          ...(this.sessionLocationIdentity === undefined ? {} : { claudeSessionLocationIdentity: this.sessionLocationIdentity }),
           claudeSessionProviderDefinitionId: this.sessionProviderDefinitionId,
-          claudeSessionPersonalPresentationVersionId: this.sessionPersonalPresentationVersionId,
+          ...(this.sessionPersonalPresentationVersionId === undefined ? {} : { claudeSessionPersonalPresentationVersionId: this.sessionPersonalPresentationVersionId }),
         };
   }
 
@@ -203,9 +232,16 @@ export class ClaudeBasicHarness implements Harness {
     resumeSessionId?: string,
     attach?: (identity: JsonObject) => void,
     signal?: AbortSignal,
+    isRoot = false,
   ): Promise<{ text: string; sessionId?: string }> {
     const runtime = await claudeRuntime(access, this.dependencies.resolveClaudeRuntime);
     const environment = executionEnvironment(access, runtime.environment, graph, completionBroker, this.dependencies.platform);
+    const locationIdentity = createHash("sha256").update(JSON.stringify({
+      providerId: access.providerId, adapterId: access.adapterId, kind: access.kind,
+      endpoint: access.kind === "secret" ? access.endpoint : null,
+      home: environment.CLAUDE_CONFIG_DIR ?? environment.HOME ?? null,
+    })).digest("hex");
+    if (isRoot && resumeSessionId !== undefined && this.sessionLocationIdentity !== undefined && this.sessionLocationIdentity !== locationIdentity) throw new Error("This conversation's native session location changed. Its saved history was preserved.");
     const permissionMode = claudePermissionMode(this.context.permissionBinding.approvalMode);
     const abortController = new AbortController();
     const abort = () => abortController.abort(signal?.reason ?? new Error("Claude completion was cancelled"));
@@ -236,7 +272,10 @@ export class ClaudeBasicHarness implements Harness {
           stderr: () => {},
         },
       });
-      return await collectClaudeResult(messages, attach, signal);
+      const result = await collectClaudeResult(messages, attach, signal);
+      if (isRoot && resumeSessionId !== undefined && result.sessionId !== resumeSessionId) throw new Error("Native conversation identity changed during resume");
+      if (isRoot && result.sessionId !== undefined) this.sessionLocationIdentity = locationIdentity;
+      return result;
     } catch {
       if (signal?.aborted) throw abortReason(signal);
       throw new Error("Claude Agent SDK completion failed.");

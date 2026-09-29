@@ -1,0 +1,26 @@
+[
+  {
+    "name": "gated",
+    "code": 0,
+    "milliseconds": 23647,
+    "log": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/projection-heavy/gated.txt"
+  },
+  {
+    "name": "default",
+    "code": 0,
+    "milliseconds": 6643,
+    "log": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/projection-heavy/default.txt"
+  },
+  {
+    "name": "context",
+    "code": 0,
+    "milliseconds": 26328,
+    "log": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/projection-heavy/context.txt"
+  },
+  {
+    "name": "project",
+    "code": 1,
+    "milliseconds": 21989,
+    "log": "/Users/vishaltandale/.codex/worktrees/attached-navigation/relayer-graphcomplete/.relayer/evidence/attached-navigation/projection-heavy/project.txt"
+  }
+]

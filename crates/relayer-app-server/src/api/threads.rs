@@ -323,7 +323,12 @@ pub(super) async fn get(
         &stale,
     )
     .await?;
+    let compatibility = state
+        .product
+        .conversation_compatibility(detail.thread.id)
+        .await?;
     let response = ThreadDetailResponse::from(detail)
+        .with_conversation_compatibility(Some(compatibility))
         .with_interactions(interactions)
         .with_completion_executions(completion_executions);
     Ok(Json(response))
@@ -428,8 +433,10 @@ pub(super) async fn project_interaction(
     interaction: Interaction,
     imported_thread: bool,
     projection_stale: bool,
+    graph_deadline: tokio::time::Instant,
 ) -> Result<InteractionResponse, ApiError> {
     let id = interaction.id.value();
+    let thread_id = interaction.thread_id;
     let graph_node_id = interaction.graph_node_id;
     let mut response: InteractionResponse = interaction.into();
     if projection_stale {
@@ -451,6 +458,7 @@ pub(super) async fn project_interaction(
         })
         .collect::<Vec<_>>();
     response.set_submitted_inputs(durable_submitted_inputs.clone());
+    let mut context_projection_complete = true;
     let has_durable_context = durable_input
         .as_ref()
         .is_some_and(|input| !input.contexts.is_empty());
@@ -508,15 +516,34 @@ pub(super) async fn project_interaction(
                     }
                 };
                 if let Err(error) = projected {
+                    context_projection_complete = false;
                     response.mark_projection_stale();
                     eprintln!("could not project context for interaction {id}: {error}");
                 }
             }
             Err(error) => {
+                context_projection_complete = false;
                 response.mark_projection_stale();
                 eprintln!("could not project context for interaction {id}: {error}");
             }
         }
+    }
+    if !imported_thread
+        && let Some((runtime, graph_id)) = state.runtime.as_ref().zip(graph_node_id)
+        && runtime.interaction_graph_enabled()
+    {
+        let mut graph = super::interaction_graph::project_before(
+            state,
+            thread_id,
+            graph_id,
+            response.navigation_contexts(),
+            graph_deadline,
+        )
+        .await;
+        if !context_projection_complete {
+            graph["complete"] = serde_json::json!(false);
+        }
+        response.set_interaction_graph(graph);
     }
     Ok(response)
 }
@@ -548,10 +575,20 @@ async fn project_interactions(
     imported_thread: bool,
     stale: &std::collections::HashSet<i64>,
 ) -> Result<Vec<InteractionResponse>, ApiError> {
+    let graph_deadline = super::interaction_graph::projection_deadline();
     let mut responses = Vec::with_capacity(interactions.len());
     for interaction in interactions {
         let is_stale = stale.contains(&interaction.id.value());
-        responses.push(project_interaction(state, interaction, imported_thread, is_stale).await?);
+        responses.push(
+            project_interaction(
+                state,
+                interaction,
+                imported_thread,
+                is_stale,
+                graph_deadline,
+            )
+            .await?,
+        );
     }
     Ok(responses)
 }
@@ -1182,8 +1219,8 @@ pub(super) async fn refresh_accepted_outputs(
         .filter(|i| i.completion_status == "accepted" && !imported_threads.contains(&i.thread_id))
         .filter_map(|i| i.graph_node_id)
         .collect::<Vec<_>>();
-    let resolved_roots = match runtime {
-        Some(runtime) => match runtime.resolved_invoke_roots(&ids).await {
+    let changed_roots = match runtime {
+        Some(runtime) => match runtime.changed_accepted_roots(&ids).await {
             Ok(roots) => roots,
             Err(_) => {
                 // Unknown canonical membership must not certify cached output as fresh.
@@ -1220,7 +1257,7 @@ pub(super) async fn refresh_accepted_outputs(
         if interaction.completion_status != "accepted" {
             continue;
         }
-        if !resolved_roots.contains(&graph_node_id)
+        if !changed_roots.contains(&graph_node_id)
             && !invoked_source_interaction_ids.contains(&interaction.id.value())
             && !interaction
                 .completion_output
@@ -1507,6 +1544,15 @@ async fn launch_prepared_child(
             interaction_text,
         )
         .await?;
+    // The action's result belongs to a user's own invoke of it, made from an accepted source
+    // whose agent is still unwinding. The product runs and settles that result; the broker
+    // never launches it.
+    if !outcome.invocation.agent_invoked {
+        return Err(ApiError::conflict(
+            "invocation_owned_by_user",
+            "A user already invoked this action; its result is not a recursive completion.",
+        ));
+    }
     let thread = state.product.get_thread(grant.thread_id).await?.thread;
     if outcome.interaction.thread_id != thread.id {
         return Err(ApiError::invalid(
@@ -1533,18 +1579,64 @@ async fn launch_prepared_child(
         }
     }
 
-    let prepared = match prepare_and_claim_interaction(
-        &state,
-        &thread,
-        &outcome.interaction,
-        false,
-        true,
-    )
-    .await?
-    {
-        Some(prepared) => prepared,
-        None => {
+    // Only the launch that claims the child's preparation may fail it after a refusal. A
+    // concurrent duplicate that finds it claimed and fails on its own must not end a child the
+    // claiming launch is still running.
+    let claimed = state
+        .product
+        .claim_interaction_preparing(outcome.interaction.id)
+        .await?;
+    let refused = |state: &ApiState, thread: Thread, interaction: Interaction| {
+        if claimed {
+            spawn_refused_launch_cleanup(
+                state.clone(),
+                thread,
+                interaction,
+                input.interaction_node,
+            );
+        }
+    };
+    let prepared = match prepare_interaction(&state, &thread, &outcome.interaction, claimed).await {
+        Ok(Preparation::Prepared { prepared, .. }) => *prepared,
+        // This launch claimed the child and cannot tell whether its preparation happened, or
+        // it failed outright. Nothing will launch the child, so it fails in both stores.
+        Ok(Preparation::Ambiguous) => {
+            refused(&state, thread, outcome.interaction);
+            return Err(ApiError::internal(
+                "recursive completion preparation did not finish",
+            ));
+        }
+        Err(error) => {
+            refused(&state, thread, outcome.interaction);
+            return Err(error);
+        }
+        // Another launch owns the child, or it can no longer be prepared. A child that ended,
+        // including one a refused launch's cleanup failed with no execution row, is reported
+        // rather than launched again: the parent then observes its terminal current through
+        // this same occurrence. The row is read again here, after ownership was lost.
+        Ok(Preparation::NotOwned) => {
             for attempt in 0..10 {
+                let current = state
+                    .product
+                    .get_interaction(outcome.interaction.id)
+                    .await?;
+                if matches!(
+                    current.completion_status.as_str(),
+                    "accepted" | "failed" | "stopped"
+                ) {
+                    if current.graph_node_id == Some(input.interaction_node) {
+                        return Ok((
+                            StatusCode::OK,
+                            Json(CompletePreparedChildResponse {
+                                completion_id: input.interaction_node,
+                            }),
+                        ));
+                    }
+                    return Err(ApiError::conflict(
+                        "recursive_completion_ended",
+                        "This recursive completion already ended.",
+                    ));
+                }
                 if let Some(existing) = state
                     .product
                     .completion_execution(outcome.interaction.id)
@@ -1579,32 +1671,47 @@ async fn launch_prepared_child(
             input.interaction_node
         )));
     }
-    let permission_origin_digest =
-        completion_permission_origin_digest(&prepared.effective_permission_receipt, invocation)?;
-    let timestamp = completion_timestamp();
-    let reserved = state
-        .product
-        .reserve_completion_execution(
-            CompletionExecutionBinding {
-                interaction_id: outcome.interaction.id,
-                graph_completion_id: prepared.graph_node_id,
-                harness_configuration_name: &prepared.harness_configuration_name,
-                harness_configuration_digest: &prepared.harness_configuration_digest,
-                model_execution_digest: &prepared.effective_execution_digest,
-                permission_origin_digest: &permission_origin_digest,
-            },
-            &timestamp,
-        )
-        .await?;
-    if !state
-        .product
-        .claim_completion_execution_launching(
-            outcome.interaction.id,
-            &permission_origin_digest,
-            &timestamp,
-        )
-        .await?
-    {
+    // Reserving and claiming the launch can still fail, for example on a binding conflict.
+    // This launch claimed the child, so a failure here fails it too.
+    let reservation = async {
+        let permission_origin_digest = completion_permission_origin_digest(
+            &prepared.effective_permission_receipt,
+            invocation,
+        )?;
+        let timestamp = completion_timestamp();
+        let reserved = state
+            .product
+            .reserve_completion_execution(
+                CompletionExecutionBinding {
+                    interaction_id: outcome.interaction.id,
+                    graph_completion_id: prepared.graph_node_id,
+                    harness_configuration_name: &prepared.harness_configuration_name,
+                    harness_configuration_digest: &prepared.harness_configuration_digest,
+                    model_execution_digest: &prepared.effective_execution_digest,
+                    permission_origin_digest: &permission_origin_digest,
+                },
+                &timestamp,
+            )
+            .await?;
+        let launch_claimed = state
+            .product
+            .claim_completion_execution_launching(
+                outcome.interaction.id,
+                &permission_origin_digest,
+                &timestamp,
+            )
+            .await?;
+        Ok::<_, ApiError>((permission_origin_digest, reserved, launch_claimed))
+    }
+    .await;
+    let (permission_origin_digest, reserved, launch_claimed) = match reservation {
+        Ok(reservation) => reservation,
+        Err(error) => {
+            refused(&state, thread, outcome.interaction);
+            return Err(error);
+        }
+    };
+    if !launch_claimed {
         let existing = match reserved {
             CompletionExecutionReserveOutcome::Created(execution)
             | CompletionExecutionReserveOutcome::Existing(execution) => execution,
@@ -1617,17 +1724,24 @@ async fn launch_prepared_child(
         ));
     }
 
-    let prepared = match claim_and_activate_prepared_interaction(
+    // This launch owns the child from its launch claim on. An activation that fails, even
+    // retryably, fails the child in both stores, as a failed start does: nothing else would
+    // run it, so an awaiting parent and the thread would otherwise wait forever. The parent's
+    // exact retry then reports the failed child.
+    let activation = claim_and_activate_prepared_interaction(
         &state,
         &thread,
         &outcome.interaction,
-        prepared,
-        true,
+        prepared.clone(),
+        false,
         false,
     )
-    .await
-    {
+    .await;
+    let prepared = match activation {
         Ok(Some(prepared)) => prepared,
+        // The child's row was no longer claimable: its unfinished binding was cleared, as a
+        // startup harness retirement does. Only this execution row settles; the next start
+        // fails the child (known gap until then).
         Ok(None) => {
             let _ = state
                 .product
@@ -1639,21 +1753,21 @@ async fn launch_prepared_child(
                     &completion_timestamp(),
                 )
                 .await;
-            return Err(ApiError::internal(
-                "reserved recursive completion lost activation ownership",
+            return Err(ApiError::conflict(
+                "recursive_launch_superseded",
+                "Another launch already runs this recursive completion.",
             ));
         }
         Err(error) => {
-            let _ = state
-                .product
-                .settle_completion_execution(
-                    outcome.interaction.id,
-                    &permission_origin_digest,
-                    None,
-                    Some("capability_activation_failed"),
-                    &completion_timestamp(),
-                )
-                .await;
+            spawn_failed_recursive_start_cleanup(
+                state.clone(),
+                thread,
+                outcome.interaction,
+                prepared,
+                permission_origin_digest,
+                LaunchFailure::ActivationFailed,
+                None,
+            );
             return Err(error);
         }
     };
@@ -1847,6 +1961,8 @@ async fn admit_recursive_child(
         .map_err(|error| refused("configuration")(error.into()))?;
     let attempt_admission_id = uuid::Uuid::new_v4().to_string();
     let command = CompleteInteraction {
+        require_native_continuity: false,
+        native_history_anchor: None,
         project_id: thread.project_id.map(ProjectId::value),
         product_interaction_id: interaction.id.value(),
         thread_id: thread.id.value(),
@@ -1980,6 +2096,8 @@ async fn settle_terminal_recursive_child(
 /// How a recursive child's launch failed, which decides what its cleanup must undo.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum LaunchFailure {
+    /// Its graph capability could not be activated, so nothing was admitted or started.
+    ActivationFailed,
     /// Admission refused the child with this reason, so no provider run was ever started.
     AdmissionRefused(&'static str),
     /// The start was requested and reported failure; it may still have run.
@@ -1989,10 +2107,131 @@ enum LaunchFailure {
 impl LaunchFailure {
     fn reason(self) -> &'static str {
         match self {
+            Self::ActivationFailed => "capability_activation_failed",
             Self::AdmissionRefused(reason) => reason,
             Self::StartFailed => "provider_start_failed",
         }
     }
+}
+
+/// Fails an agent's child whose broker launch was refused before any launch owned it: its
+/// preparation, reservation or claim ended ambiguously, or failed, after the child was
+/// claimed. The product row fails first, bound to the child's graph interaction, and then the
+/// graph current. A launch past its claim owns the child instead, and this stops. Each step
+/// is retried until it holds, as start-failure cleanup is.
+fn spawn_refused_launch_cleanup(
+    state: ApiState,
+    thread: Thread,
+    interaction: Interaction,
+    completion_id: i64,
+) {
+    tokio::spawn(async move {
+        let Some(runtime) = state.runtime.as_ref() else {
+            return;
+        };
+        loop {
+            match fail_refused_launch(&state, runtime, &thread, &interaction, completion_id).await {
+                Ok(true) => return,
+                Ok(false) => {}
+                Err(error) => eprintln!(
+                    "recursive completion {completion_id} refused-launch cleanup retry: {}",
+                    error.message()
+                ),
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    });
+}
+
+/// One pass of refused-launch cleanup. Returns whether it is finished. The product row is
+/// failed first: that fences out a later launch, whose reservation and claim need the row
+/// still `submitted`, and a user's invoke. Only then is the graph current failed, so a launch
+/// that got past its claim first keeps its child.
+async fn fail_refused_launch(
+    state: &ApiState,
+    runtime: &crate::runtime::RuntimeClient,
+    thread: &Thread,
+    interaction: &Interaction,
+    completion_id: i64,
+) -> Result<bool, ApiError> {
+    if state
+        .product
+        .completion_execution(interaction.id)
+        .await?
+        .is_some_and(|execution| {
+            matches!(
+                execution.phase,
+                CompletionExecutionPhase::Launching | CompletionExecutionPhase::Attached
+            )
+        })
+    {
+        return Ok(true);
+    }
+    let row = state.product.get_interaction(interaction.id).await?;
+    let fenced = row.completion_status == "failed"
+        && row.graph_node_id == Some(completion_id)
+        && row.completion_error.as_deref() == Some("preparation_failed");
+    if !fenced {
+        if !matches!(row.completion_status.as_str(), "not_started" | "submitted") {
+            return Ok(true);
+        }
+        let current = runtime.completion_current(completion_id).await?;
+        let reason = match current.lifecycle {
+            relayer_graph_core::CompletionLifecycle::Active => "preparation_failed".to_owned(),
+            // Something ran and returned it; that path settles its product row.
+            relayer_graph_core::CompletionLifecycle::Succeeded => return Ok(true),
+            relayer_graph_core::CompletionLifecycle::Stopped
+            | relayer_graph_core::CompletionLifecycle::Failed => current
+                .safe_reason
+                .clone()
+                .unwrap_or_else(|| "preparation_failed".into()),
+        };
+        if !state
+            .product
+            .fail_unlaunched_recursive_child(
+                interaction.id,
+                completion_id,
+                &thread.harness_configuration_name,
+                &reason,
+                current.lifecycle == relayer_graph_core::CompletionLifecycle::Active,
+                &completion_timestamp(),
+            )
+            .await?
+        {
+            // A launch claimed it meanwhile, or the row is not an agent's child bound here.
+            eprintln!(
+                "recursive completion {completion_id} refused-launch cleanup left interaction {} to its owner",
+                interaction.id
+            );
+            return Ok(true);
+        }
+        if current.lifecycle != relayer_graph_core::CompletionLifecycle::Active {
+            return Ok(true);
+        }
+    }
+    let current = runtime.completion_current(completion_id).await?;
+    if current.lifecycle == relayer_graph_core::CompletionLifecycle::Active {
+        if let Err(error) = runtime
+            .fail_graph_completion(
+                completion_id,
+                &format!("recursive-launch-refused:{}", interaction.id),
+                "preparation_failed",
+            )
+            .await
+        {
+            eprintln!("recursive completion {completion_id} refused-launch graph retry: {error}");
+        }
+        if runtime.completion_current(completion_id).await?.lifecycle
+            == relayer_graph_core::CompletionLifecycle::Active
+        {
+            return Ok(false);
+        }
+    }
+    state
+        .product
+        .confirm_refused_child_graph_failure(interaction.id)
+        .await?;
+    Ok(true)
 }
 
 fn spawn_failed_recursive_start_cleanup(
@@ -2299,6 +2538,14 @@ async fn authorize_child_completion(
         .get_action_invocation(grant.source_interaction_id, invocation.source_action_id)
         .await?
         .ok_or_else(|| ApiError::invalid("completion has no product invocation binding"))?;
+    // A user's own invoke of the action owns its result; only an agent's child answers to
+    // the broker, even while the source's agent still holds its grant.
+    if !outcome.invocation.agent_invoked {
+        return Err(ApiError::conflict(
+            "invocation_owned_by_user",
+            "A user invoked this action; its result is not a recursive completion.",
+        ));
+    }
     if outcome.interaction.graph_node_id != Some(completion_id) {
         return Err(ApiError::invalid(
             "completion graph identity does not match product history",
@@ -2836,12 +3083,19 @@ async fn finish_action_handoff(
             .thread
     };
     let recoverable_invoke = outcome.interaction.completion_status == "submitted";
-    let interaction =
-        if outcome.interaction.completion_status == "not_started" || recoverable_invoke {
-            claim_and_start_action_interaction(state, &owning_thread, outcome.interaction).await?
-        } else {
-            outcome.interaction
-        };
+    // A user's invoke never runs an agent's child on the product path: only its parent agent
+    // launches or stops it, and startup or its launch cleanup ends it if it is stuck.
+    let agent_child = state
+        .product
+        .is_agent_invoked_child(outcome.interaction.id)
+        .await?;
+    let interaction = if agent_child {
+        outcome.interaction
+    } else if outcome.interaction.completion_status == "not_started" || recoverable_invoke {
+        claim_and_start_action_interaction(state, &owning_thread, outcome.interaction).await?
+    } else {
+        outcome.interaction
+    };
     Ok((
         status,
         Json(InvokeActionResponse {
@@ -3052,6 +3306,22 @@ async fn thread_working_directory(state: &ApiState, thread: &Thread) -> Result<S
     Ok(working_directory)
 }
 
+/// How preparing an interaction's canonical graph identity ended.
+enum Preparation {
+    /// Prepared and durably bound; the caller claims and activates it.
+    Prepared {
+        prepared: Box<PreparedInteraction>,
+        has_invocation: bool,
+        has_durable_input: bool,
+    },
+    /// Another caller owns the interaction, or it can no longer be prepared.
+    NotOwned,
+    /// This call's graph preparation or product binding ended ambiguously, or the claimed
+    /// interaction's durable binding conflicts with what the graph prepared. The interaction
+    /// stays `submitted`, so the same graph interaction can be recovered idempotently.
+    Ambiguous,
+}
+
 async fn prepare_and_claim_interaction(
     state: &ApiState,
     thread: &Thread,
@@ -3059,8 +3329,36 @@ async fn prepare_and_claim_interaction(
     already_claimed_running: bool,
     defer_claim_and_activation: bool,
 ) -> Result<Option<PreparedInteraction>, ApiError> {
-    let Some(runtime) = &state.runtime else {
+    let Preparation::Prepared {
+        prepared,
+        has_invocation,
+        has_durable_input,
+    } = prepare_interaction(state, thread, interaction, already_claimed_running).await?
+    else {
         return Ok(None);
+    };
+    if defer_claim_and_activation {
+        return Ok(Some(*prepared));
+    }
+    claim_and_activate_prepared_interaction(
+        state,
+        thread,
+        interaction,
+        *prepared,
+        has_invocation,
+        has_durable_input,
+    )
+    .await
+}
+
+async fn prepare_interaction(
+    state: &ApiState,
+    thread: &Thread,
+    interaction: &Interaction,
+    already_claimed_running: bool,
+) -> Result<Preparation, ApiError> {
+    let Some(runtime) = &state.runtime else {
+        return Ok(Preparation::NotOwned);
     };
     let claimed_preparation = if already_claimed_running {
         true
@@ -3084,7 +3382,7 @@ async fn prepare_and_claim_interaction(
                     .await?
                     .is_some());
         if !recoverable_input {
-            return Ok(None);
+            return Ok(Preparation::NotOwned);
         }
     }
     if interaction.model_selection.is_none() && !state.allow_harness_override {
@@ -3152,6 +3450,8 @@ async fn prepare_and_claim_interaction(
         None
     };
     let command = CompleteInteraction {
+        require_native_continuity: false,
+        native_history_anchor: None,
         project_id: thread.project_id.map(ProjectId::value),
         product_interaction_id: interaction.id.value(),
         thread_id: thread.id.value(),
@@ -3194,7 +3494,7 @@ async fn prepare_and_claim_interaction(
                     "preserving submitted invoke interaction {} after idempotent graph preparation retry failed: {error}",
                     interaction.id
                 );
-                return Ok(None);
+                return Ok(Preparation::Ambiguous);
             }
             Err(
                 error @ (RuntimeError::Http(_)
@@ -3205,7 +3505,7 @@ async fn prepare_and_claim_interaction(
                     "preserving submitted invoke interaction {} after graph preparation ended ambiguously: {error}",
                     interaction.id
                 );
-                return Ok(None);
+                return Ok(Preparation::Ambiguous);
             }
             Err(error) => return Err(error.into()),
         };
@@ -3240,7 +3540,11 @@ async fn prepare_and_claim_interaction(
                     break prepared;
                 }
                 runtime.discard_prepared(prepared).await?;
-                return Ok(None);
+                // Still claimed but bound differently: nothing will prepare it again.
+                if current.completion_status == "submitted" {
+                    return Ok(Preparation::Ambiguous);
+                }
+                return Ok(Preparation::NotOwned);
             }
             Err(error) if invocation.is_some() || durable_input.is_some() => {
                 let cleanup = runtime.discard_prepared(prepared).await;
@@ -3262,7 +3566,7 @@ async fn prepare_and_claim_interaction(
                         .map(|cleanup| format!("; capability cleanup also failed: {cleanup}"))
                         .unwrap_or_default()
                 );
-                return Ok(None);
+                return Ok(Preparation::Ambiguous);
             }
             Err(error) => {
                 return match runtime.discard_prepared(prepared).await {
@@ -3274,18 +3578,11 @@ async fn prepare_and_claim_interaction(
             }
         }
     };
-    if defer_claim_and_activation {
-        return Ok(Some(prepared));
-    }
-    claim_and_activate_prepared_interaction(
-        state,
-        thread,
-        interaction,
-        prepared,
-        invocation.is_some(),
-        durable_input.is_some(),
-    )
-    .await
+    Ok(Preparation::Prepared {
+        prepared: Box::new(prepared),
+        has_invocation: invocation.is_some(),
+        has_durable_input: durable_input.is_some(),
+    })
 }
 
 async fn claim_and_activate_prepared_interaction(
@@ -3784,6 +4081,8 @@ mod tests {
         let working_directory = root.path().to_string_lossy().into_owned();
         let seeded = runtime
             .prepare(&CompleteInteraction {
+                require_native_continuity: false,
+                native_history_anchor: None,
                 project_id: None,
                 product_interaction_id: child.id.value(),
                 thread_id: thread.id.value(),

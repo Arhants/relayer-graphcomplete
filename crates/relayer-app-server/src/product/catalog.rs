@@ -102,6 +102,10 @@ pub(crate) struct RuntimeProductHarness {
     /// runtime files validate. Startup then restores ready only from the app server's own
     /// previous record for the same runtime configuration digest (PROV-006).
     pub(crate) restore_prior_readiness: bool,
+    /// For a coordinated harness, the exact runtime recipe this release requires.
+    pub(crate) runtime_recipe: Option<String>,
+    /// This start's app update activated a new runtime recipe for it, or failed to.
+    pub(crate) runtime_updated: bool,
     pub(crate) runtime_available: bool,
     pub(crate) unavailable_reason: Option<UnavailableReason>,
 }
@@ -428,6 +432,19 @@ pub(crate) struct ModelSettingsDefaults {
     pub(crate) modified: bool,
 }
 
+/// A provider's managed family while that provider reports no eligible execution models
+/// (PROV-008). The family is tombstoned, so it is not in `families`, but it can still be the
+/// default or a thread's last selection. Send is refused with `reason` until a refresh restores
+/// it or its successor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FamilyModelSetup {
+    pub(crate) family_id: ModelFamilyId,
+    pub(crate) family_name: String,
+    pub(crate) provider_id: ProviderId,
+    pub(crate) reason: UnavailableReason,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ModelSettings {
@@ -435,6 +452,8 @@ pub(crate) struct ModelSettings {
     pub(crate) harnesses: Vec<ProductHarness>,
     pub(crate) providers: Vec<Provider>,
     pub(crate) families: Vec<ModelFamily>,
+    pub(crate) default_family_recovery: Option<FamilyModelSetup>,
+    pub(crate) families_needing_model_setup: Vec<FamilyModelSetup>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
