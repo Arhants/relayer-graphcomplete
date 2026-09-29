@@ -1324,6 +1324,7 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 <p>The sidebar contains New Thread, Chats, and Projects. Chats contains no-folder threads; Projects contains saved thread entries. The sidebar stays visible at every width. At 760px or narrower it starts as a collapsed icon rail. Its existing toggle expands the same sidebar in normal flow. The workspace fits the remaining width. Explicit expansion stays open while the viewport remains narrow. Settings and Account stay in the footer, with icons while collapsed and labels while expanded. A Download update icon appears when an update is available.</p>
 <p>The sidebar is a compact list. It is not a recursive graph tree. A child conversation can become a saved sidebar entry. The sidebar does not show its full ancestry. Graph breadcrumbs show this ancestry.</p>
 <p>The header shows the current thread title, scope, and backward/forward turn controls. The composer remains the place to send, stop, and attach context. There is no separate <code>active run</code> dashboard.</p>
+<p>A status symbol follows the thread title only while the thread is Running, Stopping…, Needs approval, or Failed. There is no symbol when the thread is idle, stopped, cancelled, or accepted. The symbol's shape, tooltip, and accessible name carry the state. The prompt card keeps its turn-level status pill. This symbol is planned (ADR 0013).</p>
 <h3>8.2 Local persistence and restart recovery</h3>
 <p>Product data is local and disk-persisted:</p>
 <ul>
@@ -1434,6 +1435,13 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 <td>The same structural scenario asserts <code>collapseSidebar</code>; current visual evidence proves both expanded and collapsed states.</td>
 <td><code>SHL-001-E1</code> below</td>
 <td>Keyboard, accessibility, restart persistence, small-window layout, and populated project/thread lists remain broader desktop requirements.</td>
+</tr>
+<tr>
+<td>Thread status symbol</td>
+<td><span class="delivery-status open">Open — planned</span></td>
+<td>None yet. Planned tests: the symbol appears only for Running, Stopping, Needs approval, and Failed. Its accessible name and tooltip match the state.</td>
+<td>None yet.</td>
+<td>Implement the header symbol (ADR 0013 item 1), then capture each state.</td>
 </tr>
 <tr>
 <td>System appearance</td>
