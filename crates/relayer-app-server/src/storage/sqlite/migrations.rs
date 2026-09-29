@@ -643,6 +643,7 @@ mod tests {
             runtime_available: true,
             restore_prior_readiness: false,
             runtime_recipe: None,
+            runtime_updated: false,
             unavailable_reason: None,
         };
         store

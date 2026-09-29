@@ -401,6 +401,7 @@ impl SqliteProductStore {
                 runtime_available: false,
                 restore_prior_readiness: false,
                 runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: Some(UnavailableReason {
                     code: "harness_unavailable".into(),
                     message: "The harness runtime is unavailable.".into(),
@@ -412,12 +413,15 @@ impl SqliteProductStore {
         for mut harness in harnesses {
             // An update changed the runtime recipe of a route loaded before with a recorded
             // recipe. A ready measured on the old recipe does not restore.
+            // This start's update changing the runtime counts even before a recipe was
+            // recorded, as on the first start after migration 0039.
             let recipe_changed = harness.restore_prior_readiness
-                && harness.runtime_recipe.as_ref().is_some_and(|recipe| {
-                    prior_runtime
-                        .get(&harness.id)
-                        .is_some_and(|(_, _, prior)| !prior.is_empty() && prior != recipe)
-                });
+                && (harness.runtime_updated
+                    || harness.runtime_recipe.as_ref().is_some_and(|recipe| {
+                        prior_runtime
+                            .get(&harness.id)
+                            .is_some_and(|(_, _, prior)| !prior.is_empty() && prior != recipe)
+                    }));
             if harness.restore_prior_readiness
                 && harness.runtime_available
                 && (recipe_changed
@@ -3218,6 +3222,7 @@ mod provider_definition_tests {
             runtime_available: true,
             restore_prior_readiness: false,
             runtime_recipe: None,
+            runtime_updated: false,
             unavailable_reason: None,
         }
     }
@@ -3653,9 +3658,24 @@ mod provider_definition_tests {
         files_valid: bool,
         recipe: Option<&str>,
     ) {
+        coordinated_catalog_with_update(path, digest, files_valid, recipe, false);
+    }
+
+    /// The same shape, also saying whether this start's update changed the harness's
+    /// runtime: it activated a new recipe for it, or failed to.
+    fn coordinated_catalog_with_update(
+        path: &std::path::Path,
+        digest: &str,
+        files_valid: bool,
+        recipe: Option<&str>,
+        runtime_updated: bool,
+    ) {
         let mut readiness = serde_json::json!({ "runtimeFilesValid": files_valid });
         if let Some(recipe) = recipe {
             readiness["runtimeRecipe"] = serde_json::json!(recipe);
+        }
+        if runtime_updated {
+            readiness["runtimeUpdated"] = serde_json::json!(true);
         }
         std::fs::write(
             path,
@@ -4013,6 +4033,49 @@ mod provider_definition_tests {
         );
     }
 
+    /// The first start after migration 0039 has no recorded recipe to compare. An unrecorded
+    /// recipe alone changes nothing, but this start's own update activating a new recipe,
+    /// or failing to, still withholds the old ready and marks the route due.
+    #[tokio::test]
+    async fn the_first_recorded_recipe_marks_only_a_runtime_this_update_changed() {
+        let directory = readiness_root("recipe-first");
+        let root = directory.path();
+        let catalog = root.join("harness-configurations.json");
+        let store = SqliteProductStore::open(root.join("product.sqlite3"))
+            .await
+            .unwrap();
+        let pending = (false, Some("harness_readiness_pending".to_owned()));
+        let unrecord = || async {
+            sqlx::query("UPDATE product_harnesses SET runtime_recipe='' WHERE configuration_name='codex-basic'")
+                .execute(&store.pool)
+                .await
+                .unwrap();
+        };
+
+        coordinated_catalog(&catalog, "sha256:d1", true);
+        start_app_server(&store, &catalog).await;
+        store
+            .update_harness_runtime_availability(&[readiness("sha256:d1", 1, true)])
+            .await
+            .unwrap();
+        coordinated_catalog_with_recipe(&catalog, "sha256:d1", true, Some("codex@1#a"));
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            (true, None),
+            "recording the first recipe keeps a ready route"
+        );
+        assert!(updates_due(&store).await.is_empty());
+
+        unrecord().await;
+        coordinated_catalog_with_update(&catalog, "sha256:d1", true, Some("codex@2#b"), true);
+        assert_eq!(
+            start_app_server(&store, &catalog).await,
+            pending,
+            "an activated update withholds the old ready"
+        );
+        assert_eq!(updates_due(&store).await, ["codex-basic"]);
+    }
+
     /// #556: users an earlier upgrade already left pending are not waiting for a digest
     /// change. Migration 0039 marks their pending routes due once, and nothing else.
     #[tokio::test]
@@ -4109,6 +4172,7 @@ mod provider_definition_tests {
             runtime_available,
             restore_prior_readiness: false,
             runtime_recipe: None,
+            runtime_updated: false,
             unavailable_reason: (!runtime_available).then(|| UnavailableReason {
                 code: "harness_unavailable".into(),
                 message: "The harness runtime is unavailable.".into(),
@@ -4164,6 +4228,7 @@ mod provider_definition_tests {
             runtime_available: true,
             restore_prior_readiness: true,
             runtime_recipe: None,
+            runtime_updated: false,
             unavailable_reason: None,
         };
         store
@@ -5028,6 +5093,7 @@ mod provider_definition_tests {
             runtime_available: true,
             restore_prior_readiness: false,
             runtime_recipe: None,
+            runtime_updated: false,
             unavailable_reason: None,
         };
         store
@@ -5096,6 +5162,7 @@ mod provider_definition_tests {
                     runtime_available: false,
                     restore_prior_readiness: false,
                     runtime_recipe: None,
+                    runtime_updated: false,
                     unavailable_reason: Some(UnavailableReason {
                         code: "prime_agent_boundary_unsupported".into(),
                         message: "Choose another available harness on this device.".into(),
@@ -5345,6 +5412,7 @@ mod provider_definition_tests {
                         runtime_available: true,
                         restore_prior_readiness: false,
                         runtime_recipe: None,
+                        runtime_updated: false,
                         unavailable_reason: None,
                     },
                     RuntimeProductHarness {
@@ -5361,6 +5429,7 @@ mod provider_definition_tests {
                         runtime_available: true,
                         restore_prior_readiness: false,
                         runtime_recipe: None,
+                        runtime_updated: false,
                         unavailable_reason: None,
                     },
                 ],
@@ -5550,6 +5619,7 @@ mod provider_definition_tests {
                     runtime_available: true,
                     restore_prior_readiness: false,
                     runtime_recipe: None,
+                    runtime_updated: false,
                     unavailable_reason: None,
                 }],
             )
@@ -5604,6 +5674,7 @@ mod provider_definition_tests {
                         runtime_available: true,
                         restore_prior_readiness: false,
                         runtime_recipe: None,
+                        runtime_updated: false,
                         unavailable_reason: None,
                     },
                     RuntimeProductHarness {
@@ -5617,6 +5688,7 @@ mod provider_definition_tests {
                         runtime_available: true,
                         restore_prior_readiness: false,
                         runtime_recipe: None,
+                        runtime_updated: false,
                         unavailable_reason: None,
                     },
                     RuntimeProductHarness {
@@ -5637,6 +5709,7 @@ mod provider_definition_tests {
                         runtime_available: true,
                         restore_prior_readiness: false,
                         runtime_recipe: None,
+                        runtime_updated: false,
                         unavailable_reason: None,
                     },
                 ],

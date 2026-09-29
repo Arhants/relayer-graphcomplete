@@ -553,6 +553,18 @@ function managedAssemblyContext(staging, installationRoot, recipe, signal) {
   });
 }
 
+// The runtimes a post-update activation changed: a new exact recipe activated, or its
+// activation failed and left the previous runtime. Startup tells the app server, which
+// withholds their old ready and marks them due for one evaluation (PROV-009).
+export function runtimesChangedByActivation({ activated = [], recipeUpdates = [], failures = [] } = {}) {
+  const changed = new Set();
+  for (const { runtimeId, recipeId } of activated) {
+    if (recipeId && recipeUpdates.includes(recipeId)) changed.add(runtimeId);
+  }
+  for (const { runtimeId } of failures) if (RUNTIME_IDS.has(runtimeId)) changed.add(runtimeId);
+  return Object.freeze([...changed]);
+}
+
 export function createManagedRuntimeInstaller({
   root,
   platform = process.platform,

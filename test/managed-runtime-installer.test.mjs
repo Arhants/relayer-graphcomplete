@@ -8,7 +8,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { c as createTar } from "tar";
 import { describe, expect, it, vi } from "vitest";
 
-import { createManagedRuntimeInstaller as createExactManagedRuntimeInstaller } from "../desktop/main/managed-runtimes/installer.mjs";
+import {
+  createManagedRuntimeInstaller as createExactManagedRuntimeInstaller,
+  runtimesChangedByActivation,
+} from "../desktop/main/managed-runtimes/installer.mjs";
 import { createDefaultRuntimeProbes } from "../desktop/main/managed-runtimes/probes.mjs";
 import { managedRecipeInstalled } from "../desktop/main/managed-runtimes/resolver.mjs";
 
@@ -400,6 +403,34 @@ describe("managed runtime installer", () => {
     expect(() => real.recipeIdentity("prime@0.8.1")).toThrow(expect.objectContaining({
       code: "managed_runtime_unsupported_target",
     }));
+  });
+
+  it("reports the runtimes an activation changed: a new recipe, or a failed activation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
+    const outside = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-outside-"));
+    try {
+      const { installer } = exactClaudeInstaller(root, "changed-runtimes");
+      await installer.stageForAppUpdate("0.2.26", [{ runtimeId: "claude", recipeId: "claude-fixture@0.3.250" }]);
+      expect(runtimesChangedByActivation(await installer.activatePendingAppUpdate("0.2.26"))).toEqual(["claude"]);
+
+      // The same recipe again changes nothing.
+      await installer.stageForAppUpdate("0.2.27", [{ runtimeId: "claude", recipeId: "claude-fixture@0.3.250" }]);
+      expect(runtimesChangedByActivation(await installer.activatePendingAppUpdate("0.2.27"))).toEqual([]);
+
+      // A pending generation that no longer validates fails to activate: changed too.
+      const staged = await exactClaudeInstaller(root, "changed-runtimes-next").installer
+        .stageForAppUpdate("0.2.28", [{ runtimeId: "claude", recipeId: "claude-fixture@0.3.250" }]);
+      await layoutBreaks[0][1](staged.staged[0], outside);
+      const failed = await exactClaudeInstaller(root, "changed-runtimes-next").installer.activatePendingAppUpdate("0.2.28");
+      expect(failed.failures).toHaveLength(1);
+      expect(runtimesChangedByActivation(failed)).toEqual(["claude"]);
+      expect(runtimesChangedByActivation({
+        activated: [], recipeUpdates: [], failures: [{ runtimeId: null, error: new Error("unreadable") }],
+      })).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 
   it("keeps the local version probe when it activates a validated app-update generation", async () => {

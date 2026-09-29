@@ -111,6 +111,10 @@ struct AppServerReadiness {
     /// with another recipe starts pending and is due one evaluation, like a changed digest.
     #[serde(default)]
     runtime_recipe: Option<String>,
+    /// This start's app update activated a new recipe for the harness's runtime, or failed
+    /// to. It counts as a changed recipe even before any recipe was recorded.
+    #[serde(default)]
+    runtime_updated: bool,
 }
 
 const fn catalog_entry_available() -> bool {
@@ -623,6 +627,10 @@ impl RuntimeClient {
                     .app_server_readiness
                     .as_ref()
                     .and_then(|readiness| readiness.runtime_recipe.clone()),
+                runtime_updated: entry
+                    .app_server_readiness
+                    .as_ref()
+                    .is_some_and(|readiness| readiness.runtime_updated),
                 unavailable_reason: entry.unavailable_reason.clone(),
             })
             .collect::<Vec<_>>();
@@ -638,6 +646,7 @@ impl RuntimeClient {
                 runtime_available: false,
                 restore_prior_readiness: false,
                 runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: Some(entry.reason.clone()),
             }
         }));

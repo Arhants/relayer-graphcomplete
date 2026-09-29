@@ -778,7 +778,11 @@ one fix off. Three constants hold the fixes:
 | `shared-route-witness` | Witness, expected violation | Readiness is per harness, so an evaluation not started for a provider makes that provider's shared route ready too. This is why one Repair restored both providers in #556. |
 
 Desktop also passes the recipes this start activated; the recorded recipe
-covers that trigger, so the model leaves it out. Migration 0039 also marks every loaded route startup left pending.
+covers that trigger, so the model leaves it out. The model starts with a
+recorded recipe. In the code, a row migration 0039 left without one counts a
+change only when this start's own update activated a new recipe or failed
+to; `the_first_recorded_recipe_marks_only_a_runtime_this_update_changed`
+covers that. Migration 0039 also marks every loaded route startup left pending.
 The model starts after that migration, so it does not cover the backfill.
 The automatic evaluation skips a harness whose runtime was never
 installed; the model has one harness whose runtime starts installed.

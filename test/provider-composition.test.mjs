@@ -561,5 +561,10 @@ describe("injectable production provider composition", () => {
     expect(source).not.toMatch(/await\s+startPostUpgradeReadiness/);
     // Startup names each coordinated harness's required recipe for the app server.
     expect(source).toContain("harnessRuntimeRecipe: (configuration) => managedRuntimeInstaller.recipeIdentity(");
+    expect(source).toContain("harnessRuntimeUpdated: (configuration) => updatedRuntimeIds.has(");
+    expect(source).toContain("for (const runtimeId of runtimesChangedByActivation(activation)) updatedRuntimeIds.add(runtimeId);");
+    expect(source.indexOf("runtimesChangedByActivation(activation)")).toBeLessThan(source.indexOf("await graphRuntime.start()"));
+    const evalSource = await readFile(new URL("../desktop/eval-main/index.mjs", import.meta.url), "utf8");
+    expect(evalSource).toContain("harnessRuntimeRecipe: ({ implementation }) => runtimeFileValidator.recipeIdentity(");
   });
 });

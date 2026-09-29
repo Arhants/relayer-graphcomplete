@@ -286,6 +286,16 @@ function recipeIdentity(harnessRuntimeRecipe, configuration) {
   }
 }
 
+// Whether this start's app update activated a new recipe for the harness's runtime, or
+// failed to. The app server then withholds an old ready even with no recipe recorded yet.
+function runtimeUpdated(harnessRuntimeUpdated, configuration) {
+  try {
+    return harnessRuntimeUpdated(configuration) === true;
+  } catch {
+    return false;
+  }
+}
+
 export class GraphCompleteRuntimeService {
   constructor({
     userDataDirectory,
@@ -303,6 +313,7 @@ export class GraphCompleteRuntimeService {
     validateHarnessRuntime,
     onHarnessRuntimeValidationFailure = () => {},
     harnessRuntimeRecipe = () => null,
+    harnessRuntimeUpdated = () => false,
     coordinateHarnessReadiness = false,
     harnessHostModuleUrl,
     candidateTrace,
@@ -333,6 +344,7 @@ export class GraphCompleteRuntimeService {
     this.validateHarnessRuntime = validateHarnessRuntime;
     this.onHarnessRuntimeValidationFailure = onHarnessRuntimeValidationFailure;
     this.harnessRuntimeRecipe = harnessRuntimeRecipe;
+    this.harnessRuntimeUpdated = harnessRuntimeUpdated;
     this.coordinateHarnessReadiness = coordinateHarnessReadiness;
     this.harnessHostModuleUrl = harnessHostModuleUrl;
     this.candidateTrace = candidateTrace;
@@ -447,7 +459,11 @@ export class GraphCompleteRuntimeService {
             code: "harness_readiness_pending",
             message: "This execution configuration is currently unavailable.",
           },
-          appServerReadiness: { runtimeFilesValid, ...recipeIdentity(this.harnessRuntimeRecipe, configuration) },
+          appServerReadiness: {
+            runtimeFilesValid,
+            ...recipeIdentity(this.harnessRuntimeRecipe, configuration),
+            ...(runtimeUpdated(this.harnessRuntimeUpdated, configuration) ? { runtimeUpdated: true } : {}),
+          },
         };
       }));
       await this.#awaitStartupOperation(writeFileAtomically(catalogPath, `${JSON.stringify({

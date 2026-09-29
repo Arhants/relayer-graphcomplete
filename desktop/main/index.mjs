@@ -57,7 +57,7 @@ import {
   GRAPHCOMPLETE_LOGIN_URL,
 } from "./services/desktop-account-service.mjs";
 import { createDesktopUpdater, resolveUpdateChannel } from "./services/updater.mjs";
-import { createManagedRuntimeInstaller } from "./managed-runtimes/installer.mjs";
+import { createManagedRuntimeInstaller, runtimesChangedByActivation } from "./managed-runtimes/installer.mjs";
 import { createManagedRuntimeResolver, managedRecipeInstalled } from "./managed-runtimes/resolver.mjs";
 import { createHarnessReadinessCoordinator, startPostUpgradeReadiness } from "./services/harness-readiness.mjs";
 import { confirmManagedRuntimeQuit } from "./managed-runtimes/quit-guard.mjs";
@@ -120,6 +120,8 @@ const managedRuntimeInstaller = createManagedRuntimeInstaller({
   },
 });
 const managedRuntimeResolver = createManagedRuntimeResolver(managedRuntimeInstaller);
+// Runtime ids this start's app update changed; filled before the graph runtime starts.
+const updatedRuntimeIds = new Set();
 const legacyCodexHome = resolveLegacyCodexHome(userDataPath, process.env);
 const updateBaseUrl = packagedRelease?.updateBaseUrl || (
   app.isPackaged ? null : process.env.RELAYER_DESKTOP_UPDATE_BASE_URL || DESKTOP_UPDATE_BASE_URL
@@ -249,6 +251,9 @@ if (primaryInstance) {
     },
     harnessRuntimeRecipe: (configuration) => managedRuntimeInstaller.recipeIdentity(
       managedRuntimeRequirementForHarness(configuration.implementation).recipeId,
+    ),
+    harnessRuntimeUpdated: (configuration) => updatedRuntimeIds.has(
+      managedRuntimeRequirementForHarness(configuration.implementation).runtimeId,
     ),
     onHarnessRuntimeValidationFailure: async (configuration, error) => {
       await providerDiagnostics.write({
@@ -433,6 +438,9 @@ if (primaryInstance) {
     if (channel === "preview") updater.setChannel("preview");
     void accountService.start().catch((error) => console.error("Optional desktop account initialization failed:", error));
     const activation = await managedRuntimeInstaller.activatePendingAppUpdate(desktopVersion);
+    // Runtimes this update changed: a new recipe activated, or activation failed. Startup
+    // tells the app server, which withholds their old ready and marks them due.
+    for (const runtimeId of runtimesChangedByActivation(activation)) updatedRuntimeIds.add(runtimeId);
     if (activation.failures.length) {
       console.error("Managed runtime update activation failed:", new AggregateError(
         activation.failures.map(({ error }) => error),

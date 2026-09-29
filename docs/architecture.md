@@ -497,7 +497,9 @@ coordinated harness requires. `initialize_model_catalog` keeps the recipe each r
 loaded in `runtime_recipe`, and a changed recipe does not restore an old ready. When an
 upgrade changes a coordinated route's digest or recipe, it marks the row
 `readiness_update_due`; that covers an update whose staged runtime activated and one
-whose activation failed. After provider startup, Electron reads the marks and starts
+whose activation failed. Startup also flags each runtime its own activation changed
+(`runtimeUpdated`), which counts even before a recipe was recorded, as on the first
+start after migration 0039; the eval app records recipes too. After provider startup, Electron reads the marks and starts
 one background evaluation through the `recipe-update` trigger. A runtime recipe newly
 activated by the update also starts it for the harnesses that use it. The evaluation covers every active provider with a published
 route through those harnesses, so ChatGPT and OpenRouter share one result for
