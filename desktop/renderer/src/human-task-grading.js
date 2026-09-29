@@ -76,7 +76,7 @@ export function initializeHumanTaskGrading(bridge) {
         const row = document.createElement("p"); row.textContent = note.comment; content.append(row);
       }
     }
-    if (task.status === "active") {
+    if (task.status === "active" && typeof bridge.finish === "function") {
       const finish = document.createElement("form");
       finish.innerHTML = `<p>Finish only when you are done interacting. No rating is required.</p><label>Finish reason<select name="reason"><option value="satisfied">Satisfied</option><option value="endpoint_reached">Endpoint reached</option><option value="abandoned">Abandoned</option><option value="budget_exhausted">Completion limit reached</option></select></label><button type="submit">Finish task</button>`;
       finish.onsubmit = (event) => {
