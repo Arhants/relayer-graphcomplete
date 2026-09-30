@@ -36,7 +36,7 @@ const directories = [];
 const closers = [];
 
 function centered(node) {
-  return new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)]);
+  return new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)], "default");
 }
 
 afterEach(async () => {

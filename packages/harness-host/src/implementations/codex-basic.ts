@@ -12,6 +12,7 @@ import {
 } from "../native-session-reset.js";
 import { redactTraceData } from "../trace.js";
 import { CURRENT_WORKSPACE_GUIDANCE, GRAPH_PRESENTATION_GUIDANCE } from "./graph-presentation-guidance.js";
+import { LAYER_EDGE_SHAPE_GUIDANCE } from "./layer-edge-shape-guidance.js";
 import {
   personalPresentationNativeInstructions,
   personalPresentationPrompt,
@@ -756,11 +757,13 @@ The required order is:
 1. create stable-keyed NodeObject values with icon, title, and useful markdown detail;
 2. await graph.submitNode(node) for each node;
 3. create a stable-keyed EdgeObject and await graph.createEdge(edge) for each visible undirected connection;
-4. create a version-1 LayerLayoutObject with exactly one NodePlacementObject(node, x, y) per layer node, then await graph.submitLayer(new LayerObject(nodes, edges, layout, "response-layer"));
+4. create a version-1 LayerLayoutObject(placements, edgeShape, edgeRoutes?) with exactly one NodePlacementObject(node, x, y) per layer node, then await graph.submitLayer(new LayerObject(nodes, edges, layout, "response-layer"));
 5. await graph.addAction(${interactionNode.id}, { kind: "navigate", relation: "expand", label: "Response", target: layer, clientKey: "root-response" });
 6. await graph.submit(${interactionNode.id}).
 
 The visible layer must contain 1 to 8 nodes and must be connected. Layer edges are exactly what the user sees.
+
+${LAYER_EDGE_SHAPE_GUIDANCE}
 
 Every new layer, including every child layer, requires an intentional authored layout. Coordinates are normalized numbers from 0 through 1 and describe semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, use a parent or summary node to anchor hierarchy, group related nodes spatially, align comparisons deliberately, and avoid accidental overlap or edge crossings where a clearer arrangement is available. The renderer changes the camera for the viewport; do not derive coordinates from pixels, window size, or inspector state.
 
@@ -915,7 +918,8 @@ For every layer, choose the member whose detail should open first. Set layer.def
 
 Layers normally contain 1 to 5 nodes. A layer may contain 6 to 8 nodes only when keeping them together matters; pass a private sizeJustification to submitLayer. Never mention or expose the size justification in user-facing node text. More than 8 nodes must be split. Layer edges are visible and undirected. Every node needs a supported icon, short title, and useful markdown detail. Optional action icons must also be supported: ${RELAYER_ICON_NAMES.join(", ")}.
 
-Every new root, expansion, and reference layer requires a version-1 LayerLayoutObject with exactly one NodePlacementObject(node, x, y) per member node. Coordinates are normalized numbers from 0 through 1 and express semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, use a parent or summary node to anchor hierarchy, group related nodes spatially, align comparisons deliberately, and avoid accidental overlap or edge crossings where a clearer arrangement is available. Do not use pixels, window size, or inspector state. Example: const layout = new LayerLayoutObject([new NodePlacementObject(first, 0.25, 0.5), new NodePlacementObject(second, 0.75, 0.5)]); const layer = new LayerObject([first, second], [edge], layout);
+Every new root, expansion, and reference layer requires a version-1 LayerLayoutObject(placements, edgeShape, edgeRoutes?) with exactly one NodePlacementObject(node, x, y) per member node. Coordinates are normalized numbers from 0 through 1 and express semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, use a parent or summary node to anchor hierarchy, group related nodes spatially, align comparisons deliberately, and avoid accidental overlap or edge crossings where a clearer arrangement is available. Do not use pixels, window size, or inspector state. Example: const layout = new LayerLayoutObject([new NodePlacementObject(first, 0.25, 0.5), new NodePlacementObject(second, 0.75, 0.5)], "elbow-horizontal"); const layer = new LayerObject([first, second], [edge], layout); a routed loop-back: new LayerLayoutObject(placements, "elbow-horizontal", [{ edge: loopBack, ends: [{ node: last, side: "top" }, { node: first, side: "top" }], waypoints: [{ x: 0.9, y: 0.1 }, { x: 0.1, y: 0.1 }] }]);
+${LAYER_EDGE_SHAPE_GUIDANCE}
 
 Layer edges are exactly what the user sees and are undirected. Every node needs a supported icon, a short title, and useful markdown detail. Optional action icons must also use a supported Relayer icon name:
 ${RELAYER_ICON_NAMES.join(", ")}
@@ -956,7 +960,7 @@ function graphAuthoringCommand(launcher: string | undefined): string {
 
 function pinnedExecutionClause(launcher: string | undefined): string {
   if (launcher === undefined) return "";
-  return `In this pinned mode, the launcher heredoc is the only permitted shell action for graph authoring. Do not run sed, rg, cat, find, or any other inspection command through the launcher or from the authored graph program. If the authored program fails, repair it only from the returned error and rerun the same launcher heredoc. This restriction applies only to the graph-authoring path: complete the underlying user task with ordinary Codex workspace tools under the configured permission policy. LayerLayoutObject accepts exactly one argument: the placements array, for example new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)]). Its version is already fixed at 1; never pass a version argument and never assign layout.version.`;
+  return `In this pinned mode, the launcher heredoc is the only permitted shell action for graph authoring. Do not run sed, rg, cat, find, or any other inspection command through the launcher or from the authored graph program. If the authored program fails, repair it only from the returned error and rerun the same launcher heredoc. This restriction applies only to the graph-authoring path: complete the underlying user task with ordinary Codex workspace tools under the configured permission policy. LayerLayoutObject takes the placements array, the edge shape and an optional array of edge routes, for example new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)], "default"). Its version is already fixed at 1; never pass a version argument and never assign layout.version.`;
 }
 
 function traceCodexAppServerNotification(context: HarnessRunContext, method: string, params: unknown, state: CodexTraceState): void {

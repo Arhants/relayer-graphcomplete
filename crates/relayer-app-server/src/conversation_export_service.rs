@@ -17,14 +17,14 @@ use crate::{
         ExportActionKind, ExportActionVariant, ExportAdmittedExecutionModelPlan,
         ExportAdmittedExecutionModelRoute, ExportAttemptOutcome, ExportAuthoredDetailOmission,
         ExportCompletionReceipt, ExportCompletionStatus, ExportContextSource,
-        ExportContextTargetSnapshot, ExportConversation, ExportEdge, ExportInputActionSnapshot,
-        ExportInputControl, ExportInputOption, ExportInputSource, ExportInteractionContext,
-        ExportLayer, ExportLayerLayout, ExportModelSelection, ExportNavigateRelation, ExportNode,
-        ExportNodePlacement, ExportPermissionReceipt, ExportProducer, ExportRecordState,
-        ExportResolvedLayer, ExportSubmittedInput, ExportSubmittedInputValue,
-        ExportTurnManifestEntry, ExportTurnOrigin, ExportVisualAssetAssociation,
-        ExportVisualAssetContent, ExportVisualAssetProvenance, MAX_EXPORT_BYTES,
-        MAX_JSONL_LINE_BYTES, MAX_SHARE_SNAPSHOT_BYTES, validate_export_records,
+        ExportContextTargetSnapshot, ExportConversation, ExportEdge, ExportEdgeEnd,
+        ExportEdgeRoute, ExportInputActionSnapshot, ExportInputControl, ExportInputOption,
+        ExportInputSource, ExportInteractionContext, ExportLayer, ExportLayerLayout,
+        ExportModelSelection, ExportNavigateRelation, ExportNode, ExportNodePlacement,
+        ExportPermissionReceipt, ExportProducer, ExportRecordState, ExportResolvedLayer,
+        ExportSubmittedInput, ExportSubmittedInputValue, ExportTurnManifestEntry, ExportTurnOrigin,
+        ExportVisualAssetAssociation, ExportVisualAssetContent, ExportVisualAssetProvenance,
+        MAX_EXPORT_BYTES, MAX_JSONL_LINE_BYTES, MAX_SHARE_SNAPSHOT_BYTES, validate_export_records,
     },
     product::{
         ActionInvocation, DurableInteractionInput, Interaction, InteractionId, ProductError,
@@ -1944,6 +1944,24 @@ fn export_layer(
                             node_id: ids.node(placement.node_id.value()),
                             x: placement.x,
                             y: placement.y,
+                        })
+                        .collect(),
+                    edge_shape: layout.edge_shape.clone(),
+                    edge_routes: layout
+                        .edge_routes
+                        .iter()
+                        .map(|route| ExportEdgeRoute {
+                            edge_id: ids.edge(route.edge_id.value()),
+                            shape: route.shape.clone(),
+                            ends: route
+                                .ends
+                                .iter()
+                                .map(|end| ExportEdgeEnd {
+                                    node_id: ids.node(end.node_id.value()),
+                                    side: end.side.clone(),
+                                })
+                                .collect(),
+                            waypoints: route.waypoints.clone(),
                         })
                         .collect(),
                 }),

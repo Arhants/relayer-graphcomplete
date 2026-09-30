@@ -89,7 +89,7 @@ function ownershipFixtureFactory() {
       assert(distinct === (phase === "before" ? 1 : 3), "Unexpected authored package identity count");
       const edges = [];
       for (let i = 1; i < nodes.length; i++) edges.push(await graph.createEdge(nodes[0], nodes[i], `edge-${i}`));
-      const layer = new api.LayerObject(nodes, edges, new api.LayerLayoutObject(nodes.map((node, i) => new api.NodePlacementObject(node, .5, .2 + i * .3))), "root");
+      const layer = new api.LayerObject(nodes, edges, new api.LayerLayoutObject(nodes.map((node, i) => new api.NodePlacementObject(node, .5, .2 + i * .3)), "default"), "root");
       await graph.submitLayer(layer);
       await graph.addAction(context.inputGraph.id, { kind: "navigate", relation: "expand", label: "Response", target: layer, clientKey: "response" });
       const result = await graph.submit(context.inputGraph.id);

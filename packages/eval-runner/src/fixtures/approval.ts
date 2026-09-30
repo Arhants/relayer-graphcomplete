@@ -130,7 +130,7 @@ class ApprovalFixtureHarness implements Harness {
     const layer = new LayerObject(
       [node],
       [],
-      new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)]),
+      new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)], "default"),
       `approval-fixture-layer-${completion}`,
     );
     await graph.submitLayer(layer);

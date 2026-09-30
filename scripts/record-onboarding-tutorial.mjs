@@ -117,7 +117,7 @@ class TutorialFixtureHarness {
       new LayerLayoutObject([
         new NodePlacementObject(distinct, 0.5, 0.25),
         new NodePlacementObject(patterns, 0.5, 0.75),
-      ]),
+      ], "default"),
       "memory-detail-layer",
     );
     const rootLayer = new LayerObject(
@@ -127,7 +127,7 @@ class TutorialFixtureHarness {
         new NodePlacementObject(novelty, 0.2, 0.65),
         new NodePlacementObject(attention, 0.5, 0.5),
         new NodePlacementObject(memory, 0.8, 0.35),
-      ]),
+      ], "default"),
       "time-perception-layer",
     );
     await graph.submitLayer(detailLayer);

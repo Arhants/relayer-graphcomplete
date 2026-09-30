@@ -117,9 +117,9 @@ async function authorProgram(graph, interactionId, revision) {
   const rootLayout = new LayerLayoutObject([
     new NodePlacementObject(summary, 0.5, 0.25),
     new NodePlacementObject(accepted, 0.5, 0.75),
-  ]);
-  const detailLayout = new LayerLayoutObject([new NodePlacementObject(detail, 0.5, 0.5)]);
-  const abandonedLayout = new LayerLayoutObject([new NodePlacementObject(abandoned, 0.5, 0.5)]);
+  ], "default");
+  const detailLayout = new LayerLayoutObject([new NodePlacementObject(detail, 0.5, 0.5)], "default");
+  const abandonedLayout = new LayerLayoutObject([new NodePlacementObject(abandoned, 0.5, 0.5)], "default");
   const rootLayer = new LayerObject([summary, accepted], [rootEdge], rootLayout, "repair-root-layer");
   const detailLayer = new LayerObject([detail], [], detailLayout, "repair-detail-layer");
   const abandonedLayer = new LayerObject([abandoned], [], abandonedLayout, "abandoned-layer");

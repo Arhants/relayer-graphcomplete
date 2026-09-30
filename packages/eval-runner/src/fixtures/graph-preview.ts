@@ -36,7 +36,7 @@ class GraphPreviewFixtureHarness implements Harness {
     await see("authored node", (await graph.submitNode(risks)).preview, "rendered");
     const edge = new EdgeObject([plan, risks], "plan-risks");
     await graph.createEdge(edge);
-    const layout = (x: number) => new LayerLayoutObject([new NodePlacementObject(plan, x, 0.5), new NodePlacementObject(risks, 0.75, 0.5)]);
+    const layout = (x: number) => new LayerLayoutObject([new NodePlacementObject(plan, x, 0.5), new NodePlacementObject(risks, 0.75, 0.5)], "default");
     const first = await see("layer", (await graph.submitLayer(new LayerObject([plan, risks], [edge], layout(0.25), "root"))).preview, "rendered");
     const moved = await see("moved layer", (await graph.submitLayer(new LayerObject([plan, risks], [edge], layout(0.4), "root"))).preview, "rendered");
     if (moved?.path === first?.path) throw new Error("moved layer: the fresh image reused the old one");

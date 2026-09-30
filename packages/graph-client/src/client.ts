@@ -255,6 +255,15 @@ export class RelayerGraphClient {
             x: placement.x,
             y: placement.y,
           })),
+          edgeShape: layer.layout.edgeShape,
+          ...(layer.layout.edgeRoutes.length ? {
+            edgeRoutes: layer.layout.edgeRoutes.map((route) => ({
+              edgeId: edgeId(route.edge),
+              shape: route.shape,
+              ends: route.ends?.map((end) => ({ nodeId: nodeId(end.node), side: end.side })),
+              waypoints: route.waypoints?.map(({ x, y }) => ({ x, y })),
+            })),
+          } : {}),
         },
         sizeJustification: options.sizeJustification,
       }),

@@ -69,6 +69,18 @@ describe("product workspace graph layout", () => {
     expect(projected.positions.get("2")).toEqual({ x: 808, y: 428 });
   });
 
+  it("projects waypoints exactly as it projects nodes, including when overlapping boxes are spread apart", () => {
+    const placements = [
+      { nodeId: 1, x: 0.45, y: 0.5 },
+      { nodeId: 2, x: 0.55, y: 0.5 },
+      { nodeId: 3, x: 0.5, y: 0.52 },
+    ];
+    const projected = projectLayerNodePositions(authoredLayer(placements), nodes);
+    const spread = projected.positions.get("2").x - projected.positions.get("1").x;
+    expect(spread).toBeGreaterThan(0.1 * (GRAPH_WORLD_WIDTH - 2 * (bounds.halfWidth + 32)));
+    for (const { nodeId, x, y } of placements) expect(projected.project({ x, y })).toEqual(projected.positions.get(String(nodeId)));
+  });
+
   it("centers a legacy one-node layer and deterministically places larger legacy layers", () => {
     const one = projectLayerNodePositions({ layer: { id: 1 } }, [{ id: "only", layoutBounds: bounds }]);
     expect(one.source).toBe("legacy");

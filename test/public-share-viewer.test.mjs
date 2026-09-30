@@ -987,3 +987,95 @@ it("V3 root reference backlinks preserve nonroot mixed-arrival and expansion-cyc
   layers[2].actions.at(-1).targetLayerId = "layer:nested";
   expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "mixed_target_relations" }));
 });
+
+describe("public share edge shapes", () => {
+  function shapedRecords() {
+    const records = invokeFixtureRecords();
+    const root = records[1].acceptedView.layers[0];
+    // "Start" joined the layer after "Root", but its placement puts it first in reading order.
+    for (const [id, title] of [["node:start", "Start"], ["node:end", "End"]]) {
+      root.layer.nodes.push(id);
+      root.nodes.push({ id, kind: "concept", icon: "box", title, detail: "", state: "accepted" });
+    }
+    for (const [id, endpoints] of [["edge:start-root", ["node:root", "node:start"]], ["edge:root-end", ["node:root", "node:end"]]]) {
+      root.layer.edges.push(id);
+      root.edges.push({ id, endpoints, state: "accepted" });
+    }
+    root.layer.layout = {
+      version: 1,
+      placements: [{ nodeId: "node:start", x: .1, y: .2 }, { nodeId: "node:root", x: .5, y: .6 }, { nodeId: "node:end", x: .9, y: .3 }],
+      edgeShape: "arc-circle",
+      // One edge overrides the layer: straight, over the top through a waypoint.
+      edgeRoutes: [{ edgeId: "edge:root-end", shape: "straight", ends: [{ nodeId: "node:end", side: "top" }, { nodeId: "node:root" }], waypoints: [{ x: .5, y: .05 }] }],
+    };
+    return records;
+  }
+
+  it("keeps each layer's edge shape and reading order from snapshot to canvas", async () => {
+    const records = shapedRecords();
+    const snapshot = parsePublicSnapshot(recordsJsonl(records));
+    expect(snapshot.layerFor("turn:1", "layer:root").layer.layout).toEqual(records[1].acceptedView.layers[0].layer.layout);
+    // A layer shared before edge shapes existed keeps no shape and reads as the default.
+    expect(snapshot.layerFor("turn:2", "layer:child").layer.layout).toEqual({ version: 1, placements: [{ nodeId: "node:child", x: .5, y: .5 }] });
+    const malformed = shapedRecords();
+    malformed[1].acceptedView.layers[0].layer.layout.edgeShape = 3;
+    expect(() => parsePublicSnapshot(recordsJsonl(malformed))).toThrow(expect.objectContaining({ code: "layout_edge_shape_invalid" }));
+    const misrouted = shapedRecords();
+    misrouted[1].acceptedView.layers[0].layer.layout.edgeRoutes[0].ends[1].nodeId = "node:start";
+    expect(() => parsePublicSnapshot(recordsJsonl(misrouted))).toThrow(expect.objectContaining({ code: "layout_edge_route_invalid" }));
+
+    const windowRef = new Window({ url: `https://share.example.test/t/${"b".repeat(32)}` });
+    windowRef.document.write(renderPublicViewerTemplate({ snapshot: recordsJsonl(records), presentation: "standalone", sharePath: `/t/${"b".repeat(32)}`, theme: "system" }));
+    const previous = { DOMParser: globalThis.DOMParser, document: globalThis.document, lucide: globalThis.lucide, window: globalThis.window };
+    globalThis.window = windowRef;
+    globalThis.document = windowRef.document;
+    globalThis.DOMParser = windowRef.DOMParser;
+    globalThis.lucide = { Circle: {}, createElement: () => windowRef.document.createElementNS("http://www.w3.org/2000/svg", "svg") };
+    try {
+      const viewer = bootPublicViewer({ documentRef: windowRef.document, windowRef, onRenderError: vi.fn() });
+      await windowRef.happyDOM.waitUntilComplete();
+      const canvas = windowRef.document.querySelector("#edgeCanvas");
+      // Tab and screen-reader order follow the placements, not layer membership.
+      expect([...windowRef.document.querySelectorAll("[data-node]")].map((node) => node.dataset.node)).toEqual(["node:start", "node:root", "node:end"]);
+      expect(canvas.getAttribute("data-edge-shape")).toBe("arc-circle");
+      const edgePath = (id) => windowRef.document.querySelector(`[data-edge="${id}"] .graph-edge`).getAttribute("d");
+      const [startRoot, rootEnd] = [edgePath("edge:start-root"), edgePath("edge:root-end")];
+      expect(startRoot).toMatch(/^M[^MA]+A[^MA]+$/);
+      // The routed edge draws in its own shape: straight segments out of End's top, through its waypoint.
+      const routed = windowRef.document.querySelector('[data-edge="edge:root-end"]');
+      expect([routed.hasAttribute("data-edge-routed"), routed.getAttribute("data-edge-shape")]).toEqual([true, "straight"]);
+      expect(rootEnd).toMatch(/^M[^A-Z]+L[^A-Z]+L[^A-Z]+L[^A-Z]+$/);
+      const points = (d) => d.match(/-?[\d.]+/g).map(Number).reduce((list, value, index, all) => (index % 2 ? list : [...list, { x: value, y: all[index + 1] }]), []);
+      expect(canvas.querySelector("marker, [marker-start], [marker-mid], [marker-end]")).toBeNull();
+      // Dragging a node reshapes only the edges it is on.
+      windowRef.HTMLElement.prototype.setPointerCapture ??= () => {};
+      const start = windowRef.document.querySelector('[data-node="node:start"]');
+      start.dispatchEvent(new windowRef.PointerEvent("pointerdown", { bubbles: true, pointerId: 3, buttons: 1, clientX: 100, clientY: 100 }));
+      start.dispatchEvent(new windowRef.PointerEvent("pointermove", { bubbles: true, pointerId: 3, buttons: 1, clientX: 100, clientY: 160 }));
+      expect(edgePath("edge:start-root")).not.toBe(startRoot);
+      expect(edgePath("edge:root-end")).toBe(rootEnd);
+      start.dispatchEvent(new windowRef.PointerEvent("pointerup", { bubbles: true, pointerId: 3 }));
+      // Dragging End, which the route leaves from, carries its waypoint part of the way, without turning it.
+      const end = windowRef.document.querySelector('[data-node="node:end"]');
+      end.dispatchEvent(new windowRef.PointerEvent("pointerdown", { bubbles: true, pointerId: 4, buttons: 1, clientX: 500, clientY: 100 }));
+      end.dispatchEvent(new windowRef.PointerEvent("pointermove", { bubbles: true, pointerId: 4, buttons: 1, clientX: 500, clientY: 160 }));
+      const [before, after] = [points(rootEnd), points(edgePath("edge:root-end"))];
+      const moved = (index) => ({ x: after[index].x - before[index].x, y: after[index].y - before[index].y });
+      expect(moved(0).y).toBeGreaterThan(0);
+      expect(moved(2).x).toBeCloseTo(0, 6);
+      expect(moved(2).y).toBeGreaterThan(0);
+      expect(moved(2).y).toBeLessThan(moved(0).y);
+      expect(after[3]).toEqual(before[3]);
+      end.dispatchEvent(new windowRef.PointerEvent("pointerup", { bubbles: true, pointerId: 4 }));
+
+      viewer.adapter.selectTurnById("turn:2");
+      viewer.render();
+      await windowRef.happyDOM.waitUntilComplete();
+      expect(windowRef.document.querySelector("#edgeCanvas").getAttribute("data-edge-shape")).toBe("arc-outward");
+      viewer.dispose();
+    } finally {
+      Object.assign(globalThis, previous);
+      await windowRef.close();
+    }
+  });
+});

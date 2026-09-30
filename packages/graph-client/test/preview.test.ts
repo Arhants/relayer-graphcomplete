@@ -37,7 +37,7 @@ describe("draft previews on graph writes", () => {
     expect(submitted.id).toBe(10);
     expect(submitted.preview).toEqual({ status: "rendered", path: join(previewDirectory, "node-10-abababababababab.png"), width: 340, height: 812 });
     expect(await readFile(submitted.preview!.path!)).toEqual(PNG);
-    const layer = await client.submitLayer(new LayerObject([node], [], new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)]), "root"));
+    const layer = await client.submitLayer(new LayerObject([node], [], new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)], "default"), "root"));
     expect(layer.preview).toEqual({ status: "limit_reached" });
   });
 
@@ -47,7 +47,7 @@ describe("draft previews on graph writes", () => {
       return json({ layer: { ...request, id: 30, state: "draft" } });
     }));
     const layer = await new RelayerGraphClient({ url: "http://127.0.0.1:1", token: "token", nodeId: 1 })
-      .submitLayer(new LayerObject([9], [], new LayerLayoutObject([new NodePlacementObject(9, 0.5, 0.5)]), "root"));
+      .submitLayer(new LayerObject([9], [], new LayerLayoutObject([new NodePlacementObject(9, 0.5, 0.5)], "default"), "root"));
     expect(layer).not.toHaveProperty("preview");
   });
 

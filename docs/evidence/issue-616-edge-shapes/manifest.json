@@ -1,0 +1,544 @@
+{
+  "schemaVersion": 1,
+  "evidence": "issue-616-edge-shapes",
+  "fixture": {
+    "kind": "synthetic",
+    "file": "docs/evidence/issue-616-edge-shapes/synthetic-snapshot.jsonl",
+    "sha256": "8e2acf9764df076c3e9ce1c02744138a58455ce51390a9bbcda870dba5703a9b"
+  },
+  "source": {
+    "commit": "4d09141280389070409812b8724a48474fbf9deb",
+    "dirty": true,
+    "sourceFiles": {
+      "desktop/renderer/design/design.css": "332eb1b0f3bd8b65b6207a2b4d080499b57ec548c7e3167b1f91c91893a90bf7",
+      "desktop/renderer/design/fonts/bricolage-grotesque/bricolage-grotesque-latin-wght-normal.woff2": "a97804dc9fbe5fc972a08018c5eda4dab7ef2346f64c57e61419d05e6de4ea1c",
+      "desktop/renderer/design/fonts/figtree/figtree-latin-wght-normal.woff2": "4ba7d3d096695818fe0686be4f1e82c6b05134e18a22260336130335027462dd",
+      "desktop/renderer/src/action-invocation-state.js": "890d8f69c6a8310a0221e1a6ce35c9a6fb0735b8826be009bd68ceb56c06d4ea",
+      "desktop/renderer/src/api.js": "4024542092755f7167e11f0c7803a25f49c7d9b27172ce5c9dde74f16905a58e",
+      "desktop/renderer/src/approval-model.js": "f1b0d76178c7de024d14a191930f2e419e1a7e9c9396626d56ad45b58a9a4ecf",
+      "desktop/renderer/src/composer-drafts.js": "95aef2c4e5c959bd7322d999ee54a42b34e2ce706b744b4eee0fc56bcfa9ee94",
+      "desktop/renderer/src/control-activation.js": "682962e5cfc93c2720845d409c4bd65fe51a5b4f0e9718e1fbfc452943104186",
+      "desktop/renderer/src/interaction-failure-model.js": "770928962446ad3326d94460235775e581a542056a4477860b2e37f4ba457442",
+      "desktop/renderer/src/model-picker-model.js": "ce90a85ee2d9c360eca78c0241e8524d72ad2202452a6b0cdb03c8ef0f1ae463",
+      "desktop/renderer/src/model-picker.js": "11b2000a7c39d8b858ddae68ab01512054de2b8632d9fd29785ea100956fe702",
+      "desktop/renderer/src/node-context-drafts.js": "0f0db2a7a00c2bae2239b584d612e5ad21b161094b3e783879d3e7b4854f2c87",
+      "desktop/renderer/src/node-input-controls.js": "5d7bc5fee66a9ace45a01ef9dcebb20b39f1f0b94d7f35f1d61f1ef1f8672584",
+      "desktop/renderer/src/product-workspace/annotations.js": "a6d06bc7f20dcb7116533198cb12702b790b9d724d3a08d8ebbc959bcb971510",
+      "desktop/renderer/src/product-workspace/composer-submission.js": "e480c7e854b010905c7ac8e9e3b31e9a6193035de7ed8cbadbf64645cc3a2b92",
+      "desktop/renderer/src/product-workspace/edge-shapes.js": "eb207d003e6b7c1c5d7f257946f90da9e5613a0c927507d658964b4c69556b45",
+      "desktop/renderer/src/product-workspace/graph-layout.js": "f11407542b0f7301e1cc44c12b59cdf3a603277d623aabfe65eefb16834601af",
+      "desktop/renderer/src/product-workspace/icons.js": "c5cf5409011161d8d78794cf4a6c2ee12c7b3ebcb34789b88dbbdefb50b89223",
+      "desktop/renderer/src/product-workspace/index.js": "997f671fdfa819657a691dd9e8f6741a4d07ca96dcdb7b8230c5e039353c9f7b",
+      "desktop/renderer/src/product-workspace/interaction-graph.js": "2db93cdd4c3c790c2b9b87a4d13c89f17561c60a8a337b28ea68369f3e1f9424",
+      "desktop/renderer/src/product-workspace/layer-selection.js": "4c691164821433a43dac9abd7539d549f5ca858447cd20202b904f7786047185",
+      "desktop/renderer/src/product-workspace/markdown.js": "338cdd8855f3b40c4138d0245262c209554b26b94c1a4655598ce976fca5b90c",
+      "desktop/renderer/src/product-workspace/model.js": "342c4fefb1432ccf178d6d57bc03597b0d67d7ceed3280356f5a102d9eef749a",
+      "desktop/renderer/src/product-workspace/node-detail-runtime.js": "f63fdb49f1786af067b5b550b2b75467b46e7ab5b8b04dd836b64c10690065d9",
+      "desktop/renderer/src/product-workspace/run-state.js": "51d1cf895a9f261ebf74d4cba3000897e37ab8571339a68a581390f847089c15",
+      "desktop/renderer/src/product-workspace/view.js": "8f503edd7a926ff234d81faf0e84a4847dd80c2b64b544c0a2d37bcf159ed8bc",
+      "desktop/renderer/src/product-workspace/workspace-layout.js": "8e5d307f95b1863fb995606ca32a832de088916716c39476f9d31f2174de002d",
+      "desktop/renderer/src/product-workspace/workspace.js": "70af74dd3fa7cf18a0b0c3007167b715b992cf6535bde8707ae12d91b5247d28",
+      "desktop/renderer/src/public-share-viewer/adapter.js": "da4135effa876c2d8a58f7b650d2ac6c536f9eb8b0d3056e6630505d0a039021",
+      "desktop/renderer/src/public-share-viewer/main.js": "c6f03f10e2c73fd0b1f99f17ea2aad98cda452403fab0ef8357e83dd0a588db0",
+      "desktop/renderer/src/public-share-viewer/snapshot.js": "22de09bafd3c0c8808b77a64d8417414dd26e43fb0417e137426d8e7c9f7511e",
+      "desktop/renderer/src/public-share-viewer/viewer.css": "cb10f9e12bde18d5a86141835d9da5f79674830ebe2f96a672bdb63429917d80",
+      "desktop/renderer/src/share-publish-ui.js": "3a07cbecaab629f54720575e5fea998694919f2fce15638d89bc025100a57904",
+      "desktop/renderer/src/ui.js": "cc097502fc2edf38832715c536e356665e4564336441c89a2b655a5af019d53b",
+      "desktop/renderer/styles.css": "bbd35785f97e1b722afe8631155aa11bdb95f1c8c70c3e2c2cdbd6e7a2fab2ce",
+      "desktop/renderer/vendor/lucide.min.js": "534813d1da2f4d4550383d5db0879aedb2f74c2d0b8951ade277e8bcaea6df52",
+      "desktop/renderer/vendor/marked.umd.js": "2e20e86f0a13107ae9bf00675894bbb573716a8e5b4fde612eacaff1e404c128",
+      "scripts/capture-edge-shape-evidence.mjs": "0a71e7e3f9c0f1001c60a209460d0722fb7ce68876cb07ef4aed770eeacf60a4"
+    }
+  },
+  "browser": {
+    "electron": "43.0.0",
+    "networkRequests": [],
+    "paidInferenceCalls": 0
+  },
+  "captures": [
+    {
+      "scene": "default",
+      "authoredShape": "default",
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/default-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "arc-outward",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "b62516c577e69012bd05beddb6b6ab627136fa0fdd96ebfae63f31e9854c4dd0",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "arc-outward",
+      "authoredShape": "arc-outward",
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/arc-outward-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "arc-outward",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "5c5869806f5052aa8925ff559b794c9fb1be19cb11611568b30377ba325d9496",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "arc-circle",
+      "authoredShape": "arc-circle",
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/arc-circle-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "arc-circle",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 5,
+        "directionMarkers": 0
+      },
+      "sha256": "b90ad84b7103896948f34d64eb6c451877cb6be2e847a4307e319c8012165030",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "elbow-horizontal",
+      "authoredShape": "elbow-horizontal",
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/elbow-horizontal-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "elbow-horizontal",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 5,
+        "directionMarkers": 0
+      },
+      "sha256": "78c570a443c18c8618489d6a8de4b18dd047899216b8ede586919bb694a3dcf9",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "elbow-vertical",
+      "authoredShape": "elbow-vertical",
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/elbow-vertical-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "elbow-vertical",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "c6a61f8932a2fa999c154f65ca04ec6475aa5da591acdbf9996b3f04f4f884ff",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "straight",
+      "authoredShape": "straight",
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/straight-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "straight",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "aec5fde1f3b6916c8ddd9c51986a3a14b73b762566ed0398a1d5b951b5e133eb",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "legacy",
+      "authoredShape": null,
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/legacy-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "arc-outward",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "59bec9ddddf2f768c0023e8073c19993a31f036e1e1668403dcf5574c777f0db",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "loop-routed",
+      "authoredShape": "elbow-horizontal",
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/loop-routed-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "elbow-horizontal",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "6cac54f4d19433922b02108127566030506a4fc6371f7c5e5509f2d2e804b593",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "loop-elbow-sides",
+      "authoredShape": "elbow-horizontal",
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/loop-elbow-sides-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "elbow-horizontal",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "33e9507e8fcbbb6a0007415ea14ec804183f9ae1f69281e3e681650820fa281b",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "loop-sides",
+      "authoredShape": "straight",
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/loop-sides-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "straight",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "cb56ec54ee93474940e3bd4ccc794b05001ecb378c04a5114883965b1360dedf",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "chord-routed",
+      "authoredShape": "arc-circle",
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/chord-routed-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "arc-circle",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 6,
+        "directionMarkers": 0
+      },
+      "sha256": "679b8608107dc1eb103eb596b4c5ae875968265f330e19022bbf800d8e776691",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "default",
+      "authoredShape": "default",
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/default-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "arc-outward",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "6b3e4e8032e3065f33332d78ae7c5c26165ba92d8d1e4c7324f0e5da7c00f74c",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "arc-outward",
+      "authoredShape": "arc-outward",
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/arc-outward-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "arc-outward",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "907e9ac5ae88288ac62f85bca0e7870ff68ab69daeb22c69e2fade24390e5d51",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "arc-circle",
+      "authoredShape": "arc-circle",
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/arc-circle-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "arc-circle",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 5,
+        "directionMarkers": 0
+      },
+      "sha256": "3a9e296447144ce1a23660fea184e16d50df5eafe480e9682dc8bda6dea8e315",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "elbow-horizontal",
+      "authoredShape": "elbow-horizontal",
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/elbow-horizontal-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "elbow-horizontal",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 5,
+        "directionMarkers": 0
+      },
+      "sha256": "5989198717b874e31af01baa746a7f241f94c7140987fbaa26472a975e3722b8",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "elbow-vertical",
+      "authoredShape": "elbow-vertical",
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/elbow-vertical-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "elbow-vertical",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "dde57144634c18619ed36264d4c7409df74ae9c9281bff7f0347b6c2cb275b5a",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "straight",
+      "authoredShape": "straight",
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/straight-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "straight",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "5e35cb74aa3ed37cb10565d70bc59191c0b68b28aab118521fd4d891f315ac94",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "legacy",
+      "authoredShape": null,
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/legacy-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "arc-outward",
+        "routedEdges": 0,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "530b216fda987cea768d5356c23e3bda84b18ee7c31caee4277eadd77584f48b",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "loop-routed",
+      "authoredShape": "elbow-horizontal",
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/loop-routed-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "elbow-horizontal",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "2dd294f7fb54c15a23b83a258eeaf9ed88d3cb845c1cb5a2e34bb82e629c45ea",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "loop-elbow-sides",
+      "authoredShape": "elbow-horizontal",
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/loop-elbow-sides-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "elbow-horizontal",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "4581f7d16bdb7b7d7924096350b2e6950793a35302030ab7ec570349554ff4a1",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "loop-sides",
+      "authoredShape": "straight",
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/loop-sides-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "straight",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "89b4f5b85a43adde37b8954e3ebda42e526e3c202025927074e3a668e016497d",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "chord-routed",
+      "authoredShape": "arc-circle",
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/chord-routed-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "arc-circle",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 6,
+        "directionMarkers": 0
+      },
+      "sha256": "6a49ef2d701b2b984550611c8dcc66252181780a7d6632ce15d2e8ed66783f4f",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    }
+  ]
+}

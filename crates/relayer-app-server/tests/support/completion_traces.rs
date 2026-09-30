@@ -246,11 +246,14 @@ impl World {
                 client_key: "current".into(),
                 nodes: vec![source.id],
                 edges: vec![],
-                layout: Some(LayerLayout::v1(vec![NodePlacement {
-                    node_id: source.id,
-                    x: 0.5,
-                    y: 0.5,
-                }])),
+                layout: Some(LayerLayout::v1(
+                    vec![NodePlacement {
+                        node_id: source.id,
+                        x: 0.5,
+                        y: 0.5,
+                    }],
+                    "default",
+                )),
                 size_justification: None,
             })
             .await
@@ -1039,11 +1042,14 @@ impl World {
                         client_key: "answer".into(),
                         nodes: vec![answer.id],
                         edges: vec![],
-                        layout: Some(LayerLayout::v1(vec![NodePlacement {
-                            node_id: answer.id,
-                            x: 0.5,
-                            y: 0.5,
-                        }])),
+                        layout: Some(LayerLayout::v1(
+                            vec![NodePlacement {
+                                node_id: answer.id,
+                                x: 0.5,
+                                y: 0.5,
+                            }],
+                            "default",
+                        )),
                         size_justification: None,
                     })
                     .await

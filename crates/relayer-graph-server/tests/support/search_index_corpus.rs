@@ -157,7 +157,7 @@ pub async fn prepare_case(
                 client_key: format!("{}-layer-{layer_index}", case.id),
                 nodes: nodes.iter().map(|node| node.id).collect(),
                 edges: edges.iter().map(|edge| edge.id).collect(),
-                layout: Some(LayerLayout::v1(placements)),
+                layout: Some(LayerLayout::v1(placements, "default")),
                 size_justification: (width >= 6).then(|| {
                     "The boundary corpus deliberately exercises the legal maximum width.".into()
                 }),

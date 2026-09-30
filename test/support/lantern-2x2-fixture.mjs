@@ -13,7 +13,7 @@ const SEARCH_QUERY = "MATCH (layer:Layer)-[:CONTAINS]->(content:Content) WHERE c
 const STOP_CONDITION = "Launch stops if any stale grant survives a verified rotation and rollback cycle.";
 
 function centered(node) {
-  return new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)]);
+  return new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)], "default");
 }
 
 function numericLayerId(value) {

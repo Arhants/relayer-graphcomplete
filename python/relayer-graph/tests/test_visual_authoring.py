@@ -32,7 +32,7 @@ class VisualAuthoringTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_session_binding_snapshot_and_frozen_submission(self):
         node = NodeObject('box', 'Answer', 'Fallback', client_key='answer')
-        layer = LayerObject([node], [], LayerLayoutObject([NodePlacementObject(node, .5, .5)]), client_key='root')
+        layer = LayerObject([node], [], LayerLayoutObject([NodePlacementObject(node, .5, .5)], "default"), client_key='root')
         action = ActionObject('invoke', 'Continue', layer, 'continue', interaction_text='Continue')
         node.detail_authoring.set_component('main', html(['<button gc=', '>Continue</button>'], action_capability('continue', action)))
         requests = []
@@ -160,7 +160,7 @@ class VisualAuthoringTests(unittest.IsolatedAsyncioTestCase):
     async def test_owner_identity_and_clear_are_explicit(self):
         owner = NodeObject('box', 'Answer', 'Fallback', client_key='answer')
         impostor = NodeObject('box', 'Answer', 'Fallback', client_key='answer')
-        layer = LayerObject([impostor], [], LayerLayoutObject([]), client_key='root')
+        layer = LayerObject([impostor], [], LayerLayoutObject([], "default"), client_key='root')
         action = ActionObject('invoke', 'Continue', layer, 'continue', interaction_text='Continue')
         with self.assertRaisesRegex(ValueError, 'exact owning'):
             action.to_detail_wire(owner)
