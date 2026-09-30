@@ -83,6 +83,16 @@ build outputs. Source was compiled against the current inputs; no external
 Ladybug/runtime artifact restoration or cache-hit proof is claimed. Cache reuse
 never substitutes for the fresh tests above.
 
+## Integration with current main
+
+PR #631 initially conflicted with main after the theme, agent-child lifecycle and readiness changes landed. The integration baseline is `3dc56dd9cff4bd1fd9c1faaf199ed195578a7224`. Conflict resolution keeps both System appearance and worktree IPC, Sticker × Cocoa and scoped Checkout styles, sidebar activity and exact thread scope columns, and all package scripts. The worktree migration is now `0040`; main's `0038` agent-child and `0039` readiness migrations retain their identities.
+
+Integrated targeted checkpoints passed: 96 renderer/appearance/sidebar/artifact tests, 7 work-context tests, 119 storage tests, and the persistence/restart checkpoint with schema rejection. The integrated build passed. The current manifest is `e31c973560e9797e366b9a245ccb118013f16be1cf83f6fb03a0d50f63a262f0`, relative to that immutable main baseline. `VITEST_MAX_WORKERS=2 npm run check` is running without exclusions or altered scenario budgets; this is Vitest's supported concurrency setting. The integrated worktree Electron proof passed all 14 checkpoints; the existing project/new-thread proof passed both restart markers. Six refreshed screenshots and receipt hashes match the current manifest and fresh binaries. Independent reviewer `/root/integrated_review` verified all 48 manifest hashes, 12 receipt source hashes, both binary hashes and the six exact screenshot copies; source and observed evidence verdicts pass, with no unresolved findings.
+
+The first integrated full check passed all native/package/type/workspace gates and 3,320 Vitest tests, then correctly rejected two newly introduced current-source visual receipts. Their declared social-preview and follow-up-annotation workflows were rerun with zero paid inference. The original annotation baseline A-to-B comparison and real accepted/running backend state were preserved; both evidence tests now pass. Only artifact receipts/raw images changed. The complete outer `VITEST_MAX_WORKERS=2 npm run check` passed after those artifact repairs: 255 Vitest files / 3,322 tests passed, with 1 existing skipped file / 3 existing skipped tests; the explicitly enabled secret boundary passed 2 tests; Python passed 60 tests; formatting, Clippy, all Rust and crash suites, package/TypeScript/workspace checks, Ladybug receipts and PRD readability passed. The production build and both Electron proofs cover the same unchanged executable digest. Hosted CI and freshness remain pending.
+
+Independent secondary evidence review by `/root/integrated_review` verified social receipt `ed148340a2e2479de3bc2ae49bc6c318fe4d9a16ee837c9edb7c45d34ca2804b` and annotation receipt `2ad692154c36b3ffae8a091697c3e39f70b4bc8cb69a52ff773f1fc68f50912d`, including the original Git baseline, screenshot hashes and durable provenance. Verdict: pass, no unresolved findings. Earlier results above are historical and do not certify this integration.
+
 ## PR handoff gate
 
 Open a main-targeting PR with a unique head commit and attach it to the task.

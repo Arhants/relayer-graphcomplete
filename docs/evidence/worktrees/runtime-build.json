@@ -1,12 +1,12 @@
 {
   "relayer-app-server": {
-    "sha256": "26720dfe7b56b18f10c5da6bf8628e52fa7647a9776c5152581f0225cac151a6",
-    "source": "fresh local npm run build",
+    "sha256": "8d405f8b9a0f8aab1c562885e737a5a85c672c06759847614e2dd780b2019824",
+    "source": "fresh local npm run build after integration with main 3dc56dd9",
     "destination": "target/debug/relayer-app-server"
   },
   "relayer-graph-server": {
-    "sha256": "f1f309c720cb3d444a484f348d6b801daa562a2bf93dd5ca381e94ad79671a20",
-    "source": "fresh local npm run build",
+    "sha256": "3266b225e60d9a391f2b7f19ea9a315a82aba603936926395eaeba054f65ec8d",
+    "source": "fresh local npm run build after integration with main 3dc56dd9",
     "destination": "target/debug/relayer-graph-server"
   }
 }
