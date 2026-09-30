@@ -1,0 +1,24 @@
+[
+  {
+    "interactionId": 1,
+    "attemptNumber": 1,
+    "providerId": "live-run-openrouter",
+    "adapterId": "openrouter",
+    "modelId": "openai/gpt-6-luna",
+    "accessContract": "secret@1",
+    "outcome": "accepted",
+    "failureCategory": null,
+    "nativeWaitEndedAt": null
+  },
+  {
+    "interactionId": 2,
+    "attemptNumber": 1,
+    "providerId": "live-run-openrouter",
+    "adapterId": "openrouter",
+    "modelId": "openai/gpt-6-luna",
+    "accessContract": "secret@1",
+    "outcome": "accepted",
+    "failureCategory": null,
+    "nativeWaitEndedAt": null
+  }
+]
