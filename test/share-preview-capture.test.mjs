@@ -1,4 +1,7 @@
 import { EventEmitter } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -104,7 +107,9 @@ describe("desktop share preview capture", () => {
     expect(windows.every((window) => window.destroyed)).toBe(true);
   });
 
-  it.each(["missing-renderer", "invalid-utf8"])("classifies %s setup failures as export failures", async (failure) => {
+  it.each(["missing-renderer", "missing-template", "invalid-utf8"])("classifies %s setup failures as export failures", async (failure) => {
+    const emptyRenderer = failure === "missing-template"
+      ? await mkdtemp(join(tmpdir(), "relayer-missing-template-")) : null;
     const BrowserWindow = vi.fn();
     const captureSession = Object.assign(new EventEmitter(), {
       setPermissionRequestHandler: vi.fn(),
@@ -115,13 +120,14 @@ describe("desktop share preview capture", () => {
     const capture = createSharePreviewCapture({
       BrowserWindow,
       session: { fromPartition: () => captureSession },
-      rendererDirectory: new URL(failure === "missing-renderer" ? "../missing-renderer" : "../desktop/renderer", import.meta.url),
+      rendererDirectory: emptyRenderer ?? new URL(failure === "missing-renderer" ? "../missing-renderer" : "../desktop/renderer", import.meta.url),
     });
     await expect(capture({ snapshotBytes: new Uint8Array([255]), title: "Setup", theme: "light" })).rejects.toMatchObject({
       code: "share_export_failed", failureStage: "export",
     });
     expect(BrowserWindow).not.toHaveBeenCalled();
     expectSessionTeardown(captureSession);
+    if (emptyRenderer) await rm(emptyRenderer, { recursive: true, force: true });
   });
 
   it.each(["clear-failure", "abort-during-clear"])("closes %s before reusing the fixed partition", async (failure) => {

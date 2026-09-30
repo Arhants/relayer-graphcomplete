@@ -1,6 +1,6 @@
 {
   "sourceFiles": {
-    "desktop/main/services/share-preview-capture.mjs": "05cd0d94b373aeee87a5c1b6bca361471dd5418dfa766274e91766a7780174a8",
+    "desktop/main/services/share-preview-capture.mjs": "9bf4a706b5816608c1538b65467fbd1dedcb5be55b34d79d9a0df8dd02e6890e",
     "desktop/main/services/share-publish-coordinator.mjs": "f722b04879f31c2ab210c6e1eb2a8bf686af37bea6689cff9f6c4d143728abed",
     "desktop/main/services/share-publish-attempt-store.mjs": "55d555b3e1decc8c543356f66be0c4c1605c7f60dc593287fb84ecd93fb2f7ff",
     "desktop/main/services/share-service-client.mjs": "f30067b00bdb02ac64fbcfc932bafe02428cefd38ef094baa9abf51f5748c501",
@@ -315,13 +315,13 @@
   "captures": [
     {
       "theme": "light",
-      "sha256": "053766b83d8d3b33e246ff0eb15c4ebbcacb86e8eb7cdebb81c6eb323128ed68",
-      "bytes": 102664
+      "sha256": "8e0c18a949c9bdcf15085230f9d96243327d39ccdede9330b3c36e59efba39c6",
+      "bytes": 102662
     },
     {
       "theme": "dark",
-      "sha256": "436fccdcd7eb734402c6e5381cfca798fc2c7b999d0e72059e4bf0a7a8da45e5",
-      "bytes": 87670
+      "sha256": "636549eb678b887b79e92087cda39d081c8bc794ce1f44e724f3278153700be7",
+      "bytes": 87674
     }
   ],
   "platform": "macOS ARM64",
