@@ -248,7 +248,7 @@ title 14/20/600 from x+40, one line, ellipsis; right padding 16 (12 when `›N` 
 | Attached as context | BL `b-badge` + `paperclip` | |
 | Comments N (Eval) | TR `b-badge is-comments` | rose-alt disc, white 12/600 count |
 
-**Edges**: gentle circular arcs, sagitta = 0.12 × chord capped at 24px (at zoom 1), bending to the **left of the edge's own direction** (first endpoint to second; revised 2026-09-29 so dragging never flips an edge);
+**Edges**: each layer draws its edges in the shape its agent chose (PRD §6.1, §11.2); the design's default, `arc-outward`, is gentle circular arcs, sagitta = 0.12 × chord capped at 24px (at zoom 1), bowing **away from the layer's centre** (the centre of its authored positions, so dragging a node never reshapes an edge it is not on; revised for #616 so an edge draws the same from either endpoint);
 1.5px `--edge`, round caps, non-scaling; clipped 4px outside every drawn shape of both end nodes (pill, peek, badges,
 caption, and the selection ring when selected). `b-edge-draft` = dashed 4/3 with butt caps; `b-edge-strong` = 2px
 `--edge-strong` for the selected node's incident edges; `b-edge-dim` (40%) exists for the B1 specimen only — B's
@@ -714,7 +714,7 @@ Thresholds: text 4.5, marks 3, strokes ≤ 2px 3.2 (brief §2.5 design margin). 
     (the 2px ring at a 2px gap is selection's shape, so the orbit must not look like part of one); static phase 6 → 9 o'clock, clear
     of the title and away from a neighbour's selection ring above. It still shares the selection hue (rose): the badge
     and the "Running" caption carry the difference (B1 §14 risk).
-11. **Arc direction**: bend left of the edge's own direction (revised 2026-09-29). Bulging away from the layer centroid made edges flip sides while a node was dragged; the bend now depends only on the edge's endpoints.
+11. **Arc direction**: bow away from the layer's centre, taken from the authored positions (revised for #616, which requires an edge to draw the same from either endpoint). Using the authored centre keeps the 2026-09-29 fix: dragging a node never reshapes an edge it is not on. An edge whose line passes within 0.1 × its length of the centre (a hub's spokes) bows to the left of the direction leading away from the centre, so spokes turn one way. Other shapes' design parameters: elbow corners 8px × zoom, crossing halfway between node centres; `arc-circle` radius = the nodes' mean distance from the centre. Per-edge routes (PRD §6.1, §11.2): a chosen side attaches at that side's midpoint and elbows and arcs leave it at a right angle; a sides-only arc bows out from its sides by a quarter of the edge's length (at least 24px × zoom); waypoints are joined by straight segments, one Catmull-Rom curve for arcs, or right-angle legs for elbows. A dragged node moves each waypoint on its edges by a blend of the two ends' movement, weighted by the waypoint's place along the route, so a route stretches but never turns.
 12. **No non-neighbour dimming** in B's scenes (B's spec only strengthens incident edges; dimming would push edges
     below 3:1). `b-edge-dim` exists only for the B1 specimen.
 13. **Overview tier**: selected label **above** the token (below collides with N6 and the N6–N1 edge); tooltip specimen

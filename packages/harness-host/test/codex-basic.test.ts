@@ -583,7 +583,7 @@ describe("CodexBasicHarness", () => {
         expect(submittedPrompt).toContain("Do not run sed, rg, cat, find, or any other inspection command");
         expect(submittedPrompt).toContain("This restriction applies only to the graph-authoring path");
         expect(submittedPrompt).toContain("ordinary Codex workspace tools under the configured permission policy");
-        expect(submittedPrompt).toContain("LayerLayoutObject accepts exactly one argument: the placements array");
+        expect(submittedPrompt).toContain("LayerLayoutObject takes the placements array, the edge shape and an optional array of edge routes");
         expect(submittedPrompt).toContain("never assign layout.version");
         expect(submittedEnvironment.RELAYER_GRAPH_AUTHORING_NODE).toBeUndefined();
       }

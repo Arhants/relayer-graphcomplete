@@ -374,6 +374,31 @@ pub struct ExportLayer {
 pub struct ExportLayerLayout {
     pub version: u32,
     pub placements: Vec<ExportNodePlacement>,
+    /// Absent in exports written before edge shapes; it then reads as "default".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_shape: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edge_routes: Vec<ExportEdgeRoute>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportEdgeRoute {
+    pub edge_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ends: Vec<ExportEdgeEnd>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waypoints: Vec<relayer_graph_core::LayoutPoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportEdgeEnd {
+    pub node_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2437,6 +2462,119 @@ fn validate_root_action(
     Ok(())
 }
 
+fn validate_export_routes(
+    resolved: &ExportResolvedLayer,
+    layout: &ExportLayerLayout,
+    path: &str,
+) -> Result<(), ExportValidationError> {
+    let mut routed = HashSet::new();
+    for (index, route) in layout.edge_routes.iter().enumerate() {
+        let route_path = format!("{path}.layer.layout.edgeRoutes[{index}]");
+        let fail = |code: &'static str, field: &str, message: String| {
+            Err(ExportValidationError::new(
+                code,
+                format!("{route_path}{field}"),
+                message,
+            ))
+        };
+        let Some(edge) = resolved
+            .edges
+            .iter()
+            .find(|edge| edge.id == route.edge_id && resolved.layer.edges.contains(&edge.id))
+        else {
+            return fail(
+                "edge_route_outside_layer",
+                ".edgeId",
+                "An edge route must name an edge in its layer.".into(),
+            );
+        };
+        if !routed.insert(route.edge_id.as_str()) {
+            return fail(
+                "duplicate_edge_route",
+                ".edgeId",
+                "Each edge may have at most one route.".into(),
+            );
+        }
+        if let Some(shape) = &route.shape
+            && !relayer_graph_core::EDGE_SHAPES.contains(&shape.as_str())
+        {
+            return fail(
+                "unsupported_edge_shape",
+                ".shape",
+                format!(
+                    "Edge shape {shape:?} is not supported. Supported shapes: {}.",
+                    relayer_graph_core::EDGE_SHAPES.join(", ")
+                ),
+            );
+        }
+        if !route.ends.is_empty() {
+            let mut ends = route
+                .ends
+                .iter()
+                .map(|end| end.node_id.as_str())
+                .collect::<Vec<_>>();
+            let mut endpoints = edge
+                .endpoints
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            ends.sort_unstable();
+            endpoints.sort_unstable();
+            if ends != endpoints {
+                return fail(
+                    "edge_route_ends_mismatch",
+                    ".ends",
+                    "A route's ends must be its edge's two nodes.".into(),
+                );
+            }
+        }
+        for (end_index, end) in route.ends.iter().enumerate() {
+            if let Some(side) = &end.side
+                && !relayer_graph_core::NODE_SIDES.contains(&side.as_str())
+            {
+                return fail(
+                    "unsupported_node_side",
+                    &format!(".ends[{end_index}].side"),
+                    format!(
+                        "Side {side:?} is not supported. Supported sides: {}.",
+                        relayer_graph_core::NODE_SIDES.join(", ")
+                    ),
+                );
+            }
+        }
+        if !route.waypoints.is_empty() && route.ends.is_empty() {
+            return fail(
+                "edge_route_ends_required",
+                ".ends",
+                "Waypoints require the route's two ends.".into(),
+            );
+        }
+        if route.waypoints.len() > relayer_graph_core::MAX_EDGE_ROUTE_WAYPOINTS {
+            return fail(
+                "too_many_waypoints",
+                ".waypoints",
+                format!(
+                    "An edge may pass through at most {} waypoints.",
+                    relayer_graph_core::MAX_EDGE_ROUTE_WAYPOINTS
+                ),
+            );
+        }
+        for (point_index, point) in route.waypoints.iter().enumerate() {
+            for (coordinate, value) in [("x", point.x), ("y", point.y)] {
+                if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                    return fail(
+                        "layout_coordinate_invalid",
+                        &format!(".waypoints[{point_index}].{coordinate}"),
+                        "Layout coordinates must be finite normalized numbers from 0 through 1."
+                            .into(),
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_layer(resolved: &ExportResolvedLayer, path: &str) -> Result<(), ExportValidationError> {
     if let Some(client_key) = &resolved.layer.client_key {
         require_string(client_key, format!("{path}.layer.clientKey"))?;
@@ -2506,6 +2644,19 @@ fn validate_layer(resolved: &ExportResolvedLayer, path: &str) -> Result<(), Expo
                 ),
             ));
         }
+        if let Some(shape) = &layout.edge_shape
+            && !relayer_graph_core::EDGE_SHAPES.contains(&shape.as_str())
+        {
+            return Err(ExportValidationError::new(
+                "unsupported_edge_shape",
+                format!("{path}.layer.layout.edgeShape"),
+                format!(
+                    "Edge shape {shape:?} is not supported. Supported shapes: {}.",
+                    relayer_graph_core::EDGE_SHAPES.join(", ")
+                ),
+            ));
+        }
+        validate_export_routes(resolved, layout, path)?;
         if layout.placements.len() != node_ids.len() {
             return Err(ExportValidationError::new(
                 "layout_placement_count",

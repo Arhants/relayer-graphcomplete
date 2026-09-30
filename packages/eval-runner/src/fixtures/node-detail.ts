@@ -183,13 +183,13 @@ class NodeDetailHarness implements Harness {
       const expandedLayer = new LayerObject(
         [expanded],
         [],
-        new LayerLayoutObject([new NodePlacementObject(expanded, 0.5, 0.5)]),
+        new LayerLayoutObject([new NodePlacementObject(expanded, 0.5, 0.5)], "default"),
         "fixture-node-detail.expanded-layer",
       );
       const referencedLayer = new LayerObject(
         [referenced],
         [],
-        new LayerLayoutObject([new NodePlacementObject(referenced, 0.5, 0.5)]),
+        new LayerLayoutObject([new NodePlacementObject(referenced, 0.5, 0.5)], "default"),
         "fixture-node-detail.referenced-layer",
       );
       const node = new NodeObject(
@@ -202,7 +202,7 @@ class NodeDetailHarness implements Harness {
       const layer = new LayerObject(
         [node],
         [],
-        new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)]),
+        new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)], "default"),
         "fixture-node-detail.root",
       );
       const expandAction = {

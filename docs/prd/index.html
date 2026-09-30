@@ -1964,10 +1964,33 @@ type GraphEdge = {
   endpoints: readonly [NodeReference, NodeReference]; // undirected
 };
 
+type EdgeShape = &quot;default&quot; | &quot;straight&quot; | &quot;arc-outward&quot; | &quot;arc-circle&quot; | &quot;elbow-horizontal&quot; | &quot;elbow-vertical&quot;;
+
+type NodePlacement = { node: NodeReference; x: number; y: number }; // 0..1
+
+type NodeSide = &quot;top&quot; | &quot;right&quot; | &quot;bottom&quot; | &quot;left&quot;;
+
+type EdgeEnd = { node: NodeReference; side?: NodeSide }; // no side = automatic
+
+type EdgeRoute = {
+  edge: EdgeReference;
+  shape?: EdgeShape;                        // this edge only; otherwise the layer&#39;s edgeShape
+  ends?: [EdgeEnd, EdgeEnd];                // the edge&#39;s two nodes; waypoints are listed from ends[0] to ends[1]
+  waypoints?: { x: number; y: number }[];   // 0..1 layout coordinates, at most 4; requires ends
+};
+
+type LayerLayout = {
+  version: 1;
+  placements: NodePlacement[]; // one per node; list order is the layer&#39;s reading order
+  edgeShape: EdgeShape;        // the layer&#39;s default; required on submit; absent on older layers means &quot;default&quot;
+  edgeRoutes?: EdgeRoute[];    // optional; at most one per edge
+};
+
 type GraphLayer = {
   ref: LayerReference;
   nodes: NodeReference[];
   edges: EdgeReference[]; // exact visible connections, never inferred
+  layout: LayerLayout;    // agent-authored geometry
 };
 
 type NavigateRelation = &quot;expand&quot; | &quot;reference&quot;;
@@ -2005,7 +2028,7 @@ type GraphPreview = {
 <tbody>
 <tr><td><code>submitNode</code></td><td>Required icon/title/detail, supported markup, field and payload limits</td><td>Return exact invalid field and keep the last valid draft</td></tr>
 <tr><td><code>createEdge</code></td><td>Both endpoints submitted, no self-edge, no duplicate undirected edge</td><td>Return the offending endpoint or existing edge</td></tr>
-<tr><td><code>submitLayer</code></td><td>Validate members, edges, uniqueness, connectivity, and size. Layers with 6–8 nodes require a hidden justification. Reject larger layers.</td><td>Return the precise object or size failure. Discard a valid size justification.</td></tr>
+<tr><td><code>submitLayer</code></td><td>Validate members, edges, uniqueness, connectivity, and size. Layers with 6–8 nodes require a hidden justification. Reject larger layers. Require an authored layout with one placement per node and an <code>edgeShape</code> from the closed vocabulary. Each edge route names an edge in this layer, at most once. Its ends are exactly that edge&#39;s two nodes. Sides and shapes come from their closed vocabularies. An edge may have at most four waypoints, each from 0 through 1. Waypoints require ends.</td><td>Return the precise object or size failure. Discard a valid size justification. Return <code>missing_edge_shape</code> or <code>unsupported_edge_shape</code> with the allowed values. Return the precise route problem and its path, such as <code>edge_route_outside_layer</code>, <code>edge_route_ends_mismatch</code> or <code>too_many_waypoints</code>, with the allowed values.</td></tr>
 <tr><td><code>addAction</code></td><td>Validate source, authoring layer, kind, relation, target, ownership, visibility, and context-specific authoring permission.</td><td>Return the invalid source, target, provenance, or field.</td></tr>
 <tr><td><code>submit(interaction)</code></td><td>Require one root expand action. Validate the current-authored closure, expand acyclicity, references, authority, and orphan drafts.</td><td>Keep all drafts hidden. Return the exact repairable path.</td></tr>
 </tbody></table>
@@ -2546,7 +2569,7 @@ settings:
 <h3>6.1 Display and navigation</h3>
 <ul>
 <li>The response view contains the first layer of the accepted subgraph, including edges among those response nodes.</li>
-<li>Edges are visually undirected.</li>
+<li>Edges are visually undirected. They carry no arrowheads or other direction marks, and each edge&#39;s path is the same whichever endpoint it is drawn from. Each layer draws all its edges in the shape its agent chose. <code>default</code> uses the design&#39;s default shape, which is arcs in H. A layer conveys reading order through the order and positions of its authored placements. Keyboard and screen-reader order follow the placement order, and an elbow shape follows the reading axis. Layers accepted before edge shapes existed draw with the design&#39;s default. An agent may give any edge its own shape and the side of each node where it attaches. It may also add up to four waypoints the edge passes through. The edge&#39;s shape styles the path between waypoints. Straight edges run in straight segments, arcs in one smooth curve, and elbows in right-angle segments. Elbows and arcs leave a chosen side at a right angle. When a user drags a node, waypoints move with that node&#39;s edges. Edges without a route draw in the layer&#39;s shape.</li>
 <li>The interaction/parent node is not repeated inside its child layer. Its breadcrumb entry includes its icon and title.</li>
 <li>The interaction query and breadcrumb share the same left edge above the canvas.</li>
 <li>Breadcrumbs use readable 13px labels, 16px icons, and 34px navigation controls. Long paths remain horizontally scrollable.</li>

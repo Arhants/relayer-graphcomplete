@@ -112,7 +112,7 @@ function nodeInputFixtureFactory() {
         [],
         new LayerLayoutObject([
           new NodePlacementObject(navigationNode, 0.5, 0.5),
-        ]),
+        ], "default"),
         `navigation-layer-${completionCount}`,
         navigationNode,
       );
@@ -123,7 +123,7 @@ function nodeInputFixtureFactory() {
         new LayerLayoutObject([
           new NodePlacementObject(node, 0.35, 0.5),
           new NodePlacementObject(selectionGuardNode, 0.65, 0.5),
-        ]),
+        ], "default"),
         `input-layer-${completionCount}`,
         selectionGuardNode,
       );

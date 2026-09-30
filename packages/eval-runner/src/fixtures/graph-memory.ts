@@ -114,7 +114,7 @@ async function authorFirstTurn(
     new LayerLayoutObject([
       new NodePlacementObject(searchTargetNode, 0.25, 0.5),
       new NodePlacementObject(explanation, 0.75, 0.5),
-    ]),
+    ], "default"),
     "memory-first-root",
   );
   await graph.submitLayer(layer);
@@ -143,7 +143,7 @@ async function searchAndReferenceFirstTurn(
   const draftDecoyLayer = new LayerObject(
     [draftDecoy],
     [],
-    new LayerLayoutObject([new NodePlacementObject(draftDecoy, 0.5, 0.5)]),
+    new LayerLayoutObject([new NodePlacementObject(draftDecoy, 0.5, 0.5)], "default"),
     "memory-draft-decoy-layer",
   );
   await graph.submitLayer(draftDecoyLayer);
@@ -173,7 +173,7 @@ async function searchAndReferenceFirstTurn(
   const layer = new LayerObject(
     [recalled],
     [],
-    new LayerLayoutObject([new NodePlacementObject(recalled, 0.5, 0.5)]),
+    new LayerLayoutObject([new NodePlacementObject(recalled, 0.5, 0.5)], "default"),
     "memory-second-root",
   );
   await graph.submitLayer(layer);

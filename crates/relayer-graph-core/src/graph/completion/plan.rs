@@ -3,7 +3,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::{
     ActionId, ActionKind, EdgeId, GraphAction, GraphError, LayerId, NavigateRelation, NodeId,
     RecordState,
-    graph::{InteractionScope, model::validate_connected, validate_authored_layout},
+    graph::{
+        InteractionScope, model::validate_connected, validate_authored_layout,
+        validate_edge_route_ends,
+    },
     storage::{
         GraphConnection,
         sqlite::{
@@ -360,13 +363,20 @@ impl CompletionPlan {
                     "draft layer {layer_id} belongs to another interaction"
                 )));
             }
-            validate_authored_layout(record.layer.layout.as_ref(), &record.layer.nodes)?;
+            validate_authored_layout(
+                record.layer.layout.as_ref(),
+                &record.layer.nodes,
+                &record.layer.edges,
+            )?;
             if !self.layers.insert(layer_id) {
                 continue;
             }
 
             let resolved = layers::resolve(&mut *connection, scope, layer_id, false).await?;
             validate_connected(&record.layer.nodes, &resolved.edges)?;
+            if let Some(layout) = &record.layer.layout {
+                validate_edge_route_ends(layout, &resolved.edges)?;
+            }
             let node_ids = resolved
                 .nodes
                 .iter()

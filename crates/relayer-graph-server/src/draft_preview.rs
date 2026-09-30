@@ -500,7 +500,7 @@ mod tests {
                     "clientKey": "root",
                     "nodes": nodes,
                     "edges": [edge],
-                    "layout": {"version":1,"placements":[
+                    "layout": {"version":1,"edgeShape":"default","placements":[
                         {"nodeId":nodes[0],"x":x,"y":0.5},
                         {"nodeId":nodes[1],"x":0.8,"y":0.5}
                     ]}

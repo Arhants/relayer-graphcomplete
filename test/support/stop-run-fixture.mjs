@@ -59,7 +59,7 @@ export async function stopRunFixture() {
         await graph.submitNode(node);
         control.partialNodeId = node.ref.id;
         if (String(text).includes("accept")) {
-          const layer = new LayerObject([node], [], new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)]), "result");
+          const layer = new LayerObject([node], [], new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)], "default"), "result");
           await graph.submitLayer(layer);
           await graph.addAction(context.inputGraph.id, { kind: "navigate", relation: "expand", label: "Response", target: layer, clientKey: "response" });
           await graph.submit(context.inputGraph.id);
@@ -67,7 +67,7 @@ export async function stopRunFixture() {
           if (!String(text).includes("race")) return;
         }
         if (!String(text).includes("accept")) {
-          const layer = new LayerObject([node], [], new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)]), "working");
+          const layer = new LayerObject([node], [], new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)], "default"), "working");
           const savedLayer = await graph.submitLayer(layer);
           await graph.advanceCurrent(layer, 0, "working-current");
           control.partialLayerId = savedLayer.id;

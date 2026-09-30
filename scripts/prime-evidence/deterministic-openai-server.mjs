@@ -68,7 +68,7 @@ function graphCode({ interactionId, spawnChild, childSelector }) {
     "await graph.submit_node(child)",
     `edge = EdgeObject((root, child), client_key="${prefix}-edge")`,
     "await graph.create_edge(edge)",
-    "layout = LayerLayoutObject((NodePlacementObject(root, 0.28, 0.5), NodePlacementObject(child, 0.72, 0.5)))",
+    "layout = LayerLayoutObject((NodePlacementObject(root, 0.28, 0.5), NodePlacementObject(child, 0.72, 0.5)), 'elbow-horizontal')",
     `layer = LayerObject((root, child), (edge,), layout, client_key="${prefix}-layer")`,
     "await graph.submit_layer(layer)",
     `await graph.add_navigate_action(${interactionId}, "Prime evidence", layer, relation="expand", client_key="${prefix}-navigate")`,

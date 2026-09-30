@@ -239,7 +239,7 @@ function requiredNavigationFixtureFactory(configuration) {
     if (before.actions.length !== 1 || before.actions[0].kind !== "navigate") throw new Error("Fixture expected one preserved resolved control.");
     const answer = new NodeObject("info", "Attached response", "The results store retains completed work.", "concept", "attached-answer");
     await graph.submitNode(answer);
-    const response = new LayerObject([answer], [], new LayerLayoutObject([new NodePlacementObject(answer, .5, .5)]), "attached-response");
+    const response = new LayerObject([answer], [], new LayerLayoutObject([new NodePlacementObject(answer, .5, .5)], "default"), "attached-response");
     await graph.submitLayer(response);
     await graph.addAction(context.inputGraph.id, {kind:"navigate",relation:"expand",label:"Response",target:response,clientKey:"response"});
     try {
@@ -254,7 +254,7 @@ function requiredNavigationFixtureFactory(configuration) {
     const old = before.actions[0];
     const presentation = new NodeObject(source.icon, source.title, source.detail, before.node.kind, before.node.clientKey);
     // Reconstruct exact binding provenance only; this layer is never submitted.
-    const sourceLayer = new LayerObject([presentation], [], new LayerLayoutObject([new NodePlacementObject(presentation, .5, .5)]), old.sourceLayerClientKey);
+    const sourceLayer = new LayerObject([presentation], [], new LayerLayoutObject([new NodePlacementObject(presentation, .5, .5)], "default"), old.sourceLayerClientKey);
     const preserved = {kind:"invoke",label:old.label,interactionText:"Propose the most useful next improvement to this task system.",clientKey:old.clientKey,sourceLayer};
     presentation.detailAuthoring.setComponent("continuation", html`<p>Completed tasks remain in the results store.</p><button gc=${detailCapability.invoke("preserved", preserved)}>Plan the next improvement</button><button gc=${detailCapability.reference("required", addition)}>Open attached response</button>`);
     await graph.replaceNodePresentation(source.id, before.revision, presentation);

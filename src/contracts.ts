@@ -25,7 +25,17 @@ export interface NodePlacement {
 
 export interface LayerLayout {
   readonly version: 1;
+  /** List order is the layer's reading order. */
   readonly placements: readonly NodePlacement[];
+  /** One of @relayer/graph-client EDGE_SHAPES. Absent on layers accepted before edge shapes existed; read it as "default". */
+  readonly edgeShape?: string;
+  /** Optional per-edge shape, attachment sides and 0..1 waypoints. */
+  readonly edgeRoutes?: readonly {
+    readonly edgeId: GraphId;
+    readonly shape?: string;
+    readonly ends?: readonly { readonly nodeId: GraphId; readonly side?: string }[];
+    readonly waypoints?: readonly { readonly x: number; readonly y: number }[];
+  }[];
 }
 
 export interface GraphLayer {

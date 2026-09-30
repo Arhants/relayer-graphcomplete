@@ -169,7 +169,7 @@ function primeRecipe(target) {
         wheelArtifactIds,
         requirements,
         client: {
-          sha256: "67b93e723ba696b4ff608e64747993311376b4559771d4eedb4763cfcbb8df66",
+          sha256: "6197ef7c2d3514be18291371712c9cd81ee173ce1c1ecfd68f4d19c3fd396503",
           installRule: "copy-package-v1",
         },
       },

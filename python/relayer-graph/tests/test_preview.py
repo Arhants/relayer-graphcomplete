@@ -58,7 +58,7 @@ class DraftPreviewTest(unittest.TestCase):
         self.assertIsNone(submitted.preview)
 
         layer = asyncio.run(client.submit_layer(LayerObject(
-            [node], [], LayerLayoutObject([NodePlacementObject(node, 0.5, 0.5)]), client_key="root")))
+            [node], [], LayerLayoutObject([NodePlacementObject(node, 0.5, 0.5)], "default"), client_key="root")))
         path = os.path.join(self.folder.name, "layer-30-abababababababab.png")
         self.assertEqual(layer.preview, GraphPreview("rendered", path, 1176, 812))
         with open(path, "rb") as file:

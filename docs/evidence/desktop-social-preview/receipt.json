@@ -9,11 +9,11 @@
     "contracts/share-service-v1/contract.json": "7407c99d32fb04a62ab958257be5525dc3451adc9899d600e07de730dccc89ff",
     "scripts/capture-share-preview-evidence.mjs": "4510e3a54f6b658c2df86b1a06afc8ca2428a36693a93648786bd4e075327562",
     "test/fixtures/social-preview.jsonl": "ff4a4545de49ccc20562f2f763b6a120d87fa37f7703a994abeb71b219a405aa",
-    "desktop/shared/telemetry-module-inventory.mjs": "ced0641613225e7f276caf4502974a9259fc1350e57a4ebd6046ad87a2dc5ee7"
+    "desktop/shared/telemetry-module-inventory.mjs": "bba82ff8ae559364c204876de11141dddabf0effc7fa641671e2b1cce08503da"
   },
   "rendererArtifact": {
     "directory": "desktop/renderer",
-    "digest": "3f896a3bc27566a05d6a6c95dd54fd61e4dffffd579ab5b83e23392ab04231c6",
+    "digest": "e722a7e69564c3c452d6f2845a9abcd5ae3efeb2b66bca17ed2dd45cd0f33e36",
     "files": {
       "assets/relayer-logo.svg": {
         "bytes": 31624,
@@ -211,9 +211,13 @@
         "bytes": 2021,
         "sha256": "e480c7e854b010905c7ac8e9e3b31e9a6193035de7ed8cbadbf64645cc3a2b92"
       },
+      "src/product-workspace/edge-shapes.js": {
+        "bytes": 20583,
+        "sha256": "eb207d003e6b7c1c5d7f257946f90da9e5613a0c927507d658964b4c69556b45"
+      },
       "src/product-workspace/graph-layout.js": {
-        "bytes": 5572,
-        "sha256": "2d74bafc77d1ac3a9c095f3f780072300472f868791d3bf579fdceb14efb2888"
+        "bytes": 6746,
+        "sha256": "f11407542b0f7301e1cc44c12b59cdf3a603277d623aabfe65eefb16834601af"
       },
       "src/product-workspace/icons.js": {
         "bytes": 6324,
@@ -256,8 +260,8 @@
         "sha256": "8e5d307f95b1863fb995606ca32a832de088916716c39476f9d31f2174de002d"
       },
       "src/product-workspace/workspace.js": {
-        "bytes": 264257,
-        "sha256": "107d6138f172f6f0f03a24fd133f331508c5f7490dc2c9801be29bef9ce4c183"
+        "bytes": 264618,
+        "sha256": "e79b2cc3c119d6afd44a5061e4207a3498cb89108c31e3aa0bf131a7c37bbcab"
       },
       "src/project-composer-navigation.js": {
         "bytes": 282,
@@ -296,8 +300,8 @@
         "sha256": "c6f03f10e2c73fd0b1f99f17ea2aad98cda452403fab0ef8357e83dd0a588db0"
       },
       "src/public-share-viewer/snapshot.js": {
-        "bytes": 49096,
-        "sha256": "41f67119ae1e6d7639807721763bf7b932f836828b7e527d216a4545b3266056"
+        "bytes": 51907,
+        "sha256": "22de09bafd3c0c8808b77a64d8417414dd26e43fb0417e137426d8e7c9f7511e"
       },
       "src/public-share-viewer/template.js": {
         "bytes": 7258,
@@ -364,13 +368,13 @@
   "captures": [
     {
       "theme": "light",
-      "sha256": "ed95c5bf02aec8669d7367af990e6644316155fff07efd81ffb7c0fa63a6edb9",
+      "sha256": "0c0ec4784ff821e9dfcf613d8a786259ddba19d9666fe5cbe257952449527397",
       "bytes": 65490
     },
     {
       "theme": "dark",
-      "sha256": "fd02dff7a98669e906a1811fc1e46ed226a50e5f7fe60bc5fb7684068f6aeb2a",
-      "bytes": 62544
+      "sha256": "305eaacc216708d10ed2a005fd479cad6ad6bade58e05a4f009ba3f441f4551b",
+      "bytes": 62566
     }
   ],
   "platform": "macOS ARM64",

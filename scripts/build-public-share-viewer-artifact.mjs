@@ -26,6 +26,7 @@ const browserResources = Object.freeze([
   "src/node-input-controls.js",
   "src/product-workspace/annotations.js",
   "src/product-workspace/composer-submission.js",
+  "src/product-workspace/edge-shapes.js",
   "src/product-workspace/graph-layout.js",
   "src/product-workspace/icons.js",
   "src/product-workspace/index.js",

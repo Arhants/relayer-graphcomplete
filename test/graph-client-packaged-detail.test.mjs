@@ -379,7 +379,7 @@ describe("packaged graph-client authored detail boundary", () => {
       html,
     } = await import(graphClientIndexUrl.href);
     const node = new NodeObject("box", "Original title", "Original detail", "concept", "original-owner");
-    const sourceLayer = new LayerObject([node], [], new LayerLayoutObject([]), "source-layer");
+    const sourceLayer = new LayerObject([node], [], new LayerLayoutObject([], "default"), "source-layer");
     const action = {
       kind: "invoke",
       label: "Run",
@@ -588,7 +588,7 @@ describe("packaged graph-client authored detail boundary", () => {
     } = await import(graphClientDevelopmentUrl.href);
     const { assetRef } = await import(graphClientDevelopmentDetailUrl.href);
     const owner = new NodeObject("box", "Snapshot", "Fallback", "concept", "snapshot-owner");
-    const sourceLayer = new LayerObject([owner], [], new LayerLayoutObject([]), "original-layer");
+    const sourceLayer = new LayerObject([owner], [], new LayerLayoutObject([], "default"), "original-layer");
     const action = {
       kind: "invoke",
       label: "Original action",
@@ -671,7 +671,7 @@ describe("packaged graph-client authored detail boundary", () => {
     } = await import(graphClientDevelopmentUrl.href);
     const { assetRef } = await import(graphClientDevelopmentDetailUrl.href);
     const owner = new NodeObject("box", "Checkpoint", "Fallback", "concept", "checkpoint-owner");
-    const sourceLayer = new LayerObject([owner], [], new LayerLayoutObject([]), "checkpoint-layer");
+    const sourceLayer = new LayerObject([owner], [], new LayerLayoutObject([], "default"), "checkpoint-layer");
     const action = {
       kind: "invoke",
       label: "Original",
@@ -793,7 +793,7 @@ describe("packaged graph-client authored detail boundary", () => {
       html,
     } = await import(graphClientIndexUrl.href);
     let targetReads = 0;
-    const accessorTarget = new LayerObject([], [], new LayerLayoutObject([]), "accessor-target");
+    const accessorTarget = new LayerObject([], [], new LayerLayoutObject([], "default"), "accessor-target");
     Object.defineProperty(accessorTarget, "clientKey", {
       enumerable: true,
       configurable: true,
@@ -802,10 +802,10 @@ describe("packaged graph-client authored detail boundary", () => {
         return "substituted-target";
       },
     });
-    const trappedTarget = new Proxy(new LayerObject([], [], new LayerLayoutObject([]), "trapped-target"), {
+    const trappedTarget = new Proxy(new LayerObject([], [], new LayerLayoutObject([], "default"), "trapped-target"), {
       ownKeys: () => { throw new TypeError("caller target proxy trap escaped"); },
     });
-    const inheritedTarget = Object.create(new LayerObject([], [], new LayerLayoutObject([]), "inherited-target"));
+    const inheritedTarget = Object.create(new LayerObject([], [], new LayerLayoutObject([], "default"), "inherited-target"));
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
     const client = new RelayerGraphClient({ url: "http://127.0.0.1:1", token: "token", nodeId: 1 });
@@ -816,7 +816,7 @@ describe("packaged graph-client authored detail boundary", () => {
       ["inherited-target", inheritedTarget],
     ]) {
       const owner = new NodeObject("box", "Navigate", "Fallback", "concept", `${name}-owner`);
-      const sourceLayer = new LayerObject([owner], [], new LayerLayoutObject([]), `${name}-source`);
+      const sourceLayer = new LayerObject([owner], [], new LayerLayoutObject([], "default"), `${name}-source`);
       const action = {
         kind: "navigate", relation: "expand", label: "Open", target, sourceLayer, clientKey: `${name}-action`,
       };
@@ -917,7 +917,7 @@ describe("packaged graph-client authored detail boundary", () => {
         action: (owner, sourceLayer) => {
           const unrelatedNode = new NodeObject("box", "Unrelated", "Fallback", "concept", "unrelated-node");
           const unrelatedLayer = new LayerObject(
-            [unrelatedNode], [], new LayerLayoutObject([]), "unrelated-layer",
+            [unrelatedNode], [], new LayerLayoutObject([], "default"), "unrelated-layer",
           );
           let reads = 0;
           accessorReads.set("changing-source-layer-getter", () => reads);
@@ -1103,7 +1103,7 @@ describe("packaged graph-client authored detail boundary", () => {
 
     for (const scenario of cases) {
       const owner = new NodeObject("box", "Owner", "Fallback", "concept", `${scenario.name}-owner`);
-      const sourceLayer = new LayerObject([owner], [], new LayerLayoutObject([]), `${scenario.name}-layer`);
+      const sourceLayer = new LayerObject([owner], [], new LayerLayoutObject([], "default"), `${scenario.name}-layer`);
       const action = scenario.action(owner, sourceLayer);
       const capability = detailCapability[scenario.capability](scenario.name, action);
       owner.detailAuthoring.setComponent(scenario.name, html`<button gc=${capability}>Action</button>`);

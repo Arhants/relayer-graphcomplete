@@ -82,7 +82,7 @@ function statusFixtureFactory() {
         for (const node of [rootNode, expandedNode, nestedNode, sharedNode, cycleNode]) await graph.submitNode(node);
         const centeredLayout = (node) => new LayerLayoutObject([
           new NodePlacementObject(node, 0.5, 0.5),
-        ]);
+        ], "default");
         const root = new LayerObject([rootNode], [], centeredLayout(rootNode), "root-layer");
         const expanded = new LayerObject([expandedNode], [], centeredLayout(expandedNode), "expanded-layer");
         const nested = new LayerObject([nestedNode], [], centeredLayout(nestedNode), "nested-layer");
