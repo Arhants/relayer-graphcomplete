@@ -165,6 +165,8 @@ pub(crate) struct ThreadResponse {
     created_at: String,
     updated_at: String,
     imported: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    activity: Option<String>,
 }
 
 impl From<Thread> for ThreadResponse {
@@ -181,6 +183,7 @@ impl From<Thread> for ThreadResponse {
             created_at: thread.created_at,
             updated_at: thread.updated_at,
             imported: thread.imported,
+            activity: thread.activity,
         }
     }
 }

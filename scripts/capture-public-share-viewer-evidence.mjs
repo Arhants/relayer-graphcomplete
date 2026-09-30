@@ -29,7 +29,7 @@ const sourceFiles = [
   "desktop/renderer/src/product-workspace/workspace.js",
   "desktop/renderer/src/product-workspace/workspace-layout.js",
   "desktop/renderer/assets/relayer-logo.svg",
-  "desktop/renderer/assets/relayer-share-og.svg",
+  "desktop/renderer/design/share-og.svg",
   "desktop/renderer/vendor/lucide.min.js",
   "desktop/renderer/vendor/marked.umd.js",
 ];

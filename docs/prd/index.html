@@ -602,7 +602,7 @@ interface CompletionTerminalError extends Error {
 <tr class="requirement-row status-partial">
 <td>Full-page Settings surface</td>
 <td><span class="delivery-status partial">Partial</span></td>
-<td>Full-page layout, theme selector, connected Codex row, Disconnect control, channel selector, and update control are structurally tested and captured in <code>SET-001-E1</code>.</td>
+<td>Full-page layout, theme selector, Codex row, Disconnect, channel selector and update control are structurally tested. <code>SET-001-E1</code> shows the layout, sections and theme.</td>
 <td>Disconnect/reconnect behavior and retention of local data are not verified. Advanced project, storage, Git, and provider settings are not built.</td>
 </tr>
 <tr class="requirement-row status-partial">
@@ -1291,10 +1291,10 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 <figure class="evidence-figure">
   <div class="evidence-image">
     <img src="assets/evidence/desktop/new-thread.png" alt="SCP-001-E1: Connected Relayer New Thread page">
-    <span class="evidence-callout" style="--x:10%;--y:15%">1</span>
-    <span class="evidence-callout" style="--x:59%;--y:51%">2</span>
-    <span class="evidence-callout" style="--x:39%;--y:61%">3</span>
-    <span class="evidence-callout" style="--x:82%;--y:61%">4</span>
+    <span class="evidence-callout" style="--x:18%;--y:12%">1</span>
+    <span class="evidence-callout" style="--x:58%;--y:52%">2</span>
+    <span class="evidence-callout" style="--x:31%;--y:61%">3</span>
+    <span class="evidence-callout" style="--x:85%;--y:55%">4</span>
   </div>
   <ol class="evidence-legend"><li><b>1</b><span>New Thread remains available beside Chats and Projects.</span></li><li><b>2</b><span>One task composer is the primary page action.</span></li><li><b>3</b><span>No folder is the explicit initial scope.</span></li><li><b>4</b><span>The send control is inline with the composer.</span></li></ol>
 </figure>
@@ -1303,9 +1303,9 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 <figure class="evidence-figure">
   <div class="evidence-image">
     <img src="assets/evidence/desktop/new-thread-scope-menu.png" alt="SCP-001-E2: New Thread scope menu">
-    <span class="evidence-callout" style="--x:39%;--y:46%">1</span>
-    <span class="evidence-callout" style="--x:40%;--y:52%">2</span>
-    <span class="evidence-callout" style="--x:39%;--y:61%">3</span>
+    <span class="evidence-callout" style="--x:57%;--y:49%">1</span>
+    <span class="evidence-callout" style="--x:57%;--y:54%">2</span>
+    <span class="evidence-callout" style="--x:31%;--y:61%">3</span>
   </div>
   <ol class="evidence-legend"><li><b>1</b><span>No folder keeps work in an app-owned local directory.</span></li><li><b>2</b><span>Open another folder begins local project creation.</span></li><li><b>3</b><span>Scope choice stays inside New Thread rather than onboarding.</span></li></ol>
 </figure>
@@ -1315,9 +1315,9 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 <figure class="evidence-figure">
   <div class="evidence-image">
     <img src="assets/evidence/desktop/permission-picker.png" alt="PERM-001-E1: New Thread permission picker with Ask for approval, Approve for me, and Full access">
-    <span class="evidence-callout" style="--x:51%;--y:62%">1</span>
-    <span class="evidence-callout" style="--x:53%;--y:47%">2</span>
-    <span class="evidence-callout" style="--x:53%;--y:54%">3</span>
+    <span class="evidence-callout" style="--x:46%;--y:67%">1</span>
+    <span class="evidence-callout" style="--x:67%;--y:44%">2</span>
+    <span class="evidence-callout" style="--x:67%;--y:54%">3</span>
   </div>
   <ol class="evidence-legend"><li><b>1</b><span>The composer shows the selected profile before send.</span></li><li><b>2</b><span>The picker presents exactly the three product permission profiles.</span></li><li><b>3</b><span>Full access discloses that filesystem and network access are not hard-confined.</span></li></ol>
 </figure>
@@ -1333,7 +1333,8 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 <p>The sidebar contains New Thread, Chats, and Projects. Chats contains no-folder threads; Projects contains saved thread entries. The sidebar stays visible at every width. At 760px or narrower it starts as a collapsed icon rail. Its existing toggle expands the same sidebar in normal flow. The workspace fits the remaining width. Explicit expansion stays open while the viewport remains narrow. Settings and Account stay in the footer, with icons while collapsed and labels while expanded. A Download update icon appears when an update is available.</p>
 <p>The sidebar is a compact list. It is not a recursive graph tree. A child conversation can become a saved sidebar entry. The sidebar does not show its full ancestry. Graph breadcrumbs show this ancestry.</p>
 <p>The header shows the current thread title, scope, and backward/forward turn controls. The composer remains the place to send, stop, and attach context. There is no separate <code>active run</code> dashboard.</p>
-<p>A status symbol follows the thread title only while the thread is Running, Stopping…, Needs approval, or Failed. There is no symbol when the thread is idle, stopped, cancelled, or accepted. The symbol's shape, tooltip, and accessible name carry the state. The prompt card keeps its turn-level status pill. This symbol is planned (ADR 0013).</p>
+<p>A status symbol follows the thread title only while the thread is Running, Stopping…, Needs approval, or Failed. There is no symbol when the thread is idle, stopped, cancelled, or accepted. The symbol's shape, tooltip, and accessible name carry the state. The prompt card keeps its turn-level status pill.</p>
+<p>The same symbols mark threads in the sidebar list, with the state in each row's tooltip and accessible name. While any thread is running, stopping, or waiting for approval, the list refreshes its state. An idle row shows no symbol. In the collapsed sidebar it shows a small neutral dot, so the row stays visible and clickable.</p>
 <h3>8.2 Local persistence and restart recovery</h3>
 <p>Product data is local and disk-persisted:</p>
 <ul>
@@ -1463,10 +1464,10 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 </tr>
 <tr>
 <td>Thread status symbol</td>
-<td><span class="delivery-status open">Open — planned</span></td>
-<td>None yet. Planned tests: the symbol appears only for Running, Stopping, Needs approval, and Failed. Its accessible name and tooltip match the state.</td>
+<td><span class="delivery-status partial">Partial</span></td>
+<td>Sidebar: <code>test/thread-activity-sidebar.test.mjs</code> shows symbols only for Running, Stopping, Needs approval, and Failed, with matching names. It also covers the live refresh. Header: <code>test/node-detail-runtime.test.mjs</code> shows Running after the title. <code>test/run-state.test.mjs</code> and a storage test derive each state from the latest interaction.</td>
 <td>None yet.</td>
-<td>Implement the header symbol (ADR 0013 item 1), then capture each state.</td>
+<td>Capture each state in the app.</td>
 </tr>
 <tr>
 <td>System appearance</td>
@@ -1484,27 +1485,24 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 </tr>
 </tbody></table>
 <h4><code>SET-001-E1</code> — full-page Settings</h4>
-<p>The capture uses a generic connected-account label so personal account identity is not stored in the repository. All other visible state comes from the Electron renderer.</p>
+<p>Captured from the Electron renderer on its Appearance section. Account, provider and update controls have their own sections, so no account identity appears in the capture.</p>
 <figure class="evidence-figure">
   <div class="evidence-image">
     <img src="assets/evidence/desktop/settings-full-page.png" alt="SET-001-E1: Full-page Relayer Settings">
-    <span class="evidence-callout" style="--x:29%;--y:12%">1</span>
-    <span class="evidence-callout" style="--x:83%;--y:25%">2</span>
-    <span class="evidence-callout" style="--x:37%;--y:38%">3</span>
-    <span class="evidence-callout" style="--x:82%;--y:38%">4</span>
-    <span class="evidence-callout" style="--x:82%;--y:51%">5</span>
-    <span class="evidence-callout" style="--x:81%;--y:58%">6</span>
+    <span class="evidence-callout" style="--x:36%;--y:10%">1</span>
+    <span class="evidence-callout" style="--x:19%;--y:37%">2</span>
+    <span class="evidence-callout" style="--x:77%;--y:25%">3</span>
   </div>
-  <ol class="evidence-legend"><li><b>1</b><span>Settings occupies the main view; it is not a window inside the app.</span></li><li><b>2</b><span>Appearance is an ordinary top-level setting.</span></li><li><b>3</b><span>The connected Codex state is visible without making it a Relayer identity.</span></li><li><b>4</b><span>Disconnect is an account-connection action; its data-retention behavior remains to be verified.</span></li><li><b>5</b><span>Stable and Preview are explicit update channels.</span></li><li><b>6</b><span>Development builds state that updates are disabled while retaining the check control.</span></li></ol>
+  <ol class="evidence-legend"><li><b>1</b><span>Settings occupies the main view; it is not a window inside the app.</span></li><li><b>2</b><span>Account, Providers, Model families, Harnesses, Appearance, Application updates and Advanced are sections in the sidebar.</span></li><li><b>3</b><span>Appearance offers System, Light and Dark.</span></li></ol>
 </figure>
 
 <h4><code>SHL-001-E1</code> — collapsed sidebar</h4>
 <figure class="evidence-figure">
   <div class="evidence-image">
     <img src="assets/evidence/desktop/sidebar-collapsed.png" alt="SHL-001-E1: Relayer sidebar collapsed beside New Thread">
-    <span class="evidence-callout" style="--x:9%;--y:6%">1</span>
-    <span class="evidence-callout" style="--x:6%;--y:15%">2</span>
-    <span class="evidence-callout" style="--x:54%;--y:53%">3</span>
+    <span class="evidence-callout" style="--x:7%;--y:6%">1</span>
+    <span class="evidence-callout" style="--x:7%;--y:16%">2</span>
+    <span class="evidence-callout" style="--x:52%;--y:55%">3</span>
   </div>
   <ol class="evidence-legend"><li><b>1</b><span>The collapse control stays beside the macOS window controls.</span></li><li><b>2</b><span>Relayer, New Thread, and Settings remain reachable as compact icons.</span></li><li><b>3</b><span>The main task surface expands into the released sidebar space.</span></li></ol>
 </figure>
@@ -2411,6 +2409,8 @@ settings:
 <li>confirmed attachments persist with the composer draft, survive navigation, and clear only after durable send or explicit removal;</li>
 <li>the next interaction node receives typed attachment edges carrying the selected node IDs and annotations.</li>
 </ul>
+<p>Annotation controls remain visible and allow editing and confirmation while a follow-up generates, including on its accepted current layer. Confirmed annotations wait for the next ordinary message under the existing Send rules. This applies to saved chats and new follow-ups. The Send request freezes its submitted annotations; read-only views confer no annotation authority.</p>
+<p>Deterministic follow-up annotation checkpoints use <code>test/workspace-followup-annotations.test.mjs</code>. This suite observes the production workspace's visible <code>+</code>, editing, discard, confirmation, exact occurrence, and retained attachment. It also verifies read-only denial, the Send request freeze, and the running Send lock. The draft-controller suite, <code>test/node-context-drafts.test.mjs</code>, covers confirmation failure, revision races, and durable replay. Graph and product persistence tests validate accepted-current occurrence authority and confirmation before completion settles. Required assembled commands remain those in section 7.</p>
 <p>Adding context alone does not invoke Complete.</p>
 <p>V1 has no separate feedback interaction. To correct, question, or expand a node, the user selects <code>+</code>. The user attaches the node and can add a note. The user then sends a normal message. The attachment edge stores the note. The interaction stays <code>kind = &quot;message&quot;</code>.</p>
 <h3>7.2 Authored node actions</h3>

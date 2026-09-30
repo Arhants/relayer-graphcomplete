@@ -896,6 +896,22 @@ async fn confirming_a_node_context_draft_revalidates_and_replays_one_annotation(
         "context_draft_target_unavailable"
     );
     let confirm_uri = format!("{draft_uri}/confirm?expectedRevision=1");
+    // The selected occurrence is accepted, while its follow-up is still
+    // producing more output. Product turn settlement cannot grant or revoke
+    // graph publication authority.
+    let pool = sqlite_pool(&database).await;
+    sqlx::query(
+        "UPDATE interactions SET sequence=2,completion_status='running' WHERE graph_node_id=3",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO interactions(thread_id,sequence,text,created_at,graph_node_id,completion_status,permission_profile_id) VALUES (?1,1,'Original request','1',90,'accepted','auto')")
+        .bind(thread_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
     let confirmed = response_json(
         app.clone()
             .oneshot(api_request("POST", &confirm_uri, None, true))

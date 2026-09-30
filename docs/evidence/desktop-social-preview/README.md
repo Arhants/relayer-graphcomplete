@@ -13,7 +13,7 @@ The accepted behavior is PRD SOC-001 through SOC-003 and ADR 0012. The desktop c
 
 ## Real desktop capture
 
-Run `npm run prepare:renderer` then `npm run evidence:share-preview`. The runner uses the production capture service, Electron window, bundled public viewer and synthetic fixture. It verifies distinct 1200×630 PNGs, cancellation during window startup, closed loopback server and no remaining windows. Light and dark PNGs here are the inspected output. The generated receipt binds them to every served renderer file (src, vendor, assets, and styles.css), with a path-to-SHA-256 manifest and aggregate digest checked before and after capture, plus capture and publication source hashes. Regenerate the receipt and PNGs after renderer changes. Offscreen paint capture was rejected after it omitted unchanged header pixels; the implementation uses a hidden ordinary window.
+Run `npm run prepare:renderer` then `npm run evidence:share-preview`. The runner uses the production capture service, Electron window, bundled public viewer and synthetic fixture. It verifies distinct 1200×630 PNGs, cancellation during window startup, closed loopback server and no remaining windows. Light and dark PNGs here are the inspected output. The generated receipt binds them to every served renderer file (src, vendor, assets, the generated design tokens, fonts and share image under design/, and styles.css), with a path-to-SHA-256 manifest and aggregate digest checked before and after capture, plus capture and publication source hashes. Regenerate the receipt and PNGs after renderer changes. Offscreen paint capture was rejected after it omitted unchanged header pixels; the implementation uses a hidden ordinary window.
 
 ## Joined local transport
 

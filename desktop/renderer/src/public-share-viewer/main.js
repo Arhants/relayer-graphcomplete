@@ -1,4 +1,4 @@
-import { createProductWorkspace } from "../product-workspace/index.js";
+import { createProductWorkspace, loadDesignFonts } from "../product-workspace/index.js";
 import { createPublicViewerAdapter } from "./adapter.js";
 import { parsePublicSnapshot } from "./snapshot.js";
 
@@ -271,5 +271,5 @@ if (
   && typeof document !== "undefined"
   && document.querySelector("#relayerPublicSnapshot")
 ) {
-  bootPublicViewer();
+  void loadDesignFonts(document).finally(() => bootPublicViewer());
 }

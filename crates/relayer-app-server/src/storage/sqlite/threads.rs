@@ -8,7 +8,14 @@ const THREAD_COLUMNS: &str = r#"
            t.harness_configuration_name,
            t.permission_profile_id,
            (SELECT id FROM interactions WHERE thread_id=t.id ORDER BY sequence ASC LIMIT 1),
-           t.conversation_import_id IS NOT NULL, t.icon, t.icon_selection_eligible
+           t.conversation_import_id IS NOT NULL, t.icon, t.icon_selection_eligible,
+           (SELECT CASE
+                WHEN i.completion_status IN ('not_started','running','submitted','waiting_for_approval')
+                     AND EXISTS(SELECT 1 FROM interaction_stop_requests stop WHERE stop.interaction_id=i.id AND stop.error IS NULL) THEN 'stopping'
+                WHEN i.completion_status='waiting_for_approval' THEN 'needs_approval'
+                WHEN i.completion_status IN ('not_started','running','submitted') THEN 'running'
+                WHEN i.completion_status='failed' THEN 'failed'
+            END FROM interactions i WHERE i.thread_id=t.id ORDER BY i.sequence DESC LIMIT 1)
     FROM threads t
 "#;
 
@@ -122,6 +129,7 @@ fn thread_from_row(row: &SqliteRow) -> Result<Thread, StorageError> {
         permission_profile_id: row.try_get(6)?,
         root_interaction_id: InteractionId::from_database(row.try_get(7)?),
         imported: row.try_get::<i64, _>(8)? != 0,
+        activity: row.try_get(11)?,
     })
 }
 
@@ -311,5 +319,81 @@ mod icon_tests {
                 .as_deref(),
             Some("compass")
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn set_status(store: &SqliteProductStore, thread: &Thread, status: &str) {
+        sqlx::query("UPDATE interactions SET completion_status=?1 WHERE id=?2")
+            .bind(status)
+            .bind(thread.root_interaction_id.value())
+            .execute(&store.pool)
+            .await
+            .unwrap();
+    }
+
+    async fn activity(store: &SqliteProductStore, thread: &Thread) -> Option<String> {
+        store.get_thread(thread.id).await.unwrap().unwrap().activity
+    }
+
+    #[tokio::test]
+    async fn thread_lists_report_the_latest_interactions_live_state_only() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = SqliteProductStore::open(&directory.path().join("product.sqlite3"))
+            .await
+            .unwrap();
+        let thread = store
+            .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
+                title: "Thread",
+                project_id: None,
+                initial_message: "Question",
+                harness_configuration_name: "test",
+                permission_profile_id: "ask",
+                model_selection: None,
+                timestamp: "1",
+            })
+            .await
+            .unwrap();
+        for (status, expected) in [
+            ("running", Some("running")),
+            ("waiting_for_approval", Some("needs_approval")),
+            ("failed", Some("failed")),
+            ("accepted", None),
+            ("stopped", None),
+            ("cancelled", None),
+        ] {
+            set_status(&store, &thread, status).await;
+            assert_eq!(
+                activity(&store, &thread).await.as_deref(),
+                expected,
+                "{status}"
+            );
+        }
+        set_status(&store, &thread, "running").await;
+        store
+            .request_interaction_stop(thread.id, thread.root_interaction_id)
+            .await
+            .unwrap();
+        assert_eq!(activity(&store, &thread).await.as_deref(), Some("stopping"));
+        // A stop that could not be delivered leaves the run running.
+        sqlx::query(
+            "UPDATE interaction_stop_requests SET error='unreachable' WHERE interaction_id=?1",
+        )
+        .bind(thread.root_interaction_id.value())
+        .execute(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(activity(&store, &thread).await.as_deref(), Some("running"));
+        sqlx::query("UPDATE interaction_stop_requests SET error=NULL WHERE interaction_id=?1")
+            .bind(thread.root_interaction_id.value())
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        let listed = store.list_threads().await.unwrap();
+        assert_eq!(listed[0].activity.as_deref(), Some("stopping"));
     }
 }

@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { Window } from "happy-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import * as lucide from "lucide";
@@ -10,6 +11,9 @@ it("renders saved topic metadata in Chats, project threads and the workspace acr
   document.body.innerHTML = `<div class="sidebar-title"><strong>Relayer</strong></div><button id="newThread"></button>
     <section class="side-section"><div class="section-label"></div><div id="chatList"></div></section>
     <section class="side-section"><div class="section-label"></div><div id="projectList"></div></section><button id="settingsButton"></button><section id="threadView"></section>`;
+  const style = document.createElement("style");
+  style.textContent = await readFile(new URL("../desktop/renderer/styles.css", import.meta.url), "utf8");
+  document.head.append(style);
   const { appState, viewState } = await import("../desktop/renderer/src/state.js");
   const { renderSidebar } = await import("../desktop/renderer/src/navigation.js");
   const previous = { threads: appState.threads, projects: appState.projects, evalContext: viewState.evalContext };
@@ -25,11 +29,31 @@ it("renders saved topic metadata in Chats, project threads and the workspace acr
     expect(document.querySelector('[data-thread="803"] .entry-icon').textContent).toBe("◌");
     expect(document.querySelector('[data-thread="804"] .entry-icon').textContent).toBe("◌");
     expect(document.querySelector('[data-thread="804"] script')).toBeNull();
-    thread = { ...thread, icon: "database" }; render();
+    thread = { ...thread, icon: "database", activity: "failed" };
+    state.interactions = [{ id: 1, threadId: 801, sequence: 1, text: "Inspect", completionStatus: "failed", contexts: [] }];
+    render();
     expect(document.querySelector('[data-thread="802"] [data-relayer-icon="database"]')).not.toBeNull();
-    expect(document.querySelector('[data-thread="801"] .entry-icon').innerHTML).toBe(document.querySelector("#threadIcon").innerHTML);
+    expect(document.querySelector('[data-thread="801"] .thread-topic-icon').innerHTML).toBe(document.querySelector("#threadIcon").innerHTML);
+    expect(document.querySelector('[data-thread="801"] .thread-activity svg')).not.toBeNull();
+    expect(document.querySelector('[data-thread="801"]').getAttribute("aria-label")).toContain("Failed");
+    expect(document.querySelector("#threadStatusSymbol").getAttribute("aria-label")).toBe("Failed");
     expect(document.querySelector("#threadIcon svg").getAttribute("aria-hidden")).toBe("true");
-    thread = JSON.parse(JSON.stringify({ ...thread, title: "Renamed topic" })); render();
+    thread = JSON.parse(JSON.stringify({ ...thread, title: "Renamed topic", activity: undefined }));
+    state.interactions = []; render();
+    expect(document.querySelector("#threadStatusSymbol").classList.contains("hidden")).toBe(true);
+    let idleRow = document.querySelector('[data-thread="801"]');
+    expect(browser.getComputedStyle(idleRow.querySelector(".thread-activity")).display).toBe("none");
+    document.body.classList.add("sidebar-collapsed");
+    renderSidebar(); idleRow = document.querySelector('[data-thread="801"]');
+    expect(idleRow.querySelector('[data-relayer-icon="database"]')).not.toBeNull();
+    expect(browser.getComputedStyle(idleRow.querySelector(".thread-activity")).display).toBe("grid");
+    // The permanent 16px topic and secondary 12px neutral mark fit the 38px rail content.
+    expect(browser.getComputedStyle(idleRow).gap).toBe("4px");
+    expect(browser.getComputedStyle(idleRow).paddingLeft).toBe("0px");
+    const neutralRule = [...style.sheet.cssRules].find((rule) => rule.selectorText === 'body.sidebar-collapsed .entry:not([data-activity]) .thread-activity::before');
+    expect(neutralRule.style.width).toBe("6px");
+    expect(neutralRule.style.borderRadius).toBe("50%");
+    document.body.classList.remove("sidebar-collapsed");
     expect(document.querySelector("#threadTitle").textContent).toBe("Renamed topic");
     expect(document.querySelector('#threadIcon [data-relayer-icon="database"]')).not.toBeNull();
     viewState.evalContext = { harnessConfigurationName: "fixture", cases: [{ name: "Case", status: "passed", threads: [{ id: 801, name: "Eval", icon: "database" }] }] }; renderSidebar();

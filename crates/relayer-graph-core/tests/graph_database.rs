@@ -2966,6 +2966,113 @@ async fn interaction_context_is_control_authored_ordered_and_excluded_from_compl
 }
 
 #[tokio::test]
+async fn interaction_context_accepts_published_current_before_turn_completion() {
+    let (database, source) = setup(None, thread(1)).await;
+    let writer = database.writer_for_subgraph(source.id).await.unwrap();
+    let target = node(&writer, "working-answer").await;
+    let layer = single_node_layer(&writer, "working-current", &target).await;
+    let occurrence = InteractionContextTarget {
+        node_id: target.id,
+        source_interaction_node_id: source.id,
+        source_layer_id: layer.id,
+    };
+    assert!(
+        database
+            .canonical_interaction_context_occurrence(&occurrence)
+            .await
+            .is_err()
+    );
+    writer
+        .transition_current(
+            0,
+            "publish-answer",
+            CurrentTransition::Advance { layer_id: layer.id },
+        )
+        .await
+        .unwrap();
+    let accepted = database
+        .canonical_interaction_context_occurrence(&occurrence)
+        .await
+        .unwrap();
+    assert_eq!(accepted.state, RecordState::Accepted);
+    assert!(writer.completion_output().await.unwrap().is_none());
+
+    let later = node(&writer, "later-answer").await;
+    let later_layer = single_node_layer(&writer, "later-current", &later).await;
+    writer
+        .add_action(&ActionDraft {
+            client_key: "retain-annotated-current".into(),
+            source_node_id: later.id,
+            source_layer_id: Some(later_layer.id),
+            kind: ActionKind::Navigate,
+            relation: Some(NavigateRelation::Reference),
+            label: "Earlier accepted result".into(),
+            variant: ActionVariant::default(),
+            icon: None,
+            description: None,
+            target_layer_id: Some(layer.id),
+            interaction_text: None,
+            input: None,
+        })
+        .await
+        .unwrap();
+    writer
+        .transition_current(
+            1,
+            "publish-later",
+            CurrentTransition::Advance {
+                layer_id: later_layer.id,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        database
+            .canonical_interaction_context_occurrence(&occurrence)
+            .await
+            .unwrap(),
+        accepted
+    );
+    let wrong_source = database
+        .create_interaction(None, thread(1), "Unrelated turn")
+        .await
+        .unwrap();
+    assert!(
+        database
+            .canonical_interaction_context_occurrence(&InteractionContextTarget {
+                source_interaction_node_id: wrong_source.id,
+                ..occurrence.clone()
+            })
+            .await
+            .is_err()
+    );
+    let (followup, _) = database
+        .create_interaction_with_context(
+            None,
+            thread(1),
+            "Use this",
+            &[InteractionContextDraft {
+                target: occurrence,
+                annotations: vec!["Keep this accepted result".into()],
+            }],
+        )
+        .await
+        .unwrap();
+    let input = database
+        .writer_for_subgraph(followup.id)
+        .await
+        .unwrap()
+        .interaction_input()
+        .await
+        .unwrap();
+    assert_eq!(input.contexts[0].target_node, accepted);
+    assert_eq!(
+        input.contexts[0].annotations,
+        vec!["Keep this accepted result"]
+    );
+}
+
+#[tokio::test]
 async fn interaction_context_rejects_duplicate_invalid_and_empty_input_atomically() {
     let database = GraphDatabase::in_memory().await.unwrap();
     let source = database

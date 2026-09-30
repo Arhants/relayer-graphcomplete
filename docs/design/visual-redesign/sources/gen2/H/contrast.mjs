@@ -182,4 +182,4 @@ if (md) {
   for (const r of drows) console.log(r.ok.padEnd(9), r.theme.padEnd(5), r.n.padStart(5), r.c.padStart(5), ' floor', String(r.floor).padEnd(3), r.what, '|', r.a, 'vs', r.b, r.carried ? '| ' + r.carried : '');
   console.log(rows.length + drows.length, 'checks,', fails, 'failures');
 }
-process.exit(fails ? 1 : 0);
+process.exitCode = fails ? 1 : 0;
