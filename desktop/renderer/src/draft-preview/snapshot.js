@@ -13,16 +13,20 @@ export function draftPreviewReadModel(input) {
   if (input?.version !== 1 || !Array.isArray(input.nodes) || !input.nodes.length) {
     throw new Error("Draft preview snapshot is invalid.");
   }
-  const node = input.nodes[0];
-  const layer = input.layer ?? {
+  // Present the draft as the user will see it once accepted, not as a draft.
+  const accepted = (record) => ({ ...record, state: "accepted" });
+  const nodes = input.nodes.map(accepted);
+  const edges = (input.edges ?? []).map(accepted);
+  const node = nodes[0];
+  const layer = input.layer ? accepted(input.layer) : {
     id: `draft-preview-node-${node.id}`,
     nodes: [node.id],
     edges: [],
     defaultNodeId: node.id,
     layout: { version: 1, placements: [{ nodeId: node.id, x: 0.5, y: 0.5 }] },
-    state: "draft",
+    state: "accepted",
   };
-  const rootLayer = { layer, nodes: input.nodes, edges: input.edges ?? [], actions: [] };
+  const rootLayer = { layer, nodes, edges, actions: [] };
   const thread = {
     id: THREAD_ID, title: "Draft preview", projectId: null, rootInteractionId: TURN_ID,
     harnessConfigurationName: "draft-preview", harnessId: "draft-preview", permissionProfileId: "auto",

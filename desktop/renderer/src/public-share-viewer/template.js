@@ -110,7 +110,7 @@ export function renderPublicViewerTemplate({
   const snapshotLiteral = safeJsonScriptText(snapshot);
   const csp = escapeHtml(publicViewerCsp());
   const logo = escapeHtml(viewerAsset(assetManifest, "logo", "assets/relayer-logo.svg", base));
-  const ogImage = escapeHtml(viewerAsset(assetManifest, "ogImage", "assets/relayer-share-og.svg", base));
+  const ogImage = escapeHtml(viewerAsset(assetManifest, "ogImage", "design/share-og.svg", base));
   const viewerScript = escapeHtml(viewerAsset(assetManifest, "viewerScript", "src/public-share-viewer/main.js", base));
   const viewerStyles = escapeHtml(viewerAsset(assetManifest, "viewerStyles", "src/public-share-viewer/viewer.css", base));
   const workspaceStyles = escapeHtml(viewerAsset(assetManifest, "workspaceStyles", "styles.css", base));

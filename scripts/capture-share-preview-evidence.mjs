@@ -32,7 +32,7 @@ async function rendererArtifact(directory = rendererDirectory) {
       if (entry.isDirectory()) await visit(path);
       else if (entry.isFile()) {
         const name = relative(rendererDirectory, path).split(sep).join("/");
-        if (!/^(src\/|vendor\/|assets\/|styles\.css$)/.test(name)) continue;
+        if (!/^(src\/|vendor\/|assets\/|design\/|styles\.css$)/.test(name)) continue;
         const bytes = await readFile(path);
         files[name] = { bytes: bytes.length, sha256: sha256(bytes) };
       }

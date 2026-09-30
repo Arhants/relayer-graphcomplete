@@ -35,7 +35,7 @@ export async function startIsolatedPageServer({ root, prefix, html }) {
         return;
       }
       if (
-        !/^(src\/|vendor\/|assets\/|styles\.css$)/.test(file) ||
+        !/^(src\/|vendor\/|assets\/|design\/|styles\.css$)/.test(file) ||
         file.includes("..") ||
         file.includes("%")
       ) {

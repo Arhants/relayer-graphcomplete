@@ -133,7 +133,7 @@ describe("renderer appearance", () => {
 
   it("declares the native color scheme for both themes so browser-drawn controls match", async () => {
     const css = await readFile(new URL("../desktop/renderer/styles.css", import.meta.url), "utf8");
-    expect(css.match(/^:root\{[^}]*\}/)[0]).toContain("color-scheme:dark");
+    expect(css.match(/^:root\{--panel[^}]*\}/m)[0]).toContain("color-scheme:dark");
     expect(css.match(/html\[data-theme="light"\]\{[^}]*\}/)[0]).toContain("color-scheme:light");
   });
 

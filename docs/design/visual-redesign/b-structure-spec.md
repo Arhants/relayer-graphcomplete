@@ -248,7 +248,7 @@ title 14/20/600 from x+40, one line, ellipsis; right padding 16 (12 when `›N` 
 | Attached as context | BL `b-badge` + `paperclip` | |
 | Comments N (Eval) | TR `b-badge is-comments` | rose-alt disc, white 12/600 count |
 
-**Edges**: gentle circular arcs, sagitta = 0.12 × centre-to-centre chord, bulging **away from the layer centroid**;
+**Edges**: gentle circular arcs, sagitta = 0.12 × chord capped at 24px (at zoom 1), bending to the **left of the edge's own direction** (first endpoint to second; revised 2026-09-29 so dragging never flips an edge);
 1.5px `--edge`, round caps, non-scaling; clipped 4px outside every drawn shape of both end nodes (pill, peek, badges,
 caption, and the selection ring when selected). `b-edge-draft` = dashed 4/3 with butt caps; `b-edge-strong` = 2px
 `--edge-strong` for the selected node's incident edges; `b-edge-dim` (40%) exists for the B1 specimen only — B's
@@ -714,7 +714,7 @@ Thresholds: text 4.5, marks 3, strokes ≤ 2px 3.2 (brief §2.5 design margin). 
     (the 2px ring at a 2px gap is selection's shape, so the orbit must not look like part of one); static phase 6 → 9 o'clock, clear
     of the title and away from a neighbour's selection ring above. It still shares the selection hue (rose): the badge
     and the "Running" caption carry the difference (B1 §14 risk).
-11. **Arc direction**: bulge away from the layer centroid (deterministic, keeps arcs off the middle).
+11. **Arc direction**: bend left of the edge's own direction (revised 2026-09-29). Bulging away from the layer centroid made edges flip sides while a node was dragged; the bend now depends only on the edge's endpoints.
 12. **No non-neighbour dimming** in B's scenes (B's spec only strengthens incident edges; dimming would push edges
     below 3:1). `b-edge-dim` exists only for the B1 specimen.
 13. **Overview tier**: selected label **above** the token (below collides with N6 and the N6–N1 edge); tooltip specimen
