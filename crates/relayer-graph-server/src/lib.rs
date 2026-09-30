@@ -343,6 +343,8 @@ pub fn router(state: ServerState) -> Router {
         )
         .route("/api/graph/current/transitions", post(transition_current))
         .route("/api/graph/search", post(search))
+        .route("/api/graph/icons/discover", post(discover_icons))
+        .route("/api/graph/icons/inspect", post(inspect_icons))
         .route("/api/graph/nodes/{id}/output", get(completion_output))
         .with_state(state)
 }
@@ -583,6 +585,229 @@ struct ResolveDetailAssetsRequest {
     logical_ids: Vec<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct IconDiscoveryRequest {
+    query: String,
+    #[serde(default = "icon_both")]
+    kind: String,
+    #[serde(default = "icon_limit")]
+    limit: usize,
+    scope: Option<Value>,
+}
+fn icon_both() -> String {
+    "both".into()
+}
+fn icon_limit() -> usize {
+    12
+}
+
+fn bundled_symbol_catalog() -> &'static Value {
+    static CATALOG: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    CATALOG.get_or_init(|| {
+        serde_json::from_str(relayer_graph_core::RELAYER_ICON_CATALOG_JSON)
+            .expect("generated symbol catalog is valid")
+    })
+}
+async fn icon_scope(
+    state: &ServerState,
+    headers: &HeaderMap,
+    requested: Option<Value>,
+) -> Result<Value, ApiError> {
+    let authority = session(state, headers)?;
+    let writer = state
+        .graph
+        .writer_for_completion_authority(authority.node_id, authority.epoch)
+        .await?;
+    writer.require_active_authority().await?;
+    let (project, thread) = writer.authority_scope();
+    let scope = requested.unwrap_or_else(|| {
+        project.map_or_else(
+            || json!({"kind":"thread","threadId":thread.value()}),
+            |project| json!({"kind":"project","projectId":project.value()}),
+        )
+    });
+    let allowed = scope == json!({"kind":"library"})
+        || scope == json!({"kind":"thread","threadId":thread.value()})
+        || project
+            .is_some_and(|project| scope == json!({"kind":"project","projectId":project.value()}));
+    if !allowed {
+        return Err(ApiError::capability_not_granted());
+    }
+    Ok(scope)
+}
+async fn discover_icons(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Json(input): Json<IconDiscoveryRequest>,
+) -> Result<Json<Value>, ApiError> {
+    use relayer_graph_core::query::candidates::TextCandidate;
+    if input.query.len() > 512
+        || !(1..=48).contains(&input.limit)
+        || !matches!(input.kind.as_str(), "symbols" | "images" | "both")
+    {
+        return Err(ApiError::invalid(
+            "Icon discovery requires kind symbols/images/both, query at most 512 bytes, and limit 1..48",
+        ));
+    }
+    let scope = icon_scope(&state, &headers, input.scope).await?;
+    let mut candidates = Vec::<TextCandidate>::new();
+    if input.kind != "images" {
+        for record in bundled_symbol_catalog()["icons"]
+            .as_array()
+            .expect("generated icons array")
+        {
+            let mut record = record.clone();
+            record["id"] = json!(format!(
+                "symbol:{}",
+                record["name"].as_str().expect("symbol name")
+            ));
+            record["icon"] = record["name"].clone();
+            record["kind"] = json!("symbol");
+            candidates.push(serde_json::from_value(record).expect("generated symbol metadata"));
+        }
+    }
+    if input.kind != "symbols" {
+        let Json(result) = visual_assets_operation(
+            State(state.clone()),
+            headers.clone(),
+            Json(VisualAssetsOperationRequest {
+                operation: json!({"kind":"icon-candidates","scope":scope}),
+            }),
+        )
+        .await?;
+        let images: Vec<TextCandidate> = serde_json::from_value(result["candidates"].clone())
+            .map_err(|_| ApiError::visual_assets_unavailable())?;
+        candidates.extend(images);
+    }
+    let items = rank_icon_candidates(&state, candidates, input.query, input.limit).await?;
+    // Re-check after retrieval so revocation cannot expose catalog data.
+    icon_scope(&state, &headers, Some(scope)).await?;
+    Ok(Json(
+        json!({"items":items,"candidateSource":"catalog-text-v1"}),
+    ))
+}
+
+async fn rank_icon_candidates(
+    state: &ServerState,
+    candidates: Vec<relayer_graph_core::query::candidates::TextCandidate>,
+    query: String,
+    limit: usize,
+) -> Result<Vec<relayer_graph_core::query::candidates::TextCandidate>, ApiError> {
+    #[cfg(feature = "ladybug")]
+    {
+        use relayer_graph_core::SearchIndex;
+        Ok(state
+            .search_index
+            .as_ref()
+            .ok_or_else(|| ApiError::invalid("Icon discovery search engine unavailable"))?
+            .discover_candidates(candidates, query, limit)
+            .await?)
+    }
+    #[cfg(not(feature = "ladybug"))]
+    {
+        let _ = (state, candidates, query, limit);
+        Err(ApiError::invalid(
+            "Icon discovery search engine unavailable",
+        ))
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct IconInspectionRequest {
+    icons: Vec<Value>,
+    scope: Option<Value>,
+    #[serde(default)]
+    contact_sheet: bool,
+}
+async fn inspect_icons(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Json(input): Json<IconInspectionRequest>,
+) -> Result<Json<Value>, ApiError> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    if !(1..=8).contains(&input.icons.len()) {
+        return Err(ApiError::invalid("Icon inspection accepts 1..8 icons"));
+    }
+    let scope = icon_scope(&state, &headers, input.scope).await?;
+    let mut previews = Vec::new();
+    let mut total_bytes = 0;
+    for icon in input.icons {
+        let preview = if let Some(name) = icon.as_str() {
+            let canonical = relayer_graph_core::resolve_icon_name(name)
+                .ok_or_else(|| ApiError::invalid("Unsupported symbol icon"))?;
+            let record = bundled_symbol_catalog()["icons"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|record| record["name"].as_str() == Some(canonical))
+                .ok_or_else(|| ApiError::invalid("Symbol preview unavailable"))?;
+            let svg = record["svg"]
+                .as_str()
+                .ok_or_else(|| ApiError::invalid("Symbol preview unavailable"))?;
+            json!({"name":format!("{canonical}.svg"),"mediaType":"image/svg+xml","contentBase64":STANDARD.encode(svg)})
+        } else {
+            let asset_id = icon
+                .get("assetId")
+                .and_then(Value::as_str)
+                .filter(|_| icon.get("kind").and_then(Value::as_str) == Some("image"))
+                .ok_or_else(|| {
+                    ApiError::invalid(
+                        "Inspection requires symbol strings or image asset references",
+                    )
+                })?;
+            let Json(result) = visual_assets_operation(
+                State(state.clone()),
+                headers.clone(),
+                Json(VisualAssetsOperationRequest {
+                    operation: json!({"kind":"inspect-icon","assetId":asset_id,"scope":scope}),
+                }),
+            )
+            .await?;
+            result["preview"].clone()
+        };
+        total_bytes += preview["contentBase64"].as_str().map_or(0, str::len);
+        if total_bytes > 7 * 1024 * 1024 {
+            return Err(ApiError::invalid(
+                "Icon inspection exceeds preview byte budget; inspect fewer icons",
+            ));
+        }
+        previews.push(preview);
+    }
+    let sheet = if input.contact_sheet {
+        let columns = previews.len().min(4);
+        let rows = previews.len().div_ceil(columns);
+        let mut svg = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {} {}"><rect width="100%" height="100%" fill="white"/>"#,
+            columns * 128,
+            rows * 144,
+            columns * 128,
+            rows * 144
+        );
+        for (index, preview) in previews.iter().enumerate() {
+            let x = (index % columns) * 128;
+            let y = (index / columns) * 144;
+            let media = preview["mediaType"]
+                .as_str()
+                .filter(|media| matches!(*media, "image/png" | "image/jpeg" | "image/svg+xml"))
+                .ok_or_else(ApiError::visual_assets_unavailable)?;
+            let bytes = preview["contentBase64"]
+                .as_str()
+                .ok_or_else(ApiError::visual_assets_unavailable)?;
+            svg.push_str(&format!(r#"<image x="{}" y="{}" width="112" height="112" preserveAspectRatio="xMidYMid meet" href="data:{media};base64,{bytes}"/><text x="{}" y="{}" text-anchor="middle" font-family="sans-serif" font-size="12" fill="black">{}</text>"#,x+8,y+8,x+64,y+136,index+1));
+        }
+        svg.push_str("</svg>");
+        Some(
+            json!({"name":"icon-contact-sheet.svg","mediaType":"image/svg+xml","contentBase64":STANDARD.encode(svg)}),
+        )
+    } else {
+        None
+    };
+    icon_scope(&state, &headers, Some(scope)).await?;
+    Ok(Json(json!({"previews":previews,"contactSheet":sheet})))
+}
+
 async fn visual_assets_scope(
     State(state): State<ServerState>,
     headers: HeaderMap,
@@ -637,6 +862,8 @@ async fn visual_assets_operation(
             | "inspect"
             | "download"
             | "resolve"
+            | "icon-candidates"
+            | "inspect-icon"
     );
     if !read_only
         && !matches!(
@@ -2107,11 +2334,21 @@ async fn submit_node(
             prepare_detail_assets(&state, &writer, authority, asset_generation, package).await?,
         );
     }
+    let mut draft = input.draft.clone();
+    let prepared_icon = prepare_image_icon(
+        &state,
+        &writer,
+        authority,
+        asset_generation,
+        &mut draft.icon,
+    )
+    .await?;
     let node = writer
-        .submit_node_with_prepared_detail_assets(
-            &input.draft,
+        .submit_node_with_prepared_visual_assets(
+            &draft,
             input.authored_detail_update(),
             prepared_assets.as_deref(),
+            prepared_icon.as_ref(),
         )
         .await?;
     drop(asset_generation_guard);
@@ -2124,6 +2361,68 @@ async fn submit_node(
         )
         .await;
     Ok(with_preview(json!({"node": node}), preview))
+}
+
+async fn prepare_image_icon(
+    state: &ServerState,
+    writer: &GraphWriter,
+    authority: RuntimeAuthority,
+    asset_generation: u64,
+    icon: &mut String,
+) -> Result<Option<relayer_graph_core::PreparedDetailAsset>, ApiError> {
+    let Some(mut reference) = relayer_graph_core::image_icon(icon) else {
+        return Ok(None);
+    };
+    writer.require_active_authority().await?;
+    let bridge = state
+        .visual_assets_bridge
+        .lock()
+        .expect("visual-assets bridge mutex poisoned")
+        .clone()
+        .ok_or_else(ApiError::visual_assets_unavailable)?;
+    let (project_id, thread_id) = writer.authority_scope();
+    let scope = project_id.map_or_else(
+        || json!({"kind":"thread","threadId":thread_id.value()}),
+        |id| json!({"kind":"project","projectId":id.value(),"threadId":thread_id.value()}),
+    );
+    let requested_scope = project_id.map_or_else(
+        || json!({"kind":"thread","threadId":thread_id.value()}),
+        |id| json!({"kind":"project","projectId":id.value()}),
+    );
+    let response = state.http_client.post(format!("{}/visual-assets/operations", bridge.url)).bearer_auth(&bridge.token)
+        .json(&json!({"version":1,"generation":bridge.generation,"assetGeneration":asset_generation,"authority":{"kind":"completion","interactionNodeId":authority.node_id.value(),"scope":scope},"operation":{"kind":"prepare-icon","scope":requested_scope,"assetId":reference.asset_id}})).send().await.map_err(|_| ApiError::visual_assets_unavailable())?;
+    let status = response.status();
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|_| ApiError::visual_assets_unavailable())?;
+    writer.require_active_authority().await?;
+    if state
+        .visual_assets_bridge
+        .lock()
+        .expect("visual-assets bridge mutex poisoned")
+        .as_ref()
+        .map(|v| v.generation)
+        != Some(bridge.generation)
+    {
+        return Err(ApiError::conflict(
+            "visual_assets_bridge_restarted",
+            "Visual-assets authority changed while preparing icons.",
+        ));
+    }
+    if !status.is_success() {
+        return Err(ApiError(status, body));
+    }
+    let asset: relayer_graph_core::PreparedDetailAsset = serde_json::from_value(
+        body.get("result")
+            .cloned()
+            .ok_or_else(ApiError::visual_assets_unavailable)?,
+    )
+    .map_err(|_| ApiError::visual_assets_unavailable())?;
+    reference.digest_sha256 = Some(asset.digest_sha256.clone());
+    reference.media_type = Some(asset.media_type.clone());
+    *icon = serde_json::to_string(&reference).map_err(|_| ApiError::visual_assets_unavailable())?;
+    Ok(Some(asset))
 }
 
 async fn prepare_detail_assets(
@@ -2544,11 +2843,20 @@ async fn add_action(
     Json(input): Json<ActionDraft>,
 ) -> Result<Json<Value>, ApiError> {
     let authority = session(&state, &headers)?;
-    let action = state
+    let gate = completion_asset_gate(&state, authority.node_id)?;
+    let generation = gate.lock().await;
+    let writer = state
         .graph
         .writer_for_completion_authority(authority.node_id, authority.epoch)
-        .await?
-        .add_action(&input)
+        .await?;
+    let mut input = input;
+    let prepared_icon = if let Some(icon) = input.icon.as_mut() {
+        prepare_image_icon(&state, &writer, authority, *generation, icon).await?
+    } else {
+        None
+    };
+    let action = writer
+        .add_action_with_prepared_icon(&input, prepared_icon.as_ref())
         .await?;
     Ok(Json(json!({"action":action})))
 }

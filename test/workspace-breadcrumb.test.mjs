@@ -73,6 +73,7 @@ describe("product workspace breadcrumb", () => {
       evalContext: null,
     });
 
+    expect(items.map((item) => item.sourceLayerId)).toEqual([100, 100, 101]);
     expect(items.map((item) => item.label)).toEqual([
       "Response",
       "Architecture",

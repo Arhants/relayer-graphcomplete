@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as lucideExports from "lucide";
 import {
   RELAYER_ICON_NAMES,
+  RELAYER_ICON_EXPORTS,
   assertRelayerIconRendererReady,
   createRelayerIcon,
   relayerIconDescriptor,
@@ -13,7 +14,7 @@ describe("workspace Relayer icons", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses the curated vocabulary and resolves compatibility aliases", () => {
+  it("uses the pinned vocabulary and resolves compatibility aliases", () => {
     expect(RELAYER_ICON_NAMES).toContain("compass");
     expect(new Set(RELAYER_ICON_NAMES).size).toBe(RELAYER_ICON_NAMES.length);
     expect(resolveRelayerIconName("CIRCLE_ALERT")).toBe("alert-circle");
@@ -24,7 +25,8 @@ describe("workspace Relayer icons", () => {
     });
   });
 
-  it("has a pinned Lucide drawing for every curated name", () => {
+  it("has a pinned Lucide drawing for every catalog name", () => {
+    expect(new Set(Object.values(RELAYER_ICON_EXPORTS).map((name) => lucideExports[name]))).toEqual(new Set(Object.values(lucideExports.icons)));
     for (const name of RELAYER_ICON_NAMES) {
       expect(lucideExports[relayerIconDescriptor(name).lucideExportName], name).toBeDefined();
     }
@@ -45,7 +47,7 @@ describe("workspace Relayer icons", () => {
     });
   });
 
-  it("creates the selected Lucide SVG without exposing the full catalog", () => {
+  it("creates the selected Lucide SVG from the full pinned catalog", () => {
     const Compass = Symbol("Compass");
     const Circle = Symbol("Circle");
     const createElement = vi.fn((icon, attributes) => ({ icon, attributes }));
@@ -59,7 +61,7 @@ describe("workspace Relayer icons", () => {
         "data-relayer-icon": "compass",
       }),
     });
-    expect(createRelayerIcon("alarm-clock")).toMatchObject({ icon: Circle });
+    expect(createRelayerIcon("made-up-icon")).toMatchObject({ icon: Circle });
   });
 
   it("fails startup clearly when the vendored renderer is unavailable", () => {

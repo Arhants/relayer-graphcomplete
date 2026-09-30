@@ -1,0 +1,314 @@
+{
+  "schemaVersion": 1,
+  "passed": true,
+  "scenariosPassed": true,
+  "cleanupPassed": true,
+  "evidenceKind": "deterministic-authored-fixture",
+  "modelSelectionProven": false,
+  "paidInferenceCalls": 0,
+  "sourceDigestPolicy": {
+    "algorithm": "sha256",
+    "encoding": "sorted git tracked and nonignored untracked path + NUL + exact bytes + NUL",
+    "excludedPaths": [
+      "docs/evidence/issue-624-icons/README.md",
+      "docs/evidence/issue-624-icons/reviews.json"
+    ],
+    "excludedPrefixes": [
+      "docs/evidence/issue-624-discoverable-icons/ux/"
+    ],
+    "reason": "Delivery receipts and generated evidence outputs cannot recursively certify their own bytes; product source and fixture inputs remain included."
+  },
+  "sourceDigest": "a03571b99283b96a22685ae16cde82823e9b432d06c5c18c55c56e496670f154",
+  "sourceDigestUnchanged": true,
+  "nativeBinaries": {
+    "relayer-graph-server": {
+      "sha256": "52f2dd1300ffa3476bf6e3eff45db9f4700a87c1ed64113c93fdb305c5293621",
+      "byteLength": 115648552
+    },
+    "relayer-app-server": {
+      "sha256": "4f6515b96be174b64a756c7e43d050092531c3d35f4f22550c9ac237cba409c9",
+      "byteLength": 76854928
+    }
+  },
+  "nativeBinariesUnchanged": true,
+  "registeredSources": [
+    {
+      "subject": "coral",
+      "scientificName": "Acropora palmata",
+      "taxonId": 93312,
+      "taxonUrl": "https://api.inaturalist.org/v1/taxa?q=Acropora%20palmata&per_page=1",
+      "observationUrl": null,
+      "photoId": 652846455,
+      "sourceUrl": "https://inaturalist-open-data.s3.amazonaws.com/photos/652846455/medium.jpg",
+      "license": "cc-by",
+      "attribution": "(c) Ryan McMinds, some rights reserved (CC BY)",
+      "filename": "coral.jpg",
+      "sha256": "f88781d9f12c1d2954e49a577358464ba5898f1d6b2631fd0b3b99e1a28cc5d2",
+      "byteLength": 125537
+    },
+    {
+      "subject": "jellyfish",
+      "scientificName": "Aurelia aurita",
+      "taxonId": 48328,
+      "taxonUrl": "https://api.inaturalist.org/v1/taxa?q=Aurelia%20aurita&per_page=1",
+      "observationUrl": "https://www.inaturalist.org/observations/356040248",
+      "photoId": 649274082,
+      "sourceUrl": "https://inaturalist-open-data.s3.amazonaws.com/photos/649274082/medium.jpg",
+      "license": "cc-by",
+      "attribution": "(c) Fraser Higgins, some rights reserved (CC BY)",
+      "filename": "jellyfish.jpg",
+      "sha256": "b8a57f9c3da315129c6c0119bb10439dbe1769426472ba74bb75397ee3dcf529",
+      "byteLength": 114829,
+      "selection": "Inspected for close subject framing and distinguishability at graph icon size; deterministic fixture author choice."
+    },
+    {
+      "subject": "octopus",
+      "scientificName": "Octopus vulgaris",
+      "taxonId": 49315,
+      "taxonUrl": "https://api.inaturalist.org/v1/taxa?q=Octopus%20vulgaris&per_page=1",
+      "observationUrl": "https://www.inaturalist.org/observations/184933472",
+      "photoId": 322883970,
+      "sourceUrl": "https://inaturalist-open-data.s3.amazonaws.com/photos/322883970/medium.jpeg",
+      "license": "cc0",
+      "attribution": "no rights reserved",
+      "filename": "octopus.jpg",
+      "sha256": "efd787a291eb6d3a01300973f53e6380531a0933187e931f083f0aafc546c033",
+      "byteLength": 154288,
+      "selection": "Inspected for close subject framing and distinguishability at graph icon size; deterministic fixture author choice."
+    },
+    {
+      "subject": "sea-turtle",
+      "scientificName": "Chelonia mydas",
+      "taxonId": 39659,
+      "taxonUrl": "https://api.inaturalist.org/v1/taxa?q=Chelonia%20mydas&per_page=1",
+      "observationUrl": "https://www.inaturalist.org/observations/344728230",
+      "photoId": 628142620,
+      "sourceUrl": "https://inaturalist-open-data.s3.amazonaws.com/photos/628142620/medium.jpg",
+      "license": "cc-by",
+      "attribution": "(c) Matteo Bellucci, some rights reserved (CC BY)",
+      "filename": "sea-turtle.jpg",
+      "sha256": "a25d9d4913730a7aab650be528aeef693d6894e3488ec4e142dbe4b5d4823758",
+      "byteLength": 61174,
+      "selection": "Inspected for close subject framing and distinguishability at graph icon size; deterministic fixture author choice."
+    },
+    {
+      "subject": "plankton",
+      "scientificName": "Coscinodiscus",
+      "taxonId": 123865,
+      "taxonUrl": "https://api.inaturalist.org/v1/taxa?q=Coscinodiscus&per_page=1",
+      "observationUrl": "https://www.inaturalist.org/observations/50324895",
+      "photoId": 79908537,
+      "sourceUrl": "https://inaturalist-open-data.s3.amazonaws.com/photos/79908537/medium.jpeg",
+      "license": "cc-by",
+      "attribution": "(c) Allison Gong, some rights reserved (CC BY)",
+      "filename": "plankton.jpg",
+      "sha256": "a43118f303e7a9f454f9a38ae40c55f7bba855f8da98d08fb88b88f56fcbbb95",
+      "byteLength": 92833,
+      "selection": "Inspected for close subject framing and distinguishability at graph icon size; deterministic fixture author choice."
+    }
+  ],
+  "acceptedIconPins": [
+    {
+      "title": "Coral",
+      "icon": {
+        "assetId": "asset_b2d4a8d6-1d43-4e6c-8331-d75bf0a6b51a",
+        "digestSha256": "f88781d9f12c1d2954e49a577358464ba5898f1d6b2631fd0b3b99e1a28cc5d2",
+        "kind": "image",
+        "mediaType": "image/jpeg"
+      }
+    },
+    {
+      "title": "Jellyfish",
+      "icon": {
+        "assetId": "asset_9f4a3a3b-349b-4f2f-bee4-838d227f2585",
+        "digestSha256": "b8a57f9c3da315129c6c0119bb10439dbe1769426472ba74bb75397ee3dcf529",
+        "kind": "image",
+        "mediaType": "image/jpeg"
+      }
+    },
+    {
+      "title": "Octopus",
+      "icon": {
+        "assetId": "asset_ab50f3f5-ca4d-4294-a789-f8dfd2586654",
+        "digestSha256": "efd787a291eb6d3a01300973f53e6380531a0933187e931f083f0aafc546c033",
+        "kind": "image",
+        "mediaType": "image/jpeg"
+      }
+    },
+    {
+      "title": "Sea turtle",
+      "icon": {
+        "assetId": "asset_e2ebb06d-d1b5-4eb5-a6f1-22f35206d487",
+        "digestSha256": "a25d9d4913730a7aab650be528aeef693d6894e3488ec4e142dbe4b5d4823758",
+        "kind": "image",
+        "mediaType": "image/jpeg"
+      }
+    },
+    {
+      "title": "Plankton",
+      "icon": {
+        "assetId": "asset_9eabc780-5123-4715-8e27-d9a660506f2c",
+        "digestSha256": "a43118f303e7a9f454f9a38ae40c55f7bba855f8da98d08fb88b88f56fcbbb95",
+        "kind": "image",
+        "mediaType": "image/jpeg"
+      }
+    },
+    {
+      "title": "Reef monitoring",
+      "icon": "waves"
+    }
+  ],
+  "exportImportPinsPreserved": true,
+  "themes": [
+    {
+      "theme": "light",
+      "rendered": {
+        "hosts": 5,
+        "images": [
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 23.57696533203125,
+            "height": 23.576995849609375,
+            "fit": "contain"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 23.576995849609375,
+            "height": 23.576995849609375,
+            "fit": "contain"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 23.57696533203125,
+            "height": 23.576995849609375,
+            "fit": "contain"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 23.57696533203125,
+            "height": 23.57696533203125,
+            "fit": "contain"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 23.5770263671875,
+            "height": 23.57696533203125,
+            "fit": "contain"
+          }
+        ]
+      },
+      "detail": {
+        "imageLoaded": true,
+        "staticSymbolLoaded": true
+      },
+      "monitor": {
+        "actionImageLoaded": true,
+        "actionFit": "cover",
+        "actionFraming": "rounded"
+      },
+      "graphScreenshot": "graph-light.png",
+      "monitoringScreenshot": "monitoring-light.png"
+    },
+    {
+      "theme": "dark",
+      "rendered": {
+        "hosts": 5,
+        "images": [
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 22.57781982421875,
+            "height": 22.5777587890625,
+            "fit": "contain"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 22.5777587890625,
+            "height": 22.5777587890625,
+            "fit": "contain"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 22.5777587890625,
+            "height": 22.5777587890625,
+            "fit": "contain"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 22.577789306640625,
+            "height": 22.57781982421875,
+            "fit": "contain"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 22.5777587890625,
+            "height": 22.57781982421875,
+            "fit": "contain"
+          }
+        ]
+      },
+      "detail": {
+        "imageLoaded": true,
+        "staticSymbolLoaded": true
+      },
+      "monitor": {
+        "actionImageLoaded": true,
+        "actionFit": "cover",
+        "actionFraming": "rounded"
+      },
+      "graphScreenshot": "graph-dark.png",
+      "monitoringScreenshot": "monitoring-dark.png"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "graph-light.png",
+      "sha256": "9a1e559da001531b9d2f5725f7e2bded5ef0decf7124b1e0f27a898b5abf6f95",
+      "byteLength": 850003
+    },
+    {
+      "path": "graph-dark.png",
+      "sha256": "6490c4aa10c183fcb3110096da31a76a41f5feaf790b90ee897933871a257d73",
+      "byteLength": 830919
+    },
+    {
+      "path": "monitoring-light.png",
+      "sha256": "c2dc9d29374892653674c28b887218ccee5c5666103df456bdb5149426b08aef",
+      "byteLength": 232847
+    },
+    {
+      "path": "monitoring-dark.png",
+      "sha256": "75eb49765f881024258374d4bf45ded569a9b6021f864595bc36bf0d75328337",
+      "byteLength": 213725
+    },
+    {
+      "path": "contact-sheet.svg",
+      "sha256": "3f4f84554904c9e63e34509dcfc12d59b8c9834c1a51fcd70411d164539783d7",
+      "byteLength": 733701
+    },
+    {
+      "path": "contact-sheet.png",
+      "sha256": "529abc9d9d265281ce6e3a765e3fbeae12523b51cddac0b540b27b38806610c9",
+      "byteLength": 396151
+    }
+  ],
+  "originalRun": "run-2026-09-30T07-21-11.017Z-b6d91593",
+  "limitations": [
+    "Deterministic authored fixture; model selection judgment remains unproven.",
+    "Plankton image is one Coscinodiscus diatom exemplar, not the entire group.",
+    "Ordinary invoke action remains disabled in imported read-only Eval review; its accepted icon rendering is observed."
+  ],
+  "previousFailure": {
+    "run": "run-2026-09-30T07-17-04.719Z-5ea12014",
+    "cause": "Fixture expected ordinary action rail while authored static Details intentionally hides that rail; repaired by moving static symbol into Coral Detail and preserving monitoring fallback action rail."
+  }
+}

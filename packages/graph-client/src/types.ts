@@ -1,5 +1,5 @@
+import type { GraphIcon } from "./image-icons.js";
 import type { EdgeShape, NodeSide } from "./edge-shapes.js";
-import type { RelayerIconName } from "./icons.js";
 import type { CompiledNodeDetail } from "./detail.js";
 
 export type GraphId = number;
@@ -15,7 +15,7 @@ export interface GraphNode {
   readonly clientKey?: string;
   readonly leasedActionId?: GraphId | null;
   readonly kind: string;
-  readonly icon: string;
+  readonly icon: GraphIcon;
   readonly title: string;
   readonly detail: string;
   readonly authoredDetail?: CompiledNodeDetail;
@@ -88,7 +88,7 @@ export interface GraphAction {
   readonly relation?: NavigateRelation | null;
   readonly label: string;
   readonly variant: ActionVariant;
-  readonly icon?: RelayerIconName | null;
+  readonly icon?: GraphIcon | null;
   readonly description?: string | null;
   readonly targetLayerId?: GraphId | null;
   readonly interactionText?: string | null;
@@ -207,7 +207,7 @@ export interface SubmittedInput {
 export interface InteractionInputNode {
   readonly id: GraphId;
   readonly kind: string;
-  readonly icon: string;
+  readonly icon: GraphIcon;
   readonly title: string;
   readonly detail: string;
   readonly state: RecordState;

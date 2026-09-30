@@ -259,6 +259,7 @@ pub struct GraphAction {
     pub relation: Option<NavigateRelation>,
     pub label: String,
     pub variant: ActionVariant,
+    #[serde(default, with = "super::image_icon::optional_wire")]
     pub icon: Option<String>,
     pub description: Option<String>,
     pub target_layer_id: Option<LayerId>,
@@ -281,7 +282,7 @@ pub struct ActionDraft {
     pub label: String,
     #[serde(default)]
     pub variant: ActionVariant,
-    #[serde(default)]
+    #[serde(default, with = "super::image_icon::optional_wire")]
     pub icon: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
@@ -292,7 +293,7 @@ pub struct ActionDraft {
 }
 
 impl ActionDraft {
-    pub(crate) fn validate_shape(&self) -> Result<Option<&'static str>, GraphError> {
+    pub(crate) fn validate_shape(&self) -> Result<Option<String>, GraphError> {
         super::require_nonempty(&self.client_key, "clientKey")?;
         if self.client_key.contains('\0') {
             return Err(GraphError::validation(
@@ -312,19 +313,7 @@ impl ActionDraft {
         let canonical_icon = self
             .icon
             .as_deref()
-            .map(|icon| {
-                super::resolve_icon_name(icon).ok_or_else(|| {
-                    GraphError::validation(
-                        "unsupported_icon",
-                        "icon",
-                        format!(
-                            "Unsupported icon {:?}. Choose a name from the curated Relayer icon vocabulary: {}.",
-                            icon,
-                            super::RELAYER_ICON_NAMES.join(", ")
-                        ),
-                    )
-                })
-            })
+            .map(super::image_icon::canonical_icon)
             .transpose()?;
         match (&self.variant, self.description.as_deref()) {
             (ActionVariant::Card, Some(description)) if !description.trim().is_empty() => {}

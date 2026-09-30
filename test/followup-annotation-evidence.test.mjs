@@ -14,6 +14,7 @@ describe("follow-up annotation visual evidence", () => {
     expect(hash(await readFile(new URL("scripts/capture-followup-node-annotations.mjs", root)))).toBe(receipt.captureScriptSha256);
     expect(hash(await readFile(new URL(receipt.renderer.path, root)))).toBe(receipt.renderer.fixedSha256);
     expect(receipt.renderer.fixedSha256).not.toBe(receipt.renderer.baselineSha256);
+    expect(receipt.servedRendererSha256).toBe(receipt.renderer.fixedSha256);
     const [before, after, editor, confirmed, reload] = receipt.checkpoints;
     expect(before).toMatchObject({ name: "A-before-missing-plus", hidden: true, position: true });
     expect(after).toMatchObject({ name: "B-after-plus-visible", hidden: false, position: true });

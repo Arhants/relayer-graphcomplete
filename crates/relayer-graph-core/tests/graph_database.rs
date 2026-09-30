@@ -160,6 +160,7 @@ fn imported_conversation(interaction_node_id: &str) -> ImportedConversation {
             accepted_view: Some(ImportedAcceptedView {
                 interaction_node_id: interaction_node_id.into(),
                 root_action: ImportedAction {
+                    icon_asset: None,
                     converted_from_invoke: false,
                     id: "action-1".into(),
                     client_key: None,
@@ -260,6 +261,7 @@ fn imported_invoke_conversation() -> ImportedConversation {
         accepted_view: Some(ImportedAcceptedView {
             interaction_node_id: "interaction-1".into(),
             root_action: ImportedAction {
+                icon_asset: None,
                 converted_from_invoke: false,
                 id: "root-action-1".into(),
                 client_key: Some("authored-root-action-1".into()),
@@ -298,6 +300,7 @@ fn imported_invoke_conversation() -> ImportedConversation {
                 }],
                 edges: vec![],
                 actions: vec![ImportedAction {
+                    icon_asset: None,
                     converted_from_invoke: false,
                     id: "invoke-action-1".into(),
                     client_key: Some("authored-invoke-action-1".into()),
@@ -329,6 +332,7 @@ fn imported_invoke_conversation() -> ImportedConversation {
         accepted_view: Some(ImportedAcceptedView {
             interaction_node_id: "interaction-2".into(),
             root_action: ImportedAction {
+                icon_asset: None,
                 converted_from_invoke: false,
                 id: "root-action-2".into(),
                 client_key: None,
@@ -668,6 +672,7 @@ async fn imported_unanswered_input_action_keeps_its_authored_payload() {
     conversation.turns[0].accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            icon_asset: None,
             converted_from_invoke: false,
             id: "unanswered-input".into(),
             client_key: None,
@@ -727,6 +732,7 @@ async fn imported_submitted_inputs_are_semantic_inert_turn_owned_and_removable()
     input.turns[0].accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            icon_asset: None,
             converted_from_invoke: false,
             id: "input-action-1".into(),
             client_key: None,
@@ -844,6 +850,7 @@ async fn imported_submitted_input_provenance_must_be_one_exact_accepted_occurren
     // Two input actions, both genuinely authored by node-1.
     for id in ["input-action-1", "input-action-2"] {
         resolved.actions.push(ImportedAction {
+            icon_asset: None,
             converted_from_invoke: false,
             id: id.into(),
             client_key: None,
@@ -944,6 +951,7 @@ async fn imported_submitted_input_value_must_satisfy_the_accepted_action() {
     // carries provenance that actually happened.
     for id in ["input-action-1", "input-action-2"] {
         resolved.actions.push(ImportedAction {
+            icon_asset: None,
             converted_from_invoke: false,
             id: id.into(),
             client_key: None,
@@ -1030,6 +1038,7 @@ async fn imported_submitted_input_value_must_satisfy_the_accepted_action() {
         unsupported_fields: Default::default(),
     };
     resolved.actions.push(ImportedAction {
+        icon_asset: None,
         converted_from_invoke: false,
         id: "input-action-authored-text".into(),
         client_key: None,
@@ -1152,6 +1161,7 @@ async fn imported_submitted_input_requires_an_earlier_presenting_turn() {
     input.turns[0].accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            icon_asset: None,
             converted_from_invoke: false,
             id: "input-action-1".into(),
             client_key: None,
@@ -1178,6 +1188,7 @@ async fn imported_submitted_input_requires_an_earlier_presenting_turn() {
     same_turn.accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            icon_asset: None,
             converted_from_invoke: false,
             id: "input-action-2".into(),
             client_key: None,
@@ -1204,6 +1215,7 @@ async fn imported_submitted_input_requires_an_earlier_presenting_turn() {
     later.accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            icon_asset: None,
             converted_from_invoke: false,
             id: "input-action-3".into(),
             client_key: None,
@@ -1322,6 +1334,7 @@ async fn imported_duplicate_input_occurrence_drops_only_extra_answer_per_turn() 
         ("input-action-2", action_two.clone()),
     ] {
         source_layer.actions.push(ImportedAction {
+            icon_asset: None,
             converted_from_invoke: false,
             id: id.into(),
             client_key: None,
@@ -1497,6 +1510,7 @@ async fn invalid_legacy_child_snapshot_does_not_poison_a_later_valid_answer() {
     input.turns[0].accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            icon_asset: None,
             converted_from_invoke: false,
             id: "legacy-input-action".into(),
             client_key: None,
@@ -1598,6 +1612,7 @@ async fn reused_legacy_input_uses_presenting_layer_for_snapshot_preference() {
     input.turns[0].accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            icon_asset: None,
             converted_from_invoke: false,
             id: "legacy-input-action".into(),
             client_key: None,
@@ -1745,6 +1760,7 @@ async fn wrong_occurrence_legacy_snapshot_cannot_poison_exact_sibling() {
     input.turns[0].accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            icon_asset: None,
             converted_from_invoke: false,
             id: "legacy-input-action".into(),
             client_key: None,
@@ -1863,6 +1879,7 @@ async fn assert_chronologically_invalid_legacy_snapshot_is_ignored(scenario: &st
     presenting_turn.accepted_view.as_mut().unwrap().layers[0]
         .actions
         .push(ImportedAction {
+            icon_asset: None,
             converted_from_invoke: false,
             id: "legacy-input-action".into(),
             client_key: None,
@@ -9712,6 +9729,286 @@ async fn attached_navigation_review_identity_releases_only_terminal_unpublished_
 }
 
 #[tokio::test]
+async fn image_icons_pin_registered_bytes_and_survive_detail_clear_and_reopen() {
+    use sha2::{Digest, Sha256};
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let database = GraphDatabase::open(file.path()).await.unwrap();
+    let interaction = database
+        .create_interaction(None, thread(1), "Coral")
+        .await
+        .unwrap();
+    let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+    let content = b"registered coral bytes".to_vec();
+    let asset = PreparedDetailAsset {
+        asset_id: "coral".into(),
+        digest_sha256: format!("{:x}", Sha256::digest(&content)),
+        media_type: "image/png".into(),
+        byte_length: content.len(),
+        provenance_source: "user".into(),
+        provenance_file_name: "coral.png".into(),
+        content: content.clone(),
+    };
+    let draft: NodeDraft = serde_json::from_value(serde_json::json!({"clientKey":"coral","icon":{"kind":"image","assetId":"coral","digestSha256":asset.digest_sha256,"mediaType":asset.media_type},"title":"Coral","detail":"Marine coral"})).unwrap();
+    assert!(writer.submit_node(&draft).await.is_err());
+    let package_for = |asset: &PreparedDetailAsset| {
+        let mut package = serde_json::json!({"version":1,"components":[{"id":"visual","order":0,"html":"<img data-gc-asset=\"mount\">","css":""}],"mounts":[{"id":"mount","componentId":"visual","kind":"asset","host":"img","assetId":asset.asset_id}],"assets":[{"id":asset.asset_id,"digestSha256":asset.digest_sha256,"mediaType":asset.media_type,"representation":"image"}]});
+        package["integritySha256"] = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&package).unwrap())
+        )
+        .into();
+        package
+    };
+    let package = package_for(&asset);
+    let symbol_draft = NodeDraft {
+        icon: "box".into(),
+        ..draft.clone()
+    };
+    let prior = writer
+        .submit_node_with_prepared_visual_assets(
+            &symbol_draft,
+            AuthoredDetailUpdate::Replace(&package),
+            Some(std::slice::from_ref(&asset)),
+            None,
+        )
+        .await
+        .unwrap();
+    let mut conflicting = asset.clone();
+    conflicting.content = b"different registered bytes".to_vec();
+    conflicting.digest_sha256 = format!("{:x}", Sha256::digest(&conflicting.content));
+    conflicting.byte_length = conflicting.content.len();
+    let conflict_icon = serde_json::json!({"kind":"image","assetId":conflicting.asset_id,"digestSha256":conflicting.digest_sha256,"mediaType":conflicting.media_type}).to_string();
+    let conflicting_draft = NodeDraft {
+        icon: conflict_icon,
+        ..draft.clone()
+    };
+    let error = writer
+        .submit_node_with_prepared_visual_assets(
+            &conflicting_draft,
+            AuthoredDetailUpdate::Retain,
+            None,
+            Some(&conflicting),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, GraphError::Validation { code, .. } if code == "image_icon_content_conflict")
+    );
+    assert_eq!(
+        writer.get_node(prior.id).await.unwrap().icon,
+        "box",
+        "failed icon pin preserves the last valid draft"
+    );
+
+    writer
+        .submit_node_with_prepared_visual_assets(
+            &draft,
+            AuthoredDetailUpdate::Retain,
+            None,
+            Some(&asset),
+        )
+        .await
+        .unwrap();
+    let conflicting_package = package_for(&conflicting);
+    let error = writer
+        .submit_node_with_prepared_visual_assets(
+            &draft,
+            AuthoredDetailUpdate::Replace(&conflicting_package),
+            Some(std::slice::from_ref(&conflicting)),
+            Some(&asset),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, GraphError::Validation { code, .. } if code == "image_icon_content_conflict")
+    );
+    assert_eq!(
+        writer
+            .get_node(prior.id)
+            .await
+            .unwrap()
+            .authored_detail
+            .as_ref(),
+        Some(&package),
+        "failed Detail replacement preserves the matching prior package"
+    );
+    let node = writer
+        .submit_node_with_prepared_visual_assets(
+            &draft,
+            AuthoredDetailUpdate::Clear,
+            None,
+            Some(&asset),
+        )
+        .await
+        .unwrap();
+    let source_layer = writer
+        .submit_layer(&LayerDraft {
+            client_key: "root".into(),
+            default_node_id: None,
+            nodes: vec![node.id],
+            edges: vec![],
+            layout: authored_layout([node.id]),
+            size_justification: None,
+        })
+        .await
+        .unwrap();
+    let action = ActionDraft {
+        client_key: "inspect-coral".into(),
+        source_node_id: node.id,
+        source_layer_id: Some(source_layer.id),
+        kind: ActionKind::Invoke,
+        relation: None,
+        label: "Inspect coral".into(),
+        variant: ActionVariant::Pill,
+        icon: Some(draft.icon.clone()),
+        description: None,
+        target_layer_id: None,
+        interaction_text: Some("Inspect coral".into()),
+        input: None,
+    };
+    assert!(writer.add_action(&action).await.is_err());
+    let symbol_action = ActionDraft {
+        icon: None,
+        ..action.clone()
+    };
+    assert!(
+        writer
+            .add_action_with_prepared_icon(&symbol_action, Some(&asset))
+            .await
+            .is_err()
+    );
+    let action_record = writer
+        .add_action_with_prepared_icon(&action, Some(&asset))
+        .await
+        .unwrap();
+    accept_single_node(&writer, interaction.clone(), node.clone()).await;
+    assert_eq!(
+        writer
+            .accepted_detail_asset(node.id, "coral")
+            .await
+            .unwrap()
+            .content,
+        content
+    );
+    drop(writer);
+    drop(database);
+    let reopened = GraphDatabase::open(file.path()).await.unwrap();
+    let reader = reopened.writer_for_subgraph(interaction.id).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(reader.get_node(node.id).await.unwrap()).unwrap()["icon"]["assetId"],
+        "coral"
+    );
+    assert_eq!(
+        reader
+            .accepted_detail_asset(node.id, "coral")
+            .await
+            .unwrap()
+            .content,
+        content
+    );
+    let reopened_action = reader
+        .accepted_authored_action(action_record.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(reopened_action).unwrap()["icon"]["fit"],
+        serde_json::Value::Null
+    );
+    let closure = reopened
+        .accepted_graph_closure(interaction.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        closure
+            .detail_asset_revisions
+            .as_ref()
+            .unwrap()
+            .contains_key(&interaction.id)
+    );
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(SqliteConnectOptions::new().filename(file.path()))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE authored_detail_asset_contents SET content=?1 WHERE digest_sha256=?2")
+        .bind(vec![0u8; content.len()])
+        .bind(&asset.digest_sha256)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        reader
+            .accepted_detail_asset(node.id, "coral")
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn native_import_rejects_conflicting_or_missing_detail_icon_pin_inventory() {
+    let package = serde_json::json!({
+        "version":1,
+        "components":[{"id":"overview","order":0,"html":"<section><img data-gc-asset=\"m_asset\"></section>","css":"section{display:grid}"}],
+        "mounts":[{"id":"m_asset","componentId":"overview","kind":"asset","host":"img","assetId":"architecture-diagram"}],
+        "assets":[{"id":"architecture-diagram","digestSha256":"a9ce00f55032b62526a3abfc5aa6019874beff5d18c90607d663840d14ed11f9","mediaType":"image/png","representation":"image"}],
+        "integritySha256":"adf1296990ca1e4be5e4d90eb9f4a4fab14716a885efc524cc04018294fc17d1"
+    });
+    for (image_digest, expected_code) in [
+        (Some("b".repeat(64)), "import_asset_pin_conflict"),
+        (None, "import_detail_pin_missing"),
+    ] {
+        let database = GraphDatabase::in_memory().await.unwrap();
+        let mut input = imported_conversation("interaction-1");
+        let node = &mut input.turns[0].accepted_view.as_mut().unwrap().layers[0].nodes[0];
+        node.authored_detail = Some(package.clone());
+        let asset_id = if image_digest.is_some() {
+            "architecture-diagram"
+        } else {
+            "coral"
+        };
+        let digest = image_digest.unwrap_or_else(|| "b".repeat(64));
+        {
+            node.icon = serde_json::to_string(&serde_json::json!({"kind":"image","assetId":asset_id,"digestSha256":digest,"mediaType":"image/png"})).unwrap();
+            node.authored_detail_assets = vec![ImportedDetailAsset {
+                asset_id: asset_id.into(),
+                digest_sha256: digest,
+                media_type: "image/png".into(),
+                byte_length: 13,
+                provenance_source: "user".into(),
+                provenance_file_name: "diagram.png".into(),
+            }];
+        }
+        let error = database
+            .import_accepted_conversation(&input)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error,GraphError::Validation{code,..} if code==expected_code),
+            "{error}"
+        );
+    }
+    // Legacy metadata-only Details intentionally preserve an unavailable-image
+    // viewing fallback; this exception never applies to typed image icons.
+    let database = GraphDatabase::in_memory().await.unwrap();
+    let mut legacy = imported_conversation("interaction-1");
+    legacy.turns[0].accepted_view.as_mut().unwrap().layers[0].nodes[0].authored_detail =
+        Some(package.clone());
+    let imported = database
+        .import_accepted_conversation(&legacy)
+        .await
+        .unwrap();
+    let node = &imported.turns[0].output.as_ref().unwrap().root_layer.nodes[0];
+    assert_eq!(node.authored_detail.as_ref(), Some(&package));
+    assert!(
+        database
+            .accepted_detail_asset(node.id, "architecture-diagram")
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn thread_icon_proposal_is_nonblocking_first_valid_and_accepted_only() {
     let database = GraphDatabase::in_memory().await.unwrap();
     let interaction = database
@@ -9720,6 +10017,13 @@ async fn thread_icon_proposal_is_nonblocking_first_valid_and_accepted_only() {
         .unwrap();
     let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
     assert!(!writer.propose_thread_icon("🧭").await.unwrap());
+    // Thread topics remain symbolic even though graph nodes support typed images.
+    assert!(
+        !writer
+            .propose_thread_icon(r#"{"kind":"image","assetId":"coral"}"#)
+            .await
+            .unwrap()
+    );
     assert!(writer.propose_thread_icon("Circle Alert").await.unwrap());
     assert!(writer.propose_thread_icon("compass").await.unwrap());
     assert!(writer.completion_output().await.unwrap().is_none());

@@ -487,7 +487,19 @@ fn import_turn(turn: ConversationExportTurn) -> ImportedTurn {
                     detail: context.target.detail,
                     authored_detail: None,
                     authored_detail_omitted: false,
-                    authored_detail_assets: Vec::new(),
+                    authored_detail_assets: context
+                        .target
+                        .icon_asset
+                        .into_iter()
+                        .map(|asset| relayer_graph_core::ImportedDetailAsset {
+                            asset_id: asset.asset_id,
+                            digest_sha256: asset.digest_sha256,
+                            media_type: asset.media_type,
+                            byte_length: asset.byte_length,
+                            provenance_source: asset.provenance.source,
+                            provenance_file_name: asset.provenance.file_name,
+                        })
+                        .collect(),
                 },
                 source_interaction_node_id: context.source.interaction_node_id,
                 source_layer_id: context.source.layer_id,
@@ -617,6 +629,16 @@ fn import_turn(turn: ConversationExportTurn) -> ImportedTurn {
 fn import_action(action: ExportAction) -> ImportedAction {
     let input = action.input.map(import_input_action);
     ImportedAction {
+        icon_asset: action
+            .icon_asset
+            .map(|asset| relayer_graph_core::ImportedDetailAsset {
+                asset_id: asset.asset_id,
+                digest_sha256: asset.digest_sha256,
+                media_type: asset.media_type,
+                byte_length: asset.byte_length,
+                provenance_source: asset.provenance.source,
+                provenance_file_name: asset.provenance.file_name,
+            }),
         converted_from_invoke: action.converted_from_invoke,
         id: action.id,
         client_key: action.client_key,
@@ -1236,6 +1258,7 @@ mod tests {
                 id: "node:target".into(),
                 kind: "concept".into(),
                 icon: "file".into(),
+                icon_asset: None,
                 title: "Portable target".into(),
                 detail: "No local path or database ID".into(),
                 state: ExportRecordState::Accepted,

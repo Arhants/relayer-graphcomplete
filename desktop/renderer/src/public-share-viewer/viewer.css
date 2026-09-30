@@ -298,3 +298,11 @@ html[data-theme="light"] .public-share-error {
  .public-share-embed .inspector{grid-column:3;grid-row:2 / 4}
  .public-share-embed .workspace-layout:has(.inspector.hidden){grid-template-columns:minmax(0,1fr)}
 }
+
+.relayer-image-icon{display:inline-grid;place-items:center;width:1em;height:1em;overflow:hidden;background:transparent}
+.relayer-image-icon img,.relayer-image-icon svg{width:100%;height:100%;display:block}
+.relayer-image-icon[data-icon-framing="circle"]{border-radius:50%}
+.relayer-image-icon[data-icon-framing="rounded"]{border-radius:25%}
+.graph-node[data-image-icon="true"] .glyph,#detailIcon[data-image-icon="true"]{background:transparent;border-color:transparent;box-shadow:none}
+.graph-node .relayer-image-icon,.relayer-detail-icon.relayer-image-icon{width:28px;height:28px}
+.relayer-action-icon.relayer-image-icon{width:16px;height:16px}

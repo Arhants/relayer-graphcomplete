@@ -14,6 +14,7 @@ pub struct GraphNode {
     #[serde(default)]
     pub leased_action_id: Option<ActionId>,
     pub kind: String,
+    #[serde(with = "super::image_icon::wire")]
     pub icon: String,
     pub title: String,
     pub detail: String,
@@ -109,30 +110,20 @@ pub struct NodeDraft {
     pub client_key: String,
     #[serde(default = "default_kind")]
     pub kind: String,
+    #[serde(with = "super::image_icon::wire")]
     pub icon: String,
     pub title: String,
     pub detail: String,
 }
 
 impl NodeDraft {
-    pub(crate) fn validate(&self) -> Result<&'static str, GraphError> {
+    pub(crate) fn validate(&self) -> Result<String, GraphError> {
         super::require_nonempty(&self.client_key, "clientKey")?;
         super::require_nonempty(&self.kind, "kind")?;
         super::require_nonempty(&self.icon, "icon")?;
         super::require_nonempty(&self.title, "title")?;
         super::require_nonempty(&self.detail, "detail")?;
-        super::resolve_icon_name(&self.icon)
-            .ok_or_else(|| {
-                GraphError::validation(
-                    "unsupported_icon",
-                    "icon",
-                    format!(
-                        "Unsupported icon {:?}. Choose a name from the curated Relayer icon vocabulary: {}.",
-                        self.icon,
-                        super::RELAYER_ICON_NAMES.join(", ")
-                    ),
-                )
-            })
+        super::image_icon::canonical_icon(&self.icon)
     }
 }
 

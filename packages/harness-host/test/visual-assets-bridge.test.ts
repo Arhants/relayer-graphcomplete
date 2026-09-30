@@ -36,8 +36,13 @@ describe("visual asset host bridge", () => {
     directories.push(directory);
     const library = await createFileVisualAssetsLibrary({
       authority: { projects: [{ projectId: 1, threadIds: [1] }, { projectId: 2, threadIds: [2] }], standaloneThreadIds: [] },
+      initialTags: [
+        { id: "marine-root", name: "Marine", scope: { kind: "project", projectId: 1 }, parentTagId: null, authority: "user" },
+        { id: "marine-child", name: "Reef organism", scope: { kind: "project", projectId: 1 }, parentTagId: "marine-root", authority: "user" },
+      ],
       initialAssets: [
-        { id: "allowed", registryId: "user", name: "Allowed", fileName: "allowed.svg", mediaType: "image/svg+xml", content: svg, scopes: [{ kind: "project", projectId: 1 }], tagIds: [] },
+        { id: "allowed", registryId: "user", name: "Allowed", description: "Marine organism", fileName: "allowed.svg", mediaType: "image/svg+xml", content: svg, scopes: [{ kind: "project", projectId: 1 }], tagIds: ["marine-child"] },
+        { id: "archived", registryId: "user", name: "Archived", fileName: "archived.svg", mediaType: "image/svg+xml", content: svg, scopes: [{ kind: "project", projectId: 1 }], tagIds: [], archived: true },
         { id: "foreign", registryId: "user", name: "Foreign", fileName: "foreign.svg", mediaType: "image/svg+xml", content: svg, scopes: [{ kind: "project", projectId: 2 }], tagIds: [] },
       ],
     }, join(directory, "catalog.json"));
@@ -92,6 +97,31 @@ describe("visual asset host bridge", () => {
         operation: { kind: "resolve", scope: { kind: "project", projectId: 1 }, logicalIds: ["allowed"] },
       })).resolves.toMatchObject({ assets: [{ logicalId: "allowed", availability: "available", mediaType: "image/svg+xml" }] });
     });
+    const envelope = {
+      version: 1, generation: 7, assetGeneration: 1,
+      authority: { kind: "completion", interactionNodeId: 9, scope: { kind: "project", projectId: 1, threadId: 1 } },
+    };
+    await expect(host.visualAssetOperation({ ...envelope,
+      operation: { kind: "icon-candidates", scope: { kind: "project", projectId: 1 } },
+    })).resolves.toMatchObject({ candidates: [{ id: "image:allowed", tags: ["Reef organism"], icon: { kind: "image", assetId: "allowed" } }] });
+    await expect(host.visualAssetOperation({ ...envelope,
+      operation: { kind: "inspect-icon", scope: { kind: "project", projectId: 1 }, assetId: "allowed" },
+    })).resolves.toMatchObject({ asset: { id: "allowed", description: "Marine organism" } });
+    await expect(host.visualAssetOperation({ ...envelope,
+      operation: { kind: "inspect-icon", scope: { kind: "project", projectId: 1 }, assetId: "foreign" },
+    })).rejects.toMatchObject({ code: "asset_not_authorized" });
+    await expect(host.visualAssetOperation({ ...envelope,
+      operation: { kind: "prepare-icon", scope: { kind: "project", projectId: 1 }, assetId: "archived" },
+    })).rejects.toMatchObject({ code: "asset_not_authorized" });
+    await expect(host.visualAssetOperation({ ...envelope,
+      operation: { kind: "prepare-icon", scope: { kind: "project", projectId: 1 }, assetId: "allowed" },
+    })).resolves.toMatchObject({ assetId: "allowed", mediaType: "image/svg+xml", content: Buffer.from(svg).toString("base64") });
+    await expect(host.visualAssetOperation({ ...envelope,
+      operation: { kind: "prepare-icon", scope: { kind: "project", projectId: 1 }, assetId: "foreign" },
+    })).rejects.toMatchObject({ code: "asset_not_authorized" });
+    await expect(host.visualAssetOperation({ ...envelope,
+      operation: { kind: "prepare-icon", scope: { kind: "project", projectId: 1 }, assetId: "allowed", digestSha256: "forged" },
+    })).rejects.toMatchObject({ code: "visual_assets_request_invalid" });
     await expect(host.visualAssetOperation({
       version: 1,
       generation: 7,

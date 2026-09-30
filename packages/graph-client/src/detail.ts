@@ -1,3 +1,4 @@
+import { isImageIcon } from "./image-icons.js";
 import { createHash } from "node:crypto";
 import { isProxy } from "node:util/types";
 import { generate as generateCss, parse as parseCss, tokenTypes, tokenize as tokenizeCss, walk as walkCss } from "css-tree/dist/csstree.esm";
@@ -1799,7 +1800,7 @@ function hasValidActionPresentation(action: Record<string, unknown>): boolean {
   const variant = action.variant ?? "pill";
   if (variant !== "pill" && variant !== "chip" && variant !== "wide" && variant !== "card") return false;
   if (action.icon !== undefined
-    && (typeof action.icon !== "string" || !isSupportedRelayerIcon(action.icon))) return false;
+    && !isImageIcon(action.icon) && (typeof action.icon !== "string" || !isSupportedRelayerIcon(action.icon))) return false;
   if (variant === "card") return typeof action.description === "string" && action.description.trim() !== "";
   return action.description === undefined;
 }

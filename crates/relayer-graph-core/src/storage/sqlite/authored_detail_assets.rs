@@ -30,6 +30,10 @@ impl<'a> AuthoredDetailAssetTable<'a> {
         node_id: NodeId,
         assets: &[PreparedDetailAsset],
     ) -> Result<(), GraphError> {
+        for asset in assets {
+            self.assert_cross_table_identity(node_id, asset, true)
+                .await?;
+        }
         sqlx::query("DELETE FROM authored_detail_assets WHERE node_id=?1")
             .bind(node_id.value())
             .execute(&mut *self.connection)
@@ -47,6 +51,62 @@ impl<'a> AuthoredDetailAssetTable<'a> {
                 .bind(&asset.media_type).bind(asset.byte_length as i64)
                 .bind(&asset.provenance_source).bind(&asset.provenance_file_name)
                 .execute(&mut *self.connection).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn pin_icon(
+        &mut self,
+        node_id: NodeId,
+        asset: &PreparedDetailAsset,
+    ) -> Result<(), GraphError> {
+        self.assert_cross_table_identity(node_id, asset, false)
+            .await?;
+        self.materialize_content(
+            &asset.digest_sha256,
+            &asset.media_type,
+            asset.byte_length,
+            &asset.content,
+        )
+        .await?;
+        sqlx::query("INSERT INTO graph_icon_assets(node_id,asset_id,digest_sha256,media_type,byte_length,provenance_source,provenance_file_name) VALUES (?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(node_id,asset_id) DO NOTHING")
+            .bind(node_id.value()).bind(&asset.asset_id).bind(&asset.digest_sha256).bind(&asset.media_type).bind(asset.byte_length as i64).bind(&asset.provenance_source).bind(&asset.provenance_file_name).execute(&mut *self.connection).await?;
+        let matches: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM graph_icon_assets WHERE node_id=?1 AND asset_id=?2 AND digest_sha256=?3 AND media_type=?4 AND byte_length=?5)").bind(node_id.value()).bind(&asset.asset_id).bind(&asset.digest_sha256).bind(&asset.media_type).bind(asset.byte_length as i64).fetch_one(&mut *self.connection).await?;
+        if !matches {
+            return Err(GraphError::validation(
+                "image_icon_content_conflict",
+                "icon",
+                "Image icon content conflicts with a previously pinned asset identity.",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn assert_cross_table_identity(
+        &mut self,
+        node_id: NodeId,
+        asset: &PreparedDetailAsset,
+        replacing_detail: bool,
+    ) -> Result<(), GraphError> {
+        let query = if replacing_detail {
+            "SELECT EXISTS(SELECT 1 FROM graph_icon_assets WHERE node_id=?1 AND asset_id=?2 AND (digest_sha256<>?3 OR media_type<>?4 OR byte_length<>?5))"
+        } else {
+            "SELECT EXISTS(SELECT 1 FROM authored_detail_assets WHERE node_id=?1 AND asset_id=?2 AND (digest_sha256<>?3 OR media_type<>?4 OR byte_length<>?5))"
+        };
+        let conflict: bool = sqlx::query_scalar(query)
+            .bind(node_id.value())
+            .bind(&asset.asset_id)
+            .bind(&asset.digest_sha256)
+            .bind(&asset.media_type)
+            .bind(asset.byte_length as i64)
+            .fetch_one(&mut *self.connection)
+            .await?;
+        if conflict {
+            return Err(GraphError::validation(
+                "image_icon_content_conflict",
+                "icon",
+                "A node's Detail and image icons must pin the same bytes for a shared asset identity.",
+            ));
         }
         Ok(())
     }
@@ -113,6 +173,16 @@ impl<'a> AuthoredDetailAssetTable<'a> {
         Ok(())
     }
 
+    pub(crate) async fn insert_import_icon_reference(
+        &mut self,
+        node_id: NodeId,
+        asset: &crate::ImportedDetailAsset,
+    ) -> Result<(), GraphError> {
+        sqlx::query("INSERT INTO graph_icon_assets(node_id,asset_id,digest_sha256,media_type,byte_length,provenance_source,provenance_file_name) VALUES (?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(node_id,asset_id) DO NOTHING")
+            .bind(node_id.value()).bind(&asset.asset_id).bind(&asset.digest_sha256).bind(&asset.media_type).bind(asset.byte_length as i64).bind(&asset.provenance_source).bind(&asset.provenance_file_name).execute(&mut *self.connection).await?;
+        Ok(())
+    }
+
     pub(crate) async fn read_metadata(
         &mut self,
         node_id: NodeId,
@@ -120,7 +190,7 @@ impl<'a> AuthoredDetailAssetTable<'a> {
     ) -> Result<AcceptedDetailAssetMetadata, GraphError> {
         // Preserve the accepted-node and content-existence checks without loading
         // the shared BLOB for every logical association during export.
-        let row: (String, String, String, i64, String, String) = sqlx::query_as("SELECT asset.asset_id,asset.digest_sha256,asset.media_type,asset.byte_length,asset.provenance_source,asset.provenance_file_name FROM authored_detail_assets asset JOIN authored_detail_asset_contents content USING(digest_sha256) JOIN nodes node ON node.id=asset.node_id WHERE asset.node_id=?1 AND asset.asset_id=?2 AND node.state='accepted'")
+        let row: (String, String, String, i64, String, String) = sqlx::query_as("SELECT asset.asset_id,asset.digest_sha256,asset.media_type,asset.byte_length,asset.provenance_source,asset.provenance_file_name FROM (SELECT * FROM authored_detail_assets UNION SELECT * FROM graph_icon_assets) asset JOIN authored_detail_asset_contents content USING(digest_sha256) JOIN nodes node ON node.id=asset.node_id WHERE asset.node_id=?1 AND asset.asset_id=?2 AND node.state='accepted'")
             .bind(node_id.value()).bind(asset_id).fetch_optional(&mut *self.connection).await?
             .ok_or_else(|| GraphError::NotFound("accepted visual asset".into()))?;
         Ok(AcceptedDetailAssetMetadata {
@@ -157,9 +227,16 @@ impl<'a> AuthoredDetailAssetTable<'a> {
         asset_id: &str,
         accepted_only: bool,
     ) -> Result<AcceptedDetailAsset, GraphError> {
-        let row = sqlx::query_as::<_, AssetRow>("SELECT asset.asset_id,asset.digest_sha256,asset.media_type,asset.byte_length,asset.provenance_source,asset.provenance_file_name,content.content FROM authored_detail_assets asset JOIN authored_detail_asset_contents content USING(digest_sha256) JOIN nodes node ON node.id=asset.node_id WHERE asset.node_id=?1 AND asset.asset_id=?2 AND (node.state='accepted' OR NOT ?3)")
+        let row = sqlx::query_as::<_, AssetRow>("SELECT asset.asset_id,asset.digest_sha256,asset.media_type,asset.byte_length,asset.provenance_source,asset.provenance_file_name,content.content FROM (SELECT * FROM authored_detail_assets UNION SELECT * FROM graph_icon_assets) asset JOIN authored_detail_asset_contents content USING(digest_sha256) JOIN nodes node ON node.id=asset.node_id WHERE asset.node_id=?1 AND asset.asset_id=?2 AND (node.state='accepted' OR NOT ?3)")
             .bind(node_id.value()).bind(asset_id).bind(accepted_only).fetch_optional(&mut *self.connection).await?
             .ok_or_else(|| GraphError::NotFound(if accepted_only { "accepted visual asset" } else { "visual asset" }.into()))?;
+        if format!("{:x}", Sha256::digest(&row.content)) != row.digest_sha256
+            || row.content.len() as i64 != row.byte_length
+        {
+            return Err(GraphError::NotFound(
+                "accepted visual asset content integrity".into(),
+            ));
+        }
         Ok(AcceptedDetailAsset {
             asset_id: row.asset_id,
             digest_sha256: row.digest_sha256,

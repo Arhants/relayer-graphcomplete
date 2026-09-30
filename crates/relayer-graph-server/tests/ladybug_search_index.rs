@@ -204,6 +204,7 @@ fn imported_conversation(project_id: Option<ProjectId>) -> ImportedConversation 
             accepted_view: Some(ImportedAcceptedView {
                 interaction_node_id: "interaction-1".into(),
                 root_action: ImportedAction {
+                    icon_asset: None,
                     converted_from_invoke: false,
                     id: "action-1".into(),
                     client_key: None,

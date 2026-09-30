@@ -442,6 +442,15 @@ html[data-theme] .graph-node[data-run-state="failed"]{border:2px solid var(--dan
 .graph-node[data-run-state="failed"] .graph-node-caption{color:var(--danger-text)}
 @media(prefers-reduced-motion:reduce){.thread-status-symbol[data-activity="running"] svg,.graph-node[data-run-state="running"] .glyph::after{animation:none}}
 
+/* Registered image icons preserve transparency and the full image by default. */
+.relayer-image-icon{display:inline-grid;place-items:center;width:1em;height:1em;flex:none;overflow:hidden;background:transparent}
+.relayer-image-icon img,.relayer-image-icon svg{width:100%;height:100%;display:block}
+.relayer-image-icon[data-icon-framing="circle"]{border-radius:50%}
+.relayer-image-icon[data-icon-framing="rounded"]{border-radius:25%}
+.graph-node[data-image-icon="true"] .glyph,#detailIcon[data-image-icon="true"]{background:transparent;color:var(--text);border-color:transparent;box-shadow:none}
+.graph-node .relayer-image-icon{width:28px;height:28px}
+.relayer-detail-icon.relayer-image-icon{width:28px;height:28px}
+.relayer-action-icon.relayer-image-icon{width:16px;height:16px}
 .entry-icon.thread-topic-icon svg,.thread-topic-icon svg{display:block;width:16px;height:16px}.thread-topic-icon{flex:none;display:grid;place-items:center;width:16px;height:16px;color:var(--muted)}
 body:not(.sidebar-collapsed) .entry:not([data-activity]) .thread-activity{display:none}
 body.sidebar-collapsed .entry{gap:4px;padding-left:0;padding-right:0}

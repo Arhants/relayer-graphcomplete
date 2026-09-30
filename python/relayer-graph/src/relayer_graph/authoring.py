@@ -1,6 +1,8 @@
 """Object-based client for the GraphComplete Rust graph engine."""
 from __future__ import annotations
 
+from .image_icons import GraphIcon
+
 import asyncio
 import json
 import os
@@ -18,6 +20,7 @@ from .detail import NodeDetailAuthoring, _create_owned_authoring
 from .edge_shapes import EdgeShape, NodeSide
 from .preview import GraphPreview, materialize_preview
 from .visual_assets import GraphVisualAssets
+from .icon_discovery import GraphIcons
 from .query import GraphSearchRequest, GraphSearchResult
 from .query_errors_generated import (GRAPH_QUERY_CONTRACT_VERSION,
                                      GRAPH_QUERY_ERROR_PHASES)
@@ -27,7 +30,7 @@ from .query_errors_generated import (GRAPH_QUERY_CONTRACT_VERSION,
 class GraphNode:
     id: int
     kind: str
-    icon: str
+    icon: GraphIcon
     title: str
     detail: str
     state: str
@@ -38,7 +41,7 @@ class GraphNode:
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "GraphNode":
         leased_action_id = value.get("leasedActionId")
-        return cls(int(value["id"]), str(value["kind"]), str(value["icon"]),
+        return cls(int(value["id"]), str(value["kind"]), value["icon"],
                    str(value["title"]), str(value["detail"]), str(value["state"]),
                    None if leased_action_id is None else int(leased_action_id),
                    value.get("authoredDetail"))
@@ -48,14 +51,14 @@ class GraphNode:
 class InteractionInputNode:
     id: int
     kind: str
-    icon: str
+    icon: GraphIcon
     title: str
     detail: str
     state: str
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "InteractionInputNode":
-        return cls(int(value["id"]), str(value["kind"]), str(value["icon"]),
+        return cls(int(value["id"]), str(value["kind"]), value["icon"],
                    str(value["title"]), str(value["detail"]), str(value["state"]))
 
 
@@ -210,7 +213,7 @@ class _WeakNode:
 
 @dataclass(slots=True)
 class NodeObject(_WeakNode):
-    icon: str
+    icon: GraphIcon
     title: str
     detail: str
     kind: str = "concept"
@@ -324,6 +327,7 @@ class RelayerGraphClient:
         self.timeout = timeout
         self.preview_directory = preview_directory
         self.visual_assets = GraphVisualAssets(self)
+        self.icons = GraphIcons(self)
 
     async def __aenter__(self) -> "RelayerGraphClient":
         return self
@@ -409,7 +413,7 @@ class RelayerGraphClient:
     async def add_navigate_action(self, source: NodeReference, label: str, target: LayerReference,
                                   *, relation: NavigateRelation, client_key: str,
                                   source_layer: LayerReference | None = None,
-                                  variant: ActionVariant = "pill", icon: str | None = None,
+                                  variant: ActionVariant = "pill", icon: GraphIcon | None = None,
                                   description: str | None = None) -> Mapping[str, Any]:
         """Add expansion or supporting-reference navigation.
 
@@ -429,7 +433,7 @@ class RelayerGraphClient:
     async def add_invoke_action(self, source: NodeReference, label: str, interaction_text: str,
                                 *, source_layer: LayerReference, client_key: str,
                                 variant: ActionVariant = "pill",
-                                icon: str | None = None,
+                                icon: GraphIcon | None = None,
                                 description: str | None = None) -> Mapping[str, Any]:
         return await self._request("POST", "/api/graph/actions", {
             "clientKey": client_key, "sourceNodeId": _node_id(source),
@@ -450,7 +454,7 @@ class RelayerGraphClient:
         options: Sequence[InputOption] = (),
         minimum_selections: int | None = None,
         variant: ActionVariant = "pill",
-        icon: str | None = None,
+        icon: GraphIcon | None = None,
         description: str | None = None,
     ) -> Mapping[str, Any]:
         payload: dict[str, Any] = {
@@ -671,7 +675,7 @@ def _action_id(value: int | Mapping[str, Any]) -> int:
     return action_id
 
 
-def _action_presentation(variant: ActionVariant, icon: str | None,
+def _action_presentation(variant: ActionVariant, icon: GraphIcon | None,
                          description: str | None) -> dict[str, Any]:
     return {"variant": variant, "icon": icon, "description": description}
 

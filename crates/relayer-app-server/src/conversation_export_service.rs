@@ -361,11 +361,13 @@ async fn build_conversation_export_once(
     let current_snapshot = imported_current_snapshot
         || !context_owners.is_empty()
         || closures.iter().flatten().any(needs_current_snapshot);
-    let (authored_detail_assets, visual_asset_contents) = collect_visual_assets_for_snapshot(
+    let context_icon_nodes = context_image_nodes(context_inputs.iter().flatten());
+    let (authored_detail_assets, visual_asset_contents) = collect_visual_assets_with_context_icons(
         runtime,
         closures.iter().flatten(),
         &redactor,
         current_snapshot,
+        &context_icon_nodes,
     )
     .await?;
     let header = ConversationExportRecord::Header(Box::new(ConversationExportHeader {
@@ -622,9 +624,15 @@ async fn build_share_conversation_export_once(
     .await?;
     let current_snapshot =
         !context_owners.is_empty() || closures.iter().any(needs_current_snapshot);
-    let (authored_detail_assets, visual_asset_contents) =
-        collect_visual_assets_for_snapshot(runtime, closures.iter(), &redactor, current_snapshot)
-            .await?;
+    let context_icon_nodes = context_image_nodes(context_inputs.iter());
+    let (authored_detail_assets, visual_asset_contents) = collect_visual_assets_with_context_icons(
+        runtime,
+        closures.iter(),
+        &redactor,
+        current_snapshot,
+        &context_icon_nodes,
+    )
+    .await?;
     let header = ConversationExportRecord::Header(Box::new(ConversationExportHeader {
         export_version: if current_snapshot {
             EXPORT_VERSION_V3
@@ -823,11 +831,64 @@ async fn collect_visual_assets<'a>(
     collect_visual_assets_for_snapshot(runtime, closures, redactor, false).await
 }
 
+fn context_image_nodes<'a>(inputs: impl IntoIterator<Item = &'a ContextInput>) -> Vec<GraphNode> {
+    let mut nodes = Vec::new();
+    for input in inputs {
+        if let ContextInput::Runtime(runtime) = input {
+            for context in &runtime.input.contexts {
+                if icon_asset_pin(&context.target_node.icon).is_some() {
+                    let target = &context.target_node;
+                    nodes.push(GraphNode {
+                        id: target.id,
+                        client_key: None,
+                        leased_action_id: None,
+                        kind: target.kind.clone(),
+                        icon: target.icon.clone(),
+                        title: target.title.clone(),
+                        detail: target.detail.clone(),
+                        authored_detail: None,
+                        state: target.state,
+                    });
+                }
+            }
+        }
+    }
+    nodes
+}
+
+pub(super) fn icon_asset_pin(icon: &str) -> Option<serde_json::Value> {
+    let value: serde_json::Value = serde_json::from_str(icon).ok()?;
+    if value.get("kind")?.as_str()? != "image" {
+        return None;
+    }
+    Some(
+        serde_json::json!({"id": value.get("assetId")?, "digestSha256": value.get("digestSha256")?, "mediaType": value.get("mediaType")?, "representation": "image"}),
+    )
+}
+
+#[cfg(test)]
 async fn collect_visual_assets_for_snapshot<'a>(
     runtime: &RuntimeClient,
     closures: impl IntoIterator<Item = &'a AcceptedGraphClosure>,
     redactor: &ProjectPathRedactor,
     current_snapshot: bool,
+) -> Result<
+    (
+        HashMap<i64, Vec<ExportVisualAssetAssociation>>,
+        Vec<ExportVisualAssetContent>,
+    ),
+    ConversationExportBuildError,
+> {
+    collect_visual_assets_with_context_icons(runtime, closures, redactor, current_snapshot, &[])
+        .await
+}
+
+async fn collect_visual_assets_with_context_icons<'a>(
+    runtime: &RuntimeClient,
+    closures: impl IntoIterator<Item = &'a AcceptedGraphClosure>,
+    redactor: &ProjectPathRedactor,
+    current_snapshot: bool,
+    context_nodes: &[GraphNode],
 ) -> Result<
     (
         HashMap<i64, Vec<ExportVisualAssetAssociation>>,
@@ -855,37 +916,93 @@ async fn collect_visual_assets_for_snapshot<'a>(
             }
         }
     }
+    let mut icon_pins: HashMap<i64, Vec<serde_json::Value>> = HashMap::new();
+    for closure in &closures {
+        if let Some(pin) = closure.root_action.icon.as_deref().and_then(icon_asset_pin) {
+            icon_pins
+                .entry(closure.interaction.id.value())
+                .or_default()
+                .push(pin);
+        }
+        for layer in &closure.layers {
+            for node in &layer.nodes {
+                if let Some(pin) = icon_asset_pin(&node.icon) {
+                    icon_pins.entry(node.id.value()).or_default().push(pin);
+                }
+            }
+            for action in &layer.actions {
+                if let Some(pin) = action.icon.as_deref().and_then(icon_asset_pin) {
+                    icon_pins
+                        .entry(action.source_node_id.value())
+                        .or_default()
+                        .push(pin);
+                }
+            }
+        }
+    }
+    for node in context_nodes {
+        if let Some(pin) = icon_asset_pin(&node.icon) {
+            icon_pins.entry(node.id.value()).or_default().push(pin);
+        }
+    }
     let mut associations = HashMap::new();
     let mut visited_nodes = HashSet::new();
     let mut contents = BTreeMap::<String, ExportVisualAssetContent>::new();
     let mut referenced_contents = HashSet::new();
     let mut projected_content_bytes = 0usize;
-    for node in closures
-        .into_iter()
-        .flat_map(|closure| &closure.layers)
-        .flat_map(|layer| &layer.nodes)
-    {
+    let mut accepted_nodes = Vec::new();
+    for closure in closures {
+        accepted_nodes.push(&closure.interaction);
+        for layer in &closure.layers {
+            accepted_nodes.extend(&layer.nodes);
+        }
+    }
+    accepted_nodes.extend(context_nodes);
+    for node in accepted_nodes {
         if !visited_nodes.insert(node.id) {
             continue;
         }
-        let Some(detail) = node.authored_detail.as_ref() else {
-            continue;
-        };
-        if authored_detail_omission(detail, redactor).is_some() {
+        let mut pins = icon_pins.remove(&node.id.value()).unwrap_or_default();
+        let image_icon_present = !pins.is_empty();
+        if let Some(detail) = node
+            .authored_detail
+            .as_ref()
+            .filter(|detail| authored_detail_omission(detail, redactor).is_none())
+        {
+            let detail_pins = detail
+                .get("assets")
+                .and_then(serde_json::Value::as_array)
+                .ok_or_else(|| {
+                    ConversationExportBuildError::Invalid(
+                        "authored detail asset pins are invalid".into(),
+                    )
+                })?;
+            pins.extend(detail_pins.iter().cloned());
+        }
+        let mut unique_pins = BTreeMap::new();
+        for pin in pins {
+            let id = pin
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            if unique_pins
+                .insert(id, pin.clone())
+                .is_some_and(|previous| previous != pin)
+            {
+                return Err(ConversationExportBuildError::Invalid(
+                    "conflicting icon and detail asset pins".into(),
+                ));
+            }
+        }
+        let pins = unique_pins.into_values().collect::<Vec<_>>();
+        if pins.is_empty() {
             continue;
         }
-        let pins = detail
-            .get("assets")
-            .and_then(serde_json::Value::as_array)
-            .ok_or_else(|| {
-                ConversationExportBuildError::Invalid(
-                    "authored detail asset pins are invalid".into(),
-                )
-            })?;
         let mut node_assets = Vec::with_capacity(pins.len());
         let mut node_content_digests = Vec::with_capacity(pins.len());
         let mut legacy_metadata_only = false;
-        for pin in pins {
+        for pin in &pins {
             let asset_id = pin
                 .get("id")
                 .and_then(serde_json::Value::as_str)
@@ -895,7 +1012,10 @@ async fn collect_visual_assets_for_snapshot<'a>(
                     )
                 })?;
             let expected_revision = revisions.get(&node.id).copied();
-            if expected_revision.is_none() && strict_snapshot {
+            if expected_revision.is_none()
+                && strict_snapshot
+                && !context_nodes.iter().any(|target| target.id == node.id)
+            {
                 return Err(ConversationExportBuildError::Invalid(
                     "runtime lacks coherent asset revision pins".into(),
                 ));
@@ -906,7 +1026,7 @@ async fn collect_visual_assets_for_snapshot<'a>(
             {
                 Ok(value) => value,
                 Err(RuntimeError::Remote { status: 404, .. }) => {
-                    if redactor.is_share() || strict_snapshot {
+                    if redactor.is_share() || strict_snapshot || image_icon_present {
                         return Err(ConversationExportBuildError::Invalid(
                             if redactor.is_share() {
                                 "public visual asset metadata is unavailable"
@@ -1174,6 +1294,25 @@ fn export_turn(
         ids,
         redactor,
     )?;
+    if let Some(ContextInput::Runtime(input)) = context_input {
+        for (context, native) in contexts.iter_mut().zip(&input.input.contexts) {
+            if let Some(icon) = relayer_graph_core::image_icon(&native.target_node.icon) {
+                context.target.icon_asset = Some(
+                    authored_detail_assets
+                        .get(&native.target_node.id.value())
+                        .and_then(|assets| {
+                            assets.iter().find(|asset| asset.asset_id == icon.asset_id)
+                        })
+                        .cloned()
+                        .ok_or_else(|| {
+                            ConversationExportBuildError::Invalid(
+                                "context image icon bytes are unavailable".into(),
+                            )
+                        })?,
+                );
+            }
+        }
+    }
     if imported.turn.is_some() {
         for context in &mut contexts {
             if let Some(owner) = &context.source.owner_turn_id {
@@ -1364,6 +1503,30 @@ fn export_turn(
     })
 }
 
+fn portable_context_detail_matches(native: &str, portable: &str) -> bool {
+    native == portable
+        || native
+            == format!(
+                "{portable}\n\n{}",
+                relayer_graph_core::IMPORTED_AUTHORED_DETAIL_OMITTED_NOTE
+            )
+}
+
+fn portable_icon_matches(left: &str, right: &str) -> bool {
+    if left == right {
+        return true;
+    }
+    match (
+        relayer_graph_core::image_icon(left),
+        relayer_graph_core::image_icon(right),
+    ) {
+        (Some(left), Some(right)) => {
+            serde_json::to_value(left).ok() == serde_json::to_value(right).ok()
+        }
+        _ => false,
+    }
+}
+
 fn export_contexts(
     interaction: &Interaction,
     input: Option<&ContextInput>,
@@ -1420,20 +1583,41 @@ fn export_contexts(
                 || normalized.annotations != portable.annotations
                 || action.annotations != portable.annotations
                 || redactor.text(&normalized.target_node.kind) != portable.target.kind
-                || redactor.text(&normalized.target_node.icon) != portable.target.icon
+                || !portable_icon_matches(
+                    &redactor.text(&normalized.target_node.icon),
+                    &portable.target.icon,
+                )
                 || redactor.text(&normalized.target_node.title) != portable.target.title
-                || redactor.text(&normalized.target_node.detail) != portable.target.detail
+                || !portable_context_detail_matches(
+                    &redactor.text(&normalized.target_node.detail),
+                    &portable.target.detail,
+                )
             {
                 return Err(ConversationExportBuildError::Invalid(format!(
-                    "imported interaction {} context no longer matches its immutable portable snapshot",
-                    interaction.id
+                    "imported interaction {} context no longer matches its immutable portable snapshot (node={}, annotations={}, kind={}, icon={}, title={}, detail={})",
+                    interaction.id,
+                    normalized.target_node.id == action.target.node_id,
+                    normalized.annotations == portable.annotations
+                        && action.annotations == portable.annotations,
+                    redactor.text(&normalized.target_node.kind) == portable.target.kind,
+                    portable_icon_matches(
+                        &redactor.text(&normalized.target_node.icon),
+                        &portable.target.icon
+                    ),
+                    redactor.text(&normalized.target_node.title) == portable.target.title,
+                    redactor.text(&normalized.target_node.detail) == portable.target.detail
                 )));
             }
         }
         return Ok(imported
             .iter()
             .cloned()
-            .map(|mut context| {
+            .zip(&runtime.input.contexts)
+            .map(|(mut context, normalized)| {
+                // Import may append the code-owned omitted-Detail notice. Export
+                // the same accepted fallback in node and context projections.
+                context.target.detail = redactor.text(&normalized.target_node.detail);
+                context.target.icon = redactor.text(&normalized.target_node.icon);
                 context.annotations = context
                     .annotations
                     .iter()
@@ -1470,6 +1654,7 @@ fn export_contexts(
                     id: ids.node(normalized.target_node.id.value()),
                     kind: redactor.text(&normalized.target_node.kind),
                     icon: redactor.text(&normalized.target_node.icon),
+                    icon_asset: None,
                     title: redactor.text(&normalized.target_node.title),
                     detail: redactor.text(&normalized.target_node.detail),
                     state: ExportRecordState::Accepted,
@@ -1703,6 +1888,7 @@ pub(crate) fn portable_interaction_input_bytes(
                 id: format!("node:{}", context.target.node_id),
                 kind: redactor.text(&snapshot.kind),
                 icon: redactor.text(&snapshot.icon),
+                icon_asset: None,
                 title: redactor.text(&snapshot.title),
                 detail: redactor.text(&snapshot.detail),
                 state: ExportRecordState::Accepted,
@@ -1875,12 +2061,27 @@ fn export_view_with_assets(
     assets: &HashMap<i64, Vec<ExportVisualAssetAssociation>>,
 ) -> Result<ExportAcceptedView, ConversationExportBuildError> {
     let mut view = export_view(closure, ids, redactor)?;
+    if let Some(icon) = closure
+        .root_action
+        .icon
+        .as_deref()
+        .and_then(relayer_graph_core::image_icon)
+    {
+        let association = assets
+            .get(&closure.interaction.id.value())
+            .and_then(|assets| assets.iter().find(|asset| asset.asset_id == icon.asset_id))
+            .cloned()
+            .ok_or_else(|| {
+                ConversationExportBuildError::Invalid(
+                    "root image icon bytes are unavailable".into(),
+                )
+            })?;
+        view.root_action.icon_asset = Some(association);
+    }
     for (resolved, exported) in closure.layers.iter().zip(&mut view.layers) {
         for (node, portable) in resolved.nodes.iter().zip(&mut exported.nodes) {
-            if portable.authored_detail.is_some() {
-                portable.authored_detail_assets =
-                    assets.get(&node.id.value()).cloned().unwrap_or_default();
-            }
+            portable.authored_detail_assets =
+                assets.get(&node.id.value()).cloned().unwrap_or_default();
         }
     }
     Ok(view)
@@ -2110,6 +2311,7 @@ fn export_action(
         label: redactor.text(&action.label),
         variant,
         icon: redactor.optional(action.icon.as_deref()),
+        icon_asset: None,
         description: redactor.optional(action.description.as_deref()),
         // Invoke resolution is a runtime projection. Portable history keeps the authored
         // invoke shape; the following turn's origin carries the durable provenance link.
@@ -3559,6 +3761,99 @@ mod tests {
             "shared digests must be fetched once across distinct accepted nodes"
         );
         assert_eq!(metadata_requests.load(Ordering::SeqCst), 2);
+        // Image icons carry bytes independently of an authored Detail package.
+        let pinned_icon = json!({"kind":"image","assetId":"image","fit":"contain","framing":"none","digestSha256":"ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb","mediaType":"image/png"}).to_string();
+        for mode in 0..3 {
+            let action_only = mode == 1;
+            let root_only = mode == 2;
+            let mut image_closure = closures[0].as_ref().unwrap().clone();
+            image_closure.layers[0].nodes[0].authored_detail = None;
+            if root_only {
+                image_closure.root_action.icon = Some(pinned_icon.clone());
+                image_closure
+                    .detail_asset_revisions
+                    .as_mut()
+                    .unwrap()
+                    .insert(image_closure.interaction.id, 0);
+            } else if action_only {
+                let mut action = image_closure.root_action.clone();
+                action.id = ActionId::new(22).unwrap();
+                action.source_node_id = image_closure.layers[0].nodes[0].id;
+                action.icon = Some(pinned_icon.clone());
+                image_closure.layers[0].actions.push(action);
+            } else {
+                image_closure.layers[0].nodes[0].icon = pinned_icon.clone();
+            }
+            for redactor in [
+                ProjectPathRedactor::new(None),
+                ProjectPathRedactor::for_share(None),
+            ] {
+                let (icon_associations, icon_contents) =
+                    super::collect_visual_assets(&runtime, [&image_closure], &redactor)
+                        .await
+                        .unwrap();
+                assert_eq!(icon_contents.len(), 1);
+                assert_eq!(
+                    icon_associations[&if root_only { 1 } else { 2 }][0].asset_id,
+                    "image"
+                );
+                let view = export_view_with_assets(
+                    &image_closure,
+                    &mut PortableIds::default(),
+                    &redactor,
+                    &icon_associations,
+                )
+                .unwrap();
+                let wire = serde_json::to_value(&view).unwrap();
+                let wire_icon = if root_only {
+                    assert_eq!(wire["rootAction"]["iconAsset"]["assetId"], "image");
+                    &wire["rootAction"]["icon"]
+                } else if action_only {
+                    &wire["layers"][0]["actions"][0]["icon"]
+                } else {
+                    &wire["layers"][0]["nodes"][0]["icon"]
+                };
+                assert_eq!(wire_icon["kind"], "image");
+                assert_eq!(
+                    wire_icon["digestSha256"],
+                    "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"
+                );
+                let reopened: crate::conversation_export::ExportAcceptedView =
+                    serde_json::from_value(wire).unwrap();
+                assert_eq!(reopened, view);
+            }
+            // Missing accepted icon bytes cannot take the legacy Detail omission route.
+            missing.store(true, Ordering::SeqCst);
+            assert!(
+                super::collect_visual_assets(
+                    &runtime,
+                    [&image_closure],
+                    &ProjectPathRedactor::new(None)
+                )
+                .await
+                .is_err()
+            );
+            missing.store(false, Ordering::SeqCst);
+        }
+
+        let mut external_context_target = closures[0].as_ref().unwrap().layers[0].nodes[0].clone();
+        external_context_target.id = NodeId::new(3).unwrap();
+        external_context_target.authored_detail = None;
+        external_context_target.icon = pinned_icon.clone();
+        let (context_assets, context_content) = super::collect_visual_assets_with_context_icons(
+            &runtime,
+            [closures[0].as_ref().unwrap()],
+            &ProjectPathRedactor::for_share(None),
+            true,
+            &[external_context_target],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            context_assets[&3][0].asset_id, "image",
+            "an external context image target needs bytes even outside all exported layers"
+        );
+        assert_eq!(context_content.len(), 1);
         denied.store(true, Ordering::SeqCst);
         assert!(
             super::collect_visual_assets(
