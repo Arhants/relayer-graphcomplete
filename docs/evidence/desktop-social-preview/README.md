@@ -20,3 +20,28 @@ Run `npm run prepare:renderer` then `npm run evidence:share-preview`. The runner
 In the private service checkout, run `node share-service/scripts/prove-desktop-preview.mjs PUBLIC_CHECKOUT VIEWER_ARTIFACT`. It consumes the Electron PNGs and drives the real desktop client and service reserve/upload/finalize/serve path. Authentication and storage are deterministic in-memory fixtures. Both PNGs must be byte-identical after retrieval, with hosted image metadata present. This is not live AWS/Auth0 or social-platform proof.
 
 The full repository check/build and PR review results are reported separately. Hosting rollout, legacy/new-client compatibility against deployment, and LinkedIn/X crawler acceptance remain deployment checks. A desktop release is needed for users to create previews.
+
+## 0.2.33 startup repair
+
+The installed 0.2.33 archive reproduced `ERR_MODULE_NOT_FOUND` when importing
+`main/services/share-preview-capture.mjs`. Its static relative template import
+looked inside `app.asar`, while electron-builder puts renderer files in the
+sibling `Resources/renderer` directory. The capture service now resolves the
+module from the existing runtime renderer directory during capture. Missing
+renderer/template failures stay inside the export-error boundary.
+
+`test/share-preview-packaged-import.test.mjs` copies the real service and template
+into that split layout, imports the relocated service, and requests the actual
+rendered HTML through its HTTP server. It failed before the fix and passes after
+it. Electron is mocked there; the real light/dark capture evidence above is
+separate.
+
+`startup-repair.png` and `startup-repair.json` record a local unsigned
+production-shaped launch reaching the normal provider screen with an isolated
+profile. Assembly reused unchanged native binaries from signed 0.2.33 and ran
+electron-builder `--dir --mac --arm64`, with explicit release artifact mode,
+Preview channel, and the normal update base URL in extraMetadata. The ordinary
+unsigned development package separately hit its existing invalid-release-metadata
+error. The test package was not installed or published. This diagnostic does not
+certify signing, updater installation, or a future signed candidate: that exact
+candidate must still pass a real application launch before publication.

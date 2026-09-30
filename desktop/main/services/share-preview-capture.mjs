@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { readFile, realpath } from "node:fs/promises";
 import { resolve, sep, extname } from "node:path";
 import { randomUUID } from "node:crypto";
-import { renderPublicViewerTemplate } from "../../renderer/src/public-share-viewer/template.js";
+import { pathToFileURL } from "node:url";
 
 /** Capture only the frozen redacted publication, never the live desktop window. */
 export function createSharePreviewCapture({
@@ -78,6 +78,10 @@ export function createSharePreviewCapture({
     const abort = () => stop();
     try {
       root = await realpath(rendererDirectory);
+      // Packaged renderer resources live beside app.asar, not inside it.
+      const { renderPublicViewerTemplate } = await import(
+        pathToFileURL(resolve(root, "src/public-share-viewer/template.js")).href
+      );
       html = renderPublicViewerTemplate({
         snapshot: snapshotBytes,
         title,
