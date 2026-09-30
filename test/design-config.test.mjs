@@ -9,7 +9,7 @@ import { importPalette } from "../scripts/design/import-palette.mjs";
 import { checkStructure, loadStructure, validate, validateDesign } from "../scripts/design/validate.mjs";
 
 const run = promisify(execFile);
-const hPath = "docs/design/visual-redesign/h-sticker-cocoa.json";
+const hPath = "designs/h-sticker-cocoa.json";
 const prototype = new URL("../docs/design/visual-redesign/sources/gen2/H/", import.meta.url);
 const readH = async () => JSON.parse(await readFile(new URL(`../${hPath}`, import.meta.url), "utf8"));
 

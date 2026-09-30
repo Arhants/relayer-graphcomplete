@@ -2,7 +2,7 @@
 
 PRD §7.1 promises a permanent `+` on every selectable node, with editable and confirmable annotations during generation. This proof uses real Electron, Rust product/graph storage, and a deterministic harness fixture. It spends no paid inference.
 
-The selected node belongs to the second accepted interaction, a follow-up titled “Refine the queue ordering.” A third interaction remains running throughout the comparison and confirmation. Both sides use the same persisted backend state. A temporarily overlays only the pre-fix `workspace.js` from commit `b124542afda3222a0655a77acc6b41e843405066` into a copied renderer. B restores the fixed renderer. This isolates the renderer regression; it is not a comparison of two complete historical application binaries.
+The selected node belongs to the second accepted interaction, a follow-up titled “Refine the queue ordering.” A third interaction remains running throughout the comparison and confirmation. Both sides use the same persisted backend state. A temporarily overlays only the pre-fix `workspace.js` from commit `70d2d5fad590b75c7903358a0f4805026647cd76` into a copied renderer. B restores the fixed renderer. This isolates the renderer regression; it is not a comparison of two complete historical application binaries.
 
 | Capture | Observed result |
 | --- | --- |

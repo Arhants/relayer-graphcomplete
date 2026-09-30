@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -60,6 +61,57 @@ describe("desktop share preview capture", () => {
     expect(captureSession.setPermissionCheckHandler).toHaveBeenLastCalledWith(null);
     expect(captureSession.webRequest.onBeforeRequest).toHaveBeenLastCalledWith(null);
     expect(captureSession.clearStorageData).toHaveBeenCalledTimes(4);
+  });
+
+  it("serves the generated design tokens and fonts the viewer stylesheet imports", async () => {
+    const served = {};
+    class BrowserWindow {
+      constructor() {
+        this.webContents = Object.assign(new EventEmitter(), {
+          setWindowOpenHandler: vi.fn(),
+          executeJavaScript: vi.fn(async () => {}),
+          capturePage: vi.fn(async () => ({ resize: () => ({ toPNG: () => Buffer.from("png") }) })),
+        });
+      }
+      async loadURL(url) {
+        const base = url.replace(/capture$/, "");
+        for (const path of ["styles.css", "design/design.css", "design/fonts/figtree/figtree-latin-wght-normal.woff2"]) {
+          const response = await fetch(base + path);
+          served[path] = [response.status, response.headers.get("content-type")];
+        }
+        // Raw paths, so the server's own traversal guards see the dot segments (fetch would normalise them).
+        const { port, pathname } = new URL(base);
+        for (const path of ["design/../../package.json", "design/..%2f..%2fpackage.json"]) {
+          served[path] = await new Promise((resolve, reject) => {
+            request({ host: "127.0.0.1", port, path: pathname + path }, (response) => {
+              response.resume();
+              resolve([response.statusCode, response.headers["content-type"] ?? null]);
+            }).on("error", reject).end();
+          });
+        }
+      }
+      isDestroyed() { return false; }
+      destroy() {}
+    }
+    const captureSession = Object.assign(new EventEmitter(), {
+      setPermissionRequestHandler: vi.fn(),
+      setPermissionCheckHandler: vi.fn(),
+      clearStorageData: vi.fn(async () => {}),
+      webRequest: { onBeforeRequest: vi.fn() },
+    });
+    const capture = createSharePreviewCapture({
+      BrowserWindow,
+      session: { fromPartition: () => captureSession },
+      rendererDirectory: new URL("../desktop/renderer", import.meta.url),
+    });
+    await capture({ snapshotBytes: new Uint8Array(), title: "Styled", theme: "dark" });
+    expect(served).toEqual({
+      "styles.css": [200, "text/css"],
+      "design/design.css": [200, "text/css"],
+      "design/fonts/figtree/figtree-latin-wght-normal.woff2": [200, "font/woff2"],
+      "design/../../package.json": [404, null],
+      "design/..%2f..%2fpackage.json": [404, null],
+    });
   });
 
   it("tears down handlers after failures and aborts before running the next capture", async () => {

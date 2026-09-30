@@ -1,4 +1,4 @@
-export { createProductWorkspace } from "./workspace.js";
+export { createProductWorkspace, loadDesignFonts } from "./workspace.js";
 export { productWorkspaceMarkup } from "./view.js";
 export {
   interactionForThread,

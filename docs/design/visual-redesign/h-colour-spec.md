@@ -1,8 +1,8 @@
 # Gen-2 H · Sticker × Cocoa — colour spec (re-palette of Gen-1 B with K8 Cocoa Bubblegum)
 
 > **Machine-readable form (A2).** H's colours are the design config
-> [`h-sticker-cocoa.json`](h-sticker-cocoa.json), imported from `sources/gen2/H/tokens.mjs` and checked by
-> `node scripts/design/validate.mjs docs/design/visual-redesign/h-sticker-cocoa.json` against
+> [`designs/h-sticker-cocoa.json`](../../../designs/h-sticker-cocoa.json), imported from `sources/gen2/H/tokens.mjs` and checked by
+> `node scripts/design/validate.mjs designs/h-sticker-cocoa.json` against
 > `designs/structures/sticker.json` (the §7 pairs). `test/design-config.test.mjs` keeps the JSON equal to the token source
 > and the results equal to `contrast.mjs`, except three §7 state pairs now reported without a floor: running vs
 > selection ring (10), link vs running text (10) and selected-row tint vs Running pill tint (3). Running may share

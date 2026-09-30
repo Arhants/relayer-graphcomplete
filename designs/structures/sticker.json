@@ -1,6 +1,11 @@
 {
   "format": 1,
   "name": "sticker",
+  "fonts": {
+    "ui": "figtree",
+    "display": "bricolage-grotesque",
+    "mono": "dm-mono"
+  },
   "roles": [
     "bg",
     "sidebar",

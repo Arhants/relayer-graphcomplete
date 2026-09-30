@@ -81,7 +81,7 @@ function nodeInputFixtureFactory() {
       const node = new NodeObject(
         "settings",
         "Input grammar",
-        "These authored inputs belong directly to this Node Details page.",
+        "These authored inputs belong directly to this Node Details page.\n\n" + "Review the governing constraint, primary route, and supporting evidence before committing the authored controls.\n\n".repeat(8),
         "concept",
         `input-grammar-${completionCount}`,
       );

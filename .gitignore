@@ -11,6 +11,7 @@ target/
 desktop/dist/
 desktop/eval-dist/
 desktop/renderer/vendor/
+desktop/renderer/design/
 designs/lab/*
 !designs/lab/.gitkeep
 docs/prd/comments.json

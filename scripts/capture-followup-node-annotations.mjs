@@ -25,7 +25,7 @@ const graphServerBinary = join(repositoryRoot, "target", "debug", "relayer-graph
 const appServerBinary = join(repositoryRoot, "target", "debug", "relayer-app-server");
 const SECOND_DRAFT_VALUE = "Keep worker capacity visible while prioritizing work.";
 const outputDirectory = resolve(process.env.RELAYER_ANNOTATION_EVIDENCE_DIRECTORY || '.relayer/evidence/followup-node-annotations');
-const baselineCommit = execFileSync('git', ['rev-parse', process.env.RELAYER_ANNOTATION_BASELINE || 'b124542afda3222a0655a77acc6b41e843405066'], { encoding: 'utf8' }).trim();
+const baselineCommit = execFileSync('git', ['rev-parse', process.env.RELAYER_ANNOTATION_BASELINE || '70d2d5fad590b75c7903358a0f4805026647cd76'], { encoding: 'utf8' }).trim();
 const rendererRelativePath = 'desktop/renderer/src/product-workspace/workspace.js';
 const rendererDirectory = join(dataDirectory, 'renderer');
 const baselineRenderer = execFileSync('git', ['show', `${baselineCommit}:${rendererRelativePath}`]);
@@ -275,7 +275,7 @@ async function run() {
   await capture('A-before-missing-plus', { renderer: 'baseline', ...before });
   await writeFile(join(rendererDirectory, 'src/product-workspace/workspace.js'), currentRenderer);
   await window.webContents.session.clearCache();
-  await window.reload();
+  await window.loadURL(window.webContents.getURL());
   await waitFor('fixed workspace graph', () => evaluate(`document.querySelectorAll('.graph-node').length === 3`));
   await clickNode('Incoming queue');
   await waitFor('fixed + visible', () => evaluate(`!document.querySelector('#attachNodeContext')?.classList.contains('hidden') && !document.querySelector('#attachNodeContext')?.disabled`));
@@ -296,7 +296,7 @@ async function run() {
     || confirmed.confirmations[0].target.sourceLayerId !== receipt.sourceOccurrence.acceptedRootLayerId) throw new Error('Confirmed target escaped selected follow-up occurrence');
   receipt.confirmedState = confirmed;
   await capture('D-after-confirmed', { renderer: 'fixed', durableCanonicalConfirmation: true });
-  await window.reload();
+  await window.loadURL(window.webContents.getURL());
   await waitFor('durable restored confirmed pill', () => evaluate(`document.querySelector('.composer-context-pill span')?.textContent === '1 annotation'`));
   const stillPending = (await productRequest(`/api/threads/${thread.id}` )).interactions[2];
   if (stillPending.completionStatus !== active.completionStatus) throw new Error('Fixture completed during proof');

@@ -18,7 +18,8 @@ import {
   humanTurns,
   workspaceTurns,
 } from "./model.js";
-import { createRelayerIcon } from "./icons.js";
+import { createLucideIcon, createRelayerIcon, relayerIconFamily } from "./icons.js";
+import { interactionActivity, NODE_RUN_STATE, nodeRunState, THREAD_ACTIVITY } from "./run-state.js";
 import { graphLayoutSignature, projectLayerNodePositions } from "./graph-layout.js";
 import { renderMarkdown } from "./markdown.js";
 import { isResolvedInvokeAction, mountCompiledNodeDetail } from "./node-detail-runtime.js";
@@ -83,7 +84,6 @@ import {
   threadFollowupRestoration,
 } from "../composer-drafts.js";
 
-export const GRAPH_NODE_ICON_RADIUS = 24;
 export const GRAPH_MIN_ZOOM = 0.4;
 export const GRAPH_MAX_ZOOM = 2;
 export const COMPOSER_MIN_HEIGHT = 42;
@@ -195,9 +195,13 @@ export function observeAutomaticGraphFitOnResize({
 }
 
 const GRAPH_NODE_HALF_WIDTH = 82;
-const GRAPH_NODE_TOP = 28;
-const GRAPH_NODE_BOTTOM = 72;
+// Sticker pills are anchored at their centre; 18 is half the 36px pill.
+const GRAPH_NODE_HALF_HEIGHT = 18;
+// A state caption sits 6px below the pill and is 16px tall.
+const GRAPH_NODE_CAPTION_HEIGHT = 22;
 const GRAPH_FIT_PADDING = 48;
+// Sticker pills stay readable without looking oversized when a layer has few nodes (H geometry fitCap).
+const GRAPH_FIT_MAX_ZOOM = 1.25;
 const PENDING_COMPLETION_STATUSES = new Set([
   "not_started",
   "running",
@@ -291,11 +295,11 @@ export function approvalHistoryRenderTransition({
   };
 }
 
-export function graphNodeLayoutBounds(width, height) {
+export function graphNodeLayoutBounds(width, height, caption = 0) {
   return {
     halfWidth: Math.max(GRAPH_NODE_HALF_WIDTH, width / 2),
-    top: GRAPH_NODE_TOP,
-    bottom: Math.max(GRAPH_NODE_BOTTOM, height - 23),
+    top: Math.max(GRAPH_NODE_HALF_HEIGHT, height / 2),
+    bottom: Math.max(GRAPH_NODE_HALF_HEIGHT, height / 2) + caption,
   };
 }
 
@@ -362,6 +366,7 @@ export function fitGraphCamera(nodes, bounds, padding = GRAPH_FIT_PADDING) {
   const contentWidth = Math.max(1, content.maxX - content.minX);
   const contentHeight = Math.max(1, content.maxY - content.minY);
   const zoom = clampGraphZoom(Math.min(
+    GRAPH_FIT_MAX_ZOOM,
     availableWidth / contentWidth,
     availableHeight / contentHeight,
   ));
@@ -414,20 +419,46 @@ export function inspectorFitRequestIsCurrent(request, {
     && viewportWidth > 760;
 }
 
-export function graphEdgeSegment(source, target, radius = GRAPH_NODE_ICON_RADIUS) {
-  const dx = target.x - source.x;
-  const dy = target.y - source.y;
+// Where the line from a pill's centre towards another point leaves the pill's outline:
+// flat top and bottom, round ends (a capsule of the given half extents).
+export function graphPillExit(center, toward, { halfWidth, halfHeight }) {
+  const dx = toward.x - center.x;
+  const dy = toward.y - center.y;
   const distance = Math.hypot(dx, dy);
-  if (!distance) {
-    return { x1: source.x, y1: source.y, x2: target.x, y2: target.y };
+  if (!distance) return { x: center.x, y: center.y };
+  const ux = dx / distance;
+  const uy = dy / distance;
+  const flat = Math.max(0, halfWidth - halfHeight);
+  let t = uy ? halfHeight / Math.abs(uy) : Infinity;
+  if (Math.abs(ux * t) > flat) {
+    const cap = Math.sign(ux) * flat;
+    t = ux * cap + Math.sqrt(halfHeight * halfHeight - cap * cap * uy * uy);
   }
-  const offsetX = (dx / distance) * radius;
-  const offsetY = (dy / distance) * radius;
+  return { x: center.x + ux * t, y: center.y + uy * t };
+}
+
+// An edge runs between the outlines of its two node pills.
+export function graphEdgeSegment(source, target, sourceBox, targetBox = sourceBox) {
+  const start = graphPillExit(source, target, sourceBox);
+  const end = graphPillExit(target, source, targetBox);
+  return { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
+}
+
+// Sticker edges are gentle circular arcs. Each bends to the left of its own direction (first
+// endpoint to second) by 0.12 x chord, capped at 24px at zoom 1. The bend depends only on the
+// edge's endpoints, so dragging a node never flips or reshapes any other edge.
+export function graphEdgeArc(segment, { zoom = 1, curvature = 0.12, maxBend = 24 } = {}) {
+  const dx = segment.x2 - segment.x1;
+  const dy = segment.y2 - segment.y1;
+  const chord = Math.hypot(dx, dy);
+  const middle = { x: (segment.x1 + segment.x2) / 2, y: (segment.y1 + segment.y2) / 2 };
+  const sagitta = Math.min(curvature * chord, maxBend * zoom);
+  if (sagitta < 0.5) return { d: `M${segment.x1} ${segment.y1}L${segment.x2} ${segment.y2}`, middle };
+  const radius = (chord * chord / 4 + sagitta * sagitta) / (2 * sagitta);
+  // With y pointing down, the left of the direction is (dy, -dx), which sweep flag 1 draws.
   return {
-    x1: source.x + offsetX,
-    y1: source.y + offsetY,
-    x2: target.x - offsetX,
-    y2: target.y - offsetY,
+    d: `M${segment.x1} ${segment.y1}A${radius} ${radius} 0 0 1 ${segment.x2} ${segment.y2}`,
+    middle: { x: middle.x + (dy / chord) * sagitta, y: middle.y - (dx / chord) * sagitta },
   };
 }
 
@@ -1625,6 +1656,14 @@ export function submittedInputHistoryPresentation(input) {
 // History state is supplied by the renderer integration so Product and Eval use the same
 // controls. `onSelectTurn(delta)` remains the keyboard/stepper contract; callers can add
 // `onSelectTurnById(id)` for direct popover jumps without changing existing integrations.
+// Loads the design's UI and display fonts before the first graph render, so pill
+// widths are measured with them. A missing font resolves to the fallback.
+export async function loadDesignFonts(documentObject = document) {
+  const style = documentObject.defaultView?.getComputedStyle?.(documentObject.documentElement);
+  const families = ["--font-ui", "--font-display"].map((name) => style?.getPropertyValue(name).trim()).filter(Boolean);
+  await Promise.all(families.map((family) => documentObject.fonts?.load?.(`600 14px ${family}`)?.catch(() => [])));
+}
+
 export function createProductWorkspace({
   root = document,
   mode = "interactive",
@@ -2593,6 +2632,7 @@ export function createProductWorkspace({
     onSelectionChange(selection.selectedNodeId);
     const { reveal } = openInspector({ origin });
     $("#detailIcon").textContent = icon === "annotation" ? "✎" : icon;
+    $("#detailIcon").dataset.family = "neutral";
     $("#detailKind").textContent = kind || anchor.kind;
     $("#detailTitle").textContent = title || `${anchor.kind} comments`;
     $("#detailContent").replaceChildren();
@@ -4478,6 +4518,26 @@ export function createProductWorkspace({
     host.replaceChildren(heading, list);
   }
 
+  // PRD §8.1: a symbol follows the thread title only while Running, Stopping…, Needs approval or Failed.
+  function renderThreadStatusSymbol(activityKey) {
+    const symbol = $("#threadStatusSymbol");
+    if (!symbol) return;
+    const activity = THREAD_ACTIVITY[activityKey];
+    symbol.classList.toggle("hidden", !activity);
+    if (!activity) {
+      delete symbol.dataset.activity;
+      symbol.removeAttribute("aria-label");
+      symbol.removeAttribute("title");
+      symbol.replaceChildren();
+      return;
+    }
+    if (symbol.dataset.activity === activityKey) return;
+    symbol.dataset.activity = activityKey;
+    symbol.setAttribute("aria-label", activity.label);
+    symbol.title = activity.label;
+    symbol.replaceChildren(createLucideIcon(activity.icon));
+  }
+
   function render() {
     if (disposed) return;
     const state = getState();
@@ -4617,6 +4677,7 @@ export function createProductWorkspace({
     // A child an agent launched is not a human turn: the composer's scopes follow human turns.
     const turns = humanTurns(state, thread);
     const latestInteraction = turns.at(-1);
+    renderThreadStatusSymbol(interactionActivity(latestInteraction));
     if (inputDraftController && latestInteraction) {
       const statusKey = `${latestInteraction.id}:${latestInteraction.completionStatus || ""}`;
       const priorStatusKey = renderedInputDraftStatusKeys.get(threadId);
@@ -5168,7 +5229,14 @@ export function createProductWorkspace({
         ? `<span class="graph-annotation-badge" aria-label="${count} comment${count === 1 ? "" : "s"}">${count}</span>`
         : "";
       const annotationLabel = count ? `. ${count} comment${count === 1 ? "" : "s"}` : "";
-      return `<div class="graph-node ${String(node.id) === String(selection.selectedNodeId) ? "selected" : ""}" data-node="${escapeHtml(node.id)}" data-review-ref="node-${escapeHtml(node.id)}" data-review-kind="node" role="button" tabindex="0" aria-label="Open ${escapeHtml(node.title)}${annotationLabel}"><div class="glyph"></div>${badge}<div class="copy"><b>${escapeHtml(node.title)}</b></div></div>`;
+      const family = relayerIconFamily(node.icon || node.metadata?.relayer?.icon);
+      const runStateKey = nodeRunState(node, state.actions, state.actionInvocations);
+      const runState = NODE_RUN_STATE[runStateKey];
+      const runStateMarks = runState
+        ? `${runState.icon ? '<span class="graph-node-state-badge" aria-hidden="true"></span>' : ""}<span class="graph-node-caption" aria-hidden="true">${runState.label}</span>`
+        : "";
+      const runStateLabel = runState ? `. ${runState.label}` : "";
+      return `<div class="graph-node ${String(node.id) === String(selection.selectedNodeId) ? "selected" : ""}" data-node="${escapeHtml(node.id)}" data-family="${family}"${runState ? ` data-run-state="${runStateKey}"` : ""} data-review-ref="node-${escapeHtml(node.id)}" data-review-kind="node" role="button" tabindex="0" aria-label="Open ${escapeHtml(node.title)}${runStateLabel}${annotationLabel}"><div class="glyph"></div>${badge}<div class="copy"><b>${escapeHtml(node.title)}</b></div>${runStateMarks}</div>`;
     }).join("");
     $$('[data-node]').forEach((element) => {
       const authoredNode = graphNodes.find((candidate) => String(candidate.id) === element.dataset.node);
@@ -5177,11 +5245,15 @@ export function createProductWorkspace({
         authoredNode?.icon || authoredNode?.metadata?.relayer?.icon,
         { class: "relayer-node-icon" },
       ));
+      const runState = NODE_RUN_STATE[element.dataset.runState];
+      if (runState?.icon) element.querySelector(".graph-node-state-badge").replaceChildren(createLucideIcon(runState.icon));
       if (authoredNode) {
         authoredNode.layoutBounds = graphNodeLayoutBounds(
           element.offsetWidth,
           element.offsetHeight,
+          runState ? GRAPH_NODE_CAPTION_HEIGHT : 0,
         );
+        authoredNode.pillBox = { halfWidth: element.offsetWidth / 2, halfHeight: element.offsetHeight / 2 };
       }
       element.onclick = () => {
         if (!shouldActivateGraphNodeAfterPointerGesture(suppressClickAfterDrag)) {
@@ -5200,11 +5272,16 @@ export function createProductWorkspace({
         event.stopPropagation();
         focusGraph();
         const node = graphNodes.find((candidate) => String(candidate.id) === element.dataset.node);
+        const stageRect = $("#graphStage").getBoundingClientRect();
+        const grab = graphWorldPoint({ x: event.clientX - stageRect.left, y: event.clientY - stageRect.top }, camera);
         dragging = node ? {
           node,
           pointerId: event.pointerId,
           startClientX: event.clientX,
           startClientY: event.clientY,
+          // The node keeps its offset from the pointer, so grabbing it off-centre never jumps it.
+          offsetX: node.x - grab.x,
+          offsetY: node.y - grab.y,
           moved: false,
         } : null;
         element.setPointerCapture(event.pointerId);
@@ -5228,8 +5305,8 @@ export function createProductWorkspace({
           x: event.clientX - rect.left,
           y: event.clientY - rect.top,
         }, camera);
-        dragging.node.x = point.x;
-        dragging.node.y = point.y;
+        dragging.node.x = point.x + dragging.offsetX;
+        dragging.node.y = point.y + dragging.offsetY;
         if (dragging.moved) dragging.node.pinned = true;
         drawGraph();
       };
@@ -5347,19 +5424,21 @@ export function createProductWorkspace({
       const a = graphNodes.find((node) => String(node.id) === String(source));
       const b = graphNodes.find((node) => String(node.id) === String(target));
       if (!a || !b) return "";
-      const segment = graphEdgeSegment(
-        graphScreenPoint(a, camera),
-        graphScreenPoint(b, camera),
-        GRAPH_NODE_ICON_RADIUS * camera.zoom,
-      );
+      // Edges stop 4px outside each pill (b-structure-spec: clipped outside every drawn shape).
+      const pillBox = (node) => {
+        const box = node.pillBox ?? { halfWidth: GRAPH_NODE_HALF_HEIGHT, halfHeight: GRAPH_NODE_HALF_HEIGHT };
+        return { halfWidth: (box.halfWidth + 4) * camera.zoom, halfHeight: (box.halfHeight + 4) * camera.zoom };
+      };
+      const segment = graphEdgeSegment(graphScreenPoint(a, camera), graphScreenPoint(b, camera), pillBox(a), pillBox(b));
       const edgeIdentity = edge.id ?? `${source}:${target}`;
       const edgeId = escapeHtml(edgeIdentity);
       const annotatable = annotationEnabled && edge.id != null;
       const anchor = annotatable ? subjectAnchor("edge", { edgeId: edge.id }) : null;
       const count = anchor ? annotationCount(anchor) : 0;
-      const middleX = (segment.x1 + segment.x2) / 2;
-      const middleY = (segment.y1 + segment.y2) / 2;
-      return `<g class="graph-edge-group" data-edge="${edgeId}"><line class="graph-edge" aria-hidden="true" style="stroke-width:${graphEdgeStrokeWidth(camera.zoom)}" x1="${segment.x1}" y1="${segment.y1}" x2="${segment.x2}" y2="${segment.y2}"/><line class="graph-edge-hit ${annotatable ? "" : "hidden"}" tabindex="0" role="button" aria-label="Open relationship comments" x1="${segment.x1}" y1="${segment.y1}" x2="${segment.x2}" y2="${segment.y2}"/>${annotatable && count ? `<g class="edge-annotation-badge" aria-hidden="true" transform="translate(${middleX} ${middleY})"><circle r="9"></circle><text y="3">${count}</text></g>` : ""}</g>`;
+      const arc = graphEdgeArc(segment, { zoom: camera.zoom });
+      const middleX = arc.middle.x;
+      const middleY = arc.middle.y;
+      return `<g class="graph-edge-group" data-edge="${edgeId}"><path class="graph-edge" aria-hidden="true" style="stroke-width:${graphEdgeStrokeWidth(camera.zoom)}" d="${arc.d}"/><path class="graph-edge-hit ${annotatable ? "" : "hidden"}" tabindex="0" role="button" aria-label="Open relationship comments" d="${arc.d}"/>${annotatable && count ? `<g class="edge-annotation-badge" aria-hidden="true" transform="translate(${middleX} ${middleY})"><circle r="9"></circle><text y="3">${count}</text></g>` : ""}</g>`;
     }).join("");
     if (annotationEnabled) {
       $$("[data-edge]").forEach((group) => {
@@ -5837,6 +5916,7 @@ export function createProductWorkspace({
       node.icon || node.metadata?.relayer?.icon,
       { class: "relayer-detail-icon" },
     ));
+    $("#detailIcon").dataset.family = relayerIconFamily(node.icon || node.metadata?.relayer?.icon);
     $("#detailKind").textContent = node.kind;
     $("#detailTitle").textContent = node.title;
     const actions = (state.actions || []).filter((action) => String(action.sourceNodeId) === String(node.id));
