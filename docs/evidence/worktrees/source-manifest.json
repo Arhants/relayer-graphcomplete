@@ -2,7 +2,7 @@
   "scope": "Changed executable files and tests relative to integrated main; docs and captured evidence excluded",
   "algorithm": "SHA256 of sorted lines: file SHA256 hex, two ASCII spaces, relative path, LF",
   "baseCommit": "3dc56dd9cff4bd1fd9c1faaf199ed195578a7224",
-  "sha256": "e31c973560e9797e366b9a245ccb118013f16be1cf83f6fb03a0d50f63a262f0",
+  "sha256": "a34dd8bb143dfcf65b84fd790222638fe982a06241bc7643ce03d98c39084c06",
   "files": {
     "crates/relayer-app-server/src/api.rs": "de735dbcd9624818b6ddcb6190658461ad0330f1c98b9bb741bfd73dcdd68f4f",
     "crates/relayer-app-server/src/api/environment.rs": "0e48dae7b28c2ac064ec119719e8e5ca908e3be41a93722dd1915975c4580d51",
@@ -23,6 +23,7 @@
     "crates/relayer-app-server/src/storage/sqlite/schema.rs": "826e5bfce4aff67a2ad65482d9422edb67ca4c9431407d40c85e6f6b9a9978ce",
     "crates/relayer-app-server/src/storage/sqlite/threads.rs": "fd272739899402815b0a6f09688f0db57957f28525b459425b0f14b5986696dd",
     "crates/relayer-app-server/tests/product_persistence_flow.rs": "f8b511f67e1e213f05597c48f6dae88dbee2e57727ee2aa43e24f191ea3fd9ea",
+    "crates/relayer-app-server/tests/support/completion_traces.rs": "619348ac4ce2a90377dc8de2d75675d91327f8583f2a5af1dafcd6daa18b3156",
     "desktop/main/index.mjs": "f0ade4a6008658e54fef0c06caddea639b67d71be89c5dffc3d99d1b2e0fe7ae",
     "desktop/main/ipc/register-ipc.mjs": "b2b60b094b94444d13113a7dfe2bae66f7ecaecd9c1405a07c2db79c9c6c152c",
     "desktop/main/services/folder-service.mjs": "d64726fa1c9c0dbed9b4c78ea3b96b3da31c95d355064e35340f93e6d42b736f",
