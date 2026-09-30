@@ -78,7 +78,12 @@ describe("layer edge shapes", () => {
         const [x1, y1] = /^M([-\d.e]+) ([-\d.e]+)/.exec(path.d).slice(1).map(Number);
         expect(distance({ x: x1, y: y1 }, circle.centre)).toBeCloseTo(circle.radius, 6);
         expect(distance(path.middle, circle.centre)).toBeCloseTo(circle.radius, 6);
-        if (box === pill) expect(distance({ x: x1, y: y1 }, a)).toBeGreaterThan(pill.halfHeight * 0.99);
+        // With real pills the arc meets the pill's outline exactly, leaving no gap.
+        if (box === pill) {
+          const node = distance({ x: x1, y: y1 }, a) < distance({ x: x1, y: y1 }, b) ? a : b;
+          const dx = Math.abs(x1 - node.x) - (pill.halfWidth - pill.halfHeight);
+          expect(Math.hypot(Math.max(dx, 0), y1 - node.y)).toBeCloseTo(pill.halfHeight, 4);
+        }
       }
     }
   });

@@ -115,6 +115,14 @@ function bowsLeft(a, b, centre) {
   return true;
 }
 
+// Whether a point lies within a pill: flat top and bottom, round ends.
+function insidePill(point, centre, { halfWidth, halfHeight }) {
+  const dx = Math.abs(point.x - centre.x);
+  const dy = Math.abs(point.y - centre.y);
+  const flat = Math.max(0, halfWidth - halfHeight);
+  return dx <= flat ? dy <= halfHeight : Math.hypot(dx - flat, dy) <= halfHeight;
+}
+
 // Gentle arcs: each bows by 0.12 x chord, capped at 24px at zoom 1.
 function outwardArcPath(a, b, segment, circle, zoom) {
   const dx = segment.x2 - segment.x1;
@@ -133,7 +141,8 @@ function outwardArcPath(a, b, segment, circle, zoom) {
 
 // Every edge follows one circle around the layer's centre, sized to the nodes' mean
 // distance from it, so a ring of nodes reads as a ring. The arc runs through both node
-// centres and is trimmed where it enters each pill, so it stays on the circle.
+// centres and is trimmed exactly where it enters each pill, so it stays on the circle
+// and meets each pill's outline.
 function circleArcPath(a, b, boxA, boxB, circle) {
   const chord = Math.hypot(b.x - a.x, b.y - a.y);
   if (!circle || !(circle.radius > 0) || chord < 1) return straightPath(graphEdgeSegment(a, b, boxA, boxB));
@@ -146,15 +155,24 @@ function circleArcPath(a, b, boxA, boxB, circle) {
   const turn = ((Math.atan2(b.y - origin.y, b.x - origin.x) - angleA) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
   // Sweep flag 1 draws increasing angles, which is the bow to the left.
   const sweep = left ? turn : turn - 2 * Math.PI;
-  const inside = (node, toward, box) => {
-    const exit = graphPillExit(node, toward, box);
-    return Math.hypot(exit.x - node.x, exit.y - node.y);
-  };
-  const trimA = inside(a, b, boxA) / radius;
-  const trimB = inside(b, a, boxB) / radius;
-  if (Math.abs(sweep) - trimA - trimB < 0.5 / radius) return straightPath(graphEdgeSegment(a, b, boxA, boxB));
   const at = (angle) => ({ x: origin.x + radius * Math.cos(angle), y: origin.y + radius * Math.sin(angle) });
   const direction = Math.sign(sweep);
+  // The angle, from a node's centre along the arc, at which the arc leaves the node's pill.
+  const leaves = (angle, step, node, box) => {
+    let [inside, outside] = [0, Math.abs(sweep) / 2];
+    if (insidePill(at(angle + step * outside), node, box)) return null;
+    for (let iteration = 0; iteration < 24; iteration += 1) {
+      const middle = (inside + outside) / 2;
+      if (insidePill(at(angle + step * middle), node, box)) inside = middle;
+      else outside = middle;
+    }
+    return outside;
+  };
+  const trimA = leaves(angleA, direction, a, boxA);
+  const trimB = leaves(angleA + sweep, -direction, b, boxB);
+  if (trimA === null || trimB === null || Math.abs(sweep) - trimA - trimB < 0.5 / radius) {
+    return straightPath(graphEdgeSegment(a, b, boxA, boxB));
+  }
   const start = at(angleA + direction * trimA);
   const end = at(angleA + sweep - direction * trimB);
   return {
