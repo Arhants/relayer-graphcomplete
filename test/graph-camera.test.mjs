@@ -109,15 +109,15 @@ describe("product workspace graph camera", () => {
     expect(clampGraphZoom(1.25)).toBe(1.25);
   });
 
-  it("scales edge endpoints to the rendered icon boundary", () => {
+  it("scales edge endpoints to the rendered pill outline", () => {
     const camera = { x: 10, y: 20, zoom: 0.5 };
     const segment = graphEdgeSegment(
       graphScreenPoint({ x: 0, y: 0 }, camera),
-      graphScreenPoint({ x: 200, y: 0 }, camera),
-      24 * camera.zoom,
+      graphScreenPoint({ x: 400, y: 0 }, camera),
+      { halfWidth: 80 * camera.zoom, halfHeight: 18 * camera.zoom },
     );
 
-    expect(segment).toEqual({ x1: 22, y1: 20, x2: 98, y2: 20 });
+    expect(segment).toEqual({ x1: 50, y1: 20, x2: 170, y2: 20 });
   });
 
   it("fits graph content inside the viewport and recenters without changing zoom", () => {

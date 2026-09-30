@@ -84,7 +84,6 @@ import {
   threadFollowupRestoration,
 } from "../composer-drafts.js";
 
-export const GRAPH_NODE_ICON_RADIUS = 24;
 export const GRAPH_MIN_ZOOM = 0.4;
 export const GRAPH_MAX_ZOOM = 2;
 export const COMPOSER_MIN_HEIGHT = 42;
@@ -420,41 +419,46 @@ export function inspectorFitRequestIsCurrent(request, {
     && viewportWidth > 760;
 }
 
-export function graphEdgeSegment(source, target, radius = GRAPH_NODE_ICON_RADIUS) {
-  const dx = target.x - source.x;
-  const dy = target.y - source.y;
+// Where the line from a pill's centre towards another point leaves the pill's outline:
+// flat top and bottom, round ends (a capsule of the given half extents).
+export function graphPillExit(center, toward, { halfWidth, halfHeight }) {
+  const dx = toward.x - center.x;
+  const dy = toward.y - center.y;
   const distance = Math.hypot(dx, dy);
-  if (!distance) {
-    return { x1: source.x, y1: source.y, x2: target.x, y2: target.y };
+  if (!distance) return { x: center.x, y: center.y };
+  const ux = dx / distance;
+  const uy = dy / distance;
+  const flat = Math.max(0, halfWidth - halfHeight);
+  let t = uy ? halfHeight / Math.abs(uy) : Infinity;
+  if (Math.abs(ux * t) > flat) {
+    const cap = Math.sign(ux) * flat;
+    t = ux * cap + Math.sqrt(halfHeight * halfHeight - cap * cap * uy * uy);
   }
-  const offsetX = (dx / distance) * radius;
-  const offsetY = (dy / distance) * radius;
-  return {
-    x1: source.x + offsetX,
-    y1: source.y + offsetY,
-    x2: target.x - offsetX,
-    y2: target.y - offsetY,
-  };
+  return { x: center.x + ux * t, y: center.y + uy * t };
 }
 
-// Sticker edges are gentle circular arcs: sagitta = 0.12 x chord, bulging away from the layer centroid.
-export function graphEdgeArc(segment, centroid, curvature = 0.12) {
+// An edge runs between the outlines of its two node pills.
+export function graphEdgeSegment(source, target, sourceBox, targetBox = sourceBox) {
+  const start = graphPillExit(source, target, sourceBox);
+  const end = graphPillExit(target, source, targetBox);
+  return { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
+}
+
+// Sticker edges are gentle circular arcs. Each bends to the left of its own direction (first
+// endpoint to second) by 0.12 x chord, capped at 24px at zoom 1. The bend depends only on the
+// edge's endpoints, so dragging a node never flips or reshapes any other edge.
+export function graphEdgeArc(segment, { zoom = 1, curvature = 0.12, maxBend = 24 } = {}) {
   const dx = segment.x2 - segment.x1;
   const dy = segment.y2 - segment.y1;
   const chord = Math.hypot(dx, dy);
   const middle = { x: (segment.x1 + segment.x2) / 2, y: (segment.y1 + segment.y2) / 2 };
-  if (!chord || !curvature) {
-    return { d: `M${segment.x1} ${segment.y1}L${segment.x2} ${segment.y2}`, middle };
-  }
-  const normal = { x: -dy / chord, y: dx / chord };
-  const away = (middle.x - centroid.x) * normal.x + (middle.y - centroid.y) * normal.y >= 0 ? 1 : -1;
-  const sagitta = curvature * chord;
+  const sagitta = Math.min(curvature * chord, maxBend * zoom);
+  if (sagitta < 0.5) return { d: `M${segment.x1} ${segment.y1}L${segment.x2} ${segment.y2}`, middle };
   const radius = (chord * chord / 4 + sagitta * sagitta) / (2 * sagitta);
-  // With y pointing down, sweep 1 bulges to -normal and sweep 0 to +normal.
-  const sweep = away > 0 ? 0 : 1;
+  // With y pointing down, the left of the direction is (dy, -dx), which sweep flag 1 draws.
   return {
-    d: `M${segment.x1} ${segment.y1}A${radius} ${radius} 0 0 ${sweep} ${segment.x2} ${segment.y2}`,
-    middle: { x: middle.x + normal.x * sagitta * away, y: middle.y + normal.y * sagitta * away },
+    d: `M${segment.x1} ${segment.y1}A${radius} ${radius} 0 0 1 ${segment.x2} ${segment.y2}`,
+    middle: { x: middle.x + (dy / chord) * sagitta, y: middle.y - (dx / chord) * sagitta },
   };
 }
 
@@ -5247,6 +5251,7 @@ export function createProductWorkspace({
           element.offsetHeight,
           runState ? GRAPH_NODE_CAPTION_HEIGHT : 0,
         );
+        authoredNode.pillBox = { halfWidth: element.offsetWidth / 2, halfHeight: element.offsetHeight / 2 };
       }
       element.onclick = () => {
         if (!shouldActivateGraphNodeAfterPointerGesture(suppressClickAfterDrag)) {
@@ -5265,11 +5270,16 @@ export function createProductWorkspace({
         event.stopPropagation();
         focusGraph();
         const node = graphNodes.find((candidate) => String(candidate.id) === element.dataset.node);
+        const stageRect = $("#graphStage").getBoundingClientRect();
+        const grab = graphWorldPoint({ x: event.clientX - stageRect.left, y: event.clientY - stageRect.top }, camera);
         dragging = node ? {
           node,
           pointerId: event.pointerId,
           startClientX: event.clientX,
           startClientY: event.clientY,
+          // The node keeps its offset from the pointer, so grabbing it off-centre never jumps it.
+          offsetX: node.x - grab.x,
+          offsetY: node.y - grab.y,
           moved: false,
         } : null;
         element.setPointerCapture(event.pointerId);
@@ -5293,8 +5303,8 @@ export function createProductWorkspace({
           x: event.clientX - rect.left,
           y: event.clientY - rect.top,
         }, camera);
-        dragging.node.x = point.x;
-        dragging.node.y = point.y;
+        dragging.node.x = point.x + dragging.offsetX;
+        dragging.node.y = point.y + dragging.offsetY;
         if (dragging.moved) dragging.node.pinned = true;
         drawGraph();
       };
@@ -5407,27 +5417,23 @@ export function createProductWorkspace({
         element.dataset.layoutSource = node.layoutSource;
       }
     }
-    const screenPoints = graphNodes.map((node) => graphScreenPoint(node, camera));
-    const centroid = {
-      x: screenPoints.reduce((sum, point) => sum + point.x, 0) / (screenPoints.length || 1),
-      y: screenPoints.reduce((sum, point) => sum + point.y, 0) / (screenPoints.length || 1),
-    };
     $("#edgeCanvas").innerHTML = graphEdges.map((edge) => {
       const [source, target] = edge.endpoints || [edge.source, edge.target];
       const a = graphNodes.find((node) => String(node.id) === String(source));
       const b = graphNodes.find((node) => String(node.id) === String(target));
       if (!a || !b) return "";
-      const segment = graphEdgeSegment(
-        graphScreenPoint(a, camera),
-        graphScreenPoint(b, camera),
-        GRAPH_NODE_ICON_RADIUS * camera.zoom,
-      );
+      // Edges stop 4px outside each pill (b-structure-spec: clipped outside every drawn shape).
+      const pillBox = (node) => {
+        const box = node.pillBox ?? { halfWidth: GRAPH_NODE_HALF_HEIGHT, halfHeight: GRAPH_NODE_HALF_HEIGHT };
+        return { halfWidth: (box.halfWidth + 4) * camera.zoom, halfHeight: (box.halfHeight + 4) * camera.zoom };
+      };
+      const segment = graphEdgeSegment(graphScreenPoint(a, camera), graphScreenPoint(b, camera), pillBox(a), pillBox(b));
       const edgeIdentity = edge.id ?? `${source}:${target}`;
       const edgeId = escapeHtml(edgeIdentity);
       const annotatable = annotationEnabled && edge.id != null;
       const anchor = annotatable ? subjectAnchor("edge", { edgeId: edge.id }) : null;
       const count = anchor ? annotationCount(anchor) : 0;
-      const arc = graphEdgeArc(segment, centroid);
+      const arc = graphEdgeArc(segment, { zoom: camera.zoom });
       const middleX = arc.middle.x;
       const middleY = arc.middle.y;
       return `<g class="graph-edge-group" data-edge="${edgeId}"><path class="graph-edge" aria-hidden="true" style="stroke-width:${graphEdgeStrokeWidth(camera.zoom)}" d="${arc.d}"/><path class="graph-edge-hit ${annotatable ? "" : "hidden"}" tabindex="0" role="button" aria-label="Open relationship comments" d="${arc.d}"/>${annotatable && count ? `<g class="edge-annotation-badge" aria-hidden="true" transform="translate(${middleX} ${middleY})"><circle r="9"></circle><text y="3">${count}</text></g>` : ""}</g>`;

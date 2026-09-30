@@ -74,14 +74,17 @@ describe("Sticker structure", () => {
       .toEqual(["f5", "f5", "neutral", "neutral"]);
   });
 
-  it("draws edges as gentle arcs that bulge away from the layer centroid", () => {
-    const segment = { x1: 0, y1: 100, x2: 200, y2: 100 };
-    const below = graphEdgeArc(segment, { x: 100, y: 0 });
-    expect(below.middle).toEqual({ x: 100, y: 124 });
-    expect(below.d).toMatch(/^M0 100A\d+(\.\d+)? \d+(\.\d+)? 0 0 [01] 200 100$/);
-    const above = graphEdgeArc(segment, { x: 100, y: 200 });
-    expect(above.middle).toEqual({ x: 100, y: 76 });
-    expect(above.d.split(" ").at(-3)).not.toBe(below.d.split(" ").at(-3));
-    expect(graphEdgeArc({ x1: 5, y1: 5, x2: 5, y2: 5 }, { x: 0, y: 0 }).d).toBe("M5 5L5 5");
+  it("bends each edge to the left of its own direction by a capped amount", () => {
+    // Heading right, left is up: a 200px edge bends 24px (0.12 x chord).
+    const right = graphEdgeArc({ x1: 0, y1: 100, x2: 200, y2: 100 });
+    expect(right.middle).toEqual({ x: 100, y: 76 });
+    expect(right.d).toMatch(/^M0 100A\d+(\.\d+)? \d+(\.\d+)? 0 0 1 200 100$/);
+    // The same edge the other way round bends the other way; nothing else about the layer matters.
+    expect(graphEdgeArc({ x1: 200, y1: 100, x2: 0, y2: 100 }).middle).toEqual({ x: 100, y: 124 });
+    // Long edges bend at most 24px, scaled by zoom; tiny edges are straight.
+    expect(graphEdgeArc({ x1: 0, y1: 100, x2: 1000, y2: 100 }).middle).toEqual({ x: 500, y: 76 });
+    expect(graphEdgeArc({ x1: 0, y1: 100, x2: 1000, y2: 100 }, { zoom: 0.5 }).middle).toEqual({ x: 500, y: 88 });
+    expect(graphEdgeArc({ x1: 5, y1: 5, x2: 5, y2: 5 }).d).toBe("M5 5L5 5");
+    expect(graphEdgeArc({ x1: 0, y1: 0, x2: 3, y2: 0 }).d).toBe("M0 0L3 0");
   });
 });

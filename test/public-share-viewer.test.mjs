@@ -739,6 +739,18 @@ describe("public share HTML boundary", () => {
       windowRef.document.querySelector('[data-node="node:other"]').click();
       await windowRef.happyDOM.waitUntilComplete();
       expect(viewer.adapter.selection.selectedNodeId).toBe("node:other");
+      // Dragging keeps the grabbed point under the pointer: the node moves by the pointer's
+      // travel instead of jumping its centre to the pointer.
+      windowRef.HTMLElement.prototype.setPointerCapture ??= () => {};
+      const dragged = windowRef.document.querySelector('[data-node="node:other"]');
+      const zoom = Number(dragged.style.getPropertyValue("--graph-zoom"));
+      const [startX, startY] = [Number(dragged.dataset.worldX), Number(dragged.dataset.worldY)];
+      dragged.dispatchEvent(new windowRef.PointerEvent("pointerdown", { bubbles: true, pointerId: 7, buttons: 1, clientX: 300, clientY: 200 }));
+      dragged.dispatchEvent(new windowRef.PointerEvent("pointermove", { bubbles: true, pointerId: 7, buttons: 1, clientX: 340, clientY: 230 }));
+      const moved = windowRef.document.querySelector('[data-node="node:other"]');
+      expect(Number(moved.dataset.worldX) - startX).toBeCloseTo(40 / zoom, 6);
+      expect(Number(moved.dataset.worldY) - startY).toBeCloseTo(30 / zoom, 6);
+      moved.dispatchEvent(new windowRef.PointerEvent("pointerup", { bubbles: true, pointerId: 7 }));
       viewer.dispose();
       windowRef.document.open();
       windowRef.document.write(page);
