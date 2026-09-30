@@ -8,6 +8,7 @@ const root = resolve(import.meta.dirname, "..");
 const rendererDirectory = resolve(root, "desktop/renderer");
 const sourceFiles = [
   "desktop/main/services/share-preview-capture.mjs",
+  "desktop/main/services/isolated-page-capture.mjs",
   "desktop/main/services/share-publish-coordinator.mjs",
   "desktop/main/services/share-publish-attempt-store.mjs",
   "desktop/main/services/share-service-client.mjs",

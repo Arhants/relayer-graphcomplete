@@ -24,8 +24,11 @@ use std::{
 };
 use uuid::Uuid;
 
+mod draft_preview;
 #[cfg(feature = "ladybug")]
 pub mod search_index;
+
+use draft_preview::{DraftPreviews, GraphPreviewCapability, PreviewTarget, RenderBridge};
 
 #[derive(Clone)]
 pub struct ServerState {
@@ -37,6 +40,7 @@ pub struct ServerState {
     visual_assets_admission: Arc<tokio::sync::Mutex<VisualAssetsHandoffPhase>>,
     visual_assets_gate: Arc<Mutex<HashMap<NodeId, Arc<tokio::sync::Mutex<u64>>>>>,
     http_client: reqwest::Client,
+    draft_previews: Arc<DraftPreviews>,
     #[cfg(feature = "ladybug")]
     search_index: Option<Arc<search_index::LadybugSearchIndex>>,
     #[cfg(all(feature = "ladybug", feature = "crash-test-support"))]
@@ -81,6 +85,8 @@ enum GraphSearchCapability {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct GraphCapabilityProfile {
     search: GraphSearchCapability,
+    #[serde(default, skip_serializing_if = "GraphPreviewCapability::is_disabled")]
+    preview: GraphPreviewCapability,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,6 +112,7 @@ impl ServerState {
                 .timeout(std::time::Duration::from_secs(10))
                 .build()
                 .expect("visual-assets HTTP client configuration is valid"),
+            draft_previews: Arc::new(DraftPreviews::new(draft_preview::DEFAULT_RENDER_LIMIT)),
             #[cfg(feature = "ladybug")]
             search_index: None,
             #[cfg(all(feature = "ladybug", feature = "crash-test-support"))]
@@ -120,6 +127,12 @@ impl ServerState {
         self.graph
             .set_interaction_permissions_enabled(enabled)
             .await
+    }
+
+    /// Sets the per-interaction draft-preview render ceiling (PRD §11.10).
+    pub fn with_draft_preview_limit(mut self, limit: u32) -> Self {
+        self.draft_previews = Arc::new(DraftPreviews::new(limit));
+        self
     }
 
     pub fn with_temporal_features(mut self, temporal_features: TemporalFeatureConfig) -> Self {
@@ -175,6 +188,10 @@ pub fn router(state: ServerState) -> Router {
         .route(
             "/api/control/visual-assets/bridge",
             axum::routing::put(register_visual_assets_bridge),
+        )
+        .route(
+            "/api/control/draft-previews/bridge",
+            axum::routing::put(register_draft_preview_bridge),
         )
         .route("/api/control/interactions", post(create_interaction))
         .route("/api/control/interactions/{id}", get(interaction_metadata))
@@ -331,6 +348,44 @@ pub fn router(state: ServerState) -> Router {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DraftPreviewBridgeRegistration {
+    url: String,
+    token: String,
+}
+
+async fn register_draft_preview_bridge(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Json(input): Json<DraftPreviewBridgeRegistration>,
+) -> Result<Json<Value>, ApiError> {
+    require_bearer(&headers, &state.control_token)?;
+    let url = reqwest::Url::parse(&input.url)
+        .map_err(|_| ApiError::invalid("draft-preview bridge URL is invalid"))?;
+    if url.scheme() != "http"
+        || !matches!(url.host_str(), Some("127.0.0.1" | "[::1]"))
+        || input.token.len() < 32
+    {
+        return Err(ApiError::invalid(
+            "draft-preview bridge registration is invalid",
+        ));
+    }
+    state.draft_previews.register(RenderBridge {
+        url: input.url.trim_end_matches('/').to_owned(),
+        token: input.token,
+    });
+    Ok(Json(json!({"registered": true})))
+}
+
+/// Adds the advisory `preview` field to a committed write's response.
+fn with_preview(mut body: Value, preview: Option<Value>) -> Json<Value> {
+    if let Some(preview) = preview {
+        body["preview"] = preview;
+    }
+    Json(body)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct VisualAssetsBridgeRegistration {
     url: String,
     token: String,
@@ -434,6 +489,9 @@ async fn register_visual_assets_bridge(
             .lock()
             .map_err(|_| ApiError::internal("visual-assets gate lock poisoned"))?
             .retain(|node_id, _| !active_nodes.contains(node_id));
+        for node_id in &active_nodes {
+            state.draft_previews.forget(*node_id);
+        }
     }
     {
         let mut bridge = state
@@ -1946,6 +2004,7 @@ async fn revoke_capability(
             sessions.retain(|_, active| active.node_id != node_id);
             before - sessions.len()
         };
+        state.draft_previews.forget(node_id);
     }
     Ok(Json(
         json!({"revoked": revoked > 0, "revokedCount": revoked}),
@@ -2054,7 +2113,16 @@ async fn submit_node(
             prepared_assets.as_deref(),
         )
         .await?;
-    Ok(Json(json!({"node": node})))
+    drop(asset_generation_guard);
+    let preview = state
+        .draft_previews
+        .preview(
+            authority.profile.preview,
+            &writer,
+            PreviewTarget::Node { node_id: node.id },
+        )
+        .await;
+    Ok(with_preview(json!({"node": node}), preview))
 }
 
 async fn prepare_detail_assets(
@@ -2291,13 +2359,20 @@ async fn submit_layer(
 ) -> Result<Json<Value>, ApiError> {
     let authority = session(&state, &headers)?;
     let input = LayerDraft::from(input);
-    let layer = state
+    let writer = state
         .graph
         .writer_for_completion_authority(authority.node_id, authority.epoch)
-        .await?
-        .submit_layer(&input)
         .await?;
-    Ok(Json(json!({"layer":layer})))
+    let layer = writer.submit_layer(&input).await?;
+    let preview = state
+        .draft_previews
+        .preview(
+            authority.profile.preview,
+            &writer,
+            PreviewTarget::Layer { layer_id: layer.id },
+        )
+        .await;
+    Ok(with_preview(json!({"layer":layer}), preview))
 }
 
 #[derive(Debug, Deserialize)]

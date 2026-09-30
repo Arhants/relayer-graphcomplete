@@ -57,7 +57,7 @@ function snapshotText(value) {
   throw new TypeError("Public viewer snapshot must be UTF-8 JSONL text or bytes.");
 }
 
-function safeJsonScriptText(value) {
+export function safeJsonScriptText(value) {
   return JSON.stringify(snapshotText(value)).replace(
     /[<>&\u2028\u2029]/gu,
     (character) => JSON_SCRIPT_ESCAPES[character],

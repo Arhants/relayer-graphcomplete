@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -297,6 +297,24 @@ function runtimeUpdated(harnessRuntimeUpdated, configuration) {
 }
 
 // Desktop owns rollout policy; generic runtime callers retain explicit opt-in.
+/** Eval only: keeps each rendered preview PNG, in order, per interaction. */
+function retainingDraftPreviewRenderer(renderer, directory) {
+  const sequences = new Map();
+  return {
+    async render(request) {
+      const image = await renderer.render(request);
+      const sequence = (sequences.get(request.interactionNodeId) ?? 0) + 1;
+      sequences.set(request.interactionNodeId, sequence);
+      const target = request.snapshot.target;
+      const folder = join(directory, String(request.interactionNodeId));
+      await mkdir(folder, { recursive: true, mode: 0o700 });
+      const name = `${String(sequence).padStart(3, "0")}-${target.kind}-${target.layerId ?? target.nodeId}-${request.fingerprint.slice(7, 23)}.png`;
+      await writeFile(join(folder, name), image.png, { mode: 0o600 });
+      return image;
+    },
+  };
+}
+
 export function createDesktopGraphRuntime(options) {
   return new GraphCompleteRuntimeService({ ...options, interactionPermissions: true });
 }
@@ -322,6 +340,8 @@ export class GraphCompleteRuntimeService {
     coordinateHarnessReadiness = false,
     harnessHostModuleUrl,
     candidateTrace,
+    draftPreviewRenderer,
+    retainDraftPreviews = false,
     acquireProviderExecution,
     interactionPermissions = false,
     acknowledgeUnknownProviderRelease,
@@ -353,6 +373,9 @@ export class GraphCompleteRuntimeService {
     this.coordinateHarnessReadiness = coordinateHarnessReadiness;
     this.harnessHostModuleUrl = harnessHostModuleUrl;
     this.candidateTrace = candidateTrace;
+    this.draftPreviewRenderer = draftPreviewRenderer;
+    this.retainDraftPreviews = retainDraftPreviews === true;
+    this.draftPreviewDirectory = null;
     this.acquireProviderExecution = acquireProviderExecution;
     this.interactionPermissions = interactionPermissions === true;
     this.acknowledgeUnknownProviderRelease = acknowledgeUnknownProviderRelease;
@@ -423,6 +446,8 @@ export class GraphCompleteRuntimeService {
       await this.#awaitStartupOperation(chmod(runtimeDirectory, 0o700));
       const configurations = await this.#awaitStartupOperation(loadHarnessConfigurations(this.configurationPaths));
       const visualAssetsToken = randomBytes(32).toString("hex");
+      const draftPreviewsToken = randomBytes(32).toString("hex");
+      this.draftPreviewDirectory = this.retainDraftPreviews ? join(runtimeDirectory, "draft-previews") : null;
       const visualAssetsGeneration = Number.parseInt(randomBytes(6).toString("hex"), 16);
       const visualAssetsLibrary = await this.#awaitStartupOperation(createFileVisualAssetsLibrary(
         { authority: { projects: [], standaloneThreadIds: [] } },
@@ -556,6 +581,14 @@ export class GraphCompleteRuntimeService {
           library: visualAssetsLibrary,
         },
         ...(this.candidateTrace ? { trace: this.candidateTrace } : {}),
+        ...(this.draftPreviewRenderer ? {
+          draftPreviews: {
+            token: draftPreviewsToken,
+            renderer: this.draftPreviewDirectory === null
+              ? this.draftPreviewRenderer
+              : retainingDraftPreviewRenderer(this.draftPreviewRenderer, this.draftPreviewDirectory),
+          },
+        } : {}),
         ...(this.acquireProviderExecution ? {
           accessBroker: createProviderExecutionAccessBroker(this.acquireProviderExecution, {
             acknowledgeUnknownRelease: this.acknowledgeUnknownProviderRelease,
@@ -584,6 +617,17 @@ export class GraphCompleteRuntimeService {
       if (!visualBridgeResponse.ok) {
         const failure = await visualBridgeResponse.json().catch(() => ({}));
         throw new Error(failure?.error?.message || failure?.error || `Visual asset bridge registration failed (${visualBridgeResponse.status}).`);
+      }
+      if (this.draftPreviewRenderer) {
+        const previewBridgeResponse = await this.#awaitStartupOperation(this.fetchRequest(
+          new URL("/api/control/draft-previews/bridge", graphUrl),
+          {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${graphControlToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ url: harnessHost.url, token: draftPreviewsToken }),
+          },
+        ));
+        if (!previewBridgeResponse.ok) throw new Error(`Draft preview bridge registration failed (${previewBridgeResponse.status}).`);
       }
       this.session = Object.freeze({
         graphUrl: graphOperationRecorder?.url ?? graphUrl,
@@ -622,6 +666,12 @@ export class GraphCompleteRuntimeService {
       manifest.interactionNodeId,
       targetDirectory,
     );
+    if (this.draftPreviewDirectory !== null) {
+      // Eval keeps draft previews as run artifacts beside the trace, never in it.
+      await cp(join(this.draftPreviewDirectory, String(manifest.interactionNodeId)), join(targetDirectory, "draft-previews"), {
+        recursive: true,
+      }).catch((error) => { if (error?.code !== "ENOENT") throw error; });
+    }
     return {
       ...descriptor,
       ...(graphOperations.status === "complete" ? {} : {
