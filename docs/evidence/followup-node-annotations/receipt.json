@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "captureScriptSha256": "a640681a19278077da11403122f01a55a05cacca71e69e5790459ce165f70d5a",
+  "paidInferenceCalls": 0,
+  "baselineCommit": "b124542afda3222a0655a77acc6b41e843405066",
+  "sourceHead": "6fdc933ef226de2dd73b62a85714e41edd40aee5",
+  "renderer": {
+    "path": "desktop/renderer/src/product-workspace/workspace.js",
+    "baselineSha256": "e887b6b6ca002345e17dc8568eb057368b63e3e4bc16503349c7f8e62038b1ac",
+    "fixedSha256": "184ae929d7f1d5eef832b89146b87120ee15cc0f663a74616932301c54698538"
+  },
+  "binaries": {
+    "target/debug/relayer-graph-server": "44b41f0ca5a2c19a14c445797b9194a8e007f04971dfaa5474b9a4f05d0e9e3d",
+    "target/debug/relayer-app-server": "d99eed63d7e7f62cd1d542658b6c496768e314be0064bd59040e8f7fa93e16b0"
+  },
+  "checkpoints": [
+    {
+      "name": "A-before-missing-plus",
+      "imageSha256": "0e5d64ca4161095b94ddbb7f850a782aae9c26987195a5fd3d753dcdfb5f2798",
+      "renderer": "baseline",
+      "title": "Incoming queue",
+      "hidden": true,
+      "position": true
+    },
+    {
+      "name": "B-after-plus-visible",
+      "imageSha256": "6c13b14a8a37e6e39cdd2df7ec0ace1250cfaefe3a22bd70015292adbc672788",
+      "renderer": "fixed",
+      "title": "Incoming queue",
+      "hidden": false,
+      "position": true
+    },
+    {
+      "name": "C-after-editor",
+      "imageSha256": "95f076469e8ae9209bf498754059d09d0381703b38c2d99c827d35bca60f4cd9",
+      "renderer": "fixed",
+      "editableDuringGeneration": true
+    },
+    {
+      "name": "D-after-confirmed",
+      "imageSha256": "3ea22fa918c5b183d21a63bc8b543a70ffb177eaf6d2531f66cd727fff037a2d",
+      "renderer": "fixed",
+      "durableCanonicalConfirmation": true
+    },
+    {
+      "name": "reload-restores-confirmation",
+      "passed": true
+    }
+  ],
+  "fixture": {
+    "mode": "accepted-followup-while-next-followup-running",
+    "explanation": "Deterministic native fixture authors and submits two real accepted response graphs, then holds the next follow-up before graph authoring. The selected graph is the accepted second interaction (a follow-up). Baseline comparison overlays only the pre-fix workspace renderer into a temporary copied renderer; both captures use identical real Rust backend state."
+  },
+  "sourceOccurrence": {
+    "interactionId": 2,
+    "interactionNodeId": 27,
+    "acceptedRootLayerId": 9
+  },
+  "state": {
+    "threadId": 1,
+    "selectedFollowupInteractionId": 2,
+    "pendingInteractionId": 3,
+    "pendingStatus": "running"
+  },
+  "confirmedState": {
+    "drafts": [],
+    "confirmations": [
+      {
+        "draftId": "4da3bce4-ffd1-4b89-a2de-3c58d98d7dfa",
+        "threadId": 1,
+        "target": {
+          "nodeId": 28,
+          "sourceInteractionNodeId": 27,
+          "sourceLayerId": 9
+        },
+        "targetNode": {
+          "id": 28,
+          "kind": "concept",
+          "icon": "list",
+          "title": "Incoming queue",
+          "detail": "Every task first enters the incoming queue. The queue preserves extra work while both workers are busy.",
+          "state": "accepted"
+        },
+        "annotation": "Keep worker capacity visible while prioritizing work.",
+        "draftRevision": 1,
+        "confirmationRevision": 1,
+        "confirmedAt": "1790745111048"
+      }
+    ]
+  },
+  "passed": true
+}
