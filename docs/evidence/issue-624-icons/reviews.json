@@ -431,6 +431,100 @@
       "verdict": "No unresolved findings in independent Codex conflict and merged public boundary delta review: both profiles retain icon/discovery/preview/edge guidance plus optional eligible-only thread proposal; string-only topic transport, accepted optional output and validated eligibility preserve typed graph image references and provider-native recursion.",
       "findings": [],
       "limits": "Source delta review retains earlier unchanged image implementation reviews; current execution and hosted proof reported separately."
+    },
+    {
+      "reviewer": "/root/catalog",
+      "scope": "current-worktree-proof",
+      "orderedPaths": [
+        "crates/relayer-app-server/src/api/environment.rs",
+        "desktop/main/ipc/register-ipc.mjs",
+        "desktop/main/services/worktree-service.mjs",
+        "desktop/preload/index.cjs",
+        "desktop/renderer/src/checkout.js",
+        "desktop/renderer/src/composer-drafts.js",
+        "desktop/renderer/src/environment-context.js",
+        "desktop/renderer/src/product-workspace/workspace.js",
+        "desktop/renderer/src/threads.js",
+        "desktop/renderer/src/worktree-controller.js",
+        "desktop/renderer/styles.css",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/worktrees/01-checkout-menu.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/worktrees/02-retry-after-create.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/worktrees/03-accepted-worktree-thread.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/worktrees/04-reopened-exact-thread.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/worktrees/05-missing-location-readable-history.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/worktrees/06-selected-worktree-environment.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/worktrees/07-many-registered-checkouts.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/worktrees/receipt.json",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/worktrees/result.json",
+        "scripts/run-worktree-test.mjs",
+        "scripts/test-desktop-worktrees.mjs"
+      ],
+      "digestSha256": "4dff502c086cc23605c5bf48bb6ae4dab538e7752b04beaed842b2e53719cfc3",
+      "verdict": "no unresolved evidence findings",
+      "findings": [],
+      "limits": "Actual15checkpoint receipt and wrapper/awaited shutdown contract reviewed; no fullOSrestart or paid inference claim."
+    },
+    {
+      "reviewer": "/root/catalog",
+      "scope": "current-marine-replay-proof",
+      "orderedPaths": [
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/deterministic/contact-sheet.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/deterministic/contact-sheet.svg",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/deterministic/graph-dark.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/deterministic/graph-light.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/deterministic/manifest.json",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/deterministic/monitoring-dark.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/deterministic/monitoring-light.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/dark-node-1.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/dark-node-2.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/dark-node-3.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/dark-node-4.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/dark-node-5.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/dark-node-6.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/dark-node-7.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/graph-overview-dark.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/graph-overview-light.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/light-node-1.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/light-node-2.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/light-node-3.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/light-node-4.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/light-node-5.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/light-node-6.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/light-node-7.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/replay/manifest.json"
+      ],
+      "digestSha256": "ff2c1ee29814dcf1252d21409478895ea00a6a279f0c3073d154d2a62fb2d7e2",
+      "verdict": "no unresolved evidence or semantic mapping findings",
+      "findings": [],
+      "limits": "Actual artifact hashes/lengths, both manifests inner checkpoints, current source-policy digest and private native bytes independently match. Historical export SHA unchanged; replay preserves seven root nodes/five photo pins/network/binoculars and fourteen Detail captures. Deterministic fixture is authored, replay uses zero inference; neither recertifies model selection or broad recognition. Label/preview limits retained."
+    },
+    {
+      "reviewer": "/root/catalog",
+      "scope": "final-product-mapping",
+      "orderedPaths": [
+        "docs/prd/index.html",
+        "docs/architecture.md",
+        "docs/evidence/issue-624-icons/README.md",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/README.md",
+        "docs/evidence/issue-624-discoverable-icons/ux/live-2026-09-30/README.md"
+      ],
+      "digestSha256": "cf82a41a62ae3b4aa83eb6efd23938f5fb0923a7b10b5818326e840d2d3eead8",
+      "verdict": "no unresolved evidence or semantic mapping findings",
+      "findings": [],
+      "limits": "PRD ICON checkpoints map to declared production seam tests/heavy gates, retaining canonical Complete/provider recursion/acceptance authority and legacy metadata-only viewing fallback. Historical paid/model selection and human approval separated from current zero-inference recapture. Current check/build and specifically observed heavy gates pass; Eval web disabled-Send failure retained with later scenarios unknown, no overall all-gates claim. Preview service-reset/OS restart/Windows/release and hosted exact-head CI limits explicit. Review maps recorded results; does not independently rerun every gate."
+    },
+    {
+      "reviewer": "/root",
+      "scope": "eval-web-failure-preservation",
+      "orderedPaths": [
+        "scripts/test-eval-web.mjs",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/deterministic-failures/eval-web.json",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-cdee0671/deterministic-failures/eval-web.log"
+      ],
+      "digestSha256": "43d92f80ae33128183481bc4b322975afc00dfa380088ae4b09183cea7292ac2",
+      "verdict": "No unresolved evidence findings: actual log shows startup cleanup pass then disabled Send model-selection title and 30000ms timeout at production test line231; failure receipt accurately preserves failed outer gate and unknown later scenarios. Native/source/log hashes independently match.",
+      "findings": [],
+      "limits": "Known inherited failure retained; no full Eval-web or independent full cleanup proof claimed."
     }
   ],
   "historicalReviews": [
