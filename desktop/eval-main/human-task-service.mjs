@@ -234,6 +234,7 @@ export class HumanTaskService {
       const previousCompletions = session.completions;
       const previousEventCount = session.events.length;
       if (starts) {
+        await this.evalService.assertHumanTaskCatalog?.(session.prepared);
         if (session.completions >= session.maxCompletions) throw failure("Completion limit reached. Finish this task session.", 409);
         if (route === "/interactions" || retries) {
           const selection = session.prepared.execution.modelResolution;

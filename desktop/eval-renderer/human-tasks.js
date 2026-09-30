@@ -102,13 +102,25 @@ export function initializeHumanTasks({ api, show, toast }) {
     }; });
     root.querySelector("#humanAnnotation").onsubmit = (event) => { event.preventDefault(); void run(async () => { await api.annotateHumanTask(id, Object.fromEntries(new FormData(event.target))); await inspect(id); }); };
   }
+  let externalCaseIds = new Set();
   async function open() {
     show("humanView");
     const catalog = await api.catalog();
     const externalIds = new Set(catalog.externalCaseIds || []);
-    root.querySelector("#humanCase").innerHTML = catalog.cases.map((item) => `<option value="${escape(item.id)}" ${externalIds.has(item.id) ? "disabled" : ""}>${escape(item.name)}${externalIds.has(item.id) ? " · requires external budget/credential approval" : ""}</option>`).join("");
+    root.querySelector("#humanCase").innerHTML = catalog.cases.map((item) => `<option value="${escape(item.id)}">${escape(item.name)}</option>`).join("");
+    externalCaseIds = externalIds;
     root.querySelector("#humanHarness").innerHTML = catalog.harnessConfigurations.filter((item) => item.available).map((item) => `<option value="${escape(item.name)}">${escape(item.name)}</option>`).join("");
-    const setEndpoint = () => { root.querySelector("#humanEndpoint").value = catalog.cases.find((item) => item.id === root.querySelector("#humanCase").value)?.description || ""; };
+    const setEndpoint = () => {
+      const item = catalog.cases.find((item) => item.id === root.querySelector("#humanCase").value);
+      const contract = item?.caseSnapshot?.interactive;
+      root.querySelector("#humanEndpoint").value = contract?.endpoint || item?.description || "";
+      root.querySelector("#humanEndpoint").readOnly = Boolean(contract);
+      const limit = root.querySelector('[name="maxCompletions"]');
+      limit.max = contract?.maxCompletions || 100;
+      if (contract) limit.value = contract.maxCompletions;
+      root.querySelector("#externalHumanAuthorization").classList.toggle("hidden", !externalIds.has(item?.id));
+      root.querySelector('[name="subscriptionConfirmed"]').checked = false;
+    };
     root.querySelector("#humanCase").onchange = setEndpoint; setEndpoint();
     await refreshSetups(); await setups.open(); await calibration.open();
     await list();
@@ -145,6 +157,13 @@ export function initializeHumanTasks({ api, show, toast }) {
     try {
       const data = Object.fromEntries(new FormData(form)); data.startupId = startupId; data.maxCompletions = Number(data.maxCompletions);
       if (data.mode !== "simulated") delete data.actorSetupRevisionId;
+      if (externalCaseIds.has(data.testCaseId)) {
+        if (data.subscriptionConfirmed !== "on") throw new Error("Confirm subscription use before starting an external task.");
+        data.liveAuthorization = { confirmed: true, billingMode: "subscription-only",
+          testCaseId: data.testCaseId, harnessConfigurationName: data.harnessConfigurationName,
+          maxCompletions: data.maxCompletions, endpoint: data.endpoint, mode: data.mode };
+      }
+      delete data.subscriptionConfirmed;
       const task = await api.createHumanTask(data); await list(); await inspect(task.id);
     } finally { cancel.remove(); button.disabled = false; }
   }); };

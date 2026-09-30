@@ -31,6 +31,7 @@ describe("live Eval credential validation", () => {
     await expect(validate({ name: "codex-basic", implementation: "codex.basic" }, reference)).resolves.toEqual({
       selectedModel: model,
       productModelSelection: true,
+      providerAdapterId: "openrouter",
     });
     expect(ensureCodexModelCatalog).not.toHaveBeenCalled();
   });
@@ -43,7 +44,7 @@ describe("live Eval credential validation", () => {
     };
     const ensureCodexModelCatalog = vi.fn();
     const close = vi.fn(async () => {});
-    const createCredentials = vi.fn(() => ({ account: async () => ({ status: "connected" }), close }));
+    const createCredentials = vi.fn(() => ({ account: async () => ({ status: "connected", account: { type: "chatgpt" } }), close }));
     const validate = createLiveCredentialValidator({
       resolveModelRoute: createLiveModelRouteResolver({
         readModelSettings: async () => settings,
@@ -59,6 +60,7 @@ describe("live Eval credential validation", () => {
     }, reference)).resolves.toEqual({
       selectedModel: null,
       productModelSelection: false,
+      providerAdapterId: "codex-subscription",
       configurationModel: "gpt-5.6-luna",
     });
     expect(ensureCodexModelCatalog).not.toHaveBeenCalled();
@@ -89,7 +91,7 @@ describe("live Eval credential validation", () => {
     const settings = modelSettings({ providerId: "codex", adapterId: "codex-subscription" });
     const readModelSettings = vi.fn(async () => settings);
     const close = vi.fn(async () => {});
-    const account = vi.fn(async () => ({ status: "connected" }));
+    const account = vi.fn(async () => ({ status: "connected", account: { type: "chatgpt" } }));
     const createCredentials = vi.fn(() => ({ account, close }));
     const validate = createLiveCredentialValidator({
       resolveModelRoute: createLiveModelRouteResolver({
@@ -103,6 +105,7 @@ describe("live Eval credential validation", () => {
     await expect(validate({ name: "codex-basic", implementation: "codex.basic" }, reference)).resolves.toEqual({
       selectedModel: codexModel,
       productModelSelection: true,
+      providerAdapterId: "codex-subscription",
     });
     expect(ensureCodexModelCatalog).toHaveBeenCalledWith("codex-basic");
     expect(readModelSettings).toHaveBeenCalledTimes(2);
@@ -158,6 +161,7 @@ describe("live Eval credential validation", () => {
     await expect(validate({ name: "claude-basic", implementation: "claude.basic" }, reference)).resolves.toEqual({
       selectedModel: { harnessId: "claude-basic", providerId: "anthropic", modelId: "claude" },
       productModelSelection: true,
+      providerAdapterId: "anthropic-api",
     });
   });
 
@@ -172,6 +176,7 @@ describe("live Eval credential validation", () => {
     await expect(validate({ name: "prime-agent-deep", implementation: "prime.agent" }, reference)).resolves.toEqual({
       selectedModel: { harnessId: "prime-agent-deep", providerId: "router", modelId: "model-a" },
       productModelSelection: true,
+      providerAdapterId: "openrouter",
     });
     expect(order).toEqual(["select", "settings"]);
   });
@@ -200,12 +205,25 @@ describe("live Eval credential validation", () => {
     const validate = createLiveCredentialValidator({
       resolveModelRoute: resolver({ providers: [] }),
       resolveCodexRuntime: async () => ({ executable: "/managed/codex", environment: {} }),
-      createCredentials: () => ({ account: async () => ({ status: "connected" }), close }),
+      createCredentials: () => ({ account: async () => ({ status: "connected", account: { type: "chatgpt" } }), close }),
     });
     await expect(validate({ name: "simulated-user", implementation: "codex.basic" }, reference)).resolves.toEqual({
       selectedModel: null,
       productModelSelection: false,
+      providerAdapterId: "codex-subscription",
     });
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a connected Codex API-key account on the subscription adapter", async () => {
+    const close = vi.fn(async () => {});
+    const validate = createLiveCredentialValidator({
+      resolveModelRoute: resolver(modelSettings({ adapterId: "codex-subscription" })),
+      resolveCodexRuntime: async () => ({ executable: "/managed/codex", environment: {} }),
+      createCredentials: () => ({ account: async () => ({ status: "connected", account: { type: "apiKey" } }), close }),
+    });
+    await expect(validate({ name: "codex-basic", implementation: "codex.basic" }, reference))
+      .rejects.toThrow("Codex credential is not connected");
     expect(close).toHaveBeenCalledOnce();
   });
 

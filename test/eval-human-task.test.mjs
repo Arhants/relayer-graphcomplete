@@ -430,3 +430,12 @@ it("Stop aborts presentation capture and releases session admission", async () =
   await f.tasks.grade(f.session.id, { satisfaction: 1, comment: "No captured moment" });
   expect(f.tasks.get(f.session.id).events.some(event => event.kind === "presentation")).toBe(false);
 });
+
+it("rejects external catalog drift before admitting a follow-up completion", async () => {
+  const { tasks, session, calls, options } = await fixture();
+  options.evalService.assertHumanTaskCatalog = async () => { throw new Error("External catalog changed"); };
+  const before = tasks.get(session.id).completions;
+  await expect(tasks.write(session.id, "/api/threads/1/interactions", "POST", { text: "Refine" })).rejects.toThrow("External catalog changed");
+  expect(tasks.get(session.id).completions).toBe(before);
+  expect(calls.some(call => call.method === "POST" && call.path.endsWith("/interactions"))).toBe(false);
+});

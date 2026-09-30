@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { bindAutonomousCaseSnapshot, createAutonomousCaseSnapshot } from "../packages/eval-runner/src/index.ts";
 import { EvalService } from "../desktop/eval-main/eval-service.mjs";
 import { createSyntheticExternalCatalog } from "../packages/eval-runner/test/fixtures/external-catalog.ts";
 
@@ -25,14 +26,61 @@ afterEach(async () => {
 });
 
 describe("EvalService live external authorization", () => {
-  it("rejects external human tasks before preparation because that mode has no authorization flow", async () => {
+  it("rejects external human tasks before preparation without bound authorization", async () => {
     const { service, validateLiveCredential, product } = await openService();
     const callsBefore = product.mock.calls.length;
     await expect(service.prepareHumanTask({ testCaseId: externalCaseIds[0], harnessConfigurationName: "codex-basic", sessionId: "human-external" }))
-      .rejects.toThrow("External catalog human tasks require budget and credential approval");
+      .rejects.toThrow("External interactive tasks require confirmation");
     expect(validateLiveCredential).not.toHaveBeenCalled();
     expect(product.mock.calls).toHaveLength(callsBefore);
   });
+  it("keeps interactive cases out of unattended matrix runs", async () => {
+    const { service, validateLiveCredential } = await openService({ interactive: true });
+    await expect(service.createRun(liveSelection({ testCaseIds: [externalCaseIds[0]] })))
+      .rejects.toThrow("Interactive cases require a participant");
+    expect(service.listRuns()).toEqual([]);
+    expect(validateLiveCredential).not.toHaveBeenCalled();
+    expect(service.catalog().suites[0]).toMatchObject({ available: false });
+    expect(service.catalog().cases.find(({ id }) => id === externalCaseIds[0])).toBeDefined();
+  });
+
+  it("pins an external human subscription route, dispatches ordinary input, and grades with the external callback", async () => {
+    const route = { selectedModel: { harnessId: "codex-basic", providerId: "codex", modelId: "gpt-5.6-sol" }, productModelSelection: true, providerAdapterId: "codex-subscription" };
+    const { service, product } = await openService({ interactive: true, validateLiveCredential: vi.fn(async () => route) });
+    const selection = { testCaseId: externalCaseIds[0], harnessConfigurationName: "codex-basic", sessionId: "human-external", maxCompletions: 3, endpoint: "A verified change", mode: "human" };
+    const prepared = await service.prepareHumanTask({ ...selection, liveAuthorization: { ...selection, confirmed: true, billingMode: "subscription-only" } });
+    expect(prepared.humanBrief).toBe("PRIVATE_PARTICIPANT");
+    expect(prepared.humanRubric).toContain("PRIVATE_REVIEW_CRITERION");
+    expect(JSON.stringify(service.catalog())).not.toMatch(/PRIVATE_PARTICIPANT|PRIVATE_REVIEW_CRITERION/);
+    expect(prepared.execution.catalogIdentity.commit).toBe("a".repeat(40));
+    expect(prepared.execution.pinnedModelResolution).toEqual(route);
+    await service.createHumanTaskThread(prepared, 0);
+    expect(product.mock.calls.some(([url]) => new URL(url).pathname === "/api/threads")).toBe(true);
+    expect(JSON.stringify(product.mock.calls)).not.toMatch(/PRIVATE_PARTICIPANT|PRIVATE_REVIEW_CRITERION/);
+    const grade = await service.gradeHumanTaskStep(prepared, 0);
+    expect(grade.result).toEqual([{ name: "workspace:contract", passed: true, detail: "Synthetic deterministic result." }]);
+    service.externalCatalog.assertUnchanged = async () => { throw new Error("catalog drift"); };
+    await expect(service.createHumanTaskThread(prepared, 0)).rejects.toThrow("catalog drift");
+    await expect(service.gradeHumanTaskStep(prepared, 0)).rejects.toThrow("catalog drift");
+  });
+
+  it("rejects a subscription without an exact model before preparation", async () => {
+    const { service } = await openService({ validateLiveCredential: vi.fn(async () => ({ providerAdapterId: "codex-subscription" })) });
+    const selection = { testCaseId: externalCaseIds[0], harnessConfigurationName: "codex-basic", sessionId: "invalid-route", maxCompletions: 3, endpoint: "A verified change", mode: "human" };
+    await expect(service.prepareHumanTask({ ...selection, liveAuthorization: { ...selection, confirmed: true, billingMode: "subscription-only" } }))
+      .rejects.toThrow("exact provider model route");
+  });
+
+  it("refuses API routes and altered authorization before external human preparation", async () => {
+    const { service, product } = await openService({ validateLiveCredential: vi.fn(async () => ({ providerAdapterId: "openai-api-key" })) });
+    const selection = { testCaseId: externalCaseIds[0], harnessConfigurationName: "codex-basic", sessionId: "human-external", maxCompletions: 3, endpoint: "A verified change", mode: "human" };
+    const liveAuthorization = { ...selection, confirmed: true, billingMode: "subscription-only" };
+    const before = product.mock.calls.length;
+    await expect(service.prepareHumanTask({ ...selection, maxCompletions: 4, liveAuthorization })).rejects.toThrow("confirmation bound");
+    await expect(service.prepareHumanTask({ ...selection, liveAuthorization })).rejects.toThrow("API spending is not authorized");
+    expect(product.mock.calls).toHaveLength(before);
+  });
+
   it.each([
     ["individual", { testCaseIds: [externalCaseIds[0]] }],
     ["suite", { suiteId: externalSuiteId }],
@@ -281,6 +329,11 @@ async function openService(options = {}) {
   const product = fakeExternalProduct();
   globalThis.fetch = product;
   const catalog = createSyntheticExternalCatalog();
+  if (options.interactive) catalog.cases = catalog.cases.map((entry) => {
+    const boundCase = bindAutonomousCaseSnapshot(entry.boundCase.definition, createAutonomousCaseSnapshot({ ...entry.boundCase.snapshot,
+      interactive: { schemaVersion: 1, participantBrief: "PRIVATE_PARTICIPANT", reviewerRubric: { version: "v1", criteria: ["PRIVATE_REVIEW_CRITERION"] }, endpoint: "A verified change", maxCompletions: 3, research: "case-defined" } }));
+    return { ...entry, boundCase, definition: { ...entry.definition, caseSnapshot: boundCase.catalogSnapshot, caseSnapshotDigest: boundCase.snapshotDigest } };
+  });
   if (options.followUpPrompt) catalog.cases = catalog.cases.map((entry) => ({ ...entry, definition: {
     ...entry.definition, threads: entry.definition.threads.map((thread) => ({ ...thread, prompts: [...thread.prompts, options.followUpPrompt] })),
   } }));

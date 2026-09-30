@@ -51,7 +51,7 @@ function optionMarkup({ id, name, description, detail, available = true }, group
 async function configure() {
   try { catalog = await api.catalog(); }
   catch (error) { toast(error.message); return; }
-  $("#caseOptions").innerHTML = catalog.cases.map((item) => optionMarkup(item, "cases", item.defaultSelected !== false)).join("");
+  $("#caseOptions").innerHTML = catalog.cases.map((item) => optionMarkup(item.caseSnapshot?.interactive ? { ...item, available: false, description: "Interactive task — open in Human Grader." } : item, "cases", item.defaultSelected !== false)).join("");
   $("#harnessOptions").innerHTML = catalog.harnessConfigurations.map((item) => optionMarkup({
     id: item.name,
     name: item.name,

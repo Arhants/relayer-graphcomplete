@@ -6,11 +6,11 @@ import { loadAtomicAnnotationSnapshots } from "../desktop/eval-main/annotation-s
 import { spawn, execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { once } from "node:events";
-import { mkdtemp, rm, readFile, writeFile, access } from "node:fs/promises";
+import { mkdtemp, rm, readFile, writeFile, access, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright";
-import { taskSystemFixtureFactory, nodeDetailFixtureFactory } from "@relayer/eval-runner";
+import { taskSystemFixtureFactory, nodeDetailFixtureFactory, h3AutonomousFixCase, createAutonomousCaseSnapshot, bindAutonomousCaseSnapshot, validateEvalCatalogV1 } from "@relayer/eval-runner";
 import { GraphCompleteRuntimeService } from "../desktop/main/services/graphcomplete-runtime.mjs";
 import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 import { HumanTaskService } from "../desktop/eval-main/human-task-service.mjs";
@@ -250,7 +250,18 @@ try {
   resources.push(product);
   const productSession = await product.start();
   await proveProductionSettings({ browser, product, productSession, runtime, data });
-  const service = await new EvalService({ stateFile: join(data, "eval-data/test-runs.json"), productSession, configurationPaths }).open();
+  const privateInteraction = { schemaVersion: 1, participantBrief: "PRIVATE_BROWSER_PERSONA", reviewerRubric: { version: "v1", criteria: ["PRIVATE_BROWSER_RUBRIC"] }, endpoint: "An explained task system and a refined response", maxCompletions: 2, research: "case-defined" };
+  const externalDefinition = { ...h3AutonomousFixCase.definition, id: "fixture.external-human", name: "External human fixture", description: "Production external Human Grader fixture" };
+  const externalBound = bindAutonomousCaseSnapshot(externalDefinition, createAutonomousCaseSnapshot({ ...h3AutonomousFixCase.snapshot,
+    id: externalDefinition.id, name: externalDefinition.name, description: externalDefinition.description, interactive: privateInteraction }));
+  const externalCatalog = { ...validateEvalCatalogV1({ schemaVersion: 1, suites: [], cases: [{
+    boundCase: externalBound, definition: { ...externalDefinition, caseSnapshot: externalBound.catalogSnapshot, caseSnapshotDigest: externalBound.snapshotDigest }, available: true, unavailableReason: null,
+    materialize: async ({ workspaceDirectory }) => { await mkdir(workspaceDirectory, { recursive: true }); return { workspaceDirectory, repositoryUrl: externalBound.snapshot.artifacts.workspace.source, sourceRevision: externalBound.snapshot.artifacts.workspace.revision }; },
+    grade: async () => [{ name: "external-fixture", passed: true, detail: "External callback reached" }],
+    evaluateMandatoryGate: (_gate, checks) => ({ complete: true, passed: checks.every(c => c.passed), matched: checks }),
+  }] }), identity: { commit: "browser-fixture" }, assertUnchanged: async () => {} };
+  const service = await new EvalService({ stateFile: join(data, "eval-data/test-runs.json"), productSession, configurationPaths, externalCatalog }).open();
+  assert.ok(!JSON.stringify(service.catalog()).includes("PRIVATE_BROWSER"));
   // Deterministic execution still uses real provider admission and successful receipts.
   // Configuration-only fixture history is correctly blocked by AGT-011 as unverified.
   await product.seedProviderCatalog({ providerId: "codex", label: "Fixture Codex", connected: true,
@@ -735,14 +746,19 @@ async function proveHumanTask({ browser, service, productSession, data }) {
   try {
     // Human task slice: the production composer remains writable under separate
     // scope; evidence is captured without paid inference or an alternate renderer.
+    await dashboard.locator("#newRun").click();
+    assert.equal(await dashboard.locator('#caseOptions input[value="fixture.external-human"]').isDisabled(), true);
     await dashboard.locator("#humanGrader").click();
-    await dashboard.locator("#humanCase").selectOption("empty-project.task-system.two-turn");
+    await dashboard.locator("#humanCase").selectOption("fixture.external-human");
     await dashboard.locator("#humanHarness").selectOption("fixture-task-system");
     await dashboard.locator('[name="maxCompletions"]').fill("2");
-    await dashboard.locator("#humanEndpoint").fill("An explained task system and a refined response");
+    assert.equal(await dashboard.locator("#humanEndpoint").inputValue(), "An explained task system and a refined response");
+    await dashboard.locator('[name="subscriptionConfirmed"]').check();
     await dashboard.locator("#humanCreate button").click();
     await dashboard.locator("#humanOpen").waitFor();
     const humanId = (await rpc(host.url, "humanTasks"))[0].id;
+    assert.equal(tasks.get(humanId).prepared.humanBrief, "PRIVATE_BROWSER_PERSONA");
+    assert.equal(tasks.get(humanId).prepared.execution.catalogIdentity.commit, "browser-fixture");
     // A completed matrix run continues polling while Human Grader is open.
     // Wait for an actual poll, rather than assuming a timer fired.
     await dashboard.waitForResponse((response) => response.url().endsWith("/eval-api/listRuns"));
