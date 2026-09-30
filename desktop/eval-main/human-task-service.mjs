@@ -14,8 +14,8 @@ const completionRoute = /\/interactions(?:\/[1-9][0-9]*(?:\/actions\/[1-9][0-9]*
 // Eval owns the session and evidence, never graph execution or acceptance.
 // One serial admission queue also covers multiple tabs and finish/export races.
 export class HumanTaskService {
-  constructor({ stateFile, evalService, productSession, annotationSnapshotLoader, annotator = { id: "local-human", displayName: "Local human" }, fetchImpl = fetch }) {
-    Object.assign(this, { stateFile, evalService, productSession, annotationSnapshotLoader, annotator, fetchImpl });
+  constructor({ stateFile, evalService, productSession, annotationSnapshotLoader, annotator = { id: "local-human", displayName: "Local human" }, fetchImpl = fetch, setupRegistry = null }) {
+    Object.assign(this, { stateFile, evalService, productSession, annotationSnapshotLoader, annotator, fetchImpl, setupRegistry });
     this.sessions = [];
     this.tail = Promise.resolve();
   }
@@ -125,7 +125,9 @@ export class HumanTaskService {
       if (typeof selection.endpoint !== "string" || !selection.endpoint.trim() || selection.endpoint.length > 8000) throw failure("Describe the task artifact or endpoint.");
       const session = { schemaVersion: 1, id: `human-${randomUUID()}`, mode: "human", status: "preparing", createdAt: new Date().toISOString(), maxCompletions: selection.maxCompletions, completions: 0, endpoint: selection.endpoint.trim(), step: 0, threadIds: [], events: [], annotations: [], stepChecks: [], satisfaction: null, termination: null };
       if (selection.mode !== undefined && !["human", "simulated"].includes(selection.mode)) throw failure("Unknown task mode.");
-      if (selection.mode === "simulated") { session.mode = "simulated"; session.actor = actorConfiguration(selection.actor); }
+      if (selection.mode === "simulated") { session.mode = "simulated"; const setup = this.setupRegistry?.selected("actor", selection.actorSetupRevisionId);
+        if (setup) session.actorSetup = setup;
+        session.actor = setup ? actorConfiguration({ ...setup.settings, promptTemplate: setup.promptTemplate, promptVersion: setup.promptVersion }) : actorConfiguration(selection.actor); }
       this.sessions.unshift(session);
       await this.persist();
       try {
@@ -421,6 +423,15 @@ export class HumanTaskService {
       return this.get(id);
     });
   }
+  feedbackReference({ sessionId, annotationId, gradeIndex }) {
+    const session = this.get(sessionId);
+    const feedback = annotationId !== undefined ? session.annotations.find((note) => note.id === annotationId)
+      : Number.isSafeInteger(gradeIndex) && gradeIndex >= 0 ? session.grades?.[gradeIndex] : null;
+    if (!feedback) throw failure("Unknown human feedback reference.");
+    return { sessionId, ...(annotationId === undefined ? { gradeIndex } : { annotationId }), feedback: clone(feedback),
+      evidenceDigest: digest({ events: session.events, conversations: session.conversations ?? null, stepChecks: session.stepChecks }),
+      ...(annotationId === undefined ? {} : { event: clone(session.events.find((event) => event.id === feedback.eventId)) }) };
+  }
   export(id) {
     return this.serial(async () => {
       const session = this.find(id);
@@ -435,7 +446,9 @@ export class HumanTaskService {
       const sha256 = digest(bundle);
       const path = join(dirname(this.stateFile), "human-task-exports", `${session.id}-${sha256.slice(7)}.json`);
       await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, JSON.stringify({ ...bundle, sha256 }, null, 2), { flag: "wx", mode: 0o600 });
+      const bytes = JSON.stringify({ ...bundle, sha256 }, null, 2);
+    try { await writeFile(path, bytes, { flag: "wx", mode: 0o600 }); }
+    catch (error) { if (error.code !== "EEXIST" || await readFile(path, "utf8") !== bytes) throw error; }
       return { path, sha256, bundle: { ...bundle, sha256 } };
     });
   }

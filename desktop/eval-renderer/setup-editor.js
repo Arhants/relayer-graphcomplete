@@ -1,0 +1,51 @@
+const escape = (text) => String(text ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+export function initializeSetupEditor({ api, root, toast, changed }) {
+  let catalog;
+  let source;
+  let feedback = [];
+  const run = async (work) => { try { await work(); } catch (error) { toast(error.message); } };
+  async function open(predecessorId) {
+    catalog = await api.setupRevisions();
+    source = catalog.revisions.find((item) => item.id === predecessorId) || catalog.revisions.at(-1);
+    feedback = [];
+    root.innerHTML = `<h2>Setup revisions</h2><p>Publishing saves an immutable revision. Select it on a new run to execute it. Graph-presentation judging remains separate from overall trajectory judging.</p>
+      <label>Predecessor<select id="setupPredecessor">${catalog.revisions.map((item) => `<option value="${escape(item.id)}">${escape(item.kind)} · ${escape(item.name)} · ${escape(item.id)}</option>`).join("")}</select></label>
+      <form id="setupPublish"><label>Revision name<input name="name" value="${escape(source.name)}" required maxlength="200"></label>
+      <label>Prompt version<input name="promptVersion" value="${escape(source.promptVersion)}" required maxlength="100"></label>
+      <label>Model<input name="model" value="${escape(source.settings.model)}" required></label>
+      <label>Reasoning<select name="modelReasoningEffort">${["low", "medium", "high"].map((value) => `<option ${source.settings.modelReasoningEffort === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>
+      ${source.kind === "actor" ? `<label>Exploration<select name="exploration">${["low", "medium", "high"].map((value) => `<option ${source.settings.exploration === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><label>Meticulousness<select name="meticulousness">${["low", "medium", "high"].map((value) => `<option ${source.settings.meticulousness === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><label>Action limit<input name="maxActions" type="number" value="${source.settings.maxActions}" min="1" max="500"></label><label>Actor deadline (ms)<input name="timeoutMs" type="number" value="${source.settings.timeoutMs}" min="1000" max="3600000"></label>` : ""}
+      <label>Prompt template<textarea name="promptTemplate" rows="10" maxlength="100000" required>${escape(source.promptTemplate)}</textarea></label>
+      ${source.kind === "judge" ? `<label>Prompt with separately authorized input operator<textarea name="inputPromptTemplate" rows="10" maxlength="100000" required>${escape(source.inputPromptTemplate)}</textarea></label>` : ""}
+      <p>Keep the {{runtime}} variables: task evidence is supplied at execution, without feedback lineage or human target grades. Behavior authority and the graph rubric/scoring contract remain pinned. This increment supports v11/v6 only; another rubric needs its own executable contract. Select motivating human feedback before publishing.</p>
+      <label>Human feedback session<select id="setupFeedbackSession"><option value="">Choose…</option></select></label><div id="setupFeedbackRecords"></div>
+      <button class="primary">Publish new revision</button><output id="setupPublished"></output></form>
+      <details><summary>Pinned contract, lineage and revision history</summary><pre>${escape(JSON.stringify(source, null, 2))}</pre></details>
+      <form id="setupPromote"><p>Promotion changes the default for future runs. It does not certify calibration or change earlier evidence.</p><label>Human decision<textarea name="comment" required maxlength="8000"></textarea></label><button class="secondary">Promote this revision</button></form>`;
+    root.querySelector("#setupPredecessor").value = source.id;
+    root.querySelector("#setupPredecessor").onchange = (event) => run(() => open(event.target.value));
+    const sessions = await api.humanTasks();
+    root.querySelector("#setupFeedbackSession").innerHTML += sessions.map((item) => `<option value="${escape(item.id)}">${escape(item.name)} · ${escape(item.id)}</option>`).join("");
+    root.querySelector("#setupFeedbackSession").onchange = (event) => run(async () => {
+      feedback = []; const session = event.target.value ? await api.humanTask(event.target.value) : null;
+      const refs = [...(session?.annotations || []).map((item) => ({ ref: { sessionId: session.id, annotationId: item.id }, label: `${item.eventId}: ${item.comment}` })), ...(session?.grades || []).map((item, gradeIndex) => ({ ref: { sessionId: session.id, gradeIndex }, label: `Human satisfaction ${item.value}: ${item.comment}` }))];
+      const records = root.querySelector("#setupFeedbackRecords");
+      records.innerHTML = refs.map((item, index) => `<label><input type="checkbox" value="${index}"> ${escape(item.label)}</label>`).join("") || "No human feedback in this session.";
+      records.onchange = () => { feedback = [...records.querySelectorAll("input:checked")].map((input) => refs[Number(input.value)].ref); };
+    });
+    root.querySelector("#setupPublish").onsubmit = (event) => { event.preventDefault(); void run(async () => {
+      const data = Object.fromEntries(new FormData(event.target));
+      const revision = await api.publishSetup({ ...source, name: data.name, promptVersion: data.promptVersion,
+        promptTemplate: data.promptTemplate, ...(source.kind === "judge" ? { inputPromptTemplate: data.inputPromptTemplate } : {}),
+        settings: { ...source.settings, model: data.model, modelReasoningEffort: data.modelReasoningEffort,
+          ...(source.kind === "actor" ? { exploration: data.exploration, meticulousness: data.meticulousness, maxActions: Number(data.maxActions), timeoutMs: Number(data.timeoutMs) } : {}) },
+        predecessorId: source.id, feedback });
+      await changed(); await open(revision.id); root.querySelector("#setupPublished").textContent = `Published ${revision.id}`;
+    }); };
+    root.querySelector("#setupPromote").onsubmit = (event) => { event.preventDefault(); void run(async () => {
+      await api.promoteSetup({ revisionId: source.id, comment: new FormData(event.target).get("comment") });
+      await changed(); toast("Revision promoted for future default selection.");
+    }); };
+  }
+  return { open };
+}
