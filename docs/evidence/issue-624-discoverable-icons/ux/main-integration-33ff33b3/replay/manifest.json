@@ -1,0 +1,584 @@
+{
+  "schemaVersion": 1,
+  "passed": true,
+  "scenariosPassed": true,
+  "cleanupPassed": true,
+  "evidenceKind": "actual-agent-accepted-export-replay",
+  "modelSelectionProven": false,
+  "paidInferenceCalls": 0,
+  "sourceDigestPolicy": {
+    "algorithm": "sha256",
+    "encoding": "sorted git tracked and nonignored untracked path + NUL + exact bytes + NUL",
+    "excludedPaths": [
+      "docs/evidence/issue-624-icons/README.md",
+      "docs/evidence/issue-624-icons/reviews.json"
+    ],
+    "excludedPrefixes": [
+      "docs/evidence/issue-624-discoverable-icons/ux/"
+    ],
+    "reason": "Delivery receipts and generated evidence outputs cannot recursively certify their own bytes; product source and fixture inputs remain included."
+  },
+  "sourceDigest": "4935e353d452e3fb040bb09dd2e19d4dde12f17aefab96f05f9fd49d7d1dadcc",
+  "sourceDigestUnchanged": true,
+  "nativeBinaries": {
+    "relayer-graph-server": {
+      "sha256": "2f15f1cabc24acdf8d99cf4cc22c9dfd2ec886d4deffc7319cb61eb5fb152996",
+      "byteLength": 117183256
+    },
+    "relayer-app-server": {
+      "sha256": "ada6858cadff323ead50ecfd27159eb15b1da13687888c37fb48765192660e9a",
+      "byteLength": 78949552
+    }
+  },
+  "nativeBinariesUnchanged": true,
+  "exportImportPinsPreserved": true,
+  "acceptedIconPins": [
+    {
+      "title": "Marine ecology",
+      "icon": "network"
+    },
+    {
+      "title": "Coral",
+      "icon": {
+        "assetId": "asset_6f46584d-cb70-4689-9d72-7bd99b24a41c",
+        "digestSha256": "f88781d9f12c1d2954e49a577358464ba5898f1d6b2631fd0b3b99e1a28cc5d2",
+        "fit": "cover",
+        "framing": "circle",
+        "kind": "image",
+        "mediaType": "image/jpeg"
+      }
+    },
+    {
+      "title": "Plankton",
+      "icon": {
+        "assetId": "asset_bec4e344-b1bc-4a6f-9da3-1205f2bad4e0",
+        "digestSha256": "a43118f303e7a9f454f9a38ae40c55f7bba855f8da98d08fb88b88f56fcbbb95",
+        "fit": "cover",
+        "framing": "circle",
+        "kind": "image",
+        "mediaType": "image/jpeg"
+      }
+    },
+    {
+      "title": "Jellyfish",
+      "icon": {
+        "assetId": "asset_b4d3d6f5-d199-4a0c-aa54-5ff7f1c1e230",
+        "digestSha256": "b8a57f9c3da315129c6c0119bb10439dbe1769426472ba74bb75397ee3dcf529",
+        "fit": "cover",
+        "framing": "circle",
+        "kind": "image",
+        "mediaType": "image/jpeg"
+      }
+    },
+    {
+      "title": "Octopus",
+      "icon": {
+        "assetId": "asset_9bfdf408-89fd-4475-b668-1c68f37c1152",
+        "digestSha256": "efd787a291eb6d3a01300973f53e6380531a0933187e931f083f0aafc546c033",
+        "fit": "cover",
+        "framing": "circle",
+        "kind": "image",
+        "mediaType": "image/jpeg"
+      }
+    },
+    {
+      "title": "Sea turtle",
+      "icon": {
+        "assetId": "asset_2734e115-fc77-4275-b4e7-7d39131803cc",
+        "digestSha256": "a25d9d4913730a7aab650be528aeef693d6894e3488ec4e142dbe4b5d4823758",
+        "fit": "cover",
+        "framing": "circle",
+        "kind": "image",
+        "mediaType": "image/jpeg"
+      }
+    },
+    {
+      "title": "Reef monitoring",
+      "icon": "binoculars"
+    }
+  ],
+  "themes": [
+    {
+      "theme": "light",
+      "acceptedNodeCount": 7,
+      "expectedImageNodeCount": 5,
+      "rendered": {
+        "hosts": 5,
+        "images": [
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 21.759124755859375,
+            "height": 21.7591552734375,
+            "fit": "cover"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 21.7591552734375,
+            "height": 21.7591552734375,
+            "fit": "cover"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 21.7591552734375,
+            "height": 21.7591552734375,
+            "fit": "cover"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 21.7591552734375,
+            "height": 21.75909423828125,
+            "fit": "cover"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 21.7591552734375,
+            "height": 21.7591552734375,
+            "fit": "cover"
+          }
+        ]
+      },
+      "captures": [
+        {
+          "nodeId": 29,
+          "title": "Marine ecology",
+          "icon": "network",
+          "detail": {
+            "title": "Marine ecology",
+            "images": [],
+            "actions": []
+          },
+          "path": "light-node-1.png",
+          "sha256": "713223cc0cac51026428e73f1fad3821b5c92f7ef5d6ebe6dc7dde19d038bc1c"
+        },
+        {
+          "nodeId": 32,
+          "title": "Coral",
+          "icon": {
+            "assetId": "asset_6f46584d-cb70-4689-9d72-7bd99b24a41c",
+            "digestSha256": "f88781d9f12c1d2954e49a577358464ba5898f1d6b2631fd0b3b99e1a28cc5d2",
+            "fit": "cover",
+            "framing": "circle",
+            "kind": "image",
+            "mediaType": "image/jpeg"
+          },
+          "detail": {
+            "title": "Coral",
+            "images": [
+              {
+                "loaded": true,
+                "protocol": "blob:"
+              }
+            ],
+            "actions": []
+          },
+          "path": "light-node-2.png",
+          "sha256": "2336c0f5c139a7fdee33562cdfdeb13e3d20aece630a3f763e1d94280015506c"
+        },
+        {
+          "nodeId": 30,
+          "title": "Plankton",
+          "icon": {
+            "assetId": "asset_bec4e344-b1bc-4a6f-9da3-1205f2bad4e0",
+            "digestSha256": "a43118f303e7a9f454f9a38ae40c55f7bba855f8da98d08fb88b88f56fcbbb95",
+            "fit": "cover",
+            "framing": "circle",
+            "kind": "image",
+            "mediaType": "image/jpeg"
+          },
+          "detail": {
+            "title": "Plankton",
+            "images": [
+              {
+                "loaded": true,
+                "protocol": "blob:"
+              }
+            ],
+            "actions": []
+          },
+          "path": "light-node-3.png",
+          "sha256": "a4860291a22d98bd490cc45355354668cd8f557eb5b88c30092cd6ea179a5a6d"
+        },
+        {
+          "nodeId": 24,
+          "title": "Jellyfish",
+          "icon": {
+            "assetId": "asset_b4d3d6f5-d199-4a0c-aa54-5ff7f1c1e230",
+            "digestSha256": "b8a57f9c3da315129c6c0119bb10439dbe1769426472ba74bb75397ee3dcf529",
+            "fit": "cover",
+            "framing": "circle",
+            "kind": "image",
+            "mediaType": "image/jpeg"
+          },
+          "detail": {
+            "title": "Jellyfish",
+            "images": [
+              {
+                "loaded": true,
+                "protocol": "blob:"
+              }
+            ],
+            "actions": []
+          },
+          "path": "light-node-4.png",
+          "sha256": "e946098a671f12559a6d35cda2c95747d8e4b08d568d96798fdec73c26edb542"
+        },
+        {
+          "nodeId": 33,
+          "title": "Octopus",
+          "icon": {
+            "assetId": "asset_9bfdf408-89fd-4475-b668-1c68f37c1152",
+            "digestSha256": "efd787a291eb6d3a01300973f53e6380531a0933187e931f083f0aafc546c033",
+            "fit": "cover",
+            "framing": "circle",
+            "kind": "image",
+            "mediaType": "image/jpeg"
+          },
+          "detail": {
+            "title": "Octopus",
+            "images": [
+              {
+                "loaded": true,
+                "protocol": "blob:"
+              }
+            ],
+            "actions": []
+          },
+          "path": "light-node-5.png",
+          "sha256": "9e09cfbcf939d508896c61f164f71a07429d200afa39a57ffef5a7e834021b9e"
+        },
+        {
+          "nodeId": 22,
+          "title": "Sea turtle",
+          "icon": {
+            "assetId": "asset_2734e115-fc77-4275-b4e7-7d39131803cc",
+            "digestSha256": "a25d9d4913730a7aab650be528aeef693d6894e3488ec4e142dbe4b5d4823758",
+            "fit": "cover",
+            "framing": "circle",
+            "kind": "image",
+            "mediaType": "image/jpeg"
+          },
+          "detail": {
+            "title": "Sea turtle",
+            "images": [
+              {
+                "loaded": true,
+                "protocol": "blob:"
+              }
+            ],
+            "actions": []
+          },
+          "path": "light-node-6.png",
+          "sha256": "1d675bd07376b85a5470454747126b6d5c4527c83ac24ba399318788f9da7470"
+        },
+        {
+          "nodeId": 26,
+          "title": "Reef monitoring",
+          "icon": "binoculars",
+          "detail": {
+            "title": "Reef monitoring",
+            "images": [],
+            "actions": []
+          },
+          "path": "light-node-7.png",
+          "sha256": "5629bb550bbc90d45d84ebc77fff6ea0720aed67b8fd67a028a35f68b783fbdd"
+        }
+      ],
+      "overviewPath": "graph-overview-light.png",
+      "overviewSha256": "3a279326f9612b946834df2ceb0fb086ed0b6ff42f42fa439c07423fa1ad7cac"
+    },
+    {
+      "theme": "dark",
+      "acceptedNodeCount": 7,
+      "expectedImageNodeCount": 5,
+      "rendered": {
+        "hosts": 5,
+        "images": [
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 34.2564697265625,
+            "height": 34.25653076171875,
+            "fit": "cover"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 34.25653076171875,
+            "height": 34.25653076171875,
+            "fit": "cover"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 34.256591796875,
+            "height": 34.25653076171875,
+            "fit": "cover"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 34.256591796875,
+            "height": 34.25653076171875,
+            "fit": "cover"
+          },
+          {
+            "loaded": true,
+            "protocol": "blob:",
+            "width": 34.25653076171875,
+            "height": 34.25653076171875,
+            "fit": "cover"
+          }
+        ]
+      },
+      "captures": [
+        {
+          "nodeId": 29,
+          "title": "Marine ecology",
+          "icon": "network",
+          "detail": {
+            "title": "Marine ecology",
+            "images": [],
+            "actions": []
+          },
+          "path": "dark-node-1.png",
+          "sha256": "414c4d63e8d54f539a7e3aa86a69edae6a649ebfdd882cb3a9170c13318dcc06"
+        },
+        {
+          "nodeId": 32,
+          "title": "Coral",
+          "icon": {
+            "assetId": "asset_6f46584d-cb70-4689-9d72-7bd99b24a41c",
+            "digestSha256": "f88781d9f12c1d2954e49a577358464ba5898f1d6b2631fd0b3b99e1a28cc5d2",
+            "fit": "cover",
+            "framing": "circle",
+            "kind": "image",
+            "mediaType": "image/jpeg"
+          },
+          "detail": {
+            "title": "Coral",
+            "images": [
+              {
+                "loaded": true,
+                "protocol": "blob:"
+              }
+            ],
+            "actions": []
+          },
+          "path": "dark-node-2.png",
+          "sha256": "b70c7156a5abbed1416da34dadbbd5370a30bbbc28002b6b51e213843710f917"
+        },
+        {
+          "nodeId": 30,
+          "title": "Plankton",
+          "icon": {
+            "assetId": "asset_bec4e344-b1bc-4a6f-9da3-1205f2bad4e0",
+            "digestSha256": "a43118f303e7a9f454f9a38ae40c55f7bba855f8da98d08fb88b88f56fcbbb95",
+            "fit": "cover",
+            "framing": "circle",
+            "kind": "image",
+            "mediaType": "image/jpeg"
+          },
+          "detail": {
+            "title": "Plankton",
+            "images": [
+              {
+                "loaded": true,
+                "protocol": "blob:"
+              }
+            ],
+            "actions": []
+          },
+          "path": "dark-node-3.png",
+          "sha256": "4f3af83dfec2226edcb420ef4139c1a2f6a4d5189f1e9947a6a31bd4d13993d0"
+        },
+        {
+          "nodeId": 24,
+          "title": "Jellyfish",
+          "icon": {
+            "assetId": "asset_b4d3d6f5-d199-4a0c-aa54-5ff7f1c1e230",
+            "digestSha256": "b8a57f9c3da315129c6c0119bb10439dbe1769426472ba74bb75397ee3dcf529",
+            "fit": "cover",
+            "framing": "circle",
+            "kind": "image",
+            "mediaType": "image/jpeg"
+          },
+          "detail": {
+            "title": "Jellyfish",
+            "images": [
+              {
+                "loaded": true,
+                "protocol": "blob:"
+              }
+            ],
+            "actions": []
+          },
+          "path": "dark-node-4.png",
+          "sha256": "2010d4c27b6825ca73de32e6440bddd469db702a2dc4d2a967d0d2d926d8acf5"
+        },
+        {
+          "nodeId": 33,
+          "title": "Octopus",
+          "icon": {
+            "assetId": "asset_9bfdf408-89fd-4475-b668-1c68f37c1152",
+            "digestSha256": "efd787a291eb6d3a01300973f53e6380531a0933187e931f083f0aafc546c033",
+            "fit": "cover",
+            "framing": "circle",
+            "kind": "image",
+            "mediaType": "image/jpeg"
+          },
+          "detail": {
+            "title": "Octopus",
+            "images": [
+              {
+                "loaded": true,
+                "protocol": "blob:"
+              }
+            ],
+            "actions": []
+          },
+          "path": "dark-node-5.png",
+          "sha256": "27e70721ea4bdf0dd3d42c4d22eac170c2458566e811b142fc7b59cd976947a9"
+        },
+        {
+          "nodeId": 22,
+          "title": "Sea turtle",
+          "icon": {
+            "assetId": "asset_2734e115-fc77-4275-b4e7-7d39131803cc",
+            "digestSha256": "a25d9d4913730a7aab650be528aeef693d6894e3488ec4e142dbe4b5d4823758",
+            "fit": "cover",
+            "framing": "circle",
+            "kind": "image",
+            "mediaType": "image/jpeg"
+          },
+          "detail": {
+            "title": "Sea turtle",
+            "images": [
+              {
+                "loaded": true,
+                "protocol": "blob:"
+              }
+            ],
+            "actions": []
+          },
+          "path": "dark-node-6.png",
+          "sha256": "bd1c10078644baa3626ad2566c4590c8b79722819ebef3150281d52ff5734445"
+        },
+        {
+          "nodeId": 26,
+          "title": "Reef monitoring",
+          "icon": "binoculars",
+          "detail": {
+            "title": "Reef monitoring",
+            "images": [],
+            "actions": []
+          },
+          "path": "dark-node-7.png",
+          "sha256": "9b2141365bba1f79056f170101e378fb6d766543a77fe68b4728954d1e12fe2f"
+        }
+      ],
+      "overviewPath": "graph-overview-dark.png",
+      "overviewSha256": "a963cc46e7241c8613fc9c32ae5612e79330831762530363babaf8a69d6df6a0"
+    }
+  ],
+  "exportPath": "/Volumes/2T-SSD/worktrees/9f14/relayer-graphcomplete/.relayer/live/issue-624-marine/live-2026-09-30T15-02-06.488Z-9ee900f4/conversation.jsonl",
+  "exportSha256": "b07eb0ed7b20b8cf559b463cc660c12004206195567848bec58e2ec8674d2f4d",
+  "driverSha256": "4540d7953ff2fa36e076a9898ddd3ae34bc0fb085bc48c7b47604c9006dc183d",
+  "originalReceiptPath": "/Volumes/2T-SSD/worktrees/9f14/relayer-graphcomplete/.relayer/operator/marine-replay-main-33ff/run-2026-09-30T17-06-15.724Z-e9977a29/manifest.json",
+  "integrationBase": "33ff33b3",
+  "artifacts": [
+    {
+      "path": "dark-node-1.png",
+      "sha256": "414c4d63e8d54f539a7e3aa86a69edae6a649ebfdd882cb3a9170c13318dcc06",
+      "byteLength": 298921
+    },
+    {
+      "path": "dark-node-2.png",
+      "sha256": "b70c7156a5abbed1416da34dadbbd5370a30bbbc28002b6b51e213843710f917",
+      "byteLength": 1033590
+    },
+    {
+      "path": "dark-node-3.png",
+      "sha256": "4f3af83dfec2226edcb420ef4139c1a2f6a4d5189f1e9947a6a31bd4d13993d0",
+      "byteLength": 1071130
+    },
+    {
+      "path": "dark-node-4.png",
+      "sha256": "2010d4c27b6825ca73de32e6440bddd469db702a2dc4d2a967d0d2d926d8acf5",
+      "byteLength": 791046
+    },
+    {
+      "path": "dark-node-5.png",
+      "sha256": "27e70721ea4bdf0dd3d42c4d22eac170c2458566e811b142fc7b59cd976947a9",
+      "byteLength": 862116
+    },
+    {
+      "path": "dark-node-6.png",
+      "sha256": "bd1c10078644baa3626ad2566c4590c8b79722819ebef3150281d52ff5734445",
+      "byteLength": 721080
+    },
+    {
+      "path": "dark-node-7.png",
+      "sha256": "9b2141365bba1f79056f170101e378fb6d766543a77fe68b4728954d1e12fe2f",
+      "byteLength": 301988
+    },
+    {
+      "path": "graph-overview-dark.png",
+      "sha256": "a963cc46e7241c8613fc9c32ae5612e79330831762530363babaf8a69d6df6a0",
+      "byteLength": 265782
+    },
+    {
+      "path": "graph-overview-light.png",
+      "sha256": "3a279326f9612b946834df2ceb0fb086ed0b6ff42f42fa439c07423fa1ad7cac",
+      "byteLength": 273893
+    },
+    {
+      "path": "light-node-1.png",
+      "sha256": "713223cc0cac51026428e73f1fad3821b5c92f7ef5d6ebe6dc7dde19d038bc1c",
+      "byteLength": 309560
+    },
+    {
+      "path": "light-node-2.png",
+      "sha256": "2336c0f5c139a7fdee33562cdfdeb13e3d20aece630a3f763e1d94280015506c",
+      "byteLength": 1027958
+    },
+    {
+      "path": "light-node-3.png",
+      "sha256": "a4860291a22d98bd490cc45355354668cd8f557eb5b88c30092cd6ea179a5a6d",
+      "byteLength": 1066023
+    },
+    {
+      "path": "light-node-4.png",
+      "sha256": "e946098a671f12559a6d35cda2c95747d8e4b08d568d96798fdec73c26edb542",
+      "byteLength": 792946
+    },
+    {
+      "path": "light-node-5.png",
+      "sha256": "9e09cfbcf939d508896c61f164f71a07429d200afa39a57ffef5a7e834021b9e",
+      "byteLength": 864140
+    },
+    {
+      "path": "light-node-6.png",
+      "sha256": "1d675bd07376b85a5470454747126b6d5c4527c83ac24ba399318788f9da7470",
+      "byteLength": 721863
+    },
+    {
+      "path": "light-node-7.png",
+      "sha256": "5629bb550bbc90d45d84ebc77fff6ea0720aed67b8fd67a028a35f68b783fbdd",
+      "byteLength": 312261
+    }
+  ],
+  "visualReview": {
+    "verdict": "All seven root nodes, five accepted image icons and seven root Details load in both themes. Historical network and binoculars symbols are retained. Photos provide useful color/shape cues; small octopus recognition remains label-dependent.",
+    "limits": "Historical accepted agent choices are replayed unchanged; no new model inference or general model-selection reliability claim. Operator supplied optional licensed photo corpus; Coscinodiscus is a plankton exemplar."
+  },
+  "historicalInference": {
+    "originalRun": "../../live-agent/",
+    "sourceDigest": "a03571b99283b96a22685ae16cde82823e9b432d06c5c18c55c56e496670f154",
+    "inferenceKind": "real Codex subscription inference; preserved original run, no new inference"
+  }
+}

@@ -6,6 +6,8 @@ mod ids;
 mod model_policy;
 mod models;
 mod service;
+mod work_context;
+pub(crate) use work_context::ExpectedCheckout;
 
 pub(crate) use annotations::{
     Annotation, AnnotationAnchor, AnnotationRevision, AnnotationState,
@@ -93,6 +95,7 @@ pub(crate) use models::PreExecutionModelFailure;
 pub(crate) use models::ProductCapabilities;
 pub(crate) use models::ProductState;
 pub(crate) use models::Project;
+pub(crate) use models::ProjectAlias;
 pub(crate) use models::SubmittedInputEvidence;
 pub(crate) use models::Thread;
 pub(crate) use models::ThreadView;

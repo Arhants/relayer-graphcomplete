@@ -15,6 +15,7 @@ const PROJECT_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("path", "TEXT", true, 0),
     ("created_at", "TEXT", true, 0),
     ("updated_at", "TEXT", true, 0),
+    ("group_project_id", "INTEGER", false, 0),
 ];
 const THREAD_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("id", "INTEGER", false, 1),
@@ -27,6 +28,8 @@ const THREAD_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("conversation_import_id", "TEXT", false, 0),
     ("surface", "TEXT", true, 0),
     ("personal_presentation_version_key", "TEXT", false, 0),
+    ("working_directory", "TEXT", false, 0),
+    ("checkout_context_json", "TEXT", false, 0),
 ];
 const CONVERSATION_IMPORT_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("id", "TEXT", true, 1),
@@ -390,6 +393,25 @@ pub(super) async fn validate_existing_or_empty(pool: &SqlitePool) -> Result<(), 
 
 pub(super) async fn validate(pool: &SqlitePool) -> Result<(), StorageError> {
     validate_columns(pool, "projects", PROJECT_COLUMNS).await?;
+    validate_columns(
+        pool,
+        "thread_creation_requests",
+        &[
+            ("request_id", "TEXT", true, 1),
+            ("payload", "TEXT", true, 0),
+            ("thread_id", "INTEGER", true, 0),
+        ],
+    )
+    .await?;
+    validate_foreign_key(
+        pool,
+        "thread_creation_requests",
+        "thread_id",
+        "threads",
+        "id",
+        "CASCADE",
+    )
+    .await?;
     validate_columns(pool, "threads", THREAD_COLUMNS).await?;
     validate_columns(pool, "interactions", INTERACTION_COLUMNS).await?;
     validate_columns(

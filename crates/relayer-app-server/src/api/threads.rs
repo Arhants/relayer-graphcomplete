@@ -42,6 +42,9 @@ pub(super) struct CreateThreadRequest {
     title: Option<String>,
     project_id: Option<i64>,
     initial_message: String,
+    working_directory: Option<String>,
+    creation_request_id: Option<String>,
+    expected_checkout: Option<crate::product::ExpectedCheckout>,
     harness_id: Option<String>,
     harness_configuration_name: Option<String>,
     permission_profile_id: Option<String>,
@@ -259,26 +262,49 @@ pub(super) async fn create(
             .validate_interaction_model_selection(&harness_configuration_name, selection)
             .await?;
     }
-    let thread = state
+    let (thread, created) = state
         .product
-        .create_thread(CreateThreadCommand {
-            title: request.title,
-            project_id,
-            initial_message: request.initial_message,
-            harness_configuration_name,
-            personal_presentation_version_key,
-            permission_profile_id,
-            model_selection,
-            allow_unselected_model,
-        })
+        .create_thread_with_expected_checkout(
+            CreateThreadCommand {
+                title: request.title,
+                project_id,
+                initial_message: request.initial_message,
+                harness_configuration_name,
+                personal_presentation_version_key,
+                permission_profile_id,
+                model_selection,
+                allow_unselected_model,
+            },
+            request.working_directory.as_deref(),
+            request.creation_request_id.as_deref(),
+            request.expected_checkout.as_ref(),
+        )
         .await?;
+    if !created {
+        state
+            .product
+            .restore_unstarted_thread_root(thread.id)
+            .await?;
+    }
     let interaction = state
         .product
         .get_interaction(thread.root_interaction_id)
         .await?;
-    start_interaction(&state, &thread, interaction, true).await?;
+    if created || interaction.completion_status == "not_started" {
+        if let Some(expected) = request.expected_checkout.as_ref() {
+            state
+                .product
+                .verify_expected_checkout(&thread, expected)
+                .await?;
+        }
+        start_interaction(&state, &thread, interaction, true).await?;
+    }
     Ok((
-        StatusCode::CREATED,
+        if created {
+            StatusCode::CREATED
+        } else {
+            StatusCode::OK
+        },
         Json(
             ThreadView {
                 thread,
@@ -3310,22 +3336,12 @@ async fn start_interaction(
     Ok(running)
 }
 
-/// The thread's execution workspace, created if absent.
+/// Existing folder scopes must remain available; only no-folder workspaces are created.
 async fn thread_working_directory(state: &ApiState, thread: &Thread) -> Result<String, ApiError> {
-    let working_directory = match thread.project_id {
-        Some(project_id) => state.product.project_path(project_id).await?,
-        None => state
-            .standalone_workspaces_directory
-            .join(thread.id.value().to_string())
-            .to_string_lossy()
-            .into_owned(),
-    };
-    if let Err(error) = tokio::fs::create_dir_all(&working_directory).await {
-        return Err(ApiError::internal(&format!(
-            "cannot create thread workspace: {error}"
-        )));
-    }
-    Ok(working_directory)
+    Ok(state
+        .product
+        .thread_directory(thread, &state.standalone_workspaces_directory)
+        .await?)
 }
 
 /// How preparing an interaction's canonical graph identity ended.

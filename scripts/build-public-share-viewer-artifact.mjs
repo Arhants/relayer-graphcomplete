@@ -19,6 +19,7 @@ const browserResources = Object.freeze([
   "src/approval-model.js",
   "src/composer-drafts.js",
   "src/control-activation.js",
+  "src/environment-context.js",
   "src/interaction-failure-model.js",
   "src/model-picker-model.js",
   "src/model-picker.js",

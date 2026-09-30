@@ -4,7 +4,7 @@
     {
       "reviewer": "/root/discovery",
       "scope": "renderer",
-      "digestSha256": "a0911aeb9aeb6ac710eca0250d4d45db419151daea98bea5b030dca9b3899fad",
+      "digestSha256": "1e82dba0c50754a45eddf66188f9deb63ef6152d0df3fb24267e00ef64abaf3f",
       "orderedPaths": [
         "crates/relayer-app-server/src/api/threads.rs",
         "desktop/renderer/src/product-workspace/image-icons.js",
@@ -16,8 +16,17 @@
         "test/node-detail-runtime.test.mjs",
         "test/workspace-followup-annotations.test.mjs"
       ],
-      "verdict": "No unresolved merged renderer/readiness findings: accepted pin validation, neutral fallback, URL disposal, optional edge-shape defaults and annotation read-only/Send boundaries preserved",
-      "unresolvedFindings": []
+      "verdict": "No unresolved findings in 33ff merged intersection: checkout/thread identity changes preserve icon scope and pin authority; thread-specific environment context and public-viewer module closure remain coherent",
+      "unresolvedFindings": [],
+      "previousReviewedDigestSha256": "a0911aeb9aeb6ac710eca0250d4d45db419151daea98bea5b030dca9b3899fad",
+      "reviewedDeltaBase": "f25b7c7b",
+      "verification": {
+        "command": "npx vitest run test/environment-rail.test.mjs test/worktree-renderer.test.mjs test/desktop-telemetry-module-inventory.test.mjs test/sticker-structure.test.mjs test/public-share-viewer-artifact.test.mjs test/image-icon-rendering.test.mjs test/node-detail-runtime.test.mjs --maxWorkers=1",
+        "testFilesPassed": 7,
+        "testsPassed": 84,
+        "durationSeconds": 3.57,
+        "nativeOrElectronRun": false
+      }
     },
     {
       "reviewer": "/root/discovery",
@@ -98,14 +107,23 @@
     {
       "reviewer": "/root/discovery",
       "scope": "secondary-resource-and-module-inventories",
-      "digestSha256": "bbcdae663ffe3009f45dffba19db487d3ab84a83e4190c8933c7eccc97fe5d5d",
+      "digestSha256": "25bf6ce946284af96d78746ec79c9f888bdf12155639987c5dd82a46b80105ed",
       "orderedPaths": [
         "desktop/shared/telemetry-module-inventory.mjs",
         "scripts/build-public-share-viewer-artifact.mjs",
         "test/sticker-structure.test.mjs"
       ],
-      "verdict": "No unresolved findings in merged interoperability delta; prior independently reviewed original implementation is not self-certified",
-      "unresolvedFindings": []
+      "verdict": "No unresolved findings in 33ff merged resource intersection: explicit checkout/worktree telemetry modules and environment-context browser dependency preserve image module and neutral catalog closure",
+      "unresolvedFindings": [],
+      "previousReviewedDigestSha256": "bbcdae663ffe3009f45dffba19db487d3ab84a83e4190c8933c7eccc97fe5d5d",
+      "reviewedDeltaBase": "f25b7c7b",
+      "verification": {
+        "command": "npx vitest run test/environment-rail.test.mjs test/worktree-renderer.test.mjs test/desktop-telemetry-module-inventory.test.mjs test/sticker-structure.test.mjs test/public-share-viewer-artifact.test.mjs test/image-icon-rendering.test.mjs test/node-detail-runtime.test.mjs --maxWorkers=1",
+        "testFilesPassed": 7,
+        "testsPassed": 84,
+        "durationSeconds": 3.57,
+        "nativeOrElectronRun": false
+      }
     },
     {
       "reviewer": "/root/discovery",
@@ -206,10 +224,10 @@
         "scripts/capture-agent-preview-evidence.mjs",
         "desktop/shared/telemetry-module-inventory.mjs"
       ],
-      "digestSha256": "c7ab6cc34bed94e262e758ba4a1ebe9a818f2011f827d9049c20fc516322ddbc",
+      "digestSha256": "4270247dba60ee7a1071962e53c172ba86296982a977e8415f812e5823177873",
       "verdict": "no unresolved source findings",
       "findings": [],
-      "limits": "Source review only; final native and actual Electron capture qualification required."
+      "limits": "Retains unchanged independent readiness review; combines newly reviewed #631 worktree telemetry inventory delta. Final receipt qualification separate."
     },
     {
       "reviewer": "/root/catalog",
@@ -276,7 +294,7 @@
         "scripts/capture-share-preview-evidence.mjs",
         "test/fixtures/social-preview.jsonl"
       ],
-      "digestSha256": "3dca2c65a4bc6150d83de6e1635275196bc690ba0650ccd117c2be6354bc789c",
+      "digestSha256": "d566587553762b71124d85e20d45b765cd8e45d2ce7c769d84d4462badf806c8",
       "verdict": "no unresolved receipt findings",
       "findings": [],
       "limits": "Receipt/source/PNG integrity review; preview window cleanup does not certify runtime service close. Historical paid preview proof not recertified."
@@ -292,7 +310,7 @@
         "docs/evidence/followup-node-annotations/D-after-confirmed.png",
         "docs/evidence/followup-node-annotations/receipt.json"
       ],
-      "digestSha256": "e24beb8943b8b91a88db48e674889d16aa3b10c2e5b6776dda91ef5d1b6ccbd9",
+      "digestSha256": "1f68c74c52137b6b8489ae79106cca4e6947de850a7b366e1705bb264e86bbbd",
       "verdict": "no unresolved receipt findings",
       "findings": [],
       "limits": "Receipt/source/PNG integrity review; preview window cleanup does not certify runtime service close. Historical paid preview proof not recertified."
@@ -325,7 +343,7 @@
         "docs/evidence/issue-616-edge-shapes/straight-dark.png",
         "docs/evidence/issue-616-edge-shapes/straight-light.png"
       ],
-      "digestSha256": "32fc57e33979d3d64916a0bbe5fa8b2d26294712f2ec23cf350bf2ec245cf464",
+      "digestSha256": "2ad1108dcc1f2b5d926ca1ece5616de7403a2c02552ad6535ff65b4d3612d3a6",
       "verdict": "no unresolved receipt findings",
       "findings": [],
       "limits": "Receipt/source/PNG integrity review; preview window cleanup does not certify runtime service close. Historical paid preview proof not recertified."
@@ -346,6 +364,104 @@
       "verdict": "Independent source review found no unresolved findings: merged image, preview and edge-shape imports, optional capabilities, response handling and provider-native guidance preserve both branches and explicit graph state/Complete semantics.",
       "findings": [],
       "limits": "Source-scope review; integrated checks and heavy evidence reported separately."
+    },
+    {
+      "reviewer": "/root/catalog",
+      "scope": "worktree-main-integration-image-preview-authority",
+      "orderedPaths": [
+        "crates/relayer-app-server/src/api/threads.rs",
+        "desktop/renderer/src/product-workspace/workspace.js",
+        "desktop/renderer/styles.css",
+        "desktop/renderer/src/environment-context.js",
+        "desktop/shared/telemetry-module-inventory.mjs",
+        "scripts/build-public-share-viewer-artifact.mjs",
+        "scripts/capture-public-share-viewer-evidence.mjs"
+      ],
+      "digestSha256": "00366d8a5663af8e5a474efdea7429d3fc95fb57f873c9dfaa679a5d73fa2405",
+      "verdict": "no unresolved source findings",
+      "findings": [],
+      "limits": "Independent main-integration delta review; full worktree proof belongs existing checkpoint portfolio, final hosted qualification remains required."
+    },
+    {
+      "reviewer": "/root/catalog",
+      "scope": "current-worktree-proof",
+      "orderedPaths": [
+        "crates/relayer-app-server/src/api/environment.rs",
+        "desktop/main/ipc/register-ipc.mjs",
+        "desktop/main/services/worktree-service.mjs",
+        "desktop/preload/index.cjs",
+        "desktop/renderer/src/checkout.js",
+        "desktop/renderer/src/composer-drafts.js",
+        "desktop/renderer/src/environment-context.js",
+        "desktop/renderer/src/product-workspace/workspace.js",
+        "desktop/renderer/src/threads.js",
+        "desktop/renderer/src/worktree-controller.js",
+        "desktop/renderer/styles.css",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/worktrees/01-checkout-menu.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/worktrees/02-retry-after-create.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/worktrees/03-accepted-worktree-thread.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/worktrees/04-reopened-exact-thread.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/worktrees/05-missing-location-readable-history.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/worktrees/06-selected-worktree-environment.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/worktrees/07-many-registered-checkouts.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/worktrees/receipt.json",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/worktrees/result.json",
+        "scripts/run-worktree-test.mjs",
+        "scripts/test-desktop-worktrees.mjs"
+      ],
+      "digestSha256": "12a0dd58b5088baf3dfd294b0e0377482f87ebbaeee1ba99b1cfd8a508f1da81",
+      "verdict": "no unresolved evidence findings",
+      "findings": [],
+      "limits": "Actual15checkpoint exact-source/native/screenshot receipt; process wrapper exit/cleanup contract reviewed; no paid inference or full OS app restart claim."
+    },
+    {
+      "reviewer": "/root/catalog",
+      "scope": "current-marine-replay-proof",
+      "orderedPaths": [
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/deterministic/contact-sheet.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/deterministic/contact-sheet.svg",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/deterministic/graph-dark.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/deterministic/graph-light.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/deterministic/manifest.json",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/deterministic/monitoring-dark.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/deterministic/monitoring-light.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/dark-node-1.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/dark-node-2.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/dark-node-3.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/dark-node-4.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/dark-node-5.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/dark-node-6.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/dark-node-7.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/graph-overview-dark.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/graph-overview-light.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/light-node-1.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/light-node-2.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/light-node-3.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/light-node-4.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/light-node-5.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/light-node-6.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/light-node-7.png",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/replay/manifest.json"
+      ],
+      "digestSha256": "1e2af7c4811dd2953beb1fc628b05afdd4bbb339d5a38f4b4565356642c4177c",
+      "verdict": "no unresolved evidence findings",
+      "findings": [],
+      "limits": "Deterministic6subject fixture and unchanged7root actual-agent export replay are separate; new paid/model-selection/general quality proof not claimed."
+    },
+    {
+      "reviewer": "/root/catalog",
+      "scope": "final-product-mapping-and-evidence-docs",
+      "orderedPaths": [
+        "docs/prd/index.html",
+        "docs/architecture.md",
+        "docs/evidence/issue-624-icons/README.md",
+        "docs/evidence/issue-624-discoverable-icons/ux/main-integration-33ff33b3/README.md",
+        "docs/evidence/issue-624-discoverable-icons/ux/live-2026-09-30/README.md"
+      ],
+      "digestSha256": "6956b0ee8b83b78c7c211dfb09160bfe942385761cafcf66319afa1d43702fe9",
+      "verdict": "no unresolved semantic or mapping findings",
+      "findings": [],
+      "limits": "Local scoped proof and historical paid/human review preserved; hosted exact-head check and merge-freshness remain required. No merge/release/publication authorization inferred."
     }
   ]
 }

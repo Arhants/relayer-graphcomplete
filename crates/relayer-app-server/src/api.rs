@@ -210,6 +210,7 @@ pub(crate) fn router(
         )
         .route("/api/state", get(state::product_state))
         .route("/api/projects", get(projects::list).post(projects::create))
+        .route("/api/projects/consolidate", axum::routing::post(projects::consolidate))
         .route(
             "/api/projects/{id}/environment",
             get(environment::get),

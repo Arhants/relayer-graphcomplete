@@ -171,6 +171,8 @@ pub(crate) enum CompletionExecutionRestartSettlement {
 pub(crate) enum StorageError {
     #[error("database operation failed: {0}")]
     Database(#[from] sqlx::Error),
+    #[error("thread creation request conflict: {0}")]
+    ThreadCreationConflict(String),
     #[error("database migration failed: {0}")]
     Migration(#[from] sqlx::migrate::MigrateError),
     #[error("product database schema is incompatible: {0}")]

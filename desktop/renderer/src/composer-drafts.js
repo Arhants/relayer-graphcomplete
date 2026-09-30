@@ -217,3 +217,21 @@ export function persistSentThreadFollowup(threadId, record) {
   }
   writeState(state);
 }
+
+// Worktree receipt identity must be durable before filesystem creation. Ordinary
+// typing remains best-effort, but this boundary reports persistence failures.
+export async function persistPendingNewThreadDraftDurably(text, scope) {
+  const next = readState();
+  next.pendingNewThread = text ? { text, scope } : null;
+  const bounded = boundedState(next);
+  if (!bounded) throw new Error("The draft exceeds the local persistence limit.");
+  if (window.relayerDesktop?.drafts) {
+    if (!desktopInitialized) throw new Error("Draft storage is still initializing.");
+    await window.relayerDesktop.drafts.write(structuredClone(bounded));
+    desktopState = structuredClone(bounded);
+  } else {
+    const target = storage();
+    if (!target) throw new Error("Draft storage is unavailable.");
+    target.setItem(STORAGE_KEY, JSON.stringify(bounded));
+  }
+}

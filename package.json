@@ -94,6 +94,7 @@
     "test:desktop:narrow-sidebar": "npm run build && npm run test:desktop:sidebar-overflow && electron scripts/test-desktop-narrow-sidebar.mjs",
     "evidence:share-preview": "electron scripts/capture-share-preview-evidence.mjs",
     "evidence:marine-icons": "npm run build && electron scripts/evidence-marine-icons.mjs",
+    "test:desktop:worktrees": "npm run build && node scripts/run-worktree-test.mjs",
     "evidence:edge-shapes": "RELAYER_CAPTURE_EDGE_SHAPE_EVIDENCE=1 electron scripts/capture-edge-shape-evidence.mjs",
     "evidence:agent-preview": "electron scripts/capture-agent-preview-evidence.mjs",
     "evidence:agent-preview:live": "node scripts/run-agent-preview-live.mjs"

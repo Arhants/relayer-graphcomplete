@@ -1,0 +1,47 @@
+import { readFile } from "node:fs/promises";
+import { Window } from "happy-dom";
+import { afterEach, expect, it, vi } from "vitest";
+
+afterEach(() => vi.unstubAllGlobals());
+
+it("renders ordinary folder, loading, failure and Git choices in the production composer", async () => {
+  vi.resetModules();
+  const window = new Window({ url: "file:///relayer/index.html" });
+  window.document.write(await readFile(new URL("../desktop/renderer/index.html", import.meta.url), "utf8"));
+  let resolveInspection;
+  window.relayerDesktop = { worktrees: { inspect: vi.fn(() => new Promise((resolve) => { resolveInspection = resolve; })) } };
+  for (const key of ["window", "document", "location", "localStorage"]) vi.stubGlobal(key, key === "window" ? window : window[key]);
+  const { checkoutController, initializeCheckout } = await import("../desktop/renderer/src/checkout.js");
+  initializeCheckout({ onAvailabilityChanged: () => {}, onScopeChanged: () => {} });
+  const select = checkoutController.select({ path: "/repo", kind: "folder" });
+  const control = window.document.querySelector("#checkoutControl");
+  expect(control.classList.contains("hidden")).toBe(false);
+  expect(window.document.querySelector("#checkoutLabel").textContent).toBe("");
+  expect(window.document.querySelector("#checkoutStatus").classList.contains("checkout-spinner")).toBe(true);
+  expect(window.document.querySelector("#checkoutButton").disabled).toBe(true);
+  expect(checkoutController.ready).toBe(false);
+  resolveInspection({ git: false, path: "/repo" }); await select;
+  expect(control.classList.contains("hidden")).toBe(true);
+  window.relayerDesktop.worktrees.inspect.mockRejectedValueOnce(new Error("Unavailable Git"));
+  await checkoutController.select({ path: "/repo" });
+  expect(window.document.querySelector("#retryCheckoutNotice")).not.toBeNull();
+  expect(checkoutController.ready).toBe(false);
+  window.relayerDesktop.worktrees.inspect.mockResolvedValueOnce({ git: true, branch: "main", commit: "aaa", repositoryId: "id", checkoutRoot: "/repo", relativePath: "", bases: [{ ref: "refs/remotes/origin/main", name: "origin/main", commit: "aaa", remote: true }], defaultBase: "refs/remotes/origin/main", worktrees: [{ path: "/repo", branch: "main", exists: true, accessible: true }] });
+  await checkoutController.select({ path: "/repo" });
+  expect(window.document.querySelector("#checkoutLabel").textContent).toBe("Checkout");
+  window.document.querySelector("#checkoutButton").click();
+  window.document.querySelector("#newWorktree").click();
+  await Promise.resolve();
+  expect(window.document.querySelector("#checkoutMenu").classList.contains("hidden")).toBe(false);
+  const menu = window.document.querySelector("#checkoutMenu");
+  const list = menu.querySelector('.checkout-list[role="group"][aria-label="Registered checkouts"]');
+  expect(list.tabIndex).toBe(0);
+  expect(list.querySelector("[data-checkout-index]")).not.toBeNull();
+  expect(list.contains(menu.querySelector("#newWorktree"))).toBe(false);
+  expect(list.contains(menu.querySelector("#worktreeBase"))).toBe(false);
+  expect(menu.querySelector("#newWorktree").checked).toBe(true);
+  expect(menu.querySelector("#worktreeBase").value).toBe("refs/remotes/origin/main");
+  expect(menu.querySelectorAll("input:not([type=checkbox])").length).toBe(0);
+  expect(window.document.querySelector("#newThreadPrompt")).not.toBeNull();
+  window.happyDOM.abort();
+});
