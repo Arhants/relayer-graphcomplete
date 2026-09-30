@@ -8,7 +8,8 @@ const THREAD_COLUMNS: &str = r#"
            t.harness_configuration_name,
            t.permission_profile_id,
            (SELECT id FROM interactions WHERE thread_id=t.id ORDER BY sequence ASC LIMIT 1),
-           t.conversation_import_id IS NOT NULL, t.icon, t.icon_selection_eligible,
+           t.conversation_import_id IS NOT NULL, t.icon, t.icon_selection_eligible, t.working_directory,
+           COALESCE((SELECT group_project_id FROM projects WHERE id=t.project_id),t.project_id),t.checkout_context_json,
            (SELECT CASE
                 WHEN i.completion_status IN ('not_started','running','submitted','waiting_for_approval')
                      AND EXISTS(SELECT 1 FROM interaction_stop_requests stop WHERE stop.interaction_id=i.id AND stop.error IS NULL) THEN 'stopping'
@@ -16,12 +17,20 @@ const THREAD_COLUMNS: &str = r#"
                 WHEN i.completion_status IN ('not_started','running','submitted') THEN 'running'
                 WHEN i.completion_status='failed' THEN 'failed'
             END FROM interactions i WHERE i.thread_id=t.id ORDER BY i.sequence DESC LIMIT 1)
+
     FROM threads t
 "#;
 
 const VISIBLE_THREAD: &str = "t.surface='conversation' AND (t.conversation_import_id IS NULL OR EXISTS(SELECT 1 FROM conversation_imports ci WHERE ci.id=t.conversation_import_id AND ci.state='published'))";
 
 impl SqliteProductStore {
+    pub(crate) async fn restore_unstarted_thread_root(
+        &self,
+        id: ThreadId,
+    ) -> Result<bool, StorageError> {
+        let result=sqlx::query("UPDATE interactions SET completion_status='not_started',completion_error=NULL WHERE id=(SELECT id FROM interactions WHERE thread_id=?1 ORDER BY sequence LIMIT 1) AND completion_status='failed' AND graph_node_id IS NULL AND NOT EXISTS(SELECT 1 FROM interaction_attempts a WHERE a.interaction_id=interactions.id)").bind(id.value()).execute(&self.pool).await?;
+        Ok(result.rows_affected() == 1)
+    }
     pub(crate) async fn list_threads(&self) -> Result<Vec<Thread>, StorageError> {
         let mut connection = self.pool.acquire().await?;
         fetch_threads(&mut connection).await
@@ -41,12 +50,64 @@ impl SqliteProductStore {
             .await
     }
 
+    #[cfg(test)]
     pub(crate) async fn insert_thread_with_initial_interaction_and_personal_presentation(
         &self,
         record: NewThreadRecord<'_>,
         personal_presentation_version_key: Option<&str>,
     ) -> Result<Thread, StorageError> {
+        self.insert_thread_in_directory(record, personal_presentation_version_key, None)
+            .await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn insert_thread_in_directory(
+        &self,
+        record: NewThreadRecord<'_>,
+        personal_presentation_version_key: Option<&str>,
+        working_directory: Option<&str>,
+    ) -> Result<Thread, StorageError> {
+        self.insert_thread_with_creation_request(
+            record,
+            personal_presentation_version_key,
+            working_directory,
+            None,
+            None,
+        )
+        .await
+        .map(|(thread, _)| thread)
+    }
+
+    pub(crate) async fn insert_thread_with_creation_request(
+        &self,
+        record: NewThreadRecord<'_>,
+        personal_presentation_version_key: Option<&str>,
+        working_directory: Option<&str>,
+        checkout_context: Option<&str>,
+        creation_request: Option<(&str, &str)>,
+    ) -> Result<(Thread, bool), StorageError> {
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        if let Some((request_id, payload)) = creation_request
+            && let Some(row) = sqlx::query(
+                "SELECT thread_id,payload FROM thread_creation_requests WHERE request_id=?1",
+            )
+            .bind(request_id)
+            .fetch_optional(&mut *transaction)
+            .await?
+        {
+            if row.try_get::<String, _>(1)? != payload {
+                return Err(StorageError::ThreadCreationConflict(
+                    "creationRequestId already used for another draft".into(),
+                ));
+            }
+            let id = ThreadId::from_database(row.try_get(0)?);
+            let thread = fetch_thread(&mut transaction, id)
+                .await?
+                .ok_or(sqlx::Error::RowNotFound)?;
+            transaction.commit().await?;
+            return Ok((thread, false));
+        }
+
         if let Some(selection) = record.model_selection {
             let command = ValidateModelSelectionCommand {
                 harness_id: record.harness_configuration_name.to_owned(),
@@ -57,7 +118,7 @@ impl SqliteProductStore {
             catalog::validate_model_selection_on(&mut transaction, &command).await?;
         }
         let thread = sqlx::query(
-            "INSERT INTO threads(title,project_id,created_at,updated_at,harness_configuration_name,permission_profile_id,personal_presentation_version_key,icon_selection_eligible) VALUES (?1,?2,?3,?3,?4,?5,?6,?7)",
+            "INSERT INTO threads(title,project_id,created_at,updated_at,harness_configuration_name,permission_profile_id,personal_presentation_version_key,working_directory,checkout_context_json,icon_selection_eligible) VALUES (?1,?2,?3,?3,?4,?5,?6,COALESCE(?7,(SELECT path FROM projects WHERE id=?2)),?8,?9)",
         )
         .bind(record.title)
         .bind(record.project_id.map(ProjectId::value))
@@ -65,6 +126,8 @@ impl SqliteProductStore {
         .bind(record.harness_configuration_name)
         .bind(record.permission_profile_id)
         .bind(personal_presentation_version_key)
+        .bind(working_directory)
+        .bind(checkout_context)
         .bind(record.icon_selection_eligible)
         .execute(&mut *transaction)
         .await?;
@@ -81,10 +144,14 @@ impl SqliteProductStore {
         .bind(record.model_selection.map(|selection| selection.family_id.value()))
         .execute(&mut *transaction)
         .await?;
+        if let Some((request_id, payload)) = creation_request {
+            sqlx::query("INSERT INTO thread_creation_requests(request_id,payload,thread_id) VALUES (?1,?2,?3)").bind(request_id).bind(payload).bind(thread_id.value()).execute(&mut *transaction).await?;
+        }
         transaction.commit().await?;
         self.get_thread(thread_id)
             .await?
             .ok_or_else(|| sqlx::Error::RowNotFound.into())
+            .map(|thread| (thread, true))
     }
 }
 
@@ -129,7 +196,18 @@ fn thread_from_row(row: &SqliteRow) -> Result<Thread, StorageError> {
         permission_profile_id: row.try_get(6)?,
         root_interaction_id: InteractionId::from_database(row.try_get(7)?),
         imported: row.try_get::<i64, _>(8)? != 0,
-        activity: row.try_get(11)?,
+        working_directory: row.try_get(11)?,
+        checkout_context: row
+            .try_get::<Option<String>, _>(13)?
+            .map(|text| {
+                serde_json::from_str(&text).map_err(|e| StorageError::Serialization(e.to_string()))
+            })
+            .transpose()?,
+        grouped_project_id: row
+            .try_get::<Option<i64>, _>(12)?
+            .map(ProjectId::from_database),
+
+        activity: row.try_get(14)?,
     })
 }
 

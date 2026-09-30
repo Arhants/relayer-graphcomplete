@@ -2278,6 +2278,12 @@ async fn an_ambiguous_preparation_fails_the_claimed_child_in_both_stores() {
         child.completion_error.as_deref(),
         Some("preparation_failed")
     );
+    // Graph termination is observable before background cleanup clears its
+    // separate durable recovery marker. Await that existing cleanup boundary.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while world.graph_failure_pending().await && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     assert!(
         !world.graph_failure_pending().await,
         "a confirmed graph half is not revisited at startup"

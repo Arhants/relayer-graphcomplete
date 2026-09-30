@@ -1,0 +1,323 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "33ff33b348f67ba4253cef3ea8c286cb25443230",
+  "sourceDigest": "51f8fe562b4d719e0a4bfcd2ce55886fbd50a7a5c450b2af825dd8b5197b567c",
+  "digestFormat": "sorted path NUL bytes NUL; excludes docs/evidence; diff against exact merged main parent",
+  "sourceFiles": [
+    {
+      "path": "crates/relayer-app-server/src/api.rs",
+      "sha256": "5d0a9a30ee64c84cb84a9bd83117a21b25dc9fe9a4b286e29a2e5e8f5ceb8883",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/api/conversation_imports.rs",
+      "sha256": "36328ef3b64a6294decad02d367cf52d7f91de912e769b2f14bfb356cec04ce6",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/api/environment.rs",
+      "sha256": "8b8f4e98da4a64c4f1c0186b30257477b470d142cd6605f9ac61a8fea46e03e7",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/api/threads.rs",
+      "sha256": "d74327df3bcfd76530f3681e8dde17e8de55e5b1182e812a2438ea52021c0cb7",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/api/types.rs",
+      "sha256": "a8a42dab6ce25c0e6c2e95ecefa169de410405c3624d7fa71052b926a96f0290",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/app_server.rs",
+      "sha256": "27e20e76e35c3e2ca4a7570312607b04704da976243094c11af5fcf5b5837827",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/main.rs",
+      "sha256": "cfbe6069546cc8dbd474ddeb1354d63c2a1d45c1c3298556badc3b0126346779",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/product/execution.rs",
+      "sha256": "9d8a6ea9d0a8ab4d8a841251b870f33b747c869cd583b058a6744df0d5ed58d5",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/product/models.rs",
+      "sha256": "c109c3db4c1c9d4738e001fd8e8118a090dec336efe8c5090ecc187e82c73e04",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/product/service.rs",
+      "sha256": "d25ed2d8d270f5046ffe6a3bf893b4c3a24714c0358a36cbbbf384183f4ef37f",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/product/work_context.rs",
+      "sha256": "3fcbe1405ddf4dba55ec8720202dcb1380e54b2769c308a116616c76c4f88985",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/runtime.rs",
+      "sha256": "15bb4f54476933ccdd68c375da0d8f61fa35ce2271e17b5510ef0be4efa4becb",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage.rs",
+      "sha256": "13fdf5ec20e84a66bbbd880e9f6b702196732469753ed15667141a3b3965fa23",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/action_invocations.rs",
+      "sha256": "71d54bf0f66c43fe50c92ca6ef6e281112e20af77a4e0e86f5f90a5a4d24963b",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/approvals.rs",
+      "sha256": "4de5a0316402ae3b957ceef31a8d23f0cd78f7e16e66f79071530953f14ca5cb",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/attempts.rs",
+      "sha256": "72e985a6d8e736f5f711f87a5c27f2770c759bafb271ac6e141a8773497b7b95",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/completion_executions.rs",
+      "sha256": "7d258b828ffe56068f3998fd20a36da6f76b208889a7e39e9abc106a9ece3a86",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/input_drafts.rs",
+      "sha256": "0a8f8dc26927f681152eb24a3c5836862d9ed64a615777d386bee2b4544c1dc1",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/interactions.rs",
+      "sha256": "b9233c2ad12eee099128814c5c5c7466b35844ae94a617eb36ea4ee39e615a8b",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/migrations.rs",
+      "sha256": "7b3b6d6f60eac2783a8e8c8b87d54ff458a4b4f481b6459278024ab34d676d24",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/migrations/0041_thread_icons.sql",
+      "sha256": "bfed0d96a7069706f22a935b5d27738f37185a4bbe405a8dc7b4454e37a6d138",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/personal_presentation.rs",
+      "sha256": "3db4b902b2b65da75a9d422be08762524277796bf3674758a0d083828d188dbe",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/schema.rs",
+      "sha256": "0e34405c13c8f8dd39c65456465d6a56a38f72c0d34b6d7a34abc6e304586845",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/stops.rs",
+      "sha256": "39a0543750b692f378b6e7dcb174f3159470783069c7a474ea9cc4bf8ede75b6",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/threads.rs",
+      "sha256": "e8264c138d91c1c1108ef83cac1b8caff0e7d38b6bf52481079ced96b1ed7866",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/tests/product_persistence_flow.rs",
+      "sha256": "65ff5ccbe1ef3dbd6227f60f7d3eeceaccda7c2f4e85e3c2437f7eb49aec906d",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-app-server/tests/support/completion_traces.rs",
+      "sha256": "2f129ce6158072de74ed9bf37209ae5afc69ad523527831d2f6582c3583507bf",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/completion.rs",
+      "sha256": "058bdb18421f320713f0a1d87ef49da9aa538191e32f1e670a3dcf2803f89714",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/writer.rs",
+      "sha256": "a94251f12d2dd659f52083ccb7fb27cbf74b7191f6fe0b72a7d1d214e72c01e5",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite/migrations.rs",
+      "sha256": "de67d707aa3aff5be4a068bff1d3145eb72ba11102d97ce34e22b50e873ac5f1",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite/migrations/0032_thread_icon_proposals.sql",
+      "sha256": "f9def9591e974272198eab9b6349b030b11e8cb521a15d2d40968b15b1565e1f",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-graph-core/tests/graph_database.rs",
+      "sha256": "e5333c503a09acb5d9a9290840ff2a75ca1940846269b1e0a445c4ba28d0f964",
+      "deleted": false
+    },
+    {
+      "path": "crates/relayer-graph-server/src/lib.rs",
+      "sha256": "d92b6744b63be6f48cc68515298a9769ef3d21ad748fe99f2a4eff3d926b2f27",
+      "deleted": false
+    },
+    {
+      "path": "desktop/eval-main/index.mjs",
+      "sha256": "7eb1618825322f742d28600edf639fa6389140a62d429660588516782328e305",
+      "deleted": false
+    },
+    {
+      "path": "desktop/main/managed-runtimes/recipes.mjs",
+      "sha256": "6335cf71c82d231b0d1c9b3f6318f110f86e452669aa9d2b894f5c003142f5b7",
+      "deleted": false
+    },
+    {
+      "path": "desktop/main/services/prime-agent-runtime.mjs",
+      "sha256": "f164c9af45351e4b63ce002d68fe4895f383db9c9f5dcdece0bb9c686e9c12b0",
+      "deleted": false
+    },
+    {
+      "path": "desktop/main/services/relayer-app-server.mjs",
+      "sha256": "0d32589c91e90eef921eb2b6821905e782fdd3e2d7094299710344d85b416f5f",
+      "deleted": false
+    },
+    {
+      "path": "desktop/renderer/src/navigation.js",
+      "sha256": "42a9658af848f43b471d876553a8b561a4929c56e110f917ae5344c7a3d876d9",
+      "deleted": false
+    },
+    {
+      "path": "desktop/renderer/src/product-workspace/icons.js",
+      "sha256": "c5cf5409011161d8d78794cf4a6c2ee12c7b3ebcb34789b88dbbdefb50b89223",
+      "deleted": false
+    },
+    {
+      "path": "desktop/renderer/src/product-workspace/view.js",
+      "sha256": "8f503edd7a926ff234d81faf0e84a4847dd80c2b64b544c0a2d37bcf159ed8bc",
+      "deleted": false
+    },
+    {
+      "path": "desktop/renderer/src/product-workspace/workspace.js",
+      "sha256": "0be598d5a5569cf99151292e7faa4505c0acab2cfab2ae8a61b77c7c9605e44d",
+      "deleted": false
+    },
+    {
+      "path": "desktop/renderer/styles.css",
+      "sha256": "e07fc77e163eec9a1fafa604ae5249c1dbb367c3c365e6c99a64d13fadbbd2b9",
+      "deleted": false
+    },
+    {
+      "path": "desktop/shared/telemetry-module-inventory.mjs",
+      "sha256": "2e778c7ea643edc3d9253ddd370e42cba14b28a29f9a17ce4af324d331b0904f",
+      "deleted": false
+    },
+    {
+      "path": "docs/prd/index.html",
+      "sha256": "a22f52b46c21a76bfd90dcbefc4534a7f4f414e511fe7066e98f4b67091dcdc4",
+      "deleted": false
+    },
+    {
+      "path": "packages/graph-client/src/client.ts",
+      "sha256": "1e10adaf5177476539a4e029cc09e68d3ed5bf49a616d8f907705a349f14f6c8",
+      "deleted": false
+    },
+    {
+      "path": "packages/graph-client/src/types.ts",
+      "sha256": "446d90064a2c12ea3c12fa0c1ee3871bdd1e9c8fa7dcf25a4a858667e59df19b",
+      "deleted": false
+    },
+    {
+      "path": "packages/graph-client/test/objects.test.ts",
+      "sha256": "e07db3bced3449bb2f173a69fd7f7b8b522f3c6b76cb5dde589cb122368db22e",
+      "deleted": false
+    },
+    {
+      "path": "packages/harness-host/src/host.ts",
+      "sha256": "0b3d17726d90ff9dde938895a2acbbaeb6db828d5ffc126967137a63964bc6bd",
+      "deleted": false
+    },
+    {
+      "path": "packages/harness-host/src/implementations/codex-basic.ts",
+      "sha256": "4515e519accf5e8469ff755331c0bf4deff99fc01e7e28b46ed2da626dc56bf3",
+      "deleted": false
+    },
+    {
+      "path": "packages/harness-host/src/implementations/prime-agent.ts",
+      "sha256": "5ab365873dd3b10afed86c6c9a9f26ba11f18d17e55a101ffb1ab71993e01dba",
+      "deleted": false
+    },
+    {
+      "path": "packages/harness-host/src/implementations/thread-icon-guidance.ts",
+      "sha256": "ef95506bb928925869873bc37281f0c9e9dc53969b8a5084b6745771ad0f3105",
+      "deleted": false
+    },
+    {
+      "path": "packages/harness-host/src/types.ts",
+      "sha256": "98eccd5cc4a578647a4d59b3eeca49c7b9751da2af10e26fa24956e66dc1f4dc",
+      "deleted": false
+    },
+    {
+      "path": "packages/harness-host/test/claude-basic.test.ts",
+      "sha256": "46cd0ed8eda10f71746f630b17de18b2a7afcd5e7c0a73b8a79e1f644e088ead",
+      "deleted": false
+    },
+    {
+      "path": "packages/harness-host/test/codex-basic.test.ts",
+      "sha256": "6441f7458bf27d67c9ddadf83674bf9194bd4a8e3dec545c7c2fde9f928c3eed",
+      "deleted": false
+    },
+    {
+      "path": "packages/harness-host/test/host.test.ts",
+      "sha256": "dfd04fce9b85b3fa899edcd9ec52f7871e70897ac63e043a4209ed8a73efc4ab",
+      "deleted": false
+    },
+    {
+      "path": "packages/harness-host/test/prime-agent.test.ts",
+      "sha256": "437f67c6c01e423f7738c09ca184b635dac1013c41a448dadb499cbb99b5ea9f",
+      "deleted": false
+    },
+    {
+      "path": "python/relayer-graph/src/relayer_graph/authoring.py",
+      "sha256": "e7a459cb5e855d6362f4052ba6f583fa0bef31c5e544af85683a1960342f98ed",
+      "deleted": false
+    },
+    {
+      "path": "python/relayer-graph/tests/test_authoring.py",
+      "sha256": "d6e6543f32e5bc9e8f94f50b85a5bdbd6912135cd0bce1f11fb61c05c2246277",
+      "deleted": false
+    },
+    {
+      "path": "scripts/test-eval-web.mjs",
+      "sha256": "a2632e5b54bdd3c493d9fa82ef791117ac9ad7715afc7087cc4e01ba322fbbde",
+      "deleted": false
+    },
+    {
+      "path": "test/desktop-error-domain-adapters.test.mjs",
+      "sha256": "16e8c8defb5dfb379b8b9a5bb93ec0caae68f80df445298e1770b96e63cc40fa",
+      "deleted": false
+    },
+    {
+      "path": "test/eval-configuration-paths.test.mjs",
+      "sha256": "d50d9a57aab0f97dad4c42e86a1df2aec9c9701bf4d2ee84ac47f6d119310f7c",
+      "deleted": false
+    },
+    {
+      "path": "test/thread-icons.test.mjs",
+      "sha256": "c8ae857b295dc40d3d3174094c7e68248c5132c5078d34653e4b41a6d0c1e62c",
+      "deleted": false
+    },
+    {
+      "path": "vendor/prime-agent/manifest.json",
+      "sha256": "430b3e9d639aa9a3fe4c1357a709437ea6cfaecb4f4f340da0f10d69dd882e89",
+      "deleted": false
+    }
+  ]
+}

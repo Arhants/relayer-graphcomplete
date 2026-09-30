@@ -4,6 +4,7 @@ import {
   clearThreadFollowupDraft,
   pendingNewThreadDraft,
   persistPendingNewThreadDraft,
+  persistPendingNewThreadDraftDurably,
   followupTextDigest,
   persistSentThreadFollowup,
   persistThreadFollowupDraft,
@@ -146,4 +147,14 @@ describe("composer draft persistence", () => {
     persistPendingNewThreadDraft("recovered", null);
     expect(pendingNewThreadDraft()?.text).toBe("recovered");
   });
+  it("durable worktree receipts reject oversized or failed writes without accepting stale state", async () => {
+    const scope = { path: "/repo", checkout: { planId: "receipt" } };
+    await persistPendingNewThreadDraftDurably("stable", scope);
+    await expect(persistPendingNewThreadDraftDurably("x".repeat(1024 * 1024 + 1), scope)).rejects.toThrow("persistence limit");
+    expect(pendingNewThreadDraft().text).toBe("stable");
+    window.localStorage.setItem = () => { throw new Error("Storage full"); };
+    await expect(persistPendingNewThreadDraftDurably("new", scope)).rejects.toThrow("Storage full");
+    expect(pendingNewThreadDraft().text).toBe("stable");
+  });
+
 });

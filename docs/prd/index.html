@@ -270,7 +270,7 @@
 <article class="journey-card">
 <h4>Choose a work context</h4>
 <p><strong>User goal:</strong> Work without a folder or inside an authorized project.</p>
-<p><strong>Product rule:</strong> Git projects offer the local checkout or a Relayer worktree.</p>
+<p><strong>Product rule:</strong> Git projects offer Checkout selection and optional new-worktree creation.</p>
 <p><strong>Observable result:</strong> New Thread shows the selected scope before send.</p>
 <p><strong>Acceptance:</strong> The interaction records the exact scope selected at send time.</p>
 <a href="#3-choose-work-context-and-permissions">Read context requirements →</a>
@@ -1137,7 +1137,7 @@ type InteractionModelBinding = {
 <h2 data-prd-layer="Product" data-prd-order="3">3. Choose work context and permissions</h2>
 <section class="capability-summary" aria-label="Choose work context and permissions summary">
 <p><strong>User goal:</strong> Work without a folder or inside an authorized project, with understandable control over the agent's authority.</p>
-<p><strong>Product rule:</strong> Git projects offer the local checkout or a Relayer worktree. Every new thread also pins one Rust-owned product permission profile.</p>
+<p><strong>Product rule:</strong> Git projects offer Checkout selection and optional new-worktree creation. Every new thread also pins one Rust-owned product permission profile.</p>
 <p><strong>Observable result:</strong> New Thread shows the selected scope and permission profile before send.</p>
 <p><strong>Acceptance:</strong> The thread records the exact scope and permission profile selected at send time; later turns inherit both pinned choices.</p>
 </section>
@@ -1175,12 +1175,15 @@ type InteractionModelBinding = {
 <p>The first send creates one top-level <strong>user-interaction node</strong>. The thread&#39;s identity points to that root interaction node; the product does not create a separate semantic thread node for the same event.</p>
 <h3>3.2 Folder and project behavior</h3>
 <ul>
-<li>Any local folder can be a project. Git is detected capability, not a requirement.</li>
-<li>Reopening an existing canonical folder reuses the project after confirmation instead of silently duplicating it.</li>
-<li>Missing or revoked folder access keeps the project and history visible while prompting the user to relocate or reauthorize the folder.</li>
-<li>Removing a project from Relayer never deletes the user folder or worktree.</li>
-<li>A user can move a no-folder chat into an existing or new project. This action changes the thread scope and sidebar location. It must not create a second thread. It must not change the root interaction ID or remove graph history.</li>
-<li>Moving into a project affects subsequent interactions. Previously accepted turns retain the standalone scope and filesystem binding recorded when they ran.</li>
+<li>Any local folder can be a project. Git is detected capability, not a requirement. No folder uses an app-owned directory and exposes no Git controls.</li>
+<li>Repository identity comes from the local Git worktree family, not its remote URL or display name. Independent clones remain separate. A nested independent repository owns its own family.</li>
+<li>Opening a repository root or linked-worktree root selects the exact opened checkout under one repository project, named after the repository.</li>
+<li>Opening a repository subfolder retains that relative working folder under the repository project. A separate subfolder project is created only by an explicit user action. Its selector uses the subfolder name; its menu retains the full identity.</li>
+<li>Intentional subfolder project entries remain separate, including entries for the same repository and relative folder. Frontend and backend threads independently choose worktrees while retaining their respective relative folders.</li>
+<li>Consolidate existing repository-root projects once initially and again when selecting a Git project. Consolidation preserves every thread's exact working directory, history, active execution, and graph visibility. Resolve and update matching roots atomically. Unavailable locations remain unresolved records; failure retains all original records for retry.</li>
+<li>Missing or revoked folder access keeps projects and history visible with actionable recovery. Reopening a non-Git canonical folder reuses its project after confirmation.</li>
+<li>Removing a project or thread entry never deletes checkout files or worktrees, and never deletes graph records referenced elsewhere.</li>
+<li>A user can move a no-folder chat into a project without duplicating its thread or changing its root interaction ID. The scope change affects subsequent interactions; previously accepted turns retain their recorded filesystem binding.</li>
 </ul>
 <h3>3.3 Start a thread from a project row</h3>
 <p>A project row shows only its project marker and name while idle. It does not show a thread count.</p>
@@ -1195,13 +1198,13 @@ type InteractionModelBinding = {
 <p>This feature does not change the global New Thread control or keyboard-shortcut behavior.</p>
 <p>The approved throwaway prototype at <code>desktop/renderer/project-row-hover.prototype.html</code> defines the visual behavior. It is design input, not implementation evidence.</p>
 <h3>3.4 Git-aware execution options</h3>
-<p>When the selected project is a Git repository, an execution control appears beside the folder control:</p>
-<ul>
-<li><strong>Local checkout:</strong> use the opened folder and its current branch.</li>
-<li><strong>New worktree:</strong> choose a base branch, create an isolated worktree, and start the thread there.
-V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong>, matching the compact Codex-style decision. Base-branch, custom-location, and existing-worktree controls are deferred until a demonstrated product need. Non-Git folders do not show Git controls or empty Git status.</li>
-</ul>
-<p>Forking a thread can keep its current execution location or create a new worktree. The new interaction inherits the conversation graph and project ontology while retaining its own thread-specific history.</p>
+<p>The existing New Thread layout is retained. Git selection lives inside the <strong>Checkout</strong> menu beside the project selector. It lists all registered worktrees, including those created outside Relayer, with branch and path. The registered checkout list has a bounded visible height of at most 320px and shrinks for shorter viewports. It scrolls independently, supports keyboard focus, and keeps New worktree and base controls outside the scrolling list. During discovery the control shows only a spinner with an accessible loading name; discovery blocks Send and unverified selection. Inspection failure preserves the draft and offers retry without classifying the folder as non-Git.</p>
+<p>Dirty, detached, and Git-locked worktrees remain selectable with status labels. Active use by another thread produces a shared-files warning but allows Send. Missing or inaccessible entries are disabled and preserve the prior selection. The selected relative subfolder must exist inside the chosen checkout. A missing folder or escaping symlink blocks execution without root fallback.</p>
+<p>The menu contains a <strong>New worktree</strong> checkbox and, when checked, a base selector. Default to the repository's known default branch; otherwise require a valid base. The user may select the checkout's committed HEAD, a local branch, or a locally cached remote-tracking branch such as <code>origin/main</code>. Selection never fetches, switches the current checkout's branch, resets, cleans, or copies uncommitted edits.</p>
+<p>Create only on Send. Relayer generates an automatic random-hash branch and managed destination. There is no branch-name input, custom-location UI, generated branch/hash-path presentation, or extra creation section in the composer. Abandoning an unsent draft creates nothing. Invalid or occupied generated destinations block creation without overwrite or adoption.</p>
+<p>Before Send, revalidate the chosen checkout and repository state. Disappearance preserves the prompt and path and blocks execution. A changed branch or commit is shown and requires acknowledgment. Creation failure preserves the draft for retry or another checkout. If creation succeeds but startup fails or the relative subfolder is missing, retain the worktree and reuse it on retry.</p>
+<p>Persist the exact creation plan before mutation. After interruption, reconcile its path, repository, branch, and commit. Reuse an exact match; retry only after verified absence. Block mismatched or partial contents. Never blindly create twice or delete a partially successful result.</p>
+<p>Saved threads retain their exact project, checkout, and working directory across reopen. Their Environment context reports that saved working directory and checkout branch; project grouping does not substitute another checkout. They cannot switch checkout; offer a new thread instead. Missing saved locations keep history readable and block execution until restored. These choices affect new-thread drafts only and preserve pinned permissions, harness identity, and the canonical <code>complete(inputGraph)</code> boundary.</p>
 <h3>3.5 Permission profiles</h3>
 <p>The New Thread composer places a permission picker beside the folder control. It uses the product labels and availability returned by <code>GET /api/permission-profiles</code>; the renderer does not expose raw provider sandbox or approval flags. The initial selection is the Rust catalog's default profile.</p>
 <table>
@@ -1219,7 +1222,7 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 <li><strong>SCP-002:</strong> No folder never receives a user folder path by implication; the stored internal scope remains <code>standalone</code>.</li>
 <li><strong>SCP-003:</strong> Project scope always resolves through a stable <code>projectId</code>; display names and paths are metadata, not identity.</li>
 <li><strong>SCP-004:</strong> Git controls appear only when Git detection succeeds.</li>
-<li><strong>SCP-005:</strong> Worktree creation errors leave the draft intact and offer retry or Local checkout.</li>
+<li><strong>SCP-005:</strong> Worktree creation errors leave the draft intact and offer retry or another Checkout selection.</li>
 <li><strong>SCP-006:</strong> The Complete request records the exact project, checkout/worktree, and repository state selected at send time.</li>
 <li><strong>SCP-007:</strong> New thread, fork, rename, archive, pin, delete-entry, and reopen actions are available from expected sidebar or thread menus.</li>
 <li><strong>SCP-008:</strong> Deleting a thread entry never deletes graph nodes referenced by another thread or turn.</li>
@@ -1236,6 +1239,11 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 <li><strong>SCP-019:</strong> When the server rejects a follow-up after its thread's newer turn arrived, the rejected text returns to the empty composer. The composer stays editable while a send is pending. If the user cleared the sent text meanwhile, a rejection does not restore it. After a network or server error, the text is not carried into the turn the send may have created. Once a turn with that text arrives, the text is not shown again. An unrelated newer turn carries the text forward, including one that arrived while the send was pending.</li>
 <li><strong>SCP-020:</strong> A draft the user wrote for a turn wins over that turn's restored retry text. The composer shows the user's draft and does not switch between the two. A composer the user emptied holds no draft, so the restored retry text returns.</li>
 <li><strong>SCP-021:</strong> A Send that stops before posting returns its text to the composer only when the composer is empty. Text the user typed since is kept, and the earlier text is not restored. Text the user cleared while the Send waited stays cleared, as it does after a rejection.</li>
+<li><strong>SCP-022:</strong> Repository-root consolidation uses local repository identity, preserves exact thread bindings and graph visibility atomically, and keeps intentional subfolder entries separate.</li>
+<li><strong>SCP-023:</strong> Checkout discovery, selection, and Send enforce availability, contained relative subfolders, and acknowledgment of changed repository state; no silent fallback occurs.</li>
+<li><strong>SCP-024:</strong> New worktrees use a selected committed base, automatic random-hash branches and managed locations. Only Send creates; the composer exposes neither branch naming nor custom locations.</li>
+<li><strong>SCP-025:</strong> Durable creation recovery reconciles exact identity and reuses partial success; uncertain or conflicting contents block retry without overwrite.</li>
+<li><strong>SCP-026:</strong> Saved thread locations are immutable across reopen and follow-up. Missing locations block execution while history remains readable; removal of entries retains files.</li>
 <li><strong>PERM-001:</strong> New Thread exposes exactly Ask for approval, Approve for me, and Full access using the stable product IDs <code>ask</code>, <code>auto</code>, and <code>full</code>.</li>
 <li><strong>PERM-002:</strong> The picker selects the Rust catalog default on load and permits selection only when desktop policy and the selected harness both support the profile.</li>
 <li><strong>PERM-003:</strong> First send records <code>permissionProfileId</code> on the ordinary product thread before inference. Every later interaction inherits that pinned profile.</li>
@@ -1244,6 +1252,7 @@ V1 exposes only <strong>Local checkout</strong> and <strong>New worktree</strong
 <li><strong>PERM-006:</strong> Product UI and API contracts use stable profile IDs and product semantics, never raw provider sandbox or approval flags.</li>
 </ul>
 <h3>3.7 Verification</h3>
+<p>The approved worktree contract and production checkpoint mapping are recorded in <a href="../evidence/worktrees/README.md">worktree evidence</a>. Design approval is not verification; that ledger records actual runs separately from planned tests.</p>
 <p>Choice-driven tests cover each scope, Git option, and permission profile. Permission tests cover catalog defaulting, unavailable-profile fallback, no-profile failure, the exact thread-create request, pinned persistence, and the Full access disclosure. They also cover creation failure, revoked permission, duplicate projects, project moves, and both fork options. Filesystem and Git tests use temporary repositories. They must not change a user checkout.</p>
 <p>Checkpoint: <code>test/node-detail-runtime.test.mjs</code> exercises real workspace construction, rendering, and disposal without a saved thread while its input-draft controller is active.</p>
 <p>The test settles thread A's deferred input-draft load in the empty view. It verifies no threadless input-draft operation or interim Send. On return to A, it checks the displayed label, value, preview, and Send revision. This checkpoint maps only the no-thread workspace and input-draft lifecycle. The fixture response comparison does not prove that the workspace retained an exact occurrence, source, or draft-revision identity.</p>
@@ -2280,7 +2289,7 @@ settings:
 → deterministic eval passes
 → saved resolved layer opens in the local movable-node result viewer
 </code></pre>
-<p>This runtime milestone now works through the Relayer app server and Electron renderer. The remaining product work includes cancellation, retry, worktrees, context attachments, and signed live-provider proof.</p>
+<p>This runtime milestone now works through the Relayer app server and Electron renderer. The remaining product work includes cancellation, retry, worktree forking and cleanup, context attachments, and signed live-provider proof.</p>
 <h2 data-prd-layer="Contracts" data-prd-order="12.1">12A. Visual-assets library foundation</h2>
 <p><strong>Primary issues:</strong> <a href="https://github.com/vishaltandale00/relayer-graphcomplete/issues/241">#241 AI-authored visual Node Details and asset library</a> and <a href="https://github.com/vishaltandale00/relayer-graphcomplete/issues/364">#364 Build the visual asset library and deterministic discovery tools</a>.</p>
 <p>The visual-assets Module exposes deterministic tools to list registries, tags, and assets. Its tools also add harness files, inspect content-resolved previews, organize tags and assets, archive assets, and download by logical asset ID. The full inventory is discovered through these tools and is never injected into harness context. Logical assets expose provenance and a digest but no generic-store identifier; content storage and deduplication remain behind the Module.</p>
@@ -3420,7 +3429,7 @@ submitReview({ turnId, rootLayerResult, evidence, criterionJudgments, summary, f
 <ul>
 <li>Stop and retry controls do not have product proof.</li>
 <li>Context attachment does not have product proof.</li>
-<li>Local-checkout, new-worktree, fork, and worktree-cleanup flows do not have product proof.</li>
+<li>Checkout selection and new-worktree creation have deterministic production proof in <code>docs/evidence/worktrees/README.md</code>. Fork and worktree-cleanup flows remain unproven.</li>
 <li>Rename, archive, pin, delete-entry, move-to-project, and unsent-draft recovery do not have product proof.</li>
 <li>API-key providers and operating-system secret storage do not have product proof.</li>
 <li>Prime Agent does not have clean-install live-product proof.</li>

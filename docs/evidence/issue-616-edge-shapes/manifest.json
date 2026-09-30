@@ -7,7 +7,7 @@
     "sha256": "8e2acf9764df076c3e9ce1c02744138a58455ce51390a9bbcda870dba5703a9b"
   },
   "source": {
-    "commit": "4d09141280389070409812b8724a48474fbf9deb",
+    "commit": "f38af0992c3648d75ef7542d0997b362c9a61135",
     "dirty": true,
     "sourceFiles": {
       "desktop/renderer/design/design.css": "332eb1b0f3bd8b65b6207a2b4d080499b57ec548c7e3167b1f91c91893a90bf7",
@@ -16,8 +16,9 @@
       "desktop/renderer/src/action-invocation-state.js": "890d8f69c6a8310a0221e1a6ce35c9a6fb0735b8826be009bd68ceb56c06d4ea",
       "desktop/renderer/src/api.js": "4024542092755f7167e11f0c7803a25f49c7d9b27172ce5c9dde74f16905a58e",
       "desktop/renderer/src/approval-model.js": "f1b0d76178c7de024d14a191930f2e419e1a7e9c9396626d56ad45b58a9a4ecf",
-      "desktop/renderer/src/composer-drafts.js": "95aef2c4e5c959bd7322d999ee54a42b34e2ce706b744b4eee0fc56bcfa9ee94",
+      "desktop/renderer/src/composer-drafts.js": "15b619a244c6b27996805c60868b21123332376b7553380f82a8148103aa532c",
       "desktop/renderer/src/control-activation.js": "682962e5cfc93c2720845d409c4bd65fe51a5b4f0e9718e1fbfc452943104186",
+      "desktop/renderer/src/environment-context.js": "9813114cc78844ce28c8532ef4585262be1c915f8c5cfac53334b623e69b66a6",
       "desktop/renderer/src/interaction-failure-model.js": "770928962446ad3326d94460235775e581a542056a4477860b2e37f4ba457442",
       "desktop/renderer/src/model-picker-model.js": "ce90a85ee2d9c360eca78c0241e8524d72ad2202452a6b0cdb03c8ef0f1ae463",
       "desktop/renderer/src/model-picker.js": "11b2000a7c39d8b858ddae68ab01512054de2b8632d9fd29785ea100956fe702",
@@ -37,14 +38,14 @@
       "desktop/renderer/src/product-workspace/run-state.js": "51d1cf895a9f261ebf74d4cba3000897e37ab8571339a68a581390f847089c15",
       "desktop/renderer/src/product-workspace/view.js": "8f503edd7a926ff234d81faf0e84a4847dd80c2b64b544c0a2d37bcf159ed8bc",
       "desktop/renderer/src/product-workspace/workspace-layout.js": "8e5d307f95b1863fb995606ca32a832de088916716c39476f9d31f2174de002d",
-      "desktop/renderer/src/product-workspace/workspace.js": "70af74dd3fa7cf18a0b0c3007167b715b992cf6535bde8707ae12d91b5247d28",
+      "desktop/renderer/src/product-workspace/workspace.js": "0be598d5a5569cf99151292e7faa4505c0acab2cfab2ae8a61b77c7c9605e44d",
       "desktop/renderer/src/public-share-viewer/adapter.js": "da4135effa876c2d8a58f7b650d2ac6c536f9eb8b0d3056e6630505d0a039021",
       "desktop/renderer/src/public-share-viewer/main.js": "c6f03f10e2c73fd0b1f99f17ea2aad98cda452403fab0ef8357e83dd0a588db0",
       "desktop/renderer/src/public-share-viewer/snapshot.js": "22de09bafd3c0c8808b77a64d8417414dd26e43fb0417e137426d8e7c9f7511e",
       "desktop/renderer/src/public-share-viewer/viewer.css": "cb10f9e12bde18d5a86141835d9da5f79674830ebe2f96a672bdb63429917d80",
       "desktop/renderer/src/share-publish-ui.js": "3a07cbecaab629f54720575e5fea998694919f2fce15638d89bc025100a57904",
       "desktop/renderer/src/ui.js": "cc097502fc2edf38832715c536e356665e4564336441c89a2b655a5af019d53b",
-      "desktop/renderer/styles.css": "bbd35785f97e1b722afe8631155aa11bdb95f1c8c70c3e2c2cdbd6e7a2fab2ce",
+      "desktop/renderer/styles.css": "e07fc77e163eec9a1fafa604ae5249c1dbb367c3c365e6c99a64d13fadbbd2b9",
       "desktop/renderer/vendor/lucide.min.js": "534813d1da2f4d4550383d5db0879aedb2f74c2d0b8951ade277e8bcaea6df52",
       "desktop/renderer/vendor/marked.umd.js": "2e20e86f0a13107ae9bf00675894bbb573716a8e5b4fde612eacaff1e404c128",
       "scripts/capture-edge-shape-evidence.mjs": "0a71e7e3f9c0f1001c60a209460d0722fb7ce68876cb07ef4aed770eeacf60a4"

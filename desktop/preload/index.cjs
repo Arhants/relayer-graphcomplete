@@ -108,6 +108,14 @@ if (contextBridge) contextBridge.exposeInMainWorld("relayerDesktop", {
     logout: () => ipcRenderer.invoke("relayer:account-logout"),
     onChanged: (callback) => subscribe("relayer:account-changed", callback),
   },
+  worktrees: {
+    inspect: (path) => ipcRenderer.invoke("relayer:worktrees-inspect", path),
+    validateSelection: (selection) => ipcRenderer.invoke("relayer:worktrees-validateSelection", selection),
+    plan: (plan) => ipcRenderer.invoke("relayer:worktrees-plan", plan),
+    create: (planId) => ipcRenderer.invoke("relayer:worktrees-create", planId),
+    reconcile: (planId) => ipcRenderer.invoke("relayer:worktrees-reconcile", planId),
+    readPlan: (planId) => ipcRenderer.invoke("relayer:worktrees-readPlan", planId),
+  },
   folder: {
     choose: () => ipcRenderer.invoke("relayer:folder-choose"),
   },
