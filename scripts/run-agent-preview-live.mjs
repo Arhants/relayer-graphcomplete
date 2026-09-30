@@ -76,6 +76,9 @@ try {
   }, "live run", 45 * 60_000);
   const execution = run.executions[0];
   const turn = execution.turns[0];
+  if (turn === undefined) {
+    throw new Error(`Live run ${run.id} executed no turn (${run.status}): ${execution.error ?? "no error recorded"}`);
+  }
   const turnDirectory = join(userData, "eval-data", "runs", encodeURIComponent(run.id), "executions",
     encodeURIComponent(execution.id), "turns", encodeURIComponent(String(turn.interactionId)));
   const events = (await readFile(join(turnDirectory, "candidate-trace", "events.jsonl"), "utf8"))
