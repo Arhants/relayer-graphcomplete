@@ -1,0 +1,297 @@
+{
+  "runId": "run-2026-09-30T06-13-12-053Z-74edf54b",
+  "runStatus": "passed",
+  "case": "empty-project.hierarchical-overview.single-turn",
+  "harness": "codex-basic",
+  "turnAccepted": true,
+  "renderedLayerPreviews": 5,
+  "previewEvents": [
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 36
+      },
+      "fingerprint": "sha256:56222cb59268adc8004430b515c7ed273e90c2efa11c032021871e9abbdf1f57",
+      "width": 576,
+      "height": 844,
+      "byteLength": 40409,
+      "durationMs": 1476
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 36
+      },
+      "fingerprint": "sha256:36250ce7938995c66ff1ca45b48f0301ff08a2afb33754ca5076fd31e0b6e264",
+      "width": 576,
+      "height": 844,
+      "byteLength": 40409,
+      "durationMs": 733
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 37
+      },
+      "fingerprint": "sha256:3d7f313feb30ec4abd7614a1c68a67e529c11e84c532465e08663e8bb3be31a0",
+      "width": 576,
+      "height": 844,
+      "byteLength": 40759,
+      "durationMs": 252
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 38
+      },
+      "fingerprint": "sha256:d77b5c7005874c245a540e89f9e5fad2d311174eec32498b535ae5529c269fa1",
+      "width": 576,
+      "height": 844,
+      "byteLength": 40044,
+      "durationMs": 268
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 39
+      },
+      "fingerprint": "sha256:5f18e1de764722b6bd9713be7d15862820ae4612cea5b36fdfa66a8f8b6a773c",
+      "width": 576,
+      "height": 844,
+      "byteLength": 40702,
+      "durationMs": 217
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 40
+      },
+      "fingerprint": "sha256:3072f8c42a7ed23e589d1b3614115837b587a3c9b79205f9b77122ad2c4c67d5",
+      "width": 576,
+      "height": 844,
+      "byteLength": 37839,
+      "durationMs": 258
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 41
+      },
+      "fingerprint": "sha256:b69033a48b15932f3302b524c794bec3b8bd0b4f798a67d46a1c02e20f99698e",
+      "width": 576,
+      "height": 844,
+      "byteLength": 42929,
+      "durationMs": 222
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 42
+      },
+      "fingerprint": "sha256:dd1eae96e87a0f8484107018f916491ed59a7f196ca35473f6fdff33895eb36d",
+      "width": 576,
+      "height": 844,
+      "byteLength": 39134,
+      "durationMs": 223
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 43
+      },
+      "fingerprint": "sha256:295fe8d67ca564cc8f3e13d23680a1b071bf31d9eeea01c0af758749fa3e7a23",
+      "width": 576,
+      "height": 844,
+      "byteLength": 42445,
+      "durationMs": 314
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 44
+      },
+      "fingerprint": "sha256:abb9cf67e7b410ee0b6d2fffdfbd78e9985d79a07f886d3a3dea396508083355",
+      "width": 576,
+      "height": 844,
+      "byteLength": 40349,
+      "durationMs": 220
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 45
+      },
+      "fingerprint": "sha256:6cd3be557b165417a5791a29fee5ac6d73b3cd92776017efcbfe3032d86f5e02",
+      "width": 576,
+      "height": 844,
+      "byteLength": 40002,
+      "durationMs": 190
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 46
+      },
+      "fingerprint": "sha256:1eb8462f2756a603c3980a8374f0e0e8ea56c08f689928ed3fc0e11934df38c8",
+      "width": 576,
+      "height": 844,
+      "byteLength": 41785,
+      "durationMs": 207
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 47
+      },
+      "fingerprint": "sha256:291bb9b1823d97417fd2bb9eb44225d21829e4439edbd00e570b809586ef62ce",
+      "width": 576,
+      "height": 844,
+      "byteLength": 42046,
+      "durationMs": 234
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 48
+      },
+      "fingerprint": "sha256:e2d8b9db83e19c6699a5cf1be3df65d278efdf29fbed2f6782e177980bda3cbd",
+      "width": 576,
+      "height": 844,
+      "byteLength": 44823,
+      "durationMs": 245
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 49
+      },
+      "fingerprint": "sha256:b2c042bc1e8f8be5d4cade37be025d9336fd855ceac997b768953899d5106ed0",
+      "width": 576,
+      "height": 844,
+      "byteLength": 38295,
+      "durationMs": 249
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 50
+      },
+      "fingerprint": "sha256:bbb6c9d41c2958e9a10c8b692a816bce11fba66e70876579bfcb1cbc41938224",
+      "width": 576,
+      "height": 844,
+      "byteLength": 42686,
+      "durationMs": 264
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 51
+      },
+      "fingerprint": "sha256:49cc6339432a9486a3821854c95ed2a14dc03dd55c059e89f1cda50be15ad0ce",
+      "width": 576,
+      "height": 844,
+      "byteLength": 38083,
+      "durationMs": 283
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "node",
+        "nodeId": 52
+      },
+      "fingerprint": "sha256:2c176b8318639903eb64f629aa498d6b1d1cf8476de1a9b091563c745bcf55dc",
+      "width": 576,
+      "height": 844,
+      "byteLength": 40697,
+      "durationMs": 306
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "layer",
+        "layerId": 6
+      },
+      "fingerprint": "sha256:ec42861a9ba0317f198988297d9606753af663cede1fe09c818680eb04d70503",
+      "width": 1164,
+      "height": 703,
+      "byteLength": 25366,
+      "durationMs": 661
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "layer",
+        "layerId": 7
+      },
+      "fingerprint": "sha256:df5fca15af53648f0497f4449a79b76ad0129ad960d1eff1485534795845a369",
+      "width": 1164,
+      "height": 703,
+      "byteLength": 25744,
+      "durationMs": 507
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "layer",
+        "layerId": 8
+      },
+      "fingerprint": "sha256:b77f5804cf01fa7099367b777e43bf0ebf7adf6c9ef58a260afea61163a7f0be",
+      "width": 1164,
+      "height": 703,
+      "byteLength": 26275,
+      "durationMs": 282
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "layer",
+        "layerId": 9
+      },
+      "fingerprint": "sha256:7e12e4b9b5b8909b0e4edb2ba87837b008af0a0a1dd1040f29776c359a3b1b49",
+      "width": 1164,
+      "height": 703,
+      "byteLength": 25551,
+      "durationMs": 360
+    },
+    {
+      "outcome": "rendered",
+      "target": {
+        "kind": "layer",
+        "layerId": 10
+      },
+      "fingerprint": "sha256:7d20f37df75b9a2eea5f09ce9f02c954dd0b387d1c504f70b89935eaa6e336b3",
+      "width": 1164,
+      "height": 703,
+      "byteLength": 30607,
+      "durationMs": 222
+    }
+  ],
+  "imageViews": [
+    "layer-10-7d20f37df75b9a2e.png",
+    "layer-7-df5fca15af53648f.png"
+  ],
+  "submittedAt": "2026-09-30T06:27:21.950Z",
+  "viewedLayerPreviews": [
+    "layer-10-7d20f37df75b9a2e.png",
+    "layer-7-df5fca15af53648f.png"
+  ],
+  "passed": true,
+  "qualityClaim": "none"
+}

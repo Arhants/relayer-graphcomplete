@@ -6,6 +6,7 @@ import { HumanTaskService } from "./human-task-service.mjs";
 import { homedir } from "node:os";
 import { createEvalDashboard, openHumanReview, createHumanTaskSurface, createSettingsSurface } from "./web-host.mjs";
 import { createJudgeBrowser, openBrowserReview } from "./browser-review.mjs";
+import { createPlaywrightDraftPreviewRenderer } from "./draft-preview-renderer.mjs";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { readFile, mkdir, open, unlink } from "node:fs/promises";
@@ -17,6 +18,7 @@ import { nativeBinaryName } from "../shared/target.mjs";
 
 import {
   graphMemoryFixtureFactory,
+  graphPreviewFixtureFactory,
   nodeDetailFixtureFactory,
   gradeInputRoundTripSet,
   gradeInputRoundTripControlSet,
@@ -84,14 +86,18 @@ const judgeBrowser = createJudgeBrowser();
 const evalStateFile = join(userDataDirectory, "eval-data", "test-runs.json");
 // Validation only: startup checks local bytes, never prepares or probes runtimes.
 const runtimeFileValidator = createManagedRuntimeInstaller({ root: join(userDataDirectory, "managed-runtimes") });
+const draftPreviewRenderer = createPlaywrightDraftPreviewRenderer({ rendererDirectory: productRendererDirectory });
 const graphRuntime = new GraphCompleteRuntimeService({
   userDataDirectory,
   graphServerBinary,
   configurationPaths,
+  draftPreviewRenderer,
+  retainDraftPreviews: true,
   additionalImplementations: {
     "fixture.task-system": taskSystemFixtureFactory,
     "fixture.node-detail": nodeDetailFixtureFactory,
     "fixture.graph-memory": graphMemoryFixtureFactory,
+    "fixture.graph-preview": graphPreviewFixtureFactory,
   },
   ...(codexBrowserMcpInspection.available ? { codexBrowserMcpRuntime: codexBrowserMcpInspection } : {}),
   resolveCodexRuntime: () => providerSetup.resolveCodexRuntime(),
@@ -637,6 +643,7 @@ function stop() {
     }
     await attempt(() => judgeBrowser.close());
     await attempt(() => graphRuntime.close());
+    await attempt(() => draftPreviewRenderer.close());
     await attempt(() => providerSetup?.close());
     if (ownsProfileLock) await attempt(() => unlink(profileLock));
     if (errors.length) throw new AggregateError(errors, "Relayer Eval services did not stop cleanly.");

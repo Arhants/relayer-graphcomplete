@@ -695,7 +695,7 @@ function projectInteractionGraphs(interactions, turns, layersByTurn, exportVersi
   }
 }
 
-function publicState(snapshot) {
+export function publicState(snapshot) {
   const thread = snapshot.thread;
   const acceptedInteractions = snapshot.interactions;
   const first = acceptedInteractions[0];

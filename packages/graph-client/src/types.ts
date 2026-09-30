@@ -204,6 +204,8 @@ export interface GraphCapability {
   readonly url: string;
   readonly token: string;
   readonly nodeId: GraphId;
+  /** Where this completion's draft-preview PNGs are written (PRD §11.10). */
+  readonly previewDirectory?: string;
 }
 
 export interface GraphApiErrorBody {

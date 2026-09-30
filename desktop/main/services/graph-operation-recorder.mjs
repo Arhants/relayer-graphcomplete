@@ -210,6 +210,10 @@ function proxyBodyLimit(method, pathname) {
     || /^\/api\/control\/conversation-import-stages\/[^/]+\/visual-asset-contents$/.test(pathname))) {
     return 17 * 1024 * 1024;
   }
+  // Node and layer writes can return a draft-preview image (PRD §11.10).
+  if (method === "POST" && (pathname === "/api/graph/nodes" || pathname === "/api/graph/layers")) {
+    return 8 * 1024 * 1024;
+  }
   return (method === "POST" && pathname === "/api/graph/visual-assets/operations")
     || (method === "GET" && /^\/api\/control\/nodes\/[1-9][0-9]*\/detail-assets\/[^/]+$/.test(pathname))
     ? 12 * 1024 * 1024

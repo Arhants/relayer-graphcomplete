@@ -139,9 +139,27 @@ impl<'a> AuthoredDetailAssetTable<'a> {
         node_id: NodeId,
         asset_id: &str,
     ) -> Result<AcceptedDetailAsset, GraphError> {
-        let row = sqlx::query_as::<_, AssetRow>("SELECT asset.asset_id,asset.digest_sha256,asset.media_type,asset.byte_length,asset.provenance_source,asset.provenance_file_name,content.content FROM authored_detail_assets asset JOIN authored_detail_asset_contents content USING(digest_sha256) JOIN nodes node ON node.id=asset.node_id WHERE asset.node_id=?1 AND asset.asset_id=?2 AND node.state='accepted'")
-            .bind(node_id.value()).bind(asset_id).fetch_optional(&mut *self.connection).await?
-            .ok_or_else(|| GraphError::NotFound("accepted visual asset".into()))?;
+        self.read_in_state(node_id, asset_id, true).await
+    }
+
+    /// Reads a draft or accepted node's asset. Callers must check visibility.
+    pub(crate) async fn read_any_state(
+        &mut self,
+        node_id: NodeId,
+        asset_id: &str,
+    ) -> Result<AcceptedDetailAsset, GraphError> {
+        self.read_in_state(node_id, asset_id, false).await
+    }
+
+    async fn read_in_state(
+        &mut self,
+        node_id: NodeId,
+        asset_id: &str,
+        accepted_only: bool,
+    ) -> Result<AcceptedDetailAsset, GraphError> {
+        let row = sqlx::query_as::<_, AssetRow>("SELECT asset.asset_id,asset.digest_sha256,asset.media_type,asset.byte_length,asset.provenance_source,asset.provenance_file_name,content.content FROM authored_detail_assets asset JOIN authored_detail_asset_contents content USING(digest_sha256) JOIN nodes node ON node.id=asset.node_id WHERE asset.node_id=?1 AND asset.asset_id=?2 AND (node.state='accepted' OR NOT ?3)")
+            .bind(node_id.value()).bind(asset_id).bind(accepted_only).fetch_optional(&mut *self.connection).await?
+            .ok_or_else(|| GraphError::NotFound(if accepted_only { "accepted visual asset" } else { "visual asset" }.into()))?;
         Ok(AcceptedDetailAsset {
             asset_id: row.asset_id,
             digest_sha256: row.digest_sha256,
