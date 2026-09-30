@@ -121,6 +121,19 @@ export const RELAYER_ICON_NAMES = [
   "workflow",
   "wrench",
   "zap",
+  // Temporary everyday icons until #613 settles the wider vocabulary.
+  "wallet",
+  "calendar",
+  "clock",
+  "plane",
+  "train-front",
+  "car",
+  "map-pin",
+  "landmark",
+  "bed-double",
+  "utensils",
+  "coffee",
+  "shopping-cart",
 ] as const;
 
 export type RelayerIconName = typeof RELAYER_ICON_NAMES[number];
@@ -132,6 +145,23 @@ export const RELAYER_ICON_ALIASES = Object.freeze({
   messagecirclequestion: "message-circle-question",
   messagessquare: "messages-square",
 } satisfies Readonly<Record<string, RelayerIconName>>);
+
+// Presentation-only node families (visual redesign brief §3.3, Appendix A). Each coloured family gives a
+// node its disc colour; every other icon is a neutral signal icon (status, warning, confirmation, pointer).
+export const RELAYER_ICON_FAMILY_GROUPS = Object.freeze([
+  { family: "f1", label: "Documents and writing", icons: ["archive", "book-open", "book-open-text", "clipboard", "copy", "file", "file-edit", "file-output", "file-search", "file-text", "library", "pencil-line", "scroll-text"] },
+  { family: "f2", label: "Code and components", icons: ["blocks", "braces", "code", "component", "file-code", "file-code-2", "folder-git-2", "function-square", "git-branch", "git-branch-plus", "git-commit", "git-compare", "git-graph", "git-merge", "git-pull-request", "package", "puzzle", "terminal"] },
+  { family: "f3", label: "Data, structure, money and time", icons: ["bar-chart-3", "box", "boxes", "columns-3", "database", "database-backup", "folder", "folder-tree", "folders", "frame", "grid-3x3", "layers", "layout", "layout-grid", "layout-panel-left", "layout-template", "list", "list-ordered", "list-tree", "panels-top-left", "pie-chart", "square-dashed-kanban", "table", "wallet", "calendar", "clock"] },
+  { family: "f4", label: "Systems, services, places and travel", icons: ["cloud", "cog", "cpu", "globe", "hard-drive", "key", "lock", "monitor", "network", "plug", "radio", "rss", "satellite", "server", "server-cog", "settings", "shield", "smartphone", "webhook", "wifi", "wrench", "plane", "train-front", "car", "map-pin", "landmark"] },
+  { family: "f5", label: "People, agents, conversation and daily life", icons: ["bot", "mail", "messages-square", "mic", "send", "share-2", "user", "users", "bed-double", "utensils", "coffee", "shopping-cart"] },
+  { family: "f6", label: "Reasoning, ideas and process", icons: ["bolt", "brain", "compass", "palette", "route", "search", "sprout", "star", "workflow", "zap"] },
+] as const satisfies ReadonlyArray<{ family: string; label: string; icons: readonly RelayerIconName[] }>);
+
+export type RelayerIconFamily = typeof RELAYER_ICON_FAMILY_GROUPS[number]["family"] | "neutral";
+
+export const RELAYER_ICON_FAMILIES: Readonly<Record<string, RelayerIconFamily>> = Object.freeze(Object.fromEntries(
+  RELAYER_ICON_FAMILY_GROUPS.flatMap(({ family, icons }) => icons.map((icon) => [icon, family])),
+));
 
 const relayerIconNameSet: ReadonlySet<string> = new Set(RELAYER_ICON_NAMES);
 
@@ -154,4 +184,9 @@ export function isRelayerIconName(name?: string | null): name is RelayerIconName
 
 export function isSupportedRelayerIcon(name?: string | null): boolean {
   return resolveRelayerIconName(name) !== null;
+}
+
+export function relayerIconFamily(name?: string | null): RelayerIconFamily {
+  const resolved = resolveRelayerIconName(name);
+  return (resolved && RELAYER_ICON_FAMILIES[resolved]) || "neutral";
 }

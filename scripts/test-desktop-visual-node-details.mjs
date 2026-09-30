@@ -221,7 +221,9 @@ async function captureProductThemes(threadId, turnId, nodeId) {
     const explicit = [];
     for (const theme of ['light', 'dark', 'light']) {
       const inspection = await inspectTheme(window, theme, true);
-      explicit.push({ ...inspection, screenshotPaths: await captureTiles(`product-${explicit.length}-${theme}`) });
+      const windowPath = join(artifactDirectory, `product-window-${explicit.length}-${theme}.png`);
+      await writeFile(windowPath, (await window.webContents.capturePage()).toPNG());
+      explicit.push({ ...inspection, windowPath, screenshotPaths: await captureTiles(`product-${explicit.length}-${theme}`) });
     }
     // Under System the page follows prefers-color-scheme, which Electron derives
     // from nativeTheme.themeSource; setting it stands in for the OS changing.

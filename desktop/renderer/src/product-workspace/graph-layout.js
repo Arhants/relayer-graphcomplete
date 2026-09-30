@@ -70,6 +70,44 @@ function worldPadding(nodes) {
   });
 }
 
+const NODE_GAP = Object.freeze({ x: 24, y: 16 });
+
+// Spreads positions apart about their centre, keeping the layout's shape, until no
+// two node boxes overlap: first horizontally for nodes that share a row, then
+// vertically for nodes stacked in the same column.
+export function separateNodeBoxes(positions, nodes) {
+  const boxes = nodes.map((node) => ({
+    point: positions.get(String(node.id)),
+    bounds: node.layoutBounds ?? { halfWidth: 0, top: 0, bottom: 0 },
+  })).filter((box) => box.point);
+  const pairs = boxes.flatMap((a, index) => boxes.slice(index + 1).map((b) => {
+    const [upper, lower] = a.point.y <= b.point.y ? [a, b] : [b, a];
+    return {
+      dx: Math.abs(a.point.x - b.point.x),
+      dy: lower.point.y - upper.point.y,
+      needX: a.bounds.halfWidth + b.bounds.halfWidth + NODE_GAP.x,
+      needY: upper.bounds.bottom + lower.bounds.top + NODE_GAP.y,
+    };
+  }));
+  let scaleX = 1;
+  for (const pair of pairs) {
+    if (pair.dy < pair.needY && pair.dx > 0) scaleX = Math.max(scaleX, pair.needX / pair.dx);
+  }
+  let scaleY = 1;
+  for (const pair of pairs) {
+    if (pair.dx * scaleX < pair.needX && pair.dy > 0) scaleY = Math.max(scaleY, pair.needY / pair.dy);
+  }
+  if (scaleX === 1 && scaleY === 1) return positions;
+  const centre = {
+    x: boxes.reduce((sum, box) => sum + box.point.x, 0) / boxes.length,
+    y: boxes.reduce((sum, box) => sum + box.point.y, 0) / boxes.length,
+  };
+  return new Map([...positions].map(([nodeId, point]) => [nodeId, {
+    x: centre.x + (point.x - centre.x) * scaleX,
+    y: centre.y + (point.y - centre.y) * scaleY,
+  }]));
+}
+
 export function projectLayerNodePositions(layer, nodes) {
   if (!nodes.length) return { source: layer?.layer?.layout ? "authored" : "legacy", positions: new Map() };
   const authored = authoredPlacements(layer, nodes);
@@ -81,7 +119,7 @@ export function projectLayerNodePositions(layer, nodes) {
     x: padding.horizontal + point.x * usableWidth,
     y: padding.top + point.y * usableHeight,
   }]));
-  return { source: authored ? "authored" : "legacy", positions };
+  return { source: authored ? "authored" : "legacy", positions: separateNodeBoxes(positions, nodes) };
 }
 
 export function graphLayoutSignature(layer, nodes, edges) {

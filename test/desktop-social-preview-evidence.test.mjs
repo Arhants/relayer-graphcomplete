@@ -20,10 +20,11 @@ async function servedRendererFiles(rendererDirectory, current = rendererDirector
     if (entry.isDirectory()) files.push(...await servedRendererFiles(rendererDirectory, path));
     else if (entry.isFile()) {
       const name = relative(rendererDirectory, path).split(sep).join("/");
-      if (/^(src\/|vendor\/|assets\/|styles\.css$)/.test(name)) files.push(name);
+      if (/^(src\/|vendor\/|assets\/|design\/|styles\.css$)/.test(name)) files.push(name);
     }
   }
-  return files.sort();
+  // Same order as the capture script's canonical digest.
+  return files.sort((left, right) => left.localeCompare(right));
 }
 
 describe("desktop social preview evidence", () => {
@@ -35,7 +36,7 @@ describe("desktop social preview evidence", () => {
 
     const rendererDirectory = resolve(root, receipt.rendererArtifact.directory);
     const actualFiles = await servedRendererFiles(rendererDirectory);
-    expect(Object.keys(receipt.rendererArtifact.files).sort()).toEqual(actualFiles);
+    expect(Object.keys(receipt.rendererArtifact.files).sort((left, right) => left.localeCompare(right))).toEqual(actualFiles);
     const canonical = [];
     for (const path of actualFiles) {
       const bytes = await readFile(resolve(rendererDirectory, path));

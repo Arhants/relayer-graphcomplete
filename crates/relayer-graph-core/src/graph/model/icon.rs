@@ -120,6 +120,19 @@ pub const RELAYER_ICON_NAMES: &[&str] = &[
     "workflow",
     "wrench",
     "zap",
+    // Temporary everyday icons until #613 settles the wider vocabulary.
+    "wallet",
+    "calendar",
+    "clock",
+    "plane",
+    "train-front",
+    "car",
+    "map-pin",
+    "landmark",
+    "bed-double",
+    "utensils",
+    "coffee",
+    "shopping-cart",
 ];
 
 /// Compatibility spellings accepted at the authoring boundary and normalized

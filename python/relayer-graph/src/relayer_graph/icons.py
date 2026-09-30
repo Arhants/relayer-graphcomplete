@@ -25,6 +25,9 @@ RELAYER_ICON_NAMES = (
     "shield-check", "shield", "smartphone", "sprout", "square-dashed-kanban",
     "square", "star", "table", "terminal", "upload", "user", "users",
     "webhook", "wifi", "workflow", "wrench", "zap",
+    # Temporary everyday icons until #613 settles the wider vocabulary.
+    "wallet", "calendar", "clock", "plane", "train-front", "car", "map-pin",
+    "landmark", "bed-double", "utensils", "coffee", "shopping-cart",
 )
 
 RELAYER_ICON_ALIASES = MappingProxyType({

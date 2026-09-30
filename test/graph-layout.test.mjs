@@ -99,6 +99,35 @@ describe("product workspace graph layout", () => {
     )).not.toBe(graphLayoutSignature(layer, [{ id: 1 }, { id: 2 }], edges));
   });
 
+  it("spreads wide Sticker pills apart until none overlap, keeping the authored order", () => {
+    const pill = (id, halfWidth = 124) => ({ id, layoutBounds: { halfWidth, top: 18, bottom: 18 } });
+    // Three rows of three wide pills, as an agent lays out a nine-node explanation.
+    const grid = Array.from({ length: 9 }, (_, index) => pill(index + 1));
+    const layer = authoredLayer(grid.map((node, index) => ({ nodeId: node.id, x: [0.1, 0.5, 0.9][index % 3], y: [0.1, 0.5, 0.9][Math.floor(index / 3)] })));
+    const positions = projectLayerNodePositions(layer, grid).positions;
+    const box = (node) => {
+      const point = positions.get(String(node.id));
+      return { left: point.x - 124, right: point.x + 124, top: point.y - 18, bottom: point.y + 18 };
+    };
+    for (const [index, a] of grid.entries()) {
+      for (const b of grid.slice(index + 1)) {
+        const [first, second] = [box(a), box(b)];
+        const apart = first.right + 24 <= second.left + 1e-9 || second.right + 24 <= first.left + 1e-9
+          || first.bottom + 16 <= second.top + 1e-9 || second.bottom + 16 <= first.top + 1e-9;
+        expect(apart, `nodes ${a.id} and ${b.id} overlap`).toBe(true);
+      }
+    }
+    const xs = grid.slice(0, 3).map((node) => positions.get(String(node.id)).x);
+    expect(xs).toEqual([...xs].sort((left, right) => left - right));
+    expect(positions.get("1").y).toBe(positions.get("2").y);
+
+    // A single stacked column spreads vertically only.
+    const column = [pill(1), pill(2)];
+    const stacked = projectLayerNodePositions(authoredLayer([{ nodeId: 1, x: 0.5, y: 0.49 }, { nodeId: 2, x: 0.5, y: 0.51 }]), column).positions;
+    expect(stacked.get("1").x).toBe(stacked.get("2").x);
+    expect(stacked.get("2").y - stacked.get("1").y).toBeCloseTo(52);
+  });
+
   it("fails closed for malformed accepted authored layouts instead of using legacy placement", () => {
     expect(() => projectLayerNodePositions(
       authoredLayer([{ nodeId: 1, x: 0.5, y: 0.5 }]),
