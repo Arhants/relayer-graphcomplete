@@ -20,9 +20,24 @@ export function desktopRailGeometry(viewportWidth) {
   };
 }
 
+// Project grouping does not change a saved thread's original scope identity.
+export function environmentScopeKey(projectId, threadId = null) {
+  return projectId == null ? null : `${projectId}:${threadId ?? "project"}`;
+}
+
+export function environmentProjectForThread(projects, thread) {
+  if (thread?.projectId == null) return null;
+  const project = projects.find((entry) => String(entry.id) === String(thread.projectId))
+    ?? projects.find((entry) => String(entry.id) === String(thread.groupedProjectId)
+      || entry.aliases?.some((alias) => String(alias.id) === String(thread.projectId)));
+  return project ? { ...project, id: thread.projectId } : null;
+}
+
 export function environmentRefreshNeeded({
   currentProjectId,
   requestedProjectId,
+  currentThreadId = null,
+  requestedThreadId = null,
   lastRequestedAt,
   now,
   force = false,
@@ -31,7 +46,7 @@ export function environmentRefreshNeeded({
 }) {
   if (requestedProjectId == null) return false;
   return (force && now >= nextAttemptAt && now - lastRequestedAt >= minimumAgeMs)
-    || String(currentProjectId) !== String(requestedProjectId)
+    || environmentScopeKey(currentProjectId, currentThreadId) !== environmentScopeKey(requestedProjectId, requestedThreadId)
     || (
       now >= nextAttemptAt
       && now - lastRequestedAt >= ENVIRONMENT_REFRESH_INTERVAL_MS

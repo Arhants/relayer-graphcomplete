@@ -1,0 +1,27 @@
+[
+  {
+    "interactionId": 1,
+    "completionStatus": "accepted",
+    "modelProviderId": "live-run-openrouter",
+    "providerModelId": "openai/gpt-6-luna",
+    "acceptedThreadIconProposal": "database-backup",
+    "outputKeys": [
+      "nodeId",
+      "rootAction",
+      "rootLayer",
+      "threadIconProposal"
+    ]
+  },
+  {
+    "interactionId": 2,
+    "completionStatus": "accepted",
+    "modelProviderId": "live-run-openrouter",
+    "providerModelId": "openai/gpt-6-luna",
+    "acceptedThreadIconProposal": null,
+    "outputKeys": [
+      "nodeId",
+      "rootAction",
+      "rootLayer"
+    ]
+  }
+]

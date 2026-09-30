@@ -1,0 +1,76 @@
+{
+  "sourceDigest": "bd6fa9c252f159ec3cbef00810bcb398cfb29e56ed9cacb02c897fbd5c9fab90",
+  "baseCommit": "49c1433caf304bdf7a5396e22677e32773b8e624",
+  "node": "22.23.2",
+  "platform": "macOS arm64",
+  "sourceFiles": 60,
+  "check": {
+    "status": "passed-on-unchanged-rerun",
+    "javascriptPassed": 3326,
+    "javascriptSkipped": 3,
+    "secretBoundaryPassed": 2,
+    "pythonPassed": 63,
+    "firstRun": "failed: unchanged 500ms Git environment fixture timeout",
+    "focusedRerun": "passed at original deadline"
+  },
+  "build": "passed",
+  "heavy": {
+    "evalGraphPreview": "passed PREV-003 author-see-fix/cache/metadata and three PNGs",
+    "electronAgentPreview": "passed both themes, actual app frame sizes, isolated storage and window cleanup",
+    "primeManagedRuntime": "passed clean-root readiness; inference free",
+    "evalCompiledRuntime": "4 passed",
+    "followupAnnotations": "passed actual A-to-B, 0 inference",
+    "socialPreview": "passed both themes"
+  },
+  "historicalLimit": "Full Eval web proof failed at model-less human follow-up Send on original source611; later scenarios remain unobserved. Paid videos certify original source611 only; no new paid or signed release proof claimed.",
+  "logs": {
+    "check": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/check.txt",
+      "sha256": "5d15ca5083a3be22ba47bd59522fe338facc4bf7d492e80c8941ea1c70290e4d"
+    },
+    "timeout-rerun": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/timeout-rerun.txt",
+      "sha256": "3227d0935226b2292da636d6bb54ececaa0046224a96592437f12c254833bb11"
+    },
+    "check-retry": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/check-retry.txt",
+      "sha256": "3910e7380d5deae7c18a16c13dbe12c7568a8ebb9b46f418c05f65d8f6e2a413"
+    },
+    "build": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/build.txt",
+      "sha256": "784ff03180216812f297c9d355e03cede9dc75c87bdce4a89aac3df4ac02e0af"
+    },
+    "warm": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/warm.txt",
+      "sha256": "48189f2b79cbec2c8bd9d6463f8152f98dcee7f649b0e38932e5b0d85a65648a"
+    },
+    "social": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/social.txt",
+      "sha256": "59b42ce0c2b4ef3ad3848e0cb4514b78a3554f26bfb70e255d4e122dd04eb7e1"
+    },
+    "agent-preview": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/agent-preview.txt",
+      "sha256": "f77d9f082cef932d3e66943b17a20cd8839a2b89ffa58c0db56d1da3f6591f70"
+    },
+    "eval-preview": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/eval-preview.txt",
+      "sha256": "8651af81492b38a6d8d5c99bcaf6e4f28fc9af7ef90c3fa537ad17e0200c020c"
+    },
+    "prime": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/prime.txt",
+      "sha256": "2c7237d303addddbac7bca0b486c17de05343764bda74bf3a6912d90d177188e"
+    },
+    "compiled": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/compiled.txt",
+      "sha256": "880aa0e1ae688c9e300e236f9493e83d269cb8b1561154ee409cca57aeac6230"
+    },
+    "annotations": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/annotations.txt",
+      "sha256": "341365dfb3b150b048ed4ba8e982843dd1310af43feb64f768a9dedc9f5e9958"
+    },
+    "receipts": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/receipts.txt",
+      "sha256": "a2f28b2d027ad87da235caf951776c21aa93863d184ba43d6ba28579740620a9"
+    }
+  }
+}

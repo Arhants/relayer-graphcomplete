@@ -1,0 +1,220 @@
+import { chromium } from 'playwright';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+import assert from 'node:assert/strict';
+import { GraphCompleteRuntimeService } from '../../../desktop/main/services/graphcomplete-runtime.mjs';
+import { RelayerAppServerService } from '../../../desktop/main/services/relayer-app-server.mjs';
+import { createManagedRuntimeInstaller } from '../../../desktop/main/managed-runtimes/installer.mjs';
+import { createManagedRuntimeResolver } from '../../../desktop/main/managed-runtimes/resolver.mjs';
+import { productionHarnessRuntimeDescriptor, productionProviderAdapterRegistry } from '../../../desktop/main/providers/provider-adapter-registry.mjs';
+import { createHarnessReadinessCoordinator } from '../../../desktop/main/services/harness-readiness.mjs';
+import { PRIME_AGENT_ASSET_SHA256, inspectPrimeAgentRuntime, requirePrimeAgentRuntime, selectPrimeAgentDependencyClosureSha256 } from '../../../desktop/main/services/prime-agent-runtime.mjs';
+import { assemblePrimeManagedRuntime, checkPrimeManagedRuntime, createPrimeReviewedTreeCopier } from '../../../desktop/main/services/prime-managed-runtime.mjs';
+import { HARNESS_MANAGED_RUNTIME_REQUIREMENTS, managedRuntimeRequirementForHarness } from '../../../desktop/shared/managed-runtime-requirements.mjs';
+import { resolveRunProfile } from '../../../scripts/recursive-live-run-model.mjs';
+if(process.env.RELAYER_THREAD_ICONS_LIVE_RUN!=='1')throw Error('Explicit paid live opt-in required');
+const root=process.cwd(), repositoryRoot=root, out=resolve(root,'.relayer/evidence/issue-622-live-video'), data=join(out,'data');
+const profile=resolveRunProfile(JSON.parse(await readFile('/Users/vishal/ProjectsDev/relayer-graphcomplete/live-run.local.json','utf8')),'prime-openrouter',{implementation:'prime.agent'});
+await mkdir(data,{recursive:true});
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+let runtime, product, browser, context, page, session;
+function providerExecution(profile) {
+  const secret = profile.contract === "secret@1";
+  const runtime = profile.codexExecutable === undefined
+    ? undefined
+    : {
+      runtimeId: "codex",
+      version: codexVersion(profile.codexExecutable),
+      executable: profile.codexExecutable,
+      environment: {
+        CODEX_HOME: profile.codexHome,
+        RELAYER_CODEX_BINARY: profile.codexExecutable,
+        ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+        ...(process.env.HOME ? { HOME: process.env.HOME } : {}),
+      },
+    };
+  const definition = {
+    id: profile.providerId,
+    adapterId: profile.adapterId,
+    accessContract: profile.contract,
+    ...(secret ? { endpoint: profile.endpoint } : {}),
+  };
+  return async () => ({
+    definition,
+    descriptor: {
+      adapterId: definition.adapterId,
+      accessContract: definition.accessContract,
+      // Harnesses admit an adapter only at the implementation version they map, so the
+      // lease carries the production adapter's version rather than a fixed one.
+      implementationVersion: productionProviderAdapterRegistry.get(definition.adapterId).implementationVersion,
+    },
+    runtime: {
+      async executionAccess() {
+        if (!secret) return { kind: "managed-runtime", ...runtime };
+        return {
+          kind: "secret",
+          endpoint: profile.endpoint,
+          fields: { "api-key": profile.apiKey },
+          ...(runtime === undefined ? {} : { runtime }),
+        };
+      },
+    },
+    async release() {},
+  });
+}
+
+async function preparePrimeEnvironment() {
+  const pythonClientRoot = join(repositoryRoot, "python", "relayer-graph", "src");
+  const inspection = requirePrimeAgentRuntime(await inspectPrimeAgentRuntime({
+    appPath: repositoryRoot,
+    harnessDirectory: join(repositoryRoot, "harnesses"),
+    manifestPath: join(repositoryRoot, "vendor", "prime-agent", "manifest.json"),
+    pythonClientRoot,
+  }));
+  process.env.RELAYER_PRIME_PYTHON_CLIENT_ROOT = pythonClientRoot;
+  process.env.RELAYER_PRIME_RUNTIME_PROVENANCE = JSON.stringify(inspection.diagnostics);
+}
+
+/**
+ * The desktop's managed-runtime installer over a repository-local cache, so Prime runs
+ * from the same prepared runtime the app gives it. Codex runs from the profile's own
+ * executable instead, so it needs no recipe here.
+ */
+function managedRuntimeResolver() {
+  return createManagedRuntimeResolver(createManagedRuntimeInstaller({
+    root: join(repositoryRoot, ".relayer", "live", "managed-runtimes"),
+    assembleRecipe: async (context) => {
+      if (context.recipe.runtimeId !== "prime") return;
+      await assemblePrimeManagedRuntime(context, {
+        copyReviewedTrees: createPrimeReviewedTreeCopier({
+          appRoot: repositoryRoot,
+          pythonClientRoot: join(repositoryRoot, "python", "relayer-graph", "src"),
+          expectedClosureSha256: selectPrimeAgentDependencyClosureSha256({
+            isPackaged: false,
+            javascriptContract: context.recipe.runtimeContract.javascript,
+          }),
+          expectedPythonClientSha256: PRIME_AGENT_ASSET_SHA256.pythonPackageTree,
+        }),
+      });
+    },
+  }));
+}
+
+/**
+ * Makes the profile's provider and model routable the way the desktop does after a
+ * connect: the provider definition and its catalog, then harness readiness, then the
+ * family the thread selects. Product routing matches a provider's access contract to
+ * the harness, and a harness starts unavailable until readiness publishes it.
+ */
+async function prepareRoute({ session, productServer, runtime, resolver, profile }) {
+  const { providerId, modelId } = profile;
+  const catalog = {
+    providerId,
+    label: providerId,
+    connected: true,
+    models: [{
+      id: modelId,
+      label: modelId,
+      order: 0,
+      visible: true,
+      available: true,
+      providerDefault: true,
+      metadata: {},
+    }],
+    systemFamily: { key: providerId, name: providerId, modelIds: [modelId] },
+  };
+  if (profile.contract === "secret@1" && providerId !== "codex") {
+    // A key-based provider is created with its catalog in one commit, as a desktop
+    // connect creates it. The key itself stays with the execution lease.
+    const response = await fetch(new URL("/api/internal/provider-definitions/staged", session.origin), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.cookie.value}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        definition: {
+          id: providerId,
+          adapterId: profile.adapterId,
+          label: providerId,
+          endpoint: profile.endpoint,
+          accessContract: profile.contract,
+          credentialReference: `provider:${providerId}`,
+          lifecycleState: "active",
+          removedAt: null,
+        },
+        catalog,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Provider creation failed (${response.status}): ${await response.text()}`);
+    }
+  } else {
+    await productServer.seedProviderCatalog(catalog);
+  }
+
+  const prime = profile.implementation === "prime.agent";
+  const requirement = HARNESS_MANAGED_RUNTIME_REQUIREMENTS[profile.implementation];
+  const readiness = createHarnessReadinessCoordinator({
+    configurations: runtime.session.configurations,
+    digestConfiguration: runtime.session.digestConfiguration,
+    runtimeRequirements: prime ? { [profile.implementation]: requirement } : {},
+    prepareRecipe: async (recipeId) => productionHarnessRuntimeDescriptor(await resolver.prepare(recipeId)),
+    checkers: {
+      [profile.implementation]: prime
+        ? ({ runtime: prepared }) => checkPrimeManagedRuntime({ runtime: prepared })
+        // The operator supplies the Codex executable; resolveRunProfile required it.
+        : async () => ({ available: true }),
+    },
+    publishAvailability: (updates) => productServer.publishHarnessReadiness(updates),
+  });
+  const { readyHarnessIds, routeResults } = await readiness.evaluate({
+    trigger: "connect",
+    providerDefinition: { id: providerId, adapterId: profile.adapterId, accessContract: profile.contract },
+    models: [{ id: modelId, visible: true, available: true }],
+  });
+  if (!readyHarnessIds.includes(profile.harness)) {
+    const reason = routeResults.find(({ harnessId }) => harnessId === profile.harness)?.unavailableReason;
+    throw new Error(`Harness ${profile.harness} is not ready for ${providerId}/${modelId}${reason ? `: ${reason.code}` : ""}.`);
+  }
+
+  const family = await productRequest(session, "/api/model-families", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Live run models",
+      enabled: true,
+      members: [{ providerId, modelId }],
+    }),
+  });
+  await productRequest(session, "/api/model-selection/validate", {
+    method: "POST",
+    body: JSON.stringify({ harnessId: profile.harness, familyId: family.id, providerId, modelId }),
+  });
+  return family;
+}
+
+
+const resolver=managedRuntimeResolver();
+async function start(){
+ runtime=new GraphCompleteRuntimeService({userDataDirectory:data,graphServerBinary:join(root,'target/debug/relayer-graph-server'),configurationPaths:[join(root,'harnesses/prime-agent-basic.yaml')],resolvePrimeRuntime:async()=>productionHarnessRuntimeDescriptor(await resolver.get(managedRuntimeRequirementForHarness('prime.agent').recipeId)),acquireProviderExecution:providerExecution(profile),candidateTrace:{directory:join(data,'trace-spool'),policy:{mode:'required',requiredFeatures:{},includeNativeArtifacts:false,maxBytesPerTurn:10*1024*1024,maxEventsPerTurn:50000}}});
+ product=new RelayerAppServerService({userDataDirectory:data,binaryPath:join(root,'target/debug/relayer-app-server'),webDirectory:join(root,'desktop/renderer'),permissionCatalogPath:join(root,'permissions/desktop.json'),runtimeSession:await runtime.start(),defaultHarnessConfiguration:profile.harness,allowHarnessOverride:true,evalMode:false});session=await product.start();
+}
+async function request(path,body,method){const r=await fetch(new URL(path,session.origin),{method:method??(body?'POST':'GET'),headers:{Cookie:`${session.cookie.name}=${session.cookie.value}`,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const v=await r.json();assert.equal(r.ok,true,JSON.stringify(v));return v;}
+async function productRequest(s,path,init={}){const r=await fetch(new URL(path,s.origin),{...init,headers:{Cookie:`${s.cookie.name}=${s.cookie.value}`,'Content-Type':'application/json',...init.headers}});const v=await r.json();if(!r.ok)throw Error('Product request '+r.status+': '+JSON.stringify(v));return v;}
+async function until(f,label){const end=Date.now()+240000;while(Date.now()<end){const v=await f();if(v)return v;await delay(300);}throw Error('timeout '+label);}
+async function open(id){await context.addCookies([{name:session.cookie.name,value:session.cookie.value,url:session.origin}]);await page.goto(`${session.origin}/?threadId=${id}`);await page.locator('#threadTitle').waitFor({state:'visible'});}
+const evidence={provider:profile.providerId,model:profile.modelId,harness:profile.harness,paidInferenceAuthorized:true,startedAt:new Date().toISOString(),sourceCommit:'611f2772f84a6d34a0e0e4eb2a24c3cabf598250',inference:true,productionServers:true,productionRenderer:true,scenarios:[]};
+try{
+ await preparePrimeEnvironment();await start();
+ const fam=await prepareRoute({session,productServer:product,runtime,resolver,profile});
+ await request('/api/model-settings/defaults',{harnessId:profile.harness,familyId:fam.id},'PUT');console.log('SETUP real provider and managed runtime ready');
+ browser=await chromium.launch({headless:true});context=await browser.newContext({viewport:{width:1280,height:800},recordVideo:{dir:out,size:{width:1280,height:800}},colorScheme:'dark'});page=await context.newPage();page.on('pageerror',e=>console.error('PAGE',e.message));
+ await context.addCookies([{name:session.cookie.name,value:session.cookie.value,url:session.origin}]);await page.goto(session.origin);await page.locator('#newThreadPrompt').waitFor({state:'visible'});await page.locator('#newThreadPrompt').fill('Explain a simple three-step database backup strategy for a small team');await delay(2000);await page.locator('#createThread:not([disabled])').click();
+ const state=await until(async()=>{const v=await request('/api/state');return v.threads.length?v:null;},'new live thread');const id=state.threads[0].id;await page.locator('#threadIcon').waitFor();let detail=await request(`/api/threads/${id}`);assert.equal(detail.thread.icon,null);assert.equal(await page.locator('#threadIcon').textContent(),'◌');await page.screenshot({path:join(out,'01-live-default.png')});evidence.scenarios.push({name:'live turn starts with default',passed:true});console.log('LIVE_FIRST started thread='+id);
+ const accepted=await until(async()=>{const d=await request(`/api/threads/${id}`);const current=d.interactions[0];if(['failed','stopped'].includes(current?.completionStatus)){await writeFile(join(out,'failed-state.json'),JSON.stringify(d,null,2));throw Error('Live first turn '+current.completionStatus);}return current?.completionStatus==='accepted'?d:null;},'live first acceptance');
+ const savedIcon=accepted.thread.icon;assert.ok(savedIcon,'Live agent accepted its graph without choosing an icon');await page.locator(`#threadIcon [data-relayer-icon="${savedIcon}"]`).waitFor();assert.equal(await page.locator(`[data-thread="${id}"] .entry-icon`).innerHTML(),await page.locator('#threadIcon').innerHTML());await page.screenshot({path:join(out,'02-live-accepted.png')});evidence.scenarios.push({name:'live agent chooses matching saved sidebar/header icon',icon:savedIcon,interactionId:accepted.interactions[0].id,passed:true});console.log('FIRST_ACCEPTED icon='+savedIcon);await delay(4500);
+ await page.locator('#threadPrompt').fill('Add a practical restore-check step to this backup strategy');await page.locator('#sendInteraction:not([disabled])').click();console.log('LIVE_SECOND started');
+ await until(async()=>{const d=await request(`/api/threads/${id}`);if(d.interactions.some(i=>['failed','stopped'].includes(i.completionStatus))){await writeFile(join(out,'failed-state.json'),JSON.stringify(d,null,2));throw Error('Live second turn failed');}return d.interactions.length>=2&&d.interactions.every(i=>i.completionStatus==='accepted');},'second live acceptance');assert.equal((await request(`/api/threads/${id}`)).thread.icon,savedIcon);await page.screenshot({path:join(out,'03-live-followup.png')});evidence.scenarios.push({name:'second paid UI turn accepted and saved icon unchanged',passed:true});console.log('SECOND_ACCEPTED');await delay(4000);
+ await product.close();await runtime.close();await start();await open(id);assert.equal((await request(`/api/threads/${id}`)).thread.icon,savedIcon);await page.locator(`#threadIcon [data-relayer-icon="${savedIcon}"]`).waitFor();await page.screenshot({path:join(out,'04-live-reopened.png')});evidence.scenarios.push({name:'real service restart and disk reopen retains live agent icon',passed:true});await delay(4500);
+ const video=page.video();await context.close();context=null;evidence.video=await video.path();evidence.finishedAt=new Date().toISOString();await writeFile(join(out,'receipt.json'),JSON.stringify(evidence,null,2)+'\n');console.log(JSON.stringify(evidence));
+}catch(e){if(page)await page.screenshot({path:join(out,'failure.png')}).catch(()=>{});console.error(e);process.exitCode=1;}finally{await context?.close().catch(()=>{});await browser?.close();await product?.close().catch(()=>{});await runtime?.close().catch(()=>{});}

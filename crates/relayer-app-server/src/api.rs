@@ -53,6 +53,7 @@ pub(crate) struct ApiState {
     pub(crate) permission_catalog: PermissionCatalog,
     pub(crate) default_harness_configuration: String,
     pub(crate) allow_harness_override: bool,
+    pub(crate) eval_mode: bool,
     pub(crate) allow_conversation_import: bool,
     pub(crate) standalone_workspaces_directory: PathBuf,
     pub(crate) export_producer: crate::conversation_export::ExportProducer,
@@ -70,6 +71,7 @@ pub(crate) struct ApiRuntime {
     pub(crate) permission_catalog: PermissionCatalog,
     pub(crate) default_harness_configuration: String,
     pub(crate) allow_harness_override: bool,
+    pub(crate) eval_mode: bool,
     pub(crate) allow_conversation_import: bool,
     pub(crate) standalone_workspaces_directory: PathBuf,
     pub(crate) export_producer: crate::conversation_export::ExportProducer,
@@ -114,6 +116,7 @@ pub(crate) fn router(
         permission_catalog: runtime.permission_catalog,
         default_harness_configuration: runtime.default_harness_configuration,
         allow_harness_override: runtime.allow_harness_override,
+        eval_mode: runtime.eval_mode,
         allow_conversation_import: runtime.allow_conversation_import,
         standalone_workspaces_directory: runtime.standalone_workspaces_directory,
         export_producer: runtime.export_producer,
@@ -210,6 +213,7 @@ pub(crate) fn router(
         )
         .route("/api/state", get(state::product_state))
         .route("/api/projects", get(projects::list).post(projects::create))
+        .route("/api/projects/consolidate", axum::routing::post(projects::consolidate))
         .route(
             "/api/projects/{id}/environment",
             get(environment::get),

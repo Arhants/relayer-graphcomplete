@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
+  CLAUDE_PREVIEW_TOOL,
   ClaudeBasicHarness,
   claudePermissionMode,
   createClaudeBasicFactory,
@@ -11,7 +12,6 @@ import {
   type ClaudeSdkModule,
 } from "../src/implementations/claude-basic.js";
 import { CLAUDE_BROWSER_TOOL, type ClaudeSdkToolResult } from "../src/implementations/claude-basic-browser.js";
-import { CLAUDE_PREVIEW_TOOL } from "../src/implementations/claude-basic-preview.js";
 import { CLAUDE_PREVIEW_VIEWING, draftPreviewGuidance } from "../src/implementations/codex-basic.js";
 import { createNoopHarnessTraceSink } from "../src/trace.js";
 import type { HarnessExecutionAccess, HarnessFactoryContext, HarnessRunContext, HarnessTraceEventInput } from "../src/types.js";
@@ -304,6 +304,24 @@ describe("ClaudeBasicHarness", () => {
 
     expect(calls[0]?.prompt).toContain("graph.prepareComplete(invokeAction)");
     expect(calls[0]?.prompt).toContain("Import complete and watchCompletions from");
+  });
+
+  it("inherits eligible thread icon guidance in the ordinary Claude turn", async () => {
+    const calls: Parameters<ClaudeSdkQuery>[0][] = [];
+    const harness = new ClaudeBasicHarness(factoryContext("ask"), {
+      query: sdkQuery(
+        [{ type: "result", subtype: "success", result: "done", session_id: "icon-session" }],
+        (input) => { calls.push(input); },
+      ),
+      browserSdk: browserSdk(),
+    });
+    await harness.complete({ ...runContext(managedAccess()), threadIconSelection: { eligible: true } });
+    await harness.complete(runContext(managedAccess()));
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.prompt).toContain('await graph.proposeThreadIcon("semantic-icon-name")');
+    expect(calls[0]?.prompt).toContain("same supported Relayer icon library and guidance used for nodes");
+    expect(calls[0]?.prompt).toContain("only when this completion is accepted");
+    expect(calls[1]?.prompt).not.toContain("proposeThreadIcon");
   });
 
   it("includes graph-search guidance only for a query-v1 capability profile", async () => {

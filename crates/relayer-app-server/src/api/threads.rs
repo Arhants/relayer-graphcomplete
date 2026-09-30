@@ -42,6 +42,9 @@ pub(super) struct CreateThreadRequest {
     title: Option<String>,
     project_id: Option<i64>,
     initial_message: String,
+    working_directory: Option<String>,
+    creation_request_id: Option<String>,
+    expected_checkout: Option<crate::product::ExpectedCheckout>,
     harness_id: Option<String>,
     harness_configuration_name: Option<String>,
     permission_profile_id: Option<String>,
@@ -259,26 +262,50 @@ pub(super) async fn create(
             .validate_interaction_model_selection(&harness_configuration_name, selection)
             .await?;
     }
-    let thread = state
+    let (thread, created) = state
         .product
-        .create_thread(CreateThreadCommand {
-            title: request.title,
-            project_id,
-            initial_message: request.initial_message,
-            harness_configuration_name,
-            personal_presentation_version_key,
-            permission_profile_id,
-            model_selection,
-            allow_unselected_model,
-        })
+        .create_thread_with_expected_checkout(
+            CreateThreadCommand {
+                icon_selection_eligible: !state.eval_mode,
+                title: request.title,
+                project_id,
+                initial_message: request.initial_message,
+                harness_configuration_name,
+                personal_presentation_version_key,
+                permission_profile_id,
+                model_selection,
+                allow_unselected_model,
+            },
+            request.working_directory.as_deref(),
+            request.creation_request_id.as_deref(),
+            request.expected_checkout.as_ref(),
+        )
         .await?;
+    if !created {
+        state
+            .product
+            .restore_unstarted_thread_root(thread.id)
+            .await?;
+    }
     let interaction = state
         .product
         .get_interaction(thread.root_interaction_id)
         .await?;
-    start_interaction(&state, &thread, interaction, true).await?;
+    if created || interaction.completion_status == "not_started" {
+        if let Some(expected) = request.expected_checkout.as_ref() {
+            state
+                .product
+                .verify_expected_checkout(&thread, expected)
+                .await?;
+        }
+        start_interaction(&state, &thread, interaction, true).await?;
+    }
     Ok((
-        StatusCode::CREATED,
+        if created {
+            StatusCode::CREATED
+        } else {
+            StatusCode::OK
+        },
         Json(
             ThreadView {
                 thread,
@@ -1961,6 +1988,7 @@ async fn admit_recursive_child(
         .map_err(|error| refused("configuration")(error.into()))?;
     let attempt_admission_id = uuid::Uuid::new_v4().to_string();
     let command = CompleteInteraction {
+        thread_icon_selection_eligible: false,
         require_native_continuity: false,
         native_history_anchor: None,
         project_id: thread.project_id.map(ProjectId::value),
@@ -3288,22 +3316,12 @@ async fn start_interaction(
     Ok(running)
 }
 
-/// The thread's execution workspace, created if absent.
+/// Existing folder scopes must remain available; only no-folder workspaces are created.
 async fn thread_working_directory(state: &ApiState, thread: &Thread) -> Result<String, ApiError> {
-    let working_directory = match thread.project_id {
-        Some(project_id) => state.product.project_path(project_id).await?,
-        None => state
-            .standalone_workspaces_directory
-            .join(thread.id.value().to_string())
-            .to_string_lossy()
-            .into_owned(),
-    };
-    if let Err(error) = tokio::fs::create_dir_all(&working_directory).await {
-        return Err(ApiError::internal(&format!(
-            "cannot create thread workspace: {error}"
-        )));
-    }
-    Ok(working_directory)
+    Ok(state
+        .product
+        .thread_directory(thread, &state.standalone_workspaces_directory)
+        .await?)
 }
 
 /// How preparing an interaction's canonical graph identity ended.
@@ -3450,6 +3468,7 @@ async fn prepare_interaction(
         None
     };
     let command = CompleteInteraction {
+        thread_icon_selection_eligible: false,
         require_native_continuity: false,
         native_history_anchor: None,
         project_id: thread.project_id.map(ProjectId::value),
@@ -3788,6 +3807,7 @@ mod tests {
         let product = ProductService::new(storage, true);
         let thread = product
             .create_thread(CreateThreadCommand {
+                icon_selection_eligible: true,
                 title: None,
                 project_id: None,
                 initial_message: "Root".into(),
@@ -4081,6 +4101,7 @@ mod tests {
         let working_directory = root.path().to_string_lossy().into_owned();
         let seeded = runtime
             .prepare(&CompleteInteraction {
+                thread_icon_selection_eligible: false,
                 require_native_continuity: false,
                 native_history_anchor: None,
                 project_id: None,
@@ -4165,6 +4186,7 @@ mod tests {
             permission_catalog,
             default_harness_configuration: "test".into(),
             allow_harness_override: true,
+            eval_mode: false,
             allow_conversation_import: false,
             standalone_workspaces_directory: root.path().join("workspaces"),
             export_producer: ExportProducer {
@@ -4200,6 +4222,47 @@ mod tests {
             graph_task,
             harness_task,
         }
+    }
+
+    #[tokio::test]
+    async fn thread_icon_api_creation_persists_normal_and_eval_eligibility() {
+        let fixture = broker_fixture("thread-icon-mode", "active").await;
+        let mut headers = HeaderMap::new();
+        headers.insert(header::COOKIE, "relayer_control=control".parse().unwrap());
+        for eval_mode in [false, true] {
+            let mut state = fixture.state.clone();
+            state.eval_mode = eval_mode;
+            state.runtime = None;
+            state.interaction_execution = None;
+            let (_, Json(response)) = create(
+                State(state),
+                headers.clone(),
+                Json(CreateThreadRequest {
+                    title: None,
+                    project_id: None,
+                    initial_message: "Choose an icon".into(),
+                    working_directory: None,
+                    creation_request_id: None,
+                    expected_checkout: None,
+                    harness_id: None,
+                    harness_configuration_name: Some("test".into()),
+                    permission_profile_id: Some("auto".into()),
+                    model_selection: None,
+                }),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("creation failed: {}", error.message()));
+            let value = serde_json::to_value(response).unwrap();
+            assert!(value["icon"].is_null());
+            let thread = fixture
+                .product
+                .get_thread(ThreadId::try_from(value["id"].as_i64().unwrap()).unwrap())
+                .await
+                .unwrap()
+                .thread;
+            assert_eq!(thread.icon_selection_eligible, !eval_mode);
+        }
+        fixture.finish();
     }
 
     #[tokio::test]

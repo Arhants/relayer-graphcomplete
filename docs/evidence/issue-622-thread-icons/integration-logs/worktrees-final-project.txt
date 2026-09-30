@@ -1,0 +1,61 @@
+Starting isolated project-row New Thread test...
+Error occurred in handler for 'relayer:composer-drafts-write': TypeError: Composer drafts exceed the local persistence limit.
+    at normalizeComposerDrafts (file:///Volumes/2T-SSD/worktrees/thread-icons-622/desktop/main/ipc/register-ipc.mjs:106:11)
+    at file:///Volumes/2T-SSD/worktrees/thread-icons-622/desktop/main/ipc/register-ipc.mjs:117:28
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:114940)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:workspace-layout-read': Error: No handler registered for 'relayer:workspace-layout-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:workspace-layout-read': Error: No handler registered for 'relayer:workspace-layout-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:workspace-layout-read': Error: No handler registered for 'relayer:workspace-layout-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+RELAYER_PROJECT_NEW_THREAD {"passed":true,"projectId":1,"threads":2,"restartPersistence":true,"layerSelectionRestartPersistence":true,"evidence":{"resting":"/Volumes/2T-SSD/worktrees/thread-icons-622/.relayer/evidence/project-new-thread/01-resting.png","hover":"/Volumes/2T-SSD/worktrees/thread-icons-622/.relayer/evidence/project-new-thread/02-hover.png","activated":"/Volumes/2T-SSD/worktrees/thread-icons-622/.relayer/evidence/project-new-thread/03-activated.png"}}
+[39869:0930/124620.429020:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[39869:0930/124620.429740:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[39869:0930/124620.429745:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[39869:0930/124620.429747:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[39869:0930/124620.429749:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[39869:0930/124620.429751:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[39869:0930/124620.429753:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[39869:0930/124620.429755:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[39869:0930/124620.429757:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[39869:0930/124620.429759:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[39869:0930/124620.429761:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[39869:0930/124620.429765:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:395] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.

@@ -32,6 +32,7 @@ pub(crate) struct ThreadSnapshot {
 }
 
 pub(crate) struct NewThreadRecord<'a> {
+    pub(crate) icon_selection_eligible: bool,
     pub(crate) title: &'a str,
     pub(crate) project_id: Option<ProjectId>,
     pub(crate) initial_message: &'a str,
@@ -171,6 +172,8 @@ pub(crate) enum CompletionExecutionRestartSettlement {
 pub(crate) enum StorageError {
     #[error("database operation failed: {0}")]
     Database(#[from] sqlx::Error),
+    #[error("thread creation request conflict: {0}")]
+    ThreadCreationConflict(String),
     #[error("database migration failed: {0}")]
     Migration(#[from] sqlx::migrate::MigrateError),
     #[error("product database schema is incompatible: {0}")]

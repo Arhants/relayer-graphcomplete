@@ -9710,3 +9710,118 @@ async fn attached_navigation_review_identity_releases_only_terminal_unpublished_
         }
     }
 }
+
+#[tokio::test]
+async fn thread_icon_proposal_is_nonblocking_first_valid_and_accepted_only() {
+    let database = GraphDatabase::in_memory().await.unwrap();
+    let interaction = database
+        .create_interaction(None, thread(501), "Topic")
+        .await
+        .unwrap();
+    let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+    assert!(!writer.propose_thread_icon("🧭").await.unwrap());
+    assert!(writer.propose_thread_icon("Circle Alert").await.unwrap());
+    assert!(writer.propose_thread_icon("compass").await.unwrap());
+    assert!(writer.completion_output().await.unwrap().is_none());
+    assert!(writer.complete(interaction.id).await.is_err());
+    assert!(writer.completion_output().await.unwrap().is_none());
+    let answer = node(&writer, "answer").await;
+    let layer = single_node_layer(&writer, "response", &answer).await;
+    root_expand(&writer, &interaction, &layer).await;
+    let output = writer.complete(interaction.id).await.unwrap();
+    assert_eq!(output.thread_icon_proposal.as_deref(), Some("alert-circle"));
+    assert!(writer.propose_thread_icon("heart").await.is_err());
+    assert_eq!(writer.completion_output().await.unwrap(), Some(output));
+
+    let missing = database
+        .create_interaction(None, thread(502), "Missing")
+        .await
+        .unwrap();
+    let writer = database.writer_for_subgraph(missing.id).await.unwrap();
+    assert!(!writer.propose_thread_icon("made-up-icon").await.unwrap());
+    let answer = node(&writer, "answer").await;
+    let layer = single_node_layer(&writer, "response", &answer).await;
+    root_expand(&writer, &missing, &layer).await;
+    assert_eq!(
+        writer
+            .complete(missing.id)
+            .await
+            .unwrap()
+            .thread_icon_proposal,
+        None
+    );
+}
+
+#[tokio::test]
+async fn thread_icon_proposal_survives_reopen_but_advance_and_stop_do_not_accept_it() {
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
+    let database = GraphDatabase::open(file.path()).await.unwrap();
+    let interaction = database
+        .create_interaction(None, thread(503), "Topic")
+        .await
+        .unwrap();
+    let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+    writer.propose_thread_icon("compass").await.unwrap();
+    let answer = node(&writer, "answer").await;
+    let layer = single_node_layer(&writer, "response", &answer).await;
+    root_expand(&writer, &interaction, &layer).await;
+    writer
+        .transition_current(
+            0,
+            "advance",
+            CurrentTransition::Advance { layer_id: layer.id },
+        )
+        .await
+        .unwrap();
+    assert!(writer.completion_output().await.unwrap().is_none());
+    writer
+        .transition_current(
+            1,
+            "return",
+            CurrentTransition::Return { layer_id: layer.id },
+        )
+        .await
+        .unwrap();
+    drop(writer);
+    database.close().await;
+    let database = GraphDatabase::open(file.path()).await.unwrap();
+    let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+    assert_eq!(
+        writer
+            .completion_output()
+            .await
+            .unwrap()
+            .unwrap()
+            .thread_icon_proposal
+            .as_deref(),
+        Some("compass")
+    );
+    for (id, transition) in [
+        (
+            504,
+            CurrentTransition::Stop {
+                reason: "cancelled_by_user".into(),
+            },
+        ),
+        (
+            505,
+            CurrentTransition::Fail {
+                reason: "provider_crashed".into(),
+            },
+        ),
+    ] {
+        let terminal = database
+            .create_interaction(None, thread(id), "Terminal")
+            .await
+            .unwrap();
+        let writer = database.writer_for_subgraph(terminal.id).await.unwrap();
+        writer.propose_thread_icon("brain").await.unwrap();
+        writer
+            .transition_current(0, "terminal", transition)
+            .await
+            .unwrap();
+        assert!(writer.completion_output().await.unwrap().is_none());
+        assert!(writer.propose_thread_icon("heart").await.is_err());
+    }
+}

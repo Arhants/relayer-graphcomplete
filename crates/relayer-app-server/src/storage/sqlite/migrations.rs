@@ -17,6 +17,64 @@ mod tests {
     use sqlx::{Executor, Row, migrate::Migrator, sqlite::SqlitePoolOptions};
     use std::borrow::Cow;
 
+    #[tokio::test]
+    async fn schema_39_thread_icons_never_backfill_legacy_threads() {
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&format!("sqlite://{}", file.path().display()))
+            .await
+            .unwrap();
+        Migrator {
+            migrations: Cow::Owned(
+                MIGRATOR
+                    .iter()
+                    .filter(|migration| migration.version < 40)
+                    .cloned()
+                    .collect(),
+            ),
+            ..Migrator::DEFAULT
+        }
+        .run(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO threads(id,title,created_at,updated_at,harness_configuration_name,permission_profile_id) VALUES (1,'Legacy','1','1','codex-basic','auto')").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO interactions(id,thread_id,sequence,text,created_at,graph_node_id,completion_status,harness_configuration_name,harness_configuration_digest,effective_execution_digest,effective_permission_receipt_json,permission_profile_id) VALUES (1,1,1,'Legacy','1',41,'running','codex-basic','digest','execution','{}','auto')").execute(&pool).await.unwrap();
+        pool.close().await;
+        let store = SqliteProductStore::open(file.path()).await.unwrap();
+        let legacy = store
+            .get_thread(crate::product::ThreadId::from_database(1))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!legacy.icon_selection_eligible);
+        assert_eq!(legacy.working_directory, None);
+        assert_eq!(legacy.checkout_context, None);
+        let versions: Vec<i64> = sqlx::query_scalar(
+            "SELECT version FROM _sqlx_migrations WHERE version>=40 ORDER BY version",
+        )
+        .fetch_all(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(versions, [40, 41]);
+        assert!(
+            store
+                .recover_interaction_accepted(
+                    legacy.root_interaction_id,
+                    &serde_json::json!({"threadIconProposal":"code"})
+                )
+                .await
+                .unwrap()
+        );
+        store.pool.close().await;
+        let reopened = SqliteProductStore::open(file.path()).await.unwrap();
+        assert_eq!(
+            reopened.get_thread(legacy.id).await.unwrap().unwrap().icon,
+            None
+        );
+    }
+
     /// Migration 0038 marks an existing result as an agent's child exactly when the broker
     /// launched it, which the product recorded as a completion execution. A result without one
     /// keeps the default: a user's invoke.
@@ -123,6 +181,7 @@ mod tests {
         }
         let new_thread = store
             .insert_thread_with_initial_interaction(crate::storage::NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Current",
                 project_id: None,
                 initial_message: "New turn",
@@ -298,6 +357,7 @@ mod tests {
         );
         let upgraded_thread_turn = store
             .insert_thread_with_initial_interaction(crate::storage::NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "After upgrade",
                 project_id: None,
                 initial_message: "New turn",
@@ -744,5 +804,96 @@ mod tests {
             .model_rules;
         assert_eq!(rules, shipped.model_rules);
         reopened.pool.close().await;
+    }
+}
+
+#[cfg(test)]
+mod work_context_migration_tests {
+    use super::{super::SqliteProductStore, MIGRATOR};
+    use sqlx::{migrate::Migrator, sqlite::SqlitePoolOptions};
+    use std::borrow::Cow;
+
+    #[tokio::test]
+    async fn legacy_thread_scope_is_backfilled_before_project_grouping_and_reopen() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("product.db");
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                sqlx::sqlite::SqliteConnectOptions::new()
+                    .filename(&file)
+                    .create_if_missing(true),
+            )
+            .await
+            .unwrap();
+        let legacy = Migrator {
+            migrations: Cow::Owned(
+                MIGRATOR
+                    .iter()
+                    .filter(|m| m.version <= 39)
+                    .cloned()
+                    .collect(),
+            ),
+            ..Migrator::DEFAULT
+        };
+        legacy.run(&pool).await.unwrap();
+        sqlx::query("INSERT INTO projects(id,name,path,created_at,updated_at) VALUES (1,'repo','/missing/repo','1','1'),(2,'linked','/missing/linked','1','1')").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO threads(id,title,project_id,created_at,updated_at,harness_configuration_name,permission_profile_id) VALUES (1,'Saved',2,'1','1','codex-basic','full')").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO interactions(id,thread_id,sequence,text,created_at,permission_profile_id) VALUES (1,1,1,'Saved prompt','1','full')").execute(&pool).await.unwrap();
+        pool.close().await;
+        let store = SqliteProductStore::open(&file).await.unwrap();
+        store
+            .consolidate_projects(&[(
+                crate::product::ProjectId::from_database(2),
+                crate::product::ProjectId::from_database(1),
+                "repo".into(),
+            )])
+            .await
+            .unwrap();
+        store.pool.close().await;
+        let reopened = SqliteProductStore::open(&file).await.unwrap();
+        let thread = reopened
+            .get_thread(crate::product::ThreadId::from_database(1))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(thread.working_directory.as_deref(), Some("/missing/linked"));
+        assert_eq!(thread.icon, None);
+        assert!(!thread.icon_selection_eligible);
+        assert_eq!(thread.project_id.unwrap().value(), 2);
+        assert_eq!(thread.grouped_project_id.unwrap().value(), 1);
+        assert_eq!(
+            reopened.load_thread(thread.id).await.unwrap().interactions[0].text,
+            "Saved prompt"
+        );
+    }
+    #[tokio::test]
+    async fn consolidation_failure_rolls_back_every_alias_and_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = SqliteProductStore::open(temp.path().join("product.db"))
+            .await
+            .unwrap();
+        let (first, _) = store
+            .insert_or_get_project("Original", "/first", "1")
+            .await
+            .unwrap();
+        let (second, _) = store
+            .insert_or_get_project("Second", "/second", "2")
+            .await
+            .unwrap();
+        sqlx::query("CREATE TRIGGER reject_second_alias BEFORE UPDATE ON projects WHEN NEW.group_project_id IS NOT NULL BEGIN SELECT RAISE(ABORT,'injected failure'); END").execute(&store.pool).await.unwrap();
+        assert!(
+            store
+                .consolidate_projects(&[
+                    (first.id, first.id, "Renamed".into()),
+                    (second.id, first.id, "Renamed".into())
+                ])
+                .await
+                .is_err()
+        );
+        let projects = store.list_projects().await.unwrap();
+        assert_eq!(projects.len(), 2);
+        assert_eq!(projects[0].name, "Original");
+        assert_eq!(projects[1].name, "Second");
+        assert!(projects.iter().all(|p| p.aliases.is_empty()));
     }
 }

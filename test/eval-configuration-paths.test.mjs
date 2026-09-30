@@ -34,6 +34,13 @@ describe("Eval harness configuration availability", () => {
     }).key).toBe("linux-x64");
   });
 
+  it("opts the Eval product server into thread-icon exclusion", async () => {
+    const evalMain = await readFile(new URL("../desktop/eval-main/index.mjs", import.meta.url), "utf8");
+    const productServerConfiguration = evalMain.match(/productServer = new RelayerAppServerService\(\{([\s\S]*?)\n  \}\);/);
+    expect(productServerConfiguration).not.toBeNull();
+    expect(productServerConfiguration[1]).toContain("evalMode: true,");
+  });
+
   it("records the package.json product version on unpackaged Eval exports", async () => {
     const evalMain = await readFile(new URL("../desktop/eval-main/index.mjs", import.meta.url), "utf8");
     expect(evalMain).toContain("const desktopVersion = metadata.version;");

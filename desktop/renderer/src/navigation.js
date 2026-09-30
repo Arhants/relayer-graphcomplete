@@ -1,3 +1,5 @@
+import { threadIconMarkup } from "./product-workspace/icons.js";
+import { checkoutSelectionLocked, selectCheckoutScope, closeCheckoutMenu } from "./checkout.js";
 import { appState, desktop, viewState } from "./state.js";
 import { onboardingTutorialController } from "./onboarding-tutorial.js";
 import { $, $$, escapeHtml, escapeHtmlAttribute } from "./ui.js";
@@ -78,7 +80,7 @@ function threadEntry(thread) {
   const activity = THREAD_ACTIVITY[thread.activity];
   const name = activity ? `${thread.title}, ${activity.label}` : thread.title;
   const tooltip = activity ? `${thread.title} · ${activity.label}` : thread.title;
-  return `<button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}"${activity ? ` data-activity="${escapeHtmlAttribute(thread.activity)}"` : ""} data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(name)}" title="${escapeHtmlAttribute(tooltip)}"><span class="entry-icon thread-activity" aria-hidden="true"></span><span>${escapeHtml(thread.title)}</span></button>`;
+  return `<button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}"${activity ? ` data-activity="${escapeHtmlAttribute(thread.activity)}"` : ""} data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(name)}" title="${escapeHtmlAttribute(tooltip)}"><span class="entry-icon thread-topic-icon" aria-hidden="true">${threadIconMarkup(thread.icon)}</span><span class="thread-entry-title">${escapeHtml(thread.title)}</span><span class="entry-icon thread-activity" aria-hidden="true"></span></button>`;
 }
 
 function renderThreadActivity() {
@@ -139,7 +141,7 @@ export function renderSidebar() {
     ? standalone.map(threadEntry).join("")
     : `<div class="entry"><span class="entry-icon">—</span><span>No chats yet</span></div>`;
   $("#projectList").innerHTML = appState.projects.map((project) => {
-    const threads = appState.threads.filter((thread) => String(thread.projectId) === String(project.id));
+    const threads = appState.threads.filter((thread) => String(thread.groupedProjectId ?? thread.projectId) === String(project.id));
     const projectId = escapeHtmlAttribute(project.id);
     const projectName = escapeHtml(project.name);
     const projectNameAttribute = escapeHtmlAttribute(project.name);
@@ -149,8 +151,10 @@ export function renderSidebar() {
 }
 
 export function selectScope(scope, { userInitiated = false } = {}) {
+  if (checkoutSelectionLocked()) return false;
   if (userInitiated) onboardingTutorialController()?.cancelPendingAutomatic();
   viewState.selectedScope = scope;
+  closeCheckoutMenu();
   $("#scopeLabel").textContent = scope.label;
   const summary = $("#folderSummary");
   if (scope.path) {
@@ -159,6 +163,7 @@ export function selectScope(scope, { userInitiated = false } = {}) {
   } else {
     summary.classList.add("hidden");
   }
+  void selectCheckoutScope(scope);
   if (userInitiated && viewState.mainView === "new") {
     persistPendingNewThreadDraft($("#newThreadPrompt").value, scope);
   }
@@ -172,7 +177,7 @@ export async function chooseFolder() {
     folder = path ? { path, git: false } : null;
   }
   if (!folder) return;
-  const label = folder.path.split("/").filter(Boolean).at(-1) || folder.path;
+  const label = (folder.repositoryRoot || folder.path).split("/").filter(Boolean).at(-1) || folder.path;
   selectScope({ kind: "folder", label, ...folder }, { userInitiated: true });
 }
 
@@ -188,7 +193,7 @@ export function renderScopeMenu() {
         const project = appState.projects.find((item) => String(item.id) === button.dataset.project);
         if (project) {
           selectScope(
-            { kind: "project", projectId: project.id, label: project.name, path: project.path },
+            { kind: "project", projectId: project.id, label: project.name, path: project.path, separateSubfolder: Boolean(project.relativePath) },
             { userInitiated: true },
           );
         }

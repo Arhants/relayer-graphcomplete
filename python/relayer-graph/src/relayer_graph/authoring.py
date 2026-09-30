@@ -500,6 +500,13 @@ class RelayerGraphClient:
             layer.ref = stopped
         return stopped
 
+    async def propose_thread_icon(self, icon: object) -> bool:
+        """Propose topic metadata; invalid selection does not block acceptance."""
+        if not isinstance(icon, str):
+            return False
+        result = await self._request("POST", "/api/graph/thread-icon", {"icon": icon})
+        return bool(result["valid"])
+
     async def submit(self, interaction_node: NodeReference | None = None) -> Mapping[str, Any]:
         interaction_id = self.node_id if interaction_node is None else _node_id(interaction_node)
         return await self._request("POST", "/api/graph/submit", {"nodeId": interaction_id})

@@ -3,8 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PrimeVisualAuthoring } from "../src/implementations/prime-visual-authoring.js";
-import { submitPrimeLayer } from "../src/implementations/prime-layer-submission.js";
+import { PrimeVisualAuthoring, submitPrimeLayer } from "../src/implementations/prime-visual-authoring.js";
 
 const capability = { url: "http://graph.test", token: "run-one", nodeId: 1 };
 const request = () => ({ version: 1, objectId: "object-one", token: "run-one", nodeId: 1, operation: "submit",

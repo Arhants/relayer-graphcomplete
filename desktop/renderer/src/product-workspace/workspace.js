@@ -1,3 +1,4 @@
+import { environmentProjectForThread } from "../environment-context.js";
 import { interactionGraph, renderInteractionGraph } from "./interaction-graph.js";
 import { createWorkspaceLayout } from "./workspace-layout.js";
 import { preferredLayerNode, rememberedLayerSelection, rememberLayerSelection } from "./layer-selection.js";
@@ -18,7 +19,7 @@ import {
   humanTurns,
   workspaceTurns,
 } from "./model.js";
-import { createLucideIcon, createRelayerIcon, relayerIconFamily } from "./icons.js";
+import { createLucideIcon, createRelayerIcon, relayerIconFamily, renderThreadTitle } from "./icons.js";
 import { interactionActivity, NODE_RUN_STATE, nodeRunState, THREAD_ACTIVITY } from "./run-state.js";
 import { graphLayoutSignature, nodesInReadingOrder, projectLayerNodePositions } from "./graph-layout.js";
 import { graphEdgePath, graphFollowWaypoints, graphLayerCircle, graphRoutedEdgePath, resolveEdgeShape } from "./edge-shapes.js";
@@ -456,11 +457,12 @@ export function turnStatusPresentation(status) {
   return { kind: "unknown", label: status ? String(status).replaceAll("_", " ") : "Unknown" };
 }
 
-export function environmentPresentation(environment, project) {
+export function environmentPresentation(environment, project, selectedThreadId = null) {
   if (!project?.id) {
     return { mode: "message", message: "No project folder", busy: false };
   }
-  if (!environment || String(environment.projectId) !== String(project.id)) {
+  if (!environment || String(environment.projectId) !== String(project.id)
+    || (selectedThreadId != null && String(environment.threadId) !== String(selectedThreadId))) {
     return { mode: "loading", message: "Loading project context…", busy: true };
   }
   if (environment.status === "loading" && !environment.snapshot) {
@@ -4608,8 +4610,8 @@ export function createProductWorkspace({
     shareController?.render();
     void loadAnnotations(thread);
     renderHistoryNavigation();
-    $("#threadTitle").textContent = thread.title;
-    const project = state.projects.find((item) => String(item.id) === String(thread.projectId));
+    renderThreadTitle(root, thread);
+    const project = environmentProjectForThread(state.projects, thread);
     const permissionProfile = state.permissionProfiles?.find((item) => item.id === thread.permissionProfileId);
     const permissionLabel = permissionProfile?.label || thread.permissionProfileId;
     const harnessId = thread.harnessId ?? thread.harnessConfigurationName;
@@ -4617,7 +4619,7 @@ export function createProductWorkspace({
     const threadScope = `${project?.name || "No folder"} · ${permissionLabel} · ${harness?.label ?? harnessId}`;
     $("#threadScope").textContent = threadScope;
     $("#threadTitle").title = threadScope;
-    renderEnvironment(state.environment, project);
+    renderEnvironment(state.environment, project, thread.id);
     const pendingTurn = state.pendingTurn;
     const showPending = pendingTurn && String(pendingTurn.threadId) === String(thread.id)
       && String(pendingTurn.interactionId) !== String(state.currentInteractionId);
@@ -4929,10 +4931,10 @@ export function createProductWorkspace({
     syncComposer();
   }
 
-  function renderEnvironment(environment, project) {
+  function renderEnvironment(environment, project, selectedThreadId) {
     const body = $("#environmentBody");
     if (!body) return;
-    const presentation = environmentPresentation(environment, project);
+    const presentation = environmentPresentation(environment, project, selectedThreadId);
     const loading = $("#environmentLoading");
     const facts = $("#environmentFacts");
     const message = $("#environmentMessage");

@@ -20,6 +20,7 @@ import { createProviderRuntimeStateRemover } from "./providers/provider-runtime-
 import {
   createEncryptedCredentialStore,
 } from "./providers/provider-definition-store.mjs";
+import { createWorktreeService } from "./services/worktree-service.mjs";
 import { registerDesktopIpc } from "./ipc/register-ipc.mjs";
 import { createConversationExportService } from "./services/conversation-export.mjs";
 import { createSharePublishCoordinator } from "./services/share-publish-coordinator.mjs";
@@ -648,6 +649,7 @@ if (primaryInstance) {
       validateProviderOnboarding: () => productServer.validateProviderOnboarding(),
       conversationExporter,
       shareCoordinator,
+      worktrees: createWorktreeService({ worktreeRoot: join(userDataPath, "worktrees"), storeDirectory: join(userDataPath, "worktree-plans") }),
       settings,
       tutorial,
       updater,
