@@ -6,7 +6,7 @@ import {
 } from "../src/icons.js";
 
 describe("Relayer icon vocabulary", () => {
-  it("exports the curated names without duplicates", () => {
+  it("exports the pinned names without duplicates", () => {
     expect(RELAYER_ICON_NAMES).toContain("compass");
     expect(new Set(RELAYER_ICON_NAMES).size).toBe(RELAYER_ICON_NAMES.length);
   });
@@ -17,8 +17,8 @@ describe("Relayer icon vocabulary", () => {
     expect(resolveRelayerIconName("file pen")).toBe("file-edit");
   });
 
-  it("does not expose Lucide names outside Relayer's vocabulary", () => {
-    expect(resolveRelayerIconName("alarm-clock")).toBeNull();
+  it("exposes pinned Lucide names and rejects unknown names", () => {
+    expect(resolveRelayerIconName("alarm-clock")).toBe("alarm-clock");
     expect(resolveRelayerIconName("constructor")).toBeNull();
     expect(isSupportedRelayerIcon("🧭")).toBe(false);
   });

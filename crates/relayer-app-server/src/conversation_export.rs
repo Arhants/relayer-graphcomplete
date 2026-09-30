@@ -191,7 +191,10 @@ pub struct ExportContextTargetSnapshot {
     /// accepted view, but importers never interpret it as a local database ID.
     pub id: String,
     pub kind: String,
+    #[serde(with = "relayer_graph_core::icon_serde")]
     pub icon: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_asset: Option<ExportVisualAssetAssociation>,
     pub title: String,
     pub detail: String,
     pub state: ExportRecordState,
@@ -391,6 +394,7 @@ pub struct ExportNode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_key: Option<String>,
     pub kind: String,
+    #[serde(with = "relayer_graph_core::icon_serde")]
     pub icon: String,
     pub title: String,
     pub detail: String,
@@ -493,7 +497,10 @@ pub struct ExportAction {
     pub label: String,
     pub variant: ExportActionVariant,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(with = "relayer_graph_core::optional_icon_serde")]
     pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_asset: Option<ExportVisualAssetAssociation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -839,6 +846,11 @@ impl ConversationExportValidator {
             }
         }
         for context in &turn.contexts {
+            self.validate_icon_carrier(
+                &context.target.icon,
+                context.target.icon_asset.as_ref(),
+                &path,
+            )?;
             if let Some(owner) = &context.source.owner_turn_id {
                 if self.export_version != EXPORT_VERSION_V3 {
                     return Err(ExportValidationError::new(
@@ -915,10 +927,24 @@ impl ConversationExportValidator {
             )?;
         }
         if let Some(view) = &turn.accepted_view {
+            self.validate_root_icon_asset(&view.root_action, &path)?;
+            if view
+                .layers
+                .iter()
+                .flat_map(|layer| &layer.actions)
+                .any(|action| action.icon_asset.is_some())
+            {
+                return Err(ExportValidationError::new(
+                    "unexpected_icon_asset",
+                    &path,
+                    "Layer action image bytes belong to the source node asset inventory.",
+                ));
+            }
             for (layer_index, layer) in view.layers.iter().enumerate() {
                 for (node_index, node) in layer.nodes.iter().enumerate() {
                     self.validate_node_visual_assets(
                         node,
+                        view,
                         &format!("{path}.acceptedView.layers[{layer_index}].nodes[{node_index}]"),
                     )?;
                 }
@@ -1091,33 +1117,155 @@ impl ConversationExportValidator {
         Ok(())
     }
 
+    fn validate_root_icon_asset(
+        &mut self,
+        action: &ExportAction,
+        path: &str,
+    ) -> Result<(), ExportValidationError> {
+        self.validate_icon_carrier(
+            action.icon.as_deref().unwrap_or(""),
+            action.icon_asset.as_ref(),
+            path,
+        )
+    }
+
+    fn validate_icon_carrier(
+        &mut self,
+        icon_value: &str,
+        asset: Option<&ExportVisualAssetAssociation>,
+        path: &str,
+    ) -> Result<(), ExportValidationError> {
+        let image = relayer_graph_core::image_icon(icon_value);
+        match (image, asset) {
+            (None, None) => Ok(()),
+            (Some(icon), Some(asset)) => {
+                if icon.kind != "image"
+                    || icon.asset_id != asset.asset_id
+                    || icon.digest_sha256.as_deref() != Some(asset.digest_sha256.as_str())
+                    || icon.media_type.as_deref() != Some(asset.media_type.as_str())
+                    || !matches!(asset.provenance.source.as_str(), "user" | "system")
+                    || asset.provenance.file_name.trim().is_empty()
+                {
+                    return Err(ExportValidationError::new(
+                        "icon_asset_pin_mismatch",
+                        path,
+                        "Root image icon association must exactly match its pinned bytes.",
+                    ));
+                }
+                let content = self
+                    .visual_asset_contents
+                    .get(&asset.digest_sha256)
+                    .ok_or_else(|| {
+                        ExportValidationError::new(
+                            "visual_asset_content_missing",
+                            path,
+                            "Root image icon must resolve to exported bytes.",
+                        )
+                    })?;
+                if content.media_type != asset.media_type
+                    || content.byte_length != asset.byte_length
+                {
+                    return Err(ExportValidationError::new(
+                        "visual_asset_content_metadata_mismatch",
+                        path,
+                        "Root image icon content metadata must match.",
+                    ));
+                }
+                self.referenced_visual_asset_digests
+                    .insert(asset.digest_sha256.clone());
+                Ok(())
+            }
+            _ => Err(ExportValidationError::new(
+                "icon_asset_inventory_mismatch",
+                path,
+                "Only an image root action carries exactly one icon asset association.",
+            )),
+        }
+    }
+
     fn validate_node_visual_assets(
         &mut self,
         node: &ExportNode,
+        view: &ExportAcceptedView,
         path: &str,
     ) -> Result<(), ExportValidationError> {
-        if node.authored_detail.is_none() || node.authored_detail_omitted.is_some() {
-            if !node.authored_detail_assets.is_empty() {
+        let image_icon_present = relayer_graph_core::image_icon(&node.icon).is_some()
+            || view
+                .layers
+                .iter()
+                .flat_map(|layer| &layer.actions)
+                .filter(|action| action.source_node_id == node.id)
+                .any(|action| {
+                    action
+                        .icon
+                        .as_deref()
+                        .is_some_and(|icon| relayer_graph_core::image_icon(icon).is_some())
+                });
+        if !image_icon_present
+            && !node.authored_detail_assets.is_empty()
+            && (node.authored_detail.is_none() || node.authored_detail_omitted.is_some())
+        {
+            return Err(ExportValidationError::new(
+                "authored_detail_asset_without_detail",
+                path,
+                "Visual asset associations require a retained Detail package or pinned image icon.",
+            ));
+        }
+        let mut pins = Vec::new();
+        if node.authored_detail_omitted.is_none()
+            && let Some(detail) = &node.authored_detail
+        {
+            pins.extend(
+                detail
+                    .get("assets")
+                    .and_then(serde_json::Value::as_array)
+                    .ok_or_else(|| {
+                        ExportValidationError::new(
+                            "authored_detail_assets_invalid",
+                            path,
+                            "An authored detail must declare its asset pins.",
+                        )
+                    })?
+                    .iter()
+                    .cloned(),
+            );
+        }
+        if let Some(pin) = crate::conversation_export_service::icon_asset_pin(&node.icon) {
+            pins.push(pin);
+        }
+        for action in view
+            .layers
+            .iter()
+            .flat_map(|layer| &layer.actions)
+            .filter(|action| action.source_node_id == node.id)
+        {
+            if let Some(pin) = action
+                .icon
+                .as_deref()
+                .and_then(crate::conversation_export_service::icon_asset_pin)
+            {
+                pins.push(pin);
+            }
+        }
+        let mut package_assets = BTreeMap::new();
+        for pin in pins {
+            let id = pin
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            if package_assets
+                .insert(id, pin.clone())
+                .is_some_and(|previous| previous != pin)
+            {
                 return Err(ExportValidationError::new(
-                    "authored_detail_asset_without_detail",
-                    format!("{path}.authoredDetailAssets"),
-                    "Visual asset associations require an exported authored detail package.",
+                    "asset_pin_conflict",
+                    path,
+                    "Icon and detail pins conflict.",
                 ));
             }
-            return Ok(());
         }
-        let package_assets = node
-            .authored_detail
-            .as_ref()
-            .and_then(|detail| detail.get("assets"))
-            .and_then(serde_json::Value::as_array)
-            .ok_or_else(|| {
-                ExportValidationError::new(
-                    "authored_detail_assets_invalid",
-                    format!("{path}.authoredDetail.assets"),
-                    "An authored detail package must declare its asset pins as an array.",
-                )
-            })?;
+        let package_assets = package_assets.into_values().collect::<Vec<_>>();
         let mut asset_ids = HashSet::new();
         for (index, association) in node.authored_detail_assets.iter().enumerate() {
             let association_path = format!("{path}.authoredDetailAssets[{index}]");
@@ -1179,8 +1327,9 @@ impl ConversationExportValidator {
             self.referenced_visual_asset_digests
                 .insert(association.digest_sha256.clone());
         }
-        if !node.authored_detail_assets.is_empty()
-            && node.authored_detail_assets.len() != package_assets.len()
+        if (image_icon_present || !node.authored_detail_assets.is_empty())
+            && (node.authored_detail_assets.len() != package_assets.len()
+                || (image_icon_present && package_assets.is_empty()))
         {
             return Err(ExportValidationError::new(
                 "authored_detail_asset_inventory_mismatch",

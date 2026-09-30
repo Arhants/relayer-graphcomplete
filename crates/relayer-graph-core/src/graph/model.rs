@@ -4,6 +4,7 @@ mod current;
 mod edge;
 mod icon;
 mod ids;
+pub mod image_icon;
 mod input;
 mod layer;
 mod node;
@@ -25,8 +26,8 @@ pub use current::{
 };
 pub use edge::{EdgeDraft, GraphEdge};
 pub use icon::{
-    RELAYER_ICON_ALIASES, RELAYER_ICON_NAMES, is_supported_icon, normalize_icon_name,
-    resolve_icon_name,
+    RELAYER_ICON_ALIASES, RELAYER_ICON_CATALOG_JSON, RELAYER_ICON_NAMES, is_supported_icon,
+    normalize_icon_name, resolve_icon_name,
 };
 pub use ids::{
     ActionId, EdgeId, InteractionInputChildId, LayerId, NodeId,

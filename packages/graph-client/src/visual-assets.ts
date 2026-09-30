@@ -16,6 +16,7 @@ export interface VisualAsset {
   readonly id: string;
   readonly registryId: string;
   readonly name: string;
+  readonly description?: string;
   readonly mediaType: VisualAssetMediaType;
   readonly byteLength: number;
   readonly digest: string;
@@ -69,16 +70,18 @@ export class GraphVisualAssets {
     readonly file: VisualAssetFile;
     readonly scope: WritableVisualAssetScope;
     readonly name: string;
+    readonly description?: string;
     readonly tagIds?: readonly string[];
     readonly registryId?: string;
   }): Promise<VisualAsset> {
-    const { file, name, registryId } = input;
+    const { file, name, registryId, description } = input;
     const scope = { ...input.scope };
     const tagIds = [...(input.tagIds ?? [])];
     const { name: fileName, mediaType, expectedDigest } = file;
     const bytes = (await file.read()).slice();
     const result = await this.operation<VisualAsset>({
       kind: "add", scope, name, tagIds,
+      ...(description === undefined ? {} : { description }),
       ...(registryId === undefined ? {} : { registryId }),
       file: {
         name: fileName, mediaType,
@@ -146,7 +149,7 @@ function writableScope(value: unknown): value is WritableVisualAssetScope {
   const id = value.kind === "project" ? value.projectId : value.kind === "thread" ? value.threadId : undefined;
   return typeof id === "number" && Number.isSafeInteger(id) && id > 0;
 }
-function decodedFile(value: unknown): VisualAssetFile {
+export function decodedFile(value: unknown): VisualAssetFile {
   if (!record(value) || typeof value.name !== "string" || typeof value.mediaType !== "string"
     || typeof value.contentBase64 !== "string" || value.contentBase64.length > 4 * Math.ceil(8 * 1024 * 1024 / 3)
     || (value.expectedDigest !== undefined && typeof value.expectedDigest !== "string")) {

@@ -4,9 +4,9 @@ export function expectGraphPresentationGuidance(prompt: string): void {
   expect(prompt).toContain("register ALL actions");
   expect(prompt).toContain("It is not a draft preview");
   expect(prompt).toContain('"cssProperties":["align-content"');
-  expect(prompt).toContain("Valid node icons: choose the content icon that names what the node is about");
-  expect(prompt).toContain("- Reasoning, ideas and process: bolt, brain, compass, palette, route, search");
-  expect(prompt).toMatch(/Signal icons have no colour[^\n]*: alert-circle, [^\n]*\binfo\b/);
+  expect(prompt).toContain("graph.icons.discover");
+  expect(prompt).toContain("graph.icons.inspect");
+  expect(prompt).toContain("Signal symbols describe status");
   expect(prompt).toContain('Theme authoring: design readable light AND dark');
   expect(prompt).toContain('[data-relayer-theme="light"]');
   expect(prompt).toContain('[data-relayer-theme="dark"]');

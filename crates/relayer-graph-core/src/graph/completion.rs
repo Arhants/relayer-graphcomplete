@@ -448,11 +448,18 @@ pub(crate) async fn read_accepted_closure_on(
         )
         .await?;
     let mut detail_asset_revisions = BTreeMap::new();
-    for node in publication.layers.iter().flat_map(|layer| &layer.nodes) {
-        if node.authored_detail.is_some() && !detail_asset_revisions.contains_key(&node.id) {
+    for node in publication
+        .layers
+        .iter()
+        .flat_map(|layer| &layer.nodes)
+        .chain(std::iter::once(&publication.interaction))
+    {
+        if let std::collections::btree_map::Entry::Vacant(entry) =
+            detail_asset_revisions.entry(node.id)
+        {
             let revision =
                 crate::storage::sqlite::attached_navigation::revision(transaction, node.id).await?;
-            detail_asset_revisions.insert(node.id, revision);
+            entry.insert(revision);
         }
     }
     Ok(Some(AcceptedGraphClosure {

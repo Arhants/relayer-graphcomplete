@@ -1,3 +1,4 @@
+import { isImageIcon, type GraphIcon } from "./image-icons.js";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isProxy } from "node:util/types";
@@ -8,11 +9,13 @@ import { EdgeObject, LayerObject, NodeObject, actionId, edgeId, layerId, nodeId,
 import { GRAPH_QUERY_CONTRACT_VERSION } from "./query-errors.generated.js";
 import { GraphQueryError, isGraphQueryErrorBody, type GraphQueryErrorBody, type GraphSearchOptions, type GraphSearchRequest, type GraphSearchResult } from "./query.js";
 import { GraphApiError, type CompletionInputGraph, type CompletionOutput, type CompletionState, type CurrentTransitionReceipt, type GraphAction, type GraphApiErrorBody, type GraphCapability, type GraphEdge, type GraphId, type GraphLayer, type GraphNode, type InteractionInput, type ResolvedLayer, type ResolvedPersonalPresentation, type StopReason } from "./types.js";
+import { GraphIcons } from "./icon-discovery.js";
 import { GraphVisualAssets } from "./visual-assets.js";
 
 export class RelayerGraphClient {
   readonly capability: GraphCapability;
   readonly visualAssets: GraphVisualAssets;
+  readonly icons: GraphIcons;
   readonly #submittedDetails = new WeakMap<NodeObject, Promise<CompiledNodeDetail>>();
   readonly #acceptedDetails = new WeakMap<NodeObject, Promise<CompiledNodeDetail>>();
   readonly #submissionEnvelopes = new WeakMap<NodeObject, NodeSubmissionEnvelope>();
@@ -20,6 +23,7 @@ export class RelayerGraphClient {
 
   constructor(capability: GraphCapability, private readonly requestScope?: { readonly beforeRequest: (path: string) => void; readonly signal: AbortSignal }) {
     this.capability = { ...capability, url: capability.url.replace(/\/$/, "") };
+    this.icons = new GraphIcons((path, init) => this.request<unknown>(path, init));
     this.visualAssets = new GraphVisualAssets((path, init) => this.request<unknown>(path, init));
   }
 
@@ -424,7 +428,7 @@ interface NodeSubmissionEnvelope {
   readonly detailAuthoring: NodeDetailAuthoring;
   readonly clientKey: string;
   readonly kind: string;
-  readonly icon: string;
+  readonly icon: GraphIcon;
   readonly title: string;
   readonly detail: string;
 }
@@ -461,13 +465,14 @@ function materializeNodeSubmissionEnvelope(node: NodeObject): NodeSubmissionEnve
     const title = values.get("title");
     const detail = values.get("detail");
     const detailAuthoring = values.get("detailAuthoring");
-    if (typeof clientKey !== "string" || typeof kind !== "string" || typeof icon !== "string"
+    if (typeof clientKey !== "string" || typeof kind !== "string" || (typeof icon !== "string" && !isImageIcon(icon))
       || typeof title !== "string" || typeof detail !== "string" || !(detailAuthoring instanceof NodeDetailAuthoring)
       || !isNodeDetailAuthoringOwner(detailAuthoring, node)) {
       return invalidNodeSubmissionEnvelope();
     }
     const owner = Object.freeze({ object: node, clientKey });
-    return Object.freeze({ owner, detailAuthoring, clientKey, kind, icon, title, detail });
+    const pinnedIcon = typeof icon === "string" ? icon : Object.freeze({ ...icon });
+    return Object.freeze({ owner, detailAuthoring, clientKey, kind, icon: pinnedIcon, title, detail });
   } catch (error) {
     if (error instanceof DetailCompilationError) throw error;
     return invalidNodeSubmissionEnvelope();
@@ -540,7 +545,7 @@ function validatedSubmittedNodeResponse(
     if (typeof detail !== "string" || detail.trim() === "") {
       return invalidNodeResponse("node.detail", "Node detail must be a nonblank string");
     }
-    if (typeof fields.icon !== "string" || !isRelayerIconName(fields.icon)) {
+    if (!isImageIcon(fields.icon) && (typeof fields.icon !== "string" || !isRelayerIconName(fields.icon))) {
       return invalidNodeResponse("node.icon", "Node icon must use the curated Relayer icon vocabulary");
     }
     if (fields.state !== "draft" && fields.state !== "accepted" && fields.state !== "stopped") {
@@ -568,7 +573,7 @@ function validatedSubmittedNodeResponse(
       ...(candidate.optionalFields.has("clientKey") ? { clientKey: expectedClientKey } : {}),
       ...(candidate.optionalFields.has("leasedActionId") ? { leasedActionId: fields.leasedActionId as number | null } : {}),
       kind,
-      icon: fields.icon,
+      icon: typeof fields.icon === "string" ? fields.icon : Object.freeze({ ...fields.icon }),
       title,
       detail,
       ...(acceptedAuthoredDetail === undefined ? {} : { authoredDetail: acceptedAuthoredDetail }),

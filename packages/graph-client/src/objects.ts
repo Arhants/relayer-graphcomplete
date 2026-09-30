@@ -1,3 +1,4 @@
+import type { GraphIcon } from "./image-icons.js";
 import { randomUUID } from "node:crypto";
 import { createOwnedNodeDetailAuthoring, NodeDetailAuthoring } from "./detail.js";
 import { acceptedNodeResponse } from "./node-response.js";
@@ -9,7 +10,7 @@ export class NodeObject {
   declare readonly ref: GraphNode | undefined;
 
   constructor(
-    public icon: string,
+    public icon: GraphIcon,
     public title: string,
     public detail: string,
     public kind = "concept",
@@ -67,9 +68,9 @@ export class LayerObject {
 }
 
 export type ActionPresentationObject =
-  | { readonly variant?: "pill"; readonly icon?: string; readonly description?: never }
-  | { readonly variant: "chip" | "wide"; readonly icon?: string; readonly description?: never }
-  | { readonly variant: "card"; readonly icon?: string; readonly description: string };
+  | { readonly variant?: "pill"; readonly icon?: GraphIcon; readonly description?: never }
+  | { readonly variant: "chip" | "wide"; readonly icon?: GraphIcon; readonly description?: never }
+  | { readonly variant: "card"; readonly icon?: GraphIcon; readonly description: string };
 
 export interface NavigateActionFields {
   readonly kind: "navigate";

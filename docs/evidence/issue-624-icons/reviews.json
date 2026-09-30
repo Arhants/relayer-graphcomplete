@@ -1,0 +1,211 @@
+{
+  "hashConvention": "ordered path UTF-8 + NUL + file bytes + NUL",
+  "reviews": [
+    {
+      "reviewer": "/root/image_icons",
+      "scope": "renderer",
+      "digestSha256": "ff855bb84f75f7b6f85b50e946d3c2b12afac70bf3f7c33612e1288ddcfca639",
+      "orderedPaths": [
+        "crates/relayer-app-server/src/api/threads.rs",
+        "desktop/renderer/src/product-workspace/image-icons.js",
+        "desktop/renderer/src/product-workspace/model.js",
+        "desktop/renderer/src/product-workspace/workspace.js",
+        "desktop/renderer/src/public-share-viewer/snapshot.js",
+        "desktop/renderer/src/public-share-viewer/viewer.css",
+        "desktop/renderer/styles.css",
+        "test/node-detail-runtime.test.mjs",
+        "test/workspace-followup-annotations.test.mjs"
+      ],
+      "verdict": "no unresolved findings after main integration; annotation Send/read-only boundaries and icon ownership preserved",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root/catalog",
+      "scope": "discovery",
+      "digestSha256": "d092f633290606f97a0eeb735e2f1ceea25e2719f5c3bdb27afaa80dbc44e724",
+      "orderedPaths": [
+        "crates/relayer-graph-server/src/lib.rs",
+        "crates/relayer-graph-server/src/search_index.rs",
+        "crates/relayer-graph-server/src/search_index/query.rs",
+        "crates/relayer-graph-core/src/query/candidates.rs",
+        "packages/harness-host/src/host.ts",
+        "packages/graph-client/src/icon-discovery.ts",
+        "python/relayer-graph/src/relayer_graph/icon_discovery.py"
+      ],
+      "verdict": "no unresolved findings",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root/catalog",
+      "scope": "native-import",
+      "digestSha256": "e0c71449954e8b26be8a8d937ae1f2386ac9a95e7aece3855a6514865aef6ba3",
+      "orderedPaths": [
+        "crates/relayer-graph-core/src/graph/model/image_icon.rs",
+        "crates/relayer-graph-core/src/graph/import.rs",
+        "crates/relayer-graph-core/src/storage/sqlite/migrations/0030_graph_image_icons.sql",
+        "packages/graph-client/src/image-icons.ts",
+        "packages/graph-client/src/detail.ts",
+        "crates/relayer-graph-core/tests/graph_database.rs"
+      ],
+      "verdict": "no unresolved findings; preserves documented pure legacy metadata-only Detail fallback",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root/image_icons",
+      "scope": "pinning",
+      "digestSha256": "772230cec6b14afffd3f99c344b3c207c39588204ad859e17218fea8131f2f65",
+      "orderedPaths": [
+        "crates/relayer-graph-core/src/graph/writer.rs",
+        "crates/relayer-graph-core/src/storage/sqlite/authored_detail_assets.rs",
+        "crates/relayer-graph-core/tests/graph_database.rs"
+      ],
+      "verdict": "no unresolved cross-table findings; reviewer excludes self-authored native import fixture",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root/image_icons",
+      "scope": "portability",
+      "digestSha256": "b94a9f5d6c8546eb97bae251a062c12b482fd53b3dcf644d2b53606a599d18b9",
+      "orderedPaths": [
+        "crates/relayer-app-server/src/conversation_export.rs",
+        "crates/relayer-app-server/src/conversation_export_service.rs",
+        "crates/relayer-app-server/src/conversation_import_service.rs"
+      ],
+      "verdict": "no unresolved findings",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root/image_icons",
+      "scope": "static-symbols",
+      "digestSha256": "b247c34df6cd34f69e79556387c8d5a82058fa2dd93e50b31252be883dd36dd0",
+      "orderedPaths": [
+        "packages/graph-client/src/image-icon-detail.ts",
+        "packages/harness-host/src/implementations/graph-presentation-guidance.ts",
+        "python/relayer-graph/src/relayer_graph/image_icons.py"
+      ],
+      "verdict": "no unresolved findings",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root/catalog",
+      "scope": "eval-diagnostics",
+      "digestSha256": "912375bf8b778f8bef58da6251704b03a64265212545dab98ae0f13c823a005b",
+      "orderedPaths": [
+        "packages/eval-runner/src/cases/graph-checks.ts",
+        "packages/eval-runner/test/graph-checks.test.ts",
+        "scripts/test-desktop-visual-node-details.mjs"
+      ],
+      "verdict": "no unresolved findings",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root/catalog",
+      "scope": "bounded-marine-evidence",
+      "digestSha256": "d3c1276221500990fd3eb5286454dad94162d7c3fce93ea8ef27f03ac0c226b2",
+      "orderedPaths": [
+        "scripts/evidence-marine-icons.mjs",
+        "scripts/fixtures/marine-ecology-icons.mjs",
+        "test/marine-icon-integration.test.mjs"
+      ],
+      "verdict": "no unresolved findings; Coral real photo/static SVG and monitoring production image action rail preserve both renderer seams; source/native and cleanup gates unchanged",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root",
+      "scope": "secondary-resource-and-module-inventories",
+      "digestSha256": "6f185531540ef9306347ca6ca28d96ddec3bba70d4bdba1c59216f20c4cce4c5",
+      "orderedPaths": [
+        "desktop/shared/telemetry-module-inventory.mjs",
+        "scripts/build-public-share-viewer-artifact.mjs",
+        "test/sticker-structure.test.mjs"
+      ],
+      "verdict": "no unresolved findings; exact module added to existing sealed inventories, legacy family counts retained",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root/image_icons",
+      "scope": "python-runtime-integrity",
+      "digestSha256": "51c2be22bdc697ae87ac28e3feee51009216b407714fcec57e0e9fdd977f28a6",
+      "orderedPaths": [
+        "desktop/main/managed-runtimes/recipes.mjs",
+        "desktop/main/services/prime-agent-runtime.mjs",
+        "desktop/shared/prime-runtime-integrity.mjs",
+        "test/prime-managed-runtime.test.mjs",
+        "vendor/prime-agent/manifest.json"
+      ],
+      "verdict": "no unresolved findings",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root/image_icons",
+      "scope": "social-capture",
+      "digestSha256": "bd256f2c13eb8ca88c0614650980cacf7301dea7e8e349e2406baadc5d1bff23",
+      "orderedPaths": [
+        "docs/evidence/desktop-social-preview/dark.png",
+        "docs/evidence/desktop-social-preview/light.png",
+        "docs/evidence/desktop-social-preview/receipt.json",
+        "scripts/capture-share-preview-evidence.mjs",
+        "test/desktop-social-preview-evidence.test.mjs"
+      ],
+      "verdict": "no unresolved findings",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root/discovery",
+      "scope": "catalog-and-guidance",
+      "digestSha256": "b5c6a732f1fa89e9ff11798aa925925b141cb22045628d04a694c3381313c450",
+      "orderedPaths": [
+        "crates/relayer-graph-core/src/graph/model/icon.rs",
+        "desktop/renderer/src/product-workspace/icons.js",
+        "docs/icon-catalog.json",
+        "packages/graph-client/src/icons.ts",
+        "packages/graph-client/src/image-icon-detail.ts",
+        "packages/harness-host/src/implementations/graph-presentation-guidance.ts",
+        "python/relayer-graph/src/relayer_graph/icons.py",
+        "python/relayer-graph/src/relayer_graph/image_icons.py",
+        "scripts/generate-icon-catalog.mjs"
+      ],
+      "verdict": "no unresolved vocabulary or metadata findings",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root",
+      "scope": "annotation-served-source-evidence",
+      "digestSha256": "8153b8d848c0cd2a1b71ef4d49492b5cbe68e91933e4e38db734855998ea5770",
+      "orderedPaths": [
+        "scripts/capture-followup-node-annotations.mjs",
+        "test/followup-annotation-evidence.test.mjs"
+      ],
+      "verdict": "no unresolved findings; exact served bytes checked without changing UI or timing assertions",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root",
+      "scope": "annotation-capture-and-served-source",
+      "digestSha256": "d5361a03b4d298e3433b0784e037a2d15864b156bb8aa57b8ca257f206cc4ec0",
+      "orderedPaths": [
+        "docs/evidence/followup-node-annotations/A-before-missing-plus.png",
+        "docs/evidence/followup-node-annotations/B-after-plus-visible.png",
+        "docs/evidence/followup-node-annotations/C-after-editor.png",
+        "docs/evidence/followup-node-annotations/D-after-confirmed.png",
+        "docs/evidence/followup-node-annotations/receipt.json",
+        "scripts/capture-followup-node-annotations.mjs",
+        "test/followup-annotation-evidence.test.mjs"
+      ],
+      "verdict": "no unresolved findings; original UI and backend occurrence/reload assertions retained; genuine fresh captures",
+      "unresolvedFindings": []
+    },
+    {
+      "reviewer": "/root/catalog",
+      "scope": "product-semantics-and-verification-mapping",
+      "digestSha256": "caca41d2fdf1fd7a552e69437ea5b1b29b1f8eeebe0e8dc497422fe54c451427",
+      "orderedPaths": [
+        "docs/prd/index.html",
+        "docs/architecture.md",
+        "docs/evidence/issue-624-icons/README.md"
+      ],
+      "verdict": "no unresolved semantic/mapping findings; plans, executed evidence, failures and model-selection/hosted unknowns explicit",
+      "unresolvedFindings": []
+    }
+  ]
+}

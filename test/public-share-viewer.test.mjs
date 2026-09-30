@@ -263,6 +263,59 @@ describe("public share V1 reader", () => {
     })).rejects.toThrow("digest mismatch");
   });
 
+  it("preserves node and source-owned action image icons without a Detail and rejects absent pins", async () => {
+    const { jsonl, asset } = assetFixtureJsonl();
+    const records = jsonl.trimEnd().split("\n").map(JSON.parse);
+    const turn = records.find(record => record.recordType === "turn");
+    const root = turn.acceptedView.layers[0];
+    const node = root.nodes[0];
+    delete node.authoredDetail;
+    node.icon = { kind: "image", assetId: asset.id, digestSha256: asset.digestSha256, mediaType: asset.mediaType };
+    root.actions[0].icon = { ...node.icon, fit: "cover", framing: "rounded" };
+    const encode = () => records.map(JSON.stringify).join("\n") + "\n";
+    const snapshot = parsePublicSnapshot(encode());
+    expect(snapshot.interactions[0].completionOutput.rootLayer.nodes[0].icon).toEqual(node.icon);
+    const resolved = await snapshot.resolveNodeDetailAsset(asset, { crypto: webcrypto, URL: { createObjectURL: () => "blob:icon", revokeObjectURL: vi.fn() }, Blob });
+    expect(resolved.url).toBe("blob:icon");
+    resolved.release();
+    node.authoredDetailAssets = [];
+    expect(() => parsePublicSnapshot(encode())).toThrow(/inventory/);
+  });
+
+  it("carries a response-action image independently of visible node assets", async () => {
+    const { jsonl, asset } = assetFixtureJsonl();
+    const records = jsonl.trimEnd().split("\n").map(JSON.parse);
+    const turn = records.find(record => record.recordType === "turn");
+    const node = turn.acceptedView.layers[0].nodes[0];
+    const association = node.authoredDetailAssets[0];
+    delete node.authoredDetail;
+    delete node.authoredDetailAssets;
+    turn.acceptedView.rootAction.icon = { kind: "image", assetId: asset.id, digestSha256: asset.digestSha256, mediaType: asset.mediaType };
+    turn.acceptedView.rootAction.iconAsset = association;
+    const encode = () => records.map(JSON.stringify).join("\n") + "\n";
+    expect(parsePublicSnapshot(encode()).assetContents).toHaveLength(1);
+    delete turn.acceptedView.rootAction.iconAsset;
+    expect(() => parsePublicSnapshot(encode())).toThrow(/association/);
+  });
+
+  it("resolves an external context icon whose node is absent from visible layers", () => {
+    const { jsonl, asset } = assetFixtureJsonl();
+    const records = jsonl.trimEnd().split("\n").map(JSON.parse);
+    const turn = records.find(record => record.recordType === "turn");
+    const node = turn.acceptedView.layers[0].nodes[0];
+    const association = node.authoredDetailAssets[0];
+    delete node.authoredDetail;
+    delete node.authoredDetailAssets;
+    turn.contexts = [{ id: "action:context", annotation: "Marine context", source: { interactionNodeId: "node:external-owner", layerId: "layer:external" }, target: {
+      id: "node:external", kind: "concept", title: "Coral", detail: "A reef organism", state: "accepted",
+      icon: { kind: "image", assetId: asset.id, digestSha256: asset.digestSha256, mediaType: asset.mediaType }, iconAsset: association,
+    } }];
+    const encode = () => records.map(JSON.stringify).join("\n") + "\n";
+    expect(parsePublicSnapshot(encode()).assetContents).toHaveLength(1);
+    delete turn.contexts[0].target.iconAsset;
+    expect(() => parsePublicSnapshot(encode())).toThrow(/association/);
+  });
+
   it("accepts encoded visual content above the generic string ceiling when decoded bytes remain within the 8 MiB asset limit", () => {
     const bytes = Buffer.alloc(4_540_000, 65);
     const { jsonl } = assetFixtureJsonl(bytes);

@@ -646,3 +646,16 @@ the exact old compiled binding. Search updates preserve each publication's scope
 The graph-server `--interaction-permissions` qualification flag defaults off.
 Persistent attached-node mutation and portable conversion export remain unavailable;
 see [ADR 0010](decisions/0010-typed-interaction-permissions.md).
+
+## Discoverable icon authoring
+
+Issue #624 extends the pinned Lucide vocabulary from one checked-in metadata catalog.
+Catalog records join deterministic shared-search candidate ranking without becoming
+accepted conversation Content. Graph-server discovery intersects image candidates
+with the completion's existing asset authority; symbols are universal. Registered
+image icons use the existing accepted asset read boundary and retain their pinned
+bytes independently of catalog organization. Nodes and source-owned actions carry
+legacy symbol strings or typed image references. Portable snapshots collect the
+union of icon pins and visible Detail pins; omission of a private Detail does not
+remove an independently visible graph icon. `complete(inputGraph)` and provider-native
+execution ownership remain unchanged.

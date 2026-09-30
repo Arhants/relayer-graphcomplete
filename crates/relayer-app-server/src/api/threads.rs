@@ -1046,13 +1046,35 @@ pub(super) async fn get_detail_asset(
             .map_err(|_| ApiError::internal("GraphComplete returned an invalid layer"))?;
     let node_id = relayer_graph_core::NodeId::new(node_id)
         .ok_or_else(|| ApiError::invalid("invalid graph node id"))?;
+    let source_icon = if node_id.value() == graph_node_id {
+        runtime
+            .completion_output(graph_node_id)
+            .await?
+            .is_some_and(|output| {
+                output
+                    .pointer("/rootAction/icon/kind")
+                    .and_then(Value::as_str)
+                    == Some("image")
+                    && output
+                        .pointer("/rootAction/icon/assetId")
+                        .and_then(Value::as_str)
+                        == Some(asset_id.as_str())
+                    && output
+                        .pointer("/rootAction/sourceNodeId")
+                        .and_then(Value::as_i64)
+                        == Some(graph_node_id)
+            })
+    } else {
+        false
+    };
     if layer.layer.id.value() != query.layer_id
-        || !layer.nodes.iter().any(|node| {
-            node.id == node_id && node.state == relayer_graph_core::RecordState::Accepted
-        })
+        || !(source_icon
+            || layer.nodes.iter().any(|node| {
+                node.id == node_id && node.state == relayer_graph_core::RecordState::Accepted
+            }))
     {
         return Err(ApiError::forbidden(
-            "accepted node does not belong to this layer",
+            "accepted icon owner does not belong to this presentation",
         ));
     }
     Ok(Json(

@@ -165,6 +165,7 @@ pub struct ImportedNode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_key: Option<String>,
     pub kind: String,
+    #[serde(with = "crate::graph::model::image_icon::wire")]
     pub icon: String,
     pub title: String,
     pub detail: String,
@@ -200,11 +201,14 @@ pub struct ImportedAction {
     pub relation: Option<String>,
     pub label: String,
     pub variant: String,
+    #[serde(default, with = "crate::graph::model::image_icon::optional_wire")]
     pub icon: Option<String>,
     pub description: Option<String>,
     pub target_layer_id: Option<String>,
     pub interaction_text: Option<String>,
     pub input: Option<InputAction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_asset: Option<ImportedDetailAsset>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -419,10 +423,72 @@ impl crate::GraphDatabase {
         }
 
         let mut node_definitions = HashMap::<String, ImportedNode>::new();
+        let mut icon_pins = HashMap::<String, Vec<super::model::image_icon::ImageIcon>>::new();
         for position in 0..turn_count {
             let turn = load_turn(&mut tx, import_id, position).await?;
             if let Some(view) = turn.accepted_view {
+                if let Some(icon) = view
+                    .root_action
+                    .icon
+                    .as_deref()
+                    .and_then(super::model::image_icon::image_icon)
+                {
+                    let asset = view.root_action.icon_asset.as_ref().ok_or_else(|| {
+                        GraphError::validation(
+                            "import_icon_pin_missing",
+                            "rootAction.icon",
+                            "Imported response image icon requires its pinned content.",
+                        )
+                    })?;
+                    if asset.asset_id != icon.asset_id
+                        || icon.digest_sha256.as_deref() != Some(&asset.digest_sha256)
+                        || icon.media_type.as_deref() != Some(&asset.media_type)
+                    {
+                        return Err(GraphError::validation(
+                            "import_icon_pin_mismatch",
+                            "rootAction.icon",
+                            "Response icon content does not match its pin.",
+                        ));
+                    }
+                    super::model::image_icon::canonical_icon(
+                        view.root_action.icon.as_ref().unwrap(),
+                    )?;
+                    let (media_type, byte_length) = AuthoredDetailAssetTable::new(&mut tx)
+                        .materialize_import_content(import_id, &asset.digest_sha256)
+                        .await?;
+                    if media_type != asset.media_type || byte_length != asset.byte_length {
+                        return Err(GraphError::validation(
+                            "import_asset_content_mismatch",
+                            "rootAction.iconAsset",
+                            "Response icon does not match staged bytes.",
+                        ));
+                    }
+                    AuthoredDetailAssetTable::new(&mut tx)
+                        .insert_import_icon_reference(
+                            NodeId::new(node_ids[&view.interaction_node_id]).unwrap(),
+                            asset,
+                        )
+                        .await?;
+                } else if view.root_action.icon_asset.is_some() {
+                    return Err(GraphError::validation(
+                        "import_icon_asset_unexpected",
+                        "rootAction.iconAsset",
+                        "Icon content requires an image icon.",
+                    ));
+                }
                 for resolved in view.layers {
+                    for action in &resolved.actions {
+                        if let Some(pin) = action
+                            .icon
+                            .as_deref()
+                            .and_then(super::model::image_icon::image_icon)
+                        {
+                            icon_pins
+                                .entry(action.source_node_id.clone())
+                                .or_default()
+                                .push(pin);
+                        }
+                    }
                     for node in resolved.nodes {
                         register_imported_node(&mut node_definitions, node)?;
                     }
@@ -444,6 +510,73 @@ impl crate::GraphDatabase {
             let owner = node_owners[&portable_id];
             if let Some(authored_detail) = node.authored_detail.as_ref() {
                 crate::graph::model::validate_authored_detail(authored_detail)?;
+            }
+            if let Some(pin) = super::model::image_icon::image_icon(&node.icon) {
+                icon_pins.entry(portable_id.clone()).or_default().push(pin);
+            }
+            let pins = icon_pins
+                .get(&portable_id)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let detail_pins = node
+                .authored_detail
+                .as_ref()
+                .and_then(|package| package["assets"].as_array())
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            for detail_pin in detail_pins {
+                let id = detail_pin["id"]
+                    .as_str()
+                    .expect("validated detail pin identity");
+                let digest = detail_pin["digestSha256"]
+                    .as_str()
+                    .expect("validated detail digest");
+                let media_type = detail_pin["mediaType"]
+                    .as_str()
+                    .expect("validated detail media type");
+                if pins.iter().any(|pin| {
+                    pin.asset_id == id
+                        && (pin.digest_sha256.as_deref() != Some(digest)
+                            || pin.media_type.as_deref() != Some(media_type))
+                }) {
+                    return Err(GraphError::validation(
+                        "import_asset_pin_conflict",
+                        "authoredDetailAssets",
+                        "A node's Detail and image icons must pin the same bytes for a shared asset identity.",
+                    ));
+                }
+                // Historical metadata-only Detail imports have neither a content
+                // inventory nor typed image icons. Preserve their viewing fallback;
+                // image-bearing imports and supplied inventories require exact pins.
+                if (!pins.is_empty() || !node.authored_detail_assets.is_empty())
+                    && !node.authored_detail_assets.iter().any(|asset| {
+                        asset.asset_id == id
+                            && asset.digest_sha256 == digest
+                            && asset.media_type == media_type
+                    })
+                {
+                    return Err(GraphError::validation(
+                        "import_detail_pin_missing",
+                        "authoredDetailAssets",
+                        "Every imported Detail image requires its exact pinned content association.",
+                    ));
+                }
+            }
+            for pin in pins {
+                super::model::image_icon::canonical_icon(
+                    &serde_json::to_string(pin).map_err(|e| GraphError::Internal(e.to_string()))?,
+                )?;
+                if !node.authored_detail_assets.iter().any(|a| {
+                    a.asset_id == pin.asset_id
+                        && Some(&a.digest_sha256) == pin.digest_sha256.as_ref()
+                        && Some(&a.media_type) == pin.media_type.as_ref()
+                }) {
+                    return Err(GraphError::validation(
+                        "import_icon_pin_missing",
+                        "icon",
+                        "Imported image icon requires its pinned visual content.",
+                    ));
+                }
             }
             for asset in &node.authored_detail_assets {
                 if !materialized_contents.contains_key(&asset.digest_sha256) {
@@ -468,10 +601,16 @@ impl crate::GraphDatabase {
                         pins.iter()
                             .find(|pin| pin["id"].as_str() == Some(asset.asset_id.as_str()))
                     });
-                if pin.is_none_or(|pin| {
-                    pin["digestSha256"].as_str() != Some(asset.digest_sha256.as_str())
-                        || pin["mediaType"].as_str() != Some(asset.media_type.as_str())
-                }) {
+                let detail_matches = pin.is_some_and(|pin| {
+                    pin["digestSha256"].as_str() == Some(asset.digest_sha256.as_str())
+                        && pin["mediaType"].as_str() == Some(asset.media_type.as_str())
+                });
+                let icon_matches = pins.iter().any(|pin| {
+                    pin.asset_id == asset.asset_id
+                        && pin.digest_sha256.as_deref() == Some(&asset.digest_sha256)
+                        && pin.media_type.as_deref() == Some(&asset.media_type)
+                });
+                if !detail_matches && !icon_matches {
                     return Err(GraphError::validation(
                         "import_asset_pin_mismatch",
                         "authoredDetailAssets",
@@ -500,9 +639,25 @@ impl crate::GraphDatabase {
                 .bind(node_id.value()).bind(import_id).bind(node.client_key.as_deref().unwrap_or(&portable_id))
                 .execute(&mut *tx).await?;
             for asset in &node.authored_detail_assets {
-                AuthoredDetailAssetTable::new(&mut tx)
-                    .insert_import_reference(node_id, asset)
-                    .await?;
+                if pins.iter().any(|pin| pin.asset_id == asset.asset_id) {
+                    AuthoredDetailAssetTable::new(&mut tx)
+                        .insert_import_icon_reference(node_id, asset)
+                        .await?;
+                }
+                if node
+                    .authored_detail
+                    .as_ref()
+                    .and_then(|p| p["assets"].as_array())
+                    .is_some_and(|assets| {
+                        assets
+                            .iter()
+                            .any(|p| p["id"].as_str() == Some(&asset.asset_id))
+                    })
+                {
+                    AuthoredDetailAssetTable::new(&mut tx)
+                        .insert_import_reference(node_id, asset)
+                        .await?;
+                }
             }
             node_ids.insert(portable_id, node_id.value());
         }
@@ -1414,9 +1569,11 @@ fn register_imported_node(
         let existing_omitted = std::mem::take(&mut existing.authored_detail_omitted);
         if existing != &node
             || matches!((&existing_client_key, &incoming_client_key), (Some(left), Some(right)) if left != right)
-            || (!existing_assets.is_empty()
-                && !incoming_assets.is_empty()
-                && existing_assets != incoming_assets)
+            || incoming_assets.iter().any(|incoming| {
+                existing_assets
+                    .iter()
+                    .any(|existing| existing.asset_id == incoming.asset_id && existing != incoming)
+            })
             || matches!(
                 (&existing_authored_detail, &incoming_authored_detail),
                 (Some(left), Some(right)) if left != right
@@ -1432,11 +1589,16 @@ fn register_imported_node(
         }
         existing.client_key = existing_client_key.or(incoming_client_key);
         existing.authored_detail = existing_authored_detail.or(incoming_authored_detail);
-        existing.authored_detail_assets = if existing_assets.is_empty() {
-            incoming_assets
-        } else {
-            existing_assets
-        };
+        existing.authored_detail_assets = existing_assets;
+        for incoming in incoming_assets {
+            if !existing
+                .authored_detail_assets
+                .iter()
+                .any(|asset| asset.asset_id == incoming.asset_id)
+            {
+                existing.authored_detail_assets.push(incoming);
+            }
+        }
         existing.authored_detail_omitted =
             (existing_omitted || incoming_omitted) && existing.authored_detail.is_none();
         return Ok(());

@@ -416,6 +416,7 @@ mod tests {
             .into(),
             variant: ExportActionVariant::Pill,
             icon: None,
+            icon_asset: None,
             description: None,
             target_layer_id: target_layer_id.map(Into::into),
             interaction_text: (kind == ExportActionKind::Invoke)
@@ -1139,6 +1140,7 @@ mod tests {
             id: "node:source".into(),
             kind: "concept".into(),
             icon: "file".into(),
+            icon_asset: None,
             title: "Source".into(),
             detail: "Accepted detail for Source".into(),
             state: ExportRecordState::Accepted,
@@ -2115,6 +2117,174 @@ mod tests {
                 .map(|input| input.id.as_str())
                 .collect::<Vec<_>>(),
             vec!["input-child:first-valid", "input-child:distinct-valid"]
+        );
+        graph_task.abort();
+    }
+
+    #[tokio::test]
+    async fn image_icons_node_layer_root_and_context_survive_http_import_and_reexport_without_details()
+     {
+        let mut records = mixed_v2_visual_asset_and_input_records();
+        let ConversationExportRecord::Turn(source) = &mut records[2] else {
+            unreachable!()
+        };
+        let view = source.accepted_view.as_mut().unwrap();
+        let node = &mut view.layers[0].nodes[0];
+        let association = node.authored_detail_assets[0].clone();
+        let icon = serde_json::json!({"kind":"image","assetId":association.asset_id,"digestSha256":association.digest_sha256,"mediaType":association.media_type,"fit":"contain","framing":"none"}).to_string();
+        node.icon = icon.clone();
+        // Omission of an unrelated private Detail package cannot drop the icon.
+        node.authored_detail = None;
+        node.authored_detail_omitted =
+            Some(crate::conversation_export::ExportAuthoredDetailOmission::SensitiveData);
+        let target = ExportContextTargetSnapshot {
+            id: node.id.clone(),
+            kind: node.kind.clone(),
+            icon: icon.clone(),
+            icon_asset: Some(association.clone()),
+            title: node.title.clone(),
+            detail: node.detail.clone(),
+            state: ExportRecordState::Accepted,
+        };
+        view.layers[0].actions[0].icon = Some(icon.clone());
+        view.root_action.icon = Some(icon.clone());
+        view.root_action.icon_asset = Some(association.clone());
+        let interaction_node = view.interaction_node_id.clone();
+        let layer_id = view.layers[0].layer.id.clone();
+        let ConversationExportRecord::Turn(consumer) = &mut records[4] else {
+            unreachable!()
+        };
+        consumer.contexts.push(ExportInteractionContext {
+            id: "action:image-context".into(),
+            target,
+            source: ExportContextSource {
+                owner_turn_id: None,
+                interaction_node_id: interaction_node,
+                layer_id,
+            },
+            annotations: vec![],
+        });
+        let (_assets_directory, _assets_host, assets_url, assets_token) = real_visual_assets_host();
+        let (_directory, app, _store, _graph, graph_task) =
+            app_with_visual_assets(true, Some((assets_url, assets_token))).await;
+        let staged = app
+            .clone()
+            .oneshot(request("POST", "write-token", Body::from(jsonl(&records))))
+            .await
+            .unwrap();
+        let status = staged.status();
+        let staged = response_json(staged).await;
+        assert_eq!(status, StatusCode::OK, "{staged}");
+        let published = app
+            .clone()
+            .oneshot(request(
+                "PUT",
+                "write-token",
+                Body::from(serde_json::json!({"importId":staged["importId"]}).to_string()),
+            ))
+            .await
+            .unwrap();
+        let status = published.status();
+        let published = response_json(published).await;
+        assert_eq!(status, StatusCode::OK, "{published}");
+        let thread_id = published["threadId"].as_i64().unwrap();
+        let interaction_id = published["turns"][0]["interactionId"].as_i64().unwrap();
+        let layer_id = published["turns"][0]["rootLayerId"].as_i64().unwrap();
+        let thread = app
+            .clone()
+            .oneshot(request_uri(
+                "GET",
+                &format!("/api/threads/{thread_id}"),
+                "read-token",
+                Body::empty(),
+            ))
+            .await
+            .unwrap();
+        let thread = response_json(thread).await;
+        let owner_node_id =
+            thread["interactions"][0]["completionOutput"]["rootAction"]["sourceNodeId"]
+                .as_i64()
+                .unwrap();
+        let uri = format!(
+            "/api/threads/{thread_id}/interactions/{interaction_id}/nodes/{owner_node_id}/detail-assets/{}?layerId={layer_id}",
+            association.asset_id
+        );
+        let root_asset = app
+            .clone()
+            .oneshot(request_uri("GET", &uri, "read-token", Body::empty()))
+            .await
+            .unwrap();
+        let status = root_asset.status();
+        let root_asset = response_json(root_asset).await;
+        assert_eq!(status, StatusCode::OK, "{root_asset}");
+        assert_eq!(root_asset["digestSha256"], association.digest_sha256);
+        let wrong = app.clone().oneshot(request_uri("GET", &format!("/api/threads/{thread_id}/interactions/{interaction_id}/nodes/{owner_node_id}/detail-assets/wrong-asset?layerId={layer_id}"), "read-token", Body::empty())).await.unwrap();
+        assert_eq!(wrong.status(), StatusCode::FORBIDDEN);
+        let exported = app
+            .oneshot(request_uri(
+                "GET",
+                &format!(
+                    "/api/threads/{}/export",
+                    published["threadId"].as_i64().unwrap()
+                ),
+                "write-token",
+                Body::empty(),
+            ))
+            .await
+            .unwrap();
+        let status = exported.status();
+        let bytes = to_bytes(exported.into_body(), MAX_EXPORT_BYTES)
+            .await
+            .unwrap();
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "{}",
+            String::from_utf8_lossy(&bytes)
+        );
+        let exported = decode_export_jsonl(&bytes).unwrap();
+        assert_eq!(
+            exported
+                .iter()
+                .filter(|r| matches!(r, ConversationExportRecord::VisualAssetContent(_)))
+                .count(),
+            1
+        );
+        let source = exported
+            .iter()
+            .find_map(|r| match r {
+                ConversationExportRecord::Turn(t) if t.id == "turn:1" => Some(t),
+                _ => None,
+            })
+            .unwrap();
+        let view = source.accepted_view.as_ref().unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&view.root_action.icon.clone().unwrap())
+                .unwrap()["digestSha256"],
+            association.digest_sha256
+        );
+        assert_eq!(view.root_action.icon_asset.as_ref(), Some(&association));
+        assert_eq!(
+            view.layers[0].nodes[0].authored_detail_assets,
+            vec![association.clone()]
+        );
+        assert!(view.layers[0].nodes[0].authored_detail.is_none());
+        assert!(view.layers[0].actions.iter().any(|a| {
+            a.icon
+                .as_deref()
+                .and_then(|v| serde_json::from_str::<serde_json::Value>(v).ok())
+                == serde_json::from_str::<serde_json::Value>(&icon).ok()
+        }));
+        let consumer = exported
+            .iter()
+            .find_map(|r| match r {
+                ConversationExportRecord::Turn(t) if t.id == "turn:3" => Some(t),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            consumer.contexts[0].target.icon_asset.as_ref(),
+            Some(&association)
         );
         graph_task.abort();
     }

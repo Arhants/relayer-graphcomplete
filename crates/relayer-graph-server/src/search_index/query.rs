@@ -1715,6 +1715,91 @@ fn order_rows(plan: &QueryPlan, rows: &mut [NormalizedRow]) {
     });
 }
 
+/// Catalog text candidate source executed by the existing Ladybug search worker.
+/// UNWIND reads ephemeral authorized records; no catalog record is inserted into
+/// Content and no caller-supplied query syntax crosses the engine boundary.
+pub(super) fn discover_candidates(
+    connection: &Connection<'_>,
+    source: Vec<relayer_graph_core::query::candidates::TextCandidate>,
+    query: String,
+    limit: usize,
+) -> Result<Vec<relayer_graph_core::query::candidates::TextCandidate>> {
+    if source.is_empty() {
+        return Ok(Vec::new());
+    }
+    let fields = ["id", "name", "aliases", "metadata"];
+    let records = source
+        .iter()
+        .map(|candidate| {
+            Value::Struct(vec![
+                ("id".into(), Value::String(candidate.id.clone())),
+                ("name".into(), Value::String(candidate.name.to_lowercase())),
+                (
+                    "aliases".into(),
+                    Value::String(format!("|{}|", candidate.aliases.join("|").to_lowercase())),
+                ),
+                (
+                    "metadata".into(),
+                    Value::String(
+                        format!(
+                            "{} {} {} {}",
+                            candidate.description,
+                            candidate.categories.join(" "),
+                            candidate.tags.join(" "),
+                            candidate.use_cases.join(" ")
+                        )
+                        .to_lowercase(),
+                    ),
+                ),
+            ])
+        })
+        .collect();
+    let logical = LogicalType::Struct {
+        fields: fields
+            .iter()
+            .map(|field| ((*field).into(), LogicalType::String))
+            .collect(),
+    };
+    let query = query.to_lowercase();
+    let tokens: Vec<_> = query.split_whitespace().collect();
+    let mut parameters = vec![
+        ("records".into(), Value::List(logical, records)),
+        ("phrase".into(), Value::String(query.clone())),
+        ("aliasPhrase".into(), Value::String(format!("|{query}|"))),
+    ];
+    let mut filters = Vec::new();
+    let mut scores = vec!["CASE WHEN candidate.name = $phrase OR candidate.aliases CONTAINS $aliasPhrase THEN 1000 ELSE 0 END".to_string()];
+    for (index, token) in tokens.iter().enumerate() {
+        parameters.push((format!("token{index}"), Value::String((*token).into())));
+        parameters.push((format!("alias{index}"), Value::String(format!("|{token}|"))));
+        filters.push(format!("(candidate.name CONTAINS $token{index} OR candidate.aliases CONTAINS $token{index} OR candidate.metadata CONTAINS $token{index})"));
+        scores.push(format!("CASE WHEN candidate.name = $token{index} OR candidate.aliases CONTAINS $alias{index} THEN 100 WHEN candidate.name CONTAINS $token{index} OR candidate.aliases CONTAINS $token{index} THEN 50 ELSE 10 END"));
+    }
+    let filter = if filters.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", filters.join(" AND "))
+    };
+    let statement = format!(
+        "UNWIND $records AS candidate WITH candidate{filter} RETURN candidate.id, {} AS score ORDER BY score DESC, candidate.id ASC LIMIT {limit}",
+        scores.join(" + ")
+    );
+    let rows = rows_with(connection, &statement, parameters)?;
+    let candidates: std::collections::HashMap<_, _> = source
+        .into_iter()
+        .map(|candidate| (candidate.id.clone(), candidate))
+        .collect();
+    rows.into_iter()
+        .map(|row| match row.first() {
+            Some(Value::String(id)) => candidates
+                .get(id)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("catalog engine returned unknown candidate")),
+            _ => Err(anyhow::anyhow!("catalog engine returned invalid candidate")),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

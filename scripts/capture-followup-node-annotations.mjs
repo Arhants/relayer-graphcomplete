@@ -278,6 +278,15 @@ async function run() {
   await window.loadURL(window.webContents.getURL());
   await waitFor('fixed workspace graph', () => evaluate(`document.querySelectorAll('.graph-node').length === 3`));
   await clickNode('Incoming queue');
+  receipt.servedRendererSha256 = await evaluate(`(async () => {
+    const response = await fetch('./src/product-workspace/workspace.js', { cache: 'no-store' });
+    const bytes = await response.arrayBuffer();
+    return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))]
+      .map(value => value.toString(16).padStart(2, '0')).join('');
+  })()`);
+  if (receipt.servedRendererSha256 !== receipt.renderer.fixedSha256) {
+    throw new Error('Fixed renderer served bytes do not match the current renderer');
+  }
   await waitFor('fixed + visible', () => evaluate(`!document.querySelector('#attachNodeContext')?.classList.contains('hidden') && !document.querySelector('#attachNodeContext')?.disabled`));
   const after = await evaluate(`({ title: document.querySelector('#detailTitle')?.textContent, hidden: document.querySelector('#attachNodeContext')?.classList.contains('hidden'), position: ${interactionPositionCondition(2, 3)} })`);
   if (!after.position) throw new Error('Fixed renderer changed selected interaction');

@@ -27,6 +27,7 @@ export interface VisualAsset {
   readonly id: string;
   readonly registryId: string;
   readonly name: string;
+  readonly description?: string;
   readonly mediaType: VisualAssetMediaType;
   readonly byteLength: number;
   readonly digest: string;
@@ -73,6 +74,7 @@ export interface VisualAssetsLibrary {
     readonly file: HarnessFileHandle;
     readonly scope: VisualAssetScope;
     readonly name: string;
+    readonly description?: string;
     readonly tagIds: readonly string[];
     readonly registryId?: string;
   }): Promise<VisualAsset>;
@@ -129,6 +131,7 @@ export interface VisualAssetsLibraryOptions {
     readonly registryId: string;
     readonly name: string;
     readonly fileName: string;
+    readonly description?: string;
     readonly mediaType: string;
     readonly content: string | Uint8Array;
     readonly digest?: string;
@@ -880,6 +883,7 @@ function createMemoryVisualAssetsLibraryWithGuard(
           id: initial.id,
           registryId: initial.registryId,
           name: initial.name,
+          ...(initial.description === undefined ? {} : { description: validatedDescription(initial.description) }),
           mediaType: initial.mediaType,
           byteLength: bytes.byteLength,
           digest: actualDigest,
@@ -928,6 +932,7 @@ function createMemoryVisualAssetsLibraryWithGuard(
       const readFile = input.file.read.bind(input.file);
       const registryId = input.registryId ?? "user";
       const name = input.name.trim();
+      const description = validatedDescription(input.description);
       await ready();
       if (name.length === 0) throw new VisualAssetsError("asset_name_invalid", "Visual asset name is required");
       assertSupportedMediaType(mediaType);
@@ -959,6 +964,7 @@ function createMemoryVisualAssetsLibraryWithGuard(
         id: `asset_${randomUUID()}`,
         registryId,
         name,
+        ...(description === undefined ? {} : { description }),
         mediaType,
         byteLength: bytes.byteLength,
         digest,
@@ -1496,6 +1502,7 @@ export async function createFileVisualAssetsLibrary(
       id: asset.id,
       registryId: asset.registryId,
       name: asset.name,
+      ...(asset.description === undefined ? {} : { description: validatedDescription(asset.description) }),
       mediaType: supportedMediaType(asset.mediaType),
       byteLength: asset.byteLength ?? (typeof asset.content === "string"
         ? new TextEncoder().encode(asset.content).byteLength
@@ -1544,6 +1551,7 @@ export async function createFileVisualAssetsLibrary(
         id: asset.id,
         registryId: asset.registryId,
         name: asset.name,
+        ...(asset.description === undefined ? {} : { description: validatedDescription(asset.description) }),
         fileName: asset.provenance.fileName,
         mediaType: asset.mediaType,
         content: contentByDigest.get(asset.digest)!,
@@ -1653,6 +1661,7 @@ export async function createFileVisualAssetsLibrary(
       const prepared = Object.freeze({
         scope,
         name: input.name,
+        ...(input.description === undefined ? {} : { description: validatedDescription(input.description) }),
         tagIds: Object.freeze([...input.tagIds]),
         ...(input.registryId === undefined ? {} : { registryId: input.registryId }),
       });
@@ -2292,4 +2301,14 @@ function deepFreeze<T>(value: T): T {
   if (typeof value !== "object" || value === null || Object.isFrozen(value)) return value;
   for (const child of Object.values(value)) deepFreeze(child);
   return Object.freeze(value);
+}
+
+function validatedDescription(value: string): string;
+function validatedDescription(value: unknown): string | undefined;
+function validatedDescription(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || Buffer.byteLength(value, "utf8") > 4096 || value.includes("\0")) {
+    throw new VisualAssetsError("asset_description_invalid", "Visual asset description must be text of at most 4096 bytes");
+  }
+  return value.trim();
 }

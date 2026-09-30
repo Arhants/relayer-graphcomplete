@@ -1,16 +1,6 @@
-import {
-  detailAuthoringReference,
-  RELAYER_ICON_FAMILY_GROUPS,
-  RELAYER_ICON_NAMES,
-  relayerIconFamily,
-} from "@relayer/graph-client";
+import { detailAuthoringReference } from "@relayer/graph-client";
 
-// Icons grouped by the family that colours a node, so agents pick a content icon for a node's subject.
-export const NODE_ICON_GUIDANCE = [
-  "Valid node icons: choose the content icon that names what the node is about; its family gives the node its colour.",
-  ...RELAYER_ICON_FAMILY_GROUPS.map(({ label, icons }) => `- ${label}: ${icons.join(", ")}.`),
-  `Signal icons have no colour and are only for status, warning, confirmation, or pointer nodes, never for a node's subject: ${RELAYER_ICON_NAMES.filter((name) => relayerIconFamily(name) === "neutral").join(", ")}.`,
-].join("\n");
+export const NODE_ICON_GUIDANCE = `Choose recognizable icons for the subject using agent judgment. Familiar supported symbol strings remain valid without lookup. Discover symbols or registered images with graph.icons.discover({query, kind: "both", limit: 12}) in JavaScript or await graph.icons.discover(query, kind="both", limit=12) in Python. Filter kind with symbols/images/both; copy a returned item's icon into a node or action. Results are compact, bounded catalog metadata, separate from conversation Content. Optional graph.icons.inspect([item.icon], {contactSheet: true}) / await graph.icons.inspect([item["icon"]], contact_sheet=True) returns preview files or a small numbered contact sheet; native image inspection depends on the harness/model. Use meaningful symbols when communicative and sourced image assets for recognizable organisms, objects, logos, or other subjects. Register image bytes through visualAssets.add / visual_assets.add with name, description, and tags, then use {kind: "image", assetId: asset.id}; accepted output pins registered bytes. Image icons default to contain and preserve transparency; optionally set fit: "cover" and framing: "none" | "circle" | "rounded". Signal symbols describe status, warnings, confirmations, or pointers rather than the node's subject. Static Node Detail images use imageIconDetail(icon) / image_icon_detail(icon), or existing assetRef bindings. For a static bundled symbol, await symbolIconDetail(graph, "waves") / await symbol_icon_detail(graph, "waves") registers its pinned SVG preview in the current scope and returns the same ordinary image component. Pass the returned html and css to the node Detail builder.`;
 
 export const GRAPH_PRESENTATION_GUIDANCE = `Graph presentation guidance:
 Available presentation capabilities: authored HTML/CSS can express layout, diagrams, comparisons, and other visual explanations without image files. Graph actions provide navigation and supported controls. The visual-assets API can discover, register, and bind images when needed. Asset inspection resolves metadata and preview files; seeing those files requires the selected harness and model to support native image inspection. Use the language-specific public API recipes below.

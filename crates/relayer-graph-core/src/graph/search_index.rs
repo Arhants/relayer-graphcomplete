@@ -132,6 +132,23 @@ impl fmt::Display for SearchIndexRevision {
 /// `relayer-graph-server` owns the engine. That keeps the C++/CMake/OpenSSL
 /// toolchain out of graph-core, which `relayer-app-server` also depends on.
 pub trait SearchIndex: Send + Sync + 'static {
+    /// Retrieve bounded ranked catalog candidates through the same search engine.
+    /// Records are supplied only after caller-owned scope authorization and are
+    /// ephemeral, distinct from accepted conversation Content. Future vector
+    /// sources extend this seam rather than maintaining a second icon pipeline.
+    fn discover_candidates(
+        &self,
+        _source: Vec<crate::query::candidates::TextCandidate>,
+        _query: String,
+        _limit: usize,
+    ) -> SearchIndexFuture<Vec<crate::query::candidates::TextCandidate>> {
+        Box::pin(async {
+            Err(GraphError::Internal(
+                "catalog candidate retrieval unavailable".into(),
+            ))
+        })
+    }
+
     /// Wait for target-local startup repair before taking publication or SQLite
     /// locks. Dropping this future must cancel the wait without publishing work.
     /// Canonical-unknown retry validation remains the transaction's responsibility.

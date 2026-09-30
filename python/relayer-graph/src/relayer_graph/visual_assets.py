@@ -30,7 +30,7 @@ class GraphVisualAssets:
         })
 
     async def add(self, *, file: VisualAssetFile, scope: Mapping[str, Any], name: str,
-                  tag_ids: tuple[str, ...] = (), registry_id: str | None = None) -> Mapping[str, Any]:
+                  tag_ids: tuple[str, ...] = (), description: str | None = None, registry_id: str | None = None) -> Mapping[str, Any]:
         content = file.read()
         if not 0 < len(content) <= 8 * 1024 * 1024:
             raise ValueError("Visual assets must contain at most 8 MiB")
@@ -39,6 +39,8 @@ class GraphVisualAssets:
                      "contentBase64": base64.b64encode(content).decode("ascii")}}
         if file.expected_digest is not None:
             fields["file"]["expectedDigest"] = file.expected_digest
+        if description is not None:
+            fields["description"] = description
         if registry_id is not None:
             fields["registryId"] = registry_id
         return await self._operation("add", **fields)

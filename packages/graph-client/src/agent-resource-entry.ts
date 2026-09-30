@@ -27,3 +27,8 @@ export * from "./objects.js";
 export * from "./query.js";
 export * from "./types.js";
 export * from "./visual-assets.js";
+
+export * from "./image-icons.js";
+export * from "./image-icon-detail.js";
+
+export * from "./icon-discovery.js";

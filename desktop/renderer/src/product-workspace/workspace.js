@@ -18,7 +18,8 @@ import {
   humanTurns,
   workspaceTurns,
 } from "./model.js";
-import { createLucideIcon, createRelayerIcon, relayerIconFamily } from "./icons.js";
+import { createLucideIcon, createRelayerIcon as createSymbolIcon, relayerIconFamily } from "./icons.js";
+import { createImageIcon, imageIconReference } from "./image-icons.js";
 import { interactionActivity, NODE_RUN_STATE, nodeRunState, THREAD_ACTIVITY } from "./run-state.js";
 import { graphLayoutSignature, projectLayerNodePositions } from "./graph-layout.js";
 import { renderMarkdown } from "./markdown.js";
@@ -1432,7 +1433,7 @@ export function actionPresentation(action) {
   return {
     variant,
     label: String(action?.label || action?.title || "Action"),
-    icon: typeof action?.icon === "string" && action.icon.trim() ? action.icon : null,
+    icon: imageIconReference(action?.icon) ?? (typeof action?.icon === "string" && action.icon.trim() ? action.icon : null),
     description: variant === "card" && typeof action?.description === "string"
       ? action.description
       : null,
@@ -1695,6 +1696,26 @@ export function createProductWorkspace({
   inputDraftApi = null,
   inputOperatorAvailable = false,
 }) {
+  const iconMounts = new Set();
+  function createRelayerIcon(value, attributes = {}, owner, context = {}) {
+    const icon = imageIconReference(value);
+    if (!icon) return createSymbolIcon(value, attributes);
+    const state = getState();
+    const thread = context.thread ?? getThread();
+    const node = owner ?? (state.nodes ?? []).find(candidate => candidate.icon === value)
+      ?? (state.nodes ?? []).find(candidate => (state.actions ?? []).some(action => action.icon === value && String(action.sourceNodeId) === String(candidate.id)));
+    const interaction = context.interaction ?? interactionForThread(state, thread);
+    const layerId = context.layerId ?? state.visibleLayer?.layer?.id ?? interaction?.completionOutput?.rootLayer?.layer?.id;
+    const mount = createImageIcon(icon, attributes, asset => resolveNodeDetailAsset(asset, { node, state, thread, interaction, layerId }), { document: graphDocument });
+    iconMounts.add(mount);
+    return mount;
+  }
+  function iconSourceContext(target, state = getState(), thread = getThread()) {
+    return { thread, layerId: target?.sourceLayerId, interaction: state.interactions?.find(candidate => String(candidate.graphNodeId) === String(target?.sourceInteractionNodeId) && String(candidate.threadId) === String(thread?.id)) };
+  }
+  function releaseDetachedIcons() {
+    for (const mount of iconMounts) if (!mount.isConnected) { mount.disposeIcon(); iconMounts.delete(mount); }
+  }
   const capabilities = workspaceModeCapabilities(mode);
   let graphNodes = [];
   let graphEdges = [];
@@ -2305,6 +2326,7 @@ export function createProductWorkspace({
     onSelectionChange(null);
     $("#inspector").classList.add("hidden");
     renderComposerContexts();
+    releaseDetachedIcons();
     $$('[data-node]').forEach((element) => element.classList.remove("selected"));
     renderBreadcrumb();
     const focusTarget = restoreFocus
@@ -3361,7 +3383,7 @@ export function createProductWorkspace({
       nodeButton.type = "button";
       nodeButton.className = "composer-context-node";
       nodeButton.append(createRelayerIcon(
-        openContext.node.icon || openContext.node.metadata?.relayer?.icon,
+        openContext.node.icon || openContext.node.metadata?.relayer?.icon, {}, openContext.node, iconSourceContext(openContext.target),
       ));
       const title = graphDocument.createElement("strong");
       title.textContent = openContext.node.title;
@@ -3453,7 +3475,7 @@ export function createProductWorkspace({
           String(openComposerContextKey === interactionContextTargetKey(context.target)),
         );
         pill.setAttribute("aria-label", `Show ${context.node.title} annotations`);
-        pill.append(createRelayerIcon(context.node.icon || context.node.metadata?.relayer?.icon));
+        pill.append(createRelayerIcon(context.node.icon || context.node.metadata?.relayer?.icon, {}, context.node, iconSourceContext(context.target)));
         const title = graphDocument.createElement("strong");
         title.textContent = context.node.title;
         const count = graphDocument.createElement("span");
@@ -4448,7 +4470,7 @@ export function createProductWorkspace({
       const button = graphDocument.createElement("button");
       button.type = "button";
       button.className = "interaction-context-node";
-      button.append(createRelayerIcon(node.icon || node.metadata?.relayer?.icon));
+      button.append(createRelayerIcon(node.icon || node.metadata?.relayer?.icon, {}, node, iconSourceContext(context.target, state)));
       const title = graphDocument.createElement("span");
       title.textContent = node.title;
       button.append(title);
@@ -4876,7 +4898,8 @@ export function createProductWorkspace({
       if (visible) {
         const segment = graphDocument.createElement(item.interactive ? "button" : "span");
         segment.className = `breadcrumb-segment breadcrumb-${item.kind}`;
-        segment.append(createRelayerIcon(item.icon, { class: "breadcrumb-icon" }));
+        const owner = { id: item.sourceNodeId };
+        segment.append(createRelayerIcon(item.icon, { class: "breadcrumb-icon" }, owner, { layerId: item.sourceLayerId ?? item.layerId }));
         const label = graphDocument.createElement("span");
         label.className = "breadcrumb-label";
         label.textContent = item.label;
@@ -5230,20 +5253,22 @@ export function createProductWorkspace({
         : "";
       const annotationLabel = count ? `. ${count} comment${count === 1 ? "" : "s"}` : "";
       const family = relayerIconFamily(node.icon || node.metadata?.relayer?.icon);
+      const imageIcon = imageIconReference(node.icon);
       const runStateKey = nodeRunState(node, state.actions, state.actionInvocations);
       const runState = NODE_RUN_STATE[runStateKey];
       const runStateMarks = runState
         ? `${runState.icon ? '<span class="graph-node-state-badge" aria-hidden="true"></span>' : ""}<span class="graph-node-caption" aria-hidden="true">${runState.label}</span>`
         : "";
       const runStateLabel = runState ? `. ${runState.label}` : "";
-      return `<div class="graph-node ${String(node.id) === String(selection.selectedNodeId) ? "selected" : ""}" data-node="${escapeHtml(node.id)}" data-family="${family}"${runState ? ` data-run-state="${runStateKey}"` : ""} data-review-ref="node-${escapeHtml(node.id)}" data-review-kind="node" role="button" tabindex="0" aria-label="Open ${escapeHtml(node.title)}${runStateLabel}${annotationLabel}"><div class="glyph"></div>${badge}<div class="copy"><b>${escapeHtml(node.title)}</b></div>${runStateMarks}</div>`;
+      return `<div class="graph-node ${String(node.id) === String(selection.selectedNodeId) ? "selected" : ""}" data-node="${escapeHtml(node.id)}" data-family="${family}"${imageIcon ? ' data-image-icon="true"' : ""}${runState ? ` data-run-state="${runStateKey}"` : ""} data-review-ref="node-${escapeHtml(node.id)}" data-review-kind="node" role="button" tabindex="0" aria-label="Open ${escapeHtml(node.title)}${runStateLabel}${annotationLabel}"><div class="glyph"></div>${badge}<div class="copy"><b>${escapeHtml(node.title)}</b></div>${runStateMarks}</div>`;
     }).join("");
+    releaseDetachedIcons();
     $$('[data-node]').forEach((element) => {
       const authoredNode = graphNodes.find((candidate) => String(candidate.id) === element.dataset.node);
       let suppressClickAfterDrag = false;
       element.querySelector(".glyph").replaceChildren(createRelayerIcon(
         authoredNode?.icon || authoredNode?.metadata?.relayer?.icon,
-        { class: "relayer-node-icon" },
+        { class: "relayer-node-icon" }, authoredNode,
       ));
       const runState = NODE_RUN_STATE[element.dataset.runState];
       if (runState?.icon) element.querySelector(".graph-node-state-badge").replaceChildren(createLucideIcon(runState.icon));
@@ -5912,11 +5937,9 @@ export function createProductWorkspace({
     } : null;
     if (notify) onSelectionChange(node.id);
     const { reveal } = openInspector({ userInitiated, origin });
-    $("#detailIcon").replaceChildren(createRelayerIcon(
-      node.icon || node.metadata?.relayer?.icon,
-      { class: "relayer-detail-icon" },
-    ));
     $("#detailIcon").dataset.family = relayerIconFamily(node.icon || node.metadata?.relayer?.icon);
+    $("#detailIcon").dataset.imageIcon = String(Boolean(imageIconReference(node.icon)));
+    releaseDetachedIcons();
     $("#detailKind").textContent = node.kind;
     $("#detailTitle").textContent = node.title;
     const actions = (state.actions || []).filter((action) => String(action.sourceNodeId) === String(node.id));
@@ -5931,6 +5954,11 @@ export function createProductWorkspace({
       : interaction;
     const assetThread = sourceThread;
     const assetLayerId = detailContextTarget?.sourceLayerId ?? visibleLayer?.layer?.id;
+    $("#detailIcon").replaceChildren(createRelayerIcon(
+      node.icon || node.metadata?.relayer?.icon,
+      { class: "relayer-detail-icon" }, node, { thread: assetThread, interaction: assetInteraction, layerId: assetLayerId },
+    ));
+    releaseDetachedIcons();
     const resolveAuthoredAction = (reference) => resolveCompiledNodeDetailAction(
       actions,
       reference,
@@ -6134,7 +6162,7 @@ export function createProductWorkspace({
           button.dataset.reviewTargetLayerId = String(action.targetLayerId);
         }
         if (presentation.icon) {
-          button.append(createRelayerIcon(presentation.icon, { class: "relayer-action-icon" }));
+          button.append(createRelayerIcon(presentation.icon, { class: "relayer-action-icon" }, node, { thread: assetThread, interaction: assetInteraction, layerId: assetLayerId }));
         }
         const copy = graphDocument.createElement("span");
         copy.className = "action-copy";
@@ -6234,6 +6262,8 @@ export function createProductWorkspace({
 
   function dispose() {
     disposed = true;
+    for (const mount of iconMounts) mount.disposeIcon();
+    iconMounts.clear();
     nodeSelectionSequence += 1;
     contextEditor = null;
     mountedAuthoredDetail?.dispose?.();
