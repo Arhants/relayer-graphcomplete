@@ -286,11 +286,14 @@ mod tests {
                 client_key: "root".into(),
                 nodes: vec![preference.id],
                 edges: vec![],
-                layout: Some(LayerLayout::v1(vec![NodePlacement {
-                    node_id: preference.id,
-                    x: 0.5,
-                    y: 0.5,
-                }])),
+                layout: Some(LayerLayout::v1(
+                    vec![NodePlacement {
+                        node_id: preference.id,
+                        x: 0.5,
+                        y: 0.5,
+                    }],
+                    "default",
+                )),
                 size_justification: None,
             })
             .await
@@ -1239,5 +1242,37 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(key, "authored-original");
+    }
+
+    #[tokio::test]
+    async fn edge_shape_migration_keeps_existing_layouts_shape_free() {
+        use std::borrow::Cow;
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        Migrator {
+            migrations: Cow::Owned(
+                MIGRATOR
+                    .iter()
+                    .filter(|migration| migration.version <= 29)
+                    .cloned()
+                    .collect(),
+            ),
+            ..Migrator::DEFAULT
+        }
+        .run(&pool)
+        .await
+        .unwrap();
+        sqlx::raw_sql("INSERT INTO nodes(id,thread_id,kind,icon,title,detail,state,owner_interaction_id,client_key) VALUES (1,1,'user-interaction','user','Root','Root','accepted',NULL,NULL),(2,1,'concept','box','Node','Node','accepted',1,'node:2');
+            INSERT INTO layers(id,thread_id,state,owner_interaction_id,client_key,layout_schema_version) VALUES (1,1,'accepted',1,'root',1);
+            INSERT INTO layer_nodes(layer_id,node_id,position) VALUES (1,2,0);
+            INSERT INTO layer_placements(layer_id,node_id,position,x,y) VALUES (1,2,0,0.5,0.5);")
+            .execute(&pool).await.unwrap();
+        MIGRATOR.run(&pool).await.unwrap();
+        let shape = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT layout_edge_shape FROM layers WHERE id=1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(shape, None);
     }
 }

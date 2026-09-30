@@ -25,6 +25,7 @@ export type {
   GraphDetailCapability,
   StableAuthoringReference,
 } from "./detail.js";
+export * from "./edge-shapes.js";
 export * from "./icons.js";
 export * from "./objects.js";
 export * from "./query.js";

@@ -1,4 +1,5 @@
 import { expect } from "vitest";
+import { LAYER_EDGE_SHAPE_GUIDANCE } from "../src/implementations/layer-edge-shape-guidance.js";
 
 export function expectGraphPresentationGuidance(prompt: string): void {
   expect(prompt).toContain("register ALL actions");
@@ -23,4 +24,5 @@ export function expectGraphPresentationGuidance(prompt: string): void {
   expect(prompt).toContain('Choose "invoke" when the useful next step requires a new agent interaction');
   expect(prompt).toContain('choosing "stop" means leaving the node without a further action');
   expect(prompt).toContain("It is not GraphComplete's stopped lifecycle state");
+  expect(prompt).toContain(LAYER_EDGE_SHAPE_GUIDANCE);
 }

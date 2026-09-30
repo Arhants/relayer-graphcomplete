@@ -196,10 +196,10 @@ describe("conversation export to Eval end to end", () => {
       mediaType: "image/svg+xml",
       byteLength: Buffer.from(contentRecords[0].contentBase64, "base64").length,
     });
-    expect(exportedRoot.layer.layout).toMatchObject({ version: 1 });
+    expect(exportedRoot.layer.layout).toMatchObject({ version: 1, edgeShape: "elbow-horizontal" });
     expect(exportedRoot.layer.layout.placements.map(({ x, y }) => [x, y])).toEqual([
-      [0.2, 0.35],
       [0.8, 0.65],
+      [0.2, 0.35],
     ]);
     const exportedText = exactExportBytes.toString("utf8");
     expect(exportedText).not.toContain(canonicalProjectPath);
@@ -480,10 +480,10 @@ describe("conversation export to Eval end to end", () => {
       digestSha256: contentRecords[0].digestSha256,
       contentBase64: contentRecords[0].contentBase64,
     });
-    expect(rootLayer.layer.layout).toMatchObject({ version: 1 });
+    expect(rootLayer.layer.layout).toMatchObject({ version: 1, edgeShape: "elbow-horizontal" });
     expect(rootLayer.layer.layout.placements.map(({ x, y }) => [x, y])).toEqual([
-      [0.2, 0.35],
       [0.8, 0.65],
+      [0.2, 0.35],
     ]);
     const rootExpand = rootLayer.actions.find((action) => action.relation === "expand");
     const rootReference = rootLayer.actions.find((action) => action.relation === "reference");
@@ -616,7 +616,7 @@ describe("conversation export to Eval end to end", () => {
 function complexConversationFactory(projectPath) {
   const centeredLayout = (node) => new LayerLayoutObject([
     new NodePlacementObject(node, 0.5, 0.5),
-  ]);
+  ], "default");
   return () => ({
     traceSupport: () => ({
       prompt: "none", messages: "none", reasoningSummaries: "none", modelCalls: "none",
@@ -659,10 +659,11 @@ function complexConversationFactory(projectPath) {
       const root = new LayerObject(
         [rootNode, rootEvidenceNode],
         [rootEdge],
+        // Reading order starts at the evidence, the reverse of layer membership.
         new LayerLayoutObject([
-          new NodePlacementObject(rootNode, 0.2, 0.35),
           new NodePlacementObject(rootEvidenceNode, 0.8, 0.65),
-        ]),
+          new NodePlacementObject(rootNode, 0.2, 0.35),
+        ], "elbow-horizontal"),
         "root-layer",
       );
       const expanded = new LayerObject([expandedNode], [], centeredLayout(expandedNode), "sk-proj-share-client-key-secret");

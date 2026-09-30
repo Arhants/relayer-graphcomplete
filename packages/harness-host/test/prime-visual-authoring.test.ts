@@ -42,7 +42,7 @@ from relayer_graph import GraphSession, NodeObject, LayerObject, LayerLayoutObje
 graph = GraphSession("http://graph.test", "run-one", 1)
 original = graph.bind_node(NodeObject("box", "Answer", "Fallback", client_key="answer"))
 replacement = graph.bind_node(NodeObject("box", "Answer", "Fallback", client_key="answer"))
-layer = LayerObject([original], [], LayerLayoutObject([]), client_key="source")
+layer = LayerObject([original], [], LayerLayoutObject([], "default"), client_key="source")
 action = ActionObject("invoke", "Continue", layer, "continue", interaction_text="Continue")
 page = html(["<button gc=", ">Continue</button>"], action_capability("continue", action))
 original.detail_authoring.set_component("main", page)
@@ -69,7 +69,7 @@ from relayer_graph import GraphSession, NodeObject, LayerObject, LayerLayoutObje
 async def run():
     graph = GraphSession("http://graph.test", "run-one", 1)
     replacement = NodeObject("box", "Meaning", "Unchanged", client_key="persistent")
-    layer = LayerObject([replacement], [], LayerLayoutObject([]), client_key="old-source")
+    layer = LayerObject([replacement], [], LayerLayoutObject([], "default"), client_key="old-source")
     old = ActionObject("invoke", "Continue", layer, "old", interaction_text="Continue")
     new = ActionObject("navigate", "Response", None, "response", relation="reference", target=3)
     replacement.detail_authoring.set_component("main", html(["<button gc=", ">Old</button><button gc=", ">Response</button>"], action_capability("old", old), action_capability("response", new)))

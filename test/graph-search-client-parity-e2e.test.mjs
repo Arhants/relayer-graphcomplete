@@ -133,7 +133,7 @@ async function authorResponse(client, interactionNodeId, prefix) {
   }
   const layout = new LayerLayoutObject(nodes.map((node, index) => (
     new NodePlacementObject(node, (index % 3 + 1) / 4, (Math.floor(index / 3) + 1) / 3)
-  )));
+  )), "default");
   const layer = new LayerObject(nodes, edges, layout, `${prefix.toLowerCase()}-layer`);
   await client.submitLayer(layer, {
     sizeJustification: "Six ordered parity rows make the default five-row truncation boundary observable.",

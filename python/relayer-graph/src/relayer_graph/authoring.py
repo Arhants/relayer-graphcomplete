@@ -15,6 +15,7 @@ from .exceptions import (APIError, AuthenticationError, ConfigurationError,
                          GraphQueryError, NotFound, TransportError,
                          ValidationError, ValidationIssue)
 from .detail import NodeDetailAuthoring, _create_owned_authoring
+from .edge_shapes import EdgeShape
 from .visual_assets import GraphVisualAssets
 from .query import GraphSearchRequest, GraphSearchResult
 from .query_errors_generated import (GRAPH_QUERY_CONTRACT_VERSION,
@@ -141,12 +142,15 @@ class NodePlacement:
 class LayerLayout:
     version: int
     placements: tuple[NodePlacement, ...]
+    # Absent only on layers accepted before edge shapes existed; read it as "default".
+    edge_shape: str | None = None
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "LayerLayout":
         return cls(
             int(value["version"]),
             tuple(NodePlacement.from_dict(item) for item in value["placements"]),
+            value.get("edgeShape"),
         )
 
 
@@ -204,7 +208,9 @@ class NodePlacementObject:
 
 @dataclass(slots=True)
 class LayerLayoutObject:
+    # Placement order is the layer's reading order.
     placements: Sequence[NodePlacementObject]
+    edge_shape: EdgeShape
     version: Literal[1] = field(default=1, init=False)
 
 
@@ -316,6 +322,7 @@ class RelayerGraphClient:
                     {"nodeId": _node_id(item.node), "x": item.x, "y": item.y}
                     for item in layer.layout.placements
                 ],
+                "edgeShape": layer.layout.edge_shape,
             },
             "sizeJustification": size_justification,
         })

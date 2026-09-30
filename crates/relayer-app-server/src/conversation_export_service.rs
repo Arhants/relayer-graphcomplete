@@ -1946,6 +1946,7 @@ fn export_layer(
                             y: placement.y,
                         })
                         .collect(),
+                    edge_shape: layout.edge_shape.clone(),
                 }),
             state: ExportRecordState::Accepted,
         },

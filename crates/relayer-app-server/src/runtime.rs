@@ -1620,7 +1620,7 @@ impl RuntimeClient {
                         "clientKey": "personal-presentation-root",
                         "nodes": nodes,
                         "edges": edges,
-                        "layout": {"version": 1, "placements": placements},
+                        "layout": {"version": 1, "placements": placements, "edgeShape": "default"},
                     }),
                 )
                 .await?;

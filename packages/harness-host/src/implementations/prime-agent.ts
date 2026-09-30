@@ -29,6 +29,7 @@ import type {
   JsonObject,
 } from "../types.js";
 import { CURRENT_WORKSPACE_GUIDANCE, GRAPH_PRESENTATION_GUIDANCE } from "./graph-presentation-guidance.js";
+import { LAYER_EDGE_SHAPE_GUIDANCE } from "./layer-edge-shape-guidance.js";
 import {
   personalPresentationNativeInstructions,
   personalPresentationPrompt,
@@ -1135,7 +1136,8 @@ Author nodes, edges, layers, and useful expand, reference, or invoke actions. Fo
 
 ${PYTHON_GRAPH_AUTHORING_RULES}
 
-Import NodePlacementObject and LayerLayoutObject from relayer_graph. Every new layer requires a version-1 LayerLayoutObject with exactly one NodePlacementObject(node, x, y) per member node. Coordinates are normalized numbers from 0 through 1 and express semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, anchor hierarchy with a parent or summary, group related nodes, align comparisons, and avoid accidental overlap or edge crossings. Do not derive coordinates from pixels, window size, or inspector state.
+Import NodePlacementObject and LayerLayoutObject from relayer_graph. Every new layer requires a version-1 LayerLayoutObject(placements, edge_shape) with exactly one NodePlacementObject(node, x, y) per member node. Coordinates are normalized numbers from 0 through 1 and express semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, anchor hierarchy with a parent or summary, group related nodes, align comparisons, and avoid accidental overlap or edge crossings. Do not derive coordinates from pixels, window size, or inspector state.
+${LAYER_EDGE_SHAPE_GUIDANCE}
 
 Finish the root execution only by calling:
 
@@ -1191,7 +1193,8 @@ For every layer, choose the member whose detail should open first. Set layer.def
 
 Layers normally contain 1 to 5 nodes. A layer may contain 6 to 8 nodes only when keeping them together is important; pass that private reason as await graph.submit_layer(layer, size_justification="..."). Never mention or expose the size justification in user-facing node text. More than 8 nodes must be split into useful layers.
 
-Import NodePlacementObject and LayerLayoutObject from relayer_graph. Every new root, expansion, and reference layer requires a version-1 LayerLayoutObject with exactly one NodePlacementObject(node, x, y) per member node. Coordinates are normalized numbers from 0 through 1 and express semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, use a parent or summary node to anchor hierarchy, group related nodes spatially, align comparisons deliberately, and avoid accidental overlap or edge crossings where a clearer arrangement is available. Do not use pixels, window size, or inspector state. Example: layout = LayerLayoutObject((NodePlacementObject(first, 0.25, 0.5), NodePlacementObject(second, 0.75, 0.5))); layer = LayerObject((first, second), (edge,), layout, client_key="response-layer").
+Import NodePlacementObject and LayerLayoutObject from relayer_graph. Every new root, expansion, and reference layer requires a version-1 LayerLayoutObject(placements, edge_shape) with exactly one NodePlacementObject(node, x, y) per member node. Coordinates are normalized numbers from 0 through 1 and express semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, use a parent or summary node to anchor hierarchy, group related nodes spatially, align comparisons deliberately, and avoid accidental overlap or edge crossings where a clearer arrangement is available. Do not use pixels, window size, or inspector state. Example: layout = LayerLayoutObject((NodePlacementObject(first, 0.25, 0.5), NodePlacementObject(second, 0.75, 0.5)), "elbow-horizontal"); layer = LayerObject((first, second), (edge,), layout, client_key="response-layer").
+${LAYER_EDGE_SHAPE_GUIDANCE}
 
 Layer edges are exactly what the user sees and are undirected. Give every node useful markdown detail.
 
@@ -1267,7 +1270,7 @@ export const PYTHON_GRAPH_API_REFERENCE = `Graph client reference (every graph m
 - await graph.get_node_presentation(node): authorized current node, revision and existing actions.
 - await graph.replace_node_presentation(node, expected_revision, presentation): GraphSession compiles and stages a full attached-node presentation replacement.
 - (await graph.get_interaction_input()).interaction_permissions: frozen read-only version, enabled flag and exact permission entries; None for absent legacy snapshots.
-- NodeObject(icon, title, detail, kind="concept", client_key=...), EdgeObject((left_node, right_node), client_key=...), LayerObject(nodes, edges, layout, client_key=...), LayerLayoutObject(placements), NodePlacementObject(node, x, y); import them from relayer_graph.
+- NodeObject(icon, title, detail, kind="concept", client_key=...), EdgeObject((left_node, right_node), client_key=...), LayerObject(nodes, edges, layout, client_key=...), LayerLayoutObject(placements, edge_shape), NodePlacementObject(node, x, y); import them from relayer_graph.
 - await graph.submit_node(node) -> node; await graph.create_edge(left, right, client_key=...) -> edge; await graph.submit_layer(layer, size_justification=None) -> layer.
 - await graph.add_navigate_action(source_node, label, target_layer, relation="expand" | "reference", client_key=..., source_layer=None, variant="pill", icon=None, description=None).
 - await graph.add_invoke_action(source_node, label, interaction_text, source_layer=..., client_key=..., variant="pill", icon=None, description=None).
@@ -2041,8 +2044,8 @@ from relayer_graph import GraphSession, NodeObject, LayerObject, LayerLayoutObje
 graph = await GraphSession.current()
 node = NodeObject("info", "Answer", "Replace with the answer.", client_key="answer")
 child = NodeObject("info", "Details", "Replace with useful depth.", client_key="details")
-layer = LayerObject([node], [], LayerLayoutObject([NodePlacementObject(node, 0.5, 0.5)]), client_key="answer-layer")
-child_layer = LayerObject([child], [], LayerLayoutObject([NodePlacementObject(child, 0.5, 0.5)]), client_key="details-layer")
+layer = LayerObject([node], [], LayerLayoutObject([NodePlacementObject(node, 0.5, 0.5)], "default"), client_key="answer-layer")
+child_layer = LayerObject([child], [], LayerLayoutObject([NodePlacementObject(child, 0.5, 0.5)], "default"), client_key="details-layer")
 expand = ActionObject("navigate", "Details", layer, "details-action", relation="expand", target=child_layer)
 shared_styles = "section { display: grid; gap: 0.75rem; }"
 node.detail_authoring.set_component("main", html(["<section><h2>Answer</h2><p>Replace with the answer.</p><button gc=", ">Details</button></section>"], action_capability("details-control", expand)), shared_styles)

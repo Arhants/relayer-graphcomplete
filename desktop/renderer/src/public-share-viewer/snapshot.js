@@ -442,6 +442,8 @@ function validateLayer(resolved, path, allDefinitions, exportVersion) {
   if (layer.layout != null) {
     const layout = requireRecord(layer.layout, `${path}.layer.layout`);
     if (layout.version !== 1) fail("unsupported_layout_version", `${path}.layer.layout.version`, "Only layout version 1 is supported.");
+    // Absent on layers accepted before edge shapes; a shape this viewer does not know draws with the design default.
+    if (layout.edgeShape != null && typeof layout.edgeShape !== "string") fail("layout_edge_shape_invalid", `${path}.layer.layout.edgeShape`, "An edge shape must be a string.");
     const placements = requireArray(own(layout, "placements", `${path}.layer.layout.placements`), `${path}.layer.layout.placements`);
     if (placements.length !== memberNodeIds.length) fail("layout_placement_count", `${path}.layer.layout.placements`, "A layout requires exactly one placement per node.");
     const placed = new Set();

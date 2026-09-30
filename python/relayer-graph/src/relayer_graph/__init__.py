@@ -9,6 +9,7 @@ from .authoring import (ActionVariant, CompletionInputGraph, EdgeObject, GraphAu
 from .exceptions import (APIError, AuthenticationError, ConfigurationError,
                          GraphQueryError, NotFound, RelayerGraphError,
                          TransportError, ValidationError, ValidationIssue)
+from .edge_shapes import EDGE_SHAPES, EdgeShape
 from .icons import (RELAYER_ICON_ALIASES, RELAYER_ICON_NAMES,
                     is_supported_relayer_icon, normalize_relayer_icon_name,
                     resolve_relayer_icon_name)
@@ -32,7 +33,7 @@ __all__ = [
     "GraphSession",
     "NodeObject", "EdgeObject", "LayerObject", "NodePlacementObject", "LayerLayoutObject",
     "GraphNode", "GraphEdge", "GraphLayer", "InteractionContext", "InteractionInput", "InteractionPermissions", "InteractionInputNode", "SubmittedInput",
-    "NodePlacement", "LayerLayout",
+    "NodePlacement", "LayerLayout", "EDGE_SHAPES", "EdgeShape",
     "ActionVariant", "NavigateRelation", "InputControl", "InputOption",
     "CompletionInputGraph",
     "complete", "CompletionHandle", "CompletionCurrent", "CompletionCurrentSnapshot", "CompletionWatch",

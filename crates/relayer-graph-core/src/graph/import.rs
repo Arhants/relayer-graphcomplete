@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    ActionId, ActionKind, GraphError, InputAction, LayerId, NodeId,
+    ActionId, ActionKind, EDGE_SHAPES, GraphError, InputAction, LayerId, NodeId,
     PERSONAL_PRESENTATION_PROFILE_THREAD_ID, PresentingInputOccurrence, ProjectId,
     SubmittedInputValue, ThreadId, graph::InteractionScope, graph::completion,
     storage::sqlite::actions::ActionTable,
@@ -145,6 +145,9 @@ pub struct ImportedLayer {
 pub struct ImportedLayerLayout {
     pub version: u32,
     pub placements: Vec<ImportedNodePlacement>,
+    /// Absent in exports written before edge shapes; it then reads as "default".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_shape: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -533,11 +536,12 @@ impl crate::GraphDatabase {
                         .bind(owner).bind(&edge.id).execute(&mut *tx).await?;
                     edge_ids.insert(edge.id.clone(), result.last_insert_rowid());
                 }
-                let result = sqlx::query("INSERT INTO layers(project_id,thread_id,layout_schema_version,state,owner_interaction_id,client_key,default_node_id) VALUES (?1,?2,?3,'accepted',?4,?5,?6)")
+                let result = sqlx::query("INSERT INTO layers(project_id,thread_id,layout_schema_version,state,owner_interaction_id,client_key,default_node_id,layout_edge_shape) VALUES (?1,?2,?3,'accepted',?4,?5,?6,?7)")
                     .bind(metadata.project_id.map(ProjectId::value)).bind(metadata.thread_id.value())
                     .bind(resolved.layer.layout.as_ref().map(|layout| i64::from(layout.version)))
                     .bind(owner).bind(&resolved.layer.id)
                     .bind(resolved.layer.default_node_id.as_ref().map(|id| node_ids[id]))
+                    .bind(resolved.layer.layout.as_ref().and_then(|layout| layout.edge_shape.as_deref()))
                     .execute(&mut *tx).await?;
                 let layer_id = result.last_insert_rowid();
                 sqlx::query("INSERT INTO imported_layer_client_keys(layer_id,import_id,client_key) VALUES (?1,?2,?3)")
@@ -1316,6 +1320,14 @@ fn validate_imported_layout(layer: &ImportedLayer) -> Result<(), GraphError> {
         return Err(GraphError::Internal(format!(
             "imported layer {} has unsupported layout version {}",
             layer.id, layout.version
+        )));
+    }
+    if let Some(shape) = &layout.edge_shape
+        && !EDGE_SHAPES.contains(&shape.as_str())
+    {
+        return Err(GraphError::Internal(format!(
+            "imported layer {} has unsupported edge shape {shape:?}",
+            layer.id
         )));
     }
     if layout.placements.len() != layer.nodes.len() {

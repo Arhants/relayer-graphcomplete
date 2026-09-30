@@ -45,7 +45,7 @@ await client.create_edge(edge)
 layout = LayerLayoutObject((
     NodePlacementObject(first, 0.25, 0.5),
     NodePlacementObject(second, 0.75, 0.5),
-))
+), "elbow-horizontal")
 layer = LayerObject((first, second), (edge,), layout, client_key="response-layer")
 await client.submit_layer(layer)
 await client.add_navigate_action(
@@ -71,6 +71,23 @@ through `1`; place a one-node layer at `(0.5, 0.5)`. Choose positions from the
 meaning: keep flow or time consistent, anchor hierarchy, group related nodes,
 align comparisons, and avoid accidental overlap or edge crossings. Coordinates
 describe the accepted graph and must not depend on the current viewport.
+
+<!-- Mirrors packages/harness-host/src/implementations/layer-edge-shape-guidance.ts. -->
+Every layer layout also names the layer's edge shape, which draws all of its
+edges: pass it as `LayerLayoutObject(placements, edge_shape)`. Edges never show
+a direction. Choose the shape from the layer's structure:
+
+- "default": no strong structural reason; the design chooses.
+- "arc-outward": a hub and its spokes, or loose relationships around a centre.
+- "arc-circle": a cycle, or a ring of peers that each connect to their neighbours.
+- "elbow-horizontal": a left-to-right pipeline or sequence of stages.
+- "elbow-vertical": a top-down hierarchy or breakdown.
+- "straight": comparisons, grids, or dense layers.
+
+List the placements in reading order; keyboard and screen-reader users follow
+that order. Position the nodes so they read in that order too, and for an elbow
+shape run the reading order along its axis: left to right for
+"elbow-horizontal", top to bottom for "elbow-vertical".
 
 Reuse stable prior node IDs returned by `get_node` or `get_neighbors`. A model turn is complete only after `submit(node_id)` succeeds.
 

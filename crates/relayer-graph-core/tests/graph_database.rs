@@ -26,6 +26,7 @@ fn authored_layout(nodes: impl IntoIterator<Item = NodeId>) -> Option<LayerLayou
                 y: 0.5,
             })
             .collect(),
+        "default",
     ))
 }
 
@@ -189,6 +190,7 @@ fn imported_conversation(interaction_node_id: &str) -> ImportedConversation {
                                 x: 0.25,
                                 y: 0.75,
                             }],
+                            edge_shape: None,
                         }),
                     },
                     nodes: vec![ImportedNode {
@@ -4083,6 +4085,7 @@ async fn rejects_missing_and_malformed_layouts_with_repairable_field_paths() {
                         y: 1.1,
                     },
                 ],
+                edge_shape: Some("sideways".into()),
             }),
             size_justification: None,
         })
@@ -4099,6 +4102,7 @@ async fn rejects_missing_and_malformed_layouts_with_repairable_field_paths() {
         ("layout_node_outside_layer", "layout.placements[2].nodeId"),
         ("layout_coordinate_out_of_range", "layout.placements[2].y"),
         ("missing_layout_placement", "layout.placements"),
+        ("unsupported_edge_shape", "layout.edgeShape"),
     ] {
         assert!(
             issues
@@ -4107,6 +4111,30 @@ async fn rejects_missing_and_malformed_layouts_with_repairable_field_paths() {
             "missing {code} at {path}: {issues:?}"
         );
     }
+
+    // The agent must choose an edge shape; "default" is an explicit choice.
+    let mut shapeless = authored_layout([a.id, b.id]).unwrap();
+    shapeless.edge_shape = None;
+    let missing_shape = writer
+        .submit_layer(&LayerDraft {
+            default_node_id: None,
+            client_key: "shapeless-layout".into(),
+            nodes: vec![a.id, b.id],
+            edges: vec![edge.id],
+            layout: Some(shapeless),
+            size_justification: None,
+        })
+        .await
+        .unwrap_err();
+    let GraphError::ValidationIssues { issues, .. } = missing_shape else {
+        panic!("expected a repairable missing edge shape");
+    };
+    assert!(
+        issues.iter().any(|issue| issue.code == "missing_edge_shape"
+            && issue.path == "layout.edgeShape"
+            && issue.message.contains("elbow-horizontal")),
+        "{issues:?}"
+    );
 }
 
 #[tokio::test]
@@ -4120,11 +4148,14 @@ async fn invalid_layout_retry_preserves_the_last_valid_draft() {
             client_key: "root".into(),
             nodes: vec![answer.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: answer.id,
-                x: 0.25,
-                y: 0.75,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: answer.id,
+                    x: 0.25,
+                    y: 0.75,
+                }],
+                "elbow-vertical",
+            )),
             size_justification: None,
         })
         .await
@@ -4135,18 +4166,43 @@ async fn invalid_layout_retry_preserves_the_last_valid_draft() {
             client_key: "root".into(),
             nodes: vec![answer.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: answer.id,
-                x: 2.0,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: answer.id,
+                    x: 2.0,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await;
     assert!(invalid.is_err());
+    let unsupported_shape = writer
+        .submit_layer(&LayerDraft {
+            default_node_id: None,
+            client_key: "root".into(),
+            nodes: vec![answer.id],
+            edges: vec![],
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: answer.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "flow",
+            )),
+            size_justification: None,
+        })
+        .await;
+    assert!(unsupported_shape.is_err());
 
     let preserved = writer.get_layer(valid.id).await.unwrap();
     assert_eq!(preserved.layer.layout, valid.layout);
+    assert_eq!(
+        preserved.layer.layout.unwrap().edge_shape.as_deref(),
+        Some("elbow-vertical")
+    );
 }
 
 #[tokio::test]
@@ -6351,6 +6407,74 @@ async fn coordinate_free_accepted_history_remains_readable_after_restart() {
     let output = writer.completion_output().await.unwrap().unwrap();
     assert_eq!(output.root_layer.nodes[0].title, "legacy");
     assert_eq!(output.root_layer.layer.layout, None);
+}
+
+#[tokio::test]
+async fn shape_free_draft_from_before_edge_shapes_accepts_and_reads_after_restart() {
+    use sqlx::{Connection, SqliteConnection};
+
+    let temporary = tempfile::tempdir().unwrap();
+    let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
+    let database = GraphDatabase::open(file.path()).await.unwrap();
+    let interaction = database
+        .create_interaction(Some(project(1)), thread(1), "Finish an older draft")
+        .await
+        .unwrap();
+    let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+    let answer = node(&writer, "older draft").await;
+    let draft = writer
+        .submit_layer(&LayerDraft {
+            default_node_id: None,
+            client_key: "root".into(),
+            nodes: vec![answer.id],
+            edges: vec![],
+            layout: authored_layout([answer.id]),
+            size_justification: None,
+        })
+        .await
+        .unwrap();
+    drop(writer);
+    database.close().await;
+
+    // A draft saved by a build without edge shapes has no stored shape.
+    let url = format!("sqlite://{}", file.path().display());
+    let mut connection = SqliteConnection::connect(&url).await.unwrap();
+    sqlx::query("UPDATE layers SET layout_edge_shape=NULL WHERE id=?1")
+        .bind(draft.id.value())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    connection.close().await.unwrap();
+
+    let reopened = GraphDatabase::open(file.path()).await.unwrap();
+    let writer = reopened.writer_for_subgraph(interaction.id).await.unwrap();
+    writer
+        .add_action(&ActionDraft {
+            client_key: "response".into(),
+            source_node_id: interaction.id,
+            source_layer_id: None,
+            kind: ActionKind::Navigate,
+            relation: Some(NavigateRelation::Expand),
+            label: "Response".into(),
+            variant: ActionVariant::default(),
+            icon: None,
+            description: None,
+            target_layer_id: Some(draft.id),
+            interaction_text: None,
+            input: None,
+        })
+        .await
+        .unwrap();
+    writer.complete(interaction.id).await.unwrap();
+    drop(writer);
+    reopened.close().await;
+
+    let reopened = GraphDatabase::open(file.path()).await.unwrap();
+    let writer = reopened.writer_for_subgraph(interaction.id).await.unwrap();
+    let output = writer.completion_output().await.unwrap().unwrap();
+    let layout = output.root_layer.layer.layout.unwrap();
+    assert_eq!(layout.edge_shape, None);
+    assert_eq!(layout.placements, draft.layout.unwrap().placements);
 }
 
 #[tokio::test]

@@ -22,20 +22,35 @@ pub struct GraphLayer {
     pub state: RecordState,
 }
 
+/// How a layer draws all its edges. `default` leaves the shape to the design.
+pub const EDGE_SHAPES: &[&str] = &[
+    "default",
+    "straight",
+    "arc-outward",
+    "arc-circle",
+    "elbow-horizontal",
+    "elbow-vertical",
+];
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LayerLayout {
     #[serde(default)]
     pub version: u32,
+    /// List order is the layer's reading order.
     #[serde(default)]
     pub placements: Vec<NodePlacement>,
+    /// Required on submit. Absent only on layers written before edge shapes; readers treat it as "default".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_shape: Option<String>,
 }
 
 impl LayerLayout {
-    pub fn v1(placements: Vec<NodePlacement>) -> Self {
+    pub fn v1(placements: Vec<NodePlacement>, edge_shape: &str) -> Self {
         Self {
             version: 1,
             placements,
+            edge_shape: Some(edge_shape.into()),
         }
     }
 
@@ -146,6 +161,20 @@ impl LayerDraft {
         {
             issues.extend(layout_issues);
         }
+        if self
+            .layout
+            .as_ref()
+            .is_some_and(|layout| layout.edge_shape.is_none())
+        {
+            issues.push(ValidationIssue::new(
+                "missing_edge_shape",
+                "layout.edgeShape",
+                format!(
+                    "Choose how this layer draws its edges: one of {}. Use \"default\" when no shape fits the structure better.",
+                    EDGE_SHAPES.join(", ")
+                ),
+            ));
+        }
         if (6..=8).contains(&self.nodes.len()) {
             let justification = self
                 .size_justification
@@ -245,6 +274,18 @@ fn validate_layout(layout: &LayerLayout, nodes: &[NodeId], issues: &mut Vec<Vali
                 ),
             ));
         }
+    }
+    if let Some(shape) = &layout.edge_shape
+        && !EDGE_SHAPES.contains(&shape.as_str())
+    {
+        issues.push(ValidationIssue::new(
+            "unsupported_edge_shape",
+            "layout.edgeShape",
+            format!(
+                "Edge shape {shape:?} is not supported. Choose one of: {}.",
+                EDGE_SHAPES.join(", ")
+            ),
+        ));
     }
 }
 

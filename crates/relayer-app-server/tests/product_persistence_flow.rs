@@ -2351,11 +2351,14 @@ async fn eval_annotations_are_scoped_append_only_and_durable() {
 }
 
 fn authored_layout(node_id: NodeId) -> Option<LayerLayout> {
-    Some(LayerLayout::v1(vec![NodePlacement {
-        node_id,
-        x: 0.5,
-        y: 0.5,
-    }]))
+    Some(LayerLayout::v1(
+        vec![NodePlacement {
+            node_id,
+            x: 0.5,
+            y: 0.5,
+        }],
+        "default",
+    ))
 }
 
 #[tokio::test]

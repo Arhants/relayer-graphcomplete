@@ -374,6 +374,9 @@ pub struct ExportLayer {
 pub struct ExportLayerLayout {
     pub version: u32,
     pub placements: Vec<ExportNodePlacement>,
+    /// Absent in exports written before edge shapes; it then reads as "default".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_shape: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2503,6 +2506,18 @@ fn validate_layer(resolved: &ExportResolvedLayer, path: &str) -> Result<(), Expo
                 format!(
                     "V1 exports support graph layout version 1, received {}.",
                     layout.version
+                ),
+            ));
+        }
+        if let Some(shape) = &layout.edge_shape
+            && !relayer_graph_core::EDGE_SHAPES.contains(&shape.as_str())
+        {
+            return Err(ExportValidationError::new(
+                "unsupported_edge_shape",
+                format!("{path}.layer.layout.edgeShape"),
+                format!(
+                    "Edge shape {shape:?} is not supported. Supported shapes: {}.",
+                    relayer_graph_core::EDGE_SHAPES.join(", ")
                 ),
             ));
         }

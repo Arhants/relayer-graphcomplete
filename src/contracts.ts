@@ -25,7 +25,10 @@ export interface NodePlacement {
 
 export interface LayerLayout {
   readonly version: 1;
+  /** List order is the layer's reading order. */
   readonly placements: readonly NodePlacement[];
+  /** One of @relayer/graph-client EDGE_SHAPES. Absent on layers accepted before edge shapes existed; read it as "default". */
+  readonly edgeShape?: string;
 }
 
 export interface GraphLayer {

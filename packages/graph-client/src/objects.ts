@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createOwnedNodeDetailAuthoring, NodeDetailAuthoring } from "./detail.js";
+import type { EdgeShape } from "./edge-shapes.js";
 import { acceptedNodeResponse } from "./node-response.js";
 import type { GraphAction, GraphEdge, GraphId, GraphLayer, GraphNode, InputControl, InputOption, NavigateRelation } from "./types.js";
 
@@ -48,7 +49,11 @@ export class NodePlacementObject {
 export class LayerLayoutObject {
   readonly version = 1 as const;
 
-  constructor(public placements: readonly NodePlacementObject[]) {}
+  /** Placement order is the layer's reading order. */
+  constructor(
+    public placements: readonly NodePlacementObject[],
+    public edgeShape: EdgeShape,
+  ) {}
 }
 
 export class LayerObject {

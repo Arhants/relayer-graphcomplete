@@ -114,6 +114,7 @@ struct LayerRow {
     state: String,
     owner_interaction_id: i64,
     layout_schema_version: Option<i64>,
+    layout_edge_shape: Option<String>,
 }
 
 #[derive(FromRow)]
@@ -134,7 +135,7 @@ impl<'connection> LayerTable<'connection> {
         id: LayerId,
     ) -> Result<Option<LayerRecord>, GraphError> {
         let row = sqlx::query_as::<_, LayerRow>(
-            "SELECT id,COALESCE((SELECT k.client_key FROM imported_layer_client_keys k WHERE k.layer_id=layers.id),client_key) AS client_key,state,owner_interaction_id,layout_schema_version,default_node_id FROM layers WHERE id=?1 AND NOT EXISTS(SELECT 1 FROM imported_provenance_layers p WHERE p.layer_id=layers.id) AND ((?2 IS NOT NULL AND project_id=?2) OR (?2 IS NULL AND project_id IS NULL AND thread_id=?3))",
+            "SELECT id,COALESCE((SELECT k.client_key FROM imported_layer_client_keys k WHERE k.layer_id=layers.id),client_key) AS client_key,state,owner_interaction_id,layout_schema_version,layout_edge_shape,default_node_id FROM layers WHERE id=?1 AND NOT EXISTS(SELECT 1 FROM imported_provenance_layers p WHERE p.layer_id=layers.id) AND ((?2 IS NOT NULL AND project_id=?2) OR (?2 IS NULL AND project_id IS NULL AND thread_id=?3))",
         )
         .bind(id.value())
         .bind(scope.project_id.map(ProjectId::value))
@@ -177,7 +178,13 @@ impl<'connection> LayerTable<'connection> {
                 row.id
             )));
         }
-        let layout = stored_layout(row.id, row.layout_schema_version, placement_rows, &nodes)?;
+        let layout = stored_layout(
+            row.id,
+            row.layout_schema_version,
+            row.layout_edge_shape,
+            placement_rows,
+            &nodes,
+        )?;
         Ok(Some(LayerRecord {
             layer: GraphLayer {
                 default_node_id: row.default_node_id.map(valid_node_id).transpose()?,
@@ -316,11 +323,12 @@ impl<'connection> LayerTable<'connection> {
                     .execute(&mut *self.connection)
                     .await?;
                 sqlx::query(
-                    "UPDATE layers SET layout_schema_version=?1,default_node_id=?3 WHERE id=?2",
+                    "UPDATE layers SET layout_schema_version=?1,default_node_id=?3,layout_edge_shape=?4 WHERE id=?2",
                 )
                 .bind(layout(draft)?.version as i64)
                 .bind(id.value())
                 .bind(draft.default_node_id.map(NodeId::value))
+                .bind(layout(draft)?.edge_shape.as_deref())
                 .execute(&mut *self.connection)
                 .await?;
                 id
@@ -341,7 +349,7 @@ impl<'connection> LayerTable<'connection> {
             }
             None => {
                 let result = sqlx::query(
-                    "INSERT INTO layers(project_id,thread_id,state,owner_interaction_id,client_key,layout_schema_version,default_node_id) VALUES (?1,?2,'draft',?3,?4,?5,?6)",
+                    "INSERT INTO layers(project_id,thread_id,state,owner_interaction_id,client_key,layout_schema_version,default_node_id,layout_edge_shape) VALUES (?1,?2,'draft',?3,?4,?5,?6,?7)",
                 )
                 .bind(scope.project_id.map(ProjectId::value))
                 .bind(scope.thread_id.value())
@@ -349,6 +357,7 @@ impl<'connection> LayerTable<'connection> {
                 .bind(&draft.client_key)
                 .bind(layout(draft)?.version as i64)
                 .bind(draft.default_node_id.map(NodeId::value))
+                .bind(layout(draft)?.edge_shape.as_deref())
                 .execute(&mut *self.connection)
                 .await?;
                 valid_layer_id(result.last_insert_rowid())?
@@ -446,6 +455,7 @@ fn layout(draft: &LayerDraft) -> Result<&LayerLayout, GraphError> {
 fn stored_layout(
     layer_id: i64,
     version: Option<i64>,
+    edge_shape: Option<String>,
     rows: Vec<PlacementRow>,
     nodes: &[NodeId],
 ) -> Result<Option<LayerLayout>, GraphError> {
@@ -475,6 +485,7 @@ fn stored_layout(
     let layout = LayerLayout {
         version,
         placements,
+        edge_shape,
     };
     validate_authored_layout(Some(&layout), nodes).map_err(|error| {
         GraphError::Internal(format!(
